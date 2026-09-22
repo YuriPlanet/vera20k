@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "126 complete original calls:72 Drive/Ship MoveTo,24 Foot destination,30 ordinary Unit Cell destination, each followed by original IsMoving. Warp-in/out, power, zero/raw/bridge coordinates, same NavCom/force and one-shot skip-MoveTo. No full Scatter/Process parity.",
+  "assumptions": [
+    "Original constructors for Drive/Ship and embedded vectors; supplied Unit constructor6D8=-1, empty Radio contact slot, House, map and Rules BlockagePathDelay22. No EMP, Foot6A0 timer, lift/particle links, deploy, Jumpjet/Teleporter type arms, docking buildings or queue allocation.",
+    "Original bridge scales execute from supplied established level scale104. Native Unit/Foot/locomotor vtables are unchanged; actor and head are supplied prestates. Power remains unchanged; MoveTo refusal does not refuse the enclosing accepted Foot setter."
+  ],
+  "substitutions": [
+    "Only inherited OS Interlocked import operations. No gameplay replacement."
+  ],
+  "entry_points": {
+    "unit": "0x00741970",
+    "foot": "0x004D94B0",
+    "drive_move": "0x004AFD40",
+    "ship_move": "0x0069F450",
+    "drive_bridge_scale": "0x004AF4A0",
+    "ship_bridge_scale": "0x0069EBB0"
+  },
+  "payload_sha256": "7860704fdc67a431901c21af2fd4a7f93c04ffc4ced28d90354cdcdb9d99376d"
+}

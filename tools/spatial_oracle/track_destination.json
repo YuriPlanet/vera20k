@@ -1,0 +1,6798 @@
+[
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      2944,
+      2688,
+      -123
+    ],
+    "events": [
+      "drive_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "power_off": false,
+      "request": [
+        2944,
+        2688,
+        -123
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": false,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      0
+    ],
+    "events": [
+      "foot",
+      "drive_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "foot",
+      "family": "drive",
+      "power_off": false
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      0
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot",
+      "drive_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "unit",
+      "family": "drive",
+      "power_off": false
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      2944,
+      2688,
+      293
+    ],
+    "events": [
+      "drive_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "power_off": false,
+      "request": [
+        2944,
+        2688,
+        -123
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": false,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      416
+    ],
+    "events": [
+      "foot",
+      "drive_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "foot",
+      "family": "drive",
+      "power_off": false
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      416
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot",
+      "drive_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "unit",
+      "family": "drive",
+      "power_off": false
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      2944,
+      2688,
+      -123
+    ],
+    "events": [
+      "drive_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "power_off": true,
+      "request": [
+        2944,
+        2688,
+        -123
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": false,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      0
+    ],
+    "events": [
+      "foot",
+      "drive_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "foot",
+      "family": "drive",
+      "power_off": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      0
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "lookup",
+      "lookup",
+      "foot",
+      "drive_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "unit",
+      "family": "drive",
+      "power_off": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      2944,
+      2688,
+      293
+    ],
+    "events": [
+      "drive_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "power_off": true,
+      "request": [
+        2944,
+        2688,
+        -123
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": false,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      416
+    ],
+    "events": [
+      "foot",
+      "drive_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "foot",
+      "family": "drive",
+      "power_off": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      416
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "lookup",
+      "lookup",
+      "foot",
+      "drive_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "unit",
+      "family": "drive",
+      "power_off": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "power_off": false,
+      "request": [
+        2944,
+        2688,
+        -123
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "foot",
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "foot",
+      "family": "drive",
+      "power_off": false,
+      "warp_out": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot",
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "unit",
+      "family": "drive",
+      "power_off": false,
+      "warp_out": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "power_off": false,
+      "request": [
+        2944,
+        2688,
+        -123
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "foot",
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "foot",
+      "family": "drive",
+      "power_off": false,
+      "warp_out": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot",
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "unit",
+      "family": "drive",
+      "power_off": false,
+      "warp_out": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "power_off": true,
+      "request": [
+        2944,
+        2688,
+        -123
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "foot",
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "foot",
+      "family": "drive",
+      "power_off": true,
+      "warp_out": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "lookup",
+      "lookup",
+      "foot",
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "unit",
+      "family": "drive",
+      "power_off": true,
+      "warp_out": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "power_off": true,
+      "request": [
+        2944,
+        2688,
+        -123
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "foot",
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "foot",
+      "family": "drive",
+      "power_off": true,
+      "warp_out": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "lookup",
+      "lookup",
+      "foot",
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "unit",
+      "family": "drive",
+      "power_off": true,
+      "warp_out": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "power_off": false,
+      "request": [
+        2944,
+        2688,
+        -123
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "foot",
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "foot",
+      "family": "drive",
+      "power_off": false,
+      "warp_in": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot",
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "unit",
+      "family": "drive",
+      "power_off": false,
+      "warp_in": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "power_off": false,
+      "request": [
+        2944,
+        2688,
+        -123
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "foot",
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "foot",
+      "family": "drive",
+      "power_off": false,
+      "warp_in": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot",
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "unit",
+      "family": "drive",
+      "power_off": false,
+      "warp_in": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "power_off": true,
+      "request": [
+        2944,
+        2688,
+        -123
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "drive",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "foot",
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "foot",
+      "family": "drive",
+      "power_off": true,
+      "warp_in": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "lookup",
+      "lookup",
+      "foot",
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "unit",
+      "family": "drive",
+      "power_off": true,
+      "warp_in": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "power_off": true,
+      "request": [
+        2944,
+        2688,
+        -123
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "drive",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "foot",
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "foot",
+      "family": "drive",
+      "power_off": true,
+      "warp_in": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "lookup",
+      "lookup",
+      "foot",
+      "drive_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "unit",
+      "family": "drive",
+      "power_off": true,
+      "warp_in": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "entry": "unit",
+      "family": "drive",
+      "same_nav": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      0
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot",
+      "drive_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "entry": "unit",
+      "family": "drive",
+      "force_reassign": true,
+      "same_nav": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "entry": "unit",
+      "family": "drive",
+      "skip_move": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      2944,
+      2688,
+      -123
+    ],
+    "events": [
+      "ship_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "power_off": false,
+      "request": [
+        2944,
+        2688,
+        -123
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": false,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      0
+    ],
+    "events": [
+      "foot",
+      "ship_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "foot",
+      "family": "ship",
+      "power_off": false
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      0
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot",
+      "ship_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "unit",
+      "family": "ship",
+      "power_off": false
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      2944,
+      2688,
+      293
+    ],
+    "events": [
+      "ship_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "power_off": false,
+      "request": [
+        2944,
+        2688,
+        -123
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": false,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      416
+    ],
+    "events": [
+      "foot",
+      "ship_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "foot",
+      "family": "ship",
+      "power_off": false
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      416
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot",
+      "ship_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "unit",
+      "family": "ship",
+      "power_off": false
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      2944,
+      2688,
+      -123
+    ],
+    "events": [
+      "ship_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "power_off": true,
+      "request": [
+        2944,
+        2688,
+        -123
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": false,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      0
+    ],
+    "events": [
+      "foot",
+      "ship_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "foot",
+      "family": "ship",
+      "power_off": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      0
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "lookup",
+      "lookup",
+      "foot",
+      "ship_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "unit",
+      "family": "ship",
+      "power_off": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      2944,
+      2688,
+      293
+    ],
+    "events": [
+      "ship_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "power_off": true,
+      "request": [
+        2944,
+        2688,
+        -123
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ]
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": false,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      416
+    ],
+    "events": [
+      "foot",
+      "ship_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "foot",
+      "family": "ship",
+      "power_off": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      416
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "lookup",
+      "lookup",
+      "foot",
+      "ship_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "unit",
+      "family": "ship",
+      "power_off": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "power_off": false,
+      "request": [
+        2944,
+        2688,
+        -123
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "foot",
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "foot",
+      "family": "ship",
+      "power_off": false,
+      "warp_out": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot",
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "unit",
+      "family": "ship",
+      "power_off": false,
+      "warp_out": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "power_off": false,
+      "request": [
+        2944,
+        2688,
+        -123
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "foot",
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "foot",
+      "family": "ship",
+      "power_off": false,
+      "warp_out": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot",
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "unit",
+      "family": "ship",
+      "power_off": false,
+      "warp_out": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "power_off": true,
+      "request": [
+        2944,
+        2688,
+        -123
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "foot",
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "foot",
+      "family": "ship",
+      "power_off": true,
+      "warp_out": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "lookup",
+      "lookup",
+      "foot",
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "unit",
+      "family": "ship",
+      "power_off": true,
+      "warp_out": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "power_off": true,
+      "request": [
+        2944,
+        2688,
+        -123
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_out": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "foot",
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "foot",
+      "family": "ship",
+      "power_off": true,
+      "warp_out": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "lookup",
+      "lookup",
+      "foot",
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "unit",
+      "family": "ship",
+      "power_off": true,
+      "warp_out": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "power_off": false,
+      "request": [
+        2944,
+        2688,
+        -123
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "foot",
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "foot",
+      "family": "ship",
+      "power_off": false,
+      "warp_in": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot",
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "unit",
+      "family": "ship",
+      "power_off": false,
+      "warp_in": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "power_off": false,
+      "request": [
+        2944,
+        2688,
+        -123
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": false,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "foot",
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "foot",
+      "family": "ship",
+      "power_off": false,
+      "warp_in": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot",
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "unit",
+      "family": "ship",
+      "power_off": false,
+      "warp_in": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "power_off": true,
+      "request": [
+        2944,
+        2688,
+        -123
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "move",
+      "family": "ship",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "foot",
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "foot",
+      "family": "ship",
+      "power_off": true,
+      "warp_in": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "lookup",
+      "lookup",
+      "foot",
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": false,
+      "entry": "unit",
+      "family": "ship",
+      "power_off": true,
+      "warp_in": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "power_off": true,
+      "request": [
+        2944,
+        2688,
+        -123
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      0,
+      0,
+      0
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "move",
+      "family": "ship",
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "power_off": true,
+      "request": [
+        0,
+        0,
+        0
+      ],
+      "warp_in": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": null,
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "foot",
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "foot",
+      "family": "ship",
+      "power_off": true,
+      "warp_in": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "lookup",
+      "lookup",
+      "foot",
+      "ship_move"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "bridge": true,
+      "entry": "unit",
+      "family": "ship",
+      "power_off": true,
+      "warp_in": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 0,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": true,
+    "blocked": 1,
+    "blocked_timer": [
+      40,
+      6
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "entry": "unit",
+      "family": "ship",
+      "same_nav": true
+    },
+    "movement_timer": [
+      50,
+      5
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      0
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot",
+      "ship_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "entry": "unit",
+      "family": "ship",
+      "force_reassign": true,
+      "same_nav": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      700,
+      800,
+      900
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "entry": "unit",
+      "family": "ship",
+      "skip_move": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  }
+]

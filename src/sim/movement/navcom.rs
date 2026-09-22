@@ -107,9 +107,9 @@ pub(crate) fn target_cell_coord(
 fn adjusted_destination(
     mut coord: DriveCoord,
     terrain: Option<&ResolvedTerrainGrid>,
-) -> DriveCoord {
+) -> Option<DriveCoord> {
     if coord == (DriveCoord { x: 0, y: 0, z: 0 }) {
-        return coord;
+        return None;
     }
     if let Some(terrain) = terrain {
         let rx = (coord.x / 256) as i16;
@@ -122,7 +122,7 @@ fn adjusted_destination(
                 .wrapping_add(crate::util::lepton::BRIDGE_HEIGHT_DELTA_LEPTONS as i32);
         }
     }
-    coord
+    Some(coord)
 }
 
 /// Native4B05D0..0638 compares the raw target XYZ before calling SetDestination.
@@ -135,11 +135,11 @@ pub(super) fn refresh_drive_destination_coord(
     let Some(drive) = entity.drive_locomotion.as_ref() else {
         return false;
     };
-    if drive.destination == Some(coord) {
+    let requested = (coord != (DriveCoord { x: 0, y: 0, z: 0 })).then_some(coord);
+    if drive.destination == requested {
         return false;
     }
-    drive_set_destination(entity, coord, terrain);
-    true
+    drive_set_destination(entity, coord, terrain)
 }
 
 /// Resolve the live receiver behind a non-null NavCom. The Rust reference tag
@@ -403,13 +403,21 @@ fn drive_set_destination(
     entity: &mut GameEntity,
     destination: DriveCoord,
     terrain: Option<&ResolvedTerrainGrid>,
-) {
+) -> bool {
+    // Drive4AFD40 checks owner+270/+271 before any destination or map read.
+    // Track MoveTo refusal leaves Foot's accepted NavCom/timer writes intact.
+    // EMP/Unit+6D8 and Foot+6A0 producers remain separate unported gates.
+    // Original whole-call comparisons: tools/spatial_oracle/track_destination.
+    if super::locomotor_owner::owner_is_warping(entity) {
+        return false;
+    }
     let destination = adjusted_destination(destination, terrain);
     let drive = entity
         .drive_locomotion
         .get_or_insert_with(DriveLocomotionRuntime::default);
     // Native4AFD40 writes destination only. Accepted movement owns Head_To.
-    drive.destination = Some(destination);
+    drive.destination = destination;
+    true
 }
 
 fn drive_stop_moving(entity: &mut GameEntity) {
@@ -435,13 +443,18 @@ fn ship_set_destination(
     destination: DriveCoord,
     terrain: Option<&ResolvedTerrainGrid>,
 ) {
+    // Ship69F450 has the same owner warp refusal before its map lookup.
+    // Use the existing warp owner, independent of power and locomotor stash.
+    if super::locomotor_owner::owner_is_warping(entity) {
+        return;
+    }
     let destination = adjusted_destination(destination, terrain);
     let ship = entity
         .ship_locomotion
         .get_or_insert_with(ShipLocomotionRuntime::default);
     // Ship's Move_To slot writes only +0x30. The committed +0x3C head is
     // selected later by Process_Movement from the owner's path.
-    ship.destination = Some(destination);
+    ship.destination = destination;
 }
 
 fn ship_stop_moving(entity: &mut GameEntity) {
@@ -502,6 +515,10 @@ impl crate::sim::world::Simulation {
         !refused
     }
 }
+
+#[cfg(test)]
+#[path = "track_destination_tests.rs"]
+mod native_destination_tests;
 
 #[cfg(test)]
 mod tests {
