@@ -238,6 +238,7 @@ fn pursuit_uses_same_range_as_combat_no_oscillation() {
 fn sticky_drops_the_target_instead_of_chasing_it() {
     let mut civilian = make_unit(1, "MTNK", "Americans", 0, 0, 300);
     civilian.attack_target = Some(AttackTarget::new(2));
+    civilian.weapon_burst.complete_shot(2);
     civilian
         .mission
         .apply_test_fixture(crate::sim::mission::state::MissionTestFixture {
@@ -269,6 +270,7 @@ fn sticky_drops_the_target_instead_of_chasing_it() {
         "Sticky produces no pursuit cell"
     );
     assert!(entity.navigation.nav_com.is_none());
+    assert_eq!(entity.weapon_burst.index(), 0);
 }
 
 /// The same object on Guard — the mission Sticky shares its handler with —

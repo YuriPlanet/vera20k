@@ -1584,8 +1584,8 @@ impl Simulation {
                 let (dock_rx, dock_ry) =
                     building_dock::depot_dock_cell(depot_rx, depot_ry, &foundation);
                 if let Some(e) = self.substrate.entities.get_mut(*entity_id) {
-                    e.attack_target = None;
-                    e.passively_acquired_target = false;
+                    // Event4C7467 dispatches Assign_Target before the destination write.
+                    represented_assign_target(e, None);
                     e.order_intent = None;
                     e.dock_state = Some(DockState::approach(*depot_id));
                 }
@@ -1702,8 +1702,7 @@ impl Simulation {
                 if self.duplicate_enter_is_noop(*passenger_id, *transport_id) {
                     return true;
                 }
-                // Retask onto Enter (no dock reservation touched); the legacy
-                // field clears below stay authoritative.
+                // Retask onto Enter; the target setter below owns combat cancellation.
                 self.queue_megamission_with_teardown(
                     *passenger_id,
                     MissionType::Enter,
@@ -1711,8 +1710,8 @@ impl Simulation {
                 );
                 // Clear existing state on the passenger.
                 if let Some(e) = self.substrate.entities.get_mut(*passenger_id) {
-                    e.attack_target = None;
-                    e.passively_acquired_target = false;
+                    // Event4C7467 dispatches Assign_Target before the destination write.
+                    represented_assign_target(e, None);
                     e.order_intent = None;
                     e.dock_state = None;
                     e.passenger_role = passenger::PassengerRole::Boarding {
@@ -1961,8 +1960,7 @@ impl Simulation {
                 {
                     return false;
                 }
-                // Retask onto Sabotage (no dock reservation touched); the legacy
-                // field clears below stay authoritative.
+                // Retask onto Sabotage; the target setter below owns combat cancellation.
                 self.queue_megamission_with_teardown(
                     *attacker_id,
                     MissionType::Sabotage,
@@ -1970,8 +1968,8 @@ impl Simulation {
                 );
                 // Clear conflicting state and set c4_plant.
                 if let Some(e) = self.substrate.entities.get_mut(*attacker_id) {
-                    e.attack_target = None;
-                    e.passively_acquired_target = false;
+                    // Event4C7467 dispatches Assign_Target before the destination write.
+                    represented_assign_target(e, None);
                     e.order_intent = None;
                     e.dock_state = None;
                     e.capture_target = None;
@@ -2105,8 +2103,7 @@ impl Simulation {
                 {
                     return false;
                 }
-                // Retask onto Capture (no dock reservation touched); the legacy
-                // field clears below stay authoritative.
+                // Retask onto Capture; the target setter below owns combat cancellation.
                 self.queue_megamission_with_teardown(
                     *engineer_id,
                     MissionType::Capture,
@@ -2114,8 +2111,8 @@ impl Simulation {
                 );
                 // Clear conflicting state and set capture target.
                 if let Some(e) = self.substrate.entities.get_mut(*engineer_id) {
-                    e.attack_target = None;
-                    e.passively_acquired_target = false;
+                    // Event4C7467 dispatches Assign_Target before the destination write.
+                    represented_assign_target(e, None);
                     e.order_intent = None;
                     e.dock_state = None;
                     e.capture_target = Some(*target_building_id);
@@ -2391,8 +2388,8 @@ impl Simulation {
                     DockTeardown::None,
                 );
                 if let Some(e) = self.substrate.entities.get_mut(*unit_id) {
-                    e.attack_target = None;
-                    e.passively_acquired_target = false;
+                    // Event4C7467 dispatches Assign_Target before the destination write.
+                    represented_assign_target(e, None);
                     e.order_intent = None;
                     e.dock_state = None;
                     e.c4_plant = None;

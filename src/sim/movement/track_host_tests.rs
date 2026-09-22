@@ -830,3 +830,35 @@ fn per_cell_promotes_queued_mission_before_tail_without_dispatching_handler() {
         }
     }
 }
+
+#[test]
+fn idle_receiver_cancels_burst_through_the_shared_target_setter() {
+    use crate::sim::combat::{AttackTarget, TargetKind};
+    use crate::sim::components::NavTargetRef;
+    for family in [TrackFamily::Drive, TrackFamily::Ship] {
+        for has_destination in [false, true] {
+            let (mut sim, _, _) = fixture(family, 0);
+            let entity = sim.substrate.entities.get_mut(1).unwrap();
+            entity.attack_target = Some(AttackTarget::for_cell(12, 10));
+            entity.passively_acquired_target = true;
+            entity.weapon_burst.complete_shot(2);
+            entity.navigation.nav_com = has_destination.then(|| NavTargetRef::cell(12, 10));
+            sim.track_enter_idle_mode(1, None);
+            let entity = sim.substrate.entities.get(1).unwrap();
+            assert_eq!(entity.weapon_burst.index(), i32::from(has_destination));
+            assert_eq!(entity.passively_acquired_target, has_destination);
+            assert_eq!(
+                entity.attack_target.as_ref().map(|target| target.target),
+                has_destination.then_some(TargetKind::Cell(12, 10)),
+            );
+            assert_eq!(
+                entity.mission.queued(),
+                MissionId::from_known(if has_destination {
+                    MissionType::Move
+                } else {
+                    MissionType::Guard
+                }),
+            );
+        }
+    }
+}

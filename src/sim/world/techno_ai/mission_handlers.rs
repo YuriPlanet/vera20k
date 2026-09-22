@@ -549,9 +549,13 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
 
     if evaluation.clear_stale_attack_target || evaluation.clear_attack_target {
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
-            entity.attack_target = None;
             if evaluation.clear_attack_target {
-                entity.passively_acquired_target = false;
+                // Unit EnterIdle738AF5/738C75 dispatches the real target setter.
+                // Keep the same burst owner as the locomotor arrival receiver.
+                crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+            } else {
+                // A missing handle is expiry cleanup, not Assign_Target(NULL).
+                entity.attack_target = None;
             }
         }
     }

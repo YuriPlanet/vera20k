@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "108 original Unit target/burst/passive-state setter and caller-boundary cases",
+  "assumptions": [
+    "Original Unit and Cell vtables; no linked beam, spawn manager or animation",
+    "Cells supplied as ordinary targets; no dead/cloaked/self/bunker redirection cases",
+    "Event, EnterIdle and Sticky admission already completed; only their virtual setter call executes",
+    "No Infantry override, whole order admission, whole mission or full combat parity claim"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "setter_begin": "0x006FCDB0",
+    "setter_end_exclusive": "0x30000000",
+    "event_begin": "0x004C7462",
+    "event_end_exclusive": "0x004C746D",
+    "idle_guard_begin": "0x00738AEA",
+    "idle_guard_end_exclusive": "0x00738AFB",
+    "idle_harvest_begin": "0x00738C6F",
+    "idle_harvest_end_exclusive": "0x00738C7B",
+    "sticky_begin": "0x004D572A",
+    "sticky_end_exclusive": "0x004D5736"
+  },
+  "original_code": [
+    {
+      "begin": "006FCDB0",
+      "end_exclusive": "006FCF95",
+      "sha256": "fe3e3887eb28e550bbc2e20eb325bce77c27a466c6e3e333f88b8ebbcecf62e1"
+    },
+    {
+      "begin": "004C7462",
+      "end_exclusive": "004C746D",
+      "sha256": "8ad01155003cb7b1f3c337c3a219e8bd025fb875ebf3d5599ea0b8fbaf008724"
+    },
+    {
+      "begin": "00738AEA",
+      "end_exclusive": "00738AFB",
+      "sha256": "9257996e4b65b87ae043b99a3648aa1aa93273c5378a64f44ae2ae6f4968bf01"
+    },
+    {
+      "begin": "00738C6F",
+      "end_exclusive": "00738C7B",
+      "sha256": "e84c6bb150114870cf02073ca929c3bfe296eabe4e45f0d9a60d50b7c0ce0a89"
+    },
+    {
+      "begin": "00746CC0",
+      "end_exclusive": "00746CC5",
+      "sha256": "1e14d8171b09af4849ad5ddd5352f88bf6640648e63c05037506f1ba7c6257c8"
+    },
+    {
+      "begin": "004D572A",
+      "end_exclusive": "004D5736",
+      "sha256": "61839804456ae2f3f7efd9944a9ee86d5a448b9cfc9083ce333279c14e145c22"
+    }
+  ],
+  "payload_sha256": "2e46438206ad2b6f5b712023fd9611e7483fc1dc345dd13795ebf9b5297d4785"
+}

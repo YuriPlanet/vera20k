@@ -1324,8 +1324,8 @@ impl Simulation {
                 }
                 PursuitAction::DropTargetAndMovement { entity_id } => {
                     if let Some(e) = self.substrate.entities.get_mut(entity_id) {
-                        e.attack_target = None;
-                        e.passively_acquired_target = false;
+                        // Foot4D5730 calls Assign_Target(NULL) on Sticky refusal.
+                        crate::sim::mission::concrete_effects::represented_assign_target(e, None);
                         e.movement_target = None;
                         e.navigation.nav_com = None;
                     }

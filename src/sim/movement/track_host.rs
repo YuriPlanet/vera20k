@@ -1218,7 +1218,10 @@ impl Simulation {
         };
         if selection.is_some() && !has_destination {
             if let Some(entity) = self.substrate.entities.get_mut(id) {
-                entity.attack_target = None;
+                // Unit738AF5/738C75 calls the virtual target setter before
+                // the Guard/Harvest queue; clearing only Target loses its
+                // retained burst reset (Techno6FCF5B).
+                crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
             }
         }
         // Unit738CFA..D12 suppresses assignment only after preceding writes.

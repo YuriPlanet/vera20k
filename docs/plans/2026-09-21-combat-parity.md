@@ -1449,16 +1449,42 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): retained body layers and landing evidence
+## Current checkpoint (2026-09-22): target-reset consumers and landing prerequisites
 
 Owned worktree: `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`;
 branch `feature/combat-foot-speed`. This increment is based on published
-`cd0015a4` and contains the retained body-layer migration and landing evidence below. Trigger ownership
+`abc880e9` and migrates the target-reset consumers below. Trigger ownership
 source is `7b83fc6c`; main integration is `d75dc8b6`. `.local/` is intentional
 untracked evidence. The combat goal remains active. Main's
 retirement of the dependency map is merged; never consult or refresh it.
 
-Current implementation: SHP and voxel instance builders, including voxel slope
+Current target-reset implementation: RepairAtDepot, EnterTransport, PlantC4,
+CaptureBuilding and EnterBunker now call `represented_assign_target(None)` after
+admission instead of dropping the field. Both locomotor and mission arrival
+receivers and Sticky pursuit refusal use the same owner. This preserves
+changed-null burst reset and same-null retention; rejected orders and stale
+handle expiry keep their existing distinct behavior. No new serialized state.
+The helper's comment no longer falsely claims to implement the whole native
+setter: target redirection/linked effects and Infantry override branches remain.
+
+`techno_target_burst` saves108 original Unit setter/caller-boundary comparisons,
+with original vtables and no substituted calls. Event4C7467, Unit738AF5/738C75
+and Foot4D5730 establish the call roles. The corpus excludes preceding native
+admission, Infantry override and whole combat behavior. Rust tests compare all
+108 rows and exercise five special orders with existing/null targets, rejected
+ownership, both arrival routes, Sticky refusal and stale expiry preservation.
+Ghidra idle/pursuit comments saved/read back. The first focused test run failed
+because the test attempted to board a Size3 tank into a SizeLimit2 transport;
+the corrected fixture boards Infantry. Final validation:
+- `cargo test -p vera20k --lib`: **9,152 passed,0 failed,135 ignored**,14.35s
+  (`.local/target-clear-full-tests.log`). All new regressions actually executed.
+- `cargo clippy -p vera20k --lib`: passes,1,029 warnings,22.65s
+  (`.local/target-clear-clippy.log`).
+- `python -m tools.spatial_oracle.techno_target_burst --check`: all108 native
+  outputs match without writes. Snapshot189 and replay baselines unchanged.
+No new release/retail/GPU claim. Cargo and native operations are terminal.
+
+Previously published abc880e9: SHP and voxel instance builders, including voxel slope
 selection, consume retained `DisplayLayers::layer_of`; removed their competing
 altitude/locomotor classifier. A CPU regression reproduces the zero-altitude /
 retained-Top mismatch and checks a real conceal/reveal resubmission against
@@ -1467,7 +1493,7 @@ landing or prove the required takeoff -> landing -> reload instance-builder path
 Air/Top interleaving across body/effect buckets remains open. Snapshot189 and
 simulation/replay baselines are unchanged.
 
-Validation of this candidate:
+Validation of published abc880e9:
 - Focused instance suite:73 passed (`.local/display-body-focused.log`).
 - Full `cargo test -p vera20k --lib`: **9,149 passed,0 failed,135 ignored**,
   13.16s (`.local/display-body-full-tests.log`). Six obsolete classifier tests
@@ -1495,12 +1521,37 @@ is still absent; these are supplied histories, not lifecycle or complete Process
 proof. Ghidra4CE840 is now `FlyLocomotionClass__Process_Landing`, with explanatory
 comment and alias `FlyLocomotionClass__Landing_Callback`; saved and read back.
 
-Next safe action: complete landing on the simulation owner, including its
-prerequisites. Extend the EXISTING OverlayGrid Cell+122 neighbor-count authority
-(currently named retained_wall_neighbor_counts), not a separate aircraft plane;
-trace Foot+55C initialization, takeoff/limbo cleanup and all writers. FlyRuntime
-also lacks+52 landing latch. Resolve owner+2E8 and owner virtual+544 roles before
-adding state. Preserve actual Aircraft4196B0 admission rather than the Winged
+Landing prerequisite audit (instruction evidence, not yet a Rust migration):
+- Current blocker-plane builders and MovementPassCache infer every mobile source
+  from current occupancy. Native retained history cannot be reconstructed that
+  way. Extend the EXISTING OverlayGrid Cell+122 authority (currently wall-only)
+  and migrate those readers together; do not add a separate aircraft plane.
+- Foot ctor4D3243/4D324A initializes+55C=(0,0). Unlimbo4D7248 gets current cell,
+  increments eight neighbors unconditionally, then4D72B2 tests owner+54. Only
+  false writes+55C at4D72B9. High-altitude Unlimbo can increment around the actual
+  cell while retaining zero history; do not invent balanced occupancy accounting.
+- Foot PerCell4D85D0 reason2 alone decrements old eight/stores current/increments
+  new eight, and skips that entire update when old+55C is zero. Limbo4DB260 has
+  no zero-source guard on its decrement and does not clear+55C. Fly landing
+  skips only the old decrement when zero, but always stores/adds the new source.
+  BeginTakeoff4CF950 does not change these counters or+55C.
+- Successful Foot ChangeOwner4DBF53 can replace+55C with current cell when+54
+  is false, without changing counters. Aircraft DropPayload415E6E writes the
+  selected cell's coordinates from Cell486840, converted with signed truncation
+  /256. IMPORTANT correction to the earlier turn summary: this is NOT a write
+  of the zero sentinel. Original415E26..415E6E and Cell486840 were re-read.
+- Aircraft vtable+544 points Foot4D3710, SetSpeedFraction. Landing's zero call
+  belongs to existing FootSpeedState.applied_fraction, not a new Fly speed owner.
+  Techno+2E8 is initialized zero and written by FlyProcess4CE3BA from type+3B0,
+  height and speed. Its precise identity and Type+C95 still need resolution.
+  FlyRuntime also lacks+52 landing latch. Keep those identities unguessed.
+Native listings are retained in `.local/foot-counter-{unlimbo,owner-change,
+drop-payload}.native.txt` and `.local/fly-process-owner-2e8.native.txt`.
+World Foot-Unlimbo seam follows record_foot_owner_discovery; PerCell seams are
+track_host/unit_track_per_cell and walk_host. Migrate all Foot lifecycle writers,
+shared dummy/wrapping behavior, save/hash and production readers coherently.
+
+Next safe action: complete landing on the simulation owner with these prerequisites. Preserve actual Aircraft4196B0 admission rather than the Winged
 Cell leaf. Changed-layer bridge landing additionally reaches Foot4DDC60 admission,
 radio24, owner+48C/+488 and map567DA0; a native probe reaches Tactical6DA8EE and
 faults without its initialized context, so this branch is deliberately excluded
@@ -1547,7 +1598,7 @@ Do not repeat the critic after fixes. It found three confirmed integration defec
    Stock ORCA/BEAG Ammo1 escape the zero-ammo gate, but multi/unlimited-ammo rules
    stall. Require a multi-release production regression, not only suffix samples.
 2. Pure Fly takeoff registers TOP, but landing does not resubmit GROUND. The
-   renderer conflict is fixed in this candidate by consuming retained membership.
+   renderer conflict is fixed in published abc880e9 by retained membership.
    The native landing transaction and actual takeoff -> landing -> reload instance
    builder validation are STILL REQUIRED before closing this finding.
 3. Entity-owned WeaponBurst outlived direct command target clears. Event Stop4C75F8
@@ -1555,9 +1606,10 @@ Do not repeat the critic after fixes. It found three confirmed integration defec
    Techno6FCF5B resets+3B8 only on a changed-null assignment. Raw pointer clearing
    bypassed that reset. Owner fix migrates Move, Stop, AttackMove and untargeted
    Guard through `represented_assign_target`, with a production-command regression.
-   Other clears still need native-role classification: Depot/Transport/Sabotage/
-   Capture/Bunker commands, mission handlers, pursuit, spawner/transport/teleport
-   and combat cleanup. Preserve genuine Detach/PointerExpired direct-write semantics.
+   The current increment additionally fixes the five special commands, both
+   vehicle-arrival consumers and Sticky pursuit. Remaining raw clears still need
+   native-role classification: spawner, boarding/unload/aircraft dock, teleport,
+   MCV deploy and combat cleanup (including mixed Phase5 removal reasons). Preserve genuine Detach/PointerExpired direct-write semantics.
 
 Burst command fix:3 focused tests pass, including the new production-command
 regression for all4 orders. Full `cargo test -p vera20k --lib` passes **9,154

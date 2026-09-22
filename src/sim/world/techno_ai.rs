@@ -3665,6 +3665,7 @@ mod tests {
         let rules = representative_foot_handler_rules();
         let mut unit = entity_of(1, EntityCategory::Unit);
         unit.attack_target = Some(AttackTarget::new(99));
+        unit.weapon_burst.complete_shot(2);
         update_mission_test_fixture(&mut unit.mission, |fixture| {
             fixture.current = MissionId::from_known(MissionType::Attack);
             fixture.dispatch_timer = MissionDispatchTimer::at_frame(0);
@@ -3675,6 +3676,7 @@ mod tests {
 
         let unit = sim.substrate.entities.get(1).unwrap();
         assert!(unit.attack_target.is_none());
+        assert_eq!(unit.weapon_burst.index(), 1);
         assert_eq!(unit.mission.queued(), MissionId::NONE);
     }
 
@@ -4262,6 +4264,7 @@ mod tests {
         let mut unit = entity_of(1, EntityCategory::Unit);
         unit.attack_target = Some(AttackTarget::new(2));
         unit.passively_acquired_target = true;
+        unit.weapon_burst.complete_shot(2);
         update_mission_test_fixture(&mut unit.mission, |fixture| {
             fixture.current = MissionId::from_known(MissionType::Move);
             fixture.dispatch_timer = MissionDispatchTimer::at_frame(0);
@@ -4281,6 +4284,7 @@ mod tests {
             "Assign_Target(NULL) on arrival"
         );
         assert!(!entity.passively_acquired_target);
+        assert_eq!(entity.weapon_burst.index(), 0);
         assert_eq!(
             entity.mission.dispatch_timer(),
             MissionDispatchTimer::from_raw(0, 1),
