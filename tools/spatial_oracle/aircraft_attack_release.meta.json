@@ -11,7 +11,7 @@
   "assumptions": [
     "Entry after successful GetFireError; target, ammo, tier and weapon/type inputs supplied.",
     "Original Aircraft vtable cloned to scratch; original auxiliary vtable and GetWeapon execute.",
-    "Map reveal418478..4184C2 omitted; original preserved ESI/EBX and balanced stack resumed.",
+    "Cell Scatter418478..4184C2 omitted; original preserved ESI/EBX and balanced stack resumed.",
     "Entry-housekeeping rows stop before target/ammo guards and navigation; signed Ammo and retained flags supplied.",
     "AI rows enter after Ready/Commence with the resulting current Mission supplied; no preceding promotion effects substituted or claimed.",
     "Initialization rows execute41403A..414051 with supplied InitialAmmo+680 and Ammo+684. Other constructor effects and INI parsing excluded.",
@@ -24,7 +24,7 @@
   "entry_points": {
     "release_loop": "0x00418403",
     "loop_end": "0x00418478",
-    "post_reveal": "0x004184C2",
+    "post_scatter": "0x004184C2",
     "get_weapon": "0x0070E140",
     "auxiliary_18": "0x0041B7F0",
     "fighter": "0x0041B840",

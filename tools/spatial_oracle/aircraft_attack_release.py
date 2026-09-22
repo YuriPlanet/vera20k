@@ -2,8 +2,8 @@
 
 Admission is supplied by entering418403. Weapon selection and FireAt are explicit
 scratch callbacks (FireAt returns null and has no effects); original GetWeapon,
-Aircraft auxiliary classifiers and mission writes execute. The intervening map
-reveal and the later mission entries are excluded, not replaced by claimed parity.
+Aircraft auxiliary classifiers and mission writes execute. The intervening cell
+scatter and the later mission entries are excluded, not replaced by claimed parity.
 """
 from pathlib import Path
 import struct
@@ -59,7 +59,7 @@ def execute(case):
     u.hook_add(UC_HOOK_CODE,observe)
     run_checked(u,0x418403,0x418478,count=30000,required_addresses=[0x41840E,0x70E140])
     assert u.reg_read(UC_X86_REG_ESP) == sp
-    # Resume after the omitted map reveal with its preserved ESI/EBX/SP.
+    # Resume after the omitted Cell Scatter with its preserved ESI/EBX/SP.
     run_checked(u,0x4184C2,(0x4184F1,0x418539,0x418581),count=5000,
                 required_addresses=[0x41B7F0])
     assert u.reg_read(UC_X86_REG_ESP) == sp
@@ -151,7 +151,7 @@ def ai_housekeeping(case):
 
 if __name__ == '__main__':
     finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=lambda:provenance(
-        entry_points={'release_loop':0x418403,'loop_end':0x418478,'post_reveal':0x4184C2,
+        entry_points={'release_loop':0x418403,'loop_end':0x418478,'post_scatter':0x4184C2,
                       'get_weapon':0x70E140,'auxiliary_18':0x41B7F0,'fighter':0x41B840,
                       'state1_entry':0x418031,'state3_entry':0x4180A1,'state10_entry':0x418BEC,
                       'ai_after_commence':0x41505E,'ai_pending_end':0x415085,
@@ -159,7 +159,7 @@ if __name__ == '__main__':
                       'initialize_ammo':0x41403A,'initialize_ammo_end':0x414051},
         assumptions=['Entry after successful GetFireError; target, ammo, tier and weapon/type inputs supplied.',
                      'Original Aircraft vtable cloned to scratch; original auxiliary vtable and GetWeapon execute.',
-                     'Map reveal418478..4184C2 omitted; original preserved ESI/EBX and balanced stack resumed.',
+                     'Cell Scatter418478..4184C2 omitted; original preserved ESI/EBX and balanced stack resumed.',
                      'Entry-housekeeping rows stop before target/ammo guards and navigation; signed Ammo and retained flags supplied.',
                      'AI rows enter after Ready/Commence with the resulting current Mission supplied; no preceding promotion effects substituted or claimed.',
                      'Initialization rows execute41403A..414051 with supplied InitialAmmo+680 and Ammo+684. Other constructor effects and INI parsing excluded.',

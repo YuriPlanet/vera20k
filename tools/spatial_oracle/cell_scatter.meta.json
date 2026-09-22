@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "62 full original Cell Scatter calls: rank/ability/IQ eligibility, whole-list elite gate, both object lists, 13 recipients, callback unlinking and empty list. No displacement claim.",
+  "assumptions": [
+    "Supplied Unit objects and houses; copied original Unit vtable except Scatter observer.",
+    "Fixed source coordinate, explicit two forwarded booleans; no allocation failure."
+  ],
+  "substitutions": [
+    "operator new[]/delete[] allocate/free scratch memory with original cdecl stack cleanup.",
+    "Object virtual+174 records recipient and args, optionally unlinks the cell; no class Scatter body executes."
+  ],
+  "entry_points": {
+    "cell_scatter": "0x00481670",
+    "techno_cast": "0x0040DD70",
+    "ability": "0x0070D0D0",
+    "array_growth": "0x0040CE50"
+  },
+  "payload_sha256": "f995ea9a052bcb842ba658bec45d54f99795f69d01dc957d28eeead2d7f0589a"
+}

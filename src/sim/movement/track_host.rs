@@ -1339,6 +1339,8 @@ impl Simulation {
                 capability,
                 super::bump_crush::ScatterEligibility::from_rules(rules),
                 self.session.binary_frame,
+                rules,
+                &self.houses,
             );
             if !matches!(kills, super::bump_crush::DriveCrushOutcome::Kill { ref victims } if victims.contains(&victim))
             {

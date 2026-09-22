@@ -211,7 +211,9 @@ pub(super) fn fire(
 }
 
 /// 4184C2..418584: suffix does not depend on FireAt's returned bullet. Native
-/// reveal481670 between the loop and this suffix remains a visibility residual.
+/// Cell Scatter481670 between the loop and this suffix remains required:
+/// source=Aircraft+9C, firstFlag=1, dispatchAll=0, ground list. It must reach
+/// source-aware class Scatter; the NullCoord blocker helper is not equivalent.
 fn finish_release(world: &mut Simulation, rules: &RuleSet, id: u64, frame: u32) {
     let Some(entity) = world.substrate.entities.get(id) else {
         return;

@@ -854,7 +854,7 @@ secondary-facing boundaries and an actual `advance_tick` release.
 Required residuals: the common admission is still an incomplete native
 GetFireError, including unported Aircraft+6C9 retained cargo history. Loaded
 Aircraft's DropPayload arm is explicitly still blocked rather than substituted
-with gun fire. Native481670 release reveal, error-specific state4 transitions,
+with gun fire. Native481670 target-cell scatter, error-specific state4 transitions,
 FindFireLocation/state1, state3 auxiliary/navigation branches, states5..9 and
 state10 return/navigation/RNG remain required. Air FireAt's launch velocity,
 ROT0/1/homing math and6CA suffix remain unported. The host remains phased rather
@@ -1449,7 +1449,86 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): Aircraft entry and approach integration
+## Current checkpoint (2026-09-22): Cell Scatter eligibility dependency
+
+Owned checkout `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`,
+branch `feature/combat-foot-speed`, parent `9985236c`. Resolve current HEAD from
+Git. The active combat goal authorizes implementation and validated commits,
+publication and merge. No goal rewrite or new critic. Preserve `.local/`.
+The attack/flight loop remains unfinished; no PR or merge in this increment.
+
+Acceptance for this prerequisite: the existing production cell-entry recipient
+gate reads actual House CurrentIQ and shared SCATTER abilities, preserves the
+per-cell elite override and cell-list order, and matches original execution.
+This is recipient admission, not complete class displacement or aircraft parity.
+
+Changes: `bump_crush::ScatterTechno` reads existing HouseState and the shared
+HasWeaponAbility owner; deleted the constant human-IQ substitution and stale
+claim that houses/SCATTER were unavailable. The movement host passes live houses
+through both initial and resumed visits. No new retained state or snapshot
+version. The existing crusher classifier remains the production consumer.
+
+Evidence: `tools/spatial_oracle/cell_scatter.{py,json,meta.json}` executes62 full
+481670 calls, including actual cast/rank/ability readers, both lists,13 recipients
+and callback unlinking. Only allocation/free and recipient virtual observers are
+substituted. Native `--check` passes. Rust compares the62 gate results and tests
+changes to live IQ/rank through the production cell-entry classifier. A separate
+world movement regression reaches the occupied-cell receiver and checks both
+refusal and the resulting move for high IQ or a veteran SCATTER ability. Class
+Scatter movement and RNG parity are outside this corpus.
+
+Validation:91 focused bump/crush tests and the world movement regression pass.
+Final `cargo test -p vera20k --lib` passes **9,180 tests,0 failures,135 ignored**
+in16.26s (`.local/cell-scatter-full-final.log`).
+`cargo clippy -p vera20k --lib` passes with1,027 warnings, the same count as the
+parent (`.local/cell-scatter-clippy-final.log`,39.25s).
+Earlier full runs each passed9,179 tests with the new world fixture failing:
+it required a crossing after refused scatter, and omitted `[General]`, leaving
+the loader's constructor IQ threshold3 instead of the intended2. The corrected
+fixture asserts its loaded rules and detects the receiver's existing snapback.
+Focused attempts are retained in `.local/cell-scatter-world3..6.log`.
+The loader's early return without `[General]` also skips these independent
+section reads; this fixture now includes that section as retail does. No loader
+change or claim for section-only rules is included here.
+
+Ghidra481670,41840E and4184BD saved/read back: the capacity grows by ten, with no
+ten-recipient cap; aircraft release calls target-cell Scatter, not map reveal.
+Corrected the prior release harness/source notes accordingly. Its omitted call
+remains omitted; its316 suffix/loop rows pass `--check` with no expanded claim.
+Also saved/read back51D200/51D212 comments after verifying Team membership
+writes in Add_Member6EA56E and Remove_Member6EA99D.
+
+Required next work:
+- Aircraft release must call source-aware class Scatter for the target's ground
+  list after the synchronous FireAt loop, before its mission suffix. Arguments
+  are `(Aircraft+9C copy,1,0,0)` to481670; first and second booleans have distinct
+  class gates. The existing NullCoord blocker displacement cannot substitute.
+- Infantry51D0D0 demotes its first boolean when the locomotor reports moving.
+  Existing damage scatter also needs reconciliation: the final Fraidycat gate
+  51D212..220 is unconditional after a false effective first boolean, and the
+  human fallback reads Foot.Team+5D4, not the+5A4 NavCom currently used by that
+  helper. Identity is established by Add_Member6EA56E storing its Team receiver
+  and Remove_Member6EA99D clearing it. Use the existing
+  `TeamScriptVm::team_for_member`; do not introduce another membership owner.
+- States5..9 still collapse to10 in the legacy dispatcher. Native states6..8
+  accept GetFireError0/2/8/9, with8 assigning Target before fire; successful arms
+  fire once, scatter, assign Target, advance state and return raw primary ROF.
+  State9 uses the same accepted errors, fires/scatters without that destination
+  setter, enters3 and returns signed `(Range+1024)/AircraftType.Speed`.
+- State5 needs native error reasons and Rules.CurleyShuffle (+17E1, retail yes).
+  It retries busy3, uncloaks on9, and uses selected-weapon range via6F7780 ->
+  virtual+3A8/6F77B0 ->6F7220 for its reapproach decisions. The current Option
+  admission erases those reasons and orders some gates differently from native.
+  Reconcile the shared admission/rearm owner rather than inventing a second one.
+- `.local/probe_aircraft_error.py` executes full41A9E0: clear0, cooldown3,
+  ammo-zero1, facing2, far-range8, zero-Verses5, self-cloaked9. The followup-fire
+  probe executes state6 through real error checks, empty-cell Scatter and
+  destination/Fly setters; only FireAt is a spy. Promote reproducible evidence
+  with the implementation, not as proof of actual projectile emission.
+- Preserve earlier flight/lifecycle, launch math, cargo and whole-combat
+  residuals. No retail/rendered or Linux/macOS run in this increment.
+
+## Aircraft entry and approach evidence (2026-09-22)
 
 Owned checkout `C:/Users/enok/.codex/worktrees/engine-ownership-boundaries/ra2-rust-game`,
 branch `feature/combat-foot-speed`, increment parent `ce4e2c5b`. Resolve current

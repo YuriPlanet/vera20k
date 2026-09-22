@@ -6948,3 +6948,106 @@ fn deferred_crush_uses_binary_frame_after_cell_classification_with_offset_clocks
         }
     }
 }
+
+/// The production movement host must carry CurrentIQ/type abilities into the
+/// cell-entry dispatcher; a classifier-only test cannot detect dropped context.
+#[test]
+fn cell_scatter_world_reads_live_house_and_veteran_ability() {
+    let rules = crate::rules::ruleset::RuleSet::from_ini(
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[General]\nCloseEnough=0\n[VehicleTypes]\n0=LCRF\n[InfantryTypes]\n0=E1\n[LCRF]\nSpeed=6\nCrusher=yes\n[E1]\nSpeed=4\nVeteranAbilities=SCATTER\n[IQ]\nScatter=2\n[CombatDamage]\nPlayerScatter=no\n"
+        )
+    ).unwrap();
+    assert_eq!(rules.general.iq_scatter, 2);
+    assert!(!rules.general.player_scatter);
+    for (iq, rank, expected) in [(0, 0, false), (2, 0, true), (0, 100, true)] {
+        let mut sim = crate::sim::world::Simulation::new();
+        // The ordinary 576-lepton CloseEnough would finish this short route
+        // before its occupied cell, so require arrival for this fixture.
+        sim.close_enough = SIM_ZERO;
+        let mut mover = make_hover_mover(vec![(1, 1), (2, 1), (3, 1)], 250);
+        mover.regular_crusher = true;
+        mover.lifecycle.cell_marked = true;
+        mover.lifecycle.in_limbo = false;
+        sim.substrate.entities.insert(mover);
+        let mut victim = GameEntity::test_default(2, "E1", "Soviets", 2, 1);
+        victim.category = EntityCategory::Infantry;
+        victim.crushable = true;
+        victim.lifecycle.cell_marked = true;
+        victim.lifecycle.in_limbo = false;
+        // Outside the full-cell crush radius, so this test observes the entering
+        // cell's scatter dispatch instead of a simultaneous destruction.
+        victim.position.sub_x = SIM_ZERO;
+        victim.position.sub_y = SIM_ZERO;
+        victim.veterancy = rank;
+        victim.locomotor = Some(
+            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Walk,
+            ),
+        );
+        let owner = victim.owner();
+        sim.substrate.entities.insert(victim);
+        sim.interner = test_interner();
+        let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10);
+        house.current_iq = iq;
+        sim.houses.insert(owner, house);
+        sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
+        let classification = |sim: &crate::sim::world::Simulation| {
+            crate::sim::pathfinding::cell_entry::classify_occupied_cell_with_occupation_and_slave_query(
+                (2, 1), crate::sim::pathfinding::cell_entry::CanEnterLayerContext::single(MovementLayer::Ground),
+                1, bump_crush::CrushCapability::new(true, false), "Americans",
+                crate::rules::locomotor_type::LocomotorKind::Hover, false, None,
+                &sim.substrate.occupancy, &sim.substrate.cell_occupation,
+                &sim.substrate.raw_cell_occupation, sim.session.binary_frame,
+                &sim.substrate.entities, &sim.house_alliances, &sim.interner, None,
+            )
+        };
+        assert!(
+            matches!(
+                classification(&sim),
+                crate::sim::pathfinding::cell_entry::CellEntryResult::Crushable { .. }
+            ),
+            "initial classification {:?}",
+            classification(&sim)
+        );
+        let mut scattered = false;
+        let mut visited_cell_receiver = false;
+        for frame in 1..1500 {
+            let before_x = sim.substrate.entities.get(1).unwrap().position.sub_x;
+            sim.session.binary_frame = frame;
+            let timing = super::MovementConfig::from_rules(frame, SIM_ZERO, Some(&rules));
+            let stats = sim
+                .process_ground_locomotor_with_config_for_test(1, Some(&rules), None, None, timing)
+                .unwrap();
+            scattered |= stats.scatter_successes != 0;
+            // The non-centred infantry survives the crush-radius test, so the
+            // existing entering-cell receiver returns the hover to its old
+            // centre. Requiring a whole-cell crossing would incorrectly reject
+            // the intended no-scatter case, which continues waiting here.
+            let after = &sim.substrate.entities.get(1).unwrap().position;
+            visited_cell_receiver |= before_x > SimFixed::from_num(128)
+                && after.rx == 1
+                && after.sub_x == SimFixed::from_num(128);
+            if scattered || visited_cell_receiver {
+                break;
+            }
+        }
+        assert!(
+            scattered || visited_cell_receiver,
+            "fixture must reach occupied cell; IQ={iq}, rank={rank}, mover={:?}, path={:?}, classification={:?}",
+            sim.substrate.entities.get(1).unwrap().position,
+            sim.substrate.entities.get(1).unwrap().movement_target,
+            classification(&sim)
+        );
+        assert_eq!(scattered, expected, "IQ={iq}, rank={rank}");
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(2)
+                .unwrap()
+                .movement_target
+                .is_some(),
+            expected
+        );
+    }
+}

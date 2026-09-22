@@ -1045,6 +1045,7 @@ fn advance_ordinary_mover(
     block_index: &mut OwnerBlockIndex,
     slave_bindings: Option<&BTreeMap<u64, Vec<u64>>>,
     resume: Option<OrdinaryMoverVisit>,
+    houses: &BTreeMap<crate::sim::intern::InternedId, crate::sim::house_state::HouseState>,
 ) {
     let path_grid = ctx.path_grid;
     let resolved_terrain = ctx.resolved_terrain;
@@ -1499,6 +1500,7 @@ fn advance_ordinary_mover(
                 rules,
                 admission_marker,
                 slave_bindings,
+                houses,
             );
             debug_events.extend(events);
             if !accepted {
@@ -2210,6 +2212,7 @@ fn advance_ordinary_mover(
             rules,
             deferred_marker,
             None,
+            houses,
         );
         debug_events.extend(occ_evts);
         // `HoverLocomotionClass::Move`: the arrival arm sets `+0x6B6 = 1` at
@@ -2930,6 +2933,7 @@ impl PendingMovementPass {
         type_handles: Option<&TypeHandleTable>,
         slave_bindings: Option<&BTreeMap<u64, Vec<u64>>>,
         caches: &mut MovementPassCache,
+        houses: &BTreeMap<crate::sim::intern::InternedId, crate::sim::house_state::HouseState>,
     ) {
         let MovementPassCache {
             blocker: blocker_cache,
@@ -3000,6 +3004,7 @@ impl PendingMovementPass {
             block_index,
             slave_bindings,
             Some(request.visit),
+            houses,
         );
     }
 
@@ -3096,6 +3101,7 @@ pub(crate) fn begin_movement_with_grids_scoped(
     type_handles: Option<&TypeHandleTable>,
     slave_bindings: Option<&BTreeMap<u64, Vec<u64>>>,
     caches: &mut MovementPassCache,
+    houses: &BTreeMap<crate::sim::intern::InternedId, crate::sim::house_state::HouseState>,
 ) -> Result<PendingMovementPass, String> {
     let mut stats = MovementTickStats::default();
     if live_order.is_some_and(|order| order.is_empty()) {
@@ -3209,6 +3215,7 @@ pub(crate) fn begin_movement_with_grids_scoped(
             block_index,
             slave_bindings,
             None,
+            houses,
         );
     }
     Ok(PendingMovementPass {

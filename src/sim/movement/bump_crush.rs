@@ -889,18 +889,44 @@ pub fn cell_passable_after_crush(
 /// occupant's `VeterancyClass::IsElite`.
 const ELITE_VETERANCY: u16 = 200;
 
-/// House IQ as the native cell-scatter gate reads it (`occupant->Owner->IQ`).
-///
-/// `ScenarioClass::Create_Houses` writes `[IQ] MaxIQLevels` into every *computer*
-/// house whenever the game mode is not campaign, and leaves human houses at the
-/// constructor value — 0 in stock skirmish, since no stock house type carries an
-/// `IQ=` key. So in retail the gate separates AI-owned occupants (which dodge)
-/// from player-owned occupants (which do not).
-///
-/// VERA has no per-house IQ field and no AI opponent commanding units, so every
-/// house currently resolves to the human value. VERA-internal; the AI-owned half
-/// of this gate is UNCHECKED against gamemd until houses carry an IQ.
-pub const HUMAN_HOUSE_IQ: i32 = 0;
+/// Live Techno inputs at one Cell Scatter dispatch. Non-Technos have no such
+/// facts and pass only a cell-wide override. Native: 481771..4817C1.
+#[derive(Clone, Copy, Debug)]
+pub struct ScatterTechno {
+    pub has_scatter_ability: bool,
+    pub house_iq: i32,
+}
+
+impl ScatterTechno {
+    fn from_entity(
+        entity: &GameEntity,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+        houses: &std::collections::BTreeMap<
+            crate::sim::intern::InternedId,
+            crate::sim::house_state::HouseState,
+        >,
+        interner: &crate::sim::intern::StringInterner,
+    ) -> Self {
+        use crate::sim::combat::veterancy::{has_weapon_ability, rank_from_u16};
+        Self {
+            has_scatter_ability: rules
+                .and_then(|rules| rules.object(interner.resolve(entity.type_ref())))
+                .is_some_and(|object| {
+                    has_weapon_ability(
+                        rank_from_u16(entity.veterancy),
+                        object,
+                        crate::rules::object_type::Ability::Scatter,
+                    )
+                }),
+            // A rulesless/component fixture may omit its House. Runtime houses
+            // own CurrentIQ; zero is their constructor default, not a human/AI
+            // inference. The value is already saved/restored by HouseState.
+            house_iq: houses
+                .get(&entity.owner())
+                .map_or(0, |house| house.current_iq),
+        }
+    }
+}
 
 /// Rules inputs of the native cell-scatter dispatch gate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -938,23 +964,22 @@ impl ScatterEligibility {
 /// elite occupant and the answer then applies to every occupant of that cell —
 /// while the IQ term is per-occupant.
 ///
-/// The `HasWeaponAbility(3)` disjunct is not modelled: the ability index has not
-/// been resolved to a `VeteranAbilities=` string, and no stock type is known to
-/// carry it. Omitting it can only make the gate tighter than retail.
-///
-/// No random draw was found in the native body. The census behind that covered
-/// its DIRECT calls only, and the kill path also dispatches through several
-/// virtual slots, so "consumes no RNG" is UNVERIFIED rather than proven.
+/// `HasWeaponAbility(3)` is SCATTER, using the shared rank/ability owner.
+/// Evidence: tools/spatial_oracle/cell_scatter.{py,json,meta.json} executes the
+/// original full dispatcher and ability reader. Eligibility itself draws no
+/// RNG; the recipient's Scatter virtual may draw, so dispatch is not RNG-free.
 pub fn scatter_dispatch_allowed(
     eligibility: ScatterEligibility,
     forced: bool,
     elite_in_cell: bool,
-    occupant_house_iq: i32,
+    techno: Option<ScatterTechno>,
 ) -> bool {
     elite_in_cell
         || forced
         || eligibility.player_scatter
-        || occupant_house_iq >= eligibility.iq_scatter
+        || techno.is_some_and(|facts| {
+            facts.has_scatter_ability || facts.house_iq >= eligibility.iq_scatter
+        })
 }
 
 /// The per-cell elite pre-scan: does any occupant of this cell carry elite rank?
@@ -994,6 +1019,11 @@ pub fn classify_drive_crush_phase(
     capability: CrushCapability,
     eligibility: ScatterEligibility,
     current_frame: u32,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    houses: &std::collections::BTreeMap<
+        crate::sim::intern::InternedId,
+        crate::sim::house_state::HouseState,
+    >,
 ) -> DriveCrushOutcome {
     if !capability.can_crush_units() {
         return DriveCrushOutcome::None;
@@ -1017,7 +1047,12 @@ pub fn classify_drive_crush_phase(
         };
         match phase {
             DriveCrushPhase::EnteringCell => {
-                if scatter_dispatch_allowed(eligibility, false, elite_in_cell, HUMAN_HOUSE_IQ) {
+                if scatter_dispatch_allowed(
+                    eligibility,
+                    false,
+                    elite_in_cell,
+                    Some(ScatterTechno::from_entity(victim, rules, houses, interner)),
+                ) {
                     selected.push(id);
                 }
             }
@@ -2171,6 +2206,8 @@ mod tests {
             CrushCapability::new(true, false),
             stock_eligibility(),
             0,
+            None,
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(outcome, DriveCrushOutcome::None);
@@ -2206,6 +2243,8 @@ mod tests {
             CrushCapability::new(true, false),
             stock_eligibility(),
             0,
+            None,
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(
@@ -2242,6 +2281,8 @@ mod tests {
                 iq_scatter: 2,
             },
             0,
+            None,
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(outcome, DriveCrushOutcome::Scatter { blockers: vec![2] });
@@ -2255,17 +2296,60 @@ mod tests {
             stock,
             false,
             false,
-            HUMAN_HOUSE_IQ
+            Some(ScatterTechno {
+                has_scatter_ability: false,
+                house_iq: 0
+            })
         ));
         // force = 1 (every locomotor blocked-cell caller) always dispatches.
-        assert!(scatter_dispatch_allowed(stock, true, false, HUMAN_HOUSE_IQ));
+        assert!(scatter_dispatch_allowed(
+            stock,
+            true,
+            false,
+            Some(ScatterTechno {
+                has_scatter_ability: false,
+                house_iq: 0
+            })
+        ));
         // An elite in the cell releases it.
-        assert!(scatter_dispatch_allowed(stock, false, true, HUMAN_HOUSE_IQ));
+        assert!(scatter_dispatch_allowed(
+            stock,
+            false,
+            true,
+            Some(ScatterTechno {
+                has_scatter_ability: false,
+                house_iq: 0
+            })
+        ));
         // An AI house at MaxIQLevels=5 clears [IQ] Scatter=2.
-        assert!(scatter_dispatch_allowed(stock, false, false, 5));
+        assert!(scatter_dispatch_allowed(
+            stock,
+            false,
+            false,
+            Some(ScatterTechno {
+                has_scatter_ability: false,
+                house_iq: 5
+            })
+        ));
         // Exactly at the threshold: `IQ.Scatter <= house.IQ`.
-        assert!(scatter_dispatch_allowed(stock, false, false, 2));
-        assert!(!scatter_dispatch_allowed(stock, false, false, 1));
+        assert!(scatter_dispatch_allowed(
+            stock,
+            false,
+            false,
+            Some(ScatterTechno {
+                has_scatter_ability: false,
+                house_iq: 2
+            })
+        ));
+        assert!(!scatter_dispatch_allowed(
+            stock,
+            false,
+            false,
+            Some(ScatterTechno {
+                has_scatter_ability: false,
+                house_iq: 1
+            })
+        ));
     }
 
     #[test]
@@ -2273,6 +2357,158 @@ mod tests {
         let defaults = ScatterEligibility::default();
         assert!(!defaults.player_scatter);
         assert_eq!(defaults.iq_scatter, 3);
+    }
+
+    #[test]
+    fn cell_scatter_recipient_gate_matches_original_execution() {
+        use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+        use crate::sim::{house_state::HouseState, intern::StringInterner};
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/cell_scatter.json"
+        ))
+        .unwrap();
+        for row in corpus.as_array().unwrap() {
+            let input = &row["input"];
+            let objects = input["objects"].as_array().unwrap();
+            let mut ini = String::from("[VehicleTypes]\n");
+            for (n, object) in objects.iter().enumerate() {
+                ini.push_str(&format!("{n}=T{}\n", object["id"]));
+            }
+            for object in objects {
+                ini.push_str(&format!(
+                    "[T{}]\nVeteranAbilities={}\nEliteAbilities={}\n",
+                    object["id"],
+                    if object["veteran_scatter"].as_bool().unwrap_or(false) {
+                        "SCATTER"
+                    } else {
+                        ""
+                    },
+                    if object["elite_scatter"].as_bool().unwrap_or(false) {
+                        "SCATTER"
+                    } else {
+                        ""
+                    },
+                ));
+            }
+            let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
+            let mut interner = StringInterner::new();
+            let mut entities = EntityStore::new();
+            let mut houses = std::collections::BTreeMap::new();
+            for object in objects {
+                let id = object["id"].as_u64().unwrap();
+                let owner = interner.intern(&format!("H{id}"));
+                let kind = interner.intern(&format!("T{id}"));
+                let mut entity = GameEntity::new_at_frame_zero_for_test(
+                    id,
+                    5,
+                    5,
+                    0,
+                    0,
+                    owner,
+                    crate::sim::components::Health { current: 100 },
+                    kind,
+                    EntityCategory::Unit,
+                    0,
+                    5,
+                    true,
+                );
+                entity.veterancy = object["rank"].as_u64().unwrap_or(0) as u16 * 100;
+                let mut house = HouseState::new(owner, 0, None, true, 0, 10);
+                house.current_iq = object["iq"].as_i64().unwrap_or(0) as i32;
+                houses.insert(owner, house);
+                entities.insert(entity);
+            }
+            let bridge = input["bridge"].as_bool().unwrap_or(false);
+            let selected: Vec<_> = objects
+                .iter()
+                .filter(|object| object["bridge"].as_bool().unwrap_or(false) == bridge)
+                .collect();
+            let elite = selected.iter().any(|object| {
+                object["techno"].as_bool().unwrap_or(true)
+                    && object["rank"].as_u64().unwrap_or(0) >= 2
+            });
+            let eligibility = ScatterEligibility {
+                player_scatter: input["player_scatter"].as_bool().unwrap_or(false),
+                iq_scatter: input["threshold"].as_i64().unwrap_or(2) as i32,
+            };
+            let actual: Vec<u64> = selected
+                .iter()
+                .filter_map(|object| {
+                    let id = object["id"].as_u64().unwrap();
+                    let facts = object["techno"].as_bool().unwrap_or(true).then(|| {
+                        ScatterTechno::from_entity(
+                            entities.get(id).unwrap(),
+                            Some(&rules),
+                            &houses,
+                            &interner,
+                        )
+                    });
+                    scatter_dispatch_allowed(
+                        eligibility,
+                        input["dispatch_all"].as_bool().unwrap_or(false),
+                        elite,
+                        facts,
+                    )
+                    .then_some(id)
+                })
+                .collect();
+            let expected: Vec<u64> = row["dispatch"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|id| id.as_u64().unwrap())
+                .collect();
+            assert_eq!(actual, expected, "{}", input["name"]);
+        }
+    }
+
+    /// Exercise the production cell-entry classifier with live HouseState and
+    /// parsed type abilities. No replacement IQ cache is introduced.
+    #[test]
+    fn entering_cell_scatter_reads_house_iq_and_shared_ability_owner() {
+        let mut entities = EntityStore::new();
+        entities.insert(vehicle(1, 5, 5));
+        let mut victim = GameEntity::test_default(2, "E1", "Soviet", 5, 5);
+        victim.category = EntityCategory::Infantry;
+        let owner = victim.owner();
+        entities.insert(victim);
+        let interner = crate::sim::intern::test_interner();
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[InfantryTypes]\n0=E1\n[E1]\nVeteranAbilities=SCATTER\n",
+            ))
+            .unwrap();
+        let mut houses = std::collections::BTreeMap::new();
+        houses.insert(
+            owner,
+            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
+        );
+        for (iq, rank, expected) in [(1, 0, false), (2, 0, true), (1, 100, true), (1, 0, false)] {
+            houses.get_mut(&owner).unwrap().current_iq = iq;
+            entities.get_mut(2).unwrap().veterancy = rank;
+            let result = classify_drive_crush_phase(
+                DriveCrushPhase::EnteringCell,
+                &[2],
+                &entities,
+                1,
+                &crate::map::houses::HouseAllianceMap::new(),
+                &interner,
+                (1280, 1280),
+                CrushCapability::new(true, false),
+                stock_eligibility(),
+                0,
+                Some(&rules),
+                &houses,
+            );
+            assert_eq!(
+                result,
+                if expected {
+                    DriveCrushOutcome::Scatter { blockers: vec![2] }
+                } else {
+                    DriveCrushOutcome::None
+                }
+            );
+        }
     }
 
     #[test]
@@ -2298,6 +2534,8 @@ mod tests {
             CrushCapability::new(true, false),
             stock_eligibility(),
             0,
+            None,
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(outcome, DriveCrushOutcome::Kill { victims: vec![2] });
@@ -2325,6 +2563,8 @@ mod tests {
             CrushCapability::new(true, false),
             stock_eligibility(),
             0,
+            None,
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(outcome, DriveCrushOutcome::None);
@@ -2360,6 +2600,8 @@ mod tests {
             CrushCapability::new(true, false),
             stock_eligibility(),
             0,
+            None,
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(outcome, DriveCrushOutcome::Kill { victims: vec![2] });
@@ -2399,6 +2641,8 @@ mod tests {
             CrushCapability::new(true, false),
             stock_eligibility(),
             0,
+            None,
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(outcome, DriveCrushOutcome::Kill { victims: vec![2] });
@@ -2434,6 +2678,8 @@ mod tests {
                 CrushCapability::new(true, false),
                 stock_eligibility(),
                 frame,
+                None,
+                &std::collections::BTreeMap::new(),
             )
         };
 
@@ -2472,6 +2718,8 @@ mod tests {
             CrushCapability::new(true, false),
             stock_eligibility(),
             0,
+            None,
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(rng.state(), before.state());

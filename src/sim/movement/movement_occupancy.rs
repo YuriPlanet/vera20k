@@ -664,6 +664,7 @@ pub(super) fn handle_deferred_occupancy(
     rules: Option<&crate::rules::ruleset::RuleSet>,
     deferred_marker: Option<crate::sim::movement::path_markers::DeferredBridgeMarker<'_>>,
     slave_bindings: Option<&std::collections::BTreeMap<u64, Vec<u64>>>,
+    houses: &BTreeMap<crate::sim::intern::InternedId, crate::sim::house_state::HouseState>,
 ) -> (Vec<(u32, DebugEventKind)>, bool) {
     let mut debug_events: Vec<(u32, DebugEventKind)> = Vec::new();
     let (nx, ny, layer_context) = match check {
@@ -873,6 +874,8 @@ pub(super) fn handle_deferred_occupancy(
                 crush_capability,
                 eligibility,
                 mcfg.binary_frame,
+                rules,
+                houses,
             ) {
                 bump_crush::DriveCrushOutcome::Kill { victims } => victims,
                 _ => Vec::new(),
@@ -890,6 +893,8 @@ pub(super) fn handle_deferred_occupancy(
                     crush_capability,
                     eligibility,
                     mcfg.binary_frame,
+                    rules,
+                    houses,
                 )
             {
                 for blocker_id in blockers {

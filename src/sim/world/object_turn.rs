@@ -186,6 +186,7 @@ impl Simulation {
                 Some(&sim.type_handles),
                 Some(&sim.production.slave_bindings),
                 &mut sim.movement_pass_cache,
+                &sim.houses,
             )
             .map_err(|cause| super::FrameAdvanceError {
                 tick: sim.session.tick,
@@ -232,6 +233,7 @@ impl Simulation {
                     Some(&sim.type_handles),
                     Some(&sim.production.slave_bindings),
                     &mut sim.movement_pass_cache,
+                    &sim.houses,
                 );
             }
         }
