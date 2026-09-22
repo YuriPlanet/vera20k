@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "328 complete Unit73F0A0 calls through original Foot4D9C60: direction/height/slope, bridge list and raw planes, previous pointer, Tube direction/endpoint gates and MovementRestrictedTo land/overlay exceptions. Excludes full pathfinding, Scatter continuation and map-boundary aliases.",
+  "assumptions": [
+    "Uses unit_entry fixture: real Drive, class tables and shared numeric tail. Map Cells are real; optional Tubes are supplied records. Explicit previous pointer changes only the Foot height source.",
+    "Restriction cases use original registered 1x1 tile dimensions and supplied nonzero land speed rows. Overlay236/237/238 has no flags. Other cases preserve unit_entry defaults; no off-map Team/shroud or lifecycle claim."
+  ],
+  "substitutions": [
+    "Only OS Interlocked imports inherited from the Unit/Drive fixture. No gameplay substitution."
+  ],
+  "entry_points": {
+    "unit_entry": "0x0073F0A0",
+    "height_list": "0x004D9C60",
+    "get_tube": "0x00484F20"
+  },
+  "payload_sha256": "cb78c91aa6bc2842f13a1733adca1dc81324d017d409b6e5aa69d28352af1127"
+}

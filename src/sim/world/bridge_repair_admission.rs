@@ -1,6 +1,6 @@
 //! Shared live Infantry51BF90 admission and the repair +1AC receivers.
 //! Infantry and Unit retain numeric accumulators; consumers project only the
-//! answers they need. Unit's direction/height prelude is still repair-specific.
+//! answers they need. Both classes use Foot4D9C60's height/list prelude.
 //! Ordered terminal answers remain significant.
 //! Numeric Unit evidence: tools/spatial_oracle/unit_entry.{py,json,meta.json}.
 use super::*;
@@ -1040,11 +1040,6 @@ fn foot_entry(
         return aircraft_effect_quotient(live, e, cell).map(|hard| if hard { 7 } else { 0 });
     }
     let infantry = e.category == EntityCategory::Infantry;
-    let mut layer = if live.flags(cell) & BRIDGE_FLAG_STRUCTURAL != 0 {
-        MovementLayer::Bridge
-    } else {
-        MovementLayer::Ground
-    };
     let (mut bits, mut owner) = raw(live, cell, MovementLayer::Ground);
     let initial_level = live.level(cell);
     let mut vehicle_occupied = bits & 0x20 != 0;
@@ -1066,12 +1061,13 @@ fn foot_entry(
                 return Ok(7);
             }
         } else if c.yr_cell_land_type != required.as_index()
-            && !(matches!(c.bridge_facts.overlay_id, Some(237 | 238)) && initial_level != -1)
+            && !(matches!(c.bridge_facts.overlay_id, Some(237 | 238))
+                && args.height != i32::from(initial_level))
         {
             return Ok(7);
         }
     }
-    if infantry {
+    let layer = {
         use crate::sim::movement::infantry_entry::{adjust_height_and_list, backstep_cell};
         let mut height = args.height;
         let mut list_bridge = live.flags(cell) & 0x100 != 0
@@ -1080,13 +1076,23 @@ fn foot_entry(
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
         let tube = terrain.tube_for_native_cell(cell);
         if args.direction == 8 {
-            //51BFFD..51C036: the direction-eight entry tests the retained
-            //Tube endpoints, before any neighbor/height/list work.
-            return Ok(if tube.is_some_and(|tube| tube.entry != tube.exit) {
-                0
-            } else {
-                7
-            });
+            //51BFFD tests distinct endpoints; Unit73F218 tests a nonzero
+            //exit, including an automatic Tube whose endpoints are equal.
+            //Both return before neighbor/height/list work. Original calls:
+            //tools/spatial_oracle/unit_entry_traversal.{py,json,meta.json}.
+            return Ok(
+                if tube.is_some_and(|tube| {
+                    if infantry {
+                        tube.entry != tube.exit
+                    } else {
+                        tube.exit != (0, 0)
+                    }
+                }) {
+                    0
+                } else {
+                    7
+                },
+            );
         }
         let cross_tube = |tube: Option<&crate::map::tube_facts::TubeFact>, direction: i32| {
             tube.is_some_and(|tube| {
@@ -1105,7 +1111,7 @@ fn foot_entry(
             return Ok(7);
         }
         //51C0AE reloads the target level after the first neighbor lookup.
-        if height.wrapping_sub(i32::from(live.level(cell))) > 4 {
+        if infantry && height.wrapping_sub(i32::from(live.level(cell))) > 4 {
             return Ok(0);
         }
         if !adjust_height_and_list(
@@ -1118,8 +1124,8 @@ fn foot_entry(
         ) {
             return Ok(7);
         }
-        //51C0FB..136: raw occupation selection is independent of the object
-        //list plane modified by4D9C60. Do not collapse these two authorities.
+        //51C0FB..136 /73F303..348: raw occupation selection is independent
+        //of the object list plane modified by4D9C60. Keep both authorities.
         if height != -1
             && live.flags(cell) & 0x100 != 0
             && height == i32::from(live.level(cell)) + 4
@@ -1127,28 +1133,12 @@ fn foot_entry(
             (bits, owner) = raw(live, cell, MovementLayer::Bridge);
             vehicle_occupied = bits & 0x20 != 0;
         }
-        layer = if list_bridge {
+        if list_bridge {
             MovementLayer::Bridge
         } else {
             MovementLayer::Ground
-        };
-    } else {
-        //The existing Unit repair caller has dir=-1/height=-1. Preserve its
-        //two independent queries and established list/raw projection.
-        for _ in 0..2 {
-            let p = live.coord(cell);
-            let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[3];
-            live.terrain()
-                .native_cell_identity((p.0.wrapping_add(dx as i16), p.1.wrapping_add(dy as i16)));
         }
-        if live.flags(cell) & BRIDGE_FLAG_STRUCTURAL == 0 {
-            layer = MovementLayer::Ground;
-        }
-        if layer == MovementLayer::Bridge {
-            (bits, owner) = raw(live, cell, layer);
-            vehicle_occupied = bits & 0x20 != 0;
-        }
-    }
+    };
     let p = live.coord(cell);
     if e.in_playfield
         && !crate::sim::cell_rect::cell_is_in_playfield_height_aware(

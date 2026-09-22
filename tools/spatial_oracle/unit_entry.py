@@ -10,7 +10,7 @@ import struct
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ESP
 from tools.native_oracle import SCRATCH, finish_vectors, provenance
-from tools.spatial_oracle.map_queries import dwords
+from tools.spatial_oracle.map_queries import dwords, packed
 from tools.spatial_oracle.unit_scatter_state import ACTOR, TYPE, SP
 from tools.spatial_oracle.unit_source_scatter import make_source_fixture, CELLS
 
@@ -28,12 +28,42 @@ def query(case):
     u.mem_write(ACTOR + 0x21C, dwords(HOUSE))
     for address, index in ((HOUSE, 0), (ENEMY, 1)):
         u.mem_write(address + 0x30, dwords(index))
+    for x, y, slope in case.get('slopes', []):
+        u.mem_write(CELLS + (y * 32 + x) * 0x200 + 0x11C, bytes([slope]))
+    if 'restricted_land' in case:
+        u.mem_write(TYPE + 0xDFC, dwords(case['restricted_land']))
+        u.mem_write(CELL + 0xEC, dwords(case.get('land', 0)))
+        u.mem_write(0x89EA40, struct.pack('<108f', *([1.0] * 108)))
+        tile = EXTRA + 0x28000
+        u.mem_write(0xA8ED2C, dwords(tile + 0x400))
+        u.mem_write(tile + 0x400, dwords(tile))
+        u.mem_write(tile + 0x2E4, dwords(*case.get('tile_size', [1, 1])))
+        u.mem_write(CELL + 0x11A, bytes([case.get('subtile', 0)]))
+    if 'tubes' in case:
+        table = EXTRA + 0x29000
+        u.mem_write(0x8B413C, dwords(table))
+        u.mem_write(0x8B4148, dwords(len(case['tubes'])))
+        for y in range(32):
+            for x in range(32):
+                u.mem_write(CELLS + (y * 32 + x) * 0x200 + 0x116, b'\xff\xff')
+        for index, tube in enumerate(case['tubes']):
+            address = EXTRA + 0x2A000 + index * 0x100
+            u.mem_write(table + index * 4, dwords(address))
+            x, y = tube['cell']
+            u.mem_write(CELLS + (y * 32 + x) * 0x200 + 0x116, struct.pack('<h', index))
+            u.mem_write(address + 0x24, packed(*tube.get('entry', [x, y]))
+                        + packed(*tube.get('exit', [20, 20])) + dwords(tube['direction']))
     u.mem_write(TYPE + 0xD28, bytes([case.get('crusher', False), case.get('omni', False)]))
     # Original GetWeapon(0)->TechnoType7177C0: type +898 + index*28.
     u.mem_write(TYPE + 0x898, dwords(WEAPON if case.get('armed') else 0))
     u.mem_write(WEAPON + 0xA0, dwords(PROJECTILE))
     u.mem_write(WEAPON + 0xAC, dwords(WARHEAD))
     u.mem_write(PROJECTILE + 0x2A5, bytes([case.get('ag', True)]))
+    if 'overlay' in case:
+        overlay = EXTRA + 0xF000
+        u.mem_write(0xA83D84, dwords(overlay + 0x400))
+        u.mem_write(overlay + 0x400 + case['overlay'] * 4, dwords(overlay))
+        u.mem_write(CELL + 0x44, dwords(case['overlay']))
     if 'wall' in case:
         overlay = EXTRA + 0xF000
         u.mem_write(0xA83D84, dwords(overlay + 0x400))
@@ -95,7 +125,9 @@ def query(case):
             seen.append(hex(address))
     u.hook_add(UC_HOOK_CODE, observe)
     before = bytes(u.mem_read(EXTRA, 0x30000))
-    call(0x73F0A0, ACTOR, [CELL, -1, -1, 0, 1])
+    previous = case.get('previous')
+    previous_ptr = CELLS + (previous[1] * 32 + previous[0]) * 0x200 if previous else 0
+    call(0x73F0A0, ACTOR, [CELL, case.get('direction', -1), case.get('height', -1), previous_ptr, 1])
     assert u.reg_read(UC_X86_REG_ESP) == SP + 24
     assert bytes(u.mem_read(EXTRA, 0x30000)) == before
     return dict(input=case, result=u.reg_read(UC_X86_REG_EAX), calls=seen)

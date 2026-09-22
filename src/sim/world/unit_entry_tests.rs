@@ -5,16 +5,41 @@ use crate::sim::occupancy::CellListInsertion;
 
 #[test]
 fn unit_entry_preserves_original_numeric_results_and_repair_projection() {
-    let rows: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/spatial_oracle/unit_entry.json"
-    ))
-    .unwrap();
+    compare_rows(
+        include_str!("../../../tools/spatial_oracle/unit_entry.json"),
+        150,
+        true,
+    );
+}
+
+#[test]
+fn unit_entry_matches_original_height_bridge_and_tube_traversal() {
+    compare_rows(
+        include_str!("../../../tools/spatial_oracle/unit_entry_traversal.json"),
+        328,
+        false,
+    );
+}
+
+fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
+    let rows: serde_json::Value = serde_json::from_str(json).unwrap();
     let mut mismatches = Vec::new();
     for row in rows.as_array().unwrap() {
         let input = &row["input"];
         let flag = |key: &str| input[key].as_bool().unwrap_or(false);
+        let restriction = input["restricted_land"]
+            .as_u64()
+            .map(|land| {
+                format!(
+                    "MovementRestrictedTo={}\n",
+                    crate::rules::terrain_rules::LandType::from_index(land as u8)
+                        .unwrap()
+                        .section_name()
+                )
+            })
+            .unwrap_or_default();
         let mut extra = format!(
-            "[VehicleTypes]\n0=MOVER\n1=BLOCKER\n[BuildingTypes]\n1=BUILDING\n[MOVER]\nSpeedType=Track\nCrusher={}\nOmniCrusher={}\nMovementZone={}\n{}[BLOCKER]\nSpeedType=Track\n[BUILDING]\nFoundation=1x1\nGate={}\n[TESTGUN]\nDamage=10\nROF=20\nRange=5\nProjectile=TESTPROJECTILE\nWarhead=SA\n[TESTPROJECTILE]\nAG={}\n[SA]\nWall={}\n",
+            "[VehicleTypes]\n0=MOVER\n1=BLOCKER\n[BuildingTypes]\n1=BUILDING\n[MOVER]\nSpeedType=Track\nCrusher={}\nOmniCrusher={}\nMovementZone={}\n{restriction}{}[BLOCKER]\nSpeedType=Track\n[BUILDING]\nFoundation=1x1\nGate={}\n[TESTGUN]\nDamage=10\nROF=20\nRange=5\nProjectile=TESTPROJECTILE\nWarhead=SA\n[TESTPROJECTILE]\nAG={}\n[SA]\nWall={}\n",
             flag("crusher"),
             flag("omni"),
             if flag("crusher_all") {
@@ -39,6 +64,79 @@ fn unit_entry_preserves_original_numeric_results_and_repair_projection() {
             extra.push_str(&format!("[O0]\nWall=yes\nCrushable={}\n", flag("wall")));
         }
         let (mut sim, rules, registry) = super::super::super::tests::fixture_with_rules(&extra);
+        let coord = |value: &serde_json::Value| {
+            (
+                value[0].as_u64().unwrap() as u16,
+                value[1].as_u64().unwrap() as u16,
+            )
+        };
+        if let Some(tubes) = input["tubes"].as_array() {
+            use crate::map::tube_facts::{TubeFact, TubeId, TubeSource};
+            let old = sim.resolved_terrain.take().unwrap();
+            let mut cells = old.cells().to_vec();
+            let tubes = tubes
+                .iter()
+                .enumerate()
+                .map(|(index, tube)| {
+                    let at = coord(&tube["cell"]);
+                    cells
+                        .iter_mut()
+                        .find(|cell| (cell.rx, cell.ry) == at)
+                        .unwrap()
+                        .tube_index = Some(TubeId(index as u16));
+                    TubeFact {
+                        entry: tube.get("entry").map_or(at, coord),
+                        exit: tube.get("exit").map_or((20, 20), coord),
+                        direction: tube["direction"].as_i64().unwrap() as i32,
+                        path_steps: Vec::new(),
+                        source: TubeSource::ExplicitMap,
+                    }
+                })
+                .collect();
+            sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
+                33, 33, cells, tubes,
+            ));
+        }
+        for input_cell in input["cells"].as_array().into_iter().flatten() {
+            let (x, y) = coord(input_cell);
+            let cell = sim
+                .resolved_terrain
+                .as_mut()
+                .unwrap()
+                .cell_mut(x, y)
+                .unwrap();
+            cell.level = input_cell[2].as_u64().unwrap() as u8;
+            cell.bridge_facts.raw_flags = input_cell[3].as_u64().unwrap() as u32;
+        }
+        for slope in input["slopes"].as_array().into_iter().flatten() {
+            let (x, y) = coord(slope);
+            sim.resolved_terrain
+                .as_mut()
+                .unwrap()
+                .cell_mut(x, y)
+                .unwrap()
+                .slope_type = slope[2].as_u64().unwrap() as u8;
+        }
+        if input.get("restricted_land").is_some() {
+            let cell = sim
+                .resolved_terrain
+                .as_mut()
+                .unwrap()
+                .cell_mut(11, 10)
+                .unwrap();
+            cell.yr_cell_land_type = input["land"].as_u64().unwrap_or(0) as u8;
+            cell.final_tile_index = 0;
+            cell.final_sub_tile = input["subtile"].as_u64().unwrap_or(0) as u8;
+        }
+        if let Some(overlay) = input["overlay"].as_u64() {
+            sim.resolved_terrain
+                .as_mut()
+                .unwrap()
+                .cell_mut(11, 10)
+                .unwrap()
+                .bridge_facts
+                .overlay_id = Some(overlay as u8);
+        }
         sim.session.binary_frame = 100;
         let ours = sim.intern("Americans");
         let enemy = sim.intern("Russians");
@@ -197,6 +295,17 @@ fn unit_entry_preserves_original_numeric_results_and_repair_projection() {
             .as_ref()
             .unwrap()
             .native_cell_identity((11, 10));
+        let args = InfantryEntryArgs {
+            direction: input["direction"].as_i64().unwrap_or(-1) as i32,
+            height: input["height"].as_i64().unwrap_or(-1) as i32,
+            previous_cell: input.get("previous").map(|p| {
+                let (x, y) = coord(p);
+                sim.resolved_terrain
+                    .as_ref()
+                    .unwrap()
+                    .native_cell_identity((x as i16, y as i16))
+            }),
+        };
         let mut live = LivePublication {
             sim: &mut sim,
             rules: &rules,
@@ -204,19 +313,13 @@ fn unit_entry_preserves_original_numeric_results_and_repair_projection() {
             collapsed: false,
         };
         let expected = row["result"].as_u64().unwrap() as u8;
-        let actual = foot_entry(
-            &mut live,
-            CellObjectMember::Entity(90),
-            cell,
-            InfantryEntryArgs::REPAIR,
-        );
-        let repair = impassable(&mut live, CellObjectMember::Entity(90), cell);
-        if actual != Ok(expected) || repair != Ok(expected == 7) {
-            mismatches.push(format!(
-                "{input}: expected{expected}, actual{actual:?}, repair{repair:?}"
-            ));
+        let actual = foot_entry(&mut live, CellObjectMember::Entity(90), cell, args);
+        let repair =
+            repair_projection.then(|| impassable(&mut live, CellObjectMember::Entity(90), cell));
+        if actual != Ok(expected) || repair.is_some_and(|answer| answer != Ok(expected == 7)) {
+            mismatches.push(format!("{input}: expected {expected}, actual {actual:?}"));
         }
     }
-    assert_eq!(rows.as_array().unwrap().len(), 150);
+    assert_eq!(rows.as_array().unwrap().len(), expected_count);
     assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
 }

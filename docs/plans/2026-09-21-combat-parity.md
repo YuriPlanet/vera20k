@@ -1449,14 +1449,37 @@ the independent Aircraft+6C9 annotation. No critic or PR for this branch yet.
 terminal. No release loader binding changed in this increment; the coherent
 branch still needs the post-FlightLevel/Carryall retail load before merge.
 
-## Current checkpoint (2026-09-22): numeric Unit cell entry
+## Current checkpoint (2026-09-22): Unit height and Tube traversal
 
 Owned checkout: engine-ownership-boundaries/ra2-rust-game, branch
-feature/combat-foot-speed, published parent **d17dad7c**. Combat goal stays active.
+feature/combat-foot-speed, published parent **12f7a4b6**. Combat goal stays active.
 The sole critic already ran; no repeated critic or PR/merge while its required
 aircraft attack/flight joins remain unfinished. Preserve .local/ and prior work.
 
-Acceptance: preserve original Unit73F0A0 numeric outcomes in the shared live
+Current acceptance: replace the Unit repair-only height shortcut with original
+direction/Tube/Foot4D9C60 traversal in the shared live receiver. Preserve
+Infantry's distinct Tube endpoint predicate and high-height early-clear arm,
+Unit's numeric outcomes, independent bridge list/raw planes, and repair's
+literal-seven projection. No competing entry implementation or new state.
+
+Implemented: Unit now uses the same existing Foot height owner as Infantry,
+with native class differences retained. MovementRestrictedTo overlay237/238
+exception compares the supplied height against signed Cell level, rather than
+assuming height=-1. Two independent neighbor lookups remain when previous=NULL;
+explicit previous suppresses only the Foot lookup, not the earlier Tube query.
+Evidence unit_entry_traversal.{py,json,meta.json}:328 complete original Unit
+calls, including9 directions, signed levels, slope/bridge combinations,
+explicit previous, list/raw selection,128 target/backstep Tube direction
+combinations and restriction/overlay cases. Native --check passes328 rows;
+unit_entry's previous150 outputs reproduce unchanged. Ghidra73F0A0/4D9C60
+comments corrected, saved and read back. No full Scatter/pathfinding claim.
+Final cargo test -p vera20k --lib passes **9187 tests,0 failures,135 ignored**
+(.local/unit-traversal-full.log,23.00s). Final cargo clippy -p vera20k --lib
+passes with1024 warnings, unchanged from parent (.local/unit-traversal-clippy.log,
+24.51s). Both processes finished. Native traversal and original entry checks
+also finished. No retail rendered/Linux/macOS claim.
+
+Published12f7a4b6 acceptance: preserve original Unit73F0A0 numeric outcomes in the shared live
 repair/class receiver, including ordered blockers, walls/gates and independent
 raw occupation. Repair still projects ==7; source Scatter requires ==0. Remove
 the boolean accumulator which incorrectly turned all soft outcomes into0.
@@ -1496,7 +1519,7 @@ memory unchanged. Source fixture setup is shared with unit_source_scatter;
 its existing56 outputs remain unchanged. Unit corpus is compared to the actual
 shared receiver and repair projection, not a separate test implementation.
 
-Validation: final cargo test -p vera20k --lib passes **9186 tests,0 failures,
+Published12f7a4b6 validation: final cargo test -p vera20k --lib passes **9186 tests,0 failures,
 135 ignored** (.local/unit-entry-full-validated.log,19.94s). Final cargo clippy
 -p vera20k --lib passes with1024 warnings, unchanged from the parent
 (.local/unit-entry-clippy.log,26.99s). Both processes finished. Native --check
@@ -1516,12 +1539,20 @@ back. Updated the stale gate-identity paragraph in cell_entry.rs. Updated
 5F6CD0's annotation to preserve Omni fallthrough and distinguish Object targets
 from overlay crushing.
 
-Next required receiver work: Unit's shared live prelude is still repair-specific,
-with no general directional/height traversal. Native seed uncertainty resolved:
+Next required receiver work: Unit73F34C gates the map-edge check on GameMode0;
+out-of-bounds candidates can still pass through Foot+320/4DA1D0. The live
+receiver currently reduces this to in_playfield plus bounds. Native4DA1D0:
+if !retained3D5 returnfalse; otherwise TypeC94 IsTrain, retained3D4, effective
+Retreat4, or attached Team6EC300 can admit. IsTrain is absent from stock.
+Team6EC300 requires retainedTeam7F, valid unsigned Script cursor, action3 and
+Scenario waypoint outside height-aware Map578460(mode1). Share its existing
+owners rather than deriving from locomotor kind or duplicating state. Also
+audit moving/chain_cursor's installed-kind dispatch before general exposure.
+Native seed uncertainty resolved:
 foot_locomotor_entry.{py,json,meta.json} executes48 original Foot4D9C10 calls;
 Drive/Ship/Walk/Hover/Fly/Jumpjet/Rocket/Teleport all have actual+1C=55ABF0,
 XOR EAX,EAX;RET8, with no instance reads. Thus their initial0 is exact; dormant
-TS Mech/Tunnel are outside this proof. Port remaining gates before exposing
+TS Mech/Tunnel are outside this proof. Resolve remaining gates before exposing
 the general receiver to source Scatter; do not substitute
 repair's !=7 projection or the legacy movement classifier for ==0.
 Unit source branch743CA0 additionally tests current MissionControl Paralyzed(+7),
