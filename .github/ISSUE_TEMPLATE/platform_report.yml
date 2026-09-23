@@ -1,0 +1,118 @@
+name: Platform report
+description: Tell us how building and running VERA20k went on your machine.
+labels: ["area:platform"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        So far VERA20k has only been played on Windows. Reports from Linux and macOS are especially welcome, and "it all worked" is a useful report too.
+
+        If you hit a specific bug, a separate **Bug report** for it helps as well.
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      placeholder: "For example: Ubuntu 24.04 (Wayland), Fedora 40, macOS 15"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: arch
+    attributes:
+      label: CPU architecture
+      options:
+        - x86_64 (Intel or AMD)
+        - arm64 (for example Apple silicon)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU, driver and graphics API
+      description: The graphics API is Vulkan, Metal or DirectX 12, if you know it.
+      placeholder: "For example: AMD Radeon RX 6600, Mesa 24.0, Vulkan"
+    validations:
+      required: true
+
+  - type: input
+    id: rust
+    attributes:
+      label: Rust version
+      description: The output of `rustc --version`.
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: VERA20k commit
+      description: The output of `git rev-parse --short HEAD`.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: result
+    attributes:
+      label: How far did you get?
+      options:
+        - "The build failed"
+        - "It built; I only ran the tests"
+        - "It built, but the game failed to start"
+        - "The game started, but something was wrong"
+        - "The game started and played normally"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tests
+    attributes:
+      label: Result of cargo test -p vera20k --lib
+      options:
+        - Passed
+        - Some tests failed
+        - Did not build
+        - Not run
+    validations:
+      required: true
+
+  - type: textarea
+    id: game-files
+    attributes:
+      label: How did you get the game files onto this machine?
+      placeholder: "For example: installed through Steam with Proton, or copied from a Windows install"
+
+  - type: textarea
+    id: packages
+    attributes:
+      label: Extra system packages you had to install
+      placeholder: "For example: libasound2-dev pkg-config"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Build errors, test failures or logs
+      description: |
+        Paste the relevant part. The game writes its log to `logs/ra2.log` in the folder you ran it from.
+        Remove personal details first, such as your username in file paths.
+      render: text
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Input, audio, performance, screenshots, or anything that behaved differently from Windows.

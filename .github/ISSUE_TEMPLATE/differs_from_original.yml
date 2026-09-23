@@ -1,0 +1,97 @@
+name: Differs from the original game
+description: VERA20k behaves, looks or sounds different from Yuri's Revenge.
+labels: ["parity"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        VERA20k aims to play, look and sound like the original Yuri's Revenge. Reports of where it doesn't are very useful.
+
+        The best reports show the **same situation in both games**: the same map, units and actions. A short clip of each is often all we need.
+        Record the game window only, so no paths, usernames or notifications show.
+
+  - type: textarea
+    id: original
+    attributes:
+      label: What does the original game do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: vera
+    attributes:
+      label: What does VERA20k do?
+    validations:
+      required: true
+
+  - type: input
+    id: map
+    attributes:
+      label: Map and mode
+      placeholder: "For example: skirmish on <map name>"
+    validations:
+      required: true
+
+  - type: textarea
+    id: units
+    attributes:
+      label: Units, buildings and weapons involved
+      description: Include the side or country if it might matter.
+      placeholder: "For example: Allied Grizzly Tanks attacking a Soviet Tesla Coil"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to see it
+      description: What to do, in both games, to see the difference.
+      placeholder: |
+        1. Start a skirmish on ...
+        2. Select ...
+        3. ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often does it happen in VERA20k?
+      options:
+        - Every time
+        - Sometimes
+        - Seen once
+    validations:
+      required: true
+
+  - type: input
+    id: game-speed
+    attributes:
+      label: Game speed in each game
+      description: Timing differences are easier to judge when both games run at the same speed.
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Clips, screenshots or frame numbers
+      description: Drag files or paste links here. If you can, give the time or frame in each clip where the difference shows.
+
+  - type: input
+    id: original-source
+    attributes:
+      label: Where your copy of the original game comes from
+      placeholder: "For example: Steam, EA app, or an original disc"
+
+  - type: input
+    id: commit
+    attributes:
+      label: VERA20k commit
+      description: The output of `git rev-parse --short HEAD`.
+    validations:
+      required: true
+
+  - type: input
+    id: system
+    attributes:
+      label: Operating system and GPU
+      placeholder: "For example: Windows 11, AMD Radeon RX 6700 XT"

@@ -1,0 +1,99 @@
+name: Bug report
+description: VERA20k crashes, fails to start or clearly breaks.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem.
+
+        - If VERA20k works but behaves differently from the original game, use **Differs from the original game** instead.
+        - If you want to tell us how building or running went on Linux, macOS or Windows, use **Platform report**.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect to happen instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The shortest list of steps that shows the problem.
+      placeholder: |
+        1. Start a skirmish on ...
+        2. Build ...
+        3. ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: original-game
+    attributes:
+      label: Does the original game do the same?
+      options:
+        - "No, the original game behaves differently"
+        - "Yes, the original game does the same"
+        - "Not checked"
+        - "Not applicable (build, tools or docs)"
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: VERA20k commit
+      description: The output of `git rev-parse --short HEAD`.
+    validations:
+      required: true
+
+  - type: input
+    id: map
+    attributes:
+      label: Map and game settings
+      description: For example the map name, sides and game speed. Leave empty if it doesn't apply.
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - Linux
+        - macOS
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and driver
+      placeholder: "For example: NVIDIA GeForce RTX 3060, driver 560.94"
+
+  - type: dropdown
+    id: build
+    attributes:
+      label: Build
+      options:
+        - "Release (cargo run --release)"
+        - "Debug (cargo run without --release)"
+        - "Not sure"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log or error output
+      description: |
+        Paste the end of `logs/ra2.log` (in the folder you ran the game from), or any error or crash output.
+        Remove personal details first, such as your username in file paths.
+      render: text
+
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Screenshots, clips or save files
+      description: Drag files here. Record the game window only, so no paths, usernames or notifications show.
