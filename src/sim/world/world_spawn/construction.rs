@@ -192,9 +192,7 @@ impl Simulation {
             )
         {
             ge.parasite = Some(Box::new(
-                crate::sim::combat::parasite::ParasiteState::constructed(
-                    self.session.binary_frame,
-                ),
+                crate::sim::combat::parasite::ParasiteState::constructed(self.session.binary_frame),
             ));
         }
         // Initialize aircraft mission for Fly-locomotor aircraft.

@@ -1,0 +1,8896 @@
+[
+  {
+    "events": [],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 1,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2817576302
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 1,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 660436142
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 1,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 660436142
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 1,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 660436142
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 1,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 660436142
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 2,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 1680153835
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 2,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 1680153835
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 2,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 1680153835
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 2,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 1680153835
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 3,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3176385826
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 3,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3176385826
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 3,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3176385826
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 3,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3176385826
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 4,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 425984382
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 4,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 425984382
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 4,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 425984382
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 4,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 425984382
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 5,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3488889902
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 5,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3488889902
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 5,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3488889902
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 5,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3488889902
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 6,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2805907746
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 6,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2805907746
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 6,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2805907746
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 6,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2805907746
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 8,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 1004296518
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 8,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 1004296518
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 8,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 1004296518
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 8,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 1004296518
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 9,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3127494956
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 9,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3127494956
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 9,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3127494956
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 9,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3127494956
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 10,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2083483745
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 10,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2083483745
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 10,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2083483745
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 10,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2083483745
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 11,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3918135264
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 11,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3918135264
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 11,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3918135264
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 11,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3918135264
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 12,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3772958059
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 12,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3772958059
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 12,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3772958059
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 12,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3772958059
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 13,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 552379075
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 13,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 552379075
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 13,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 552379075
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 13,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 552379075
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 14,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2109651767
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 14,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2109651767
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 14,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2109651767
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 14,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2109651767
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 15,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 1289103766
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 15,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 1289103766
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 15,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 1289103766
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 15,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 1289103766
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 16,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4146353725
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 16,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4146353725
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 16,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4146353725
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 16,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4146353725
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 17,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3891045620
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 17,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3891045620
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 17,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3891045620
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 17,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3891045620
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 18,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2491729113
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 18,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2491729113
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 18,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2491729113
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 18,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2491729113
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 19,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 471977362
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 19,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 471977362
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 19,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 471977362
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 19,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 471977362
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 20,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3057105289
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 20,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3057105289
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 20,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3057105289
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 20,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3057105289
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 21,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2435577751
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 21,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2435577751
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 21,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2435577751
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 21,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2435577751
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 22,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 1960546225
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 22,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 1960546225
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 22,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 1960546225
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 22,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 1960546225
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 23,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2267417610
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 23,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2267417610
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 23,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2267417610
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 23,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 2267417610
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 24,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4030778874
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 24,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4030778874
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 50,
+      "seed": 24,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4030778874
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 24,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4030778874
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": -1,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 0,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_money"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 1999,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 2000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 2001,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 0,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 0,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 0,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 0,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 99,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 99,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "low_power"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 10,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": -5,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": -5,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": -10,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": -10,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": -5,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": -5,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 0,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 7,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 7,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 31,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 32,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 128,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 33,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 128,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 0,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 1,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 4,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 1,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 3,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 5,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 21,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 5,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 0,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 0,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 0,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 40,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.3
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 40,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.1
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 40,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.5
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "wounded"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 40,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 7,
+      "strength": 125,
+      "tables": [
+        [
+          15,
+          75,
+          5,
+          5
+        ],
+        [
+          15,
+          5,
+          75,
+          5
+        ],
+        [
+          15,
+          40,
+          40,
+          5
+        ],
+        [
+          75,
+          5,
+          5,
+          15
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 1.0
+    },
+    "next_random": 4114954595
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 3,
+      "strength": 125,
+      "tables": [
+        [
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3176385826
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 3,
+      "strength": 125,
+      "tables": [
+        [
+          10,
+          10
+        ],
+        [
+          10,
+          10
+        ],
+        [
+          10,
+          10
+        ],
+        [
+          10,
+          10
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3176385826
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 3,
+      "strength": 125,
+      "tables": [
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          94
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          94
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          94
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          94
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3176385826
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 3,
+      "strength": 125,
+      "tables": [
+        [
+          100
+        ],
+        [
+          100
+        ],
+        [
+          100
+        ],
+        [
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3176385826
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 3,
+      "strength": 125,
+      "tables": [
+        [
+          0,
+          100
+        ],
+        [
+          0,
+          100
+        ],
+        [
+          0,
+          100
+        ],
+        [
+          0,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3176385826
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 3,
+      "strength": 125,
+      "tables": [
+        [
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3176385826
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 3,
+      "strength": 125,
+      "tables": [
+        [],
+        [],
+        [],
+        []
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3176385826
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 3,
+      "strength": 125,
+      "tables": [
+        [
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3176385826
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 3,
+      "strength": 125,
+      "tables": [
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3176385826
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 3,
+      "strength": 125,
+      "tables": [
+        [
+          -50,
+          100
+        ],
+        [
+          -50,
+          100
+        ],
+        [
+          -50,
+          100
+        ],
+        [
+          -50,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3176385826
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 11,
+      "strength": 125,
+      "tables": [
+        [
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3918135264
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 11,
+      "strength": 125,
+      "tables": [
+        [
+          10,
+          10
+        ],
+        [
+          10,
+          10
+        ],
+        [
+          10,
+          10
+        ],
+        [
+          10,
+          10
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3918135264
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 11,
+      "strength": 125,
+      "tables": [
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          94
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          94
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          94
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          94
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3918135264
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 11,
+      "strength": 125,
+      "tables": [
+        [
+          100
+        ],
+        [
+          100
+        ],
+        [
+          100
+        ],
+        [
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3918135264
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 11,
+      "strength": 125,
+      "tables": [
+        [
+          0,
+          100
+        ],
+        [
+          0,
+          100
+        ],
+        [
+          0,
+          100
+        ],
+        [
+          0,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3918135264
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 11,
+      "strength": 125,
+      "tables": [
+        [
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3918135264
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 11,
+      "strength": 125,
+      "tables": [
+        [],
+        [],
+        [],
+        []
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3918135264
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 11,
+      "strength": 125,
+      "tables": [
+        [
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3918135264
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 11,
+      "strength": 125,
+      "tables": [
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3918135264
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 11,
+      "strength": 125,
+      "tables": [
+        [
+          -50,
+          100
+        ],
+        [
+          -50,
+          100
+        ],
+        [
+          -50,
+          100
+        ],
+        [
+          -50,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 3918135264
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 29,
+      "strength": 125,
+      "tables": [
+        [
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 5066845
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 29,
+      "strength": 125,
+      "tables": [
+        [
+          10,
+          10
+        ],
+        [
+          10,
+          10
+        ],
+        [
+          10,
+          10
+        ],
+        [
+          10,
+          10
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 5066845
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 29,
+      "strength": 125,
+      "tables": [
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          94
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          94
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          94
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          94
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 5066845
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 29,
+      "strength": 125,
+      "tables": [
+        [
+          100
+        ],
+        [
+          100
+        ],
+        [
+          100
+        ],
+        [
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 5066845
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 29,
+      "strength": 125,
+      "tables": [
+        [
+          0,
+          100
+        ],
+        [
+          0,
+          100
+        ],
+        [
+          0,
+          100
+        ],
+        [
+          0,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 5066845
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "absorber": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 29,
+      "strength": 125,
+      "tables": [
+        [
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 5066845
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 29,
+      "strength": 125,
+      "tables": [
+        [],
+        [],
+        [],
+        []
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 5066845
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 29,
+      "strength": 125,
+      "tables": [
+        [
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 5066845
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 29,
+      "strength": 125,
+      "tables": [
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          100
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 5066845
+  },
+  {
+    "events": [
+      {
+        "random": [
+          1,
+          100
+        ]
+      },
+      {
+        "table": "normal"
+      },
+      {
+        "grinder": true
+      },
+      {
+        "queue_mission": [
+          15,
+          0
+        ]
+      }
+    ],
+    "input": {
+      "drained": 100,
+      "health": 125,
+      "money": 5000,
+      "money_mark": 2000,
+      "produced": 100,
+      "seed": 29,
+      "strength": 125,
+      "tables": [
+        [
+          -50,
+          100
+        ],
+        [
+          -50,
+          100
+        ],
+        [
+          -50,
+          100
+        ],
+        [
+          -50,
+          100
+        ]
+      ],
+      "unit_house_human": 0,
+      "wounded_mark": 0.25
+    },
+    "next_random": 5066845
+  }
+]

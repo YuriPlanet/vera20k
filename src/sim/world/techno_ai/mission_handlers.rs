@@ -966,12 +966,18 @@ fn foot_enter_idle_mode_selection(
     //
     // Trigger: a caller whose committed and effective missions differ, or one
     // that reaches here with both a destination and a frozen mission. Player
-    // effect: none today — the live entries are the Attack handler's no-target
-    // exit and the parasite releases (`queue_foot_enter_idle_mode`), where
-    // committed == effective == Attack and `[Attack]` carries neither key. Frequency: zero. Downstream risk: a second producer
-    // would inherit both. (Curiosity for whoever ports it: with a current of -1
-    // and only a queued mission, native indexes `MissionControl[-1]` — an
-    // out-of-bounds read one entry below the array.)
+    // effect: none today. The live entries are the Attack handler's no-target
+    // exit and the parasite releases (committed == effective == Attack, and
+    // `[Attack]` carries neither key) and ChangeOwner's Enter_Idle_Mode
+    // (capture, release, engineer and garrison transfers). ChangeOwner queues
+    // Guard first, so committed can differ from effective there, but then the
+    // Guard return above answers before this gate, and native returns too: the
+    // only stock frozen entries are `[Sleep]` (Zombie) and `[Sticky]`
+    // (Paralyzed). Without the Guard queue (Selling, a Simple Deployer's
+    // Unload) the two missions agree. Frequency: zero. Downstream risk: a new
+    // producer would inherit both. (Curiosity for whoever ports it: with a
+    // current of -1 and only a queued mission, native indexes
+    // `MissionControl[-1]` — an out-of-bounds read one entry below the array.)
     let frozen = effective_mission.is_some_and(|mission| {
         rules
             .mission_control

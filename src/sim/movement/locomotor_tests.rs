@@ -358,6 +358,8 @@ fn make_obj(locomotor: LocomotorKind, category: ObjectCategory) -> ObjectType {
         immune: false,
         type_immune: false,
         immune_to_psionics: false,
+        mind_control_ring_offset: 0x8C,
+        mind_cleared_sound: None,
         immune_to_psionic_weapons: false,
         immune_to_poison: false,
         engineer: false,

@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original 0x004723B0 DecideUnitFate reason selection, Scenario RandomRanged(1,100), choice walk and Queue_Mission call",
+  "assumptions": [
+    "Unit and controller are not Foot (flags+14 bit 2 clear), so the Team removal, Add To Team and TeamType override arms do not run",
+    "Unit has no Temporal (+274) and its type is not OpenTopped (+5E4)",
+    "Original GetPowerRatio 0x004FCE30 reads the controller house +53A4/+53A8; original DVC<int> vtable 0x007E4DD8 reads the tables",
+    "Scenario RNG seeded through the original 0x0065C6D0; next_random from the original 0x0065C780"
+  ],
+  "substitutions": [
+    "Scratch stubs: unit GetTechnoType (+84), Queue_Mission (+1E8, recorded), grinder (+33C) and absorber (+340) seeks returning 0, IHouse Available_Money (+18) returning the supplied money"
+  ],
+  "entry_points": {
+    "decide_unit_fate": "0x004723B0",
+    "power_ratio": "0x004FCE30",
+    "random_ranged": "0x0065C7E0"
+  },
+  "payload_sha256": "60b407794f0f8f98400d444d3196ff7220f54bdb4ebf76bc8e2da830d8eab7ea"
+}

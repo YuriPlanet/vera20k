@@ -171,8 +171,10 @@ fn stock_cloak_tick_facts(
         //    re-cloak branch is unreachable for units: visual state 1 requires
         //    a nonzero progress.
         && cloak_progress == 0
-        // 7. the mind-control arm (`+0x2B0` plus the FootClass `+0x6AD` byte).
-        && !entity.mind_controlled
+        // 7. `+0x2B0 && Foot && +0x6AD` (`0x006FBF57..0x006FBF7D`): a
+        //    Magnetron-lifted object (`+0x6AD` is written by
+        //    `TechnoClass::ImbueLocomotor @ 0x00710352`). VERA has no
+        //    Magnetron, so the term is always false and is not evaluated.
         // 8. `GetHeight() < 1`.
         && entity.position.z < 1
         // The pre-CanAutoCloak `Contact_With_Whom(0)` exclusion at

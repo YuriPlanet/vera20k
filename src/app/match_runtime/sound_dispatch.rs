@@ -215,6 +215,39 @@ pub(super) fn dispatch_sim_sound_events(
                     source: Some(SoundSource::new((sx, sy), (rx, ry))),
                 }
             }
+            SimSoundEvent::VocAt {
+                sound_id,
+                audible_to,
+                rx,
+                ry,
+                sub_x,
+                sub_y,
+                world_z_leptons,
+            } => {
+                // `HouseClass::IsHumanPlayer @ 0x0050B6F0`: the capture sound
+                // plays only when the local player owns the firer or the
+                // target.
+                if let Some(houses) = audible_to
+                    && !houses.iter().any(|&house| {
+                        local_owner_name.is_some_and(|local| {
+                            local.eq_ignore_ascii_case(sim.interner.resolve(house))
+                        })
+                    })
+                {
+                    continue;
+                }
+                let (sx, sy) = crate::util::lepton::lepton_to_screen_exact_z(
+                    rx,
+                    ry,
+                    sub_x,
+                    sub_y,
+                    world_z_leptons,
+                );
+                GameSoundEvent::VocAt {
+                    sound_id,
+                    source: Some(SoundSource::new((sx, sy), (rx, ry))),
+                }
+            }
             SimSoundEvent::BuildingComplete { owner } => {
                 // Only play EVA for the local player's production.
                 let owner_str = sim.interner.resolve(owner);

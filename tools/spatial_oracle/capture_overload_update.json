@@ -1,0 +1,5284 @@
+[
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 22,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "lean": 0.0,
+      "max": 3
+    },
+    "frames": [],
+    "input": {
+      "calls": 70,
+      "captives": 3,
+      "name": "idle_at_the_first_row",
+      "seed": 1
+    },
+    "next_random": 2025287381
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 22,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 1,
+      "lean": -0.014999999664723873,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 50
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 13
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -26
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12902,
+              25741,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 105
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 10
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12938,
+              25833,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 9
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -32
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12896,
+              25737,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -83
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -79
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12849,
+              25645,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -190
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -3
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12925,
+              25538,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 55
+          }
+        ],
+        "frame": 31
+      },
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 50
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -105
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -52
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12876,
+              25623,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -107
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -76
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12852,
+              25621,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 147
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -96
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12832,
+              25875,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -190
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -33
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12895,
+              25538,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 183
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -82
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12846,
+              25911,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 15
+          }
+        ],
+        "frame": 92
+      }
+    ],
+    "input": {
+      "calls": 130,
+      "captives": 4,
+      "name": "row_one",
+      "seed": 1
+    },
+    "next_random": 2711570743
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 56,
+      "flash": 6,
+      "infinite": 1,
+      "latch": 1,
+      "lean": -0.029999999329447746,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 100
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 74
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 35
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12963,
+              25802,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 46
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 173
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13101,
+              25774,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -81
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 19
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12947,
+              25647,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 181
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -14
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12914,
+              25909,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -83
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -135
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12793,
+              25645,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 45
+          }
+        ],
+        "frame": 31
+      }
+    ],
+    "input": {
+      "calls": 35,
+      "captives": 7,
+      "name": "row_two",
+      "seed": 2
+    },
+    "next_random": 3724895037
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 56,
+      "flash": 6,
+      "infinite": 1,
+      "latch": 1,
+      "lean": 0.029999999329447746,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 500
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -135
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 90
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13018,
+              25593,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 124
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -98
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12830,
+              25852,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 27
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -50
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12878,
+              25755,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -25
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -121
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12807,
+              25703,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -170
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 102
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13030,
+              25558,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 86
+          }
+        ],
+        "frame": 31
+      }
+    ],
+    "input": {
+      "calls": 35,
+      "captives": 11,
+      "name": "row_three",
+      "seed": 3
+    },
+    "next_random": 1638438157
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 56,
+      "flash": 6,
+      "infinite": 1,
+      "latch": 1,
+      "lean": 0.029999999329447746,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 500
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -107
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 182
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13110,
+              25621,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 68
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 50
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12978,
+              25796,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -190
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -165
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12763,
+              25538,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -158
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 107
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13035,
+              25570,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 57
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -88
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12840,
+              25785,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 52
+          }
+        ],
+        "frame": 31
+      }
+    ],
+    "input": {
+      "calls": 35,
+      "captives": 51,
+      "name": "row_three_capped",
+      "seed": 4
+    },
+    "next_random": 1793489089
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 60,
+      "flash": 10,
+      "infinite": 1,
+      "latch": 1,
+      "lean": 0.014999999664723873,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 50
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 166
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 129
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13057,
+              25894,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -154
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -175
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12753,
+              25574,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -191
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 29
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12957,
+              25537,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 123
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 17
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12945,
+              25851,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 11
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 184
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13112,
+              25739,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 86
+          }
+        ],
+        "frame": 31
+      }
+    ],
+    "input": {
+      "calls": 31,
+      "captives": 6,
+      "name": "boundary_six",
+      "seed": 5
+    },
+    "next_random": 2051291636
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 60,
+      "flash": 10,
+      "infinite": 1,
+      "latch": 1,
+      "lean": 0.029999999329447746,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 100
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 166
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 129
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13057,
+              25894,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -154
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -175
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12753,
+              25574,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -191
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 29
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12957,
+              25537,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 123
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 17
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12945,
+              25851,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 11
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 184
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13112,
+              25739,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 86
+          }
+        ],
+        "frame": 31
+      }
+    ],
+    "input": {
+      "calls": 31,
+      "captives": 10,
+      "name": "boundary_ten",
+      "seed": 5
+    },
+    "next_random": 2051291636
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 60,
+      "flash": 10,
+      "infinite": 1,
+      "latch": 1,
+      "lean": 0.029999999329447746,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 500
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 166
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 129
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13057,
+              25894,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -154
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -175
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12753,
+              25574,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -191
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 29
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12957,
+              25537,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 123
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 17
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12945,
+              25851,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 11
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 184
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13112,
+              25739,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 86
+          }
+        ],
+        "frame": 31
+      }
+    ],
+    "input": {
+      "calls": 31,
+      "captives": 50,
+      "name": "boundary_fifty",
+      "seed": 5
+    },
+    "next_random": 2051291636
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "lean": 0.0,
+      "max": 3
+    },
+    "frames": [],
+    "input": {
+      "calls": 31,
+      "captives": 0,
+      "name": "no_captives",
+      "seed": 5
+    },
+    "next_random": 2547813742
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 0,
+      "countdown": 60,
+      "flash": 10,
+      "infinite": 1,
+      "latch": 1,
+      "lean": 0.0,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 50
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -31
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 90
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13018,
+              25697,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 123
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 33
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12961,
+              25851,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -76
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 35
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12963,
+              25652,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -86
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -24
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12904,
+              25642,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -183
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -35
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12893,
+              25545,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "frame": 31
+      }
+    ],
+    "input": {
+      "calls": 31,
+      "captives": 4,
+      "kill": true,
+      "name": "dies_from_the_overload",
+      "seed": 6
+    },
+    "next_random": 136344574
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 53,
+      "flash": 3,
+      "infinite": 1,
+      "latch": 1,
+      "lean": -0.014999999664723873,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 50
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 166
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 155
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13083,
+              25894,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 123
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 41
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12969,
+              25851,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -47
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -82
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12846,
+              25681,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -114
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -8
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12920,
+              25614,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -122
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 150
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13078,
+              25606,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 44
+          }
+        ],
+        "frame": 31
+      },
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 50
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 89
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -132
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12796,
+              25817,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 95
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 131
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13059,
+              25823,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -159
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -102
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12826,
+              25569,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -111
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 193
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13121,
+              25617,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -4
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -124
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12804,
+              25724,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 43
+          }
+        ],
+        "frame": 123
+      }
+    ],
+    "input": {
+      "calls": 130,
+      "captives": 4,
+      "captives_at": {
+        "62": 3,
+        "93": 4
+      },
+      "name": "voice_rearms",
+      "seed": 7
+    },
+    "next_random": 3972908563
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 0,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 0,
+      "latch": 0,
+      "lean": 0.0,
+      "max": 3
+    },
+    "frames": [],
+    "input": {
+      "calls": 40,
+      "captives": 5,
+      "infinite": false,
+      "name": "finite_manager",
+      "seed": 8
+    },
+    "next_random": 2505325664
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 5,
+      "flash": 10,
+      "infinite": 1,
+      "latch": 1,
+      "lean": 0.0,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 5,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 10
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -189
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 100
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13028,
+              25539,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 110
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -191
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12737,
+              25838,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 156
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -30
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12898,
+              25884,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -153
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -26
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12902,
+              25575,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -194
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 72
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13000,
+              25534,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "frame": 31
+      }
+    ],
+    "input": {
+      "calls": 31,
+      "captives": 5,
+      "name": "single_row_damages_without_lean",
+      "seed": 9,
+      "tables": {
+        "count": [
+          2
+        ],
+        "damage": [
+          10
+        ],
+        "frames": [
+          5
+        ]
+      }
+    },
+    "next_random": 1046443569
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 0,
+      "flash": 10,
+      "infinite": 1,
+      "latch": 1,
+      "lean": 0.014999999664723873,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 0,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 20
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 90
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -103
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12825,
+              25818,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -92
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -135
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12793,
+              25636,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -88
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -96
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12832,
+              25640,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -123
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -48
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12880,
+              25605,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -21
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 96
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13024,
+              25707,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 94
+          }
+        ],
+        "frame": 31
+      },
+      {
+        "after": {
+          "countdown": 0,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 20
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 98
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 6
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12934,
+              25826,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 2
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 89
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13017,
+              25730,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 101
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 167
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13095,
+              25829,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 197
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -130
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12798,
+              25925,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -168
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -92
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12836,
+              25560,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 82
+          }
+        ],
+        "frame": 32
+      },
+      {
+        "after": {
+          "countdown": 0,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 20
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -50
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -149
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12779,
+              25678,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 83
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 12
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12940,
+              25811,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -10
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -3
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12925,
+              25718,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 64
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -190
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12738,
+              25792,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 156
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 164
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13092,
+              25884,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 24
+          }
+        ],
+        "frame": 33
+      },
+      {
+        "after": {
+          "countdown": 0,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 20
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -120
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -147
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12781,
+              25608,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -83
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -150
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12778,
+              25645,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 100
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 59
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12987,
+              25828,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 103
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 58
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12986,
+              25831,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -112
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 74
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13002,
+              25616,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 93
+          }
+        ],
+        "frame": 34
+      }
+    ],
+    "input": {
+      "calls": 34,
+      "captives": 3,
+      "name": "zero_frames_checks_every_frame",
+      "seed": 10,
+      "tables": {
+        "count": [
+          0,
+          5
+        ],
+        "damage": [
+          0,
+          20
+        ],
+        "frames": [
+          0,
+          0
+        ]
+      }
+    },
+    "next_random": 2736048509
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "lean": 0.0,
+      "max": 3
+    },
+    "frames": [],
+    "input": {
+      "calls": 31,
+      "captives": 4,
+      "name": "negative_damage_rearms",
+      "seed": 10,
+      "tables": {
+        "count": [
+          3,
+          6
+        ],
+        "damage": [
+          -5,
+          -5
+        ],
+        "frames": [
+          30,
+          30
+        ]
+      }
+    },
+    "next_random": 3504048418
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 60,
+      "flash": 10,
+      "infinite": 1,
+      "latch": 1,
+      "lean": -0.029999999329447746,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 100
+          },
+          {
+            "arg": 0,
+            "at": [
+              -300,
+              70000,
+              1234
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 37
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 31
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              -269,
+              70037,
+              1334
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -198
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 44
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              -256,
+              69802,
+              1334
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -68
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -73
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              -373,
+              69932,
+              1334
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 12
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -10
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              -310,
+              70012,
+              1334
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 47
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 199
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              -101,
+              70047,
+              1334
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 38
+          }
+        ],
+        "frame": 31
+      }
+    ],
+    "input": {
+      "calls": 31,
+      "captives": 7,
+      "location": [
+        -300,
+        70000,
+        1234
+      ],
+      "name": "located_elsewhere",
+      "seed": 11
+    },
+    "next_random": 2619561070
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 60,
+      "flash": 10,
+      "infinite": 1,
+      "latch": 1,
+      "lean": 0.014999999664723873,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 50
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 174
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -198
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12730,
+              25902,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 163
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -156
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12772,
+              25891,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 66
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 16
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12944,
+              25794,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 68
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 1
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12929,
+              25796,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 4
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -128
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12800,
+              25732,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 63
+          }
+        ],
+        "frame": 31
+      }
+    ],
+    "input": {
+      "calls": 31,
+      "captives": 4,
+      "name": "spark_seed_12",
+      "seed": 12
+    },
+    "next_random": 2842622941
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 60,
+      "flash": 10,
+      "infinite": 1,
+      "latch": 1,
+      "lean": -0.014999999664723873,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 50
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -82
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -5
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12923,
+              25646,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 102
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -102
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12826,
+              25830,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 55
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -169
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12759,
+              25783,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 105
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -43
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12885,
+              25833,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 39
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 99
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13027,
+              25767,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 2
+          }
+        ],
+        "frame": 31
+      }
+    ],
+    "input": {
+      "calls": 31,
+      "captives": 4,
+      "name": "spark_seed_13",
+      "seed": 13
+    },
+    "next_random": 1661815748
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 60,
+      "flash": 10,
+      "infinite": 1,
+      "latch": 1,
+      "lean": -0.014999999664723873,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 50
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 177
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -59
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12869,
+              25905,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 111
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 199
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13127,
+              25839,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -101
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 98
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13026,
+              25627,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 2
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 60
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12988,
+              25730,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -34
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -148
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12780,
+              25694,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 45
+          }
+        ],
+        "frame": 31
+      }
+    ],
+    "input": {
+      "calls": 31,
+      "captives": 4,
+      "name": "spark_seed_14",
+      "seed": 14
+    },
+    "next_random": 3014138289
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 60,
+      "flash": 10,
+      "infinite": 1,
+      "latch": 1,
+      "lean": -0.014999999664723873,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 50
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 31
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -90
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12838,
+              25759,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -134
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -165
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12763,
+              25594,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 155
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -144
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12784,
+              25883,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 195
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 95
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13023,
+              25923,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -5
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -194
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12734,
+              25723,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 36
+          }
+        ],
+        "frame": 31
+      }
+    ],
+    "input": {
+      "calls": 31,
+      "captives": 4,
+      "name": "spark_seed_15",
+      "seed": 15
+    },
+    "next_random": 3034402295
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 60,
+      "flash": 10,
+      "infinite": 1,
+      "latch": 1,
+      "lean": 0.014999999664723873,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 50
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -139
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -88
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12840,
+              25589,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 196
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 198
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13126,
+              25924,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -51
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 148
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              13076,
+              25677,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 30
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -18
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12910,
+              25758,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 32
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 62
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12990,
+              25760,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 57
+          }
+        ],
+        "frame": 31
+      }
+    ],
+    "input": {
+      "calls": 31,
+      "captives": 4,
+      "name": "spark_seed_16",
+      "seed": 16
+    },
+    "next_random": 1312094536
+  },
+  {
+    "constructed": {
+      "countdown": 30,
+      "flash": 0,
+      "infinite": 1,
+      "latch": 0,
+      "max": 3
+    },
+    "final": {
+      "alive": 1,
+      "countdown": 60,
+      "flash": 10,
+      "infinite": 1,
+      "latch": 1,
+      "lean": 0.014999999664723873,
+      "max": 3
+    },
+    "frames": [
+      {
+        "after": {
+          "countdown": 60,
+          "flash": 10,
+          "infinite": 1,
+          "latch": 1,
+          "max": 3
+        },
+        "events": [
+          {
+            "args": [
+              0,
+              206326848,
+              0,
+              0,
+              0,
+              0
+            ],
+            "damage": 50
+          },
+          {
+            "arg": 0,
+            "at": [
+              12928,
+              25728,
+              480
+            ],
+            "sound": 291
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -42
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 44
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12972,
+              25686,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 83
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -91
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12837,
+              25811,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 144
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -14
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12914,
+              25872,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -85
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": 48
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12976,
+              25643,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -90
+          },
+          {
+            "random": [
+              -200,
+              200
+            ],
+            "value": -78
+          },
+          {
+            "new": 256
+          },
+          {
+            "at": [
+              12850,
+              25638,
+              580
+            ],
+            "house": 0,
+            "owner": 0,
+            "spark": 1515847680,
+            "target": 0,
+            "target_at": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "random": [
+              0,
+              100
+            ],
+            "value": 85
+          }
+        ],
+        "frame": 31
+      }
+    ],
+    "input": {
+      "calls": 31,
+      "captives": 4,
+      "name": "spark_seed_17",
+      "seed": 17
+    },
+    "next_random": 1452805200
+  }
+]

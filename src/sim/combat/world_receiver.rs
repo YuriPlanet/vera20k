@@ -1036,6 +1036,11 @@ pub(crate) fn handle_death(
             current_weapon_ref,
         )) = dead_info
         {
+            // `0x00702112`: the death arm frees a controller's captives before
+            // its death sounds (their fate draws precede the debris draws).
+            if callbacks_enabled(world) {
+                world.free_all_captures(dead_id, rules);
+            }
             let type_id_str = world.interner.resolve(type_id);
             if let Some(obj) = rules.object(type_id_str) {
                 append_selected_death_sounds(
@@ -1594,6 +1599,15 @@ fn emit_one_projectile_detonation(
                 world.parasite_attach(detonation.source_id, victim, rules);
             }
         }
+        SpecialDetonationAction::MindControl => {
+            let target = match detonation.target {
+                ProjectileTarget::Entity(id) => Some(id),
+                ProjectileTarget::Cell { .. }
+                | ProjectileTarget::None
+                | ProjectileTarget::DummyCell => None,
+            };
+            world.mind_control_detonation(detonation.source_id, target, rules);
+        }
         claimed => {
             log::debug!(
                 "Projectile {} claimed by unimplemented special detonation {:?}; \
@@ -2052,7 +2066,19 @@ fn admit_attacker_fire<'r>(
     // Weapon selection: garrison uses occupant's OccupyWeapon, everything
     // else runs the native selection ladder.
     let (selected, is_garrison) = if let Some(saved_slot) = delayed_building_slot {
-        match select_weapon_slot(rules, obj, snap.veterancy, saved_slot, &target_facts) {
+        let capture = world
+            .substrate
+            .entities
+            .get(snap.stable_id)
+            .and_then(crate::sim::capture_manager::CaptureControllerFacts::of);
+        match select_weapon_slot(
+            rules,
+            obj,
+            snap.veterancy,
+            saved_slot,
+            &target_facts,
+            capture,
+        ) {
             Some(selected) => (selected, false),
             None => return None,
         }
@@ -2113,6 +2139,18 @@ fn admit_attacker_fire<'r>(
                         binary_frame,
                     )
             })
+    {
+        if delayed_building_slot.is_none() {
+            out.remove_attack.push(snap.stable_id);
+        }
+        return None;
+    }
+    // GetFireError `0x006FCB3B`: the live CanCapture for a MindControl shot,
+    // whose Iron Curtain gate (vt+0x160) reads the frame the targeting
+    // subset lacks. VERA drops the target, as for the Parasite gates above.
+    if selected.warhead.mind_control
+        && let TargetKind::Entity(target_id) = snap.target
+        && !world.can_capture(snap.stable_id, target_id, rules)
     {
         if delayed_building_slot.is_none() {
             out.remove_attack.push(snap.stable_id);
@@ -3231,51 +3269,65 @@ fn emit_admitted_fire(
             &mut world.substrate.entities,
             world.resolved_terrain.as_ref(),
         );
-        let routed_wall = wall_overlay_flags_at(
-            world.overlay_grid.as_ref(),
-            overlay_registry,
-            target_rx,
-            target_ry,
-        )
-        .is_some_and(|flags| warhead_damages_wall(warhead, flags));
-        let wh_iid = world.interner.intern(&warhead.id);
-        let aoe = {
-            let collected = collect_area(
-                world,
-                rules,
+        // An Inviso shot detonates here, so it runs the head of
+        // `BulletClass::DetonateAtCoord`'s special chain as well: MindControl
+        // is its first arm (`0x0046920B`) and claims the impact, so no area
+        // damage. RESIDUAL: the chain's other arms are not dispatched on this
+        // path; an Inviso special warhead (the Giant Squid's grapple) still
+        // takes ordinary area damage here.
+        if warhead.mind_control {
+            let target = match snap.target {
+                TargetKind::Entity(id) => Some(id),
+                TargetKind::Cell(..) => None,
+            };
+            world.mind_control_detonation(snap.stable_id, target, rules);
+        } else {
+            let routed_wall = wall_overlay_flags_at(
+                world.overlay_grid.as_ref(),
                 overlay_registry,
-                (target_rx, target_ry),
-                base_damage,
-                warhead,
-                (snap.stable_id, Some(snap.owner), wh_iid),
-                air_impact,
-                impact_z,
-            );
-            append_fixture_tiberium(world, &mut out.effects.tiberium_reduction_requests);
-            collected
-        };
-        #[cfg(test)]
-        out.effects.wall_mutations.extend(aoe.wall_mutations);
-
-        #[cfg(test)]
-        out.effects
-            .cell_target_detaches
-            .extend(aoe.cell_target_detaches);
-
-        out.damage_events.extend(aoe.receivers);
-        if !scenario_no_damage && base_damage > 0 && !routed_wall && warhead.wall {
+                target_rx,
+                target_ry,
+            )
+            .is_some_and(|flags| warhead_damages_wall(warhead, flags));
             let wh_iid = world.interner.intern(&warhead.id);
-            out.effects.bridge_damage_events.push(BridgeDamageEvent {
-                rx: target_rx,
-                ry: target_ry,
-                damage: base_damage.min(i32::from(u16::MAX)) as u16,
-                warhead_ref: wh_iid,
-                is_ion_cannon: wh_iid
-                    == handles
-                        .expect("Simulation::resolve_type_handles must run before combat")
-                        .ion_cannon,
-                impact_z,
-            });
+            let aoe = {
+                let collected = collect_area(
+                    world,
+                    rules,
+                    overlay_registry,
+                    (target_rx, target_ry),
+                    base_damage,
+                    warhead,
+                    (snap.stable_id, Some(snap.owner), wh_iid),
+                    air_impact,
+                    impact_z,
+                );
+                append_fixture_tiberium(world, &mut out.effects.tiberium_reduction_requests);
+                collected
+            };
+            #[cfg(test)]
+            out.effects.wall_mutations.extend(aoe.wall_mutations);
+
+            #[cfg(test)]
+            out.effects
+                .cell_target_detaches
+                .extend(aoe.cell_target_detaches);
+
+            out.damage_events.extend(aoe.receivers);
+            if !scenario_no_damage && base_damage > 0 && !routed_wall && warhead.wall {
+                let wh_iid = world.interner.intern(&warhead.id);
+                out.effects.bridge_damage_events.push(BridgeDamageEvent {
+                    rx: target_rx,
+                    ry: target_ry,
+                    damage: base_damage.min(i32::from(u16::MAX)) as u16,
+                    warhead_ref: wh_iid,
+                    is_ion_cannon: wh_iid
+                        == handles
+                            .expect("Simulation::resolve_type_handles must run before combat")
+                            .ion_cannon,
+                    impact_z,
+                });
+            }
         }
         // Radiation-emitting detonation: one site request per shot at the impact
         // cell. Spread is the warhead's CellSpread truncated to whole cells.
@@ -3444,7 +3496,7 @@ fn emit_admitted_fire(
     }
 }
 
-fn commit_fire_bookkeeping(world: &mut Simulation, emit: &mut CombatEmit) {
+fn commit_fire_bookkeeping(world: &mut Simulation, rules: &RuleSet, emit: &mut CombatEmit) {
     let binary_frame = world.session.binary_frame;
     let spawn_target_updates = std::mem::take(&mut emit.spawn_target_updates);
     let drain_links = std::mem::take(&mut emit.drain_links);
@@ -3474,11 +3526,14 @@ fn commit_fire_bookkeeping(world: &mut Simulation, emit: &mut CombatEmit) {
     // `+0x304` link the setter also releases is not modelled (identity
     // UNCHECKED; no stock drainer carries a SpawnManager or that link).
     for &(drainer_id, victim_id) in &drain_links {
-        crate::sim::credit_income::install_drain_link(
+        // `0x0070FDBD`: a drained Psychic Tower frees its captives.
+        if crate::sim::credit_income::install_drain_link(
             &mut world.substrate.entities,
             drainer_id,
             victim_id,
-        );
+        ) {
+            world.free_all_captures(victim_id, rules);
+        }
         if let Some(drainer) = world.substrate.entities.get_mut(drainer_id) {
             represented_assign_target(drainer, None);
             if let Some(manager) = drainer.spawn_manager.as_mut() {
@@ -3593,7 +3648,7 @@ impl FireCommitBoundary {
             &mut emit.effects.smudge_spawn_requests,
         );
         under_attack_events.append(&mut pings);
-        commit_fire_bookkeeping(world, emit);
+        commit_fire_bookkeeping(world, rules, emit);
         let wave_fire_events = emit.fire_events[fire_event_start..].to_vec();
         for event in &wave_fire_events {
             {

@@ -397,6 +397,20 @@ pub enum SimSoundEvent {
         sub_y: SimFixed,
         world_z_leptons: i32,
     },
+    /// `VocClass::PlayAt @ 0x007509E0` of a rules-named sound at an object's
+    /// Location: the mind-control capture, release and overload sounds.
+    /// `audible_to` names the houses a `HouseClass::IsHumanPlayer
+    /// @ 0x0050B6F0` gate admits (the local player must own one of them; the
+    /// app resolves it); `None` plays for everyone.
+    VocAt {
+        sound_id: String,
+        audible_to: Option<[InternedId; 2]>,
+        rx: u16,
+        ry: u16,
+        sub_x: SimFixed,
+        sub_y: SimFixed,
+        world_z_leptons: i32,
+    },
     /// `TechnoClass::AI_Update @ 0x006FA054..0x006FA145` crossed a rank.
     ///
     /// Native plays `[AudioVisual] UpgradeVeteranSound=`/`UpgradeEliteSound=`
@@ -692,6 +706,26 @@ impl SimSoundEvent {
     pub(crate) fn wall_crushed(sound_id: String, position: &Position) -> Self {
         Self::WallCrushed {
             sound_id,
+            rx: position.rx,
+            ry: position.ry,
+            sub_x: position.sub_x,
+            sub_y: position.sub_y,
+            world_z_leptons: Self::world_z_leptons(position),
+        }
+    }
+
+    pub(crate) fn voc_at(sound_id: String, position: &Position) -> Self {
+        Self::voc_at_for(sound_id, None, position)
+    }
+
+    pub(crate) fn voc_at_for(
+        sound_id: String,
+        audible_to: Option<[InternedId; 2]>,
+        position: &Position,
+    ) -> Self {
+        Self::VocAt {
+            sound_id,
+            audible_to,
             rx: position.rx,
             ry: position.ry,
             sub_x: position.sub_x,
@@ -4369,7 +4403,7 @@ impl Simulation {
         // IsControlledByHuman). A rules-less transfer (tests only) cannot
         // read the type and skips it.
         if let Some(rules) = rules {
-            self.change_owner_harvester_idle_arm(stable_id, rules);
+            self.change_owner_mission_half(stable_id, rules);
         }
         self.foot_neighbors_after_owner_change(stable_id, rules);
         self.refresh_waypoint_edge_from_committed_structure(stable_id);
@@ -4379,32 +4413,62 @@ impl Simulation {
         }
     }
 
-    /// The mission half of `TechnoClass::ChangeOwner @ 0x007014A0` for a
-    /// war/chrono miner (decompiled 2026-09-06):
-    /// - 0x007014E1/0x007014F1: `Assign_Target(0)` (`+0x3C8`) and
-    ///   `Assign_Destination(0, 1)` (`+0x480`);
-    /// - then `Queue_Mission(Guard, commence_now = 1)` (`+0x1E8` =
-    ///   `MissionClass::Queue_Mission @ 0x005B35E0`) unless current is
-    ///   Selling(0x13) — for a ready unit that commits Guard on the spot;
-    /// - after the `+0x21C` house swap: unless the object is in radio contact
-    ///   with a `WeaponsFactory=` building (`BuildingType+0x16BD`, the
-    ///   war-factory exit link; not a refinery), `Assign_Destination(0, 1)`,
-    ///   `Assign_Target(0)` and `Enter_Idle_Mode(0, 1)` at 0x00701849, whose
-    ///   harvester arm ([`harvester_enter_idle_mode_selector`]) re-queues
-    ///   Harvest for the new owner, Guard when that owner is human and the
-    ///   miner stands off ore, and nothing while in radio contact (a miner
-    ///   docked at its refinery) or while the Guard above is still only
-    ///   queued (a miner caught mid-track: current stays Harvest, the arm
-    ///   returns, and the queued Guard promotes when it stops).
+    /// The mission half of `TechnoClass::ChangeOwner @ 0x007014A0`, every
+    /// class (read 2026-09-23):
+    /// - `0x007014D5..0x0070151A`: `Assign_Target(0)` (`+0x3C8`),
+    ///   `Assign_Destination(0, 1)` (`+0x480`), and the ArchiveTarget
+    ///   (`+0x218`) cleared unless a Unit is deploying (`0x00746DB0`, the
+    ///   `+0x6E1`/`+0x6E2` latches);
+    /// - `0x00701524..0x0070156E`: `Queue_Mission(Guard, commence_now = 1)`
+    ///   (`+0x1E8` = `MissionClass::Queue_Mission @ 0x005B35E0`) unless current
+    ///   is Selling (0x13), or a Unit whose type is `IsSimpleDeployer`
+    ///   (`UnitType+0xE13`) is in Unload; a ready object commits Guard on the
+    ///   spot;
+    /// - `0x00701793..0x007017BA`, after the `+0x21C` house swap: a Rescue
+    ///   (0x15) current or queued mission becomes `Assign_Mission(Guard)`;
+    /// - `0x007017C0..0x00701849`, unless in limbo (`+0x81`), a
+    ///   `WeaponsFactory=` building unloading, or in radio contact with a
+    ///   `WeaponsFactory=` building (`BuildingType+0x16BD`, the war-factory
+    ///   exit link): `Assign_Destination(0, 1)`, `Assign_Target(0)` and
+    ///   `Enter_Idle_Mode(0, 1)` (`+0x484`), which reads the NEW owner:
+    ///   - a war or chrono miner takes the Unit leaf's harvester arm
+    ///     ([`harvester_enter_idle_mode_selector`]): Harvest for the new owner,
+    ///     Guard when that owner is human and the miner stands off ore, and
+    ///     nothing while in radio contact (a miner docked at its refinery) or
+    ///     while the Guard above is still only queued (a miner caught
+    ///     mid-track);
+    ///   - any other Unit or Infantry takes VERA's Foot selector
+    ///     (`queue_foot_enter_idle_mode`) in place of the Unit `0x00738970`
+    ///     and Infantry `0x0051CBA0` leaves (residual below);
+    ///   - a Building (`0x0044D6A0` with `initial = 0`) calls `0x00447780(1)`
+    ///     and `Queue_Mission(Guard, 0)`.
     ///
-    /// The forced Guard is skipped at 0x00701553 when RTTI == Unit,
-    /// `UnitType+0xE13 IsSimpleDeployer` is set and current == Unload — not
-    /// a stock miner, so this arm does not model it.
+    /// VERA's legacy `order_intent` (an AttackMove goal or Guard anchor) is
+    /// the duplicate of the TarCom/NavCom orders this drops, so it goes too:
+    /// no order survives an owner change.
     ///
-    /// Stock reach on a miner: mind control (`CaptureManagerClass::CaptureUnit
-    /// @ 0x00471DB8`, `FreeUnit @ 0x004720DA`, `PsychicDominator::
-    /// MindControlArea @ 0x0053B298`) — VERA has no owner-swapping mind
-    /// control yet, so this chokepoint is where it lands when it does.
+    /// Callers: engineer capture and garrison transfer, and mind control's
+    /// CaptureUnit and FreeUnit. No stock miner is ever mind-controlled: HARV,
+    /// CMIN and SMIN are `ImmuneToPsionics=yes`.
+    ///
+    /// RESIDUALS:
+    /// - The Foot leaves also pick AreaGuard (a human house with the
+    ///   GUARD_AREA option, or `DefaultToGuardArea=`; the AI IQ, Team and
+    ///   SlaveOwner arms), Harvest or Unload, and read TarCom first; VERA's
+    ///   selector returns Guard, Move or nothing. Trigger: a captured or
+    ///   released Foot of such a type. Effect: Guard instead of AreaGuard.
+    ///   Frequency: nil in stock (every `DefaultToGuardArea=` type is
+    ///   psionic-immune and no stock house sets GUARD_AREA).
+    /// - The Building leaf's `0x00447780(1)` re-selects the building's idle
+    ///   animation state (BState `+0x534`/`+0x538`, the anim timer
+    ///   `+0xF8..+0x10C`); VERA keeps the current one. Trigger: engineer
+    ///   capture, Yuri Prime capture or garrison transfer. Effect: the
+    ///   captured building's animation state (presentation). Frequency: per
+    ///   building capture.
+    /// - Aircraft Enter_Idle_Mode (`0x004176F0`) is not ported (no stock
+    ///   aircraft can be captured); the trailing `+0x423`-gated
+    ///   `vt+0x498`/`vt+0x494` and `vt+0x488(0, 0, 0, 0, 0)` calls are
+    ///   unidentified.
     ///
     /// `+0x484` census (`search_instructions CALL [+0x484]`), the sites a
     /// miner can reach besides Move arrival, this owner change and the depot
@@ -4423,37 +4487,44 @@ impl Simulation {
     /// - `FootClass::ReceiveDamage @ 0x004D74C7`, gated on
     ///   `MissionControl[current].NoThreat && !Zombie`; no retail mission
     ///   sets either, so the call is unreachable on stock data.
-    ///
-    /// Residual (VERA-internal, gamemd equivalent UNCHECKED): every other
-    /// category takes the same `Queue_Mission(Guard, 1)` natively; a captured
-    /// building or garrison keeps its mission here. Trigger: engineer capture
-    /// / garrison transfer; effect: no forced Guard; frequency: per capture.
-    fn change_owner_harvester_idle_arm(&mut self, stable_id: u64, rules: &RuleSet) {
-        let is_dispatchable_miner = self.substrate.entities.get(stable_id).is_some_and(|e| {
-            e.category == EntityCategory::Unit
-                && e.miner
-                    .as_ref()
-                    .is_some_and(|m| m.kind != crate::sim::miner::MinerKind::Slave)
-        });
-        if !is_dispatchable_miner {
-            return;
-        }
+    fn change_owner_mission_half(&mut self, stable_id: u64, rules: &RuleSet) {
         use crate::sim::mission::{MissionId, MissionType};
+        let Some(entity) = self.substrate.entities.get(stable_id) else {
+            return;
+        };
+        let category = entity.category;
+        let current = entity.mission.current().known();
+        let object = self.object_type(entity.type_ref(), rules);
+        let unit_deploying = category == EntityCategory::Unit
+            && entity.mission_leaf.as_unit().is_some_and(|leaf| {
+                leaf.deploy_begin_active() != 0 || leaf.deploy_reverse_active() != 0
+            });
+        let simple_deployer_unloading = category == EntityCategory::Unit
+            && current == Some(MissionType::Unload)
+            && object.is_some_and(|object| object.is_simple_deployer);
+        let factory_unloading = category == EntityCategory::Structure
+            && current == Some(MissionType::Unload)
+            && object.is_some_and(|object| object.weapons_factory);
+        let in_limbo = entity.lifecycle.in_limbo;
+        let is_dispatchable_miner = category == EntityCategory::Unit
+            && entity
+                .miner
+                .as_ref()
+                .is_some_and(|m| m.kind != crate::sim::miner::MinerKind::Slave);
         let now = self.session.binary_frame;
-        let selling = self
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|e| e.mission.current().known() == Some(MissionType::Selling));
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
             crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
                 entity, None,
             );
             entity.movement_target = None;
+            entity.order_intent = None;
+            if !unit_deploying {
+                entity.base_defense_response.set_archive_target(None);
+            }
         }
         let readiness = crate::sim::mission::authority::LiveReadyInputProvider { rules };
-        if !selling {
+        if current != Some(MissionType::Selling) && !simple_deployer_unloading {
             // `Queue_Mission(Guard, 1)`: the queue write, then Ready_To_Commence
             // (`+0x200`) and Commence (`+0x1EC`). The immediate promotion runs
             // through the host's promotion step so the recorded readiness
@@ -4468,6 +4539,20 @@ impl Simulation {
             );
             self.mission_host_promote(stable_id, now, rules);
         }
+        let rescue = self.substrate.entities.get(stable_id).is_some_and(|e| {
+            e.mission.current().known() == Some(MissionType::Rescue)
+                || e.mission.queued().known() == Some(MissionType::Rescue)
+        });
+        if rescue {
+            let _ = self.mission_assign_exact(
+                stable_id,
+                MissionId::from_known(MissionType::Guard),
+                now,
+            );
+        }
+        if in_limbo || factory_unloading {
+            return;
+        }
         let in_factory_contact = self.substrate.entities.get(stable_id).is_some_and(|e| {
             e.radio_contacts.iter_live().any(|other| {
                 self.substrate
@@ -4480,14 +4565,40 @@ impl Simulation {
         if in_factory_contact {
             return;
         }
-        if let Some(selector) = harvester_enter_idle_mode_selector(self, stable_id, rules, false) {
-            let _ = self.mission_queue_exact(
-                stable_id,
-                MissionId::from_known(selector),
-                0,
-                now,
-                &readiness,
+        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+            crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
+                entity, None,
             );
+            entity.movement_target = None;
+            crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+        }
+        match category {
+            EntityCategory::Unit if is_dispatchable_miner => {
+                if let Some(selector) =
+                    harvester_enter_idle_mode_selector(self, stable_id, rules, false)
+                {
+                    let _ = self.mission_queue_exact(
+                        stable_id,
+                        MissionId::from_known(selector),
+                        0,
+                        now,
+                        &readiness,
+                    );
+                }
+            }
+            EntityCategory::Unit | EntityCategory::Infantry => {
+                queue_foot_enter_idle_mode(self, stable_id, rules);
+            }
+            EntityCategory::Structure => {
+                let _ = self.mission_queue_exact(
+                    stable_id,
+                    MissionId::from_known(MissionType::Guard),
+                    0,
+                    now,
+                    &readiness,
+                );
+            }
+            EntityCategory::Aircraft => {}
         }
     }
 

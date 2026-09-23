@@ -178,6 +178,9 @@ pub(crate) struct AttackerFacts {
     /// `AircraftClass+0x6CA` spawn retreat/collision flag
     /// (`SpawnRetreat__Push 0x0054E47D`).
     pub aircraft_spawn_collision: bool,
+    /// The firer's CaptureManager half of CanCapture, which GetFireError asks
+    /// for a MindControl warhead (`0x006FCB24..0x006FCB50`).
+    pub capture: Option<crate::sim::capture_manager::CaptureControllerFacts>,
 }
 
 /// Target-side facts read by the ladder and the GetFireError subset.
@@ -216,6 +219,10 @@ pub(crate) enum TargetFacts<'a> {
         /// CanInfect `0x0062A8E0`'s victim-side gates, which GetFireError
         /// `0x006FCA81..0x006FCAC2` applies to a Parasite warhead.
         parasite: ParasiteVictimFacts,
+        /// CanCapture `0x00471C90`'s victim-side gates, which GetFireError
+        /// applies to a MindControl warhead (the Iron Curtain gate reads the
+        /// frame and is applied at fire admission).
+        capture: crate::sim::capture_manager::CaptureVictimFacts,
     },
 }
 
@@ -882,6 +889,7 @@ fn targeting_fire_error_blocks(
     weapon: &WeaponType,
     warhead: &WarheadType,
     target: &TargetFacts,
+    capture: Option<crate::sim::capture_manager::CaptureControllerFacts>,
 ) -> bool {
     let aa = projectile_aa(rules, weapon);
     match *target {
@@ -918,6 +926,7 @@ fn targeting_fire_error_blocks(
             on_bridge,
             cell_land_type,
             parasite,
+            capture: capture_victim,
             ..
         } => {
             // 0x006FCA81..0x006FCAC2: a Parasite warhead is ILLEGAL unless the
@@ -926,6 +935,15 @@ fn targeting_fire_error_blocks(
             // (0x006FCAE1) and Iron Curtain (0x006FCB21) gates read the frame
             // and are applied at fire admission instead.
             if warhead.parasite && !parasite.admits(obj.naval) {
+                return true;
+            }
+            // 0x006FCB24..0x006FCB50: a MindControl warhead is ILLEGAL unless
+            // the firer's CaptureManager could capture this target.
+            if warhead.mind_control
+                && !capture.is_some_and(|controller| {
+                    crate::sim::capture_manager::can_capture(controller, capture_victim)
+                })
+            {
                 return true;
             }
             // 0x006FC705..0x006FC739: `IsHighFlying && !AA` → 5 (3 when the
@@ -1007,10 +1025,18 @@ fn resolve_index<'a>(
     veterancy: u16,
     index: i32,
     target: &TargetFacts,
+    capture: Option<crate::sim::capture_manager::CaptureControllerFacts>,
 ) -> Option<SelectedWeapon<'a>> {
     let selected = resolve_index_for_emission(rules, obj, veterancy, index, Some(target))?;
-    (!targeting_fire_error_blocks(rules, obj, selected.weapon, selected.warhead, target))
-        .then_some(selected)
+    (!targeting_fire_error_blocks(
+        rules,
+        obj,
+        selected.weapon,
+        selected.warhead,
+        target,
+        capture,
+    ))
+    .then_some(selected)
 }
 
 /// GetWeapon/warhead resolution without repeating GetFireError. Mission_Attack
@@ -1065,7 +1091,14 @@ pub(crate) fn select_weapon_for_target<'a>(
     target: &TargetFacts,
 ) -> Option<SelectedWeapon<'a>> {
     let index = what_weapon_should_i_use(rules, obj, attacker, Some(target));
-    resolve_index(rules, obj, attacker.veterancy, index, target)
+    resolve_index(
+        rules,
+        obj,
+        attacker.veterancy,
+        index,
+        target,
+        attacker.capture,
+    )
 }
 
 /// Resolve exactly one saved static weapon slot against the current target.
@@ -1079,12 +1112,13 @@ pub(crate) fn select_weapon_slot<'a>(
     veterancy: u16,
     slot: WeaponSlot,
     target: &TargetFacts,
+    capture: Option<crate::sim::capture_manager::CaptureControllerFacts>,
 ) -> Option<SelectedWeapon<'a>> {
     let index = match slot {
         WeaponSlot::Primary => 0,
         WeaponSlot::Secondary => 1,
     };
-    resolve_index(rules, obj, veterancy, index, target)
+    resolve_index(rules, obj, veterancy, index, target, capture)
 }
 
 /// `HouseClass::Is_Ally_ByObject @ 0x004F9A90` reduced to house identity:
@@ -1189,6 +1223,7 @@ pub(crate) fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerF
         mission_is_unload: entity.mission.effective().known() == Some(MissionType::Unload),
         is_overpowered_building: false,
         aircraft_spawn_collision: false,
+        capture: crate::sim::capture_manager::CaptureControllerFacts::of(entity),
     }
 }
 
@@ -1223,6 +1258,8 @@ pub(crate) fn attacker_facts_from_snapshot(
         mission_is_unload: false,
         is_overpowered_building: false,
         aircraft_spawn_collision: false,
+        // No entity, no manager: a MindControl weapon reads as illegal.
+        capture: None,
     }
 }
 
@@ -1247,6 +1284,7 @@ pub(crate) fn techno_target_facts<'a>(
         submerged: target.cloak.as_ref().is_some_and(|cloak| cloak.state != 0),
         is_ally,
         parasite: ParasiteVictimFacts::of(target, target_obj, terrain),
+        capture: crate::sim::capture_manager::CaptureVictimFacts::of(target, target_obj, None),
     }
 }
 
@@ -2020,6 +2058,7 @@ IsLocomotor=yes
             mission_is_unload: false,
             is_overpowered_building: false,
             aircraft_spawn_collision: false,
+            capture: None,
         }
     }
 
@@ -2033,6 +2072,7 @@ IsLocomotor=yes
             submerged: false,
             is_ally: false,
             parasite: ParasiteVictimFacts::INFECTABLE_ON_LAND,
+            capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
         }
     }
 
@@ -2059,6 +2099,7 @@ IsLocomotor=yes
                     on_water_set: true,
                     ..parasite
                 },
+                capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
             },
             cell => cell,
         }
@@ -2084,6 +2125,7 @@ IsLocomotor=yes
                 submerged,
                 is_ally,
                 parasite,
+                capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
             },
             cell => cell,
         }
@@ -2109,6 +2151,7 @@ IsLocomotor=yes
                 submerged,
                 is_ally: true,
                 parasite,
+                capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
             },
             cell => cell,
         }
@@ -2260,6 +2303,7 @@ IsLocomotor=yes
                 on_water_set: true,
                 ..ParasiteVictimFacts::INFECTABLE_ON_LAND
             },
+            capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
         };
         let sqd_t = techno(sqd, TechnoKind::Unit);
         let bsub_t = techno(bsub, TechnoKind::Unit);
@@ -2784,6 +2828,7 @@ IsLocomotor=yes
             submerged,
             is_ally,
             parasite,
+            capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
         };
         assert_eq!(slot(&rules, "DEST", &dest, Some(&bridged)), 0);
     }
@@ -2816,6 +2861,7 @@ IsLocomotor=yes
                 on_water_set: true,
                 ..ParasiteVictimFacts::INFECTABLE_ON_LAND
             },
+            capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
         };
         assert_eq!(
             selected(&rules, "HTNK", &facts(TechnoKind::Unit), &submerged),
@@ -2843,6 +2889,7 @@ IsLocomotor=yes
             submerged: false,
             is_ally: false,
             parasite: ParasiteVictimFacts::INFECTABLE_ON_LAND,
+            capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
         };
         assert_eq!(
             selected(&rules, "AEGIS", &facts(TechnoKind::Unit), &beach),
@@ -3154,7 +3201,8 @@ IsLocomotor=yes
         let htnk = rules.object("HTNK").unwrap();
         let tank = techno(htnk, TechnoKind::Unit);
         let tesla = rules.object("TESLA").unwrap();
-        let saved = select_weapon_slot(&rules, tesla, 0, WeaponSlot::Secondary, &tank).unwrap();
+        let saved =
+            select_weapon_slot(&rules, tesla, 0, WeaponSlot::Secondary, &tank, None).unwrap();
         assert_eq!(saved.weapon_id, "OPCoilBolt");
         assert_eq!(saved.slot, WeaponSlot::Secondary);
         assert_eq!(saved.index, 1);

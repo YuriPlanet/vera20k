@@ -2149,7 +2149,18 @@ impl Simulation {
             // worlds without a mind-control controller keep legacy hashes.
             if let Some(ref manager) = entity.capture_manager {
                 3u8.hash(hasher);
-                manager.hash(hasher);
+                if schema.includes(HashFeature::MindControl) {
+                    manager.hash(hasher);
+                } else {
+                    manager.hash_before_mind_control(hasher);
+                }
+            }
+            if schema.includes(HashFeature::MindControl)
+                && entity.mind_control != crate::sim::capture_manager::MindControlLink::default()
+            {
+                // The victim's MindControlledBy (+2C0) and ring (+2C8).
+                0x2c0_u32.hash(hasher);
+                entity.mind_control.hash(hasher);
             }
             // Homing missile flight state. `HomingState` has a manual `Hash`
             // impl that excludes the render-only `pitch: f32` field — see

@@ -88,6 +88,11 @@ impl Simulation {
         {
             return;
         }
+        // The `0x004549B0` off edge frees a Psychic Tower's captives
+        // (`0x00454B3D`) before its gap and power slots.
+        if !operational {
+            self.free_all_captures(id, rules);
+        }
         if let Some((_, radius)) = self.gap_operational_state(id, rules) {
             let viewers = self.gap_viewers();
             for viewer in viewers {

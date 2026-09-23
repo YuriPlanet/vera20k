@@ -779,7 +779,7 @@ pub struct GameEntity {
     pub low_bridge_tube_state: Option<LowBridgeTubeMovementState>,
     /// Controller-owned reversible mind-control manager (`TechnoClass+0x2BC`).
     /// Capacity and ordered victim links are authoritative runtime state; they
-    /// cannot be reconstructed from victim-side `mind_controlled` flags.
+    /// cannot be reconstructed from the victims' back-links.
     #[serde(default)]
     pub capture_manager: Option<crate::sim::capture_manager::CaptureManagerState>,
     /// Spawn-manager pool carried by a `Spawns=` parent (V3 Launcher,
@@ -814,9 +814,10 @@ pub struct GameEntity {
     /// (except healing) until the timer expires. Applied by superweapon launch handlers.
     #[serde(default)]
     pub invulnerability: Option<InvulnerabilityState>,
-    /// Native `TechnoClass::IsMindControlled` gate surrogate.
+    /// The victim side of mind control (`TechnoClass+0x2C0` MindControlledBy,
+    /// `+0x2C8` the ring anim), written only by `capture_manager`.
     #[serde(default)]
-    pub mind_controlled: bool,
+    pub mind_control: crate::sim::capture_manager::MindControlLink,
     /// Psychedelic/chaos runtime, separate from reversible mind control.
     #[serde(default)]
     pub berserk: BerserkState,
@@ -1438,7 +1439,7 @@ impl GameEntity {
             homing_state: None,
             parachute_state: None,
             invulnerability: None,
-            mind_controlled: false,
+            mind_control: Default::default(),
             berserk: BerserkState::default(),
             drive_locomotion: None,
             ship_locomotion: None,

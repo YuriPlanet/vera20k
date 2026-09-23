@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original 0x004717D0 constructor (to its registration) and 0x00471A50 CaptureManagerClass::Update, frame by frame",
+  "assumptions": [
+    "Owner vtable +16C is ReceiveDamage (7 stdcall arguments); owner +9C Location, +90 IsAlive, +330 the lean float",
+    "Rules +EE8/+F04/+F20 are the OverloadCount/Damage/Frames DynamicVectorClass<int>; +FA8 C4Warhead, +258 the overload sound, +1020 DefaultSparkSystem",
+    "Scenario RNG seeded through the original 0x0065C6D0; next_random from the original 0x0065C780"
+  ],
+  "substitutions": [
+    "Recorded at entry and returned without running: owner ReceiveDamage (a killing case clears +90), VocClass::PlayAt 0x007509E0, operator new 0x007C8E17 (scratch storage), ParticleSystemClass::ParticleSystemClass 0x0062DC50",
+    "Warhead, sound and spark type are marker values passed through"
+  ],
+  "entry_points": {
+    "constructor": "0x004717D0",
+    "update": "0x00471A50",
+    "random_ranged": "0x0065C7E0",
+    "static_target": "0x004716F0"
+  },
+  "payload_sha256": "8a1da7df2fb73048e443b26f33b864e41b37b4cd21ea0cb1f19f7bb1f2710b60"
+}

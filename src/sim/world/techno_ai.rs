@@ -513,10 +513,10 @@ fn techno_ai_shell(
         // path instead.
         // The supported Foot mission cadence branches run here as well.
         EntityCategory::Infantry => {
-            if let Some(rules) = rules {
-                veterancy_promotion_step(sim, id, rules);
-                crate::sim::credit_income::drain_common_step(sim, id, rules);
-                self_heal_step(sim, id, rules);
+            if let Some(rules) = rules
+                && !techno_common_steps(sim, id, rules, ctx.overlay_registry)
+            {
+                return;
             }
             clear_passive_target_off_mission(sim, id);
             mission_common_step(sim, id, rules);
@@ -534,9 +534,9 @@ fn techno_ai_shell(
                 crate::sim::credit_income::produce_cash_step(sim, id, rules);
                 sim.update_building_absorb_anim(id, rules);
                 sim.update_building_storage_anims(id, rules);
-                veterancy_promotion_step(sim, id, rules);
-                crate::sim::credit_income::drain_common_step(sim, id, rules);
-                self_heal_step(sim, id, rules);
+                if !techno_common_steps(sim, id, rules, ctx.overlay_registry) {
+                    return;
+                }
             }
             // Buildings run the SAME common Techno AI body units do — it is the
             // only acquisition path a base defence has. Same order: off-mission
@@ -587,10 +587,10 @@ fn techno_ai_shell(
         // properly means choosing which aircraft states may acquire and routing
         // the pick through that machine, which is its own slice.
         EntityCategory::Aircraft => {
-            if let Some(rules) = rules {
-                veterancy_promotion_step(sim, id, rules);
-                crate::sim::credit_income::drain_common_step(sim, id, rules);
-                self_heal_step(sim, id, rules);
+            if let Some(rules) = rules
+                && !techno_common_steps(sim, id, rules, ctx.overlay_registry)
+            {
+                return;
             }
             drop_unsensed_cloaked_target_step(sim, id);
             mission_counter_step(sim, id);
@@ -836,18 +836,41 @@ fn mission_common_step(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
 /// validation, …). The stock cloak producer now executes at the verified head;
 /// the remaining common-body items stay owned by their existing phases.
 #[allow(unused_variables)]
-fn techno_common_pre(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
-    let Some(rules) = rules else { return };
-    // `AI_Update` order: the promotion sample (`0x006FA054`) and the self-heal
-    // pulse (`0x006FA735`) both precede the cloak tick (`vtable+0x410` at
-    // `0x006FA946`), so a same-frame heal is visible to the cloak's health
-    // branch.
+/// `TechnoClass::AI_Update`'s leading common steps, in native order: the
+/// promotion sample (`0x006FA054`), the drain blocks (`0x006FA14B..
+/// 0x006FA224`, directly after the rank-cache write at `0x006FA145`), the
+/// CaptureManager update (`0x006FA730`), then the IsAlive gate (`0x006FA735`)
+/// before the self-heal pulse. Returns false when the object died in them (an
+/// overloaded Mastermind), which ends its AI body.
+fn techno_common_steps(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+) -> bool {
     veterancy_promotion_step(sim, id, rules);
-    // `0x006FA14B..0x006FA224`, directly after the rank-cache write at
-    // `0x006FA145`: the drain money transfer (victim) and ally release
-    // (drainer) blocks of the common body.
     crate::sim::credit_income::drain_common_step(sim, id, rules);
+    sim.capture_manager_update(id, rules, overlay_registry);
+    if !sim.substrate.entities.get(id).is_some_and(|e| e.is_alive()) {
+        return false;
+    }
     self_heal_step(sim, id, rules);
+    true
+}
+
+fn techno_common_pre(
+    sim: &mut Simulation,
+    id: u64,
+    rules: Option<&RuleSet>,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+) {
+    let Some(rules) = rules else { return };
+    // `AI_Update` order: the promotion sample and the self-heal pulse both
+    // precede the cloak tick (`vtable+0x410` at `0x006FA946`), so a same-frame
+    // heal is visible to the cloak's health branch.
+    if !techno_common_steps(sim, id, rules, overlay_registry) {
+        return;
+    }
     super::techno_ai_cloak::tick_stock_cloak_producer(sim, id, rules);
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -1053,7 +1076,7 @@ fn unit_techno_bracket(
     rules: Option<&RuleSet>,
     ctx: ObjectAiCtx<'_>,
 ) -> BracketReach {
-    techno_common_pre(sim, id, rules);
+    techno_common_pre(sim, id, rules, ctx.overlay_registry);
     // Guard B (post-pre IsAlive): a health-0 Unit runs no mission work. No
     // lethal pre-block step exists yet, so this fires only for an already-dead
     // Unit.
@@ -1191,9 +1214,9 @@ fn passive_acquire_gate(mission: MissionType, can_acquire: bool, opportunity_fir
 /// intent matches; the exact condition is UNCHECKED and the two can disagree
 /// (for example on a building disabled by something other than low power).
 ///
-/// SUBSTITUTED, not verified: the mind-control term. The original's condition
-/// is a capture-manager pointer plus a helper call, neither decoded; VERA reads
-/// its own mind-controlled flag.
+/// The capture term is `CaptureManager && IsFull` of the scanner itself
+/// (`0x00709230..0x00709268`, `0x004722A0`): a controller at its limit does
+/// not acquire.
 ///
 /// Not modelled (recorded): the first disabled/limbo-ish virtual, the second
 /// early-out field, and the player-control virtual whose slot role is
@@ -1234,7 +1257,11 @@ fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
     {
         return false;
     }
-    if entity.mind_controlled {
+    if entity
+        .capture_manager
+        .as_ref()
+        .is_some_and(|manager| manager.is_full())
+    {
         return false;
     }
     // `TechnoClass::CanAcquireTarget 0x007091D0`'s final term: `vt+0x2AC`.
