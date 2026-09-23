@@ -878,10 +878,14 @@ pub struct GeneralRules {
     pub engineer_infantry: Option<String>,
     /// `CrewEscape=` (Rules `+0x5C0`, `ReadDouble`), the chance a crewed
     /// vehicle's crew escapes. Constructor default 0.5 (`0x00665E11..0x00665E17`).
+    /// `read_double` scales a `%` value by 0.01 in host binary64; native
+    /// `CCINIClass::ReadDouble @ 0x005283D0` FMULs under the chop control word,
+    /// so a mod percentage can differ in the last bit (stock "50%" is exact).
     pub crew_escape: crate::util::native_x87::NativeF64Bits,
     /// `RefundPercent=` (Rules `+0x1738`, `ReadDouble`), the human-owner refund
     /// share `TechnoTypeClass::GetRefund @ 0x00711F60` applies. Constructor
-    /// default 0.5 (`0x006675CE..0x006675D4`, ECX set at `0x00667190`).
+    /// default 0.5 (`0x006675CE..0x006675D4`, ECX set at `0x00667190`). Same
+    /// `%` rounding note as `crew_escape`.
     pub refund_percent: crate::util::native_x87::NativeF64Bits,
 
     // -- Cliff/slope movement coefficients ([General]) --

@@ -764,10 +764,12 @@ pub(crate) fn commit_entities(
             // `ObjectClass::UnInit` (`0x005F65F0`, clears `IsAlive +0x90` at
             // `0x005F6625`), so the `0x00442905` re-test returns 4 before
             // `NotifyUnderAttack`. RESIDUAL: `DestructionEffects` arms a zero
-            // timer for `BuildingType+0xD15` types and a building whose
+            // timer for `Explodes=` types (TechnoType `+0xD15`, ReadINI
+            // `0x007122BE..0x007122D2`: stock GAYARD, NAYARD, YAYARD, NANRCT,
+            // AMMOCRAT, CAOILD, CAMISC01/02, YAPPPT) and for a building whose
             // current mission is Selling (0x13), leaving `IsAlive` set and the
-            // ping live on their killing blow; neither is modelled here (walls
-            // are overlay mutations, a sold building dying is rare).
+            // ping live on their killing blow; VERA UnInits them at once (see
+            // `crew_survival` for the second SpawnSurvivors this skips).
             if damage > 0
                 && !became_fatal
                 && let Some(obj) = rules.object(world.interner.resolve(target.type_ref()))

@@ -155,10 +155,13 @@ impl Simulation {
     /// `InfantryClass::Scatter @ 0x0051D0D0` with a NULL coordinate and
     /// `forced = true` (`Scatter(&EmptyCoord, 1, x)`), through its successful
     /// FNPC arm. Shared by the BridgeRepairHut evacuation (third argument
-    /// true) and the crew/survivor exits (third argument false); the third
-    /// argument only gates a MOVING infantryman's PlayerScatter test, and both
-    /// survivor callers scatter a freshly unlimboed, stationary one. Draws the
-    /// fallback direction `RandomRanged(0, 4)` before the FNPC search.
+    /// true) and the crew/survivor exits (third argument false). The third
+    /// argument gates a MOVING infantryman's PlayerScatter test and selects
+    /// the deploy-Doing head arm (`0x0051D0E3..0x0051D148`: PlayAnim 0x1F when
+    /// forced and set, else the human early return); neither reaches a freshly
+    /// unlimboed survivor, which is stationary with Doing -1 (`0x00517A64`).
+    /// Draws the fallback direction `RandomRanged(0, 4)` before the FNPC
+    /// search.
     pub(crate) fn scatter_infantry_forced_from_empty(
         &mut self,
         id: u64,
@@ -169,7 +172,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .expect("hut selected live listener");
+            .expect("Scatter target is a live infantryman");
         let object = self
             .object_type(e.type_ref(), rules)
             .ok_or_else(|| String::from("Scatter requires an Infantry type"))?;

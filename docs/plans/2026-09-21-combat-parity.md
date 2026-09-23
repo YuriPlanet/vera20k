@@ -257,10 +257,12 @@ Crew survival (`feature/combat-survivors`, snapshot 194), owner `sim/crew_surviv
 - Vehicle crew `7381BC..73838A`: after the dying unit's Mark(UP) (`737F7A`), a Crewed=yes type
   with no passenger capacity rolls `RandomRanged(0, 0x7FFFFFFE)` against CrewEscape in x87 order
   (`r < 0x40000000` at 50%); arg6 skips it. Health `RandomRanged(5, Strength/2)`, Guard (human) or
-  Hunt. Aircraft have no crew path (Pilot= has no gameplay reader).
-- Placement is PlaceInfantryInCell `481180` over the raw occupation byte (vehicle 0x20 refuses;
-  0x40 refuses the ground plane unless a passable Gate, `+16B7`/`4525F0`; the building bit is not
-  read; the centre-row draw is spent before the scan). Its transport, paradrop and parasite callers
+  Hunt. InfantryClass::Unlimbo's Z gate (`51E01B`) is modelled: a vehicle on a bridge deck (or
+  lifted) leaves its crewman at its exact coordinate with no placement draw. Aircraft have no
+  crew path (Pilot= has no gameplay reader).
+- Placement is PlaceInfantryInCell `481180` over the raw occupation bytes (the requested plane's
+  vehicle bit refuses; the ground byte's 0x40 refuses either plane unless a passable Gate,
+  `+16B7`/`4525F0`; the building bit is not read; the centre/NW-row draw is spent before the scan). Its transport, paradrop and parasite callers
   moved to it; exit is the shared forced Scatter arm (hut and crew).
 - Deleted: the invented one-E1 destruction survivor (`eject_destruction_survivors`,
   `DestroyedCrewedBuilding`) that ran after the building's UnInit, and the per-cell marks every
@@ -270,13 +272,19 @@ Crew survival (`feature/combat-survivors`, snapshot 194), owner `sim/crew_surviv
   `rulesmd.ini` binding check, and an ignored retail Dustbowl run (8 seeds: 6 plant and 4 MCV
   crewmen scatter through FNPC off their spawn cells). Rust regression only; no native executable
   comparison.
-- Residuals (module doc): the sale crew (`Mission_Selling` `44A2EE`) keeps the old adapter;
-  IsToDie; the survivor's Doing at Scatter; a crewman's non-ground-Z Unlimbo; HijackerType;
-  selection/tag transfer; Phase A kill credit/counters; Nominal; a Bio Reactor holding more
-  infantry than cells; FNPC failure's eight-neighbour Scatter fallback (the crewman stays put);
-  passenger escape from a dying transport (`737FD2`; VERA still kills the cargo). The walk
-  FindSubCellDest, tube-exit and landed-aircraft unload callers keep the cell-list allocator
-  (movement ledger).
+- Residuals (module doc): the second SpawnSurvivors after Limbo for `Explodes=` (TechnoType
+  `+D15`) or Selling deaths (`4400D4`; every NANRCT death; needs a breakpoint); the sale crew
+  (`Mission_Selling` `44A2EE`); passenger escape from a dying transport (`737FB0..7381B6`; VERA
+  still kills the cargo); FNPC failure's eight-neighbour Scatter fallback and a blocked start cell
+  losing its destination (the crewman stays put); IsToDie; the survivor's Doing at Scatter; the
+  Unlimbo usable-area arm (map rim); HijackerType; selection/tag transfer; Phase A kill
+  credit/counters; Nominal; a Bio Reactor holding more infantry than cells. The walk
+  FindSubCellDest and tube-exit callers keep the cell-list allocator (movement ledger); the
+  landed-aircraft unload moves with its Unlimbo Z gate (aircraft unload port).
+- Critic (one pass): fixed the bridge-deck crew (Unlimbo Z gate), the deck request's ground 0x40
+  test, the NW-draw doc, the unrecorded residuals (second SpawnSurvivors, passenger escape, FNPC
+  failure) and the `+D15` misreading (it is `Explodes=`, not walls). Noted: parasite releases next
+  to a building now succeed (0x80 is not read), matching `481180`.
 
 ## Native evidence inventory
 
@@ -510,3 +518,8 @@ moved; the refused-Restore test fails with the refusal disabled); Clippy pass, 1
 Release `parity-digest` (same map, seed, 30 ticks, before the critic fixes): two runs identical
 to each other and to the parasite base (no deaths in that window, so this checks the load path
 only).
+Crew-survival candidate (after critic fixes): `cargo test -p vera20k --lib` 9233 passed, 0 failed,
+136 ignored (17 new crew tests plus the ignored retail Dustbowl run: 8 seeds, 6 plant and 4 MCV
+crewmen scatter through FNPC off their spawn cells); Clippy pass, 1020 warnings. No replay pin
+moved (no pinned fixture kills a crewed building or vehicle). Release `parity-digest` Dustbowl,
+seed `0x00C0FFEE`, 30 ticks: identical to the pre-change digest (load path only).

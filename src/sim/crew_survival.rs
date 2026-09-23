@@ -18,20 +18,49 @@
 //! crew-type slot `vt+0x30C`.
 //!
 //! RESIDUALS:
+//! - A second SpawnSurvivors after Limbo: DestructionEffects arms the death
+//!   timer (`+0x528`) at 0 for an `Explodes=` type (TechnoType `+0xD15`) or a
+//!   building killed while Selling (`0x00441C43..0x00441C8C`), so the building
+//!   stays alive at 0 HP and `BuildingClass::Update` runs SpawnSurvivors again
+//!   after its Limbo (`0x004400D4`), then UnInit. VERA UnInits at once and
+//!   runs one round. Trigger: every NANRCT death (the only stock `Crewed=yes`
+//!   `Explodes=yes` building) and any crewed building killed while sold.
+//!   Effect: one survivor round and its per-cell marks instead of two.
+//!   Frequency: every Soviet Nuclear Reactor death. Risk: survivor count,
+//!   marks and the Scenario stream after them. Needs a breakpoint at
+//!   `0x004400D4` (kill a NANRCT) to confirm Update reaches that arm.
 //! - Sale crew (`Mission_Selling` Status 1, `0x0044A2EE`): a sale keeps the
-//!   older VERA survivor adapter until the Mission_Selling port. Trigger:
-//!   every sale of a crewed building. Effect: invented survivor count, type
-//!   and cells.
+//!   older VERA survivor adapter until the Mission_Selling port, which can
+//!   reuse this count. Trigger: every sale of a crewed building. Effect:
+//!   invented survivor count, type and cells.
+//! - Passenger escape (`UnitClass::ReceiveDamage` `0x00737FB0..0x007381B6`):
+//!   a dying unit that is not `Crashable=` (`+0xD95`) Unlimboes each passenger
+//!   at its Location and Scatters it (computer passengers join a team or
+//!   Hunt); IgnoreDefenses, a falling unit or a Can_Enter_Cell refusal give
+//!   RecordKill and UnInit instead. VERA's fatal prelude purges all cargo.
+//!   Trigger: every destroyed loaded transport (IFV, Flak Track, Battle
+//!   Fortress, amphibious transport on land). Effect: the infantry inside die
+//!   with it instead of stepping out. Frequency: common. Risk: unit counts and
+//!   Scenario draws. Its own mechanism.
+//! - Scatter's FNPC failure arm (the eight-neighbour fallback and
+//!   QueueMission(Move) inside `InfantryClass::Scatter @ 0x0051D0D0`) is not
+//!   ported: the crewman stays where it landed, with its mission still
+//!   queued. Trigger: no passable cell at its height within the FNPC radius,
+//!   e.g. a building straddling a cliff ledge. Frequency: rare (buildings
+//!   stand on level ground). Risk: position only. Likewise a crewman on a
+//!   cell the path grid marks unwalkable loses its Scatter destination in the
+//!   immediate Process (the movement owner refuses a blocked start cell);
+//!   only seen with a building placed partly on such ground.
 //! - House IsToDie (`+0x1F6`, set by `0x004FC980`): VERA has no resign
 //!   countdown, so it never suppresses the survivor roll. Frequency: only a
 //!   resigning house's buildings.
 //! - A survivor's Doing right after Unlimbo decides whether Scatter's table
 //!   gate admits it (`0x0051D1AA`); VERA's fresh infantry passes it. Needs a
 //!   breakpoint on `0x0051D0D0` with a survivor.
-//! - A crewman's Unlimbo at a coordinate whose Z is not the ground height
-//!   (`InfantryClass::Unlimbo @ 0x0051DFF0` head) skips sub-cell selection;
-//!   VERA always places through PlaceInfantryInCell. Trigger: a vehicle dying
-//!   on a slope or bridge ramp. Needs a breakpoint at `0x0051E095`.
+//! - The Unlimbo usable-area arm: a vehicle crewman whose cell lies outside
+//!   the usable map area places with priority (no occupancy test, no draw;
+//!   `0x0051E06B`, `0x00578460`); VERA always runs the ordinary placement.
+//!   Trigger: a vehicle dying on the unusable map rim. Rare.
 //! - HijackerType (Unit `+0x338`): VERA has no hijacking, so the always-exit
 //!   hijacker arm is unreachable.
 //! - The crewman takes the vehicle's selection (vt+0x14C, local player) and
@@ -94,6 +123,27 @@ fn crew_escapes(roll: u32, crew_escape: NativeF64Bits) -> bool {
         X87::compare(scaled, X87::load_f64(crew_escape)),
         MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
     )
+}
+
+/// Where a new crewman Unlimboes (`InfantryClass::Unlimbo @ 0x0051DFF0`).
+enum CrewUnlimbo {
+    /// PlaceInfantryInCell on the ground plane at `request` inside `cell`,
+    /// then the chosen spot on the cell floor `z`.
+    Place {
+        cell: (u16, u16),
+        z: u8,
+        request: (SimFixed, SimFixed),
+    },
+    /// A coordinate above the floor (`0x0051E01B`): no placement and no draw;
+    /// the crewman keeps the exact coordinate and the vehicle's OnBridge.
+    Exact {
+        rx: u16,
+        ry: u16,
+        z: u8,
+        sub_x: SimFixed,
+        sub_y: SimFixed,
+        on_bridge: bool,
+    },
 }
 
 impl Simulation {
@@ -273,15 +323,9 @@ impl Simulation {
             SimFixed::from_num(SURVIVOR_REQUEST_X),
             SimFixed::from_num(SURVIVOR_REQUEST_Y),
         );
-        let Some(id) = self.construct_and_place_crew(
-            rules,
-            crew,
-            owner,
-            cell,
-            MovementLayer::Ground,
-            z,
-            request,
-        ) else {
+        let Some(id) =
+            self.construct_crew(rules, crew, owner, CrewUnlimbo::Place { cell, z, request })
+        else {
             return false;
         };
         let strength = rules.object(crew).map_or(0, |object| object.strength);
@@ -433,14 +477,43 @@ impl Simulation {
         }
         let owner = entity.owner();
         let armed = crate::sim::combat::combat_weapon::is_armed(entity, object);
-        let layer = if entity.on_bridge {
-            MovementLayer::Bridge
-        } else {
-            MovementLayer::Ground
-        };
+        let on_bridge = entity.on_bridge;
         let position = entity.position.clone();
         let Some(side) = self.houses.get(&owner).map(|house| house.side_index) else {
             return;
+        };
+        // `InfantryClass::Unlimbo @ 0x0051DFF0` places through
+        // PlaceInfantryInCell (ground plane, `0x0051E07F`) only when the
+        // coordinate's Z is the floor at its XY (`0x0051E01B`): a vehicle on a
+        // bridge deck, or lifted off the ground, leaves its crewman at its own
+        // coordinate with no placement draw.
+        let world_xy = crate::sim::movement::ground_pose::position_world_xy(&position);
+        let floor = crate::sim::movement::ground_pose::ground_surface_z_at(
+            world_xy,
+            false,
+            self.resolved_terrain.as_ref(),
+            self.path_grid(),
+        );
+        let off_floor = on_bridge
+            || position
+                .exact_z_leptons
+                .zip(floor)
+                .is_some_and(|(z, floor)| z != floor);
+        let unlimbo = if off_floor {
+            CrewUnlimbo::Exact {
+                rx: position.rx,
+                ry: position.ry,
+                z: position.z,
+                sub_x: position.sub_x,
+                sub_y: position.sub_y,
+                on_bridge,
+            }
+        } else {
+            CrewUnlimbo::Place {
+                cell: (position.rx, position.ry),
+                z: position.z,
+                request: (position.sub_x, position.sub_y),
+            }
         };
 
         let roll = self.scenario_rng.next_range_u32_inclusive(0, 0x7FFF_FFFE);
@@ -450,15 +523,7 @@ impl Simulation {
         let Some(crew) = self.techno_crew_type(rules, side, armed) else {
             return;
         };
-        let Some(id) = self.construct_and_place_crew(
-            rules,
-            &crew,
-            owner,
-            (position.rx, position.ry),
-            layer,
-            position.z,
-            (position.sub_x, position.sub_y),
-        ) else {
+        let Some(id) = self.construct_crew(rules, &crew, owner, unlimbo) else {
             return;
         };
         // Signed Strength/2 (CDQ; SUB; SAR).
@@ -475,46 +540,60 @@ impl Simulation {
     }
 
     /// `new InfantryClass(type, Owner)` (the TechnoClass constructor's
-    /// Scenario draw), then PlaceInfantryInCell at `request` in `cell` and
-    /// Unlimbo at the chosen spot. A refused cell or Unlimbo deletes the new
-    /// object; its constructor draw stays spent.
-    #[allow(clippy::too_many_arguments)]
-    fn construct_and_place_crew(
+    /// Scenario draw), then Unlimbo as `unlimbo` says. A refused cell or
+    /// Unlimbo deletes the new object; its constructor draw stays spent.
+    fn construct_crew(
         &mut self,
         rules: &RuleSet,
         crew: &str,
         owner: InternedId,
-        cell: (u16, u16),
-        layer: MovementLayer,
-        z: u8,
-        request: (SimFixed, SimFixed),
+        unlimbo: CrewUnlimbo,
     ) -> Option<u64> {
         let owner_name = self.interner.resolve(owner).to_string();
-        let id =
-            self.construct_object_limbo_at_height(crew, &owner_name, cell.0, cell.1, 0, z, rules)?;
-        let Some(spot) = bump_crush::place_infantry_in_cell(
-            &self.substrate.raw_cell_occupation,
-            cell.0,
-            cell.1,
-            layer,
-            request.0,
-            request.1,
-            &mut self.scenario_rng,
-        ) else {
-            self.discard_constructed_limbo(id);
-            return None;
+        let (rx, ry, z) = match unlimbo {
+            CrewUnlimbo::Place { cell, z, .. } => (cell.0, cell.1, z),
+            CrewUnlimbo::Exact { rx, ry, z, .. } => (rx, ry, z),
         };
-        let (sub_x, sub_y) = crate::util::lepton::subcell_lepton_offset(Some(spot));
+        let id = self.construct_object_limbo_at_height(crew, &owner_name, rx, ry, 0, z, rules)?;
+        let (spot, sub_x, sub_y, on_bridge) = match unlimbo {
+            CrewUnlimbo::Place { cell, request, .. } => {
+                let Some(spot) = bump_crush::place_infantry_in_cell(
+                    &self.substrate.raw_cell_occupation,
+                    cell.0,
+                    cell.1,
+                    MovementLayer::Ground,
+                    request.0,
+                    request.1,
+                    &mut self.scenario_rng,
+                ) else {
+                    self.discard_constructed_limbo(id);
+                    return None;
+                };
+                let (sub_x, sub_y) = crate::util::lepton::subcell_lepton_offset(Some(spot));
+                (spot, sub_x, sub_y, false)
+            }
+            CrewUnlimbo::Exact {
+                sub_x,
+                sub_y,
+                on_bridge,
+                ..
+            } => (
+                bump_crush::priority_sub_cell(sub_x, sub_y),
+                sub_x,
+                sub_y,
+                on_bridge,
+            ),
+        };
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.sub_cell = Some(spot);
-            entity.on_bridge = layer == MovementLayer::Bridge;
+            entity.on_bridge = on_bridge;
         }
         let outcome = self.try_reveal_entity_with_context(
             id,
             RevealRequest {
                 position: RevealPosition {
-                    rx: cell.0,
-                    ry: cell.1,
+                    rx,
+                    ry,
                     z,
                     sub_x,
                     sub_y,
@@ -538,7 +617,10 @@ impl Simulation {
     }
 
     /// `InfantryClass::Scatter(&EmptyCoord, 1, 0)` through the shared forced
-    /// arm. An arm VERA does not port yet leaves the crewman where it landed.
+    /// arm. An arm VERA does not port yet leaves the crewman where it landed
+    /// (module residuals). The immediate Process's bridge-state flag, which
+    /// the hut caller propagates, is dropped: a crewman's first walk step does
+    /// not change bridge state.
     fn scatter_crew(&mut self, rules: &RuleSet, registry: Option<&OverlayTypeRegistry>, id: u64) {
         if let Err(cause) = self.scatter_infantry_forced_from_empty(id, rules, registry) {
             log::debug!("crew {id} did not scatter: {cause}");

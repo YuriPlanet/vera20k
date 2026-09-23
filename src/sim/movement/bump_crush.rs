@@ -357,17 +357,19 @@ pub fn allocate_sub_cell_with_reserved(
 
 /// `CellClass::PlaceInfantryInCell @ 0x00481180` with priority 0: the infantry
 /// spot for a request at `(sub_x, sub_y)` inside cell `(rx, ry)` on `layer`,
-/// read from the cell's native occupation byte.
+/// read from the cell's native occupation bytes.
 ///
 /// The selected byte (deck on a bridge, else ground) refuses the whole cell on
-/// its vehicle bit, and the ground byte on its object bit unless the 0x40
-/// occupier is a passable Gate; VERA marks 0x40 only for landed aircraft and
-/// crates, never a Gate. The building bit (0x80) is not read, so a dying
-/// building's own cells admit its crew. Those refusals return before any draw.
-/// A request within 60 leptons of the centre then draws its
+/// its vehicle bit (`0x0048126B..0x0048128A`); the ground byte's object bit
+/// refuses either plane (`0x00481298`) unless the 0x40 occupier is a passable
+/// Gate (`Gate=`, `+0x16B7`, `0x004525F0`). VERA marks 0x40 only for landed
+/// aircraft and crates, never a Gate. The building bit (0x80) is not read, so
+/// a dying building's own cells admit its crew. Those refusals return before
+/// any draw. A request within 60 leptons of the centre, or in the north-west
+/// quadrant (preference 0, `0x004811F5..0x00481212`), then draws its
 /// `RandomRanged(0, 3)` row rotation on the Scenario stream before scanning,
-/// even when every spot is taken; an off-centre request prefers its own
-/// quadrant and draws nothing.
+/// even when every spot is taken; a NE, SW or SE request prefers its own spot
+/// and draws nothing.
 pub(crate) fn place_infantry_in_cell(
     raw: &crate::sim::occupancy::RawCellOccupationGrid,
     rx: u16,
@@ -377,13 +379,15 @@ pub(crate) fn place_infantry_in_cell(
     sub_y: SimFixed,
     rng: &mut SimRng,
 ) -> Option<u8> {
-    let deck = layer == MovementLayer::Bridge;
-    let mask = if deck {
+    let ground = raw.ground_bits(rx, ry);
+    let mask = if layer == MovementLayer::Bridge {
         raw.deck_bits(rx, ry)
     } else {
-        raw.ground_bits(rx, ry)
+        ground
     };
-    if !cell_kernel::infantry_occupation_allows(mask, !deck, false) {
+    let refusal_bits = (mask & cell_kernel::INFANTRY_OCCUPATION_VEHICLE_BIT)
+        | (ground & cell_kernel::INFANTRY_OCCUPATION_OBJECT_BIT);
+    if !cell_kernel::infantry_occupation_allows(refusal_bits, true, false) {
         return None;
     }
     let quadrant: u8 = get_subcell_quadrant(sub_x, sub_y);
@@ -400,9 +404,12 @@ pub(crate) fn place_infantry_in_cell(
 /// centre-row `RandomRanged(0, 3)` draw on a cell already holding three
 /// infantry (native draws first). Trigger: infantry walking or unloading into
 /// a crowded cell. Effect: one Scenario draw fewer per such placement.
-/// Moving these callers to the native byte read needs the movement pass's
-/// raw occupation to be current at the crossing, which the movement ledger
-/// owns.
+/// Moving the walk and tube callers to the native byte read needs the
+/// movement pass's raw occupation to be current at the crossing, which the
+/// movement ledger owns. The landed-aircraft unload (`0x00415B10`) reaches
+/// PlaceInfantryInCell through `InfantryClass::Unlimbo @ 0x0051DFF0`, whose
+/// Z gate (`0x0051E01B`) skips placement for a coordinate above the floor, so
+/// it moves with the aircraft unload port, not here.
 pub fn allocate_sub_cell_with_preference(
     occ: Option<&CellOccupancy>,
     layer: MovementLayer,
@@ -3816,26 +3823,33 @@ mod tests {
     }
 
     /// The building bit (0x80) is not read, so a dying building's own cells
-    /// admit its crew; the object bit (0x40) refuses the ground plane only.
+    /// admit its crew. The vehicle bit is read from the requested plane
+    /// (`0x0048126B..0x0048128A`); the object bit (0x40) always from the
+    /// ground byte (`0x00481298`), so it refuses a deck request too.
     #[test]
-    fn the_building_bit_does_not_block_and_the_object_bit_blocks_the_ground() {
+    fn the_building_bit_does_not_block_and_the_ground_object_bit_blocks_both_planes() {
+        use crate::sim::occupancy::RawCellOccupationGrid;
+
         assert_eq!(place(&raw_cells(&[(5, 5, 0x80)]), 200, 40), Some(2));
         assert_eq!(place(&raw_cells(&[(5, 5, 0x40)]), 200, 40), None);
-        let mut deck = crate::sim::occupancy::RawCellOccupationGrid::new();
-        deck.mark_deck(5, 5, 0x40);
-        let mut rng = SimRng::new(42);
-        assert_eq!(
+        let deck_request = |mark: fn(&mut RawCellOccupationGrid)| {
+            let mut raw = RawCellOccupationGrid::new();
+            mark(&mut raw);
+            let mut rng = SimRng::new(42);
             place_infantry_in_cell(
-                &deck,
+                &raw,
                 5,
                 5,
                 MovementLayer::Bridge,
                 SimFixed::from_num(200),
                 SimFixed::from_num(40),
                 &mut rng,
-            ),
-            Some(2),
-        );
+            )
+        };
+        assert_eq!(deck_request(|raw| raw.mark_deck(5, 5, 0x40)), Some(2));
+        assert_eq!(deck_request(|raw| raw.mark_ground(5, 5, 0x40)), None);
+        assert_eq!(deck_request(|raw| raw.mark_deck(5, 5, 0x20)), None);
+        assert_eq!(deck_request(|raw| raw.mark_ground(5, 5, 0x20)), Some(2));
     }
 
     #[test]

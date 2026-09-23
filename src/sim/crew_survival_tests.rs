@@ -578,6 +578,53 @@ fn a_crewed_vehicle_rolls_crew_escape_then_places_its_crewman() {
     assert!(outcomes[0] > 0 && outcomes[1] > 0, "{outcomes:?}");
 }
 
+/// A vehicle on a bridge deck stands above the floor, so its crewman skips
+/// PlaceInfantryInCell (`InfantryClass::Unlimbo`, `0x0051E01B`): no placement
+/// draw, the vehicle's exact in-cell coordinate, and its OnBridge.
+#[test]
+fn a_crewman_leaving_a_bridge_deck_keeps_the_vehicle_coordinate() {
+    let rules = rules();
+    let (sub_x, sub_y) = (SimFixed::from_num(60), SimFixed::from_num(200));
+    let mut escaped = 0;
+    for seed in 1..=8 {
+        let mut sim = sim_with_houses(seed);
+        let mcv = spawn(&mut sim, &rules, "AMCV", "Americans", 10, 10);
+        {
+            let unit = sim.substrate.entities.get_mut(mcv).unwrap();
+            unit.on_bridge = true;
+            unit.position.sub_x = sub_x;
+            unit.position.sub_y = sub_y;
+        }
+        sim.mark_up_dying_unit(mcv, UninitContext::with_rules(&rules));
+        let before = sim.substrate.entities.keys_sorted();
+        let mut replay = sim.scenario_rng.clone();
+        sim.spawn_vehicle_crew(&rules, None, mcv, false);
+
+        let escapes = replay.next_range_u32_inclusive(0, 0x7fff_fffe) < 0x4000_0000;
+        if escapes {
+            let _constructor = replay.next_u32();
+            let _health = replay.next_range_i32_inclusive(5, 62);
+            let _scatter = replay.next_range_u32_inclusive(0, 4);
+        }
+        assert_eq!(sim.scenario_rng.state(), replay.state(), "seed {seed}");
+        let crew = new_ids(&sim, &before);
+        if escapes {
+            let crewman = sim.substrate.entities.get(crew[0]).unwrap();
+            assert!(crewman.on_bridge);
+            assert_eq!((crewman.position.rx, crewman.position.ry), (10, 10));
+            assert_eq!(
+                (crewman.position.sub_x, crewman.position.sub_y),
+                (sub_x, sub_y)
+            );
+            assert_eq!(crewman.sub_cell, Some(3), "the SW spot of its coordinate");
+            escaped += 1;
+        } else {
+            assert!(crew.is_empty());
+        }
+    }
+    assert!(escaped > 0);
+}
+
 /// arg6 and passenger capacity both skip the block before its draw.
 #[test]
 fn prevent_escape_and_passenger_capacity_skip_the_crew_draw() {
