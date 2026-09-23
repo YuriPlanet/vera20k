@@ -833,21 +833,22 @@ pub(crate) fn ordinary_cell_move_goal(
     viewer: InternedId,
     entity_id: u64,
     clicked: (u16, u16),
-    native_ground_walk: bool,
+    native_ground_receiver: bool,
 ) -> Option<(u16, u16)> {
-    if native_ground_walk
-        && let Some(result) = sim.ordinary_ground_walk_cell_input(viewer, entity_id, clicked, rules)
+    if native_ground_receiver
+        && let Some(result) = sim.ordinary_ground_foot_cell_input(viewer, entity_id, clicked, rules)
     {
         return match result {
             Ok(cell) => cell,
             Err(cause) => {
-                log::warn!("ordinary Walk input: {cause}");
+                log::warn!("ordinary Foot cell input: {cause}");
                 None
             }
         };
     }
-    //Existing compatibility adapter for other locomotors, high Walk and
-    //attack-move/queued input. Their native caller contracts remain separate.
+    //Existing compatibility adapter for other locomotors (Hover, Teleport,
+    //Jumpjet, Fly), high movers and attack-move/queued input. Their native
+    //caller contracts remain separate.
     let mut goal = clicked;
     if let Some(grid) = sim.path_grid()
         && !crate::app::match_runtime::sim_tick::is_any_layer_walkable(grid, goal.0, goal.1)

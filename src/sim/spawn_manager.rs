@@ -208,6 +208,31 @@ impl SpawnManagerState {
             .count()
     }
 
+    /// Native `0x006B7D80`, read by the Drive/Ship Process_Movement gate
+    /// (0x4B272C / 0x6A1D49) before its no-queue path request: slots waiting
+    /// out a kamikaze launch (state 1), plus in-flight children (state 2)
+    /// outside limbo (+81) whose own type sets `MissileSpawn=` (+D68).
+    pub(crate) fn count_launched_missiles(
+        &self,
+        entities: &crate::sim::entity_store::EntityStore,
+        rules: &RuleSet,
+        interner: &crate::sim::intern::StringInterner,
+    ) -> usize {
+        self.slots
+            .iter()
+            .filter(|slot| match slot.state {
+                SpawnSlotState::KamikazeWait => true,
+                SpawnSlotState::InFlight => slot
+                    .spawn
+                    .and_then(|id| entities.get(id))
+                    .filter(|child| !child.lifecycle.in_limbo)
+                    .and_then(|child| rules.object(interner.resolve(child.type_ref())))
+                    .is_some_and(|kind| kind.missile_spawn),
+                _ => false,
+            })
+            .count()
+    }
+
     /// `SpawnManagerClass::SetTarget` (`0x006B7B90`): a target that differs
     /// from the live one is queued, never written straight through. The next AI
     /// pass promotes it.

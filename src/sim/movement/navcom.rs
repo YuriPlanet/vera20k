@@ -13,7 +13,9 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::MissionType;
 use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 
-const SHIP_STOP_TARGET_FRACTION: SimFixed = SimFixed::lit("0.3");
+/// Drive Stop_Moving 0x4AFE00 and Ship 0x69F510 clamp the class target
+/// fraction to the float 0.3 at 0x7E6240 / 0x7F1308 (identical bodies).
+const TRACK_STOP_TARGET_FRACTION: SimFixed = SimFixed::lit("0.3");
 
 /// Accepted Walk75ACB0 destination store. This conversion is independent of
 /// HeadTo/OnBridge's416: original6D1830,6D18C0,6D1BF0 initialize the scale for
@@ -203,28 +205,33 @@ pub(crate) fn set_destination_internal_cell(
     target: (u16, u16),
     resolved_terrain: Option<&ResolvedTerrainGrid>,
 ) {
+    let coord = target_cell_coord(target.0, target.1, resolved_terrain);
+    set_destination_internal_coord(
+        entity,
+        NavTargetRef::cell(target.0, target.1),
+        coord,
+        resolved_terrain,
+    );
+}
+
+/// Foot4D9510/4D9628 publishes the reference and dispatches its captured +4C
+/// coordinate. Cell and object orders reach the same active locomotor owner.
+pub(crate) fn set_destination_internal_coord(
+    entity: &mut GameEntity,
+    target: NavTargetRef,
+    coord: DriveCoord,
+    resolved_terrain: Option<&ResolvedTerrainGrid>,
+) {
     entity.navigation.nav_com_aux = None;
-    entity.navigation.nav_com = Some(NavTargetRef::cell(target.0, target.1));
+    entity.navigation.nav_com = Some(target);
     entity.navigation.pending_arrival_clear = false;
 
     if is_drive_locomotor(entity) {
-        drive_set_destination(
-            entity,
-            target_cell_coord(target.0, target.1, resolved_terrain),
-            resolved_terrain,
-        );
+        drive_set_destination(entity, coord, resolved_terrain);
     } else if is_ship_locomotor(entity) {
-        ship_set_destination(
-            entity,
-            target_cell_coord(target.0, target.1, resolved_terrain),
-            resolved_terrain,
-        );
+        ship_set_destination(entity, coord, resolved_terrain);
     } else {
-        set_walk_destination_coord(
-            entity,
-            target_cell_coord(target.0, target.1, resolved_terrain),
-            resolved_terrain,
-        );
+        set_walk_destination_coord(entity, coord, resolved_terrain);
     }
 }
 
@@ -420,10 +427,52 @@ fn drive_set_destination(
     true
 }
 
+/// ILocomotion +0x44 Move_To of the active Drive/Ship instance without the
+/// Foot setter (Drive 0x4AFD40 / Ship 0x69F450): the outer Process's NavCom
+/// reissue (0x4B09A3 / 0x6A006C) calls it directly. Returns false when the
+/// instance refused (warp) or is not Drive/Ship.
+pub(super) fn track_move_to(
+    entity: &mut GameEntity,
+    coord: DriveCoord,
+    terrain: Option<&ResolvedTerrainGrid>,
+) -> bool {
+    if is_drive_locomotor(entity) {
+        drive_set_destination(entity, coord, terrain)
+    } else if is_ship_locomotor(entity) {
+        if super::locomotor_owner::owner_is_warping(entity) {
+            return false;
+        }
+        ship_set_destination(entity, coord, terrain);
+        true
+    } else {
+        false
+    }
+}
+
+/// ILocomotion +0x48 Stop_Moving of the active Drive/Ship instance, the only
+/// call of Foot's failed-path receiver 0x4D55C0 (Unit +0x500). It clears the
+/// locomotor destination; NavCom and the committed head are untouched.
+pub(super) fn track_stop_moving(entity: &mut GameEntity) -> bool {
+    if is_drive_locomotor(entity) {
+        drive_stop_moving(entity);
+    } else if is_ship_locomotor(entity) {
+        ship_stop_moving(entity);
+    } else {
+        return false;
+    }
+    true
+}
+
 fn drive_stop_moving(entity: &mut GameEntity) {
     let drive = entity
         .drive_locomotion
         .get_or_insert_with(DriveLocomotionRuntime::default);
+    // 0x4AFE00 clamps the class target fraction (+0x50), then clears only
+    // the destination; the head (+0x40) may continue to its endpoint. The
+    // IsTrain follower cascade has no stock type (no retail IsTrain=yes).
+    if drive.target_speed_fraction > TRACK_STOP_TARGET_FRACTION {
+        drive.target_speed_fraction = TRACK_STOP_TARGET_FRACTION;
+    }
     drive.destination = None;
     // OPEN Process-host timing: native Stop4AFE00 clamps only class target
     // and clears destination. The owner zero belongs to the admitted Process
@@ -463,8 +512,8 @@ fn ship_stop_moving(entity: &mut GameEntity) {
         .get_or_insert_with(ShipLocomotionRuntime::default);
     // Ship Stop_Moving clamps the class-owned target fraction, then clears
     // only +0x30. A committed head may continue to its track endpoint.
-    if ship.target_speed_fraction > SHIP_STOP_TARGET_FRACTION {
-        ship.target_speed_fraction = SHIP_STOP_TARGET_FRACTION;
+    if ship.target_speed_fraction > TRACK_STOP_TARGET_FRACTION {
+        ship.target_speed_fraction = TRACK_STOP_TARGET_FRACTION;
     }
     ship.destination = None;
 
@@ -548,7 +597,7 @@ mod tests {
         set_destination_internal_null(&mut entity);
         let ship = entity.ship_locomotion.as_ref().expect("Ship runtime");
         assert_eq!(ship.destination, None);
-        assert_eq!(ship.target_speed_fraction, SHIP_STOP_TARGET_FRACTION);
+        assert_eq!(ship.target_speed_fraction, TRACK_STOP_TARGET_FRACTION);
         assert_eq!(entity.navigation.path_replay.cursor, 0);
         assert_eq!(entity.foot_speed.applied_fraction, SIM_ZERO);
         assert_eq!(entity.foot_speed.cached_current_speed, 0);
@@ -579,7 +628,7 @@ mod tests {
         let ship = entity.ship_locomotion.as_ref().expect("Ship runtime");
         assert_eq!(ship.destination, None);
         assert_eq!(ship.head_to, Some(DriveCoord::cell(4, 3, 0)));
-        assert_eq!(ship.target_speed_fraction, SHIP_STOP_TARGET_FRACTION);
+        assert_eq!(ship.target_speed_fraction, TRACK_STOP_TARGET_FRACTION);
         assert_eq!(entity.foot_speed.applied_fraction, SIM_HALF);
         assert_eq!(entity.foot_speed.cached_current_speed, 10);
 

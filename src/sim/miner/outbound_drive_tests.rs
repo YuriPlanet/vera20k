@@ -232,6 +232,9 @@ fn install_world(
         off_104: 128,
         off_108: 65,
     });
+    // Map-load authority retains Size height beside the bounds (the shared
+    // Foot zone precheck reads both).
+    sim.playfield_size_height = Some(i32::from(terrain.height()));
     sim.terrain_costs = SpeedType::ALL_WITH_COSTS
         .iter()
         .copied()
@@ -1210,14 +1213,14 @@ fn production_cmin_outbound_drive_keeps_teleport_primary() {
 }
 
 #[test]
-fn production_cmin_failed_outbound_issue_restores_locomotor_exactly() {
+fn production_cmin_unreachable_outbound_drive_returns_to_teleport() {
     let oracle = outbound_contract_oracle();
     let target = (32, 29);
     let mut sim = production_sim(0x0715_D004, &oracle);
     let mut grid = PathGrid::test_all_blocked(GRID_SIZE, GRID_SIZE);
     grid.set_blocked(START.0, START.1, false);
     grid.set_blocked(target.0, target.1, false);
-    install_world(&mut sim, &oracle, &grid, &[target], false);
+    install_world(&mut sim, &oracle, &grid, &[target], true);
     let entity_id = spawn_stock_miner(&mut sim, &oracle, "CMIN", MinerKind::Chrono);
     spawn_inert_dock_instance(&mut sim);
     arm_search(&mut sim, entity_id);
@@ -1225,9 +1228,10 @@ fn production_cmin_failed_outbound_issue_restores_locomotor_exactly() {
     let scenario_after_scan = scenario_after_one_epilogue_draw(&mut sim);
 
     // The scan finds the ore and hands the destination to the mover in the same
-    // dispatch; the mover refuses it (nothing between start and target is
-    // passable) and the speculative Drive piggyback must be unwound field for
-    // field, leaving Teleport primary and no owner destination behind.
+    // dispatch. Unit741970 accepts it behind the Drive piggyback; the first
+    // Process drops it (the isolated target fails Find_Path's zone precheck
+    // and the continuation's recheck -> SetDestination(NULL)), and the idle
+    // Drive then ENDs back to Teleport primary with no owner destination.
     advance(&mut sim, &oracle, &grid);
     let before = locomotor_tuple(&sim, entity_id);
     assert_eq!(before.0, LocomotorKind::Teleport);
@@ -1242,18 +1246,14 @@ fn production_cmin_failed_outbound_issue_restores_locomotor_exactly() {
             .nav_com,
         None,
     );
-    // RESIDUAL, VERA-internal with the gamemd equivalent UNCHECKED: the scan
-    // dispatch arms the Rate epilogue whether or not the mover accepted the
-    // destination, so a refused command still costs one scenario draw. gamemd's
-    // Set_Destination cannot refuse, so what its epilogue does on a refusal was
-    // never observed. Pinned so that changing the refusal arm is deliberate.
+    // The scan dispatch arms the Rate epilogue: one scenario draw.
     let rng_after_scan = sim.rng_state();
     assert_eq!(rng_after_scan.scenario, scenario_after_scan);
     assert_eq!(rng_after_scan.main, rng_before.main);
     assert_eq!(rng_after_scan.mapgen, rng_before.mapgen);
 
-    // A refused command must not strand the miner: the next dispatch retries and
-    // unwinds the piggyback again, leaving exactly the same locomotor state.
+    // A dropped destination must not strand the miner: the next dispatch
+    // retries and ends in exactly the same locomotor state.
     arm_dispatch_now(&mut sim, entity_id);
     let scenario_after_retry = scenario_after_one_epilogue_draw(&mut sim);
     advance(&mut sim, &oracle, &grid);

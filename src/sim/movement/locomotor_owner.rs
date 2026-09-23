@@ -8,9 +8,7 @@
 //! lifetime here. The generic piggyback gate and other class policies stay with
 //! their existing owners. These helpers do not mutate Cell occupation.
 
-use super::locomotor::LocomotorState;
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::sim::components::DriveLocomotionRuntime;
 use crate::sim::game_entity::GameEntity;
 
 fn clear_drive_instance(entity: &mut GameEntity) {
@@ -86,41 +84,6 @@ pub(crate) fn restore_admitted_primary(entity: &mut GameEntity) -> bool {
         clear_drive_instance(entity);
     }
     restored
-}
-
-/// Rollback for the existing miner command's failed-path transaction. Capture
-/// the complete state changed by Drive activation, including the class payload;
-/// restoring only kind/layer/phase would leave the newly installed instance's
-/// payload behind. This is a Rust command transaction, not a native END call.
-pub(crate) struct DriveActivationSnapshot {
-    locomotor: Option<LocomotorState>,
-    drive: Option<DriveLocomotionRuntime>,
-    path_replay: crate::sim::components::FootPathQueue,
-    path_runtime: crate::sim::components::FootPathRuntime,
-    foot_speed: crate::sim::components::FootSpeedState,
-    foot_occupation_enabled: bool,
-}
-
-impl DriveActivationSnapshot {
-    pub(crate) fn capture(entity: &GameEntity) -> Self {
-        Self {
-            locomotor: entity.locomotor.clone(),
-            drive: entity.drive_locomotion.clone(),
-            path_replay: entity.navigation.path_replay.clone(),
-            path_runtime: entity.navigation.path_runtime,
-            foot_speed: entity.foot_speed.clone(),
-            foot_occupation_enabled: entity.foot_occupation_enabled,
-        }
-    }
-
-    pub(crate) fn restore(self, entity: &mut GameEntity) {
-        entity.locomotor = self.locomotor;
-        entity.drive_locomotion = self.drive;
-        entity.navigation.path_replay = self.path_replay;
-        entity.navigation.path_runtime = self.path_runtime;
-        entity.foot_speed = self.foot_speed;
-        entity.foot_occupation_enabled = self.foot_occupation_enabled;
-    }
 }
 
 /// Techno70C5B0/70C5C0 expose the represented warp bytes to Walk/Fly: the

@@ -990,7 +990,7 @@ impl Simulation {
                     &self.interner,
                 );
                 if issued {
-                    self.finish_ordered_walk_attack(*attacker_id, rules);
+                    self.finish_ordered_attack_destination(*attacker_id, rules);
                 }
                 issued
             }
@@ -1029,7 +1029,7 @@ impl Simulation {
                     &self.interner,
                 );
                 if issued {
-                    self.finish_ordered_walk_attack(*attacker_id, rules);
+                    self.finish_ordered_attack_destination(*attacker_id, rules);
                 }
                 issued
             }
@@ -1066,7 +1066,7 @@ impl Simulation {
                     &self.interner,
                 );
                 if issued {
-                    self.finish_ordered_walk_attack(*attacker_id, rules);
+                    self.finish_ordered_attack_destination(*attacker_id, rules);
                 }
                 issued
             }
@@ -3138,8 +3138,10 @@ mod tests {
         assert!(!info.drive_accelerates);
     }
 
+    /// The Drive order accepts without a search (Unit741970); the first
+    /// Process's search reads the Simulation's zone grid.
     #[test]
-    fn player_drive_move_command_passes_zone_grid_to_path_search() {
+    fn player_drive_move_first_process_search_uses_the_zone_grid() {
         let rules = amcv_move_rules();
         let mut sim = Simulation::new();
         spawn_rule_backed_unit(&mut sim, 1, "AMCV", &rules);
@@ -3167,6 +3169,9 @@ mod tests {
         );
 
         assert!(applied);
+        assert!(!crate::sim::movement::path_search_used_zone_grid_marker());
+        sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
+            .expect("the first Process requests the route");
         assert!(crate::sim::movement::path_search_used_zone_grid_marker());
     }
 

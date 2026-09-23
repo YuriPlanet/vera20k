@@ -794,6 +794,13 @@ impl ZoneGrid {
             .copied()
     }
 
+    /// Whether native raw base topology exists (the live map build); only
+    /// then can native Foot queries (Can_Reach_Zone, the AStar entry reject)
+    /// be answered.
+    pub(crate) fn has_native_topology(&self) -> bool {
+        self.base_topology.is_some()
+    }
+
     pub(crate) fn base_topology_mut(&mut self) -> Option<&mut zone_build::BaseZoneTopology> {
         self.base_topology.as_mut()
     }

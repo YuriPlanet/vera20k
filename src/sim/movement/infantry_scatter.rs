@@ -160,7 +160,7 @@ impl Simulation {
                 self.run_infantry_failed_path_receiver(id, rules, registry)?;
             }
         }
-        super::movement_commands::clear_infantry_cell_destination_head(
+        super::movement_commands::clear_destination_path_head(
             self.substrate.entities.get_mut(id).unwrap(),
         );
         if !self.begin_foot_destination(id, true, rules) {

@@ -996,8 +996,30 @@ impl Simulation {
         {
             return Err("Infantry entry requires a live Infantry receiver".into());
         }
+        self.foot_can_enter(id, cell, args, rules, registry)
+            .map(crate::sim::movement::infantry_entry::InfantryEntryClass::from_raw)
+    }
+
+    /// The class's own `Can_Enter_Cell` (+0x1AC) for a live Foot receiver:
+    /// Infantry 0x0051BF90 or Unit 0x0073F0A0, as the raw native code 0..7.
+    /// Foot4D3920's target query and the Drive/Ship Process continuations
+    /// (0x4B2B17, 0x4B2FF9 and the Ship twins) consume the code directly.
+    /// Native comparisons: tools/spatial_oracle/unit_entry* corpora.
+    pub(crate) fn foot_can_enter(
+        &mut self,
+        id: u64,
+        cell: Cell,
+        args: crate::sim::movement::infantry_entry::InfantryEntryArgs,
+        rules: &RuleSet,
+        registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    ) -> Result<u8, String> {
+        if self.substrate.entities.get(id).is_none_or(|e| {
+            !matches!(e.category, EntityCategory::Infantry | EntityCategory::Unit)
+        }) {
+            return Err("Foot entry requires a live Infantry or Unit receiver".into());
+        }
         if self.resolved_terrain.is_none() {
-            return Err("Infantry entry requires map cells".into());
+            return Err("Foot entry requires map cells".into());
         }
         let mut live = LivePublication {
             sim: self,
@@ -1006,7 +1028,6 @@ impl Simulation {
             collapsed: false,
         };
         foot_entry(&mut live, CellObjectMember::Entity(id), cell, args)
-            .map(crate::sim::movement::infantry_entry::InfantryEntryClass::from_raw)
     }
 }
 

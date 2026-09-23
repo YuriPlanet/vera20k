@@ -19,7 +19,7 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::test_interner;
 use crate::sim::miner::miner_system::{issue_move_if_idle, issue_stock_miner_drive_move};
 use crate::sim::miner::{CargoBale, MinerConfig, MinerState, RefineryDockPhase, ResourceType};
-use crate::sim::movement::{bump_crush, issue_move_command_with_layered, tick_movement_with_grids};
+use crate::sim::movement::{issue_move_command_with_layered, tick_movement_with_grids};
 use crate::sim::occupancy::{CellOccupationGrid, OccupancyGrid};
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig;
@@ -149,6 +149,31 @@ fn rectangular_spawn_bounds(span: i32) -> PlayfieldBounds {
         off_104: span * 2,
         off_108: span * 2,
     }
+}
+
+/// Drive/Ship orders accept without a route (Unit741970); the first Process
+/// requests it with the pass's own blocker plane and zone context, whatever
+/// the caller. Runs that Process through the production host and returns the
+/// installed route.
+fn first_track_process_route(
+    sim: &mut Simulation,
+    id: u64,
+    rules: Option<&RuleSet>,
+    grid: &PathGrid,
+) -> Option<crate::sim::components::MovementTarget> {
+    let request = sim
+        .substrate
+        .entities
+        .get(id)
+        .and_then(|entity| entity.movement_target.as_ref())
+        .expect("the order scheduled a Process");
+    assert!(request.path.is_empty(), "the order installs no route");
+    sim.process_ground_locomotor_for_test(id, rules, Some(grid), None)
+        .expect("the first Process completes");
+    sim.substrate
+        .entities
+        .get(id)
+        .and_then(|entity| entity.movement_target.clone())
 }
 
 fn hierarchy_endpoint_zone_grid() -> ZoneGrid {
@@ -366,14 +391,15 @@ fn playfield_hierarchy_initial_order_outside_endpoint_uses_flat_astar() {
     ));
 
     let mut entities = EntityStore::new();
-    let mut mover = gsi_04_12_cell_listed_entity(1, "HTNK", "Americans", 6, 6);
+    // Hover keeps the command-time search adapter; Drive/Ship reach the same
+    // hierarchy/flat choice at their first Process search.
+    let mut mover = gsi_04_12_cell_listed_entity(1, "LCRF", "Americans", 6, 6);
     mover.category = crate::map::entities::EntityCategory::Unit;
-    mover.locomotor = Some(
-        crate::sim::movement::locomotor::LocomotorState::for_test_kind(
-            crate::rules::locomotor_type::LocomotorKind::Drive,
-        ),
+    let mut hover = crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+        crate::rules::locomotor_type::LocomotorKind::Hover,
     );
-    mover.drive_locomotion = Some(Default::default());
+    hover.movement_zone = MovementZone::Normal;
+    mover.locomotor = Some(hover);
     mover.in_playfield = true;
     entities.insert(mover);
 
@@ -784,32 +810,39 @@ fn gsi_04_12_layered_production_precheck_projects_only_hierarchy_coordinates() {
         entities
     };
 
-    let mut entities = make_entities();
-    let interner = test_interner();
-    let blocker_counts =
-        bump_crush::build_blocker_neighbor_counts(&entities, 5, 1, Some(&terrain), &interner, None);
-    let mut cell_occupation = CellOccupationGrid::new();
-    assert!(issue_move_command_with_layered(
-        &mut entities,
-        &astar_grid,
-        1,
-        (3, 0),
-        SimFixed::from_num(128),
-        false,
-        None,
-        None,
-        Some(&terrain),
-        Some(&zone_grid),
-        None,
-        Some(&blocker_counts),
-        None,
-        Some(&mut cell_occupation),
-        crate::sim::movement::DestinationTiming::new(0, 60),
-    ));
-    let movement = entities
-        .get(1)
-        .and_then(|entity| entity.movement_target.as_ref())
-        .expect("production command should install the projected hierarchy route");
+    let make_sim = |terrain: &ResolvedTerrainGrid| {
+        // Entities intern their names first; the snapshot must contain them.
+        let entities = make_entities();
+        let mut sim = Simulation::new();
+        sim.interner = test_interner();
+        sim.substrate.entities = entities;
+        sim.resolved_terrain = Some(terrain.clone());
+        sim.zone_grid = Some(zone_grid.clone());
+        sim
+    };
+    let order = |sim: &mut Simulation, terrain: &ResolvedTerrainGrid| {
+        assert!(issue_move_command_with_layered(
+            &mut sim.substrate.entities,
+            &astar_grid,
+            1,
+            (3, 0),
+            SimFixed::from_num(128),
+            false,
+            None,
+            None,
+            Some(terrain),
+            Some(&zone_grid),
+            None,
+            None,
+            None,
+            None,
+            crate::sim::movement::DestinationTiming::new(0, 60),
+        ));
+    };
+    let mut sim = make_sim(&terrain);
+    order(&mut sim, &terrain);
+    let movement = first_track_process_route(&mut sim, 1, None, &astar_grid)
+        .expect("the first Process should install the projected hierarchy route");
 
     assert_eq!(
         movement.path.first().copied(),
@@ -819,7 +852,7 @@ fn gsi_04_12_layered_production_precheck_projects_only_hierarchy_coordinates() {
     assert_eq!(
         movement.path_layers.first().copied(),
         Some(MovementLayer::Bridge),
-        "production command must keep the raw A* start layer"
+        "the Process search must keep the raw A* start layer"
     );
     assert_eq!(
         movement.path.last().copied(),
@@ -828,27 +861,11 @@ fn gsi_04_12_layered_production_precheck_projects_only_hierarchy_coordinates() {
     );
 
     terrain.cell_mut(3, 0).unwrap().bridge_facts.raw_flags = 0;
-    let mut entities = make_entities();
-    let blocker_counts =
-        bump_crush::build_blocker_neighbor_counts(&entities, 5, 1, Some(&terrain), &interner, None);
+    let mut sim = make_sim(&terrain);
+    order(&mut sim, &terrain);
     assert!(
-        !issue_move_command_with_layered(
-            &mut entities,
-            &astar_grid,
-            1,
-            (3, 0),
-            SimFixed::from_num(128),
-            false,
-            None,
-            None,
-            Some(&terrain),
-            Some(&zone_grid),
-            None,
-            Some(&blocker_counts),
-            None,
-            None,
-            crate::sim::movement::DestinationTiming::new(0, 60),
-        ),
+        first_track_process_route(&mut sim, 1, None, &astar_grid)
+            .is_none_or(|movement| movement.path.is_empty()),
         "destination projection must be selected by the destination structural bit"
     );
 }
@@ -990,7 +1007,13 @@ fn gsi_04_12_completed_ground_unit_rally_threads_exact_blocker_counts() {
     let mut height_map = BTreeMap::new();
     height_map.insert((1, 0), 4);
     let mut sim = Simulation::new();
-    sim.playfield_bounds = Some(rectangular_spawn_bounds(6));
+    // Explicit fixture Map Size=(6,4) beside the generous LocalSize bounds;
+    // Foot's production precheck consumes both header dimensions.
+    sim.playfield_bounds = Some(PlayfieldBounds {
+        base: 6,
+        ..rectangular_spawn_bounds(6)
+    });
+    sim.playfield_size_height = Some(4);
     sim.resolved_terrain = Some(terrain);
     sim.zone_grid = Some(zone_grid);
     sim.spawn_object("GAWEAP", "Americans", 0, 0, 0, &rules, &height_map)
@@ -1048,9 +1071,8 @@ fn gsi_04_12_completed_ground_unit_rally_threads_exact_blocker_counts() {
     assert_eq!(locomotor.movement_zone, MovementZone::Normal);
     assert!(!produced.on_bridge);
     assert!(!produced.too_big_to_fit_under_bridge);
-    let movement = produced
-        .movement_target
-        .as_ref()
+    let produced_id = produced.stable_id();
+    let movement = first_track_process_route(&mut sim, produced_id, Some(&rules), &path_grid)
         .expect("completed MTNK should receive the hierarchy-backed rally route");
     assert_eq!(movement.path.first().copied(), Some((1, 0)));
     assert_eq!(movement.path_layers.first(), Some(&MovementLayer::Ground));
@@ -1086,7 +1108,11 @@ fn gsi_04_12_miner_dock_approach_threads_exact_blocker_counts() {
     height_map.insert((1, 0), 4);
     height_map.insert((5, 0), 4);
     let mut sim = Simulation::new();
-    sim.playfield_bounds = Some(rectangular_spawn_bounds(6));
+    sim.playfield_bounds = Some(PlayfieldBounds {
+        base: 6,
+        ..rectangular_spawn_bounds(6)
+    });
+    sim.playfield_size_height = Some(4);
     sim.resolved_terrain = Some(terrain);
     sim.zone_grid = Some(zone_grid);
     let refinery_id = sim
@@ -1122,9 +1148,7 @@ fn gsi_04_12_miner_dock_approach_threads_exact_blocker_counts() {
     let miner_state = miner.miner.as_ref().unwrap();
     assert_eq!(miner_state.dock_phase, RefineryDockPhase::Approach);
     assert_eq!(miner_state.reserved_refinery, Some(refinery_id));
-    let movement = miner
-        .movement_target
-        .as_ref()
+    let movement = first_track_process_route(&mut sim, miner_id, Some(&rules), &path_grid)
         .expect("live Approach dispatch should install the hierarchy-backed queue route");
     assert_eq!(movement.path.first().copied(), Some((5, 0)));
     assert!(
@@ -1335,11 +1359,7 @@ fn gsi_04_12_attack_pursuit_entry_threads_exact_blocker_counts() {
 
     sim.tick_attack_pursuit(&rules, Some(&path_grid));
 
-    let movement = sim
-        .substrate
-        .entities
-        .get(1)
-        .and_then(|entity| entity.movement_target.as_ref())
+    let movement = first_track_process_route(&mut sim, 1, Some(&rules), &path_grid)
         .expect("real out-of-range pursuit should reach the projected hierarchy route");
     assert_eq!(movement.path.first().copied(), Some((1, 0)));
     assert_eq!(
@@ -1412,11 +1432,9 @@ fn gsi_04_12_phase_six_order_resume_threads_exact_blocker_counts() {
 
     sim.tick_order_intents_post_combat(Some(&path_grid), Some(&rules));
 
-    let resumed = sim.substrate.entities.get(1).expect("resumed mover");
-    let movement = resumed
-        .movement_target
-        .as_ref()
+    let movement = first_track_process_route(&mut sim, 1, Some(&rules), &path_grid)
         .expect("real Phase-6 resume should reach the projected hierarchy route");
+    let resumed = sim.substrate.entities.get(1).expect("resumed mover");
     assert_eq!(movement.path.first().copied(), Some((1, 0)));
     assert_eq!(
         movement.path_layers.first().copied(),
@@ -1612,11 +1630,7 @@ fn gsi_04_12_stock_miner_move_entries_thread_exact_world_context() {
         (3, 0),
     ));
     assert_eq!(
-        ore_trip
-            .substrate
-            .entities
-            .get(1)
-            .and_then(|entity| entity.movement_target.as_ref())
+        first_track_process_route(&mut ore_trip, 1, Some(&rules), &path_grid)
             .and_then(|movement| movement.path.last().copied()),
         Some((3, 0)),
     );
@@ -1632,11 +1646,7 @@ fn gsi_04_12_stock_miner_move_entries_thread_exact_world_context() {
         None,
     );
     assert_eq!(
-        refinery_return
-            .substrate
-            .entities
-            .get(1)
-            .and_then(|entity| entity.movement_target.as_ref())
+        first_track_process_route(&mut refinery_return, 1, Some(&rules), &path_grid)
             .and_then(|movement| movement.path.last().copied()),
         Some((3, 0)),
     );
