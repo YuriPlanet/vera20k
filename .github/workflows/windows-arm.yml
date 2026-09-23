@@ -8,9 +8,11 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: windows-arm.yml-${{ github.ref }}
-  # Cancel superseded pull-request runs only: every run on main finishes,
-  # so the README status badges never show "cancelled".
+  # Pull requests: one group per branch, superseded runs are cancelled.
+  # main: one group per commit, so no run is ever cancelled or replaced
+  # (GitHub keeps only one pending run per group) and the README status
+  # badges always come from a finished run.
+  group: windows-arm.yml-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
