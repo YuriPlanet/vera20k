@@ -363,8 +363,10 @@ fn conversion_receipt_rebuilds_navigation_in_the_conversion_frame() {
 }
 #[test]
 fn retail_mcv_and_target_rules_deploy_with_one_command() {
-    let rules_ini = IniFile::from_bytes(include_bytes!("../../ini/rulesmd.ini")).unwrap();
-    let art_ini = IniFile::from_bytes(include_bytes!("../../ini/artmd.ini")).unwrap();
+    let Some((rules_ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art()
+    else {
+        return;
+    };
     let mut rules = RuleSet::from_ini(&rules_ini).unwrap();
     let art = crate::rules::art_data::ArtRegistry::from_ini(&art_ini);
     rules.merge_art_data(&art);

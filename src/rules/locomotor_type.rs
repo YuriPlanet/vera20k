@@ -408,16 +408,10 @@ mod tests {
     /// and map INIs are UNCHECKED.
     #[test]
     fn dormant_clsids_absent_from_retail_inis() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         for name in ["rulesmd.ini", "rules.ini"] {
-            let path = root.join("ini").join(name);
-            let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
-                panic!(
-                    "cannot read {}: {e}. The gitignored ini/ directory is required; \
-                     a fresh worktree needs it copied in from the main checkout.",
-                    path.display()
-                )
-            });
+            let Some(text) = crate::rules::retail_ini_fixture::retail_ini_text(name) else {
+                return;
+            };
             let upper = text.to_ascii_uppercase();
             for (label, clsid) in [
                 ("Tunnel", DORMANT_CLSID_TUNNEL),

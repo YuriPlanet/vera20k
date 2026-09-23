@@ -60,3 +60,5 @@ pub mod weapon_type;
 
 #[cfg(test)]
 mod path_delay_rules_tests;
+#[cfg(test)]
+pub(crate) mod retail_ini_fixture;
