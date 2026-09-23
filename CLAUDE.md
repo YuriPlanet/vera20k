@@ -164,8 +164,10 @@ Avoid tests that merely mirror the implementation or require maintaining a secon
 - Working Rust: `cargo check -p vera20k` as needed; focused
   `cargo test -p vera20k --lib <module_path>::`.
 - Rust PR readiness: one full `cargo test -p vera20k --lib` plus
-  `cargo clippy -p vera20k --lib` for the final candidate; repeat only if later
-  changes/failures invalidate it.
+  `cargo clippy -p vera20k --lib` on the final candidate with retail `ini/`; no
+  baseline runs. Validate later fixes with focused tests; repeat both only when a
+  fix reaches beyond the tested modules or a `main` merge conflicts. CI runs both
+  on every PR, without retail INIs.
 - Asset binding, loader or rules-closure changes: a release-build retail map load
   before merge; the lib suite never runs the app loader against retail assets.
 - Docs/skills: validate content, links/examples and tooling; no Cargo suite.
