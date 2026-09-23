@@ -9,9 +9,9 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::Command;
-use crate::sim::components::{DriveCoord, Health};
+use crate::sim::components::{DriveCoord, DriveLocomotionRuntime, Health};
 use crate::sim::movement::locomotion::{LocomotorRuntimePayload, LocomotorSlot};
-use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
 use crate::sim::movement::{self, teleport_movement};
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::world::Simulation;
@@ -305,8 +305,12 @@ fn finished_teleport_restores_suspended_drive_without_retiring_its_state() {
     assert_eq!(owned_state(entity), before);
 }
 
+/// Unit741970's class refusals return before its Teleporter swap (0x7423CD),
+/// so a refused Chrono Miner order never installs Drive: payload and external
+/// instance state stay untouched. An accepted order has no rollback (the
+/// Drive setter cannot refuse; see outbound_drive_tests).
 #[test]
-fn failed_miner_path_restores_full_payload_and_external_instance_state() {
+fn refused_miner_order_leaves_teleport_payload_untouched() {
     for stale_fields in [false, true] {
         let (mut sim, rules) = fixture();
         let entity = sim.substrate.entities.get_mut(1).unwrap();
@@ -320,6 +324,7 @@ fn failed_miner_path_restores_full_payload_and_external_instance_state() {
             retries_left: u32::MAX,
         };
         entity.navigation.path_runtime = path_runtime;
+        entity.order_intent = Some(crate::sim::components::OrderIntent::Unloading);
         let before = owned_state(entity);
         let mut grid = PathGrid::test_all_blocked(16, 16);
         grid.set_blocked(8, 8, false);

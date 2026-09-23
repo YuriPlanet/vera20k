@@ -1,0 +1,1918 @@
+[
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "drive_continuation"
+    ],
+    "input": {
+      "family": "drive",
+      "find_path": "found",
+      "retries": 3,
+      "route": [
+        2
+      ]
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "path": [
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "queued": -1,
+      "retries": 10,
+      "returned": false,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "drive_continuation"
+    ],
+    "input": {
+      "family": "drive",
+      "find_path": "found",
+      "retries": 3,
+      "route": [
+        0,
+        2
+      ]
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "path": [
+        0,
+        2,
+        -1,
+        -1
+      ],
+      "queued": -1,
+      "retries": 10,
+      "returned": false,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "drive_continuation"
+    ],
+    "input": {
+      "family": "drive",
+      "find_path": "found",
+      "retries": 3,
+      "route": [
+        8
+      ]
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "out": 0,
+      "path": [
+        8,
+        -1,
+        -1,
+        -1
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 3,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "drive_continuation"
+    ],
+    "input": {
+      "family": "drive",
+      "find_path": "failed",
+      "retries": 10
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 9,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "drive_continuation"
+    ],
+    "input": {
+      "family": "drive",
+      "find_path": "failed",
+      "retries": 1
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 0,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "drive_continuation",
+      "unit_destination"
+    ],
+    "input": {
+      "family": "drive",
+      "find_path": "failed",
+      "retries": 0
+    },
+    "state": {
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 0,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "drive_continuation"
+    ],
+    "input": {
+      "close_enough": 256,
+      "family": "drive",
+      "find_path": "failed",
+      "mission": 2
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 9,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "drive_continuation",
+      "unit_destination"
+    ],
+    "input": {
+      "close_enough": 257,
+      "family": "drive",
+      "find_path": "failed",
+      "mission": 2
+    },
+    "state": {
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 2,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "drive_continuation",
+      "unit_destination"
+    ],
+    "input": {
+      "close_enough": 257,
+      "family": "drive",
+      "find_path": "failed",
+      "mission": 11
+    },
+    "state": {
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 11,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [],
+    "input": {
+      "close_enough": 257,
+      "family": "drive",
+      "find_path": "failed",
+      "mission": 7
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 7,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "path": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "retries": 10,
+      "returned": false,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "drive_continuation"
+    ],
+    "input": {
+      "close_enough": 257,
+      "empty_path": true,
+      "family": "drive",
+      "find_path": "failed",
+      "mission": 7
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 7,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 9,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "drive_continuation",
+      "unit_destination"
+    ],
+    "input": {
+      "family": "drive",
+      "far_zone": [
+        [
+          11,
+          10
+        ]
+      ],
+      "find_path": "failed"
+    },
+    "state": {
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "astar_null",
+      "failed_receiver",
+      "drive_continuation",
+      "unit_destination"
+    ],
+    "input": {
+      "destination": [
+        11,
+        10
+      ],
+      "family": "drive",
+      "find_path": "native",
+      "human": true
+    },
+    "state": {
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "astar_null",
+      "failed_receiver",
+      "drive_continuation",
+      "unit_destination"
+    ],
+    "input": {
+      "destination": [
+        11,
+        10
+      ],
+      "family": "drive",
+      "find_path": "native",
+      "human": false
+    },
+    "state": {
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0
+      ],
+      "astar_null",
+      "failed_receiver",
+      "unit_destination",
+      "drive_continuation",
+      "unit_destination"
+    ],
+    "input": {
+      "destination": [
+        13,
+        10
+      ],
+      "family": "drive",
+      "find_path": "native",
+      "human": true
+    },
+    "state": {
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0
+      ],
+      "astar_null",
+      "failed_receiver",
+      "unit_destination",
+      "drive_continuation",
+      "unit_destination"
+    ],
+    "input": {
+      "destination": [
+        13,
+        10
+      ],
+      "family": "drive",
+      "find_path": "native",
+      "human": false
+    },
+    "state": {
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": 11,
+      "result": 0,
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0
+      ],
+      "astar_found",
+      "drive_continuation"
+    ],
+    "input": {
+      "destination": [
+        13,
+        10
+      ],
+      "family": "drive",
+      "find_path": "native",
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "path": [
+        2,
+        2,
+        2,
+        -1
+      ],
+      "queued": -1,
+      "retries": 10,
+      "returned": false,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "ship_continuation"
+    ],
+    "input": {
+      "family": "ship",
+      "find_path": "found",
+      "retries": 3,
+      "route": [
+        2
+      ]
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "path": [
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "queued": -1,
+      "retries": 10,
+      "returned": false,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "ship_continuation"
+    ],
+    "input": {
+      "family": "ship",
+      "find_path": "found",
+      "retries": 3,
+      "route": [
+        0,
+        2
+      ]
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "path": [
+        0,
+        2,
+        -1,
+        -1
+      ],
+      "queued": -1,
+      "retries": 10,
+      "returned": false,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "ship_continuation"
+    ],
+    "input": {
+      "family": "ship",
+      "find_path": "found",
+      "retries": 3,
+      "route": [
+        8
+      ]
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "out": 0,
+      "path": [
+        8,
+        -1,
+        -1,
+        -1
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 3,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "ship_continuation"
+    ],
+    "input": {
+      "family": "ship",
+      "find_path": "failed",
+      "retries": 10
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 9,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "ship_continuation"
+    ],
+    "input": {
+      "family": "ship",
+      "find_path": "failed",
+      "retries": 1
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 0,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "ship_continuation",
+      "unit_destination"
+    ],
+    "input": {
+      "family": "ship",
+      "find_path": "failed",
+      "retries": 0
+    },
+    "state": {
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 0,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "ship_continuation"
+    ],
+    "input": {
+      "close_enough": 256,
+      "family": "ship",
+      "find_path": "failed",
+      "mission": 2
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 9,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "ship_continuation",
+      "unit_destination"
+    ],
+    "input": {
+      "close_enough": 257,
+      "family": "ship",
+      "find_path": "failed",
+      "mission": 2
+    },
+    "state": {
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 2,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "ship_continuation",
+      "unit_destination"
+    ],
+    "input": {
+      "close_enough": 257,
+      "family": "ship",
+      "find_path": "failed",
+      "mission": 11
+    },
+    "state": {
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 11,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [],
+    "input": {
+      "close_enough": 257,
+      "family": "ship",
+      "find_path": "failed",
+      "mission": 7
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 7,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "path": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "retries": 10,
+      "returned": false,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "ship_continuation"
+    ],
+    "input": {
+      "close_enough": 257,
+      "empty_path": true,
+      "family": "ship",
+      "find_path": "failed",
+      "mission": 7
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 7,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 9,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "ship_continuation",
+      "unit_destination"
+    ],
+    "input": {
+      "family": "ship",
+      "far_zone": [
+        [
+          11,
+          10
+        ]
+      ],
+      "find_path": "failed"
+    },
+    "state": {
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "astar_null",
+      "failed_receiver",
+      "ship_continuation",
+      "unit_destination"
+    ],
+    "input": {
+      "destination": [
+        11,
+        10
+      ],
+      "family": "ship",
+      "find_path": "native",
+      "human": true
+    },
+    "state": {
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0
+      ],
+      "astar_null",
+      "failed_receiver",
+      "ship_continuation",
+      "unit_destination"
+    ],
+    "input": {
+      "destination": [
+        11,
+        10
+      ],
+      "family": "ship",
+      "find_path": "native",
+      "human": false
+    },
+    "state": {
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0
+      ],
+      "astar_null",
+      "failed_receiver",
+      "unit_destination",
+      "ship_continuation",
+      "unit_destination"
+    ],
+    "input": {
+      "destination": [
+        13,
+        10
+      ],
+      "family": "ship",
+      "find_path": "native",
+      "human": true
+    },
+    "state": {
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": -1,
+      "result": 0,
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0
+      ],
+      "astar_null",
+      "failed_receiver",
+      "unit_destination",
+      "ship_continuation",
+      "unit_destination"
+    ],
+    "input": {
+      "destination": [
+        13,
+        10
+      ],
+      "family": "ship",
+      "find_path": "native",
+      "human": false
+    },
+    "state": {
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        3,
+        4,
+        5
+      ],
+      "queued": 11,
+      "result": 0,
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "target": 0
+    }
+  },
+  {
+    "events": [
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0
+      ],
+      "astar_found",
+      "ship_continuation"
+    ],
+    "input": {
+      "destination": [
+        13,
+        10
+      ],
+      "family": "ship",
+      "find_path": "native",
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "mission": 5,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "path": [
+        2,
+        2,
+        2,
+        -1
+      ],
+      "queued": -1,
+      "retries": 10,
+      "returned": false,
+      "selector": -1,
+      "target": 0
+    }
+  }
+]

@@ -48,6 +48,11 @@ def make_destination_fixture(case):
     u.mem_write(ACTOR + 0x6B7, b'\x01')
     u.mem_write(ACTOR + 0x6AC, bytes([case.get('skip_move', False)]))
     u.mem_write(ACTOR + 0x1F8, bytes([case.get('force_reassign', False)]))
+    if case.get('nav_queue'):
+        items = EXTRA + 0x2C000
+        u.mem_write(items, dwords(*([CELL] * case['nav_queue'])))
+        u.mem_write(ACTOR + 0x588 + 4, dwords(items, case['nav_queue']))
+        u.mem_write(ACTOR + 0x598, dwords(case['nav_queue']))
     u.mem_write(LOCO + 0x34, dwords(*case.get('prior', [700, 800, 900])))
     u.mem_write(LOCO + 0x40, dwords(*case.get('head', [2816, 2688, 123])))
     u.mem_write(CELL + 0x140, dwords(0x100 if case.get('bridge') else 0))
@@ -65,8 +70,13 @@ def query(case):
     events = []
     addresses = {0x741970:'unit', 0x4D94B0:'foot', 0x4AFD40:'drive_move',
                  0x69F450:'ship_move', 0x4E0190:'clear_queue', 0x565730:'lookup'}
-    u.hook_add(UC_HOOK_CODE, lambda _u, address, _size, _data:
-               events.append(addresses[address]) if address in addresses else None)
+    def observe(_u, address, _size, _data):
+        # Destination acceptance never calls Foot::Find_Path. The first
+        # locomotor Process owns that request, even for an obstructed route.
+        assert address != 0x4D3920, 'destination setter performed Find_Path'
+        if address in addresses:
+            events.append(addresses[address])
+    u.hook_add(UC_HOOK_CODE, observe)
     before = bytes(u.mem_read(ACTOR, 0x700))
     entry = case['entry']
     if entry == 'move':
@@ -75,7 +85,8 @@ def query(case):
         assert u.reg_read(UC_X86_REG_ESP) == SP + 20
         assert bytes(u.mem_read(ACTOR, 0x700)) == before
     else:
-        call(0x741970 if entry == 'unit' else 0x4D94B0, ACTOR, [CELL, 1])
+        target = 0 if case.get('null') else CELL
+        call(0x741970 if entry == 'unit' else 0x4D94B0, ACTOR, [target, case.get('flag', 1)])
         assert u.reg_read(UC_X86_REG_ESP) == SP + 12
     call(read32(read32(LOCO + 4) + 0x10), 0, [LOCO + 4])
     moving = bool(u.reg_read(UC_X86_REG_EAX) & 255)
@@ -90,7 +101,8 @@ def query(case):
                 blocked_timer=[read32(ACTOR + 0x668), read32(ACTOR + 0x670)],
                 blocked=u.mem_read(ACTOR + 0x6B7, 1)[0], retries=read32(ACTOR + 0x64C),
                 skip_move=u.mem_read(ACTOR + 0x6AC, 1)[0],
-                force_reassign=u.mem_read(ACTOR + 0x1F8, 1)[0])
+                force_reassign=u.mem_read(ACTOR + 0x1F8, 1)[0],
+                **({'nav_queue': read32(ACTOR + 0x598)} if 'nav_queue' in case else {}))
 
 
 def generate():
@@ -107,12 +119,19 @@ def generate():
                     cases.append(dict(base, entry='unit'))
         for extra in ({'same_nav':True}, {'same_nav':True, 'force_reassign':True}, {'skip_move':True}):
             cases.append(dict(family=family, entry='unit', **extra))
+        # NavQueue: the Cell setter keeps it; only a NULL destination reaches
+        # the Clear at 0x7423BE (0x742091 TEST EBX,EBX / JZ).
+        # A NULL destination needs a prior NavCom (0x741A80 returns without one).
+        for null in (False, True):
+            cases.append(dict(family=family, entry='unit', same_nav=null, nav_queue=2, null=null))
+        # The Cell setter's clear (0x7422E8..0x7422F4) is gated by its flag.
+        cases.append(dict(family=family, entry='unit', same_nav=False, nav_queue=2, null=False, flag=0))
     return [query(case) for case in cases]
 
 
 if __name__ == '__main__':
     finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=lambda: provenance(
-        scope='126 complete original calls:72 Drive/Ship MoveTo,24 Foot destination,30 ordinary Unit Cell destination, each followed by original IsMoving. Warp-in/out, power, zero/raw/bridge coordinates, same NavCom/force and one-shot skip-MoveTo. No full Scatter/Process parity.',
+        scope='132 complete original calls:72 Drive/Ship MoveTo,24 Foot destination,30 ordinary Unit Cell destination and 6 Unit Cell/NULL destinations with a 2-entry NavQueue (setter flag 1, and flag 0 for Cell), each followed by original IsMoving. Warp-in/out, power, zero/raw/bridge coordinates, same NavCom/force, one-shot skip-MoveTo and NavQueue survival. No full Scatter/Process parity.',
         entry_points={'unit':0x741970,'foot':0x4D94B0,'drive_move':0x4AFD40,'ship_move':0x69F450,
                       'drive_bridge_scale':0x4AF4A0,'ship_bridge_scale':0x69EBB0},
         assumptions=['Original constructors for Drive/Ship and embedded vectors; supplied Unit constructor6D8=-1, empty Radio contact slot, House, map and Rules BlockagePathDelay22. No EMP, Foot6A0 timer, lift/particle links, deploy, Jumpjet/Teleporter type arms, docking buildings or queue allocation.',

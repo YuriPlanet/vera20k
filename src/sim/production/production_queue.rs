@@ -579,9 +579,10 @@ fn tick_production_impl(
                     if naval_rally.is_some()
                         && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
                     {
-                        // The generic immediate-path adapter may redirect its
-                        // execution endpoint. Restore the producer rally as the
-                        // represented owner destination so A* never owns NavCom.
+                        // A Ship's setter publishes the rally unchanged; the
+                        // command-time adapter of the remaining locomotors
+                        // (Hover) may redirect its endpoint. Restore the
+                        // producer rally so that A* never owns NavCom.
                         crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
                             entity,
                             Some(crate::sim::components::NavTargetRef::cell(tx, ty)),

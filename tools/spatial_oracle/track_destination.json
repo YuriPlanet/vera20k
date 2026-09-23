@@ -3398,6 +3398,169 @@
     "skip_move": 0
   },
   {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      0
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot",
+      "drive_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "entry": "unit",
+      "family": "drive",
+      "nav_queue": 2,
+      "null": false,
+      "same_nav": false
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "nav_queue": 0,
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "entry": "unit",
+      "family": "drive",
+      "nav_queue": 2,
+      "null": true,
+      "same_nav": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": null,
+    "nav_queue": 0,
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      0
+    ],
+    "events": [
+      "unit",
+      "foot",
+      "drive_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "entry": "unit",
+      "family": "drive",
+      "flag": 0,
+      "nav_queue": 2,
+      "null": false,
+      "same_nav": false
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "nav_queue": 2,
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
     "aux": true,
     "blocked": 1,
     "blocked_timer": [
@@ -6781,6 +6944,169 @@
       11,
       10
     ],
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      0
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot",
+      "ship_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "entry": "unit",
+      "family": "ship",
+      "nav_queue": 2,
+      "null": false,
+      "same_nav": false
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "nav_queue": 0,
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      0,
+      0,
+      0
+    ],
+    "events": [
+      "unit",
+      "clear_queue",
+      "foot"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "entry": "unit",
+      "family": "ship",
+      "nav_queue": 2,
+      "null": true,
+      "same_nav": true
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": null,
+    "nav_queue": 0,
+    "path": [
+      -1,
+      3,
+      4,
+      5
+    ],
+    "power": 1,
+    "reference": [
+      9,
+      8
+    ],
+    "retries": 7,
+    "skip_move": 0
+  },
+  {
+    "aux": false,
+    "blocked": 0,
+    "blocked_timer": [
+      100,
+      22
+    ],
+    "destination": [
+      2944,
+      2688,
+      0
+    ],
+    "events": [
+      "unit",
+      "foot",
+      "ship_move",
+      "lookup"
+    ],
+    "force_reassign": 0,
+    "head": [
+      2816,
+      2688,
+      123
+    ],
+    "input": {
+      "entry": "unit",
+      "family": "ship",
+      "flag": 0,
+      "nav_queue": 2,
+      "null": false,
+      "same_nav": false
+    },
+    "movement_timer": [
+      100,
+      0
+    ],
+    "moving": true,
+    "nav": [
+      11,
+      10
+    ],
+    "nav_queue": 2,
     "path": [
       -1,
       3,

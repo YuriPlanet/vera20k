@@ -1363,6 +1363,45 @@ pub fn scatter_blocker(
     accepted
 }
 
+/// `CellClass::Scatter_Objects` 0x00481670 with the NullCoord source
+/// (0x008A0790 / Ship 0x00B077F8) and force 1, as the Drive/Ship Process
+/// continuations call it (0x4B2DC0, 0x4B327D and the Ship twins). The
+/// selected list is snapshotted first, then each occupant's Scatter (+0x174)
+/// runs in list order; force admits every recipient (cell_scatter corpus).
+/// The per-occupant receiver is the existing [`scatter_blocker`] adapter, so
+/// its displacement and RNG residuals apply unchanged.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn scatter_cell_objects(
+    entities: &mut EntityStore,
+    occupancy: &OccupancyGrid,
+    cell: (u16, u16),
+    layer: MovementLayer,
+    path_grid: Option<&PathGrid>,
+    resolved_terrain: Option<&ResolvedTerrainGrid>,
+    rng: &mut SimRng,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    interner: &crate::sim::intern::StringInterner,
+    timing: crate::sim::movement::DestinationTiming,
+) {
+    let occupants = occupancy
+        .get(cell.0, cell.1)
+        .map_or_else(Vec::new, |occ| occ.snapshot_layer(layer));
+    for id in occupants {
+        scatter_blocker(
+            entities,
+            id,
+            path_grid,
+            resolved_terrain,
+            occupancy,
+            layer,
+            rng,
+            rules,
+            interner,
+            timing,
+        );
+    }
+}
+
 /// Normal speed shared by blocked-cell and damage-triggered displacement.
 pub(super) fn scatter_movement_speed(
     entity: &GameEntity,

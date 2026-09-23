@@ -59,7 +59,7 @@ fn order_walk(sim: &mut Simulation, rules: &RuleSet, id: u64, target: (u16, u16)
 /// Eight Buildings around `centre`: the zone labels stay connected while the
 /// cell search cannot reach the centre, which is the supplied-NULL core result
 /// of the oracle's astar_null rows.
-fn enclose(sim: &mut Simulation, rules: &RuleSet, centre: (u16, u16)) {
+pub(super) fn enclose(sim: &mut Simulation, rules: &RuleSet, centre: (u16, u16)) {
     for dx in -1i32..=1 {
         for dy in -1i32..=1 {
             if dx == 0 && dy == 0 {
@@ -183,7 +183,6 @@ fn building_target_redirects_to_a_nearby_cell_and_the_walk_completes_there() {
 
 #[test]
 fn obstructed_target_beyond_close_enough_redirects_only_when_the_nearby_cell_is_closer() {
-    use crate::sim::movement::infantry_entry::InfantryEntryClass;
     let (mut sim, rules, _registry) = fixture();
     human_house(&mut sim);
     let id = engineer_at(&mut sim, &rules, (10, 10));
@@ -199,12 +198,7 @@ fn obstructed_target_beyond_close_enough_redirects_only_when_the_nearby_cell_is_
     // (EstimateZoneCost = Chebyshev), so SetDestination(cell, 1) retargets.
     order_walk(&mut sim, &rules, id, (13, 10));
     let goal = sim
-        .walk_path_goal_for_answer(
-            id,
-            DriveCoord::cell(13, 10, 0),
-            InfantryEntryClass::Obstructed6,
-            &rules,
-        )
+        .find_path_goal_for_answer(id, DriveCoord::cell(13, 10, 0), 6, &rules)
         .unwrap();
     assert_eq!((goal.x / 256, goal.y / 256), (12, 10));
     let e = sim.substrate.entities.get(id).unwrap();
@@ -217,12 +211,7 @@ fn obstructed_target_beyond_close_enough_redirects_only_when_the_nearby_cell_is_
     // Within CloseEnough the obstructed target is searched unchanged.
     order_walk(&mut sim, &rules, id, (12, 10));
     let goal = sim
-        .walk_path_goal_for_answer(
-            id,
-            DriveCoord::cell(12, 10, 0),
-            InfantryEntryClass::Obstructed6,
-            &rules,
-        )
+        .find_path_goal_for_answer(id, DriveCoord::cell(12, 10, 0), 6, &rules)
         .unwrap();
     assert_eq!((goal.x / 256, goal.y / 256), (12, 10));
 }
@@ -236,7 +225,7 @@ fn near_failure_returns_before_the_null_setter_and_guard_queue() {
     sim.run_infantry_failed_path_receiver(id, &rules, Some(&registry))
         .unwrap();
     // 0x4D40A6..0x4D40D4: Chebyshev 1 to a non-structural target returns.
-    sim.finish_walk_find_path_failure(id, DriveCoord::cell(11, 10, 0), &rules)
+    sim.finish_find_path_failure(id, DriveCoord::cell(11, 10, 0), &rules)
         .unwrap();
     let e = sim.substrate.entities.get(id).unwrap();
     assert_eq!(e.mission.queued(), MissionId::NONE);

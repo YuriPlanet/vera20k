@@ -73,17 +73,19 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
         Some(&mut sim.substrate.cell_occupation),
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
+    // Unit741970 accepts without a route; the first Process requests it.
     let accepted = sim.substrate.entities.get(1).unwrap();
-    assert_eq!(
-        accepted.movement_target.as_ref().unwrap().path,
-        [(0, 0), (1, 0), (5, 0)]
-    );
+    assert!(accepted.movement_target.as_ref().unwrap().path.is_empty());
     assert!(committed_track_head(accepted).is_none());
     sim.resolved_terrain = Some(terrain.clone());
     sim.zone_grid = Some(zones.clone());
     sim.process_ground_locomotor_for_test(1, None, Some(&grid), None)
         .expect("Process commits the ordinary segment before the tube entrance");
     let accepted = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(
+        accepted.movement_target.as_ref().unwrap().path,
+        [(0, 0), (1, 0), (5, 0)]
+    );
     assert!(committed_track_head(accepted).is_some());
     assert!(accepted.drive_locomotion.as_ref().unwrap().track.turn_index >= 0);
 
@@ -371,11 +373,20 @@ fn test_drive_queue_command_reissues_destination_without_navqueue_append() {
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
 
+    // The queued Drive order re-enters the ordinary setter: the destination
+    // is replaced and the first Process requests the route.
     let entity = entities.get(1).expect("entity exists");
     let movement = entity.movement_target.as_ref().expect("movement target");
-    assert_eq!(movement.path.first().copied(), Some((0, 0)));
-    assert_eq!(movement.path.last().copied(), Some((4, 0)));
+    assert!(movement.path.is_empty());
     assert_eq!(movement.final_goal, Some((4, 0)));
+    assert_eq!(
+        entity.drive_locomotion.as_ref().and_then(|d| d.destination),
+        Some(DriveCoord {
+            x: 4 * 256 + 128,
+            y: 128,
+            z: 0
+        })
+    );
     assert_eq!(entity.navigation.nav_com, Some(NavTargetRef::cell(4, 0)));
     assert!(
         entity.navigation.nav_queue.is_empty(),
@@ -1414,11 +1425,14 @@ fn gsi_06_02_missing_zone_data_short_circuits_to_reachable() {
     assert_eq!(resolve_split_goal(&grid, None, (4, 0)), Some((4, 0)));
 }
 
-/// End-to-end: a cross-zone ground move order is accepted and the mover is sent
-/// to its own side of the split. Previously the command was refused and the unit
-/// did not move at all.
+/// A cross-zone ground move order is accepted unchanged: Unit741970 installs
+/// NavCom and the Drive destination without a search or redirect. The player
+/// click reaches it only through the ordinary 4DE1D0 resolver, which picks a
+/// reachable cell (move_cell_input); the first Process drops an unreachable
+/// destination through Find_Path's precheck and the continuation's recheck
+/// (track_path_continuation).
 #[test]
-fn gsi_06_02_cross_zone_move_order_is_accepted_and_moves_the_unit() {
+fn gsi_06_02_cross_zone_move_order_is_accepted_without_redirect() {
     let (grid, zone_grid) = split_corridor_fixture();
     let mut entities = EntityStore::new();
     let mut mover = GameEntity::test_default(1, "MTNK", "Americans", 0, 0);
@@ -1447,20 +1461,17 @@ fn gsi_06_02_cross_zone_move_order_is_accepted_and_moves_the_unit() {
         ),
         "gamemd accepts a ground move order across a disconnected boundary"
     );
-    let target = entities
-        .get(1)
-        .and_then(|entity| entity.movement_target.as_ref())
-        .expect("an accepted order installs a movement target");
-    let goal = target
-        .final_goal
-        .or_else(|| target.path.last().copied())
-        .expect("the installed target names a destination");
-    assert!(
-        goal.0 <= 1,
-        "the unit must be sent to its own side of the split, got {goal:?}"
-    );
+    let entity = entities.get(1).unwrap();
+    let target = entity.movement_target.as_ref().unwrap();
+    assert_eq!(target.final_goal, Some((4, 0)));
+    assert!(target.path.is_empty());
+    assert_eq!(entity.navigation.nav_com, Some(NavTargetRef::cell(4, 0)));
 }
 
+/// `AStar @ 0x0042CAD6` uses the hierarchy only for a +3D5 (in playfield)
+/// mover. Hover keeps the command-time search adapter, so the order's own
+/// search shows the flat fallback (Drive/Ship search at their first Process
+/// through the same `allow_zone_hierarchy` snapshot).
 #[test]
 fn techno_playfield_false_mover_uses_flat_astar_instead_of_hierarchy_abort() {
     let grid = PathGrid::new(5, 1);
@@ -1497,10 +1508,11 @@ fn techno_playfield_false_mover_uses_flat_astar_instead_of_hierarchy_abort() {
     ));
 
     let mut entities = EntityStore::new();
-    let mut mover = GameEntity::test_default(1, "MTNK", "Americans", 0, 0);
+    let mut mover = GameEntity::test_default(1, "LCRF", "Americans", 0, 0);
     mover.category = EntityCategory::Unit;
-    mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
-    mover.drive_locomotion = Some(Default::default());
+    let mut hover = LocomotorState::for_test_kind(LocomotorKind::Hover);
+    hover.movement_zone = MovementZone::Normal;
+    mover.locomotor = Some(hover);
     mover.in_playfield = false;
     entities.insert(mover);
 
@@ -1527,7 +1539,7 @@ fn techno_playfield_false_mover_uses_flat_astar_instead_of_hierarchy_abort() {
 }
 
 #[test]
-fn gsi_04_05_second_mover_cannot_adopt_reserved_head_to_endpoint() {
+fn gsi_04_05_second_mover_cannot_adopt_reserved_head() {
     let mut sim = Simulation::new();
     let grid = PathGrid::new(6, 6);
     let mut first = GameEntity::test_default(1, "MTNK", "Americans", 1, 1);
@@ -1587,7 +1599,9 @@ fn gsi_04_05_second_mover_cannot_adopt_reserved_head_to_endpoint() {
             .occupied_by_other(2, 1, MovementLayer::Ground, 2)
     );
 
-    let second_issued = issue_move_command_with_layered(
+    // Unit741970 names the reserved cell unchanged (track_destination rows);
+    // only the second mover's own Process may refuse the reserved head.
+    assert!(issue_move_command_with_layered(
         &mut sim.substrate.entities,
         &grid,
         2,
@@ -1603,16 +1617,10 @@ fn gsi_04_05_second_mover_cannot_adopt_reserved_head_to_endpoint() {
         None,
         Some(&mut sim.substrate.cell_occupation),
         crate::sim::movement::DestinationTiming::new(0, 60),
-    );
-    let second_goal = sim
-        .substrate
-        .entities
-        .get(2)
-        .and_then(|entity| entity.movement_target.as_ref())
-        .and_then(|target| target.final_goal);
-    assert!(
-        !second_issued || second_goal != Some((2, 1)),
-        "another mover must not adopt a bit-reserved endpoint"
+    ));
+    assert_eq!(
+        sim.substrate.entities.get(2).unwrap().navigation.nav_com,
+        Some(NavTargetRef::cell(2, 1))
     );
     sim.process_ground_locomotor_for_test(2, None, Some(&grid), None)
         .expect("the second mover observes the first Process reservation");
@@ -1816,7 +1824,7 @@ fn test_drive_off_destination_finish_defers_then_resumes_toward_navcom() {
 }
 
 #[test]
-fn test_drive_deferred_repath_failure_rearms_retry_instead_of_dead_end() {
+fn test_drive_deferred_repath_failure_retries_on_path_delay_instead_of_dead_end() {
     let mut entities = EntityStore::new();
     let mut grid = PathGrid::new(8, 4);
     // Wall off the goal: a full blocked column between (1,0) and (3,0).
@@ -1833,30 +1841,50 @@ fn test_drive_deferred_repath_failure_rearms_retry_instead_of_dead_end() {
     e.navigation.pending_arrival_clear = true;
     entities.insert(e);
 
-    // Two ticks: each process-entry repath fails against the wall. The retry
-    // flag must stay armed and the owner destination must survive — never the
-    // dead-end state (nav_com held with no movement and no retry flag).
+    // Never the dead-end state (NavCom held with no movement and no retry):
+    // the first search fails against the wall and re-arms the retry with
+    // PathDelay on +640; the rescheduled destination then waits for +640
+    // (Drive4B2825) and searches again once it expires.
     let mut lifecycle_requests = Vec::new();
-    for tick in 0..2u64 {
+    let mut tick = |entities: &mut EntityStore, frame: u64| {
         tick_movement_with_grid(
-            &mut entities,
+            entities,
             Some(&grid),
             &Default::default(),
             &Default::default(),
             &mut OccupancyGrid::new(),
             &mut SimRng::new(0),
-            tick,
+            frame,
             &mut test_interner(),
             &mut lifecycle_requests,
         );
+    };
+    tick(&mut entities, 0);
+    let entity = entities.get(1).expect("entity exists");
+    assert!(entity.movement_target.is_none());
+    assert_eq!(entity.navigation.nav_com, Some(NavTargetRef::cell(3, 0)));
+    assert!(entity.navigation.pending_arrival_clear);
+    let timer = entity.navigation.path_runtime.movement_timer;
+    assert_eq!((timer.start_frame(), timer.duration()), (0, 9));
+    for frame in 1..9 {
+        tick(&mut entities, frame);
         let entity = entities.get(1).expect("entity exists");
-        assert!(entity.movement_target.is_none());
-        assert_eq!(entity.navigation.nav_com, Some(NavTargetRef::cell(3, 0)));
+        let target = entity.movement_target.as_ref().expect("rescheduled");
         assert!(
-            entity.navigation.pending_arrival_clear,
-            "repath failure must re-arm the deferred retry flag (tick {tick})"
+            target.path.is_empty(),
+            "frame {frame}: no search before +640"
         );
+        assert_eq!(entity.navigation.nav_com, Some(NavTargetRef::cell(3, 0)));
+        let timer = entity.navigation.path_runtime.movement_timer;
+        assert_eq!((timer.start_frame(), timer.duration()), (0, 9));
     }
+    tick(&mut entities, 9);
+    let entity = entities.get(1).expect("entity exists");
+    assert!(entity.movement_target.is_none());
+    assert_eq!(entity.navigation.nav_com, Some(NavTargetRef::cell(3, 0)));
+    assert!(entity.navigation.pending_arrival_clear);
+    let timer = entity.navigation.path_runtime.movement_timer;
+    assert_eq!((timer.start_frame(), timer.duration()), (9, 9));
 }
 
 #[test]
@@ -1994,13 +2022,20 @@ fn move_order_defers_drive_track_admission_until_process() {
     assert_eq!(drive.head_to, None);
     assert_eq!(drive.track.turn_index, -1);
     assert_eq!(drive.occupation_head_to, None);
-    assert_eq!(entity.navigation.path_replay.directions, vec![2; 5]);
+    assert!(
+        entity
+            .navigation
+            .path_replay
+            .remaining_directions()
+            .is_empty()
+    );
     assert_eq!(entity.navigation.path_replay.cursor, 0);
-    assert_eq!(entity.navigation.path_replay.reference_cell, Some((2, 3)));
+    assert_eq!(entity.navigation.path_replay.reference_cell, None);
     assert_eq!(drive.target_speed_fraction, SIM_ZERO);
     assert_eq!(entity.foot_speed.applied_fraction, SIM_ZERO);
-    assert_eq!(drive.turn.target_direction, Some(2));
-    assert_eq!(drive.turn.target_facing_16, Some(0x3fff));
+    assert_eq!(drive.turn.target_direction, None);
+    assert_eq!(drive.turn.target_facing_16, None);
+    assert!(entity.movement_target.as_ref().unwrap().path.is_empty());
 
     tick_movement_with_grid(
         &mut entities,
@@ -2096,7 +2131,7 @@ fn test_reissue_mid_curve_keeps_track_and_anchors_path_at_head() {
     e.lifecycle.cell_marked = true;
     entities.insert(e);
 
-    // The order supplies the path; first Process commits its head (3,3).
+    // First Process searches and commits its head (3,3).
     assert!(issue_move_command(
         &mut entities,
         &grid,
@@ -2166,12 +2201,12 @@ fn test_reissue_mid_curve_keeps_track_and_anchors_path_at_head() {
     );
     let movement = entity.movement_target.as_ref().expect("movement target");
     assert_eq!(
-        movement.path.first().copied(),
+        movement.path.last().copied(),
         Some((3, 3)),
-        "new path is anchored at the curve's committed head cell"
+        "only the curve's committed head survives until Process searches again"
     );
     assert_eq!(
-        movement.next_index, 0,
+        movement.next_index, 1,
         "the still-unreached head is itself the first queued node"
     );
     assert_eq!(movement.final_goal, Some((0, 3)));
@@ -2182,7 +2217,14 @@ fn test_reissue_mid_curve_keeps_track_and_anchors_path_at_head() {
         "the kept curve keeps its head-to occupation claim"
     );
     assert_eq!(entity.navigation.path_replay.reference_cell, Some((3, 3)));
-    assert_eq!(entity.navigation.path_replay.cursor, 0);
+    assert_eq!(entity.navigation.path_replay.cursor, 1);
+    assert!(
+        entity
+            .navigation
+            .path_replay
+            .remaining_directions()
+            .is_empty()
+    );
     assert_eq!(drive.target_speed_fraction, SimFixed::lit("0.4"));
     assert_eq!(entity.foot_speed.applied_fraction, SimFixed::lit("0.25"));
     assert_eq!(entity.foot_speed.cached_current_speed, 7);
@@ -2221,11 +2263,28 @@ fn test_reissue_mid_curve_does_not_snap_position_backward() {
     ));
 
     // Advance until the body sits visibly past its cell centre (sub_x 128)
-    // but has not crossed into (3,3) yet.
+    // but has not crossed into (3,3) yet. The first Process requests the
+    // route, so the grid is live from the first tick.
     let mut lifecycle_requests = Vec::new();
+    let mut occupancy = OccupancyGrid::new();
+    let mut frame = 0u64;
+    let mut tick = |entities: &mut EntityStore, frame: u64| {
+        tick_movement_with_grid(
+            entities,
+            Some(&grid),
+            &Default::default(),
+            &Default::default(),
+            &mut occupancy,
+            &mut SimRng::new(0),
+            frame,
+            &mut test_interner(),
+            &mut lifecycle_requests,
+        );
+    };
     let mut observed_mid_cell = false;
     for _ in 0..50 {
-        tick_movement(&mut entities, &mut test_interner(), &mut lifecycle_requests);
+        tick(&mut entities, frame);
+        frame += 1;
         let entity = entities.get(1).expect("entity exists");
         if entity.position.rx > 2 {
             break;
@@ -2267,7 +2326,7 @@ fn test_reissue_mid_curve_does_not_snap_position_backward() {
         entity.position.sub_x, sub_x_before,
         "issuing the order must not move the body"
     );
-    tick_movement(&mut entities, &mut test_interner(), &mut lifecycle_requests);
+    tick(&mut entities, frame);
     let entity = entities.get(1).expect("entity exists");
     let east_after = i32::from(entity.position.rx) * 256 + entity.position.sub_x.to_num::<i32>();
     assert!(
@@ -4653,29 +4712,62 @@ fn drive_accelerates_true_tick_ramps_fraction_before_movement_speed() {
     );
 }
 
+/// One Structure per 2x2 foundation cell at (5,5), so the per-owner block
+/// set the first Process search reads contains every foundation cell (no
+/// rules: `build_entity_block_set` adds each Structure's anchor cell).
+fn footprint_fixture(entities: &mut EntityStore) -> std::collections::BTreeSet<(u16, u16)> {
+    use crate::sim::production::building_footprint_cells;
+    let foundation: std::collections::BTreeSet<(u16, u16)> =
+        building_footprint_cells(5, 5, "2x2", &[], &[])
+            .into_iter()
+            .collect();
+    for (i, &(rx, ry)) in foundation.iter().enumerate() {
+        let mut blocker = GameEntity::test_default(100 + i as u64, "GAWALL", "Americans", rx, ry);
+        blocker.category = EntityCategory::Structure;
+        blocker.lifecycle.in_limbo = false;
+        blocker.lifecycle.cell_marked = true;
+        entities.insert(blocker);
+    }
+    let mut mover = GameEntity::test_default(1, "HTNK", "Americans", 1, 5);
+    mover.locomotor = Some(make_drive_loco_for_test());
+    mover.drive_accelerates = false;
+    mover.lifecycle.in_limbo = false;
+    mover.lifecycle.cell_marked = true;
+    entities.insert(mover);
+    foundation
+}
+
+fn first_process_route(entities: &mut EntityStore, grid: &PathGrid) -> Vec<(u16, u16)> {
+    let mut occupancy = OccupancyGrid::rebuild(entities);
+    tick_movement_with_grid(
+        entities,
+        Some(grid),
+        &Default::default(),
+        &Default::default(),
+        &mut occupancy,
+        &mut SimRng::new(0),
+        0,
+        &mut test_interner(),
+        &mut Vec::new(),
+    );
+    entities
+        .get(1)
+        .and_then(|entity| entity.movement_target.as_ref())
+        .expect("the first Process installed a route")
+        .path
+        .clone()
+}
+
 #[test]
 fn test_initial_layered_path_avoids_friendly_building_footprint() {
     // A friendly Drive-locomotor unit ordered across a 2x2 friendly building
     // foundation must plan a path that does NOT visit any foundation cell on
-    // the FIRST attempt — gamemd's Can_Enter_Cell returns code 7 (impassable)
-    // for unrelated allied buildings, so the layered A* must hard-block them.
-    use crate::sim::production::building_footprint_cells;
-    use std::collections::BTreeSet;
-
+    // its FIRST search, which its first Process requests — gamemd's
+    // Can_Enter_Cell returns code 7 (impassable) for unrelated allied
+    // buildings, so the layered A* must hard-block them.
     let mut entities = EntityStore::new();
     let grid: PathGrid = PathGrid::new(15, 15);
-
-    // 2x2 friendly building anchored at (5,5) — covers (5,5), (6,5), (5,6), (6,6).
-    let foundation: BTreeSet<(u16, u16)> = building_footprint_cells(5, 5, "2x2", &[], &[])
-        .into_iter()
-        .collect();
-    let mut blocks = BTreeSet::new();
-    blocks.extend(foundation.iter().copied());
-
-    // Mover at (1,5), goal at (10,5) — straight east through the foundation.
-    let mut mover = GameEntity::test_default(1, "HTNK", "Americans", 1, 5);
-    mover.locomotor = Some(make_drive_loco_for_test());
-    entities.insert(mover);
+    let foundation = footprint_fixture(&mut entities);
 
     assert!(issue_move_command(
         &mut entities,
@@ -4683,96 +4775,55 @@ fn test_initial_layered_path_avoids_friendly_building_footprint() {
         1,
         (10, 5),
         SimFixed::from_num(1024),
-        false,         // queue
-        None,          // terrain_costs
-        Some(&blocks), // entity_blocks
-        None,          // entity_block_map
+        false,
+        None,
+        None,
+        None,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
-
-    let entity = entities.get(1).expect("mover exists");
-    let target = entity
-        .movement_target
-        .as_ref()
-        .expect("initial path was planned");
-
-    for &cell in &target.path {
+    let path = first_process_route(&mut entities, &grid);
+    for &cell in &path {
         assert!(
             !foundation.contains(&cell),
-            "Initial path visited foundation cell {:?} — layered A* did not see \
-             ground_blocks/bridge_blocks on the first plan. Path: {:?}",
-            cell,
-            target.path,
+            "First route visited foundation cell {cell:?}. Path: {path:?}"
         );
     }
-    assert_eq!(target.path.first().copied(), Some((1, 5)));
-    assert_eq!(target.path.last().copied(), Some((10, 5)));
+    assert_eq!(path.first().copied(), Some((1, 5)));
+    assert_eq!(path.last().copied(), Some((10, 5)));
 }
 
 #[test]
 fn test_queued_drive_reissue_layered_path_avoids_friendly_building_footprint() {
-    // Issue an initial Drive move, then a queued player move that crosses a
-    // 2x2 friendly building. Drive reissues the destination without using
-    // Foot NavQueue, and the replacement path must avoid the foundation.
-    use crate::sim::production::building_footprint_cells;
-    use std::collections::BTreeSet;
-
+    // An initial Drive move, then a queued player move that crosses a 2x2
+    // friendly building. Drive reissues the destination without using Foot
+    // NavQueue, and the route its first Process requests avoids the foundation.
     let mut entities = EntityStore::new();
     let grid: PathGrid = PathGrid::new(15, 15);
+    let foundation = footprint_fixture(&mut entities);
 
-    let foundation: BTreeSet<(u16, u16)> = building_footprint_cells(5, 5, "2x2", &[], &[])
-        .into_iter()
-        .collect();
-    let mut blocks = BTreeSet::new();
-    blocks.extend(foundation.iter().copied());
-
-    // Mover at (1,5). First move to (3,5) (no obstacle). The queued Drive
-    // command reissues to (10,5), beyond the foundation.
-    let mut mover = GameEntity::test_default(1, "HTNK", "Americans", 1, 5);
-    mover.locomotor = Some(make_drive_loco_for_test());
-    entities.insert(mover);
-
-    assert!(issue_move_command(
-        &mut entities,
-        &grid,
-        1,
-        (3, 5),
-        SimFixed::from_num(1024),
-        false, // queue=false (initial)
-        None,
-        Some(&blocks),
-        None,
-        crate::sim::movement::DestinationTiming::new(0, 60),
-    ));
-    assert!(issue_move_command(
-        &mut entities,
-        &grid,
-        1,
-        (10, 5),
-        SimFixed::from_num(1024),
-        true, // queue=true (Drive destination reissue)
-        None,
-        Some(&blocks),
-        None,
-        crate::sim::movement::DestinationTiming::new(0, 60),
-    ));
-
-    let entity = entities.get(1).expect("mover exists");
-    let target = entity
-        .movement_target
-        .as_ref()
-        .expect("reissued path exists");
-
-    for &cell in &target.path {
+    for (target, queue) in [((3, 5), false), ((10, 5), true)] {
+        assert!(issue_move_command(
+            &mut entities,
+            &grid,
+            1,
+            target,
+            SimFixed::from_num(1024),
+            queue,
+            None,
+            None,
+            None,
+            crate::sim::movement::DestinationTiming::new(0, 60),
+        ));
+    }
+    let path = first_process_route(&mut entities, &grid);
+    for &cell in &path {
         assert!(
             !foundation.contains(&cell),
-            "Queued Drive reissue path visited foundation cell {:?}. Path: {:?}",
-            cell,
-            target.path,
+            "Queued Drive reissue route visited foundation cell {cell:?}. Path: {path:?}"
         );
     }
-    assert_eq!(target.path.first().copied(), Some((1, 5)));
-    assert_eq!(target.path.last().copied(), Some((10, 5)));
+    assert_eq!(path.first().copied(), Some((1, 5)));
+    assert_eq!(path.last().copied(), Some((10, 5)));
 }
 
 #[test]
@@ -6747,11 +6798,12 @@ fn segment_repath_lets_a_crusher_tank_through_a_sandbag_line() {
     );
 }
 
-/// I9c regression, order path. The move order's own search reads the crusher
-/// flags from the mover: no caller passes them, so no caller can pass `false`
-/// for a tank. One row, a sandbag at x=5, the goal beyond it.
+/// I9c regression, first search. The Drive order accepts without a route, and
+/// the first Process's search reads the crusher flags from the mover: no
+/// caller passes them, so no caller can pass `false` for a tank. One row, a
+/// sandbag at x=5, the goal beyond it.
 #[test]
-fn move_order_search_reads_the_crusher_flags_from_the_mover() {
+fn first_process_search_reads_the_crusher_flags_from_the_mover() {
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zone_class};
     let mut cells = Vec::with_capacity(12);
     for rx in 0..12u16 {
@@ -6788,6 +6840,31 @@ fn move_order_search_reads_the_crusher_flags_from_the_mover() {
             None,
             crate::sim::movement::DestinationTiming::new(0, 60),
         );
+        tick_movement_with_grids(
+            &mut entities,
+            None,
+            Some(&grid),
+            &Default::default(),
+            &Default::default(),
+            &mut OccupancyGrid::new(),
+            &mut crate::sim::occupancy::CellOccupationGrid::new(),
+            &mut crate::sim::occupancy::RawCellOccupationGrid::new(),
+            &mut crate::sim::world::EnterOrderCounter::new(),
+            &mut SimRng::new(0),
+            0,
+            0,
+            None,
+            Some(&terrain),
+            None,
+            &crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
+            SIM_ZERO,
+            9,
+            60,
+            &mut test_interner(),
+            None,
+            &mut Vec::new(),
+            &mut Vec::new(),
+        );
         let path = entities
             .get(1)
             .and_then(|e| e.movement_target.as_ref())
@@ -6799,7 +6876,7 @@ fn move_order_search_reads_the_crusher_flags_from_the_mover() {
     assert!(accepted);
     assert!(
         path.contains(&(5, 0)) && path.last() == Some(&(10, 0)),
-        "the crusher's ordered path crosses the sandbag: {path:?}"
+        "the crusher's first route crosses the sandbag: {path:?}"
     );
     let (_, path) = ordered_path(false);
     assert!(
@@ -6808,9 +6885,10 @@ fn move_order_search_reads_the_crusher_flags_from_the_mover() {
     );
 }
 
-/// I9c regression, process-entry repath. A Drive `Crusher=yes` tank whose owner
-/// destination survives with no active path rebuilds its route on its next
-/// turn; that search must admit the sandbag cell a non-crusher is refused.
+/// I9c regression, retained destination. A Drive `Crusher=yes` tank whose
+/// NavCom and locomotor destination survive an arrival with no route requests
+/// it on its next Process (Drive4B281C); that search must admit the sandbag
+/// cell a non-crusher is refused.
 #[test]
 fn process_entry_repath_lets_a_crusher_tank_through_a_sandbag_cell() {
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zone_class};
@@ -6830,6 +6908,14 @@ fn process_entry_repath_lets_a_crusher_tank_through_a_sandbag_cell() {
         let mut e = GameEntity::test_default(1, "MTNK", "Americans", 0, 0);
         e.regular_crusher = regular_crusher;
         e.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+        e.drive_locomotion = Some(crate::sim::components::DriveLocomotionRuntime {
+            destination: Some(DriveCoord {
+                x: 10 * 256 + 128,
+                y: 128,
+                z: 0,
+            }),
+            ..Default::default()
+        });
         e.navigation.nav_com = Some(NavTargetRef::cell(10, 0));
         e.navigation.pending_arrival_clear = true;
         entities.insert(e);
@@ -6860,23 +6946,18 @@ fn process_entry_repath_lets_a_crusher_tank_through_a_sandbag_cell() {
             &mut lifecycle_requests,
         );
         let e = entities.get(1).expect("entity exists");
-        (
-            e.movement_target.as_ref().map(|t| t.path.clone()),
-            e.navigation.pending_arrival_clear,
-        )
+        e.movement_target.as_ref().map(|t| t.path.clone())
     };
-    let (path, _) = run(true);
-    let path = path.expect("crusher rebuilds its route");
+    let path = run(true).expect("crusher rebuilds its route");
     assert!(
         path.contains(&(5, 0)),
         "crusher route crosses the sandbag: {path:?}"
     );
-    let (path, rearmed) = run(false);
+    let path = run(false).unwrap_or_default();
     assert!(
-        path.is_none(),
+        !path.contains(&(5, 0)),
         "non-crusher is refused at the sandbag: {path:?}"
     );
-    assert!(rearmed, "the failed rebuild re-arms the retry");
 }
 
 // Clock regression for the still-existing deferred crossing corridor. This

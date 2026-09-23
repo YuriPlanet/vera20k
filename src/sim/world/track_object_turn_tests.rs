@@ -492,8 +492,16 @@ fn terminal_arrival_resets_owner_speed_before_next_accelerating_move() {
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     entity.drive_accelerates = true;
     entity.movement_target.as_mut().unwrap().accel_factor = SimFixed::from_num(0.03);
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
-        .expect("fixture object turn must complete");
+    // The first Process after the order requests the route from the grid.
+    sim.advance_live_object_turn(
+        1,
+        Some(&rules),
+        techno_ai::ObjectAiCtx {
+            path_grid: Some(&grid),
+            ..Default::default()
+        },
+    )
+    .expect("fixture object turn must complete");
     assert_eq!(
         sim.substrate
             .entities
@@ -527,7 +535,11 @@ fn ship_fresh_claim_survives_next_object_visit_and_snapshot_rebuild() {
         None,
         crate::sim::movement::DestinationTiming::new(0, 60),
     ));
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
+    let ctx = || techno_ai::ObjectAiCtx {
+        path_grid: Some(&grid),
+        ..Default::default()
+    };
+    sim.advance_live_object_turn(1, Some(&rules), ctx())
         .expect("fixture object turn must complete");
     let mark = sim
         .substrate
@@ -554,7 +566,7 @@ fn ship_fresh_claim_survives_next_object_visit_and_snapshot_rebuild() {
         .as_mut()
         .unwrap()
         .speed = SimFixed::from_num(15);
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, Some(&rules), ctx())
         .expect("fixture object turn must complete");
     assert!(
         sim.substrate

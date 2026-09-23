@@ -26,7 +26,6 @@ use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::world::Simulation;
-use crate::util::fixed_math::SimFixed;
 
 use super::miner_dock::{self, ContactAdmission};
 use super::miner_system::{MinerSnapshot, effective_purifier_count};
@@ -844,9 +843,9 @@ fn phase_approach(
     {
         if !is_adjacent_or_at((snap.rx, snap.ry), wait_queue) {
             if let Some(grid) = path_grid {
-                issue_move_if_idle(
+                super::miner_system::issue_move_if_idle(
                     sim,
-                    rules,
+                    Some(rules),
                     grid,
                     snap.entity_id,
                     wait_queue,
@@ -877,9 +876,9 @@ fn phase_approach(
     schedule_approach_hello(sim, rules, snap);
     if !is_adjacent_or_at((snap.rx, snap.ry), wait_queue) {
         if let Some(grid) = path_grid {
-            issue_move_if_idle(
+            super::miner_system::issue_move_if_idle(
                 sim,
-                rules,
+                Some(rules),
                 grid,
                 snap.entity_id,
                 wait_queue,
@@ -911,9 +910,9 @@ fn phase_mission_enter(
         snap.miner.dock_queued = true;
         if !is_adjacent_or_at((snap.rx, snap.ry), wait_queue) {
             if let Some(grid) = path_grid {
-                issue_move_if_idle(
+                super::miner_system::issue_move_if_idle(
                     sim,
-                    rules,
+                    Some(rules),
                     grid,
                     snap.entity_id,
                     wait_queue,
@@ -969,9 +968,9 @@ fn phase_mission_enter(
         && !is_adjacent_or_at((snap.rx, snap.ry), accepted_cell)
     {
         if let Some(grid) = path_grid {
-            issue_move_if_idle(
+            super::miner_system::issue_move_if_idle(
                 sim,
-                rules,
+                Some(rules),
                 grid,
                 snap.entity_id,
                 wait_queue,
@@ -1432,59 +1431,4 @@ fn is_adjacent_or_at(pos: (u16, u16), target: (u16, u16)) -> bool {
     let dx = (pos.0 as i32 - target.0 as i32).unsigned_abs();
     let dy = (pos.1 as i32 - target.1 as i32).unsigned_abs();
     dx <= 1 && dy <= 1
-}
-
-/// Issue a move command only if the entity isn't already pathing to this target.
-fn issue_move_if_idle(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    grid: &PathGrid,
-    entity_id: u64,
-    target: (u16, u16),
-    speed: SimFixed,
-    overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-) {
-    if target.0 >= grid.width() || target.1 >= grid.height() {
-        return;
-    }
-    let already = sim
-        .substrate
-        .entities
-        .get(entity_id)
-        .and_then(|e| e.movement_target.as_ref())
-        .and_then(|mt| mt.path.last().copied())
-        .is_some_and(|goal| goal == target);
-    if !already {
-        let blocker_neighbor_counts =
-            movement::bump_crush::build_blocker_neighbor_counts_with_overlays(
-                &sim.substrate.entities,
-                grid.width(),
-                grid.height(),
-                sim.resolved_terrain.as_ref(),
-                sim.overlay_grid.as_ref(),
-                overlay_registry,
-                &sim.interner,
-                Some(rules),
-            );
-        let _ = movement::issue_move_command_with_layered(
-            &mut sim.substrate.entities,
-            grid,
-            entity_id,
-            target,
-            speed,
-            false,
-            None,
-            None,
-            sim.resolved_terrain.as_ref(),
-            sim.zone_grid.as_ref(),
-            None,
-            Some(&blocker_neighbor_counts),
-            sim.playfield_bounds,
-            Some(&mut sim.substrate.cell_occupation),
-            crate::sim::movement::DestinationTiming::from_rules(
-                sim.session.binary_frame,
-                rules.into(),
-            ),
-        );
-    }
 }

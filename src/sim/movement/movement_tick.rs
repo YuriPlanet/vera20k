@@ -502,6 +502,9 @@ fn apply_subcell_redirect(
     }
 }
 
+/// The deferred process-entry pass for Foots whose owner destination outlived
+/// their route. Drive/Ship are finished before their Process instead; every
+/// other locomotor keeps its route adapter below.
 #[allow(clippy::too_many_arguments)]
 fn process_pending_drive_arrivals(
     entities: &mut EntityStore,
@@ -528,6 +531,16 @@ fn process_pending_drive_arrivals(
         if entity.movement_target.is_some()
             || super::track_head::active_track_family(entity).is_some()
         {
+            continue;
+        }
+        // Drive/Ship finish their deferred order before Process
+        // (`Simulation::complete_pending_track_order`).
+        if entity.locomotor.as_ref().is_some_and(|loco| {
+            matches!(
+                loco.active_kind(),
+                LocomotorKind::Drive | LocomotorKind::Ship
+            )
+        }) {
             continue;
         }
         // Process-entry rebuild: an owner destination that survived the
@@ -614,10 +627,6 @@ fn process_pending_drive_arrivals(
         }
         let obj = rules.and_then(|r| r.object(interner.resolve(entity.type_ref())));
         let speed_multiplier = loco.speed_multiplier;
-        // Copy out (Copy type) before `loco`'s borrow of `entity` ends: only
-        // Drive-kind movers ride drive-track curve tables below — hover (and
-        // any other straight-line mover) must not pick one up on repath.
-        let loco_kind = loco.kind;
         // `FootClass::GetCurrentSpeed @ 0x004DB1A0`: the FASTER multiply sits
         // on the truncated per-frame type speed, before the locomotor's own
         // fraction — see `veterancy::veteran_speed_leptons_per_second`.
@@ -649,15 +658,7 @@ fn process_pending_drive_arrivals(
             ..Default::default()
         };
         // This continuation rebuilds the route only. Ordinary ProcessMovement
-        // below owns fresh admission, turn selection and the accepted claim.
-        if matches!(loco_kind, LocomotorKind::Drive | LocomotorKind::Ship) {
-            super::path_markers::install_path_replay(
-                &mut entity.navigation.path_replay,
-                current,
-                &movement.path,
-                1,
-            );
-        }
+        // below owns admission, turn selection and the accepted claim.
         // Successful core/search continuation, not a new Foot constructor.
         entity
             .navigation
@@ -899,38 +900,92 @@ struct OrdinaryMoverVisit {
     prone_crawls: Option<bool>,
 }
 
-pub(crate) struct WalkPathRequest {
+pub(crate) struct FootPathRequest {
     pub(crate) entity_id: u64,
     pub(crate) destination: crate::sim::components::DriveCoord,
+    pub(crate) caller: FootPathCaller,
     visit: OrdinaryMoverVisit,
 }
 
-impl WalkPathRequest {
+/// The locomotor Process that issued a no-queue `Find_Path(cell, 0, 0)`.
+/// Each owns its timer arm and its continuation after the shared body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FootPathCaller {
+    /// Walk75AFC5, continuation 0x75AFD3.
+    Walk,
+    /// Drive4B28A3 / Ship6A1EF3, continuations 0x4B28A8 / 0x6A1EF8.
+    Track(super::track_process::TrackFamily),
+}
+
+/// Whether a Rust route adapter, not the retained locomotor state, owns this
+/// visit: `issue_direct_move` (docking pads, grid-less scatter) and component
+/// fixtures install MovementTarget nodes that were never published to
+/// Foot+5E0 and name no locomotor destination; the pass finalizer retires
+/// them, including an exhausted route. Native routes publish both together
+/// (Find_Path 4D3E98 copy and `install_route`), and the track terminal
+/// retires an exhausted native route itself, so a routed adapter above an
+/// empty +5E0 head identifies that lane.
+pub(super) fn adapter_route_pending(entity: &crate::sim::game_entity::GameEntity) -> bool {
+    entity
+        .movement_target
+        .as_ref()
+        .is_some_and(|target| !target.path.is_empty())
+        && entity
+            .navigation
+            .path_replay
+            .remaining_directions()
+            .is_empty()
+}
+
+/// The retained no-queue request of a live ground Foot, if its Process would
+/// reach the arm: Walk with no paid head, Drive/Ship with a retained
+/// destination. In every case the Foot+5E0 head is empty (native -1).
+fn no_queue_path_request(
+    entity: &crate::sim::game_entity::GameEntity,
+) -> Option<(crate::sim::components::DriveCoord, FootPathCaller)> {
+    if !entity
+        .navigation
+        .path_replay
+        .remaining_directions()
+        .is_empty()
+    {
+        return None;
+    }
+    let loco = entity.locomotor.as_ref()?;
+    match loco.kind {
+        LocomotorKind::Walk if loco.step_head().is_none() => {
+            Some((loco.walk_destination()?, FootPathCaller::Walk))
+        }
+        // A Drive/Ship route adapter owns its visit (see adapter_route_pending).
+        LocomotorKind::Drive if !adapter_route_pending(entity) => Some((
+            entity.drive_locomotion.as_ref()?.destination?,
+            FootPathCaller::Track(super::track_process::TrackFamily::Drive),
+        )),
+        LocomotorKind::Ship if !adapter_route_pending(entity) => Some((
+            entity.ship_locomotion.as_ref()?.destination?,
+            FootPathCaller::Track(super::track_process::TrackFamily::Ship),
+        )),
+        _ => None,
+    }
+}
+
+impl FootPathRequest {
     /// The Simulation wrapper calls this only between its real Mark0/Mark1.
-    /// Build occupancy-dependent inputs here, after the actor left the cell.
-    #[allow(clippy::too_many_arguments)]
+    /// `blocks` and the context's blocker plane are brought current after the
+    /// actor left its cell; this reuses the single existing search.
     pub(super) fn search(
         &self,
         goal: crate::sim::components::DriveCoord,
         entities: &EntityStore,
         ctx: PathfindingContext<'_>,
         terrain_costs: &BTreeMap<SpeedType, TerrainCostGrid>,
-        alliances: &HouseAllianceMap,
-        interner: &crate::sim::intern::StringInterner,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        blocks: &super::block_index::OwnerBlockSet,
     ) -> Result<(Vec<(u16, u16)>, Vec<MovementLayer>), super::movement_path::MovePathFailure> {
         let snap = &self.visit.snap;
         let actor = entities.get(self.entity_id).expect("live suspended mover");
         let start = (actor.position.rx, actor.position.ry);
         let layer = actor.movement_layer_or_ground();
         let goal = ((goal.x / 256) as u16, (goal.y / 256) as u16);
-        let (blocks, block_map) = bump_crush::build_entity_block_set(
-            entities,
-            interner.resolve(snap.owner),
-            alliances,
-            interner,
-            rules,
-        );
         let layered = snap
             .locomotor
             .as_ref()
@@ -949,18 +1004,22 @@ impl WalkPathRequest {
             layer,
             goal,
             snap.speed_type.and_then(|speed| terrain_costs.get(&speed)),
-            Some(&blocks),
-            Some(&blocks),
-            Some(&blocks),
+            Some(&blocks.0),
+            Some(&blocks.0),
+            Some(&blocks.0),
             snap.movement_zone,
             Some(snap.movement_zone),
             snap.too_big_to_fit_under_bridge,
-            Some(&block_map),
+            Some(&blocks.1),
             None,
             // One crush authority for every search; see `CrushCapability::of`.
             super::MoverPathFacts::from_snapshot(snap, 0),
             snap.allow_zone_hierarchy,
         )
+    }
+
+    pub(crate) fn owner(&self) -> crate::sim::intern::InternedId {
+        self.visit.snap.owner
     }
 
     /// Reuse the accepted destination's execution adapter. Foot timer/latch/
@@ -1013,7 +1072,7 @@ struct MovementPassEffects {
     native_track: Option<super::track_process::TrackInvocation>,
     walk_per_cell: Option<(u64, crate::sim::components::DriveCoord)>,
     walk_boundary: Option<(u64, crate::sim::components::DriveCoord)>,
-    walk_path_request: Option<WalkPathRequest>,
+    foot_path_request: Option<FootPathRequest>,
 }
 
 /// Run one ordinary mover visit. An early return ends this visit, including
@@ -1065,7 +1124,7 @@ fn advance_ordinary_mover(
         native_track,
         walk_per_cell,
         walk_boundary,
-        walk_path_request,
+        foot_path_request,
     } = effects;
     if resume.is_none() {
         let continuation = entities
@@ -1133,48 +1192,64 @@ fn advance_ordinary_mover(
             prone_crawls,
         }
     };
-    // Without native map cells, zone topology and playfield bounds (replay and
-    // unit fixtures) the synchronous Find_Path owner cannot run its precheck,
-    // Can_Enter_Cell or failure receiver; the former inline search below keeps
-    // those fixtures on their pinned path. Production installs all three.
-    let native_path_inputs =
-        resolved_terrain.is_some() && ctx.zone_grid.is_some() && playfield_bounds.is_some();
-    if !resumed_path_request && native_path_inputs {
-        let request = entities.get(entity_id).and_then(|entity| {
-            let loco = entity.locomotor.as_ref()?;
-            (loco.kind == LocomotorKind::Walk
-                && loco.step_head().is_none()
-                && entity
-                    .navigation
-                    .path_replay
-                    .remaining_directions()
-                    .is_empty())
-            .then(|| loco.walk_destination())
-            .flatten()
-        });
-        if let Some(destination) = request {
-            let entity = entities.get(entity_id).expect("same mover request");
-            //75AF3C..55 observes a frame-anchored remainder. No search,
-            //debt, occupancy preparation or second mover visit on this wait.
-            if !entity
+    // Without native map cells, native zone topology and playfield bounds
+    // (component fixtures) the synchronous Find_Path owner cannot run its
+    // precheck, Can_Enter_Cell or failure receiver; the former inline search
+    // below keeps those fixtures on their pinned path. Production installs all
+    // three (world::navigation builds the native topology).
+    let native_path_inputs = resolved_terrain.is_some()
+        && ctx.zone_grid.is_some_and(ZoneGrid::has_native_topology)
+        && playfield_bounds.is_some();
+    if !resumed_path_request
+        && native_path_inputs
+        && let Some((destination, caller)) = entities.get(entity_id).and_then(no_queue_path_request)
+    {
+        let entity = entities.get(entity_id).expect("same mover request");
+        // Drive4B26F9..4B2761 / Ship6A1D20..6A1DB1 return before the arm while
+        // a warp byte (+270/+271) is set or launched missiles are out (+2D0
+        // count 6B7D80). The EMP (+37C: Unit+6D8/+504) and Foot+6A0 timer
+        // gates have no Rust producer yet. Process_Track still follows.
+        let gated = matches!(caller, FootPathCaller::Track(_))
+            && (super::locomotor_owner::owner_is_warping(entity)
+                || entity
+                    .spawn_manager
+                    .as_ref()
+                    .zip(rules)
+                    .is_some_and(|(manager, rules)| {
+                        manager.count_launched_missiles(entities, rules, interner) > 0
+                    }));
+        //Walk75AF3C..55, Drive4B2825..2845 and Ship6A1E75..1E95 observe a
+        //frame-anchored exact-zero remainder. No search, debt, occupancy
+        //preparation or second mover visit on this wait.
+        if gated
+            || !entity
                 .navigation
                 .path_runtime
                 .movement_timer
                 .expired(native_frame as i32)
-            {
-                return;
+        {
+            // The outer Drive/Ship Process still reaches TrackProcess after
+            // its fresh Process_Movement returns (4B0A75..0AAA /6A013E..0173).
+            if let FootPathCaller::Track(family) = caller {
+                *native_track = Some(super::track_process::TrackInvocation {
+                    entity_id,
+                    family,
+                    apply_fresh_occupation: false,
+                });
             }
-            debug_assert!(
-                walk_path_request.is_none(),
-                "scoped Process has one path request"
-            );
-            *walk_path_request = Some(WalkPathRequest {
-                entity_id,
-                destination,
-                visit,
-            });
             return;
         }
+        debug_assert!(
+            foot_path_request.is_none(),
+            "scoped Process has one path request"
+        );
+        *foot_path_request = Some(FootPathRequest {
+            entity_id,
+            destination,
+            caller,
+            visit,
+        });
+        return;
     }
     let OrdinaryMoverVisit {
         snap,
@@ -2343,9 +2418,11 @@ impl MovementPassCache {
         self.blocker.world_rebuilds
     }
 
-    #[cfg(test)]
+    /// The kept plane brought current through the touch log. The synchronous
+    /// Foot path request reads it between its Mark(0) and Mark(1), so the
+    /// requester's own removal is included without a whole-world rebuild.
     #[allow(clippy::too_many_arguments)]
-    fn blocker_plane(
+    pub(crate) fn blocker_plane(
         &mut self,
         entities: &mut EntityStore,
         grid: &PathGrid,
@@ -2367,6 +2444,41 @@ impl MovementPassCache {
             interner,
             rules,
         )
+    }
+
+    /// Bring owner sets a pass holds current, e.g. after a synchronous Mark(0).
+    pub(crate) fn refresh_lent_block_set(
+        &mut self,
+        owner: crate::sim::intern::InternedId,
+        lent: &mut LentOwnerBlockSet,
+        entities: &mut EntityStore,
+        alliances: &HouseAllianceMap,
+        interner: &crate::sim::intern::StringInterner,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+    ) {
+        self.block_index
+            .refresh_lent(owner, lent, entities, alliances, interner, rules);
+    }
+
+    /// Owner sets for a caller outside any pass; [`Self::give_back`] returns them.
+    pub(crate) fn lend_block_set(
+        &mut self,
+        owner: crate::sim::intern::InternedId,
+        entities: &mut EntityStore,
+        alliances: &HouseAllianceMap,
+        interner: &crate::sim::intern::StringInterner,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+    ) -> LentOwnerBlockSet {
+        self.block_index
+            .lend_current(owner, entities, alliances, interner, rules)
+    }
+
+    pub(crate) fn give_back(
+        &mut self,
+        owner: crate::sim::intern::InternedId,
+        lent: LentOwnerBlockSet,
+    ) {
+        self.block_index.give_back(owner, lent);
     }
 
     /// On the blocker field alone, so a pass can hold the plane while it
@@ -2900,14 +3012,31 @@ pub(crate) struct PendingMovementPass {
 }
 
 impl PendingMovementPass {
-    pub(crate) fn take_walk_path_request(&mut self) -> Option<WalkPathRequest> {
-        self.effects.walk_path_request.take()
+    pub(crate) fn take_foot_path_request(&mut self) -> Option<FootPathRequest> {
+        self.effects.foot_path_request.take()
+    }
+
+    /// The requester's owner sets this pass already holds, for its search.
+    pub(crate) fn lent_block_set(
+        &mut self,
+        owner: crate::sim::intern::InternedId,
+    ) -> Option<&mut LentOwnerBlockSet> {
+        self.prepared.entity_block_sets.get_mut(&owner)
+    }
+
+    /// A Drive/Ship Process_Movement that returned without head selection
+    /// still reaches the outer Process_Track (0x4B0AAA / 0x6A0173).
+    pub(crate) fn record_native_track(
+        &mut self,
+        invocation: super::track_process::TrackInvocation,
+    ) {
+        self.effects.native_track = Some(invocation);
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn resume_walk_path_request(
+    pub(crate) fn resume_foot_path_request(
         &mut self,
-        request: WalkPathRequest,
+        request: FootPathRequest,
         entities: &mut EntityStore,
         path_grid: Option<&PathGrid>,
         zone_grid: Option<&ZoneGrid>,

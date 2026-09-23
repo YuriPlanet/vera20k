@@ -143,13 +143,15 @@ fn native_fixture(row: &Value) -> (ResolvedTerrainGrid, ZoneGrid, RawCellOccupat
     (terrain, zones, raw)
 }
 
+/// 20 Infantry/Walk, 7 Unit/Drive and 2 Unit/Ship receivers of the same
+/// 4DE1D0 corpus: the resolver is class-generic, so one Rust owner serves all.
 #[test]
-fn ordinary_walk_input_matches_native_admission_rows() {
+fn ordinary_foot_input_matches_native_admission_rows() {
     let rows: Value = serde_json::from_str(include_str!(
         "../../../tools/spatial_oracle/walk_move_admission.json"
     ))
     .unwrap();
-    assert_eq!(rows.as_array().unwrap().len(), 20);
+    assert_eq!(rows.as_array().unwrap().len(), 29);
     for (index, row) in rows.as_array().unwrap().iter().enumerate() {
         let input = &row["input"];
         let (terrain, zones, raw) = native_fixture(input);
@@ -157,7 +159,7 @@ fn ordinary_walk_input_matches_native_admission_rows() {
         let current = coord(input.get("xyz").unwrap_or(&json!([1344, 1344, 0])));
         let head = coord(input.get("head").unwrap_or(&json!([0, 0, 0])));
         let clicked = pair(input.get("clicked").unwrap_or(&json!([11, 5])));
-        let click = WalkCellClick {
+        let click = FootCellClick {
             clicked: (clicked.0 as i16, clicked.1 as i16),
             action: input["action"].as_u64().unwrap_or(1) as u32,
             current,
@@ -172,14 +174,21 @@ fn ordinary_walk_input_matches_native_admission_rows() {
             move_to_shroud: input["move_to_shroud"].as_bool().unwrap_or(true),
             teleporter: false,
             jumpjet_type: false,
-            movement_zone: if input["movement_zone"].as_u64() == Some(3) {
-                MovementZone::AmphibiousDestroyer
-            } else {
-                MovementZone::AmphibiousCrusher
+            movement_zone: match input["movement_zone"].as_u64().unwrap_or(4) {
+                0 => MovementZone::Normal,
+                1 => MovementZone::Crusher,
+                3 => MovementZone::AmphibiousDestroyer,
+                4 => MovementZone::AmphibiousCrusher,
+                10 => MovementZone::Water,
+                other => panic!("unmapped movement zone {other}"),
             },
-            speed_type: SpeedType::Foot,
+            speed_type: match input["receiver"].as_str() {
+                Some("unit") => SpeedType::Track,
+                Some("ship") => SpeedType::Float,
+                _ => SpeedType::Foot,
+            },
         };
-        let result = resolve_walk_cell_click(
+        let result = resolve_foot_cell_click(
             &cells,
             &zones,
             &raw,
