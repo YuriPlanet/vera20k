@@ -11,7 +11,6 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::{DeathEffects, RevealEvent, UnderAttackEvent};
 use crate::sim::intern::InternedId;
 use crate::sim::pathfinding::PathGrid;
-use crate::sim::production;
 use std::sync::Arc;
 
 enum DamageDelivery {
@@ -181,17 +180,6 @@ impl DamageConsequences {
             }
         }
 
-        for building in &effects.destroyed_crewed_buildings {
-            production::eject_destruction_survivors(
-                world,
-                rules,
-                building.type_id,
-                building.owner,
-                building.rx,
-                building.ry,
-                building.z,
-            );
-        }
         if world.session.game_options.super_weapons && effects.structure_destroyed {
             let mut refreshed = Vec::new();
             for &(owner, category) in &dead_infos {

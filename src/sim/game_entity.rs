@@ -930,6 +930,12 @@ pub struct GameEntity {
     /// IronCurtain/ForceShield entry cancels it; `None` means no shared latch.
     #[serde(default)]
     pub pending_c4_detonation: Option<PendingC4Detonation>,
+    /// Building `+0x6E3` HasBeenCaptured: cleared by the BuildingClass
+    /// constructor (`0x0043B96C`), set by every `BuildingClass::ChangeOwner`
+    /// (`0x00448723`). Read by the survivor count, the survivor roll and the
+    /// building crew pick (`crew_survival`). Hashed and persisted (v194).
+    #[serde(default)]
+    pub has_been_captured: bool,
     /// Stable ID of the unit installed in a `Bunker=yes` building.
     ///
     /// Mirrors the live `BuildingClass+0x2E4` role for tank bunkers: an empty
@@ -1467,6 +1473,7 @@ impl GameEntity {
             capture_target: None,
             c4_plant: None,
             pending_c4_detonation: None,
+            has_been_captured: false,
             bunker_occupant: None,
             bunker_link: BunkerLink::None,
             building_gate: None,

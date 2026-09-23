@@ -633,11 +633,11 @@ fn eject_head_passenger(
             let (place_cell, sub_cell) = if passenger_is_infantry {
                 // `PlaceInfantryInCell` from the cell centre: quadrant 0, so the
                 // centre-row `RandomRanged(0, 3)` draw is made on the Scenario stream.
-                let occupancy = sim.substrate.occupancy.get(exit.0, exit.1);
-                let spot = bump_crush::allocate_sub_cell_with_preference(
-                    occupancy,
+                let spot = bump_crush::place_infantry_in_cell(
+                    &sim.substrate.raw_cell_occupation,
+                    exit.0,
+                    exit.1,
                     MovementLayer::Ground,
-                    None,
                     CELL_CENTER_LEPTON,
                     CELL_CENTER_LEPTON,
                     &mut sim.scenario_rng,

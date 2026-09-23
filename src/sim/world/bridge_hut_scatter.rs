@@ -148,20 +148,38 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) -> Result<bool, FrameAdvanceError> {
+        self.scatter_infantry_forced_from_empty(id, rules, registry)
+            .map_err(|cause| self.hut_callback_error(id, cause))
+    }
+
+    /// `InfantryClass::Scatter @ 0x0051D0D0` with a NULL coordinate and
+    /// `forced = true` (`Scatter(&EmptyCoord, 1, x)`), through its successful
+    /// FNPC arm. Shared by the BridgeRepairHut evacuation (third argument
+    /// true) and the crew/survivor exits (third argument false). The third
+    /// argument gates a MOVING infantryman's PlayerScatter test and selects
+    /// the deploy-Doing head arm (`0x0051D0E3..0x0051D148`: PlayAnim 0x1F when
+    /// forced and set, else the human early return); neither reaches a freshly
+    /// unlimboed survivor, which is stationary with Doing -1 (`0x00517A64`).
+    /// Draws the fallback direction `RandomRanged(0, 4)` before the FNPC
+    /// search.
+    pub(crate) fn scatter_infantry_forced_from_empty(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> Result<bool, String> {
         let e = self
             .substrate
             .entities
             .get(id)
-            .expect("hut selected live listener");
-        let object = self.object_type(e.type_ref(), rules).ok_or_else(|| {
-            self.hut_callback_error(id, "hut Scatter requires Infantry type".into())
-        })?;
+            .expect("Scatter target is a live infantryman");
+        let object = self
+            .object_type(e.type_ref(), rules)
+            .ok_or_else(|| String::from("Scatter requires an Infantry type"))?;
         let doing = e
             .mission_leaf
             .as_infantry()
-            .ok_or_else(|| {
-                self.hut_callback_error(id, "hut Scatter requires Infantry Doing".into())
-            })?
+            .ok_or_else(|| String::from("Scatter requires an Infantry Doing"))?
             .doing();
         if (28..=30).contains(&doing)
             && rules
@@ -169,27 +187,18 @@ impl Simulation {
                 .and_then(|set| set.get(&crate::rules::animation_sequence::SequenceKind::Undeploy))
                 .is_some_and(|sequence| sequence.frame_count != 0)
         {
-            return Err(self.hut_callback_error(
-                id,
-                "hut Scatter requires accepted DoAction31 lifetime".into(),
-            ));
+            return Err("Scatter requires an accepted DoAction31 lifetime".into());
         }
         // 51D103 passes (31,false,false), so Doing27 cannot change through
         // its permission gate; it is rejected by the Scatter table below.
-        let moving = crate::sim::movement::motion_query::is_moving(e).ok_or_else(|| {
-            self.hut_callback_error(id, "hut Scatter requires active locomotor Is_Moving".into())
-        })?;
+        let moving = crate::sim::movement::motion_query::is_moving(e)
+            .ok_or_else(|| String::from("Scatter requires an active locomotor Is_Moving"))?;
         let mission_scatter = if moving {
             e.mission
                 .current()
                 .known()
                 .and_then(|mission| rules.mission_control.entry(mission))
-                .ok_or_else(|| {
-                    self.hut_callback_error(
-                        id,
-                        "hut Scatter requires current mission control".into(),
-                    )
-                })?
+                .ok_or_else(|| String::from("Scatter requires current mission control"))?
                 .scatter
         } else {
             true
@@ -203,7 +212,7 @@ impl Simulation {
             object.fraidycat,
             e.attack_target.is_some(),
         )
-        .ok_or_else(|| self.hut_callback_error(id, "hut Scatter has invalid Doing".into()))?
+        .ok_or_else(|| String::from("Scatter has an invalid Doing"))?
         {
             return Ok(false);
         }
@@ -218,20 +227,13 @@ impl Simulation {
             .as_ref()
             .map(|loco| loco.active_kind())
             .filter(|kind| matches!(kind, LocomotorKind::Walk | LocomotorKind::Jumpjet))
-            .ok_or_else(|| {
-                self.hut_callback_error(
-                    id,
-                    "admitted hut Scatter requires a Walk or Jumpjet locomotor".into(),
-                )
-            })?;
+            .ok_or_else(|| String::from("admitted Scatter requires a Walk or Jumpjet locomotor"))?;
         let speed_type = object.speed_type;
         let on_bridge = e.on_bridge;
         // Null-threat angle only determines the later eight-neighbour fallback.
         // The successful FNPC arm does not consume it, but still draws first.
         let _fallback_direction_draw = self.scenario_rng.next_range_u32_inclusive(0, 4);
-        let seed = self
-            .foot_navigation_coordinate(id)
-            .map_err(|cause| self.hut_callback_error(id, cause))?;
+        let seed = self.foot_navigation_coordinate(id)?;
         let seed = (
             i32::from((seed.x / 256) as i16),
             i32::from((seed.y / 256) as i16),
@@ -241,9 +243,7 @@ impl Simulation {
             .zip(self.playfield_size_height)
             .map(|(bounds, height)| (bounds.base, height))
             .or_else(|| self.bridge_state.as_ref()?.native_zone_source_size())
-            .ok_or_else(|| {
-                self.hut_callback_error(id, "hut FNPC requires original Map Size".into())
-            })?;
+            .ok_or_else(|| String::from("Scatter FNPC requires the original Map Size"))?;
         let grid = self.path_grid_snapshot();
         let destination = find_nearby_passable_cell(
             seed,
@@ -275,10 +275,7 @@ impl Simulation {
             self.session.binary_frame,
         );
         let destination = destination.ok_or_else(|| {
-            self.hut_callback_error(
-                id,
-                "hut Scatter requires the eight-neighbour fallback after FNPC failure".into(),
-            )
+            String::from("Scatter requires the eight-neighbour fallback after FNPC failure")
         })?;
         let move_info = self
             .resolve_move_info(id, Some(rules))
@@ -290,16 +287,15 @@ impl Simulation {
             // immediately; the compatibility air adapter advances this actor
             // at its ordinary object turn instead, one frame later.
             if !self.issue_air_cell_destination(id, destination, move_info.speed, Some(rules)) {
-                return Err(self.hut_callback_error(
-                    id,
-                    "hut Jumpjet destination requires its failed-placement continuation".into(),
-                ));
+                return Err(
+                    "Scatter Jumpjet destination requires its failed-placement continuation".into(),
+                );
             }
             return Ok(false);
         }
         let grid = grid
             .as_deref()
-            .ok_or_else(|| self.hut_callback_error(id, "hut Process requires navigation".into()))?;
+            .ok_or_else(|| String::from("Scatter Process requires navigation"))?;
         movement::prepare_walk_cell_destination(
             &mut self.substrate.entities,
             id,
@@ -313,7 +309,9 @@ impl Simulation {
         );
         // 51D478 is an immediate locomotor invocation, without another object
         // AI, mission timer, global animation tick, or frame-tail deletion.
-        let outcome = self.process_ground_locomotor_one(id, Some(rules), Some(grid), registry)?;
+        let outcome = self
+            .process_ground_locomotor_one(id, Some(rules), Some(grid), registry)
+            .map_err(|error| format!("Scatter Process failed: {error:?}"))?;
         Ok(outcome.bridge_state_changed)
     }
 }

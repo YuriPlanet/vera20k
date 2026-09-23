@@ -100,6 +100,14 @@ impl RegisteredBuilding {
 }
 
 impl HouseBaseState {
+    /// The FactoryPlant product `0x0050BEB0` returns for a BuildingType: the
+    /// Defenses factor (House `+0x53A0`) for `BuildCat=Combat`, else the
+    /// Buildings factor (`+0x539C`), as `CalculateCostMultipliers @ 0x0050BF60`
+    /// left them.
+    pub(crate) fn building_cost_factor(&self, defense: bool) -> NativeF32Bits {
+        self.factors[if defense { 4 } else { 3 }]
+    }
+
     #[allow(dead_code)]
     fn weighted_center(
         &self,

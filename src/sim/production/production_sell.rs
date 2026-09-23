@@ -25,6 +25,61 @@ use super::production_tech::foundation_dimensions;
 /// RA2 sell refund: 50% of cost (integer percentage).
 const SELL_REFUND_PERCENT: u32 = 50;
 
+/// `TechnoTypeClass::GetRefund @ 0x00711F60` for a BuildingType and a live
+/// house (`RET 8`), in its x87 order under the chop control word:
+///
+/// ```text
+/// pct = (float)RefundPercent            ; FLD double, FSTP float
+/// if (full) pct = 1.0f
+/// m1 = country Cost*Mult (0x0050BDF0); m2 = FactoryPlant product (0x0050BEB0)
+/// if (Soylent) return ftol(Soylent * m1)
+/// v = ftol(GetCost() * m2 * m1)         ; BuildingType vt+0xAC = 0x0045ED50
+/// if (human (0x0050B730)) v = ftol(v * pct)
+/// ```
+///
+/// RESIDUAL: VERA does not parse the country `Cost*Mult=` keys; no stock
+/// country authors them, so `m1` is the HouseType constructor's 1.0f
+/// (`0x00511481..0x005114CC`) for every stock house. Sale money still uses
+/// the older 50% adapter below; it moves here with the Mission_Selling port.
+pub(crate) fn building_type_refund(
+    rules: &RuleSet,
+    object: &crate::rules::object_type::ObjectType,
+    house: &crate::sim::house_state::HouseState,
+    game_mode_nonzero: bool,
+    full: bool,
+) -> i32 {
+    use crate::rules::object_type::BuildCategory;
+    use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF32Bits};
+
+    let pct = if full {
+        NativeF32Bits::ONE
+    } else {
+        X87::store_f32_masked_chop(X87::load_f64(rules.general.refund_percent))
+    };
+    let m1 = NativeF32Bits::ONE;
+    let m2 = house
+        .base_projection
+        .building_cost_factor(object.build_cat == Some(BuildCategory::Combat));
+    if object.soylent != 0 {
+        return X87::ftol_i32_low_masked(X87::mul(
+            X87::load_i32(object.soylent),
+            X87::load_f32(m1),
+        ));
+    }
+    let value = X87::ftol_i32_low_masked(X87::mul(
+        X87::mul(
+            X87::load_i32(rules.building_actual_cost(object)),
+            X87::load_f32(m2),
+        ),
+        X87::load_f32(m1),
+    ));
+    if house.is_controlled_by_human(game_mode_nonzero) {
+        X87::ftol_i32_low_masked(X87::mul(X87::load_i32(value), X87::load_f32(pct)))
+    } else {
+        value
+    }
+}
+
 const SCATTER_DIRECTION_OFFSETS: [(i16, i16); 8] = [
     (0, -1),
     (1, -1),
@@ -169,57 +224,6 @@ fn eject_sell_survivors(
                 spawn_ry,
                 64,
                 building_pos.z,
-                rules,
-            )
-            .is_some()
-        {
-            spawned += 1;
-        }
-    }
-    spawned
-}
-
-/// Eject survivors from a crewed building destroyed in combat.
-///
-/// In the original RA2 engine, destroyed crewed buildings always eject at
-/// least one infantry survivor regardless of the building's remaining HP (which
-/// is 0). The survivor type is side-dependent (E1 for Allied, E2 for Soviet,
-/// INIT for Yuri).
-pub fn eject_destruction_survivors(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    type_id: InternedId,
-    owner: InternedId,
-    rx: u16,
-    ry: u16,
-    z: u8,
-) -> usize {
-    let type_str = sim.interner.resolve(type_id);
-    let owner_str = sim.interner.resolve(owner);
-    let Some(obj) = rules.object(type_str) else {
-        return 0;
-    };
-    if !obj.crewed {
-        return 0;
-    }
-    let Some(infantry_type) = sell_survivor_type(sim, rules, owner_str) else {
-        return 0;
-    };
-    // Clone owner string for spawn calls — rare path (building destruction only).
-    let owner_owned = owner_str.to_string();
-    let (width, height) = foundation_dimensions(&obj.foundation);
-    // Always eject at least 1 survivor on destruction.
-    let positions = sell_survivor_positions(rx, ry, width, height);
-    let mut spawned = 0;
-    for (spawn_rx, spawn_ry) in positions.into_iter().take(1) {
-        if sim
-            .spawn_object_at_height(
-                &infantry_type,
-                &owner_owned,
-                spawn_rx,
-                spawn_ry,
-                64,
-                z,
                 rules,
             )
             .is_some()

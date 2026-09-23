@@ -17,7 +17,7 @@ use thiserror::Error;
 use super::{Particle, ParticleSystem, SparkRuntimeState};
 use crate::rules::particle_type::{ParticleBehavesLike, ParticleType};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::rng::SimRng;
+use crate::sim::rng::{RANDOM_RANGED_UNIT_SCALE, SimRng};
 use crate::sim::world::Simulation;
 use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 use crate::util::native_x87::{
@@ -27,13 +27,6 @@ use crate::util::native_x87::{
 /// `Random__RandomRanged(0, 0x7ffffffe)`'s inclusive top, as used by every
 /// unit-interval probability gate in the Spark path.
 const MAX_RANDOM_RANGED_SAMPLE: u32 = 0x7fff_fffe;
-
-/// The `double` at `0x007E3570` that scales a `RandomRanged(0, 0x7ffffffe)`
-/// draw onto `[0, 1]`. Raw bytes `00 00 40 00 00 00 00 3E`, i.e.
-/// `1.0 / 2147483646.0` — the reciprocal of the draw's own inclusive top, NOT
-/// `2^-31`. The two differ by `2^-30` relative, which is a real bias in a
-/// deterministic gate, so this is carried as bits and never recomputed.
-const RANDOM_RANGED_UNIT_SCALE: NativeF64Bits = NativeF64Bits::from_bits(0x3e00_0000_0040_0000);
 
 /// `FCOM double ptr [0x007E5138]` — the lower facing-walk threshold.
 const FACING_STEP_DOWN_THRESHOLD: NativeF64Bits = NativeF64Bits::from_bits(0x3fd3_3333_3333_3333);
@@ -339,9 +332,7 @@ where
     // VERA-internal, gamemd equivalent UNCHECKED: a world that cannot be built
     // — no resolved terrain — is treated as "no floor". Native always has a
     // map, so that branch remains a fixture-only compatibility policy.
-    let coords = floor_constructor_coords_with(system_coords, |x, y| {
-        ground_height(sim, x, y)
-    })?;
+    let coords = floor_constructor_coords_with(system_coords, |x, y| ground_height(sim, x, y))?;
 
     // The colour seed. Native reads the list only when it has entries, and
     // takes the interpolated arm only when at least one of the six

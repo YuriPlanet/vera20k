@@ -1771,6 +1771,13 @@ impl Simulation {
         self.unmark_entity_remove(stable_id, UninitContext::default());
     }
 
+    /// `UnitClass::ReceiveDamage` lifts a dying unit off its cell
+    /// (vt+0x124 Mark(UP) at `0x00737F7A`) before its passengers and crew are
+    /// placed there. The UnInit that follows finds it already unmarked.
+    pub(crate) fn mark_up_dying_unit(&mut self, stable_id: u64, context: UninitContext<'_>) {
+        self.unmark_entity_remove(stable_id, context);
+    }
+
     /// Materialize the legacy split representation before its first Fly
     /// producer visit. Exact Object coordinates are already physical Z and
     /// cannot be reconstructed from a stale altitude cache at the wrapper tail.

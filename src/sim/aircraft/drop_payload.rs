@@ -224,15 +224,13 @@ pub fn try_drop(
             }
 
             let selected_sub_cell = if passenger_category == EntityCategory::Infantry {
-                let occ = sim.substrate.occupancy.get(drop_rx, drop_ry);
-                match bump_crush::allocate_sub_cell_with_preference(
-                    occ,
+                match bump_crush::place_infantry_in_cell(
+                    &sim.substrate.raw_cell_occupation,
+                    drop_rx,
+                    drop_ry,
                     landing_layer,
-                    None,
                     drop_sub_x,
                     drop_sub_y,
-                    // sub-cell placement — scenario stream. Direct field: `occ` may borrow
-                    // &sim.substrate.occupancy, so the subcell_rng() accessor could conflict.
                     &mut sim.scenario_rng,
                 ) {
                     Some(sub_cell) => Some(sub_cell),

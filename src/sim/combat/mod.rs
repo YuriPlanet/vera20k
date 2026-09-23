@@ -1354,16 +1354,6 @@ pub(crate) fn cell_distance(ax: u16, ay: u16, bx: u16, by: u16) -> f32 {
 
 use self::combat_targeting::{AttackerSnapshot, GarrisonSnapshot, acquire_best_target};
 
-/// Destroyed crewed building — survivor ejection is deferred to the caller
-/// (which has access to `Simulation` for spawning infantry).
-pub struct DestroyedCrewedBuilding {
-    pub type_id: InternedId,
-    pub owner: InternedId,
-    pub rx: u16,
-    pub ry: u16,
-    pub z: u8,
-}
-
 /// A `CanBeOccupied` building destroyed in combat with live occupants —
 /// gamemd routes this through `BuildingClass::SellBuilding @ 0x00457DE0`, the
 /// same occupant-eject helper used by sell. The world fatal prelude consumes
@@ -1441,32 +1431,25 @@ pub enum SmudgeSpawnRequest {
         foundation_w: u8,
         foundation_h: u8,
     },
-    /// Emitted per surviving foundation cell (SpawnSurvivors path).
+    /// One foundation cell's mark, committed by `SpawnSurvivors` after that
+    /// cell's survivor roll (never for a building owing no survivor).
     BuildingSurvivor { cell_rx: u16, cell_ry: u16 },
 }
 
-fn append_building_smudge_requests(
-    requests: &mut Vec<SmudgeSpawnRequest>,
+/// `BuildingClass::DestructionEffects`' centre mark for a destroyed building.
+fn building_center_smudge_request(
     rx: u16,
     ry: u16,
     building_z: i32,
     foundation: &str,
-) {
+) -> SmudgeSpawnRequest {
     let (foundation_w, foundation_h) = foundation_dimensions(foundation);
-    requests.push(SmudgeSpawnRequest::BuildingCenter {
+    SmudgeSpawnRequest::BuildingCenter {
         rx,
         ry,
         building_z,
         foundation_w: foundation_w as u8,
         foundation_h: foundation_h as u8,
-    });
-    for (dx, dy) in crate::rules::foundation::foundation_cell_offsets(foundation) {
-        let cell_rx = i32::from(rx) + i32::from(dx);
-        let cell_ry = i32::from(ry) + i32::from(dy);
-        let (Ok(cell_rx), Ok(cell_ry)) = (u16::try_from(cell_rx), u16::try_from(cell_ry)) else {
-            continue;
-        };
-        requests.push(SmudgeSpawnRequest::BuildingSurvivor { cell_rx, cell_ry });
     }
 }
 
@@ -1518,23 +1501,6 @@ pub(crate) fn emit_infantry_death_anim(
 /// The dying object's OWN explosion is emitted separately, in the death loop —
 /// see `UnitClass::Death_Explosion @ 0x00738680` there. This function is only
 /// the warhead's half.
-///
-/// RESIDUAL (GSI-08.11) — crew survival is still absent. `Crewed=` (126 stock
-/// sections) only queues the building smudge arm, so a destroyed `Crewed=yes`
-/// vehicle ejects nobody. Native resolves the survivor's type through
-/// `TechnoClass::Crew_Type @ 0x00707D20` (`AlliedCrew`/`SovietCrew`/`ThirdCrew`
-/// by side, falling to `Technician` behind a 15% `RandomRanged(0, 99)` draw for
-/// a veteran), ejects exactly one from a vehicle behind a `CrewEscape` draw
-/// (Rules `+0x5C0`, stock 50%), and 0-5 from a building through
-/// `How_Many_Survivors @ 0x00451330` (cost / `*SurvivorDivisor`, clamped 1..5)
-/// with a per-cell roll interleaved with the debris roll.
-/// - Trigger: every `Crewed=yes` vehicle or building death.
-/// - Player effect: no crew ever runs out of a wreck or a levelled structure.
-/// - Frequency: continuous.
-/// - Downstream risk: crew ejection spawns entities, so it moves unit counts,
-///   occupancy, house counts and the pinned replay hash, and its per-cell draw
-///   order interleaves with the existing debris roll — it wants its own slice.
-///   The debris half of this row is recorded on `rules/warhead_type.rs`.
 pub(crate) fn emit_warhead_detonation_effects(
     warhead: &WarheadType,
     base_damage: i32,
@@ -1966,7 +1932,6 @@ pub(crate) struct DeathEffects {
     /// Remaining world UnInit requests; distinct from all fatal receiver IDs.
     pub(crate) immediate_uninit_ids: Vec<u64>,
     pub(crate) structure_destroyed: bool,
-    pub(crate) destroyed_crewed_buildings: Vec<DestroyedCrewedBuilding>,
     pub(crate) explosion_effects: Vec<ExplosionEffect>,
     /// `VoxelAnimClass` debris planned by the death block for admission at the
     /// world consequence boundary. The live receiver has allocator access;
@@ -2045,8 +2010,6 @@ impl DeathEffects {
         self.immediate_uninit_ids
             .append(&mut other.immediate_uninit_ids);
         self.structure_destroyed |= other.structure_destroyed;
-        self.destroyed_crewed_buildings
-            .append(&mut other.destroyed_crewed_buildings);
         self.explosion_effects.append(&mut other.explosion_effects);
         self.voxel_debris.append(&mut other.voxel_debris);
         self.invulnerability_impact_effects
@@ -2471,11 +2434,8 @@ fn resolve_receive_damage(
         defender_vet_armor,
         ..damage::CombatMods::default()
     };
-    // `arg6` is forwarded by the concrete ABI. Its only verified Unit-class
-    // consumer gates a crew-survivor branch that this lifecycle does not
-    // model; periodic radiation's true value is nevertheless retained on the
-    // ordered call rather than erased at collection time.
-    let _receiver_arg6 = receiver_flags.arg6;
+    // `arg6` stays on the ordered call: its Unit-class consumer is the crew
+    // block, which the concrete death reads from the killing event.
     let outcome = damage::receive::receive_damage(
         receiver_input,
         warhead.cell_spread_f64,
@@ -3443,25 +3403,17 @@ mod impact_height_tests {
     const RAISED_LEVEL: u8 = 2;
 
     #[test]
-    fn gsi_04_11_refinery_survivor_requests_follow_native_sentinel_offsets() {
-        let mut requests = Vec::new();
-        append_building_smudge_requests(&mut requests, 10, 20, 3, "3x3Refinery");
+    fn gsi_04_11_refinery_survivor_cells_follow_native_sentinel_offsets() {
         let SmudgeSpawnRequest::BuildingCenter {
             foundation_w,
             foundation_h,
             ..
-        } = &requests[0]
+        } = building_center_smudge_request(10, 20, 3, "3x3Refinery")
         else {
-            panic!("first request must be the destruction-center mark");
+            panic!("the destruction-center mark");
         };
-        assert_eq!((*foundation_w, *foundation_h), (3, 3));
-        let survivor_cells: Vec<_> = requests[1..]
-            .iter()
-            .map(|request| match request {
-                SmudgeSpawnRequest::BuildingSurvivor { cell_rx, cell_ry } => (*cell_rx, *cell_ry),
-                _ => panic!("remaining requests must be survivor marks"),
-            })
-            .collect();
+        assert_eq!((foundation_w, foundation_h), (3, 3));
+        let survivor_cells = crate::sim::crew_survival::foundation_cells(10, 20, "3x3Refinery");
         assert_eq!(
             survivor_cells,
             vec![
