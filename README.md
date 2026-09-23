@@ -2,7 +2,12 @@
 
 [![VERA20k Discord](https://img.shields.io/badge/VERA20k%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/kmjRUn5m5F)
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-blue?style=for-the-badge)](LICENSE-GPL)
-[![Platforms: Windows, Linux, macOS](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20Linux%20%C2%B7%20macOS-blue?style=for-the-badge)](https://github.com/YuriPlanet/vera20k/actions)
+[![Windows](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/windows.yml?branch=main&label=Windows&style=for-the-badge)](https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml)
+[![Linux](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/linux.yml?branch=main&label=Linux&style=for-the-badge)](https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml)
+[![macOS](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/macos.yml?branch=main&label=macOS&style=for-the-badge)](https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml)
+[![Linux ARM](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/linux-arm.yml?branch=main&label=Linux%20ARM&style=for-the-badge)](https://github.com/YuriPlanet/vera20k/actions/workflows/linux-arm.yml)
+[![Windows ARM](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/windows-arm.yml?branch=main&label=Windows%20ARM&style=for-the-badge)](https://github.com/YuriPlanet/vera20k/actions/workflows/windows-arm.yml)
+[![Clippy](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/rust.yml?branch=main&label=Clippy&style=for-the-badge)](https://github.com/YuriPlanet/vera20k/actions/workflows/rust.yml)
 
 # VERA20k
 
@@ -41,13 +46,6 @@ a placeholder AI.
 
 You need Rust 1.88 or newer, a GPU with Vulkan, DirectX 12 or Metal, and the game installed.
 It has been played on Windows, Linux and macOS, and CI builds and tests all three.
-
-[![Windows](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/windows.yml?branch=main&label=Windows&style=flat-square)](https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml)
-[![Linux](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/linux.yml?branch=main&label=Linux&style=flat-square)](https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml)
-[![macOS](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/macos.yml?branch=main&label=macOS&style=flat-square)](https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml)
-[![Linux ARM](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/linux-arm.yml?branch=main&label=Linux%20ARM&style=flat-square)](https://github.com/YuriPlanet/vera20k/actions/workflows/linux-arm.yml)
-[![Windows ARM](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/windows-arm.yml?branch=main&label=Windows%20ARM&style=flat-square)](https://github.com/YuriPlanet/vera20k/actions/workflows/windows-arm.yml)
-[![Clippy](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/rust.yml?branch=main&label=Clippy&style=flat-square)](https://github.com/YuriPlanet/vera20k/actions/workflows/rust.yml)
 
 ```sh
 git clone https://github.com/YuriPlanet/vera20k.git
