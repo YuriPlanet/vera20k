@@ -389,6 +389,17 @@ impl Simulation {
             // Evidence: tools/spatial_oracle/foot_enter_idle, foot_ai_reset rows.
             return Ok(outcome);
         }
+        // A temporal-warped object's leaf AI returned before its locomotor
+        // Process (Unit 0x007362B5..0x007362CB, Infantry and Aircraft alike;
+        // `Simulation::temporal_ai_prologue`).
+        if sim
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.temporal.is_warped())
+        {
+            return Ok(outcome);
+        }
 
         if !tube_active_at_entry {
             sim.refresh_high_flying_sight_before_process(stable_id, rules, path_grid);
@@ -526,6 +537,9 @@ impl Simulation {
             // Relocation71971C / 719ADE calls PerCell(2), including a
             // same-cell relocation; ordinary Fly motion has no such call.
             sim.foot_neighbors_at_per_cell(stable_id);
+            // PerCell(2)'s tail `0x006F5090` lets a held Temporal target go
+            // (a Chrono Legionnaire teleporting away from its victim).
+            sim.temporal_release_if_warping(stable_id);
         }
         sim.pending_rocket_detonations
             .extend(rocket_movement::tick_rocket_movement(
@@ -601,6 +615,9 @@ impl Simulation {
                     sim, stable_id, rules,
                 );
             }
+            // `0x006F5090`'s head (`0x006F50A3..0x006F50B4`): entering a cell
+            // lets a held Temporal target go.
+            sim.temporal_release_if_warping(stable_id);
             sim.promote_entity_playfield_membership_after_move(stable_id);
         }
 

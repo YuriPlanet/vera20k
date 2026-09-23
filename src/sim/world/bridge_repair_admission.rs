@@ -96,11 +96,7 @@ fn infantry_target_admission(
 ) -> Result<InfantryTargetAdmission, String> {
     //51C2D3..51C37D: gate effects first. InfantryType EC2=C4 (52453D/
     //825978), EC3=Engineer (524571/82596C). +1D4 is the warp latch.
-    if blocker
-        .teleport_state
-        .as_ref()
-        .is_some_and(|s| s.warp_out_active())
-    {
+    if blocker.is_warped_out() {
         return Ok(InfantryTargetAdmission::Ordinary);
     }
     let eligible = match mover.mission.current().known() {
@@ -1337,14 +1333,11 @@ fn foot_entry(
                     continue;
                 }
                 //73F5EF/73F628 have distinct type/mission pairs. +1D4 is
-                //the live warp latch; the represented Teleport writer is used.
+                //the live warp latch.
                 if object_target_is(e, b)
                     && ((mission == Some(MissionType::Enter) && bt.unit_absorb)
                         || (mission == Some(MissionType::Eaten) && bt.grinding))
-                    && !b
-                        .teleport_state
-                        .as_ref()
-                        .is_some_and(|s| s.warp_out_active())
+                    && !b.is_warped_out()
                 {
                     return Ok(0);
                 }

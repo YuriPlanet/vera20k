@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original 0x0071A760 TemporalClass::Update with SumChainDamage, LetGo, ClearLinkedList, Sqrt_Approx and ftol",
+  "assumptions": [
+    "TemporalClass +24 Owner, +28 Target, +40 Prev, +44 Next, +48 WarpRemaining, +4C WarpPerStep",
+    "Owner +82 InOpenTransport, +150 VeterancyStruct, +274 TemporalImUsing; target +270 warped, +278 chain head, +9C Location",
+    "Rules +F60 OpenToppedWarpDistance, +340 WarpAway"
+  ],
+  "substitutions": [
+    "Recorded at entry and returned without running: GetCoords, SelectWeapon (0), GetWeapon, GetTechnoType, the type cost, WhatAmI, the occupant count, Enter_Idle_Mode, the unit-lost notice, Record_The_Kill, UnInit, Mark, operator new, AnimClass constructor, VeterancyStruct::Add, occupant kill, bunker and slave releases, building back-online"
+  ],
+  "entry_points": {
+    "update": "0x0071A760",
+    "sum_chain": "0x0071AB10",
+    "let_go": "0x0071ABC0",
+    "clear_linked_list": "0x0071ADE0"
+  },
+  "payload_sha256": "100fe733eadb9034d72b3ee2bb9ad0d8126207852a4bbdbb1da6597b6324fe4b"
+}

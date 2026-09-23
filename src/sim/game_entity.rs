@@ -818,6 +818,10 @@ pub struct GameEntity {
     /// `+0x2C8` the ring anim), written only by `capture_manager`.
     #[serde(default)]
     pub mind_control: crate::sim::capture_manager::MindControlLink,
+    /// TemporalClass state (`TechnoClass+0x274` TemporalImUsing and `+0x278`
+    /// TemporalTargetingMe), written only by `temporal`.
+    #[serde(default)]
+    pub temporal: crate::sim::temporal::TemporalState,
     /// Psychedelic/chaos runtime, separate from reversible mind control.
     #[serde(default)]
     pub berserk: BerserkState,
@@ -1440,6 +1444,7 @@ impl GameEntity {
             parachute_state: None,
             invulnerability: None,
             mind_control: Default::default(),
+            temporal: Default::default(),
             berserk: BerserkState::default(),
             drive_locomotion: None,
             ship_locomotion: None,

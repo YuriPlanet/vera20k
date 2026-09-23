@@ -195,11 +195,7 @@ impl DrawState {
         remap_row: u32,
         observer: ObserverDrawContext,
     ) -> DrawDecision {
-        let (warp_out, warp_in) = entity
-            .teleport_state
-            .as_ref()
-            .map(|teleport| (teleport.warp_out_active(), teleport.warp_in_active()))
-            .unwrap_or_default();
+        let (warp_out, warp_in) = (entity.is_warped_out(), entity.is_warping_in());
         Self::resolve(
             DrawStateInput {
                 cloak: entity.cloak.as_ref().and_then(|cloak| {

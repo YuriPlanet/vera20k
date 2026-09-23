@@ -18,9 +18,11 @@
 //! installed on it (`0x0070FDBD`), a Psychic Tower going offline (the
 //! `0x004549B0` off edge, FreeAll at `0x00454B47`), which a sale reaches
 //! because Selling ends Is_Operational (`0x004555D0`) before the tower is
-//! removed, CaptureUnit's single-victim replacement (`0x00471D98`), and a
-//! captive boarding a building or transport (the PerCellProcess sites
-//! `0x0051A2DA`, `0x0051A438`, `0x0073A2CD`, `0x0073A72B`). A victim's own
+//! removed, CaptureUnit's single-victim replacement (`0x00471D98`), a Chrono
+//! beam's warp start on the controller (`TemporalClass::InitiateWarp @
+//! 0x0071AF48`), and a captive boarding a building or transport (the
+//! PerCellProcess sites `0x0051A2DA`, `0x0051A438`, `0x0073A2CD`,
+//! `0x0073A72B`). A victim's own
 //! death only drops its node (`TechnoClass::PointerExpired @ 0x00707B14` ->
 //! `0x00471F90`): no owner change, no sound, no draw. The victim's
 //! `+0x2C0` also bars deploying an MCV (`0x00700ED0`) and repacking a
@@ -67,11 +69,6 @@
 //!   not kept.
 //! - The Mastermind's overload rocking (`+0x330`, sideways lean 0.015/0.03)
 //!   has no VERA rocking producer; its Scenario draw is kept.
-//! - Temporal: the Chrono Legionnaire's warp start frees a controller's
-//!   victims (`TemporalClass::InitiateWarp @ 0x0071AF48`), and DecideUnitFate
-//!   detaches a unit a Chrono beam holds (`+0x274`, `0x004723E4..0x004723F3`
-//!   -> `TemporalClass::DetachFromTarget @ 0x0071ABC0`) before its other
-//!   tests. VERA has no Temporal weapon yet.
 //! - An expired ring anim clears the victim's `+0x2C8` natively
 //!   (`TechnoClass::PointerExpired @ 0x00707946`, `0x0071043D`); VERA clears
 //!   the link only in FreeUnit, so a ring that ran out of loops leaves a
@@ -658,6 +655,11 @@ impl Simulation {
     /// the original on release). Team, Grinder and Bio Reactor arms are module
     /// residuals.
     fn decide_unit_fate(&mut self, controller_id: u64, unit_id: u64, rules: &RuleSet) {
+        if !self.substrate.entities.contains(unit_id) {
+            return;
+        }
+        // 0x004723E4..0x004723F3: a unit holding a Temporal target lets go.
+        self.temporal_release_if_warping(unit_id);
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
         };

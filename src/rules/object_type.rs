@@ -922,6 +922,11 @@ pub struct ObjectType {
     pub type_immune: bool,
     /// Psychedelic/mind-control immunity. Buildings default true natively.
     pub immune_to_psionics: bool,
+    /// `Warpable=` (`TechnoTypeClass+0xD3A`, ReadINI `0x00714F65..0x00714F79`;
+    /// constructor default 1 at `0x0071140D`/`0x00711542`): a Chrono
+    /// Legionnaire may start erasing it (`TemporalClass::CanWarpTarget @
+    /// 0x0071AE50`). No stock section authors the key.
+    pub warpable: bool,
     /// `MindControlRingOffset=` (`TechnoTypeClass+0x60C`, ReadINI
     /// `0x00714350`; constructor default 0x8C at `0x0071103A`): the capture
     /// ring's height above a captured non-building's coordinate.
@@ -2097,6 +2102,7 @@ impl ObjectType {
             immune_to_psionics: section
                 .get_bool("ImmuneToPsionics")
                 .unwrap_or(category == ObjectCategory::Building),
+            warpable: section.get_bool("Warpable").unwrap_or(true),
             mind_control_ring_offset: section.get_i32("MindControlRingOffset").unwrap_or(0x8C),
             // "none" finds no sound (-1), which FreeUnit reads as unset.
             mind_cleared_sound: section

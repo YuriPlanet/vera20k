@@ -57,12 +57,24 @@ pub(crate) fn depart_cargo_head(
     // FUN_004DE710's empty-hold weapon reset occurs before placement for these
     // two callers. Garrison resets only after successful scatter; paradrop does
     // not reset the carrier override at all.
-    if matches!(
+    let emptied = matches!(
         route,
         DepartureRoute::Vehicle | DepartureRoute::LandedAircraft
-    ) && cargo.is_empty()
-    {
+    ) && cargo.is_empty();
+    if emptied {
         transport.weapon_override = None;
+        // The same pop's `+0x4D8` for a `Gunner=` type (`0x004DE72E..
+        // 0x004DE742` -> `0x007464E0`): an IFV's TemporalClass returns to the
+        // gunner, which lets its target go.
+        let gunner = sim
+            .substrate
+            .entities
+            .get(transport_id)
+            .and_then(|transport| sim.object_type(transport.type_ref(), rules))
+            .is_some_and(|object| object.gunner);
+        if gunner {
+            sim.temporal_remove_gunner(transport_id, passenger_id);
+        }
     }
     let result = attempt(sim, passenger_id);
     if let Err(failure) = result.as_ref() {
@@ -229,4 +241,5 @@ fn reapply_gunner_weapon(sim: &mut Simulation, rules: &RuleSet, transport_id: u6
             crate::sim::combat::combat_weapon::WeaponOverride::IfvSlot(ifv_mode),
         );
     }
+    sim.temporal_receive_gunner(transport_id, pax_id);
 }

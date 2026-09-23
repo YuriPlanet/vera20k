@@ -2643,10 +2643,7 @@ impl Simulation {
         if !entity.lifecycle.object_alive
             || entity.lifecycle.in_limbo
             || entity.selected
-            || entity
-                .teleport_state
-                .as_ref()
-                .is_some_and(|teleport| teleport.warp_out_active())
+            || entity.is_warped_out()
         {
             return false;
         }

@@ -121,9 +121,17 @@ fn recalculate_power_for_owner(
         // GetPowerOutput/GetPowerDrain decide its contribution; it has no
         // construction-state exclusion.
 
+        // A building being warped out gives and takes nothing
+        // (GetPowerOutput `0x0044E7C7`, GetPowerDrain `0x0044E885`). The
+        // drain's online-latch test (`0x0044E88F`) adds nothing while the
+        // warp is the latch's only represented writer.
+        if entity.is_warped_out() {
+            continue;
+        }
+
         // Numeric comparison corpus: tools/spatial_oracle/power_health.json.
-        // Still-open native lifecycle inputs: BeingWarped, online/overpowered,
-        // attached upgrade slots and House campaign registration.
+        // Still-open native lifecycle inputs: overpowered, attached upgrade
+        // slots and House campaign registration.
         // Producer branch: base = max(Power, 0), plus ExtraPower × occupants
         // for InfantryAbsorb/UnitAbsorb buildings (gate is strict on all
         // three conditions, matching gamemd's GetPowerOutput).
@@ -288,6 +296,9 @@ pub fn has_active_radar(
     entities.values().any(|e| {
         !e.dying
             && !e.lifecycle.in_limbo
+            // `0x00508EA3`: an offline building (the warp's latch) is no
+            // radar provider; the scan moves on to the next.
+            && e.building_online()
             && e.category == EntityCategory::Structure
             && e.owner() == owner_id
             && rules

@@ -1485,22 +1485,8 @@ fn emit_one_projectile_detonation(
             | ProjectileTarget::DummyCell => false,
         },
     };
-    let special_action = projectile_special_detonation_action(
-        SpecialDetonationFlags {
-            mind_control: warhead.mind_control,
-            ivan_bomb: warhead.ivan_bomb,
-            electric_assault: warhead.electric_assault,
-            parasite: warhead.parasite,
-            temporal: warhead.temporal,
-            is_locomotor: warhead.is_locomotor,
-            airstrike: warhead.airstrike,
-            direct_rocker: warhead.direct_rocker,
-            bomb_disarm: warhead.bomb_disarm,
-            makes_disguise: warhead.makes_disguise,
-            nuke_maker: warhead.nuke_maker,
-        },
-        special_target,
-    );
+    let special_action =
+        projectile_special_detonation_action(SpecialDetonationFlags::of(warhead), special_target);
 
     // Native ownership: only the final else at `0x00469a3f` runs
     // `BulletClass::SpawnShrapnel @ 0x0046a310` and
@@ -1607,6 +1593,18 @@ fn emit_one_projectile_detonation(
                 | ProjectileTarget::DummyCell => None,
             };
             world.mind_control_detonation(detonation.source_id, target, rules);
+        }
+        SpecialDetonationAction::Temporal => {
+            let target = match detonation.target {
+                ProjectileTarget::Entity(id) => {
+                    crate::sim::temporal::TemporalShotTarget::Object(id)
+                }
+                ProjectileTarget::Cell { .. } | ProjectileTarget::DummyCell => {
+                    crate::sim::temporal::TemporalShotTarget::Cell
+                }
+                ProjectileTarget::None => crate::sim::temporal::TemporalShotTarget::None,
+            };
+            world.temporal_detonation(detonation.source_id, target, rules);
         }
         claimed => {
             log::debug!(
@@ -1877,6 +1875,18 @@ fn admit_attacker_fire<'r>(
             entity.pending_building_fire = None;
         }
     }
+    // `TechnoClass::GetFireError @ 0x006FC109`: a firer being warped out
+    // (vtable +0x1D4) returns ILLEGAL (5) before any other test. A Temporal
+    // victim's frozen AI has already dropped its target; this covers the
+    // teleport writer.
+    if world
+        .substrate
+        .entities
+        .get(snap.stable_id)
+        .is_some_and(|firer| firer.is_warped_out())
+    {
+        return None;
+    }
     // Pre-compute garrison scan range for retargeting (includes +1 buffer).
     let garrison_retarget_range: Option<SimFixed> = snap.garrison.as_ref().map(|gs| {
         let cells = gs.half_foundation as i32 + 1 + rules.garrison_rules.occupy_weapon_range;
@@ -2022,6 +2032,19 @@ fn admit_attacker_fire<'r>(
     {
         return None;
     }
+    // GetFireError `0x006FC14F..0x006FC16B`: while this object's
+    // TemporalClass holds the target, a shot at it is REARM (3). The beam
+    // holds; a re-fire would restart the warp (InitiateWarp lets go first).
+    if let TargetKind::Entity(target_id) = snap.target
+        && world
+            .substrate
+            .entities
+            .get(snap.stable_id)
+            .and_then(|attacker| attacker.temporal.warp_target())
+            == Some(target_id)
+    {
+        return None;
+    }
 
     let target_armor: String = rules
         .object(world.interner.resolve(target_type_ref))
@@ -2117,6 +2140,23 @@ fn admit_attacker_fire<'r>(
     // and that return precedes every shot/cooldown/report/current-weapon side
     // effect owned below. Type-3's local effect check is not this gate.
     if weapon.is_sonic && has_active_wave {
+        return None;
+    }
+    // GetFireError `0x006FC5D5..0x006FC600`: a target being warped out
+    // (vtable +0x1D4) takes only Temporal shots; anything else is ILLEGAL (5),
+    // so only other Chrono weapons join the erase. VERA drops the target as
+    // for the Parasite gates below, with the same up-to-15-frame residual.
+    if !selected.warhead.temporal
+        && let TargetKind::Entity(target_id) = snap.target
+        && world
+            .substrate
+            .entities
+            .get(target_id)
+            .is_some_and(|target| target.is_warped_out())
+    {
+        if delayed_building_slot.is_none() {
+            out.remove_attack.push(snap.stable_id);
+        }
         return None;
     }
     // GetFireError 0x006FCAC5..0x006FCB21: a Parasite shot at a Foot another
@@ -2466,6 +2506,19 @@ fn admit_attacker_fire<'r>(
                 infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
             ));
         }
+        return None;
+    }
+
+    // UnitClass::GetFireError `0x00741206..0x00741226`: a Unit carrying a
+    // TemporalClass (an IFV with a Chrono Legionnaire gunner) cannot fire
+    // while it has a NavCom (MOVING, 7).
+    if snap.category == EntityCategory::Unit
+        && world
+            .substrate
+            .entities
+            .get(snap.stable_id)
+            .is_some_and(|entity| entity.temporal.has_link() && entity.navigation.nav_com.is_some())
+    {
         return None;
     }
 
@@ -3269,18 +3322,33 @@ fn emit_admitted_fire(
             &mut world.substrate.entities,
             world.resolved_terrain.as_ref(),
         );
-        // An Inviso shot detonates here, so it runs the head of
-        // `BulletClass::DetonateAtCoord`'s special chain as well: MindControl
-        // is its first arm (`0x0046920B`) and claims the impact, so no area
-        // damage. RESIDUAL: the chain's other arms are not dispatched on this
-        // path; an Inviso special warhead (the Giant Squid's grapple) still
-        // takes ordinary area damage here.
-        if warhead.mind_control {
+        // An Inviso shot detonates here, so it runs `BulletClass::
+        // DetonateAtCoord`'s special chain as well. Its MindControl
+        // (`0x0046920B`) and Temporal (`0x00469423`) arms claim the impact, so
+        // no area damage. RESIDUAL: the chain's other arms are not dispatched
+        // on this path; an Inviso special warhead of another kind (the Giant
+        // Squid's Parasite grapple) still takes ordinary area damage here.
+        let special_action = projectile_special_detonation_action(
+            SpecialDetonationFlags::of(warhead),
+            SpecialDetonationTarget {
+                is_unit: matches!(snap.target, TargetKind::Entity(id)
+                if world.substrate.entities.get(id).is_some_and(|entity| {
+                    entity.category == EntityCategory::Unit
+                })),
+            },
+        );
+        if special_action == SpecialDetonationAction::MindControl {
             let target = match snap.target {
                 TargetKind::Entity(id) => Some(id),
                 TargetKind::Cell(..) => None,
             };
             world.mind_control_detonation(snap.stable_id, target, rules);
+        } else if special_action == SpecialDetonationAction::Temporal {
+            let target = match snap.target {
+                TargetKind::Entity(id) => crate::sim::temporal::TemporalShotTarget::Object(id),
+                TargetKind::Cell(..) => crate::sim::temporal::TemporalShotTarget::Cell,
+            };
+            world.temporal_detonation(snap.stable_id, target, rules);
         } else {
             let routed_wall = wall_overlay_flags_at(
                 world.overlay_grid.as_ref(),

@@ -2644,6 +2644,42 @@ fn harvester_uses_dock_list_for_refinery_selection() {
     assert_eq!(miner.state, MinerState::ReturnToRefinery);
 }
 
+/// `Receive_Radio(0xF)` `0x0043C422`: a refinery whose online latch a
+/// Temporal warp cleared answers 10, so a returning harvester takes the other
+/// one even though it is farther away.
+#[test]
+fn a_warped_refinery_is_passed_over() {
+    let mut sim = Simulation::new();
+    let rules = dock_rules();
+    let miner_id = sim
+        .spawn_object("MODHARV", "Americans", 30, 30, 64, &rules, &BTreeMap::new())
+        .expect("spawn harvester");
+    spawn_structure(&mut sim, 2, "MODPROC", 26, 26);
+    spawn_structure(&mut sim, 3, "MODPROC", 10, 10);
+    sim.substrate.entities.get_mut(2).unwrap().temporal =
+        crate::sim::temporal::TemporalState::warped_by_for_test(999);
+
+    {
+        let entity = sim
+            .substrate
+            .entities
+            .get_mut(miner_id)
+            .expect("miner entity");
+        let miner = entity.miner.as_mut().expect("miner component");
+        miner.cargo.push(CargoBale {
+            resource_type: ResourceType::Ore,
+            value: 25,
+        });
+        entity
+            .mission
+            .set_handler_state(MinerState::ReturnToRefinery.cursor());
+    }
+
+    tick_miners_n(&mut sim, &rules, 1);
+
+    assert_eq!(get_miner(&sim, miner_id).reserved_refinery, Some(3));
+}
+
 #[test]
 fn harvester_queues_guard_when_no_dock_compatible_refinery_exists() {
     let mut sim = Simulation::new();

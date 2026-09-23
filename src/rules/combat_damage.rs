@@ -36,6 +36,10 @@ pub struct CombatDamageDefaults {
     /// 256; the constructor default written at `0x006675C4` is `0x100`, and
     /// stock `rulesmd.ini:815` authors `1.0` for the same 256.
     pub ballistic_scatter: i32,
+    /// `OpenToppedWarpDistance=` in CELLS (`RulesClass+0xF60`, ReadInt at
+    /// `0x0066C79C`; constructor default 5 at `0x00666AB1`/`0x00666AE5`;
+    /// stock 7). `TemporalClass::Update` multiplies it by 256 at its use.
+    pub open_topped_warp_distance: i32,
     /// Global `DeathWeapon=` used only when a dying type has neither an
     /// explicit death weapon nor a live current-weapon fallback.
     pub death_weapon: Option<String>,
@@ -66,6 +70,7 @@ impl CombatDamageDefaults {
             max_damage: section.get_i32("MaxDamage").unwrap_or(1000),
             collapse_chance: section.get_i32("CollapseChance").unwrap_or(100),
             ballistic_scatter: section.read_range("BallisticScatter", 0x100),
+            open_topped_warp_distance: section.get_i32("OpenToppedWarpDistance").unwrap_or(5),
             death_weapon: read_name(section, "DeathWeapon"),
             default_large_grey_smoke_system: read_name(section, "DefaultLargeGreySmokeSystem"),
             default_small_grey_smoke_system: read_name(section, "DefaultSmallGreySmokeSystem"),
@@ -86,6 +91,7 @@ impl Default for CombatDamageDefaults {
             max_damage: 1000,
             collapse_chance: 100,
             ballistic_scatter: 0x100,
+            open_topped_warp_distance: 5,
             death_weapon: None,
             default_large_grey_smoke_system: None,
             default_small_grey_smoke_system: None,

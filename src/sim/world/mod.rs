@@ -5276,11 +5276,7 @@ impl Simulation {
                 }
                 // The first coarse candidate decides the house. Warp-out is a
                 // blocking result, not a reason to continue to a later uplink.
-                if !entity
-                    .teleport_state
-                    .as_ref()
-                    .is_some_and(|state| state.warp_out_active())
-                {
+                if !entity.is_warped_out() {
                     active.insert(owner);
                 }
                 break;

@@ -1079,48 +1079,8 @@ fn mind_control_state_round_trips_and_is_hashed() {
 
 /// A flat 32x32 clear map with its playfield, zones and path grid.
 fn arena(seed: u64, rules: &RuleSet) -> (Simulation, crate::sim::pathfinding::PathGrid) {
-    const SIZE: u16 = 32;
     let mut sim = sim(seed);
-    sim.input_delay_ticks = 0;
-    sim.session.map_width = SIZE;
-    sim.session.map_height = SIZE;
-    let clear = crate::rules::terrain_rules::SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
-        float: None,
-        amphibious: Some(80),
-        float_beach: None,
-        hover: Some(50),
-    };
-    let cell = |x, y| {
-        let mut cell = crate::map::resolved_terrain::test_flat_cell(x, y);
-        cell.speed_costs = clear;
-        cell.base_speed_costs = clear;
-        cell
-    };
-    sim.install_resolved_terrain_for_new_map(
-        crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
-            SIZE,
-            SIZE,
-            (0..SIZE)
-                .flat_map(|y| (0..SIZE).map(move |x| cell(x, y)))
-                .collect(),
-        ),
-    );
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
-        base: 20,
-        off_fc: -128,
-        off_100: -128,
-        off_104: 256,
-        off_108: 256,
-    });
-    sim.playfield_size_height = Some(20);
-    assert!(sim.rebuild_dynamic_navigation(rules));
-    let grid = sim
-        .path_grid_snapshot()
-        .map(|grid| (*grid).clone())
-        .expect("navigation grid");
+    let grid = crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     (sim, grid)
 }
 

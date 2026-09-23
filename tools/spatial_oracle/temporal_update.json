@@ -1,0 +1,1908 @@
+[
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_per_step": 8,
+        "warp_remaining": 3992
+      }
+    ],
+    "events": [],
+    "input": {
+      "attackers": [
+        {
+          "damage": 8
+        }
+      ],
+      "name": "one_step",
+      "target": {
+        "coords": [
+          4000,
+          4000,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_per_step": 8,
+        "warp_remaining": 0
+      }
+    ],
+    "events": [
+      [
+        "anim",
+        "warp_away",
+        [
+          4000,
+          4000,
+          0
+        ],
+        0,
+        1,
+        1536,
+        0,
+        0
+      ],
+      [
+        "veterancy_add",
+        "owner0",
+        1500,
+        900
+      ],
+      [
+        "unit_lost",
+        "target",
+        "owner0"
+      ],
+      [
+        "record_kill",
+        "target",
+        "owner0"
+      ],
+      [
+        "uninit",
+        "target"
+      ],
+      [
+        "idle",
+        "owner0",
+        "0x0",
+        "0x1"
+      ],
+      [
+        "idle",
+        "owner0",
+        "0x0",
+        "0x1"
+      ]
+    ],
+    "input": {
+      "attackers": [
+        {
+          "damage": 8
+        }
+      ],
+      "name": "erase_at_zero",
+      "target": {
+        "coords": [
+          4000,
+          4000,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 8
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_per_step": 8,
+        "warp_remaining": 1
+      }
+    ],
+    "events": [],
+    "input": {
+      "attackers": [
+        {
+          "damage": 8
+        }
+      ],
+      "name": "one_left",
+      "target": {
+        "coords": [
+          4000,
+          4000,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 9
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_per_step": 8,
+        "warp_remaining": -8
+      }
+    ],
+    "events": [
+      [
+        "anim",
+        "warp_away",
+        [
+          4000,
+          4000,
+          0
+        ],
+        0,
+        1,
+        1536,
+        0,
+        0
+      ],
+      [
+        "veterancy_add",
+        "owner0",
+        1500,
+        900
+      ],
+      [
+        "unit_lost",
+        "target",
+        "owner0"
+      ],
+      [
+        "record_kill",
+        "target",
+        "owner0"
+      ],
+      [
+        "uninit",
+        "target"
+      ],
+      [
+        "idle",
+        "owner0",
+        "0x0",
+        "0x1"
+      ],
+      [
+        "idle",
+        "owner0",
+        "0x0",
+        "0x1"
+      ]
+    ],
+    "input": {
+      "attackers": [
+        {
+          "damage": 8
+        }
+      ],
+      "name": "already_spent",
+      "target": {
+        "coords": [
+          4000,
+          4000,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 0
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_per_step": 16,
+        "warp_remaining": 1234
+      }
+    ],
+    "events": [],
+    "input": {
+      "attackers": [
+        {
+          "damage": 16
+        }
+      ],
+      "name": "elite_step",
+      "target": {
+        "coords": [
+          4000,
+          4000,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 1250
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_per_step": 5,
+        "warp_remaining": -2
+      }
+    ],
+    "events": [
+      [
+        "anim",
+        "warp_away",
+        [
+          4000,
+          4000,
+          0
+        ],
+        0,
+        1,
+        1536,
+        0,
+        0
+      ],
+      [
+        "unit_lost",
+        "target",
+        "owner0"
+      ],
+      [
+        "record_kill",
+        "target",
+        "owner0"
+      ],
+      [
+        "uninit",
+        "target"
+      ],
+      [
+        "idle",
+        "owner0",
+        "0x0",
+        "0x1"
+      ],
+      [
+        "idle",
+        "owner0",
+        "0x0",
+        "0x1"
+      ]
+    ],
+    "input": {
+      "attackers": [
+        {
+          "damage": 5,
+          "trainable": 0
+        }
+      ],
+      "name": "untrainable_erase",
+      "target": {
+        "coords": [
+          4000,
+          4000,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 3
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "temporal1",
+        "prev": "0x0",
+        "target": "target",
+        "warp_per_step": 8,
+        "warp_remaining": 71
+      },
+      {
+        "next": "temporal2",
+        "prev": "temporal0",
+        "target": "target",
+        "warp_per_step": 16,
+        "warp_remaining": 0
+      },
+      {
+        "next": "0x0",
+        "prev": "temporal1",
+        "target": "target",
+        "warp_per_step": 5,
+        "warp_remaining": 0
+      }
+    ],
+    "events": [],
+    "input": {
+      "attackers": [
+        {
+          "damage": 8
+        },
+        {
+          "damage": 16
+        },
+        {
+          "damage": 5
+        }
+      ],
+      "name": "chain_of_three",
+      "target": {
+        "coords": [
+          4000,
+          4000,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 100
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_per_step": 8,
+        "warp_remaining": 0
+      },
+      {
+        "next": "0x0",
+        "prev": "temporal0",
+        "target": "target",
+        "warp_per_step": 16,
+        "warp_remaining": 0
+      }
+    ],
+    "events": [
+      [
+        "anim",
+        "warp_away",
+        [
+          4000,
+          4000,
+          0
+        ],
+        0,
+        1,
+        1536,
+        0,
+        0
+      ],
+      [
+        "veterancy_add",
+        "owner0",
+        1500,
+        900
+      ],
+      [
+        "unit_lost",
+        "target",
+        "owner0"
+      ],
+      [
+        "record_kill",
+        "target",
+        "owner0"
+      ],
+      [
+        "uninit",
+        "target"
+      ],
+      [
+        "idle",
+        "owner0",
+        "0x0",
+        "0x1"
+      ],
+      [
+        "idle",
+        "owner0",
+        "0x0",
+        "0x1"
+      ]
+    ],
+    "input": {
+      "attackers": [
+        {
+          "damage": 8
+        },
+        {
+          "damage": 16
+        }
+      ],
+      "name": "chain_erase",
+      "target": {
+        "coords": [
+          4000,
+          4000,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 24
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "temporal1",
+        "prev": "0x0",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 948
+      },
+      {
+        "next": "temporal2",
+        "prev": "temporal0",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal3",
+        "prev": "temporal1",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal4",
+        "prev": "temporal2",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal5",
+        "prev": "temporal3",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal6",
+        "prev": "temporal4",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal7",
+        "prev": "temporal5",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal8",
+        "prev": "temporal6",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal9",
+        "prev": "temporal7",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal10",
+        "prev": "temporal8",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal11",
+        "prev": "temporal9",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal12",
+        "prev": "temporal10",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal13",
+        "prev": "temporal11",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal14",
+        "prev": "temporal12",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal15",
+        "prev": "temporal13",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal16",
+        "prev": "temporal14",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal17",
+        "prev": "temporal15",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal18",
+        "prev": "temporal16",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal19",
+        "prev": "temporal17",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal20",
+        "prev": "temporal18",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal21",
+        "prev": "temporal19",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal22",
+        "prev": "temporal20",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal23",
+        "prev": "temporal21",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal24",
+        "prev": "temporal22",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal25",
+        "prev": "temporal23",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal26",
+        "prev": "temporal24",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal27",
+        "prev": "temporal25",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal28",
+        "prev": "temporal26",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal29",
+        "prev": "temporal27",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal30",
+        "prev": "temporal28",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal31",
+        "prev": "temporal29",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal32",
+        "prev": "temporal30",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal33",
+        "prev": "temporal31",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal34",
+        "prev": "temporal32",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal35",
+        "prev": "temporal33",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal36",
+        "prev": "temporal34",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal37",
+        "prev": "temporal35",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal38",
+        "prev": "temporal36",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal39",
+        "prev": "temporal37",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal40",
+        "prev": "temporal38",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal41",
+        "prev": "temporal39",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal42",
+        "prev": "temporal40",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal43",
+        "prev": "temporal41",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal44",
+        "prev": "temporal42",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal45",
+        "prev": "temporal43",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal46",
+        "prev": "temporal44",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal47",
+        "prev": "temporal45",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal48",
+        "prev": "temporal46",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal49",
+        "prev": "temporal47",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal50",
+        "prev": "temporal48",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal51",
+        "prev": "temporal49",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal52",
+        "prev": "temporal50",
+        "target": "target",
+        "warp_per_step": 1,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal53",
+        "prev": "temporal51",
+        "target": "target",
+        "warp_per_step": 0,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal54",
+        "prev": "temporal52",
+        "target": "target",
+        "warp_per_step": 0,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal55",
+        "prev": "temporal53",
+        "target": "target",
+        "warp_per_step": 0,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal56",
+        "prev": "temporal54",
+        "target": "target",
+        "warp_per_step": 0,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal57",
+        "prev": "temporal55",
+        "target": "target",
+        "warp_per_step": 0,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal58",
+        "prev": "temporal56",
+        "target": "target",
+        "warp_per_step": 0,
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal59",
+        "prev": "temporal57",
+        "target": "target",
+        "warp_per_step": 0,
+        "warp_remaining": 0
+      },
+      {
+        "next": "0x0",
+        "prev": "temporal58",
+        "target": "target",
+        "warp_per_step": 0,
+        "warp_remaining": 0
+      }
+    ],
+    "events": [],
+    "input": {
+      "attackers": [
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        },
+        {
+          "damage": 1
+        }
+      ],
+      "name": "depth_cap",
+      "target": {
+        "coords": [
+          4000,
+          4000,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 1000
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_per_step": 0,
+        "warp_remaining": 100
+      },
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_per_step": 0,
+        "warp_remaining": 0
+      },
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_per_step": 0,
+        "warp_remaining": 0
+      }
+    ],
+    "events": [
+      [
+        "idle",
+        "owner1",
+        "0x0",
+        "0x1"
+      ],
+      [
+        "idle",
+        "owner2",
+        "0x0",
+        "0x1"
+      ],
+      [
+        "idle",
+        "owner0",
+        "0x0",
+        "0x1"
+      ]
+    ],
+    "input": {
+      "attackers": [
+        {
+          "damage": 8
+        },
+        {
+          "damage": 8
+        },
+        {
+          "damage": 16
+        }
+      ],
+      "corrupt_head": true,
+      "name": "corrupt_head",
+      "target": {
+        "coords": [
+          4000,
+          4000,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 100
+    },
+    "target_head": "0x0",
+    "target_warped": 0
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_per_step": 8,
+        "warp_remaining": -4
+      }
+    ],
+    "events": [
+      [
+        "anim",
+        "warp_away",
+        [
+          5000,
+          5000,
+          0
+        ],
+        0,
+        1,
+        1536,
+        0,
+        0
+      ],
+      [
+        "veterancy_add",
+        "owner0",
+        1500,
+        900
+      ],
+      [
+        "kill_occupants",
+        "target",
+        "0x0"
+      ],
+      [
+        "unit_lost",
+        "target",
+        "owner0"
+      ],
+      [
+        "record_kill",
+        "target",
+        "owner0"
+      ],
+      [
+        "uninit",
+        "target"
+      ],
+      [
+        "idle",
+        "owner0",
+        "0x0",
+        "0x1"
+      ],
+      [
+        "idle",
+        "owner0",
+        "0x0",
+        "0x1"
+      ]
+    ],
+    "input": {
+      "attackers": [
+        {
+          "damage": 8
+        }
+      ],
+      "name": "building_erase",
+      "target": {
+        "coords": [
+          5000,
+          5000,
+          0
+        ],
+        "occupants": 2,
+        "rtti": 6
+      },
+      "warp_remaining": 4
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_per_step": 8,
+        "warp_remaining": 3992
+      }
+    ],
+    "events": [],
+    "input": {
+      "attackers": [
+        {
+          "damage": 8
+        }
+      ],
+      "name": "building_step",
+      "target": {
+        "coords": [
+          5000,
+          5000,
+          0
+        ],
+        "rtti": 6
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_per_step": 5,
+        "warp_remaining": 3995
+      }
+    ],
+    "events": [],
+    "input": {
+      "attackers": [
+        {
+          "coords": [
+            0,
+            0,
+            0
+          ],
+          "damage": 5,
+          "open_topped": 1
+        }
+      ],
+      "name": "open_topped_straight_1792",
+      "target": {
+        "coords": [
+          1792,
+          0,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_per_step": 5,
+        "warp_remaining": 3995
+      }
+    ],
+    "events": [],
+    "input": {
+      "attackers": [
+        {
+          "coords": [
+            0,
+            0,
+            0
+          ],
+          "damage": 5,
+          "open_topped": 1
+        }
+      ],
+      "name": "open_topped_straight_1793",
+      "target": {
+        "coords": [
+          1793,
+          0,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_per_step": 0,
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        "0x2"
+      ]
+    ],
+    "input": {
+      "attackers": [
+        {
+          "coords": [
+            0,
+            0,
+            0
+          ],
+          "damage": 5,
+          "open_topped": 1
+        }
+      ],
+      "name": "open_topped_straight_1794",
+      "target": {
+        "coords": [
+          1794,
+          0,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "0x0",
+    "target_warped": 0
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_per_step": 0,
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        "0x2"
+      ]
+    ],
+    "input": {
+      "attackers": [
+        {
+          "coords": [
+            0,
+            0,
+            0
+          ],
+          "damage": 5,
+          "open_topped": 1
+        }
+      ],
+      "name": "open_topped_straight_1795",
+      "target": {
+        "coords": [
+          1795,
+          0,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "0x0",
+    "target_warped": 0
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_per_step": 0,
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        "0x2"
+      ]
+    ],
+    "input": {
+      "attackers": [
+        {
+          "coords": [
+            0,
+            0,
+            0
+          ],
+          "damage": 5,
+          "open_topped": 1
+        }
+      ],
+      "name": "open_topped_straight_1796",
+      "target": {
+        "coords": [
+          1796,
+          0,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "0x0",
+    "target_warped": 0
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_per_step": 0,
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        "0x2"
+      ]
+    ],
+    "input": {
+      "attackers": [
+        {
+          "coords": [
+            0,
+            0,
+            0
+          ],
+          "damage": 5,
+          "open_topped": 1
+        }
+      ],
+      "name": "open_topped_straight_1800",
+      "target": {
+        "coords": [
+          1800,
+          0,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "0x0",
+    "target_warped": 0
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_per_step": 0,
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        "0x2"
+      ]
+    ],
+    "input": {
+      "attackers": [
+        {
+          "coords": [
+            0,
+            0,
+            0
+          ],
+          "damage": 5,
+          "open_topped": 1
+        }
+      ],
+      "name": "open_topped_negative_1795",
+      "target": {
+        "coords": [
+          -1795,
+          0,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "0x0",
+    "target_warped": 0
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_per_step": 0,
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        "0x2"
+      ]
+    ],
+    "input": {
+      "attackers": [
+        {
+          "coords": [
+            0,
+            0,
+            0
+          ],
+          "damage": 5,
+          "open_topped": 1
+        }
+      ],
+      "name": "open_topped_diagonal_1270",
+      "target": {
+        "coords": [
+          1270,
+          1270,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "0x0",
+    "target_warped": 0
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_per_step": 5,
+        "warp_remaining": 3995
+      }
+    ],
+    "events": [],
+    "input": {
+      "attackers": [
+        {
+          "coords": [
+            0,
+            0,
+            0
+          ],
+          "damage": 5,
+          "open_topped": 1
+        }
+      ],
+      "name": "open_topped_diagonal_1267",
+      "target": {
+        "coords": [
+          1267,
+          1267,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_per_step": 5,
+        "warp_remaining": 3995
+      }
+    ],
+    "events": [],
+    "input": {
+      "attackers": [
+        {
+          "coords": [
+            0,
+            0,
+            0
+          ],
+          "damage": 5,
+          "open_topped": 1
+        }
+      ],
+      "name": "open_topped_diagonal_1268",
+      "target": {
+        "coords": [
+          1268,
+          1267,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_per_step": 5,
+        "warp_remaining": 3995
+      }
+    ],
+    "events": [],
+    "input": {
+      "attackers": [
+        {
+          "coords": [
+            0,
+            0,
+            0
+          ],
+          "damage": 5,
+          "open_topped": 1
+        }
+      ],
+      "name": "open_topped_cube_1034",
+      "target": {
+        "coords": [
+          1034,
+          1034,
+          1034
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_per_step": 5,
+        "warp_remaining": 3995
+      }
+    ],
+    "events": [],
+    "input": {
+      "attackers": [
+        {
+          "coords": [
+            0,
+            0,
+            0
+          ],
+          "damage": 5,
+          "open_topped": 1
+        }
+      ],
+      "name": "open_topped_cube_1035",
+      "target": {
+        "coords": [
+          1035,
+          1035,
+          1035
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_per_step": 5,
+        "warp_remaining": 3995
+      }
+    ],
+    "events": [],
+    "input": {
+      "attackers": [
+        {
+          "coords": [
+            0,
+            0,
+            0
+          ],
+          "damage": 5,
+          "open_topped": 1
+        }
+      ],
+      "name": "open_topped_near_1791",
+      "target": {
+        "coords": [
+          1791,
+          45,
+          12
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_per_step": 5,
+        "warp_remaining": 3995
+      }
+    ],
+    "events": [],
+    "input": {
+      "attackers": [
+        {
+          "coords": [
+            0,
+            0,
+            0
+          ],
+          "damage": 5,
+          "open_topped": 1
+        }
+      ],
+      "name": "open_topped_near_1792",
+      "target": {
+        "coords": [
+          1792,
+          1,
+          1
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_per_step": 5,
+        "warp_remaining": 3995
+      }
+    ],
+    "events": [],
+    "input": {
+      "attackers": [
+        {
+          "coords": [
+            0,
+            0,
+            0
+          ],
+          "damage": 5,
+          "open_topped": 1
+        }
+      ],
+      "name": "open_topped_vertical_1793",
+      "target": {
+        "coords": [
+          0,
+          0,
+          1793
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_per_step": 0,
+        "warp_remaining": 4000
+      },
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_per_step": 0,
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [],
+    "input": {
+      "attackers": [
+        {
+          "coords": [
+            0,
+            0,
+            0
+          ],
+          "damage": 5,
+          "open_topped": 1
+        },
+        {
+          "damage": 8
+        }
+      ],
+      "name": "open_topped_chained_release",
+      "target": {
+        "coords": [
+          1900,
+          0,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 4000
+    },
+    "target_head": "temporal1",
+    "target_warped": 1
+  }
+]

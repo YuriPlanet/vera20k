@@ -230,10 +230,8 @@ pub(crate) fn tick_shp_vehicle_body_frame_counter(
     };
     if locomotor.piggyback.is_some()
         || entity.deploy_state.is_some()
-        || entity
-            .teleport_state
-            .as_ref()
-            .is_some_and(|state| state.warp_out_active() || state.warp_in_active())
+        || entity.is_warped_out()
+        || entity.is_warping_in()
     {
         return;
     }

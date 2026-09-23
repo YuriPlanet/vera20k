@@ -97,6 +97,7 @@ pub(super) enum HashFeature {
     Parasite = 193,
     CrewSurvival = 194,
     MindControl = 196,
+    Temporal = 197,
 }
 
 impl HashSchema {
@@ -122,6 +123,7 @@ impl HashSchema {
                     | HashFeature::Parasite
                     | HashFeature::CrewSurvival
                     | HashFeature::MindControl
+                    | HashFeature::Temporal
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

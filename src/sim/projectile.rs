@@ -853,25 +853,25 @@ pub fn projectile_shrapnel_count(
 /// `0x00469c13`) into a 2/4/8 bit mask and passes it with the impact coord and
 /// `bullet+0x6c`; the exact visual `0x0048a620` produces is UNCHECKED here.
 ///
-/// RESIDUAL — **nine special effect bodies are not implemented in VERA.**
-/// MindControl (`capture_manager`) and Parasite (`combat/parasite.rs`, visible
-/// projectiles) run their bodies. Every other variant except
-/// `OrdinaryDamage` claims the detonation, suppresses damage and shrapnel
-/// exactly as native does, and then runs the shared tail without performing
-/// its effect. Per-variant native callees are named below; the unimplemented
-/// families are port M15d.
-/// - Trigger: any impact whose warhead carries one of the nine unported
+/// RESIDUAL — **eight special effect bodies are not implemented in VERA.**
+/// MindControl (`capture_manager`), Parasite (`combat/parasite.rs`, visible
+/// projectiles) and Temporal (`temporal`) run their bodies. Every other
+/// variant except `OrdinaryDamage` claims the detonation, suppresses damage
+/// and shrapnel exactly as native does, and then runs the shared tail without
+/// performing its effect. Per-variant native callees are named below; the
+/// unimplemented families are port M15d.
+/// - Trigger: any impact whose warhead carries one of the eight unported
 ///   flags. The stock census across all eleven flags was 14 warhead
 ///   sections, named by 24 weapon sections through an exact-case `Warhead=`,
 ///   of which 22 are mounted (`TankMakeupKit` and `CRMakeupKit` are named by
 ///   no mount key; gamemd's INI lookup is case-sensitive); its carriers other
-///   than the mind controllers and Terror Drones are attack dogs, Giant
-///   Squids (Inviso, so their Parasite arm is not dispatched either), Chrono
-///   Legionnaires, Crazy Ivan, Engineers, Spies, Magnetrons, Tesla Troopers,
-///   the IFV's chrono weapon, Boris and the Weed Guy.
+///   than the mind controllers, Terror Drones and Chrono weapons are attack
+///   dogs, Giant Squids (Inviso, so their Parasite arm is not dispatched
+///   either), Crazy Ivan, Engineers, Spies, Magnetrons, Tesla Troopers, Boris
+///   and the Weed Guy.
 /// - Player effect: the shot lands, plays its animation and leaves its crater,
-///   but nobody is attached to, erased, bombed, defused, disguised or lifted,
-///   and the target takes no damage from that shot.
+///   but nobody is attached to, bombed, defused, disguised or lifted, and the
+///   target takes no damage from that shot.
 /// - Frequency: continuous in ordinary skirmish — an attack dog appears in
 ///   almost every game.
 /// - Downstream risk: the ports add snapshotted, hashed entity state
@@ -921,7 +921,8 @@ pub enum SpecialDetonationAction {
     /// for visible projectiles (Inviso deliveries skip this dispatch).
     Parasite,
     /// `Temporal=` (`+0x15a`), test `0x00469423` ->
-    /// `TemporalClass::InitiateWarp @ 0x0071af20`. UNIMPLEMENTED (M15d).
+    /// `TemporalClass::InitiateWarp @ 0x0071af20`, ported in `temporal` (the
+    /// Inviso delivery dispatches it too).
     Temporal,
     /// `IsLocomotor=` (`+0x15b`), test `0x004694cb` -> the Magnetron
     /// deploy / chrono-warp arm. UNIMPLEMENTED (M15d).
@@ -994,6 +995,25 @@ pub struct SpecialDetonationFlags {
     pub bomb_disarm: bool,
     pub makes_disguise: bool,
     pub nuke_maker: bool,
+}
+
+impl SpecialDetonationFlags {
+    /// The eleven flags of one warhead.
+    pub fn of(warhead: &crate::rules::warhead_type::WarheadType) -> Self {
+        Self {
+            mind_control: warhead.mind_control,
+            ivan_bomb: warhead.ivan_bomb,
+            electric_assault: warhead.electric_assault,
+            parasite: warhead.parasite,
+            temporal: warhead.temporal,
+            is_locomotor: warhead.is_locomotor,
+            airstrike: warhead.airstrike,
+            direct_rocker: warhead.direct_rocker,
+            bomb_disarm: warhead.bomb_disarm,
+            makes_disguise: warhead.makes_disguise,
+            nuke_maker: warhead.nuke_maker,
+        }
+    }
 }
 
 /// Target-side context the native chain consults *inside* an arm predicate.

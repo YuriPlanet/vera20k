@@ -1272,10 +1272,7 @@ fn static_selection_gate(
 ) -> bool {
     entity.lifecycle.object_alive
         && !entity.lifecycle.in_limbo
-        && !entity
-            .teleport_state
-            .as_ref()
-            .is_some_and(|teleport| teleport.warp_out_active())
+        && !entity.is_warped_out()
         // `TechnoClass::Select @ 0x006F32D0` requires the stored +0x3D5
         // membership byte. The app supplies the live MapClass authority gate;
         // headless selection fixtures leave it disabled.

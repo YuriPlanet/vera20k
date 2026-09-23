@@ -326,6 +326,11 @@ pub fn can_dock_occupier_garrison(
             return false;
         }
     }
+    // `BuildingClass::CanDock @ 0x00457D3E`: a building being warped out
+    // admits nobody.
+    if building.is_warped_out() {
+        return false;
+    }
     if !passenger_obj.occupier {
         return false;
     }
@@ -638,6 +643,11 @@ fn process_boarding_passenger(sim: &mut Simulation, rules: &RuleSet, pax_id: u64
             if let Some(t) = sim.substrate.entities.get_mut(transport_id) {
                 t.weapon_override = new_override;
             }
+        }
+        if transport_gunner {
+            // UnitClass +0x4D4 (`0x00746420`): the gunner's TemporalClass
+            // moves to the IFV.
+            sim.temporal_receive_gunner(transport_id, pax_id);
         }
     } else if let Some(pax) = sim.substrate.entities.get_mut(pax_id) {
         pax.passenger_role = PassengerRole::None;

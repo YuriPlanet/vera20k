@@ -236,6 +236,7 @@ impl Simulation {
         // after this parent enters the limbo store and before its Unlimbo.
         if let Some(rules) = rules {
             ge.capture_manager = crate::sim::capture_manager::init_capture_manager(obj, rules);
+            ge.temporal = crate::sim::temporal::init_temporal(obj, rules);
             ge.spawn_manager = crate::sim::spawn_manager::init_spawn_manager(
                 obj,
                 rules,
