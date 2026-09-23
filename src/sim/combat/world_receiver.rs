@@ -849,11 +849,7 @@ pub(crate) fn commit_entities(
                 &world.house_alliances,
                 world.resolved_terrain.as_ref(),
             ) {
-                override_mission_on_damage_response(
-                    &mut world.substrate.entities,
-                    target_id,
-                    attacker_id,
-                );
+                world.override_mission_on_damage_response(target_id, attacker_id, rules);
             }
         }
 

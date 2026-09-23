@@ -3053,7 +3053,7 @@ impl Simulation {
     /// - A second native table swept after the techno vector, nulling two
     ///   pointer slots that match the detaching object. Its element class is
     ///   UNKNOWN, so it is not modelled.
-    pub(crate) fn stop_all_targeting_on_detach(&mut self, detach_id: u64) {
+    pub(crate) fn stop_all_targeting_on_detach(&mut self, detach_id: u64, rules: Option<&RuleSet>) {
         let mut listeners = self.substrate.entities.keys_sorted();
         listeners.reverse();
 
@@ -3063,7 +3063,7 @@ impl Simulation {
             }
 
             let restored = self
-                .mission_restore_on_target_detach(listener_id)
+                .mission_restore_on_target_detach(listener_id, rules)
                 .expect("detach sweep listener was resolved immediately before the Restore");
 
             let target_cleared = self.listener_targets(listener_id, detach_id);
@@ -3140,6 +3140,8 @@ impl Simulation {
                 facts.3,
                 Some(facts.4),
                 PointerExpiryControl::DetachAll,
+                // Infantry listeners: no Unit class setter.
+                None,
             );
             // Techno707B24 forwards this manager independently of control.
             crate::sim::spawn_manager::notify_pointer_expired(self, listener_id, hut_id);
@@ -3163,6 +3165,7 @@ impl Simulation {
         expired_is_selling: bool,
         expired_owner: Option<InternedId>,
         control: PointerExpiryControl,
+        rules: Option<&RuleSet>,
     ) {
         let Some(listener) = self.substrate.entities.get(listener_id) else {
             return;
@@ -3245,7 +3248,7 @@ impl Simulation {
             self.set_archive_target_represented(listener_id, None)
                 .expect("expiry listener remains present");
             if mission_is_suspended {
-                self.mission_restore_after_target_expiry(listener_id)
+                self.mission_restore_after_target_expiry(listener_id, rules)
                     .expect("represented expiry restore remains available");
             }
         }
@@ -3527,6 +3530,7 @@ impl Simulation {
                     expired_is_selling,
                     expired_owner,
                     control,
+                    context.rules(),
                 );
                 // `TechnoClass::PointerExpired` forwards to the listener's
                 // SpawnManager: `0x00707B24 CALL 0x006B7C60`, gated only on

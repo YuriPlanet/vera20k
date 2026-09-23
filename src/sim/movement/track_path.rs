@@ -32,11 +32,14 @@
 //!   (0x4D3E82..0x4D3E9F); VERA installs the whole route, so the native
 //!   re-request every 24 cells does not happen. Effect: a long route is not
 //!   re-planned mid-way.
-//! - Adapter-only stops. Stop writers that drop only the scheduling adapter
-//!   (the Guard command, pursuit ClearMovement, retaliation) leave NavCom, +34
-//!   and path words; the track end's same-call continuation reinstalls the
-//!   adapter and, with words left, the legacy inline search rebuilds the
-//!   route. Their native null-destination payloads are unverified.
+//! - Adapter-only stops. The Guard command and pursuit ClearMovement drop only
+//!   the scheduling adapter and leave NavCom, +34 and path words; the track
+//!   terminal defers the order and the same-call continuation finishes it
+//!   toward NavCom (before the continuation, the next frame did). Their
+//!   native null-destination payloads are unverified. Effect: the unit
+//!   resumes its order after the track instead of stopping. Callers of the
+//!   class setter vt+0x480(NULL, 1) take the Unit setter instead
+//!   (`assign_null_destination`).
 
 use super::foot_path::FootPathOutcome;
 use super::ground_pose;
@@ -64,6 +67,17 @@ const FOUND_ROUTE_RETRIES: u32 = 10;
 
 /// LandType Tunnel (10), the Cell+EC value the ally stop excludes.
 const LAND_TUNNEL: u8 = 10;
+
+/// A Unit on Drive or Ship, whose class setter is Unit 0x741970.
+fn track_unit(entity: &GameEntity) -> bool {
+    entity.category == EntityCategory::Unit
+        && entity.locomotor.as_ref().is_some_and(|loco| {
+            matches!(
+                loco.active_kind(),
+                LocomotorKind::Drive | LocomotorKind::Ship
+            )
+        })
+}
 
 fn track_destination(entity: &GameEntity) -> Option<DriveCoord> {
     match entity.locomotor.as_ref()?.kind {
@@ -149,9 +163,13 @@ impl Simulation {
                 //Residual: a zero-cost route leaves Foot+5E0 at -1 and native
                 //continues with that word (the success arm then steps toward
                 //octant 7 and head selection turns toward 0xE000). VERA ends
-                //the visit instead. Trigger: a non-Cell NavCom whose
-                //coordinate lies in the mover's own cell (a same-cell Cell
-                //NavCom stops earlier, 0x4B066C). Effect: no turn.
+                //the visit instead. Trigger: +34 in the mover's own cell: a
+                //non-Cell NavCom whose coordinate lies there (a same-cell Cell
+                //NavCom stops earlier, 0x4B066C), or a forced track's end
+                //(Force_Track wrote +34 = its cell, 0x4B0D3F, and a null
+                //NavCom skips the arrival clear, 0x4B2129), in the track-end
+                //Process. Effect: no turn; whether native then stops or
+                //re-requests is unexecuted.
                 FootPathOutcome::Returned
             }
             FindPathResult::Failed => self.finish_failed_track_path(id, rules, registry)?,
@@ -618,8 +636,9 @@ impl Simulation {
         }
     }
 
-    /// A Drive/Ship order that Rust deferred to the movement tick (the
-    /// `pending_arrival_clear` flag), finished before the locomotor Process,
+    /// A Drive/Ship order that Rust deferred (the `pending_arrival_clear`
+    /// flag), finished before the locomotor Process or, after a track end,
+    /// before the same-call continuation's gates (`track_continuation`),
     /// where natively its setter already ran:
     /// - Enter_Idle_Mode took a NavQueue waypoint at an arrival (its true
     ///   return ended that Process, 0x4B2273): +34 and a NavCom naming the
@@ -715,19 +734,28 @@ impl Simulation {
     /// paid head kept and a Drive/Ship Unit takes 0x741970(NULL, 1): NavCom
     /// and +34 clear and the running track finishes at its head.
     pub(crate) fn finish_ordered_attack_destination(&mut self, id: u64, rules: Option<&RuleSet>) {
-        let track_unit = self.substrate.entities.get(id).is_some_and(|actor| {
-            actor.category == EntityCategory::Unit
-                && actor.locomotor.as_ref().is_some_and(|loco| {
-                    matches!(
-                        loco.active_kind(),
-                        LocomotorKind::Drive | LocomotorKind::Ship
-                    )
-                })
-        });
-        if track_unit {
+        if self.substrate.entities.get(id).is_some_and(track_unit) {
             self.set_unit_null_destination(id, rules);
         } else {
             self.finish_ordered_walk_attack(id, rules);
+        }
+    }
+
+    /// The class setter vt+0x480 with a NULL destination from outside the
+    /// locomotor: Foot::Override_Mission (0x4D8F6D, the ReceiveDamage
+    /// retaliation) and Restore_Mission (0x4D8F99), the capture reset
+    /// (0x70F859), the owner change (0x7014E9, 0x70182F), the parasite
+    /// release (0x62A78A, 0x62A3ED, 0x62AAB9) and the Temporal freeze. A
+    /// Drive/Ship Unit takes Unit 0x741970(NULL, 1), whose locomotor Stop
+    /// nulls +34, so a track end cannot resume the old order; any other
+    /// receiver keeps the represented NavCom write set.
+    pub(crate) fn assign_null_destination(&mut self, id: u64, rules: Option<&RuleSet>) {
+        if self.substrate.entities.get(id).is_some_and(track_unit) {
+            self.set_unit_null_destination(id, rules);
+        } else if let Some(actor) = self.substrate.entities.get_mut(id) {
+            crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
+                actor, None,
+            );
         }
     }
 

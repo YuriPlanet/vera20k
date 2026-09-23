@@ -9533,10 +9533,12 @@ fn repro_two_moving_vehicles_pass_through_each_other() {
     // next-visit reselection, and enters (11,10) while the east tank's dodge
     // curve is still leaving through that cell's south-west corner: closest
     // approach 108 leptons at tick 77, and the pair shares (11,10) for tick
-    // 78 only, 119 leptons apart. The derived transit bound holds at the
-    // admission instant with the leader moving away; these hulls converge
-    // after admission, so it is printed, not asserted, here. Ratchets on the
-    // measured values, not native bounds.
+    // 78 only, 119 leptons apart, below the derived transit bound. That bound
+    // is derived for the admission instant, inside the frame, which this
+    // fixture does not sample; whether native admits here too is open while
+    // Drive admission runs through `classify_blocker` (ledger row I15).
+    // Ratchets on the measured values, not native bounds; the bound is
+    // printed.
     const VISIBLE_OVERLAP_LEPTONS: i64 = 108;
     const SHARED_CELL_FLOOR_LEPTONS: i64 = 119;
     const SHARED_CELL_TICKS: usize = 1;

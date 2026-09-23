@@ -223,10 +223,14 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 51339613354888284
 // Process_Track(0) ends a track the same Process runs Process_Movement and
 // Process_Track(1) (residual-only budget; its speed prefix runs again).
 // First divergence from main: tick 30, the tank's first track end, now
-// continuing into the next track in that Process. The prefix's second ramp in
-// track-end frames moves the arrival from tick 165 to 168; the scenario-RNG
-// draws are the same sequence, moved with the arrival's Guard mission, so the
-// absolute RNG state pin changes too. Old values: the commit that moved them.
+// continuing into the next track in that Process. Measured against main: the
+// speed prefix runs in both Process_Track calls of a track-end frame, so the
+// early track ends (accelerating or cruising) leave the tank up to 4 leptons
+// ahead; at the last one (tick 131), braking toward its destination, it
+// brakes one step more, falls up to 21 leptons behind and arrives at tick 168
+// instead of 165. The scenario-RNG draws are the same sequence, moved with
+// the arrival's Guard mission, so the absolute RNG state pin changes too. Old
+// values: the commit that moved them.
 const BRIDGE_HARNESS_FINAL_HASH: u64 = 0xE38B_348B_1940_AF9A;
 const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 17631648094789127815;
 

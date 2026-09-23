@@ -101,9 +101,7 @@ use crate::sim::house_strategy::update_anger_nodes;
 use crate::sim::infantry;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::map::bridge_topology::BRIDGE_DECK_HEIGHT_LEPTONS;
-use crate::sim::mission::authority::{
-    override_mission_on_damage_response, queue_entity_mission_deferred,
-};
+use crate::sim::mission::authority::queue_entity_mission_deferred;
 use crate::sim::mission::concrete_effects::represented_assign_target;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::overlay_grid::OverlayGrid;

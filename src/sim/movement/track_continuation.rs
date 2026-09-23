@@ -5,7 +5,8 @@
 //! 1. [`Simulation::begin_track_end_continuation`]: the gates 0x4B0583..
 //!    0x4B05CA (live owner; selector retired; Is_Moving or a Foot+5E0 head;
 //!    no Unit+6D1 unload latch), then the Drive Unit->Infantry NavCom re-aim
-//!    0x4B05D0..0x4B063B;
+//!    0x4B05D0..0x4B063B. A class setter Rust deferred is finished before
+//!    the gates read +34 (natively it ran before this Process);
 //! 2. Process_Movement(&out, 1, 0) (0x4B0647 / 0x69FCEE) through the pending
 //!    pass (`MoverReentry::AfterTrackEnd`);
 //! 3. Process_Track(1) (0x4B0AAA / 0x6A0173): its budget is the retained
@@ -52,6 +53,10 @@ impl Simulation {
         if selector.is_some_and(|selector| selector != -1) {
             return Ok(false);
         }
+        self.finish_deferred_track_order(id, rules);
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return Ok(false);
+        };
         // 4B059B..4B05AE: Is_Moving (4AFB80 / 69F290) or a Foot+5E0 head.
         if !super::motion_query::is_moving(entity).unwrap_or(false)
             && entity
@@ -119,10 +124,29 @@ impl Simulation {
         Ok(())
     }
 
+    /// Rust bookkeeping, no native counterpart. A class setter that Rust
+    /// deferred (`pending_arrival_clear`: a mission restore's
+    /// `Assign_Destination(saved, 1)`, or a NavCom whose scheduling adapter a
+    /// stop or callback dropped) ran natively before this Process, so +34 and
+    /// the path head already follow NavCom when the gates read them. The
+    /// setter clears the path head, so the adapter's leftover route is
+    /// abandoned.
+    fn finish_deferred_track_order(&mut self, id: u64, rules: Option<&RuleSet>) {
+        let Some(actor) = self.substrate.entities.get_mut(id) else {
+            return;
+        };
+        if !actor.navigation.pending_arrival_clear {
+            return;
+        }
+        actor.movement_target = None;
+        self.complete_pending_track_order(id, rules);
+    }
+
     /// Rust bookkeeping, no native counterpart: Process_Movement runs through
-    /// the MovementTarget scheduling adapter, which a PerCell callback may
-    /// have dropped while +34 stayed. The empty-route adapter replaces the
-    /// deferred next-frame order that the track terminal armed for it.
+    /// the MovementTarget scheduling adapter, and a +34 can outlive it without
+    /// a deferred order: Force_Track writes +34 directly (0x4B0D3F), and a
+    /// NavCom object's pointer expiry clears NavCom but not +34 (0x4D9ABD).
+    /// Those continue toward +34 through an empty-route adapter.
     fn ensure_track_scheduling_adapter(&mut self, id: u64, rules: Option<&RuleSet>) {
         let destination = self.substrate.entities.get(id).and_then(|entity| {
             if entity.movement_target.is_some() {
@@ -145,7 +169,6 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return;
         };
-        actor.navigation.pending_arrival_clear = false;
         let speed = info.as_ref().map_or(SimFixed::lit("25"), |info| info.speed);
         let cell = ((destination.x / 256) as u16, (destination.y / 256) as u16);
         super::movement_commands::schedule_track_process(actor, cell, speed);

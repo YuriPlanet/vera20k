@@ -1082,19 +1082,6 @@ impl Simulation {
         // unit only finishes its current track. The locomotor's Move_To
         // refuses while warped (Drive `0x004AFD71`, Walk `0x0075ACD0`), and it
         // does not process.
-        let track_unit = category == EntityCategory::Unit
-            && self
-                .substrate
-                .entities
-                .get(id)
-                .and_then(|entity| entity.locomotor.as_ref())
-                .is_some_and(|loco| {
-                    matches!(
-                        loco.active_kind(),
-                        crate::rules::locomotor_type::LocomotorKind::Drive
-                            | crate::rules::locomotor_type::LocomotorKind::Ship
-                    )
-                });
         let mut clears_destination = false;
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             if entity.attack_target.is_some() {
@@ -1104,15 +1091,8 @@ impl Simulation {
                 && (entity.navigation.nav_com.is_some() || entity.movement_target.is_some());
         }
         if clears_destination {
-            if track_unit {
-                self.set_unit_null_destination(id, Some(rules));
-            }
+            self.assign_null_destination(id, Some(rules));
             if let Some(entity) = self.substrate.entities.get_mut(id) {
-                if !track_unit {
-                    crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
-                        entity, None,
-                    );
-                }
                 entity.movement_target = None;
             }
         }
