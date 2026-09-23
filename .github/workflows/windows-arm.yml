@@ -1,0 +1,18 @@
+name: Windows ARM
+
+# Windows on ARM64 (Snapdragon laptops).
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: windows-arm.yml-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+    with:
+      os: windows-11-arm
