@@ -1,0 +1,415 @@
+[
+  {
+    "events": [
+      [
+        "receive_damage",
+        "obj0",
+        100,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ],
+      [
+        "receive_damage",
+        "obj2",
+        250,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ],
+      [
+        "receive_damage",
+        "obj3",
+        0,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "house": 0,
+      "houses": [
+        0,
+        1
+      ],
+      "name": "own_objects_in_array_order",
+      "objects": [
+        {
+          "health": 100,
+          "owner": 0
+        },
+        {
+          "owner": 1
+        },
+        {
+          "health": 250,
+          "owner": 0
+        },
+        {
+          "health": 0,
+          "owner": 0
+        }
+      ]
+    },
+    "original_owners": {}
+  },
+  {
+    "events": [],
+    "input": {
+      "house": 0,
+      "houses": [
+        0,
+        1
+      ],
+      "name": "nothing_owned",
+      "objects": [
+        {
+          "owner": 1
+        },
+        {
+          "owner": 1
+        }
+      ]
+    },
+    "original_owners": {}
+  },
+  {
+    "events": [],
+    "input": {
+      "house": 0,
+      "houses": [
+        0
+      ],
+      "name": "empty_array",
+      "objects": []
+    },
+    "original_owners": {}
+  },
+  {
+    "events": [
+      [
+        "receive_damage",
+        "obj2",
+        100,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "civilian_side": 2,
+      "controllers": {
+        "0": [
+          [
+            1,
+            0
+          ]
+        ]
+      },
+      "house": 0,
+      "houses": [
+        0,
+        1,
+        2
+      ],
+      "name": "captured_by_other_to_civilian",
+      "objects": [
+        {
+          "owner": 1
+        },
+        {
+          "health": 90,
+          "owner": 1
+        },
+        {
+          "owner": 0
+        }
+      ]
+    },
+    "original_owners": {
+      "0": [
+        "house2"
+      ]
+    }
+  },
+  {
+    "events": [
+      [
+        "receive_damage",
+        "obj1",
+        90,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ],
+      [
+        "receive_damage",
+        "obj2",
+        100,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "civilian_side": 5,
+      "controllers": {
+        "0": [
+          [
+            1,
+            0
+          ]
+        ]
+      },
+      "house": 0,
+      "houses": [
+        0,
+        1
+      ],
+      "name": "captured_by_other_no_civilian",
+      "objects": [
+        {
+          "owner": 1
+        },
+        {
+          "health": 90,
+          "owner": 1
+        },
+        {
+          "owner": 0
+        }
+      ]
+    },
+    "original_owners": {
+      "0": [
+        "house0"
+      ]
+    }
+  },
+  {
+    "events": [
+      [
+        "receive_damage",
+        "obj0",
+        100,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "controllers": {
+        "0": [
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "house": 0,
+      "houses": [
+        0,
+        1
+      ],
+      "name": "our_captive_survives",
+      "objects": [
+        {
+          "owner": 0
+        },
+        {
+          "health": 70,
+          "owner": 0
+        }
+      ]
+    },
+    "original_owners": {
+      "0": [
+        "house1"
+      ]
+    }
+  },
+  {
+    "events": [
+      [
+        "receive_damage",
+        "obj0",
+        60,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "house": 0,
+      "houses": [
+        0,
+        1
+      ],
+      "name": "trigger_owned_elsewhere_dies",
+      "objects": [
+        {
+          "health": 60,
+          "owner": 1,
+          "trigger_owner": 0
+        },
+        {
+          "owner": 1,
+          "trigger_owner": 1
+        }
+      ]
+    },
+    "original_owners": {}
+  },
+  {
+    "events": [
+      [
+        "temporal_release",
+        "head0"
+      ],
+      [
+        "receive_damage",
+        "obj0",
+        400,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "house": 0,
+      "houses": [
+        0,
+        1
+      ],
+      "name": "warped_object_released_first",
+      "objects": [
+        {
+          "health": 400,
+          "owner": 0,
+          "warped": true
+        }
+      ]
+    },
+    "original_owners": {}
+  },
+  {
+    "events": [
+      [
+        "receive_damage",
+        "obj0",
+        10,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ],
+      [
+        "receive_damage",
+        "obj1",
+        20,
+        0,
+        "c4",
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "house": 0,
+      "houses": [
+        0,
+        1
+      ],
+      "name": "removal_rereads_the_slot",
+      "objects": [
+        {
+          "health": 10,
+          "owner": 0,
+          "remove": true
+        },
+        {
+          "health": 20,
+          "owner": 0
+        },
+        {
+          "owner": 1
+        }
+      ]
+    },
+    "original_owners": {}
+  },
+  {
+    "events": [],
+    "input": {
+      "civilian_side": 2,
+      "controllers": {
+        "0": [
+          [
+            1,
+            0
+          ],
+          [
+            2,
+            0
+          ]
+        ]
+      },
+      "house": 0,
+      "houses": [
+        0,
+        1,
+        2
+      ],
+      "name": "two_captives_one_controller",
+      "objects": [
+        {
+          "owner": 1
+        },
+        {
+          "health": 11,
+          "owner": 1
+        },
+        {
+          "health": 22,
+          "owner": 1
+        }
+      ]
+    },
+    "original_owners": {
+      "0": [
+        "house2",
+        "house2"
+      ]
+    }
+  }
+]

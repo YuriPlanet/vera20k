@@ -22,6 +22,7 @@ pub mod edge_cell;
 mod gap_generator;
 mod hash_schema;
 mod house_base;
+mod house_defeat;
 pub(crate) use house_base::HouseBaseState;
 mod infantry_terminal;
 mod jumpjet_cruise;
@@ -3873,8 +3874,8 @@ impl Simulation {
                     entity.stable_id()
                 );
                 debug_assert!(
-                    entity.owned_count_released,
-                    "dead entity {} must release owned count exactly once before alive clear",
+                    entity.destruction_recorded,
+                    "dead entity {} must record its destruction exactly once before alive clear",
                     entity.stable_id()
                 );
                 debug_assert!(
@@ -4197,33 +4198,21 @@ impl Simulation {
         }
     }
 
-    /// Increment owned count for the given owner when an entity spawns.
-    pub(crate) fn increment_owned_count(&mut self, owner: &str, category: EntityCategory) {
-        if let Some(house) = crate::sim::house_state::house_state_for_owner_mut(
-            &mut self.houses,
-            owner,
-            &self.interner,
-        ) {
-            match category {
-                EntityCategory::Structure => house.owned_building_count += 1,
-                _ => house.owned_unit_count += 1,
-            }
-        }
-    }
-
-    /// Decrement owned count for the given owner when an entity dies or is despawned.
-    pub(crate) fn decrement_owned_count(&mut self, owner: &str, category: EntityCategory) {
-        if let Some(house) = crate::sim::house_state::house_state_for_owner_mut(
-            &mut self.houses,
-            owner,
-            &self.interner,
-        ) {
-            match category {
-                EntityCategory::Structure => {
-                    house.owned_building_count = house.owned_building_count.saturating_sub(1)
-                }
-                _ => house.owned_unit_count = house.owned_unit_count.saturating_sub(1),
-            }
+    /// Apply one of `house_tracking`'s writers (Add/Remove_Tracking,
+    /// Added_To_Game/Removed_From_Game) for an object on its owner's house.
+    pub(crate) fn update_house_tracking(
+        &mut self,
+        stable_id: u64,
+        update: fn(
+            &mut crate::sim::house_tracking::HouseTracking,
+            &crate::sim::game_entity::GameEntity,
+        ),
+    ) {
+        let Some(entity) = self.substrate.entities.get(stable_id) else {
+            return;
+        };
+        if let Some(house) = self.houses.get_mut(&entity.owner()) {
+            update(&mut house.tracking, entity);
         }
     }
 
@@ -4335,12 +4324,8 @@ impl Simulation {
         }
 
         // Active YR chain: BuildingClass::ChangeOwner (0x00448260) delegates
-        // to TechnoClass::ChangeOwner (0x007014A0), which calls
-        // HouseClass::Removed_From_Game (0x005025F0) before the owner swap and
-        // HouseClass::Added_To_Game (0x00502A80) afterward. Their building
-        // cases move the old/new HouseClass ownership totals.
-        let old_owner_name = self.interner.resolve(old_owner).to_string();
-        let new_owner_name = self.interner.resolve(new_owner).to_string();
+        // to TechnoClass::ChangeOwner (0x007014A0), which moves the house
+        // counts (`house_tracking`) below.
 
         // `TechnoClass::ChangeOwner` calls `SpawnManagerClass::Kill_All_Spawns`
         // before the house swap: a mind-controlled V3/Dreadnought/Boomer loses
@@ -4370,7 +4355,23 @@ impl Simulation {
         if build_const_eligible {
             self.remove_build_const_from_owner(stable_id);
         }
-        self.decrement_owned_count(&old_owner_name, category);
+        // Techno70158A..7015E6: Removed_From_Game on the old house (not in
+        // limbo), then Remove_Tracking from it and Add_Tracking to the new.
+        let on_map = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| !entity.lifecycle.in_limbo);
+        if on_map {
+            self.update_house_tracking(
+                stable_id,
+                crate::sim::house_tracking::HouseTracking::removed_from_game,
+            );
+        }
+        self.update_house_tracking(
+            stable_id,
+            crate::sim::house_tracking::HouseTracking::remove_tracking,
+        );
         // `TechnoClass::ChangeOwner` runs the live-detach targeting sweep next,
         // before the house swap: everything shooting at this object is released
         // while the object still belongs to its old house. Engineer capture and
@@ -4379,6 +4380,10 @@ impl Simulation {
         // shooting at what is now its own structure.
         self.stop_all_targeting_on_detach(stable_id);
         self.substrate.entities.change_owner(stable_id, new_owner);
+        self.update_house_tracking(
+            stable_id,
+            crate::sim::house_tracking::HouseTracking::add_tracking,
+        );
         // `BuildingClass::ChangeOwner @ 0x00448723` marks every transferred
         // building HasBeenCaptured (+0x6E3); survivors read it at death.
         if category == EntityCategory::Structure
@@ -4391,7 +4396,13 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.discovery.owned_by_current_house = self.session.current_house == Some(new_owner);
         }
-        self.increment_owned_count(&new_owner_name, category);
+        // Techno701757..70178E: Added_To_Game on the new house (not in limbo).
+        if on_map {
+            self.update_house_tracking(
+                stable_id,
+                crate::sim::house_tracking::HouseTracking::added_to_game,
+            );
+        }
         if build_const_eligible
             && let Some(house) = self.houses.get_mut(&new_owner)
             && !house.build_const_order.contains(&stable_id)
@@ -4608,128 +4619,6 @@ impl Simulation {
         self.substrate.entities.clear_radio_contacts_for(stable_id);
     }
 
-    /// Check each house for defeat and game completion
-    /// (all remaining houses mutually allied).
-    fn check_defeat(&mut self, rules: Option<&RuleSet>) {
-        let outcome_tick = self.session.tick.saturating_add(1);
-        let savour_frames = crate::rules::ruleset::savour_delay_frames(
-            rules
-                .map(|rules| rules.general.savour_delay_minutes)
-                // RulesClass__Constructor @ 0x00665650 stores the exact f64
-                // default 0.03 before any optional INI ReadDouble override.
-                .unwrap_or(0.03),
-        );
-        // Short Game defeats houses with no buildings unless a BaseUnit remains.
-        // Long games wait for all owned objects.
-        let owners: Vec<InternedId> = self.houses.keys().copied().collect();
-        for &owner in &owners {
-            let house = &self.houses[&owner];
-            // gamemd gates its entire defeat block on the house type's
-            // MultiplayPassive being clear, so Civilian/JP houses are never
-            // evaluated for defeat no matter what they own or lose.
-            if house.is_defeated || house.multiplay_passive {
-                continue;
-            }
-            let should_defeat = if self.session.game_options.short_game {
-                house.owned_building_count == 0 && !self.house_has_live_base_unit(owner, rules)
-            } else {
-                house.owned_building_count == 0 && house.owned_unit_count == 0
-            };
-            if should_defeat {
-                // `HouseClass::MPlayer_Defeated 0x004FC30F..0x004FC3BC`: the
-                // defeat of any non-passive house is announced (the passive
-                // gate is the `continue` above); the app decides local vs
-                // other.
-                self.sound_events
-                    .push(SimSoundEvent::PlayerDefeated { house: owner });
-                let accepted = if let Some(h) = self.houses.get_mut(&owner) {
-                    h.is_defeated = true;
-                    // A house that owns nothing (or, in Short Game, has no base
-                    // left) has lost from its own perspective. Flag_To_Lose owns
-                    // the result transition and grace timer. NOTE: gamemd does
-                    // NOT destroy the
-                    // defeated house's remaining objects — it scatters surviving
-                    // units (ScatterAllUnits) and they persist; hard object
-                    // removal only happens under the non-standard SpecialFlags
-                    // 0x800 (HarvesterImmune). So no cleanup/destroy is done here.
-                    h.flag_to_lose(outcome_tick, savour_frames)
-                } else {
-                    false
-                };
-                if accepted {
-                    self.sound_events.push(SimSoundEvent::MatchOutcome {
-                        owner,
-                        kind: crate::sim::house_state::HouseOutcomeKind::Defeat,
-                    });
-                }
-            }
-        }
-
-        // Check if all remaining alive houses are mutually allied → game over.
-        // The native alive scan counts only houses that are neither defeated nor
-        // passive; the Civilian/JP houses present in every skirmish own map
-        // objects forever, so including them would keep the alive set above one
-        // and the victory screen would never appear.
-        let alive: Vec<InternedId> = self
-            .houses
-            .iter()
-            .filter(|(_, h)| !h.is_defeated && !h.multiplay_passive)
-            .map(|(k, _)| *k)
-            .collect();
-
-        // VERA-internal developer policy, gamemd equivalent UNCHECKED: an
-        // authored solo sandbox must not create a victory state or EVA merely
-        // for being the only contender. Keep accepted explicit outcomes and
-        // their timers below independent of this automatic-creation gate.
-        let automatic_victory_allowed = self.contending_house_count() > 1;
-        if automatic_victory_allowed && alive.len() == 1 {
-            // Last player standing.
-            if let Some(h) = self.houses.get_mut(&alive[0]) {
-                if h.flag_to_win(outcome_tick, savour_frames) {
-                    self.sound_events.push(SimSoundEvent::MatchOutcome {
-                        owner: alive[0],
-                        kind: crate::sim::house_state::HouseOutcomeKind::Victory,
-                    });
-                }
-            }
-        } else if automatic_victory_allowed && !alive.is_empty() {
-            // O(n^2) mutual-alliance check. Native alliance is directional — each
-            // house owns its own ally bits — and the game-over scan requires BOTH
-            // houses of a pair to name the other, so a one-way alliance must not end
-            // the match.
-            let all_allied = alive.iter().all(|a| {
-                alive.iter().all(|b| {
-                    a == b
-                        || crate::map::houses::are_houses_mutually_allied(
-                            &self.house_alliances,
-                            self.interner.resolve(*a),
-                            self.interner.resolve(*b),
-                        )
-                })
-            });
-
-            if all_allied {
-                for &owner in &alive {
-                    if let Some(h) = self.houses.get_mut(&owner) {
-                        if h.flag_to_win(outcome_tick, savour_frames) {
-                            self.sound_events.push(SimSoundEvent::MatchOutcome {
-                                owner,
-                                kind: crate::sim::house_state::HouseOutcomeKind::Victory,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        // HouseClass::Update @ 0x004F8440 advances the accepted result timer
-        // in the house rung. The expiry frame is terminal and therefore skips
-        // the wrapping frame commit below, matching Main_Tick's early return.
-        for house in self.houses.values_mut() {
-            house.advance_outcome_savour(outcome_tick);
-        }
-    }
-
     /// Number of houses that can actually contend for the match outcome.
     ///
     /// MultiplayPassive houses (stock Civilian/JP) are roster filler: they are
@@ -4749,23 +4638,6 @@ impl Simulation {
             .values()
             .filter(|house| !house.multiplay_passive)
             .count()
-    }
-
-    fn house_has_live_base_unit(&self, owner: InternedId, rules: Option<&RuleSet>) -> bool {
-        let Some(rules) = rules else {
-            return false;
-        };
-
-        self.substrate.entities.values().any(|entity| {
-            entity.owner() == owner
-                && entity.category == EntityCategory::Unit
-                && !entity.dying
-                && rules.general.base_unit_types.iter().any(|type_id| {
-                    self.interner
-                        .resolve(entity.type_ref())
-                        .eq_ignore_ascii_case(type_id)
-                })
-        })
     }
 
     /// Restore externally-derived cache fields after validated snapshot
@@ -5697,12 +5569,13 @@ impl Simulation {
         self.update_houses_anger_and_activation(rules);
         // --- Phase 8: Defeat detection (runs BEFORE AI) ---
         // gamemd evaluates each house's defeat before its AI manage/produce step,
-        // so a house that lost its last building/unit this tick can issue NO AI
-        // command this tick. Owned counts are final here after combat + production
-        // (but before this tick's AI spawns); tick_ai then skips any house already
-        // flagged defeated via its is_defeated gate.
+        // so a defeated house issues no AI command this tick; tick_ai skips any
+        // house flagged defeated via its is_defeated gate. The gate reads the
+        // house's tracking counts (`house_defeat.rs`), which construction and
+        // the frame-end pending-delete drain move: a death reaches the gate on
+        // the next frame.
         if self.session.tick > 0 {
-            self.check_defeat(rules);
+            self.check_defeat(rules, overlay_registry);
             #[cfg(test)]
             self.trace_house_ai_activation_order(HouseAiActivationOrderTestEvent::DefeatProcessed);
         }

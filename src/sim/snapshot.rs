@@ -573,7 +573,11 @@ use crate::sim::world::Simulation;
 // 196 -> 197: TemporalClass: a Temporal firer keeps its link (target, chain
 // neighbours, WarpRemaining) and a warped object its chain head. A 196 save
 // cannot tell a warped object from a free one.
-const SNAPSHOT_VERSION: u32 = 197;
+// 197 -> 198: the house keeps its native defeat counts (`house_tracking`) in
+// place of the two retired owned counts; an entity keeps its DontScore and
+// tracking facts, and `owned_count_released` is renamed
+// `destruction_recorded`. A 197 save holds none of the counts.
+const SNAPSHOT_VERSION: u32 = 198;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3511,7 +3515,8 @@ mod tests {
         // 194 -> 195: death anims take the death producers' arguments.
         // 195 -> 196: mind-control nodes, overload state and victim links.
         // 196 -> 197: TemporalClass links and the warped object's chain head.
-        assert_eq!(super::SNAPSHOT_VERSION, 197);
+        // 197 -> 198: the house defeat counts.
+        assert_eq!(super::SNAPSHOT_VERSION, 198);
     }
 
     #[test]
@@ -7447,7 +7452,7 @@ mod tests {
         entity.in_logic_vector = false;
         entity.dying = true;
         entity.dirty_rect_eligible = true;
-        entity.owned_count_released = true;
+        entity.destruction_recorded = true;
         sim.substrate.entities.insert(entity);
         sim.substrate.pending_delete.extend([7, 3, 7]);
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
@@ -7465,7 +7470,7 @@ mod tests {
         assert!(!restored_entity.in_logic_vector);
         assert!(restored_entity.dying);
         assert!(restored_entity.dirty_rect_eligible);
-        assert!(restored_entity.owned_count_released);
+        assert!(restored_entity.destruction_recorded);
         assert_eq!(restored.substrate.pending_delete, vec![7, 3, 7]);
         assert_eq!(restored.state_hash(), hash_before);
     }
@@ -7523,7 +7528,7 @@ mod tests {
 
         let entity = sim.substrate.entities.get_mut(1).expect("fixture entity");
         entity.dirty_rect_eligible = true;
-        entity.owned_count_released = true;
+        entity.destruction_recorded = true;
         let changed_hash = sim.state_hash();
         assert_ne!(default_hash, changed_hash);
 
@@ -7531,7 +7536,7 @@ mod tests {
         let restored = GameSnapshot::load(&bytes).expect("load should succeed").sim;
         let restored_entity = restored.substrate.entities.get(1).expect("entity restored");
         assert!(restored_entity.dirty_rect_eligible);
-        assert!(restored_entity.owned_count_released);
+        assert!(restored_entity.destruction_recorded);
         assert_eq!(restored.state_hash(), changed_hash);
     }
 
@@ -7962,8 +7967,9 @@ mod tests {
 
     /// Slice 3: `unlimbo(ge)` places the entity into BOTH the active order and
     /// occupancy in one atomic call — a caller can never observe it in `logic`
-    /// without occupancy, because the method returns only after both. Owner count
-    /// is incremented. (No-op collapse: same end state as the old 4-step.)
+    /// without occupancy, because the method returns only after both. The
+    /// house tracks it (Add_Tracking, Added_To_Game). (No-op collapse: same
+    /// end state as the old 4-step.)
     #[test]
     fn unlimbo_ge_places_into_logic_and_occupancy_atomically() {
         use crate::sim::game_entity::GameEntity;
@@ -7988,8 +7994,8 @@ mod tests {
         sim.debug_assert_lifecycle_consistent();
     }
 
-    /// Slice 3: `create_limbo(ge)` stores the entity and increments owner counts
-    /// but leaves it OUT of the active order and OUT of occupancy (born InLimbo).
+    /// Slice 3: `create_limbo(ge)` stores the entity and its house tracks it
+    /// (Add_Tracking) but leaves it OUT of the active order and OUT of occupancy (born InLimbo).
     #[test]
     fn create_limbo_leaves_entity_out_of_logic_and_occupancy() {
         use crate::sim::game_entity::GameEntity;

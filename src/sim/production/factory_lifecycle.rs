@@ -500,6 +500,17 @@ pub(in crate::sim) fn revalidate_and_step_factories(sim: &mut Simulation, rules:
             "prerequisite AbandonProduction destroys its held limbo object"
         );
     }
+    // An abandoned finished building no longer waits for placement.
+    for (owner, type_id) in lifecycle.abandoned_finished {
+        if let Some(ready_queue) = sim.production.ready_by_owner.get_mut(&owner)
+            && let Some(index) = ready_queue.iter().position(|&ready| ready == type_id)
+        {
+            ready_queue.remove(index);
+            if ready_queue.is_empty() {
+                sim.production.ready_by_owner.remove(&owner);
+            }
+        }
+    }
     sim.production.factory_shadow = registry;
     for (owner, category, type_id) in lifecycle.promoted {
         construct_and_link_active_factory_object(sim, rules, owner, category, type_id)

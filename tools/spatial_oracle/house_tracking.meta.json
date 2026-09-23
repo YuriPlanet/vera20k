@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original 0x004FF700 HouseClass::Add_Tracking and 0x004FF550 HouseClass::Remove_Tracking",
+  "assumptions": [
+    "House +2E8 units, +2EC naval without passengers, +2F0 buildings, +2F4 infantry, +2F8 aircraft; per-type counters +5500/+5514/+5528/+553C; owned-type sets +1B40/+1338/+B30/+328",
+    "Techno +3CC tracked, +438 infantry latch, +439, +520 building type; TechnoType +232 Insignificant, +C9F DontScore, +CCE Naval, +5E0 Passengers, +408 UndeploysInto, +5EC ResourceGatherer"
+  ],
+  "substitutions": [
+    "Recorded at entry and returned without running: GetTechnoType (+84), WhatAmI (+2C), the building pre-check (+80, the case's value), the type's ArrayIndex (+40, 7), IndexClass Increment 0x0049FA00 / Decrement 0x0049FA70, the owned-type set 0x00749020"
+  ],
+  "entry_points": {
+    "add_tracking": "0x004FF700",
+    "remove_tracking": "0x004FF550"
+  },
+  "payload_sha256": "000f86cf46961f6537416c4df93deed78f22493f4c9bf44205d7f8873cbbe1fb"
+}

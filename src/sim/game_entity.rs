@@ -503,15 +503,16 @@ pub struct GameEntity {
     /// veterancy is still the value it died at.
     #[serde(skip)]
     pub kill_award_points: i32,
-    /// Type's `DontScore=`, copied in at spawn so the score bookkeeping can honor
-    /// it without a `RuleSet` borrow — the same reason `foundation` is copied.
-    ///
-    /// Not serialized, matching the rest of the score bookkeeping. A snapshot
-    /// reload therefore clears it and the affected types (slaves, spawner
-    /// missiles) resume contributing phantom entries until this is promoted to a
-    /// persisted field.
-    #[serde(skip)]
+    /// Type's `DontScore=`, copied in at spawn so the score bookkeeping and the
+    /// house counts (`house_tracking`) can honor it without a `RuleSet`
+    /// borrow — the same reason `foundation` is copied. Persisted: a count
+    /// removed after a reload must skip it as its addition did.
+    #[serde(default)]
     pub dont_score: bool,
+    /// The other type facts the house counts test (`house_tracking`), copied
+    /// in at construction.
+    #[serde(default)]
+    pub tracking_facts: crate::sim::house_tracking::TrackingFacts,
     /// Fog-of-war sight range in cells.
     pub vision_range: u16,
     /// Exact immutable Type+5E8 == 0 predicate used by InfantryUnlimbo51E0EF.
@@ -572,10 +573,11 @@ pub struct GameEntity {
     /// Parsed InfantryType occupation capability used by capture-target expiry.
     #[serde(default)]
     pub occupier: bool,
-    /// Rust bookkeeping that makes the represented owner-count decrement
-    /// exactly-once. This does not stand in for native-alive or `dying`.
+    /// Rust bookkeeping that makes the UnInit-time score record
+    /// (`Simulation::record_destruction_once`) exactly-once. This does not
+    /// stand in for native-alive or `dying`.
     #[serde(default)]
-    pub owned_count_released: bool,
+    pub destruction_recorded: bool,
     /// Monotonic order of the last successful insertion into a CellClass-style
     /// object list. Serialized because `OccupancyGrid` is a rebuilt cache; this
     /// is the authoritative fact needed to reconstruct its linked-list order.
@@ -1327,6 +1329,7 @@ impl GameEntity {
             killed_by: None,
             kill_award_points: 0,
             dont_score: false,
+            tracking_facts: Default::default(),
             stable_id,
             techno_ctor_random_word,
             discovery: TechnoDiscoveryHistory::default(),
@@ -1379,7 +1382,7 @@ impl GameEntity {
             mission_only: false,
             dirty_rect_eligible: false,
             occupier: false,
-            owned_count_released: false,
+            destruction_recorded: false,
             occupancy_enter_order: stable_id,
             air_spatial_bucket: None,
             air_spatial_enter_order: stable_id,
@@ -1859,7 +1862,7 @@ mod lifecycle_tests {
         assert_eq!(e.lifecycle, ObjectLifecycle::default());
         assert!(!e.in_logic_vector);
         assert!(!e.dirty_rect_eligible);
-        assert!(!e.owned_count_released);
+        assert!(!e.destruction_recorded);
 
         // Exercise every combination without deriving one fact from another.
         for bits in 0u8..64 {

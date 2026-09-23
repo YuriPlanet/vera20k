@@ -2168,18 +2168,29 @@ fn unregister_live_object_clears_flag_when_vector_entry_is_missing() {
     assert!(!sim.substrate.entities.get(10).unwrap().in_logic_vector);
 }
 
+/// A house whose tracked buildings and on-map units stand for objects the
+/// fixture does not construct, in a non-campaign game, where the defeat gate
+/// runs.
 fn insert_house_with_counts(
     sim: &mut Simulation,
     name: &str,
-    buildings: u32,
-    units: u32,
+    buildings: i32,
+    units: i32,
 ) -> crate::sim::intern::InternedId {
     let owner = sim.interner.intern(name);
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10);
-    house.owned_building_count = buildings;
-    house.owned_unit_count = units;
+    house.tracking.set_buildings_for_test(buildings);
+    house.tracking.set_active_units_for_test(units);
     sim.houses.insert(owner, house);
+    sim.session.house_order.push(owner);
+    sim.session.game_mode_nonzero = true;
     owner
+}
+
+/// The house rung's defeat pass, past frame zero as the gate requires.
+fn check_defeat_now(sim: &mut Simulation, rules: Option<&RuleSet>) {
+    sim.session.binary_frame = sim.session.binary_frame.max(1);
+    sim.check_defeat(rules, None);
 }
 
 fn insert_test_entity_for_owner(
@@ -2195,33 +2206,39 @@ fn insert_test_entity_for_owner(
     entity.type_ref = sim.interner.intern(type_id);
     entity.category = category;
     sim.substrate.entities.insert(entity);
+    // As its construction would: Add_Tracking.
+    sim.update_house_tracking(
+        stable_id,
+        crate::sim::house_tracking::HouseTracking::add_tracking,
+    );
 }
 
 #[test]
 fn gsi_05_16_change_owner_moves_live_category_counts_once_and_noops() {
     let mut sim = Simulation::new();
-    let old_owner = insert_house_with_counts(&mut sim, "Americans", 1, 1);
+    let old_owner = insert_house_with_counts(&mut sim, "Americans", 0, 0);
     let new_owner = insert_house_with_counts(&mut sim, "Russians", 0, 0);
     insert_test_entity_for_owner(&mut sim, 1, old_owner, "GAPOWR", EntityCategory::Structure);
-    insert_test_entity_for_owner(&mut sim, 2, old_owner, "GI", EntityCategory::Unit);
+    insert_test_entity_for_owner(&mut sim, 2, old_owner, "MTNK", EntityCategory::Unit);
+    let counts = |sim: &Simulation, owner| {
+        let tracking = &sim.houses[&owner].tracking;
+        (tracking.buildings_for_test(), tracking.units_for_test())
+    };
+    assert_eq!(counts(&sim, old_owner), (1, 1));
 
     sim.change_owner(1, new_owner);
     sim.change_owner(2, new_owner);
 
-    assert_eq!(sim.houses[&old_owner].owned_building_count, 0);
-    assert_eq!(sim.houses[&old_owner].owned_unit_count, 0);
-    assert_eq!(sim.houses[&new_owner].owned_building_count, 1);
-    assert_eq!(sim.houses[&new_owner].owned_unit_count, 1);
+    assert_eq!(counts(&sim, old_owner), (0, 0));
+    assert_eq!(counts(&sim, new_owner), (1, 1));
     assert_eq!(sim.substrate.entities.get(1).unwrap().owner, new_owner);
     assert_eq!(sim.substrate.entities.get(2).unwrap().owner, new_owner);
 
     sim.change_owner(1, new_owner);
     sim.change_owner(999, old_owner);
 
-    assert_eq!(sim.houses[&old_owner].owned_building_count, 0);
-    assert_eq!(sim.houses[&old_owner].owned_unit_count, 0);
-    assert_eq!(sim.houses[&new_owner].owned_building_count, 1);
-    assert_eq!(sim.houses[&new_owner].owned_unit_count, 1);
+    assert_eq!(counts(&sim, old_owner), (0, 0));
+    assert_eq!(counts(&sim, new_owner), (1, 1));
 }
 
 /// Create a CommandEnvelope with a string owner, interning it via the sim's interner.
@@ -3444,13 +3461,16 @@ fn short_game_defeat_test_rules() -> RuleSet {
          [InfantryTypes]\n0=E1\n\n\
          [VehicleTypes]\n0=MTNK\n1=AMCV\n2=SMCV\n3=PCV\n\n\
          [AircraftTypes]\n\n\
-         [BuildingTypes]\n0=GACNST\n\n\
+         [BuildingTypes]\n0=GACNST\n1=CAGAS01\n\n\
+         [CAGAS01]\nStrength=400\nArmor=wood\nInsignificant=yes\nCanBeOccupied=yes\n\n\
          [E1]\nStrength=125\nArmor=flak\nSpeed=4\n\n\
          [MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\n\n\
          [AMCV]\nStrength=450\nArmor=heavy\nSpeed=5\nDeploysInto=GACNST\n\n\
          [SMCV]\nStrength=450\nArmor=heavy\nSpeed=5\nDeploysInto=GACNST\n\n\
          [PCV]\nStrength=450\nArmor=heavy\nSpeed=5\nDeploysInto=GACNST\n\n\
-         [GACNST]\nStrength=1000\nArmor=wood\nFoundation=4x3\nConstructionYard=yes\nUndeploysInto=AMCV\n",
+         [GACNST]\nStrength=1000\nArmor=wood\nFoundation=4x3\nConstructionYard=yes\nUndeploysInto=AMCV\n\n\
+         [Warheads]\n0=Super\n\n\
+         [Super]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     );
     RuleSet::from_ini(&ini).expect("short game defeat test rules should parse")
 }
@@ -3582,7 +3602,7 @@ fn short_game_defeats_house_with_no_buildings_even_if_ordinary_units_remain() {
     let owner = insert_house_with_counts(&mut sim, "Americans", 0, 1);
     insert_test_entity_for_owner(&mut sim, 1, owner, "MTNK", EntityCategory::Unit);
 
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
 
     assert!(sim.houses[&owner].is_defeated);
 }
@@ -3595,13 +3615,15 @@ fn short_game_keeps_house_alive_when_base_unit_remains() {
     let owner = insert_house_with_counts(&mut sim, "Americans", 0, 1);
     insert_test_entity_for_owner(&mut sim, 1, owner, "AMCV", EntityCategory::Unit);
 
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
 
     assert!(!sim.houses[&owner].is_defeated);
 }
 
+/// A dying MCV stays tracked until its destructor's Remove_Tracking at the
+/// pending-delete drain, so the short game defeats its house only after.
 #[test]
-fn short_game_defeats_when_only_base_unit_is_dying() {
+fn short_game_counts_a_dying_base_unit_until_it_is_deleted() {
     let rules = short_game_defeat_test_rules();
     let mut sim = Simulation::new();
     sim.session.game_options.short_game = true;
@@ -3613,8 +3635,12 @@ fn short_game_defeats_when_only_base_unit_is_dying() {
         .expect("AMCV inserted")
         .dying = true;
 
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
+    assert!(!sim.houses[&owner].is_defeated, "still tracked");
 
+    sim.uninit(1);
+    sim.flush_pending_delete();
+    check_defeat_now(&mut sim, Some(&rules));
     assert!(sim.houses[&owner].is_defeated);
 }
 
@@ -3625,7 +3651,7 @@ fn long_game_keeps_house_alive_when_units_remain() {
     sim.session.game_options.short_game = false;
     let owner = insert_house_with_counts(&mut sim, "Americans", 0, 1);
 
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
 
     assert!(!sim.houses[&owner].is_defeated);
 }
@@ -3637,7 +3663,7 @@ fn long_game_defeats_when_no_owned_objects_remain() {
     sim.session.game_options.short_game = false;
     let owner = insert_house_with_counts(&mut sim, "Americans", 0, 0);
 
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
 
     assert!(sim.houses[&owner].is_defeated);
 }
@@ -3651,14 +3677,17 @@ fn short_game_victory_resolution_uses_new_defeat_state() {
     let survivor = insert_house_with_counts(&mut sim, "Russians", 1, 0);
     insert_test_entity_for_owner(&mut sim, 1, defeated, "MTNK", EntityCategory::Unit);
 
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
 
     assert!(sim.houses[&defeated].is_defeated);
     assert!(sim.houses[&survivor].has_won);
 }
 
+/// HouseClass::Update's gate calls Blowup_All (`0x004F8F7B`) before
+/// MPlayer_Defeated: the straggler dies to its own Health in C4 damage, with
+/// no attacker, so no house is credited.
 #[test]
-fn defeated_house_is_flagged_has_lost_and_stragglers_survive() {
+fn defeated_house_is_flagged_has_lost_and_its_stragglers_die() {
     let rules = short_game_defeat_test_rules();
     let mut sim = Simulation::new();
     sim.session.game_options.short_game = true;
@@ -3667,16 +3696,23 @@ fn defeated_house_is_flagged_has_lost_and_stragglers_survive() {
     // A straggler vehicle owned by the losing house.
     insert_test_entity_for_owner(&mut sim, 1, defeated, "MTNK", EntityCategory::Unit);
 
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
 
     // The loser is flagged both defeated and has_lost; the winner is not.
     assert!(sim.houses[&defeated].is_defeated);
     assert!(sim.houses[&defeated].has_lost);
     assert!(!sim.houses[&survivor].has_lost);
     assert!(sim.houses[&survivor].has_won);
-    // Parity: gamemd scatters a defeated house's units (ScatterAllUnits); it does
-    // NOT hard-remove them. The straggler must still exist after defeat.
-    assert!(sim.entities().get(1).is_some());
+    let straggler = sim
+        .entities()
+        .get(1)
+        .expect("dead objects wait for the drain");
+    assert_eq!(
+        straggler.health.current, 0,
+        "Blowup_All killed the straggler"
+    );
+    assert!(straggler.killed_by.is_none(), "no house is credited");
+    assert_eq!(sim.houses[&survivor].stats.units_killed, 0);
 }
 
 #[test]
@@ -3691,7 +3727,7 @@ fn gsi_01_04_house_rung_owns_savour_deadline_and_emits_one_transition_edge() {
     let winner = insert_house_with_counts(&mut sim, "Americans", 1, 0);
     let loser = insert_house_with_counts(&mut sim, "Russians", 0, 0);
 
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
 
     let winner_outcome = sim.houses[&winner].outcome_state.expect("victory accepted");
     assert_eq!(winner_outcome.kind, HouseOutcomeKind::Victory);
@@ -3708,13 +3744,13 @@ fn gsi_01_04_house_rung_owns_savour_deadline_and_emits_one_transition_edge() {
 
     sim.sound_events.clear();
     sim.session.tick = 36;
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
     assert!(!sim.houses[&winner].outcome_state.unwrap().exit_ready);
     assert!(!sim.termination_frame_requested());
     assert!(sim.sound_events.is_empty(), "accepted edges never replay");
 
     sim.session.tick = 37;
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
     assert!(sim.houses[&winner].outcome_state.unwrap().exit_ready);
     assert!(sim.houses[&loser].outcome_state.unwrap().exit_ready);
     assert!(sim.termination_frame_requested());
@@ -3730,31 +3766,41 @@ fn short_game_base_unit_survivor_prevents_enemy_victory() {
     let enemy = insert_house_with_counts(&mut sim, "Russians", 1, 0);
     insert_test_entity_for_owner(&mut sim, 1, mcv_owner, "AMCV", EntityCategory::Unit);
 
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
 
     assert!(!sim.houses[&mcv_owner].is_defeated);
     assert!(!sim.houses[&enemy].has_won);
 }
 
+/// Retail CAGAS01 is `Insignificant=yes`, and Add_Tracking skips
+/// Insignificant types (`0x004FF71B`), including on ChangeOwner
+/// (`0x007015E6`): a captured garrison does not keep its captor alive, and
+/// Blowup_All destroys it with the rest of that house.
 #[test]
-fn gsi_05_16_captured_garrison_building_prevents_short_game_defeat() {
+fn gsi_05_16_a_captured_insignificant_garrison_does_not_keep_its_house_alive() {
     let rules = short_game_defeat_test_rules();
     let mut sim = Simulation::new();
     sim.session.game_options.short_game = true;
-    let civilian = insert_passive_house_with_counts(&mut sim, "Neutral", 1, 0);
+    let civilian = insert_passive_house_with_counts(&mut sim, "Neutral", 0, 0);
     let player = insert_house_with_counts(&mut sim, "Americans", 0, 1);
     let enemy = insert_house_with_counts(&mut sim, "Russians", 1, 0);
-    insert_test_entity_for_owner(&mut sim, 1, civilian, "CAGAS01", EntityCategory::Structure);
+    let mut garrison = GameEntity::test_default(1, "CAGAS01", "Neutral", 10, 10);
+    garrison.owner = civilian;
+    garrison.type_ref = sim.interner.intern("CAGAS01");
+    garrison.category = EntityCategory::Structure;
+    garrison.tracking_facts.insignificant = true;
+    sim.substrate.entities.insert(garrison);
+    sim.update_house_tracking(1, crate::sim::house_tracking::HouseTracking::add_tracking);
 
     // The passenger reconciler uses this chokepoint when the first occupant
     // captures a civilian CanBeOccupied building.
     sim.change_owner(1, player);
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
 
-    assert_eq!(sim.houses[&civilian].owned_building_count, 0);
-    assert_eq!(sim.houses[&player].owned_building_count, 1);
-    assert!(!sim.houses[&player].is_defeated);
-    assert!(!sim.houses[&enemy].has_won);
+    assert_eq!(sim.houses[&player].tracking.buildings_for_test(), 0);
+    assert!(sim.houses[&player].is_defeated);
+    assert!(sim.houses[&enemy].has_won);
+    assert_eq!(sim.entities().get(1).unwrap().health.current, 0);
 }
 
 /// Insert a `MultiplayPassive=true` house — the stock `Neutral` (Civilian) and
@@ -3763,8 +3809,8 @@ fn gsi_05_16_captured_garrison_building_prevents_short_game_defeat() {
 fn insert_passive_house_with_counts(
     sim: &mut Simulation,
     name: &str,
-    buildings: u32,
-    units: u32,
+    buildings: i32,
+    units: i32,
 ) -> crate::sim::intern::InternedId {
     let owner = insert_house_with_counts(sim, name, buildings, units);
     let house = sim.houses.get_mut(&owner).expect("house just inserted");
@@ -3799,7 +3845,7 @@ fn passive_house_owning_buildings_does_not_block_last_player_victory() {
     let loser = insert_house_with_counts(&mut sim, "Russians", 0, 0);
     insert_passive_house_with_counts(&mut sim, "Neutral", 7, 0);
 
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
 
     assert!(sim.houses[&loser].is_defeated);
     assert!(
@@ -3819,7 +3865,7 @@ fn passive_house_is_never_defeated_even_with_nothing_left() {
     let player = insert_house_with_counts(&mut sim, "Americans", 2, 1);
     let opponent = insert_house_with_counts(&mut sim, "Russians", 0, 0);
 
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
 
     assert!(!sim.houses[&passive].is_defeated);
     assert!(!sim.houses[&passive].has_lost);
@@ -3853,7 +3899,7 @@ fn solo_developer_board_creates_no_automatic_victory_state_or_eva() {
     insert_passive_house_with_counts(&mut sim, "Special", 2, 0);
     for tick in 0..300 {
         sim.session.tick = tick;
-        sim.check_defeat(None);
+        check_defeat_now(&mut sim, None);
         assert!(!sim.houses[&player].has_won);
         assert!(sim.houses[&player].outcome_state.is_none());
         assert!(sim.ready_outcome_for_owner(player).is_none());
@@ -3883,7 +3929,7 @@ fn explicit_solo_outcomes_advance_and_reach_the_shared_ready_query() {
         // Their timer and app-visible readiness must not depend on opponents.
         for tick in 0..3 {
             sim.session.tick = tick;
-            sim.check_defeat(None);
+            check_defeat_now(&mut sim, None);
             assert_eq!(sim.termination_frame_requested(), tick == 2);
             assert_eq!(sim.ready_outcome_for_owner(player).is_some(), tick == 2);
         }
@@ -3906,7 +3952,7 @@ fn one_way_alliance_does_not_end_the_game() {
     let b = insert_house_with_counts(&mut sim, "Russians", 1, 1);
     sim.house_alliances = directed_alliances(&[("Americans", "Russians")]);
 
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
 
     assert!(!sim.houses[&a].has_won, "one-way alliance must not win");
     assert!(!sim.houses[&b].has_won, "one-way alliance must not win");
@@ -3914,7 +3960,7 @@ fn one_way_alliance_does_not_end_the_game() {
     // Control: once the alliance is mutual the same board is a shared victory.
     sim.house_alliances =
         directed_alliances(&[("Americans", "Russians"), ("Russians", "Americans")]);
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
     assert!(sim.houses[&a].has_won);
     assert!(sim.houses[&b].has_won);
 }
@@ -10511,7 +10557,7 @@ fn defeat_of_a_non_passive_house_emits_player_defeated() {
     let enemy = insert_house_with_counts(&mut sim, "Russians", 0, 0);
     let civilian = insert_passive_house_with_counts(&mut sim, "Neutral", 0, 0);
 
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
 
     let defeated: Vec<InternedId> = sim
         .sound_events
@@ -10530,7 +10576,7 @@ fn defeat_of_a_non_passive_house_emits_player_defeated() {
 
     // A house already flagged defeated is not announced again.
     sim.sound_events.clear();
-    sim.check_defeat(Some(&rules));
+    check_defeat_now(&mut sim, Some(&rules));
     assert!(
         sim.sound_events
             .iter()

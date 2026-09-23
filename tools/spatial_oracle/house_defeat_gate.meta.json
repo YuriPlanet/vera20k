@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original HouseClass::Update defeat gate 0x004F8E86..0x004F8F87 with CounterClass::GetItemCount 0x0049FAE0 and IndexClass::GetTotal 0x0049FB60",
+  "assumptions": [
+    "GameMode [0xA8B238], frame [0xA8ED84], ShortGame [0xA8B262], Rules [0x8871E0] +B24 BaseUnit items, +8E8 BuildRefinery items, type +DF8 ArrayIndex",
+    "House +34 HouseType (+1A6 MultiplayPassive), +1F5 Defeated, +2F0 buildings, CounterClass +5514 unit types, +5550 active building types, +5564/+5578/+558C active unit/infantry/aircraft (items +4, capacity +8, total +10)"
+  ],
+  "substitutions": [
+    "Recorded at entry and returned without running: Blowup_All 0x004FC6D0, MPlayer_Defeated 0x004FC0B0"
+  ],
+  "entry_points": {
+    "gate": "0x004F8E86",
+    "join": "0x004F8F87"
+  },
+  "payload_sha256": "a267ca6da901d1156aed5505cafe2b835a94a6804816299405f1ff2c8271bf30"
+}

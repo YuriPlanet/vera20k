@@ -1052,6 +1052,26 @@ impl Simulation {
         }
     }
 
+    /// The owner's stored buildings and other objects whose destruction is
+    /// not yet recorded: the retired per-house counts that schemas before
+    /// `HouseDefeatTracking` fold. It reproduces them for a house created
+    /// before its objects whose counts were never set by hand; no pinned-hash
+    /// fixture has a house, so older schemas meet it only in relative
+    /// comparisons.
+    pub(crate) fn owned_object_counts(&self, owner: crate::sim::intern::InternedId) -> (u32, u32) {
+        self.substrate
+            .entities
+            .values()
+            .filter(|entity| entity.owner() == owner && !entity.destruction_recorded)
+            .fold((0, 0), |(buildings, others), entity| {
+                if entity.category == crate::map::entities::EntityCategory::Structure {
+                    (buildings + 1, others)
+                } else {
+                    (buildings, others + 1)
+                }
+            })
+    }
+
     /// Hash per-player house state (BTreeMap = deterministic order).
     fn hash_houses(&self, hasher: &mut impl Hasher, schema: HashSchema) {
         for (owner, house) in &self.houses {
@@ -1071,8 +1091,17 @@ impl Simulation {
             house.outcome_state.hash(hasher);
             house.map_is_clear.hash(hasher);
             house.spy_sat_active.hash(hasher);
-            house.owned_building_count.hash(hasher);
-            house.owned_unit_count.hash(hasher);
+            if schema.includes(HashFeature::HouseDefeatTracking) {
+                house.tracking.hash(hasher);
+            } else {
+                // Earlier schemas folded a count of the owner's buildings and
+                // one of its other objects, each added at construction and
+                // released at UnInit: its stored entities whose destruction
+                // is not yet recorded.
+                let (buildings, others) = self.owned_object_counts(*owner);
+                buildings.hash(hasher);
+                others.hash(hasher);
+            }
             house.tech_level.hash(hasher);
             hash_house_ai_activation_fields(
                 house,
@@ -1616,7 +1645,7 @@ impl Simulation {
                 entity.lifecycle.cell_marked.hash(hasher);
                 entity.dying.hash(hasher);
                 entity.dirty_rect_eligible.hash(hasher);
-                entity.owned_count_released.hash(hasher);
+                entity.destruction_recorded.hash(hasher);
             }
             if schema.includes(HashFeature::InfantryTerminal) {
                 entity.infantry_terminal.hash(hasher);
@@ -2852,7 +2881,7 @@ mod lifecycle_hash_tests {
             entity.dirty_rect_eligible = !entity.dirty_rect_eligible;
         });
         assert_entity_mutation_changes_hash(|entity| {
-            entity.owned_count_released = !entity.owned_count_released;
+            entity.destruction_recorded = !entity.destruction_recorded;
         });
         assert_entity_mutation_changes_hash(|entity| {
             entity.occupier = !entity.occupier;

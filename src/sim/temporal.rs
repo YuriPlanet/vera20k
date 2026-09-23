@@ -136,8 +136,6 @@
 //! - `UnitClass::Receive_Radio` answers WANT_RIDE (`0x24`) with 0 while
 //!   warped (`0x0073745C..0x00737473`); the message is dormant in stock YR
 //!   and not represented.
-//! - The house blow-up's chain release (`0x0071AD40`, idling the neighbours
-//!   but not itself) arrives with the house-defeat mechanism.
 //! - A transport's death or grinding ejects its first passenger through
 //!   RemoveGunner (`0x00737FD4`, `0x0073A0C8`/`0x0073A0DF`); VERA's passenger
 //!   escape residual (`crew_survival`) covers those paths.
@@ -206,6 +204,12 @@ impl TemporalState {
     /// The temporal half of `TechnoClass+0x270` BeingWarpedOut.
     pub fn is_warped(&self) -> bool {
         self.head.is_some()
+    }
+
+    /// `TechnoClass+0x278`: the attacker heading the chain warping this
+    /// object.
+    pub(crate) fn chain_head(&self) -> Option<u64> {
+        self.head
     }
 
     /// `vtable+0x1DC` (`0x0070C5D0`): a link that holds a target.
@@ -876,6 +880,39 @@ impl Simulation {
         }
         self.temporal_clear_fields(attacker);
         self.temporal_owner_idle(attacker, rules);
+    }
+
+    /// `0x0071AD40`, the house blow-up's release of the chain warping one of
+    /// its objects (`HouseClass::Blowup_All @ 0x004FC6D0`, at `0x004FC742`),
+    /// run on the head: frees the target, then walks Next and Prev through
+    /// ClearLinkedList, which idles those attackers, but never idles its own.
+    pub(crate) fn temporal_release_chain_no_idle(&mut self, attacker: u64, rules: &RuleSet) {
+        let Some(target) = self.temporal_link(attacker).map(|link| link.target) else {
+            return;
+        };
+        if let Some(target) = target {
+            self.set_temporal_head(target, None);
+            if let Some(stored) = self.temporal_link_mut(attacker) {
+                stored.target = None;
+            }
+        }
+        if let Some(next) = self.temporal_link(attacker).and_then(|link| link.next) {
+            if let Some(next_link) = self.temporal_link_mut(next)
+                && next_link.prev == Some(attacker)
+            {
+                next_link.prev = None;
+            }
+            self.temporal_clear_linked_list(next, rules);
+        }
+        if let Some(prev) = self.temporal_link(attacker).and_then(|link| link.prev) {
+            if let Some(prev_link) = self.temporal_link_mut(prev)
+                && prev_link.next == Some(attacker)
+            {
+                prev_link.next = None;
+            }
+            self.temporal_clear_linked_list(prev, rules);
+        }
+        self.temporal_clear_fields(attacker);
     }
 
     /// `TechnoClass::PointerExpired`'s forward (`0x00707B34` ->

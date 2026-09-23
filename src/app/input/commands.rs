@@ -1035,8 +1035,8 @@ mod tests {
         let enemy = sim.interner.intern("Enemy");
         let mut local_house = HouseState::new(local, 0, None, true, 0, 10);
         let mut enemy_house = HouseState::new(enemy, 1, None, false, 0, 10);
-        local_house.owned_building_count = 1;
-        enemy_house.owned_building_count = 1;
+        local_house.tracking.set_buildings_for_test(1);
+        enemy_house.tracking.set_buildings_for_test(1);
         sim.houses.insert(local, local_house);
         sim.houses.insert(enemy, enemy_house);
         sim.session.house_order = vec![local, enemy];

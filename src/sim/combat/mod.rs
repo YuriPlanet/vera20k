@@ -3215,9 +3215,9 @@ pub(crate) fn capture_kill_credit(
 /// `Record_The_Kill`'s kill and score half for a victim that may still have
 /// health: a Chrono Legionnaire's erase calls vtable `+0xE0` on a target it
 /// removes at full health (`TemporalClass::Update @ 0x0071AAC4`, then UnInit).
-/// The owned-count release books the loss for a victim credited here, as for
-/// one at zero health. [`capture_kill_credit`] adds the zero-health gate the
-/// damage paths need.
+/// The destruction record (`record_destruction_once`) books the loss for a
+/// victim credited here, as for one at zero health. [`capture_kill_credit`]
+/// adds the zero-health gate the damage paths need.
 pub(crate) fn record_kill_credit(
     victim: &mut crate::sim::game_entity::GameEntity,
     killer_owner: Option<InternedId>,

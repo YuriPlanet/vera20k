@@ -1076,8 +1076,9 @@ impl MatchLaunchDescriptor {
 /// Active YR `ScenarioClass__Full_Init @ 0x00686B20` calls
 /// `ScenarioClass__Create_Houses @ 0x00687F10` before terrain and Techno map
 /// sections. The standard offline order is the human participant, AI slots,
-/// then Neutral and Special. Object Reveal can therefore commit owned counts
-/// and house-indexed base reservations directly, without a repair pass.
+/// then Neutral and Special. Object construction and Reveal can therefore
+/// commit the house tracking counts and house-indexed base reservations
+/// directly, without a repair pass.
 pub(crate) fn initialize_skirmish_launch_houses(
     sim: &mut Simulation,
     house_roster: &HouseRoster,
