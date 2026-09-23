@@ -564,6 +564,17 @@ pub(crate) fn commit_entities(
                 target_id,
             );
         }
+        // ObjectClass::ReceiveDamage 0x005F5765..0x005F57AF: after the kill
+        // callback the exact-zero arm runs Destroy = Detach_All(1), so every
+        // listener drops the dying object at the killing hit, before the
+        // anger callback and TechnoClass's death arm. The CausesDelayKill
+        // PostMortem stage below runs the same callback after its bookkeeping.
+        if reached_exact_zero && postmortem_candidate.is_none() && callbacks_enabled(world) {
+            world.object_destroy_callback(
+                target_id,
+                crate::sim::world::UninitContext::with_rules(rules),
+            );
+        }
         if postmortem_candidate.is_some() {
             if callbacks_enabled(world) {
                 world.apply_fatal_lifecycle_stage(
@@ -1037,6 +1048,14 @@ pub(crate) fn handle_death(
                     ry,
                     &mut death_sounds,
                 );
+                // 0x00702206..0x00702210: RADIO OVER_OUT to every contact and
+                // the Stun, between the death sounds and the debris.
+                if callbacks_enabled(world) {
+                    world.techno_death_stun(
+                        dead_id,
+                        crate::sim::world::UninitContext::with_rules(rules),
+                    );
+                }
                 // gamemd-derived: the debris block of
                 // `TechnoClass::ReceiveDamage @ 0x00701900`
                 // (`0x00702281`..`0x0070256C`). It sits BELOW the two death
@@ -1402,12 +1421,9 @@ fn finish_concrete_death(
                 anim.switch_to(sequence);
             }
         }
-        // The corpse stays in the store for its death animation, but native
-        // Limbo has already run by now and with it the BREAK to every radio
-        // contact (`TechnoClass::Limbo`, see `techno_limbo_with_context`). Send
-        // it here so a dying object never keeps a dock slot through the
-        // animation; the later uninit repeats it against empty slots.
-        crate::sim::radio::broadcast_break(world, dead_id);
+        // The corpse stays in the store for its death animation; the death
+        // arm's OVER_OUT to every contact (`techno_death_stun`) already
+        // released its dock slots.
         effects.despawned_ids.push(dead_id);
     } else {
         effects.immediate_uninit_ids.push(dead_id);
@@ -2121,13 +2137,17 @@ fn admit_attacker_fire<'r>(
     // sooner; no RNG or state beyond the target is involved.
     if selected.warhead.parasite
         && let TargetKind::Entity(target_id) = snap.target
-        && world.substrate.entities.get(target_id).is_some_and(|target| {
-            binary_frame < target.parasite_launch_lock
-                || crate::sim::superweapon::invulnerability::is_invulnerable(
-                    target.invulnerability.as_ref(),
-                    binary_frame,
-                )
-        })
+        && world
+            .substrate
+            .entities
+            .get(target_id)
+            .is_some_and(|target| {
+                binary_frame < target.parasite_launch_lock
+                    || crate::sim::superweapon::invulnerability::is_invulnerable(
+                        target.invulnerability.as_ref(),
+                        binary_frame,
+                    )
+            })
     {
         if delayed_building_slot.is_none() {
             out.remove_attack.push(snap.stable_id);

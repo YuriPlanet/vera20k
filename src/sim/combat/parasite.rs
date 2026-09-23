@@ -9,8 +9,13 @@
 //! While attached the victim holds the owner in Foot+694 and runs the class AI
 //! `0x00629FD0` at the tail of its own `FootClass::AI` (`0x004DAEE1`).
 //! Release: ExitUnit `0x0062A4A0` (forced) or PointerExpired `0x0062A260`
-//! (the victim expired). Ghidra plates on those addresses carry the evidence;
-//! retail data: `[ParasiteDog]`, `[Parasite]`, `[BadTeeth]`, `[DroneJump]`.
+//! (the victim expired). A victim's death releases its eater inside the
+//! killing hit: ObjectClass::ReceiveDamage's exact-zero Destroy (`0x005F57AF`)
+//! runs Detach_All(1), whose announce visits the victim itself; its
+//! FootClass::PointerExpired forwards from Foot+694 to the eater's
+//! ParasiteClass (`0x004D99AA..0x004D99C6`, `Simulation::object_destroy_callback`).
+//! Ghidra plates on those addresses carry the evidence; retail data:
+//! `[ParasiteDog]`, `[Parasite]`, `[BadTeeth]`, `[DroneJump]`.
 //!
 //! The owner entity holds [`ParasiteState`]; the victim holds only the
 //! back-link `GameEntity::parasite_eating_me`.
@@ -22,15 +27,6 @@
 //! loading, tank bunkers, DeploysInto, retaliation against the eater.
 //!
 //! RESIDUALS (each needs a mechanism VERA does not have yet):
-//! - Release at the killing hit (REQUIRED, next mechanism): the death branch
-//!   of TechnoClass::ReceiveDamage calls Stun (`0x00702210` -> FootClass
-//!   `0x004D5660` -> Techno `0x006FCD40`), whose Detach_All(1) broadcasts
-//!   PointerExpired while the host is still dying. VERA broadcasts only at
-//!   UnInit, so the owner stays in limbo for the infantry death sequence:
-//!   hidden, untargetable, unable to re-engage, with its reselect, idle mode
-//!   and suppression test (`0x0062A283`) all late; a short suppression can
-//!   lapse in between and spare an owner native deletes. Frequency: every dog
-//!   kill. Owner: the Techno death-Stun port, which keeps this loop open.
 //! - Area Guard after a release: Enter_Idle_Mode (Infantry `0x0051CD3E..`,
 //!   Unit `0x00738B67..`) picks Area Guard for DefaultToGuardArea types
 //!   (DOG/ADOG/DRON and 8 more) and, IQ-gated, for AI houses; the shared

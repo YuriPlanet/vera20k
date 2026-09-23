@@ -141,12 +141,13 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects {
         prepared: &Self::Prepared,
         requested: Option<TargetKind>,
     ) {
+        let commits = assign_target_commits(&sim.substrate.entities, requested);
         let entity = sim
             .substrate
             .entities
             .get_mut(prepared.receiver)
             .expect("preflight guaranteed receiver");
-        represented_assign_target(entity, requested);
+        represented_assign_target_admitted(entity, requested, commits);
     }
 
     fn apply_destination_mode_one(
@@ -164,17 +165,57 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects {
     }
 }
 
-/// The represented `Assign_Target` write set, entity-local.
+/// Whether `TechnoClass::Assign_Target @ 0x006FCDB0` commits the requested
+/// target (`0x006FCE4B..0x006FCF36`). A cell or NULL passes. An object commits
+/// only while it is alive (`+0x90`) with nonzero Health (`+0x6C`); otherwise the
+/// setter writes NULL, so a Restore or a retaliation that names a dying object
+/// leaves its receiver without a target. Two further NULL arms have no VERA
+/// producer: a Foot with `+0x3CD` set (sinking or crashing: `UnitClass::
+/// ReceiveDamage 0x00737E51`, the Jumpjet crash `0x0054CEB7`, the squid grapple
+/// `0x00629C69`, the Teleport water check `0x0071896B`/`0x00718AC2`), and an
+/// Infantry in a death DoType (`0x00522CB0`), which VERA only enters at Health 0.
+pub(crate) fn assign_target_commits(
+    entities: &crate::sim::entity_store::EntityStore,
+    requested: Option<TargetKind>,
+) -> bool {
+    match requested {
+        Some(TargetKind::Entity(id)) => entities
+            .get(id)
+            .is_some_and(|target| target.lifecycle.object_alive && target.health.current != 0),
+        Some(TargetKind::Cell(..)) | None => true,
+    }
+}
+
+/// The represented `Assign_Target` write set for a NULL or cell target.
 ///
-/// The currently represented target/burst/Infantry-action writes share this
-/// owner. Native Techno6FCDB0 also validates/redirects targets and tears down
-/// linked effects; Infantry51B1F0 has class-specific branches not all represented
-/// here. This is not the whole native setter. The free function lets a bare
-/// `EntityStore`, including movement, reach the same implementation as Mission
-/// transactions without an open-coded copy.
+/// An object target needs [`assign_target_commits`], which reads the target;
+/// use [`represented_assign_target_admitted`] for those.
 pub(crate) fn represented_assign_target(
     entity: &mut crate::sim::game_entity::GameEntity,
     requested: Option<TargetKind>,
+) {
+    debug_assert!(
+        !matches!(requested, Some(TargetKind::Entity(_))),
+        "an object target needs assign_target_commits"
+    );
+    represented_assign_target_admitted(entity, requested, true);
+}
+
+/// The represented `Assign_Target` write set, entity-local; `commits` is
+/// [`assign_target_commits`] for `requested`, read before the receiver was
+/// borrowed.
+///
+/// The currently represented target/burst/Infantry-action writes and the
+/// object-liveness refusal share this owner. Native Techno6FCDB0 also redirects
+/// targets (a tank-bunkered object, self) and tears down linked effects;
+/// Infantry51B1F0 has class-specific branches not all represented here. This is
+/// not the whole native setter. The free function lets a bare `EntityStore`,
+/// including movement, reach the same implementation as Mission transactions
+/// without an open-coded copy.
+pub(crate) fn represented_assign_target_admitted(
+    entity: &mut crate::sim::game_entity::GameEntity,
+    requested: Option<TargetKind>,
+    commits: bool,
 ) {
     // The original's target assignment clears the passive-acquire flag as
     // its first statement, ahead of any same-target short-circuit, so a
@@ -182,11 +223,18 @@ pub(crate) fn represented_assign_target(
     // of one the scanner picked. The scanner
     // re-sets the flag itself after calling this.
     entity.passively_acquired_target = false;
+    // The same-target early-out (`0x006FCDCC`, Infantry `0x0051B201`) compares
+    // the requested pointer, before the liveness refusal.
     if entity.attack_target.as_ref().map(|target| target.target) == requested {
         return;
     }
+    let requested = if commits { requested } else { None };
 
-    if entity.category == crate::map::entities::EntityCategory::Infantry {
+    // `InfantryClass::Assign_Target @ 0x0051B1F0` returns its receiver to an
+    // idle sequence only while the receiver itself is alive (`0x0051B203`).
+    if entity.category == crate::map::entities::EntityCategory::Infantry
+        && entity.health.current > 0
+    {
         entity.mission_leaf.set_infantry_firing_sequence(0);
         entity
             .mission_leaf

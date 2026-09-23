@@ -9474,13 +9474,16 @@ fn damaged_refinery_ore_only_unload_smokes_twice_without_special_anim() {
     assert!(get_miner(&sim, miner_id).cargo.is_empty(), "cargo drained");
 }
 
-/// Keep damage-transaction coverage of VERA's existing eager contact/reset
-/// adapter, without treating its timing as native parity. Native4424A2 gates
-/// Force release4593A0 on reciprocal bunker+2E4; refinery contacts do
-/// not satisfy it. Native death's pointer-expiry/Limbo and contact-loss Unload
-/// scheduling remain separate unfinished work.
+/// A refinery killed under an unloading miner: `ObjectClass::ReceiveDamage`'s
+/// exact-zero Destroy (`0x005F57AF`, Detach_All(1)) drops the reservation and
+/// the radio slot at the killing hit, touching neither cargo, motion nor
+/// credits, and the miner's own next dock visit aborts to Approach. Native4424A2
+/// gates Force release4593A0 on reciprocal bunker+2E4, which refinery contacts
+/// do not satisfy. The building NowDead contact loop (`0x00442511`: radio 0x17,
+/// or a C4 kill within 0x100 leptons of the centre or on a Helipad=yes
+/// building, over the pre-hit contact copy) is not ported yet.
 #[test]
-fn refinery_damage_adapter_preserves_unloading_miner_motion_and_cargo() {
+fn refinery_death_drops_the_unloading_miner_at_the_kill() {
     use crate::sim::combat::EntityDamageEvent;
     use crate::sim::house_state::HouseState;
 
@@ -9563,14 +9566,11 @@ fn refinery_damage_adapter_preserves_unloading_miner_motion_and_cargo() {
     let miner = miner_entity.miner.as_ref().expect("miner component");
     assert_eq!(
         miner.reserved_refinery, None,
-        "refinery reservation cleared"
+        "Detach_All drops the reservation at the kill"
     );
-    assert_eq!(miner.dock_phase, RefineryDockPhase::Approach);
-    assert!(!miner.unload_active, "no deposit continues");
-    assert_eq!(miner.cargo.len(), 4, "remaining cargo stays aboard");
     assert!(
         miner_entity.radio_contacts.is_empty(),
-        "contact released with the building"
+        "contact released at the kill"
     );
     assert!(!crate::sim::miner::miner_dock::has_contact(
         &sim, 2, miner_id
@@ -9591,6 +9591,13 @@ fn refinery_damage_adapter_preserves_unloading_miner_motion_and_cargo() {
         credits_before,
         "the cargo on the pad is not deposited"
     );
+
+    // The miner's own dock visit finds its refinery gone and stops unloading.
+    tick_miners_n(&mut sim, &rules, 1);
+    let miner = get_miner(&sim, miner_id);
+    assert_eq!(miner.dock_phase, RefineryDockPhase::Approach);
+    assert!(!miner.unload_active, "no deposit continues");
+    assert_eq!(miner.cargo.len(), 4, "remaining cargo stays aboard");
 
     // Nothing pays the bales later either: no refinery is left to dock at.
     tick_miners_n(&mut sim, &rules, 60);

@@ -16,7 +16,9 @@ use crate::sim::entity_store::EntityStore;
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::mission::authority::queue_entity_mission_deferred;
-use crate::sim::mission::concrete_effects::represented_assign_target;
+use crate::sim::mission::concrete_effects::{
+    assign_target_commits, represented_assign_target_admitted,
+};
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::pathfinding::zone_map::ZoneGrid;
 use crate::sim::rng::SimRng;
@@ -488,6 +490,8 @@ pub(crate) fn respond_to_base_attack(
             ResponseMission::Rescue => MissionType::Rescue,
             ResponseMission::AreaGuard => MissionType::AreaGuard,
         };
+        let attacker_commits =
+            assign_target_commits(context.entities, Some(TargetKind::Entity(attacker_id)));
         let Some(responder_entity) = context.entities.get_mut(responder.entity_id) else {
             continue;
         };
@@ -501,7 +505,11 @@ pub(crate) fn respond_to_base_attack(
         responder_entity
             .base_defense_response
             .set_archive_target(Some(TargetKind::Entity(victim_id)));
-        represented_assign_target(responder_entity, Some(TargetKind::Entity(attacker_id)));
+        represented_assign_target_admitted(
+            responder_entity,
+            Some(TargetKind::Entity(attacker_id)),
+            attacker_commits,
+        );
         let (next, overshot) = add_assigned_cost(accumulated, responder_object.cost, budget);
         accumulated = next;
         if overshot {

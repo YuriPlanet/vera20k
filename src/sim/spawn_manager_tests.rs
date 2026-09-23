@@ -925,6 +925,69 @@ fn owner_death_destroys_docked_children() {
     }
 }
 
+/// `ObjectClass::ReceiveDamage`'s exact-zero Destroy (`0x005F57AF`) visits the
+/// dying owner itself, and its SpawnManager forward (`0x00707B24`) takes the
+/// owner arm (`0x006B7CBC`): the docked children are UnInit'd at the killing
+/// hit, ahead of the owner's own expiry broadcast and its UnInit.
+#[test]
+fn a_killing_hit_destroys_docked_children_at_the_destroy() {
+    use crate::sim::world::LifecycleTestEvent;
+
+    let rules = make_spawner_rules();
+    let mut sim = Simulation::new();
+    let hm = empty_height_map();
+    let dred = sim
+        .spawn_object("DRED", "Russians", 10, 10, 0, &rules, &hm)
+        .expect("spawn DRED");
+    let children: Vec<u64> = sim
+        .substrate
+        .entities
+        .get(dred)
+        .and_then(|e| e.spawn_manager.as_ref())
+        .map(|m| m.slots.iter().filter_map(|s| s.spawn).collect())
+        .expect("children");
+    assert_eq!(children.len(), 2, "SpawnsNumber=2");
+    sim.clear_lifecycle_test_events_for_test();
+
+    let warhead = sim.interner.intern("Special");
+    let hit = crate::sim::combat::EntityDamageEvent::direct_receiver(
+        dred,
+        10_000,
+        0,
+        crate::sim::combat::RAD_NO_ATTACKER,
+        None,
+        warhead,
+        crate::sim::combat::ReceiverCallFlags {
+            ignore_defenses: true,
+            arg6: false,
+        },
+    );
+    sim.commit_noncombat_aoe_hits(&rules, None, &[hit]);
+
+    let events = sim.lifecycle_test_events_for_test();
+    let uninit_of = |id: u64| {
+        events.iter().position(|event| {
+            matches!(
+                event,
+                LifecycleTestEvent::UninitRemovalNotifyBoundary { stable_id, .. } if *stable_id == id
+            )
+        })
+    };
+    let owner_destroy = events
+        .iter()
+        .position(|event| *event == LifecycleTestEvent::DestroyNotifyBoundary { stable_id: dred })
+        .expect("the killing hit runs the Destroy");
+    let owner_uninit = uninit_of(dred).expect("the dead Unit is UnInit'd in the receiver");
+    for child in children {
+        let child_uninit = uninit_of(child).expect("Kill_All_Spawns UnInits the docked child");
+        assert!(
+            child_uninit < owner_destroy,
+            "the owner arm runs inside the Destroy, before its expiry broadcast"
+        );
+    }
+    assert!(owner_destroy < owner_uninit);
+}
+
 #[test]
 fn spawn_manager_state_contributes_to_the_state_hash() {
     // The hash folds the pool only when present, so prove the presence and the

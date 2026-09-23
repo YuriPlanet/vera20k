@@ -510,17 +510,18 @@ fn dock_abort_state_from_miner(miner: &super::Miner) -> MinerState {
     }
 }
 
-/// VERA's current refinery-loss adapter: release contacts/reservations and
-/// reset the miner cursor/timers, preserving cargo and locomotor state.
-/// Returns the number of miners whose adapter state was cleared.
+/// VERA's refinery-sale adapter: release contacts/reservations and reset the
+/// miner cursor/timers, preserving cargo and locomotor state. Returns the
+/// number of miners whose adapter state was cleared.
 ///
-/// Native Sell44AAA4 and ReceiveDamage4424A2 call release4593A0 only through
-/// the reciprocal bunker link (+2E4), whose producer is gated by Bunker at
-/// 44B797..44B7A3. Refinery contacts are not that link and cannot
-/// authorize Force_Track(0x47) or SetSpeedFraction(1). Native sale's radio0x17
-/// receiver737A98 and death's later contact-loss dispatch73DEE0 have distinct
-/// mission/scatter timing. This eager shared reset remains an unfinished
-/// VERA adapter; it does not implement either complete native sequence.
+/// Native Sell44AAA4 calls release4593A0 only through the reciprocal bunker
+/// link (+2E4), whose producer is gated by Bunker at 44B797..44B7A3. Refinery
+/// contacts are not that link and cannot authorize Force_Track(0x47) or
+/// SetSpeedFraction(1). Native sale's radio0x17 receiver737A98 has its own
+/// mission/scatter timing; this eager reset remains an unfinished VERA
+/// adapter. Refinery death no longer uses it: the exact-zero Destroy broadcast
+/// (`Simulation::object_destroy_callback`) drops the reservation at the kill
+/// and the miner's own dock visit aborts to Approach.
 pub(crate) fn interrupt_refinery_docked_miners(sim: &mut Simulation, ref_sid: u64) -> usize {
     // The refinery's own contact slots name every miner it admitted, so no
     // world scan is needed. Ascending id keeps the former visiting order.

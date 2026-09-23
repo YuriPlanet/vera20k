@@ -1879,9 +1879,12 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
         ],
         "combat-result commit projects the complete DestroyOverlay visit stencil",
     );
+    // ObjectClass::ReceiveDamage's exact-zero Destroy broadcast (0x005F57AF)
+    // re-arms the attacker's passive scan (4..8) before TechnoClass's death
+    // arm fires the DeathWeapon whose wall hit draws 0..400.
     let mut one_draw = SimRng::new(1);
-    let _ = one_draw.next_range_u32_inclusive(0, 400);
     let _ = one_draw.next_range_u32_inclusive(4, 8);
+    let _ = one_draw.next_range_u32_inclusive(0, 400);
     assert_eq!(fatal_rng, one_draw.state());
 
     let (boundary, boundary_result, boundary_rng) = run(11);
@@ -7065,7 +7068,7 @@ fn test_attack_move_auto_acquires_enemy() {
 }
 
 #[test]
-fn test_attack_move_lethal_hit_does_not_run_pointer_expiry_early() {
+fn test_attack_move_lethal_hit_expires_the_target_at_the_kill() {
     let rules = combat_test_rules();
     let mut sim: Simulation = Simulation::new();
     sim.spawn_from_map(
@@ -7144,14 +7147,200 @@ fn test_attack_move_lethal_hit_does_not_run_pointer_expiry_early() {
 
     let attacker = sim.substrate.entities.get(1).expect("attacker exists");
     assert!(
-        attacker.attack_target.as_ref().is_some_and(|target| {
-            matches!(target.target, crate::sim::combat::TargetKind::Entity(2))
+        attacker.attack_target.is_none(),
+        "ObjectClass::ReceiveDamage's exact-zero Destroy (0x005F57AF) expires the target at the kill"
+    );
+    assert_eq!(
+        attacker.order_intent,
+        Some(crate::sim::components::OrderIntent::AttackMove {
+            goal_rx: 8,
+            goal_ry: 2
         }),
-        "damage handling must not pre-run the later UnInit listener stage"
+        "the attack-move order outlives its target"
     );
     assert!(
-        attacker.movement_target.is_none(),
-        "attack-move remains engaged until pointer expiry is dispatched"
+        attacker.movement_target.is_some(),
+        "the post-combat order pass resumes the attack-move on the kill tick"
+    );
+}
+
+/// `TechnoClass::PointerExpired @ 0x007077C0` clears a listener's Target and,
+/// with a mission suspended, Restores it. The archived Target re-enters
+/// `Assign_Target @ 0x006FCDB0`, which commits NULL for a Health-0 object
+/// (`0x006FCEF8..0x006FCF03`). AI retaliation archives the target a unit
+/// already shoots, so a killer whose current and archived targets are both its
+/// victim holds no target once the killing hit's Destroy has run, while the
+/// infantry corpse is still stored for its die sequence.
+#[test]
+fn test_lethal_hit_restore_refuses_the_dying_archived_target() {
+    use crate::sim::mission::{MissionId, MissionType};
+
+    let rules = combat_test_rules();
+    let mut sim: Simulation = Simulation::new();
+    sim.spawn_from_map(
+        &[
+            MapEntity {
+                owner: "Americans".to_string(),
+                type_id: "MTNK".to_string(),
+                health: 256,
+                cell_x: 2,
+                cell_y: 2,
+                facing: 64,
+                category: EntityCategory::Unit,
+                sub_cell: 0,
+                veterancy: 0,
+                high: false,
+                mission: None,
+                recruitable_a: true,
+                recruitable_b: true,
+                structure_upgrades: [None, None, None],
+            },
+            MapEntity {
+                owner: "Russians".to_string(),
+                type_id: "E1".to_string(),
+                health: 256,
+                cell_x: 4,
+                cell_y: 2,
+                facing: 64,
+                category: EntityCategory::Infantry,
+                sub_cell: 0,
+                veterancy: 0,
+                high: false,
+                mission: None,
+                recruitable_a: true,
+                recruitable_b: true,
+                structure_upgrades: [None, None, None],
+            },
+        ],
+        None,
+        &empty_heights(),
+    );
+    sim.substrate.entities.get_mut(2).unwrap().health.current = 50;
+    {
+        let tank = sim.substrate.entities.get_mut(1).unwrap();
+        tank.attack_target = Some(AttackTarget::new(2));
+        tank.suspended_attack_target = Some(crate::sim::combat::TargetKind::Entity(2));
+        tank.mission
+            .apply_test_fixture(crate::sim::mission::state::MissionTestFixture {
+                current: MissionId::from_known(MissionType::Attack),
+                suspended: MissionId::from_known(MissionType::Guard),
+                queued: MissionId::NONE,
+                movement_bypass_latch: 0,
+                handler_state: 0,
+                mission_start_frame: 0,
+                ai_counter: 0,
+                dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(0),
+            });
+    }
+    let grid = PathGrid::new(32, 32);
+    for _ in 0..8 {
+        let _ = sim.advance_tick(&[], Some(&rules), &empty_heights(), Some(&grid), None, 100);
+        if sim
+            .substrate
+            .entities
+            .get(2)
+            .is_some_and(|victim| victim.health.current == 0)
+        {
+            break;
+        }
+    }
+
+    let victim = sim
+        .substrate
+        .entities
+        .get(2)
+        .expect("the corpse stays stored for its die sequence");
+    assert_eq!(victim.health.current, 0);
+    assert!(victim.lifecycle.object_alive);
+    let tank = sim.substrate.entities.get(1).expect("the killer survives");
+    assert!(
+        tank.attack_target.is_none(),
+        "Assign_Target refuses the dying archived target the Restore names"
+    );
+    assert_eq!(tank.mission.current().known(), Some(MissionType::Guard));
+    assert_eq!(tank.suspended_attack_target, None);
+}
+
+/// The death arm's Stun (`0x00702210`: FootClass::Stun `0x004D5660`, then
+/// TechnoClass::Stun `0x006FCD40`) drops the dying object's own Target and
+/// destination at the killing hit, while the infantry corpse is still stored
+/// for its die sequence.
+#[test]
+fn test_lethal_hit_stuns_the_dying_infantry() {
+    let rules = combat_test_rules();
+    let mut sim: Simulation = Simulation::new();
+    sim.spawn_from_map(
+        &[
+            MapEntity {
+                owner: "Russians".to_string(),
+                type_id: "E1".to_string(),
+                health: 256,
+                cell_x: 4,
+                cell_y: 2,
+                facing: 64,
+                category: EntityCategory::Infantry,
+                sub_cell: 0,
+                veterancy: 0,
+                high: false,
+                mission: None,
+                recruitable_a: true,
+                recruitable_b: true,
+                structure_upgrades: [None, None, None],
+            },
+            MapEntity {
+                owner: "Americans".to_string(),
+                type_id: "MTNK".to_string(),
+                health: 256,
+                cell_x: 2,
+                cell_y: 2,
+                facing: 64,
+                category: EntityCategory::Unit,
+                sub_cell: 0,
+                veterancy: 0,
+                high: false,
+                mission: None,
+                recruitable_a: true,
+                recruitable_b: true,
+                structure_upgrades: [None, None, None],
+            },
+        ],
+        None,
+        &empty_heights(),
+    );
+    {
+        let gi = sim.substrate.entities.get_mut(1).unwrap();
+        gi.attack_target = Some(AttackTarget::new(2));
+        gi.navigation.nav_com = Some(crate::sim::components::NavTargetRef::Cell { rx: 9, ry: 2 });
+    }
+    let warhead = sim.interner.intern("AP");
+    let hit = crate::sim::combat::EntityDamageEvent::direct_receiver(
+        1,
+        10_000,
+        0,
+        crate::sim::combat::RAD_NO_ATTACKER,
+        None,
+        warhead,
+        crate::sim::combat::ReceiverCallFlags {
+            ignore_defenses: true,
+            arg6: false,
+        },
+    );
+    sim.commit_noncombat_aoe_hits(&rules, None, &[hit]);
+
+    let gi = sim
+        .substrate
+        .entities
+        .get(1)
+        .expect("the corpse stays stored for its die sequence");
+    assert_eq!(gi.health.current, 0);
+    assert!(gi.lifecycle.object_alive);
+    assert!(
+        gi.attack_target.is_none(),
+        "TechnoClass::Stun Assign_Target(NULL)"
+    );
+    assert!(
+        gi.navigation.nav_com.is_none(),
+        "FootClass::Stun Assign_Destination(NULL)"
     );
 }
 

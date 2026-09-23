@@ -763,6 +763,12 @@ pub(crate) fn expire_cell_target_references(
 ) {
     let listener_ids = entities.keys_sorted();
     for listener_id in listener_ids {
+        let saved_target_commits = entities.get(listener_id).is_some_and(|entity| {
+            crate::sim::mission::concrete_effects::assign_target_commits(
+                entities,
+                entity.suspended_attack_target,
+            )
+        });
         let Some(entity) = entities.get_mut(listener_id) else {
             continue;
         };
@@ -776,7 +782,8 @@ pub(crate) fn expire_cell_target_references(
         let mission_was_suspended =
             entity.mission.suspended() != crate::sim::mission::MissionId::NONE;
         represented_assign_target(entity, None);
-        let _restored = mission_was_suspended && restore_entity_after_target_expiry(entity);
+        let _restored = mission_was_suspended
+            && restore_entity_after_target_expiry(entity, saved_target_commits);
         #[cfg(test)]
         trace.push(CellTargetDetach {
             listener_id,

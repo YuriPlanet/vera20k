@@ -35,9 +35,13 @@ deferred Drive/Ship path request is parked, not landed, on `wip/track-order-defe
 (`5966799c`; 31 failing tests, triage in the review's `wip.md`). After landing, choose
 mechanisms by player-visible combat gaps; one PR and one critic pass per mechanism.
 
-Checkpoint (2026-09-23): the landing PR merged as #444 (`9bab8fba`). Parasite (attack dogs,
-Terror Drones) is the first post-landing mechanism, on `feature/combat-parasite`. Next: the
-Techno death-branch Stun (see open work), then aircraft GetFireError with Mission_Attack 5..9.
+Checkpoint (2026-09-23): the landing PR merged as #444 (`9bab8fba`), Parasite (attack dogs,
+Terror Drones) as #446 (`24ff63b7`). The Techno death broadcast and Stun is on
+`feature/combat-death-stun`. Next, by player visibility: the Foot Enter_Idle_Mode leaves
+(Infantry `51CBA0`, Unit `738970`: Area Guard for DefaultToGuardArea types and IQ-gated AI
+units), then the remaining special warhead bodies starting with mind control, building
+destruction effects (`4415F0`, the NowDead contact loop), and aircraft GetFireError with
+Mission_Attack 5..9.
 
 ## Landed mechanisms
 
@@ -157,8 +161,62 @@ Parasite (`feature/combat-parasite`, snapshot/hash 193), owner `sim/combat/paras
   native waits for the 16-frame check `6FA472..6FA4CB`), Load restarts both timers, refusal
   keeps ArchiveTarget (setter on `BaseDefenseResponseState`), squid attach guard, one CanInfect
   (`ParasiteVictimFacts::of/admits`), stale docs. Recorded: Area Guard arm of Enter_Idle_Mode,
-  Unlimbo Can_Enter_Cell, the death-Stun timing (below). Declined: skipping limboed attackers in
-  the combat pass (unit fixtures fire from never-revealed entities; follow-up).
+  Unlimbo Can_Enter_Cell, the death-Stun timing (ported next). Declined: skipping limboed
+  attackers in the combat pass (unit fixtures fire from never-revealed entities; follow-up).
+
+Techno death broadcast and Stun (`feature/combat-death-stun`, no schema change), owner
+`world/lifecycle.rs`:
+- ObjectClass::ReceiveDamage's exact-zero arm runs Destroy = Detach_All(1) (`5F57AF`) after the
+  kill callback. `object_destroy_callback`: class prelude (Building `44EBF0` OVER_OUT to every
+  contact; Foot `4D9720` OVER_OUT to contact 0), Deselect, the SpawnManager owner arm (`6B7CBC`,
+  reached because the announce loop `725947` does not skip the announcer and ObjectClass's
+  constructor `5F3900` enrols every object), then the expiry broadcast. The receiver calls it at
+  the killing hit; the CausesDelayKill PostMortem stage calls it after its bookkeeping.
+- Assign_Target's object-liveness refusal (`6FCDB0`, `6FCEF8..6FCF03`: NULL for a !IsAlive or
+  Health-0 object, after the same-target early-out) is now in the Target-write owner
+  (`assign_target_commits`, `concrete_effects.rs`), for every writer that can name an object:
+  mission transactions (Restore), the three Overrides, ToProtect and the cloak re-assign. Without
+  it the Destroy walk's own Restore re-installed the corpse for a listener whose current and
+  archived targets were both the victim (AI retaliation). Infantry Assign_Target's idle switch is
+  gated on the receiver's Health (`51B203`).
+- Death-arm Stun (`702210`): `techno_death_stun` = FootClass::Stun `4D5660` (navigation stop) +
+  TechnoClass::Stun `6FCD40` (Assign_Target and Assign_Destination NULL, OVER_OUT to every
+  contact, Kill_All_Spawns + ClearAllTargets, Deselect). Its Detach_All(1) repeats a broadcast
+  the killing hit already made; every Target write since refused the Health-0 object, so the
+  roster is walked once.
+- Effect: listeners drop a dying object at the killing hit instead of at corpse removal. Visible
+  on infantry die sequences (~15 frames): dogs and drones leave inside the killing bite, bullets
+  retarget the corpse's cell, and attackers hold no target until their passive scan (re-armed to
+  4..8 frames when more than 10 were left) picks the next one, where VERA used to switch at once
+  through its dead-target compensation. Units and buildings reorder within the tick: the
+  passive-scan re-arm draw now precedes a DeathWeapon's draws.
+- Deleted: the death-path refinery adapter (`undock_refinery_unit_on_death`; the Destroy drops
+  the reservation and the miner's own dock visit aborts to Approach), the animated-corpse BREAK
+  in `finish_concrete_death`, the invented inside-transport gate of the garrison exit-cell check
+  (SellBuilding `457DE0` asks Occupants[0]; `7078C0..7078D5` has already cleared its Transporter),
+  and the parasite "release at the killing hit" residual. Corrected: the spawn-manager census
+  (`710021` is the Magnetron lift, not PerformDeploy).
+- Tests: late-timing pins flipped to the native order (dog released on the kill frame,
+  attack-move target expired at the kill, nested DeathWeapon RNG order, refinery death); new
+  production-frame checks for the refused Restore, the Stun's own effects and a spawner's
+  children dying inside its Destroy. Rust regression only; no native executable comparison.
+- Residuals: Foot Team removal `4D9744` (`TeamScriptVm` never removes a dying member); the
+  Building prelude's production abandon `44EC01..44EEC8` (VERA drops it in the same tick's
+  production phase); the owner arm runs ahead of the listener walk instead of at the owner's
+  roster slot (rare Scenario-order swap); the Limbo self-visit owner arm `5F4D61`
+  (`object_conceal_with_context`); the building NowDead contact loop `442511..442601`, which walks
+  the pre-hit contact copy (`4422C1..4422DB`): a C4Warhead kill for every contact of a
+  Helipad=yes building (aircraft landed on an airfield) or within 0x100 leptons of the centre,
+  else radio 0x17 and contact+0x500 = 0. It belongs to building destruction effects and must
+  snapshot contacts before the receiver. Infantry second Stun `518108`, naval sinking `737E58`,
+  FootClass::Crash `4DEC90` and the Sell, exit-map, Deploy and teleport Stuns stay with their
+  mechanisms.
+- Critic (one pass): fixed the Restore re-install (above), stale facing-test contract, missing
+  production coverage and provenance; recorded the owner-arm order. Follow-ups: the carrier slot
+  defect (next mechanism: a docking Hornet's Limbo broadcast frees its own slot because VERA lacks
+  the alive-child guard `6B7CDD..6B7CF4`, so the Hornet stays in limbo); a third roster walk per
+  death at the 20k scale (cache the order or index reverse references); ToProtect on the killing
+  hit (`702D24` table).
 
 ## Native evidence inventory
 
@@ -238,6 +296,11 @@ All saved and read back; no byte or prototype edits. One boundary repair (below,
   TechnoClass__Fire), `4DEAE0` FootClass__IronCurtain (boundary repaired: was FUN_004deae0 +
   TechnoClass__StartFidget at `4DEAE4`). Comments `4D734F`, `4D7374`, `4D73D4`, `4D998C`,
   `4D99AA`, `4D99C9`, `6F4D70`, `6FC623`, `6FCAAD`, `6FCCD5`, `708ABD`, `70FBB9`, `737602`, `7195BF`.
+- Death Stun (plates): `6FCD40` TechnoClass__Stun (was FUN_006fcd40), `4D5660` FootClass__Stun
+  (was FootClass__StopFiring), `710000` TechnoClass__ImbueLocomotor (was TechnoClass__PerformDeploy),
+  `5F5280` ObjectClass__Detach_All, `4D9720` FootClass__Detach_All, `44EBF0`
+  BuildingClass__Detach_All (the three were `__Destroy`). Comments `5F57AF`, `702210`, `6B7CBC`,
+  `5F4D61`.
 - Comments, other: `4143EB`, `65E6BE`, `692766`, `41CD6E`, `4CDBE1`, `4CDC37`, `4CDCFB`, `566332`,
   `6EA089`, `6EC300`, `6E53A0`, `726C9C`, `71F4E0`, `55AFB0`, `481670`, `518C56`, `51D200`,
   `51D212`, Teleport `718080`, Foot `4DDC60` (EOL; no function), Foot `4DB800`
@@ -338,18 +401,6 @@ Team, Tag, Trigger (owners `TeamScriptVm`, `TriggerRuntime`):
   materialize Tag/CellTag/object attachments. Preserve `6E52A0` reuse, prepended instances,
   reset `726400` before gates, `689670`/`689910` resets, poll `55AFB0` order and compaction.
 
-Techno death broadcast and Stun (next mechanism; research `death-stun-lane.md` in the session
-scratchpad): the first death-moment broadcast is ObjectClass::ReceiveDamage's exact-zero
-Detach_All(1) (`5F57AF`), before TechnoClass's death branch (slaves, drain, mind control, voice,
-radio OVER_OUT, Stun `702210`, fire-system teardown, debris, death weapon). FootClass::Stun
-`4D5660` (NULL destination, Foot+5E0=-1, Stop_Driver) -> TechnoClass::Stun `6FCD40`
-(Assign_Target/Destination NULL, OVER_OUT all, Kill_All_Spawns + ClearAllTargets and
-Detach_All(1) unless Foot+6AD Magnetron-held, deselect). VERA broadcasts only at UnInit (twice),
-so infantry die sequences delay every listener (dogs reappear ~15 frames late); units and
-buildings only reorder within the tick. Plan: one lifecycle owner for the exact-zero callback
-and a `techno_stun`, called from the receiver; expect moved hash pins (Scenario draws in target
-clears) and more roster walks per death at scale.
-
 Parasite residuals (recorded in `combat/parasite.rs`): squid grapple `6297F0` (squids do not
 LimboLaunch); paralysis in Drive/Ship/Fly/Hover/Teleport movers and player-control +0xA0
 (Drive/Ship owner); grinder `73A13E`, ChronoWarp `6CC763` and Magnetron `710026` releases wait
@@ -387,3 +438,9 @@ Parasite candidate (after critic fixes): `cargo test -p vera20k --lib` 9216 pass
 135 ignored (15 new); Clippy pass, 1022 warnings; no replay pin moved (the v193 fold adds only
 parasite/paralysis state). Release `parity-digest` Dustbowl.mmx, seed `0x00C0FFEE`, 30 ticks:
 two identical runs.
+Death-Stun candidate (after critic fixes): `cargo test -p vera20k --lib` 9219 passed, 0 failed,
+135 ignored (three new production-frame checks, five late-timing pins flipped, no replay pin
+moved; the refused-Restore test fails with the refusal disabled); Clippy pass, 1022 warnings.
+Release `parity-digest` (same map, seed, 30 ticks, before the critic fixes): two runs identical
+to each other and to the parasite base (no deaths in that window, so this checks the load path
+only).

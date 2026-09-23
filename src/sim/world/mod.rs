@@ -1631,13 +1631,6 @@ impl Simulation {
                 if !matches!(category, EntityCategory::Unit | EntityCategory::Structure) {
                     return;
                 }
-                // `BuildingClass::ReceiveDamage` result-4 arm: `UndockUnit`
-                // (0x004424EA) runs first, ahead of the CaptureManager
-                // release, the contact kill/scatter loop and the `+0x4EC`
-                // death — see `undock_refinery_unit_on_death`.
-                if category == EntityCategory::Structure {
-                    self.undock_refinery_unit_on_death(rules, stable_id);
-                }
                 let garrison = self.substrate.entities.get(stable_id).and_then(|entity| {
                     if category != EntityCategory::Structure {
                         return None;
@@ -2395,30 +2388,6 @@ impl Simulation {
             terrain_navigation_changed_cells,
         );
         fatal_ids
-    }
-
-    /// Current VERA refinery-loss adapter, invoked by the damage transaction.
-    /// Cargo remains aboard while contacts are removed and miner state is reset.
-    /// This shared sale/death scheduling is still incomplete native behavior.
-    ///
-    /// Native ReceiveDamage4424A2 gates release4593A0 on reciprocal bunker
-    /// +2E4, not refinery contacts. That release calls Power_On (+58),
-    /// Force_Track (+70), a separate owner-speed setter and radio BREAK (+274),
-    /// not Stop or Mark. Stock refinery death instead proceeds through pointer
-    /// expiry/Limbo; subsequent contact-loss Unload73DEE0 has its own idle,
-    /// stop and queued-mission gates. Do not substitute a forced track or
-    /// universal cancellation for that unfinished receiver/lifecycle migration.
-    fn undock_refinery_unit_on_death(&mut self, rules: &RuleSet, dead_id: u64) {
-        let is_refinery = self
-            .substrate
-            .entities
-            .get(dead_id)
-            .filter(|building| building.category == EntityCategory::Structure)
-            .and_then(|building| self.object_type(building.type_ref(), rules))
-            .is_some_and(|obj| obj.refinery);
-        if is_refinery {
-            crate::sim::miner::interrupt_refinery_docked_miners(self, dead_id);
-        }
     }
 
     /// World-owned half of a non-combat damage transaction. Physical death

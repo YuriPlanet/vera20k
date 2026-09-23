@@ -277,29 +277,24 @@ fn garrison_sellbuilding_exit_cells(rx: u16, ry: u16, width: u16, height: u16) -
 /// cell. Rust does not have the exact InfantryClass predicate bound here yet;
 /// this uses the shared Can_Enter_Cell phase-1 terrain/sub-cell check with the
 /// verified available inputs and leaves terrain-cost/layer details unchecked.
+/// `SellBuilding @ 0x00457DE0` asks Occupants[0] (the building-side list)
+/// whether it can enter each exit cell (vtable `+0x1AC`); it never reads the
+/// occupant's own Transporter link, which a killing hit's Destroy broadcast
+/// has already cleared (`0x007078C0..0x007078D5`: the transport has Health 0).
 fn garrison_first_occupant_can_enter_cell(
     sim: &Simulation,
     first_occupant_id: u64,
     rx: u16,
     ry: u16,
 ) -> bool {
-    garrison_infantry_can_enter_cell(sim, first_occupant_id, rx, ry, true)
+    garrison_infantry_can_enter_cell(sim, first_occupant_id, rx, ry)
 }
 
-fn garrison_infantry_can_enter_cell(
-    sim: &Simulation,
-    infantry_id: u64,
-    rx: u16,
-    ry: u16,
-    require_inside_transport: bool,
-) -> bool {
+fn garrison_infantry_can_enter_cell(sim: &Simulation, infantry_id: u64, rx: u16, ry: u16) -> bool {
     let Some(infantry) = sim.substrate.entities.get(infantry_id) else {
         return false;
     };
     if !infantry.is_alive() {
-        return false;
-    }
-    if require_inside_transport && !infantry.passenger_role.is_inside_transport() {
         return false;
     }
 
@@ -400,7 +395,7 @@ fn sellbuilding_direct_scatter_handoff(
             continue;
         }
         let candidate = (cx as u16, cy as u16);
-        if garrison_infantry_can_enter_cell(sim, passenger_id, candidate.0, candidate.1, false) {
+        if garrison_infantry_can_enter_cell(sim, passenger_id, candidate.0, candidate.1) {
             dest = Some(candidate);
             break;
         }

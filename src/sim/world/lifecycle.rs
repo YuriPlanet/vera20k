@@ -375,13 +375,13 @@ pub(crate) enum LifecycleTestEvent {
     PostMortemKillBookkeeping {
         stable_id: u64,
     },
-    PostMortemRadioBreakCompleted {
+    DestroyRadioBreakCompleted {
         stable_id: u64,
     },
-    PostMortemDeselected {
+    DestroyDeselected {
         stable_id: u64,
     },
-    PostMortemDestroyNotifyBoundary {
+    DestroyNotifyBoundary {
         stable_id: u64,
     },
     /// One visited listener of the live-detach targeting sweep, in the order
@@ -2439,7 +2439,7 @@ impl Simulation {
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealDeselected);
 
         // gamemd-derived: active YR `ObjectClass::Conceal @ 0x005F4D30`
-        // enters `ObjectClass::Destroy(1) @ 0x005F5280` after deselection and
+        // enters `ObjectClass::Detach_All(1) @ 0x005F5280` after deselection and
         // before `Mark(REMOVE)`, so the expiry broadcast observes the target
         // alive, resolvable, and still cell-marked.
         #[cfg(test)]
@@ -2457,6 +2457,13 @@ impl Simulation {
                 resolvable: self.substrate.entities.contains(stable_id),
             });
         }
+        // RESIDUAL: this Detach_All(1) (`0x005F4D61`) also visits the concealed
+        // object itself, so native runs the SpawnManager owner arm on a live
+        // spawner's Limbo: docked children UnInit with a zero regen timer, and
+        // airborne ones turn kamikaze on the wing's target (`0x006B7100`). VERA
+        // skips `spawn_manager_owner_expired` here. Trigger: a spawner limboed
+        // alive. Effect: its wing survives the Limbo. Frequency: rare in stock.
+        // Risk: spawn-pool timing only.
         self.notify_pointer_expired(stable_id, context);
 
         if self.unmark_entity_remove(stable_id, context) {
@@ -2714,29 +2721,135 @@ impl Simulation {
         }
         #[cfg(test)]
         self.trace_lifecycle_for_test(LifecycleTestEvent::PostMortemKillBookkeeping { stable_id });
+        self.object_destroy_callback(stable_id, context);
+    }
 
-        // BuildingClass::Destroy broadcasts BREAK before entering the common
-        // ObjectClass::Destroy body. The per-building native factory pointer has
-        // no Rust representation; eligible stock barrels have none.
-        crate::sim::radio::broadcast_break(self, stable_id);
+    /// `ObjectClass::Detach_All(true)` (vtable `+0xDC`) as the exact-zero
+    /// Destroy callback of `ObjectClass::ReceiveDamage` (`0x005F5765..0x005F57AF`):
+    /// every killing hit runs it after the kill callback, before TechnoClass's
+    /// death arm. The class prelude comes first: `BuildingClass::Detach_All
+    /// @ 0x0044EBF0` sends RADIO OVER_OUT to every contact, and
+    /// `FootClass::Detach_All @ 0x004D9720` to contact 0. `ObjectClass::
+    /// Detach_All @ 0x005F5280` then deselects and announces the expiry
+    /// (`0x007258D0`), leaving Logic, occupancy and liveness intact.
+    ///
+    /// RESIDUALS: the Building prelude also abandons the building's production
+    /// at the kill (`0x0044EC01..0x0044EEC8`, `0x004FAA10`); VERA has no
+    /// per-building factory pointer and drops a dead factory's work in the
+    /// same tick's production phase (`revalidate_and_step_factories`). The Foot
+    /// prelude removes the object from its Team (`TeamClass::Remove @
+    /// 0x006EA870`, at `0x004D9744`); `TeamScriptVm` keeps its members and
+    /// nothing removes a dying one, here or at UnInit. Trigger: a team member
+    /// dies. Effect: the team still lists it. Frequency: every AI team loss.
+    /// Risk: team scripts see a dead member until the team ends.
+    pub(crate) fn object_destroy_callback(&mut self, stable_id: u64, context: UninitContext<'_>) {
+        let Some(category) = self.substrate.entities.get(stable_id).map(|e| e.category) else {
+            return;
+        };
+        match category {
+            EntityCategory::Structure => crate::sim::radio::broadcast_break(self, stable_id),
+            EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft => {
+                if let Some(contact) = self
+                    .substrate
+                    .entities
+                    .get(stable_id)
+                    .and_then(|entity| entity.radio_contacts.slot(0))
+                {
+                    crate::sim::radio::transmit(
+                        self,
+                        stable_id,
+                        contact,
+                        crate::sim::radio::RadioMessage::Break,
+                        crate::sim::radio::RadioPayload::default(),
+                    );
+                }
+            }
+        }
         #[cfg(test)]
-        self.trace_lifecycle_for_test(LifecycleTestEvent::PostMortemRadioBreakCompleted {
-            stable_id,
-        });
+        self.trace_lifecycle_for_test(LifecycleTestEvent::DestroyRadioBreakCompleted { stable_id });
 
-        // ObjectClass::Destroy(1) unconditionally deselects before broadcasting
-        // pointer expiry. It leaves Logic/occupancy/liveness intact.
         if let Some(target) = self.substrate.entities.get_mut(stable_id) {
             target.selected = false;
         }
         #[cfg(test)]
-        self.trace_lifecycle_for_test(LifecycleTestEvent::PostMortemDeselected { stable_id });
+        self.trace_lifecycle_for_test(LifecycleTestEvent::DestroyDeselected { stable_id });
 
+        self.spawn_manager_owner_expired(stable_id, context);
         #[cfg(test)]
-        self.trace_lifecycle_for_test(LifecycleTestEvent::PostMortemDestroyNotifyBoundary {
-            stable_id,
-        });
+        self.trace_lifecycle_for_test(LifecycleTestEvent::DestroyNotifyBoundary { stable_id });
         self.notify_pointer_expired(stable_id, context);
+    }
+
+    /// `SpawnManagerClass::PointerExpired @ 0x006B7C60`, owner arm
+    /// (`0x006B7CBC`): `Kill_All_Spawns()` then `ClearAllTargets()`. Every
+    /// object joins the expiry roster in `ObjectClass::Constructor @
+    /// 0x005F3900` (append `0x005F3A85..0x005F3A8B`) and the announce loop
+    /// (`0x00725947`) does not skip the announcer, so the dying owner's own
+    /// `TechnoClass::PointerExpired` reaches its SpawnManager forward
+    /// (`0x00707B24`). Docked/reloading children and any missile still in its
+    /// post-launch window die with the parent; aircraft already out are
+    /// released. The target clear is the second, separate call —
+    /// `Kill_All_Spawns` alone never touches the targets.
+    ///
+    /// RESIDUAL: VERA runs this self-visit ahead of the listener walk; native
+    /// reaches it at the owner's roster slot, after the listeners before it.
+    /// Trigger: a launcher dies while a lower-roster listener targets it and
+    /// another listener targets one of its missiles still in the post-launch
+    /// window. Effect: those two passive-scan re-arm draws (`RandomRanged(4,8)`
+    /// at `0x00707A0D`) swap order on the Scenario stream. Frequency: rare.
+    /// Risk: Scenario-stream order only.
+    fn spawn_manager_owner_expired(&mut self, stable_id: u64, context: UninitContext<'_>) {
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.spawn_manager.is_some())
+        {
+            crate::sim::spawn_manager::kill_all_spawns_with_context(self, stable_id, context);
+            crate::sim::spawn_manager::clear_all_spawn_targets(self, stable_id);
+        }
+    }
+
+    /// The Stun of TechnoClass::ReceiveDamage's death arm (`0x00702210`),
+    /// after the death sounds and before the debris: `FootClass::Stun @
+    /// 0x004D5660` (Assign_Destination(NULL,1), Path[0] = -1, Stop_Driver) for
+    /// Units, Infantry and Aircraft, then `TechnoClass::Stun @ 0x006FCD40`:
+    /// Assign_Target(NULL), a second NULL destination, RADIO OVER_OUT to every
+    /// contact (`+0x280(3)`), SpawnManager Kill_All_Spawns `0x006B7100` and
+    /// ClearAllTargets `0x006B7BB0`, Detach_All(1), and Deselect.
+    ///
+    /// The Foot prefix is the Stop command's navigation clear, which keeps only
+    /// an already committed segment. Foot+6AD (Magnetron-held) would skip the
+    /// spawn calls and Detach_All; VERA never sets it (the IsLocomotor arm is
+    /// unported). On this path the spawn calls repeat the Destroy's owner arm
+    /// and find nothing left to kill. Detach_All(1) repeats the broadcast the
+    /// killing hit's Destroy already made (on a re-entered death arm,
+    /// `0x0070202E..0x00702035`, that was an earlier call). The walk is not
+    /// repeated: every Target write since then refused the Health-0 object
+    /// (the setter through `assign_target_commits`, including the Destroy
+    /// walk's own Restores; the scans, orders and legacy retaliation filter
+    /// Health 0 themselves), so no listener can hold it again. The Foot
+    /// prelude's contact-0 OVER_OUT is covered by the OVER_OUT to every contact.
+    pub(crate) fn techno_death_stun(&mut self, stable_id: u64, context: UninitContext<'_>) {
+        let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
+            return;
+        };
+        if matches!(
+            entity.category,
+            EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+        ) {
+            crate::sim::movement::stop_navigation_at_committed_head(entity);
+        }
+        crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+        crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
+            entity, None,
+        );
+        crate::sim::radio::broadcast_break(self, stable_id);
+        crate::sim::spawn_manager::kill_all_spawns_with_context(self, stable_id, context);
+        crate::sim::spawn_manager::clear_all_spawn_targets(self, stable_id);
+        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+            entity.selected = false;
+        }
     }
 
     pub(crate) fn apply_lifecycle_request(&mut self, request: LifecycleRequest) {
@@ -3239,8 +3352,9 @@ impl Simulation {
     /// monotonic construction-order walk have the same observable result.
     ///
     /// gamemd-derived: active YR `DispatchPointerExpiredCleanup @ 0x007258D0`
-    /// is called directly by `ObjectClass__UnInit @ 0x005F65F0` and again by
-    /// `ObjectClass::Destroy @ 0x005F5280` inside the virtual Conceal path.
+    /// is called directly by `ObjectClass__UnInit @ 0x005F65F0` and by
+    /// `ObjectClass::Detach_All @ 0x005F5280` (the killing hit's Destroy, the
+    /// virtual Conceal path and the Stun).
     /// Every listener uses the live MapClass authority, including when a receiver
     /// has temporarily lent that grid through UninitContext. The remaining arms
     /// read the object's liveness, health and mission from the same world.
@@ -3512,20 +3626,7 @@ impl Simulation {
 
         self.run_represented_uninit_pre_hook(stable_id);
         self.uninit_carried_passengers(stable_id, context);
-        // `SpawnManagerClass::PointerExpired`, owner arm: `Kill_All_Spawns()`
-        // then `ClearAllTargets()`. Docked/reloading children and any missile
-        // still in its post-launch window die with the parent; aircraft already
-        // out are released. The target clear is the second, separate call —
-        // `Kill_All_Spawns` alone never touches the targets.
-        if self
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| entity.spawn_manager.is_some())
-        {
-            crate::sim::spawn_manager::kill_all_spawns_with_context(self, stable_id, context);
-            crate::sim::spawn_manager::clear_all_spawn_targets(self, stable_id);
-        }
+        self.spawn_manager_owner_expired(stable_id, context);
 
         #[cfg(test)]
         {
