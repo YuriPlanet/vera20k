@@ -503,3 +503,73 @@ fn missing_helipad_delivery_refunds_disposes_and_promotes_aircraft() {
         0
     );
 }
+
+/// A finished object held for delivery goes with its factory. At a building's
+/// kill `BuildingClass::Detach_All(1) @ 0x0044EBF0` abandons its own factory
+/// and, for a Construction Yard, every production no other factory can build,
+/// finished or not (AbandonProduction `0x004C9FF0` refunds what was paid and
+/// deletes the object). With the only Construction Yard gone, the ready
+/// building is refunded, deleted and untracked, and leaves the ready list.
+#[test]
+fn a_ready_building_goes_with_the_last_construction_yard() {
+    let (mut sim, rules, owner) = world(0xfac7_0019);
+    assert!(enqueue_by_type(&mut sim, &rules, "Americans", "GAPOWR"));
+    let held = held_id(&sim, owner, ProductionCategory::Building);
+    assert!(
+        sim.production
+            .factory_shadow
+            .test_arm_ready(owner, ProductionCategory::Building)
+    );
+    assert!(!tick_production(&mut sim, &rules, &BTreeMap::new(), None));
+    assert_eq!(sim.production.ready_by_owner[&owner].len(), 1);
+    let tracked = sim.houses[&owner].tracking.buildings_for_test();
+    let credits = sim.houses[&owner].economy.credits;
+
+    // With a Construction Yard standing, the ready building waits.
+    super::revalidate_and_step_factories(&mut sim, &rules);
+    assert!(sim.substrate.entities.contains(held));
+
+    sim.substrate.entities.remove(3);
+    super::revalidate_and_step_factories(&mut sim, &rules);
+    assert!(!sim.substrate.entities.contains(held));
+    assert_eq!(
+        sim.houses[&owner].tracking.buildings_for_test(),
+        tracked - 1
+    );
+    assert_eq!(sim.houses[&owner].economy.credits, credits + 800);
+    assert!(
+        sim.production
+            .ready_by_owner
+            .get(&owner)
+            .is_none_or(|ready| ready.is_empty())
+    );
+    assert!(
+        sim.production
+            .factory_shadow
+            .view(owner, ProductionCategory::Building)
+            .is_none()
+    );
+}
+
+/// The same for a finished vehicle held at its factory: with the last War
+/// Factory gone, the tank and its spawns are deleted, untracked and refunded.
+#[test]
+fn a_held_vehicle_goes_with_the_last_war_factory() {
+    let (mut sim, rules, owner) = world(0xfac7_001a);
+    assert!(enqueue_by_type(&mut sim, &rules, "Americans", "MTNK"));
+    let held = held_id(&sim, owner, ProductionCategory::Vehicle);
+    let child_ids = children(&sim, held);
+    assert!(
+        sim.production
+            .factory_shadow
+            .test_arm_ready(owner, ProductionCategory::Vehicle)
+    );
+    assert_eq!(sim.houses[&owner].tracking.units_for_test(), 1);
+    let credits = sim.houses[&owner].economy.credits;
+
+    sim.substrate.entities.remove(1);
+    super::revalidate_and_step_factories(&mut sim, &rules);
+    assert_gone(&sim, held, &child_ids);
+    assert_eq!(sim.houses[&owner].tracking.units_for_test(), 0);
+    assert_eq!(sim.houses[&owner].economy.credits, credits + 700);
+}

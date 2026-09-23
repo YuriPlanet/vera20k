@@ -433,6 +433,7 @@ fn naval_yard_placement_rules() -> RuleSet {
          Armor=wood\n\
          Foundation=2x2\n\
          BaseNormal=yes\n\
+         Factory=BuildingType\n\
          Adjacent=12\n\
          [GAYARD]\n\
          Strength=1500\n\
@@ -458,6 +459,7 @@ fn build_off_ally_rules() -> RuleSet {
          Armor=wood\n\
          Foundation=2x2\n\
          BaseNormal=yes\n\
+         Factory=BuildingType\n\
          EligibileForAllyBuilding=yes\n\
          [GAPOWR]\n\
          Strength=750\n\
@@ -490,6 +492,7 @@ fn ground_occupant_placement_rules() -> RuleSet {
          Armor=wood\n\
          Foundation=2x2\n\
          BaseNormal=yes\n\
+         Factory=BuildingType\n\
          [GAPOWR]\n\
          Strength=750\n\
          Armor=wood\n\
@@ -612,6 +615,7 @@ fn stock_power_contract_rules() -> RuleSet {
          Armor=concrete\n\
          Adjacent=2\n\
          Power=0\n\
+         Factory=BuildingType\n\
          [GAPOWR]\n\
          BuildCat=Power\n\
          Strength=750\n\

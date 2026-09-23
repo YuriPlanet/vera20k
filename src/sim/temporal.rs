@@ -883,9 +883,9 @@ impl Simulation {
     }
 
     /// `0x0071AD40`, the house blow-up's release of the chain warping one of
-    /// its objects (`HouseClass::Blowup_All @ 0x004FC742`), run on the head:
-    /// frees the target, then walks Next and Prev through ClearLinkedList,
-    /// which idles those attackers, but never idles its own.
+    /// its objects (`HouseClass::Blowup_All @ 0x004FC6D0`, at `0x004FC742`),
+    /// run on the head: frees the target, then walks Next and Prev through
+    /// ClearLinkedList, which idles those attackers, but never idles its own.
     pub(crate) fn temporal_release_chain_no_idle(&mut self, attacker: u64, rules: &RuleSet) {
         let Some(target) = self.temporal_link(attacker).map(|link| link.target) else {
             return;

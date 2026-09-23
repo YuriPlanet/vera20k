@@ -19,31 +19,49 @@
 //! exists. An object being erased first has its Temporal chain released
 //! (`0x0071AD40`). Each dies through its own ReceiveDamage with its Health as
 //! `C4Warhead=` damage, no attacker, ignoring defenses and passenger escape
-//! (vtable `+0x16C`, `0x004FC75F`): no kill credit, no survivors.
+//! (vtable `+0x16C`, called at `0x004FC766`): no kill credit, no survivors.
 //!
-//! Scenario draws: none in the gate or the sweep; each death draws in its own
-//! receiver (death sounds, debris, death anims), in array order.
+//! Scenario draws (read, not executed): none in the gate or the sweep's own
+//! code; each death draws in its own receiver (death sounds, debris, death
+//! anims), in array order. The Temporal release idles the released attackers
+//! (ClearLinkedList); VERA queues those idles, so any draw they make comes at
+//! the idle's turn.
 //!
 //! Evidence: `tools/spatial_oracle/house_blowup_all.py` runs the original
 //! Blowup_All with GetOriginalOwner, CaptureManager GetOriginalOwner and
-//! SetOriginalOwnerToCivilian (10 cases); `house_defeat_gate.py` the gate
-//! (21 cases). Control flow and ordering read from the disassembly.
+//! SetOriginalOwnerToCivilian (10 cases; the Civilian side lookup is
+//! supplied); `house_defeat_gate.py` the gate (21 cases). Control flow and
+//! ordering read from the disassembly.
 //!
 //! RESIDUALS:
 //! - VERA runs the gate in its own house pass after the anger rung and before
-//!   the AI, not inside each house's Update between its other steps (ledger
-//!   T2-28). Trigger: two houses defeated in one frame. Effect: the order of
-//!   their sweeps against the other houses' AI steps.
+//!   every house's AI, not inside each house's Update between its other steps
+//!   (ledger T2-28). Trigger: every defeat. Effect: natively the houses before
+//!   the defeated one in HouseClass::Array ran their AI before its sweep, so
+//!   they saw its objects alive; in VERA every AI sees them dead.
 //! - TechnoClass::Array order stands on stable-id order (construction order),
 //!   which matches for every source VERA constructs in native order.
+//! - Slave release: a Slave Miner killed with no attacker hands its slaves on
+//!   the map to the Civilian-side house and UnInits those in limbo (the
+//!   ReceiveDamage death arm's `0x006B0AE0` call at `0x00702065`); the sweep
+//!   reaches the miner before its slaves and then skips them. VERA has no slave
+//!   release on any master's death. Trigger: a Yuri house defeated while it
+//!   owns a Slave Miner with slaves. Effect: its slaves die in the sweep, with
+//!   their receivers' death effects and draws, instead of staying on the map
+//!   as civilians.
 //! - The IsToDie path (`Flag_To_Die @ 0x004FC980`: DESTRUCT, REMOVEPLAYER, a
 //!   last human's EXIT) has no VERA producer; offline skirmish cannot reach
 //!   it.
 //! - The trigger-held original owner (`+0x2CC`/`+0x2E0`,
-//!   HouseClass::TransferUnitsTo) and MPlayer_Defeated's Harvester-Truce
-//!   UnInit loop (`0x004FC163`, Scenario flag `0x800`, off in stock skirmish),
-//!   Computer_Paranoid (`0x00501640`) and its local-player presentation are
-//!   not ported.
+//!   HouseClass::TransferUnitsTo) is not ported.
+//! - MPlayer_Defeated's local-player branch (`0x004FC1E7..0x004FC307`: the
+//!   whole-map reveal `0x00577F30` and the defeat UI), its capture-the-flag
+//!   cleanup (Flag_Remove `0x004FBE40` at `0x004FC112..0x004FC15E`, Scenario
+//!   flag `0x10`), the Harvester-Truce UnInit loop (`0x004FC163`, Scenario flag
+//!   `0x800`) and Computer_Paranoid (`0x00501640`) are not ported; the flags
+//!   are off in stock skirmish. Of the local branch only the map-clear byte is
+//!   kept (see `mplayer_defeated`). Trigger: the local player is defeated.
+//!   Effect: the shroud stays in place for the loser.
 
 use crate::map::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -69,8 +87,20 @@ impl Simulation {
         );
         // 0x004F8E86..0x004F8EB7: not a campaign, past frame zero.
         if self.session.game_mode_nonzero && (self.session.binary_frame as i32) > 0 {
-            let base_units = rules.map_or(&[][..], |rules| &rules.general.base_unit_types[..]);
-            let build_refinery_2 = rules.and_then(|rules| rules.build_refinery_types.get(2));
+            // The interner resolves names case-insensitively, as native type
+            // lookups do.
+            let base_units = rules.map_or([None; 3], |rules| {
+                std::array::from_fn(|slot| {
+                    rules
+                        .general
+                        .base_unit_types
+                        .get(slot)
+                        .and_then(|name| self.interner.get(name))
+                })
+            });
+            let build_refinery_2 = rules
+                .and_then(|rules| rules.build_refinery_types.get(2))
+                .and_then(|name| self.interner.get(name));
             for owner in self.session.house_order.clone() {
                 let Some(house) = self.houses.get(&owner) else {
                     continue;
@@ -78,18 +108,10 @@ impl Simulation {
                 if house.is_defeated || house.multiplay_passive {
                     continue;
                 }
-                // Type names resolve case-insensitively, as native lookups do.
-                let names = |name: &str, type_ref: InternedId| {
-                    self.interner.resolve(type_ref).eq_ignore_ascii_case(name)
-                };
                 let alive = if self.session.game_options.short_game {
-                    house.tracking.short_game_alive(|entry, unit| {
-                        base_units.get(entry).is_some_and(|name| names(name, unit))
-                    })
+                    house.tracking.short_game_alive(&base_units)
                 } else {
-                    house.tracking.normal_game_alive(|building| {
-                        build_refinery_2.is_some_and(|name| names(name, building))
-                    })
+                    house.tracking.normal_game_alive(build_refinery_2)
                 };
                 if alive {
                     continue;
@@ -168,12 +190,16 @@ impl Simulation {
 
     /// `HouseClass::MPlayer_Defeated @ 0x004FC0B0`, the represented part: the
     /// Defeated flag, the announcement (`0x004FC30F..0x004FC3BC`, any
-    /// non-passive house; the app decides local or other) and the loss.
+    /// non-passive house; the app decides local or other), the map-clear byte
+    /// `+0x241` (written at `0x004FC328` for another player's house, through
+    /// the whole-map reveal at `0x00577F48` for the local player's) and the
+    /// loss.
     fn mplayer_defeated(&mut self, owner: InternedId, outcome_tick: u64, savour_frames: u64) {
         self.sound_events
             .push(SimSoundEvent::PlayerDefeated { house: owner });
         let accepted = self.houses.get_mut(&owner).is_some_and(|house| {
             house.is_defeated = true;
+            house.map_is_clear = true;
             house.flag_to_lose(outcome_tick, savour_frames)
         });
         if accepted {
@@ -192,8 +218,9 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
     ) {
         let c4 = self.interner.intern(&rules.bridge_warheads.c4_name);
-        // The array is re-read each step (`0x004FC6E6`): an object added
-        // during the sweep is visited too, after every one that preceded it.
+        // The array is re-read each step (items `0x004FC6EC`, count
+        // `0x004FC771`): an object added during the sweep is visited too,
+        // after every one that preceded it.
         let mut visited_below = 0u64;
         loop {
             let mut order: Vec<u64> = self
@@ -241,12 +268,14 @@ impl Simulation {
                         arg6: true,
                     },
                 );
+                #[cfg(test)]
+                BLOWUP_TRACE.with(|trace| trace.borrow_mut().push(event));
                 self.commit_direct_damage_receiver(rules, registry, event);
             }
         }
     }
 
-    /// Blowup_All's predicate (`0x004FC6F1..0x004FC735`) for one Techno:
+    /// Blowup_All's predicate (`0x004FC6F1..0x004FC731`) for one Techno:
     /// its original owner (`TechnoClass::GetOriginalOwner @ 0x0070F820`) is
     /// `house`, and either it still belongs to `house` or no Civilian-side
     /// house takes it over from the house controlling it.
@@ -305,6 +334,18 @@ impl Simulation {
         }
         true
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Blowup_All's receiver calls, in order, for the native comparison.
+    static BLOWUP_TRACE: std::cell::RefCell<Vec<EntityDamageEvent>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+fn take_blowup_trace() -> Vec<EntityDamageEvent> {
+    BLOWUP_TRACE.with(|trace| std::mem::take(&mut *trace.borrow_mut()))
 }
 
 #[cfg(test)]

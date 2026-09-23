@@ -35,12 +35,20 @@
 //! original counter readers (21 cases). Added_To_Game and Removed_From_Game
 //! are read, not executed.
 //!
-//! RESIDUAL: the survivor flag `+0x6D9` is not written. SpawnSurvivors
-//! (`0x00443127`) and Sell (`0x0044A747`) set it on a `Nominal=` survivor of
-//! a building whose `+0x6E9` Init_Managers set (`0x00442CCF`, condition not
-//! established). Trigger: such a survivor entering the map in a normal
-//! (non-short) game. Effect: VERA counts it on the map, so its house can
-//! outlive the native defeat by the survivor's lifetime.
+//! RESIDUAL: the survivor flag `+0x6D9` is not written. SpawnSurvivors sets it
+//! (`0x00443111..0x00443127`), before the survivor's Unlimbo, on a `Nominal=`
+//! survivor (the Technician) of a building with Buildup art (Init_Managers sets
+//! `+0x6E9` when the type has a Buildup shape, `0x00442CAA..0x00442CCF`); the
+//! sale crew sets it after a successful Unlimbo (`0x0044A733..0x0044A747`;
+//! VERA has no sale crew). Nothing clears it. Added_To_Game skips a flagged
+//! infantry on every Unlimbo while Removed_From_Game still decrements it on
+//! every Limbo, so each time a flagged Technician leaves the map (dies,
+//! garrisons, boards) native `+0x5578` drops by one for good. Trigger: a
+//! Technician survivor of an armed building (the 15% crew roll) leaving the
+//! map in a normal (non-short) game. Effect: native's sum can reach zero while
+//! objects stand (the house is defeated and they are blown up) or stay
+//! negative when nothing is left (the house is never defeated); VERA does
+//! neither.
 
 use std::collections::BTreeMap;
 
@@ -153,35 +161,32 @@ impl HouseTracking {
 
     /// The short game's test (`0x004F8EC6..0x004F8F1D`): alive while
     /// `+0x2F0 > 0` or the tracked counts of `BaseUnit=` entries 1, 2 and 0
-    /// sum above zero. `is_base_unit(entry, type)` says whether the entry
-    /// names the type (native compares type pointers).
-    pub(crate) fn short_game_alive(&self, is_base_unit: impl Fn(usize, InternedId) -> bool) -> bool {
-        let tracked = |entry: usize| count_where(&self.unit_types, |unit| is_base_unit(entry, unit));
+    /// sum above zero.
+    pub(crate) fn short_game_alive(&self, base_units: &[Option<InternedId>; 3]) -> bool {
+        let tracked = |slot: usize| {
+            base_units[slot].map_or(0, |unit| self.unit_types.get(&unit).copied().unwrap_or(0))
+        };
         let base = tracked(1).wrapping_add(tracked(2)).wrapping_add(tracked(0));
         self.buildings > 0 || base > 0
     }
 
     /// The normal game's test (`0x004F8F21..0x004F8F77`): alive while
     /// `+0x2F0` plus the on-map totals and the on-map count of `[AI]
-    /// BuildRefinery=`'s third type (`is_refinery_2`) is not zero.
-    pub(crate) fn normal_game_alive(&self, is_refinery_2: impl Fn(InternedId) -> bool) -> bool {
+    /// BuildRefinery=`'s third type is not zero.
+    pub(crate) fn normal_game_alive(&self, build_refinery_2: Option<InternedId>) -> bool {
+        let refinery = build_refinery_2.map_or(0, |refinery| {
+            self.active_building_types
+                .get(&refinery)
+                .copied()
+                .unwrap_or(0)
+        });
         self.buildings
             .wrapping_add(self.active_units)
             .wrapping_add(self.active_infantry)
             .wrapping_add(self.active_aircraft)
-            .wrapping_add(count_where(&self.active_building_types, is_refinery_2))
+            .wrapping_add(refinery)
             != 0
     }
-}
-
-/// The count of one type in a per-type counter. VERA keys objects by the
-/// spelling they were constructed with, so a type may sit under more than one
-/// key.
-fn count_where(counts: &BTreeMap<InternedId, i32>, names_type: impl Fn(InternedId) -> bool) -> i32 {
-    counts
-        .iter()
-        .filter(|(key, _)| names_type(**key))
-        .fold(0, |sum, (_, count)| sum.wrapping_add(*count))
 }
 
 #[cfg(test)]
@@ -213,6 +218,14 @@ impl HouseTracking {
             self.active_infantry,
             self.active_aircraft,
         )
+    }
+
+    /// The on-map count of one building type.
+    pub(crate) fn active_building_count_for_test(&self, building: InternedId) -> i32 {
+        self.active_building_types
+            .get(&building)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Set every counter the gate reads.

@@ -349,7 +349,7 @@ pub(super) fn supports_live_production(obj: &crate::rules::object_type::ObjectTy
     )
 }
 
-fn has_factory_for_owner(
+pub(super) fn has_factory_for_owner(
     entities: &EntityStore,
     rules: &RuleSet,
     owner: &str,

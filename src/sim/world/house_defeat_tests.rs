@@ -8,6 +8,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::capture_manager::{CaptureManagerState, MindControlLink};
+use crate::sim::combat::{RAD_NO_ATTACKER, ReceiverCallFlags};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
@@ -191,13 +192,15 @@ struct NativeBlowupCase {
 
 /// `HouseClass::Blowup_All @ 0x004FC6D0` against the original, case by case
 /// (with GetOriginalOwner, the CaptureManager node scan and
-/// SetOriginalOwnerToCivilian executed): who dies, in array order, each to
-/// its own Health as C4 damage; a captive of another house handed to the
+/// SetOriginalOwnerToCivilian executed; the Civilian side lookup supplied):
+/// VERA's own receiver calls, in order, against the native ones (target,
+/// damage = its Health, distance, C4Warhead, no attacker, ignoreDefenses,
+/// no escape, no source house); a captive of another house handed to the
 /// Civilian-side house, or killed when none exists; our own captive spared;
 /// a warped object released first. The trigger-held original owner
-/// (`trigger_owned_elsewhere_dies`) has no VERA state and is skipped; VERA's
-/// deferred deletion never shifts the array, so the removal case compares
-/// its victims only.
+/// (`trigger_owned_elsewhere_dies`) has no VERA state and is skipped. VERA's
+/// deferred deletion never shifts the array; the removal case shows native
+/// re-reading the slot, so the call order is the same.
 #[test]
 fn native_blowup_all_corpus() {
     let cases: Vec<NativeBlowupCase> = serde_json::from_str(include_str!(
@@ -279,31 +282,51 @@ fn native_blowup_all_corpus() {
             .map(|&id| sim.substrate.entities.get(id).unwrap().health.current)
             .collect();
         let blown = houses[input["house"].as_u64().unwrap() as usize];
+        let c4 = sim.interner.intern("Super");
+        let _ = super::take_blowup_trace();
 
         sim.house_blowup_all(blown, &rules, None);
 
-        let native_victims: Vec<usize> = case
+        // Native: ReceiveDamage(&damage, distance, warhead, attacker,
+        // ignoreDefenses, arg6, sourceHouse), in array order.
+        let calls = super::take_blowup_trace();
+        let native_calls: Vec<&serde_json::Value> = case
             .events
             .iter()
             .filter(|event| event[0] == "receive_damage")
-            .map(|event| {
-                // ReceiveDamage(&Health, 0, C4Warhead, null, 1, 1, null).
-                assert_eq!(event[4], "c4", "{name}: the warhead");
-                assert_eq!(
-                    (event[5].as_u64(), event[6].as_u64(), event[7].as_u64()),
-                    (Some(0), Some(1), Some(1)),
-                    "{name}: no attacker, ignoreDefenses, no escape"
-                );
-                let object = event[1].as_str().unwrap();
-                let n = object["obj".len()..].parse::<usize>().unwrap();
-                assert_eq!(
-                    event[2].as_i64(),
-                    Some(i64::from(health_before[n])),
-                    "{name}: its own Health"
-                );
-                n
-            })
             .collect();
+        assert_eq!(calls.len(), native_calls.len(), "{name}: receiver calls");
+        let mut native_victims = Vec::new();
+        for (call, event) in calls.iter().zip(&native_calls) {
+            let object = event[1].as_str().unwrap();
+            let n = object["obj".len()..].parse::<usize>().unwrap();
+            native_victims.push(n);
+            assert_eq!(event[4], "c4", "{name}: the native warhead");
+            assert_eq!(call.target_id, ids[n], "{name}: who, in order");
+            assert_eq!(
+                Some(i64::from(call.damage)),
+                event[2].as_i64(),
+                "{name}: obj{n}'s damage"
+            );
+            assert_eq!(
+                call.distance_leptons.map(i64::from),
+                event[3].as_i64(),
+                "{name}: distance"
+            );
+            assert_eq!(call.warhead_ref, c4, "{name}: C4Warhead");
+            assert_eq!(event[5].as_u64(), Some(0), "{name}: no native attacker");
+            assert_eq!(call.attacker_id, RAD_NO_ATTACKER, "{name}: no attacker");
+            assert_eq!(
+                call.receiver_flags,
+                Some(ReceiverCallFlags {
+                    ignore_defenses: event[6].as_u64() == Some(1),
+                    arg6: event[7].as_u64() == Some(1),
+                }),
+                "{name}: ignoreDefenses, no escape"
+            );
+            assert_eq!(event[8].as_u64(), Some(0), "{name}: no native source house");
+            assert_eq!(call.source_house, None, "{name}: no source house");
+        }
         for (n, &id) in ids.iter().enumerate() {
             let entity = sim.substrate.entities.get(id).unwrap();
             let hit = native_victims.contains(&n);

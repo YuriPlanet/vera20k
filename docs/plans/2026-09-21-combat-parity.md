@@ -45,12 +45,15 @@ Chrono Legionnaire's erase (TemporalClass) as #474 (`80f4494a`). The house defea
 counts, the gate, Blowup_All) is on `feature/combat-house-defeat`. A production
 sortie showed the Carrier wing never attacks: every manager pass re-issues each Hornet's attack
 from sub-state 0 (`assign_child_attack`), so the aircraft attack run never completes and the wing
-never lands. Next, by player visibility: the remaining special
-warhead bodies (IvanBomb, Magnetron and the rest), the ship sink, that wing cycle together with the
+never lands. Next, by player visibility: the Crazy Ivan bomb (BombClass; reading lane and a
+70-case native oracle ready), the Slave Miner's slave release at its death (`6B0AE0`), the other
+special warhead bodies (Magnetron and the rest), the table-based native trig that replaces host
+`sin`/`cos`/`atan` in homing, flak and shrapnel paths (research lane done: gamemd reads float32
+tables, so exact portable results are possible), the ship sink, that wing cycle together with the
 aircraft attack loop (Mission_Attack 5..9, GetFireError), the Foot Enter_Idle_Mode leaves (Infantry
 `51CBA0`, Unit `738970`, with the Mission_AreaGuard post and leash `4D6AA0` they need), open-topped
-passenger fire (a Chrono Legionnaire or Yuri in a Battle Fortress), and constructing each death
-object at its native call.
+passenger fire (a Chrono Legionnaire or Yuri in a Battle Fortress), the survivor flag `+6D9`, and
+constructing each death object at its native call.
 
 ## Landed mechanisms
 
@@ -510,8 +513,15 @@ House defeat (`feature/combat-house-defeat`, snapshot 198, hash feature 198), ow
   not MultiplayPassive. The short game keeps a house while `+2F0 > 0` or BaseUnit entries 1, 2
   and 0 are tracked above zero; the normal game while buildings, the on-map totals and the
   on-map count of `[AI] BuildRefinery=`'s third type sum to non-zero. Otherwise Blowup_All, then
-  MPlayer_Defeated (`4FC0B0`: flag, announcement, loss). A death reaches the gate on the frame
+  MPlayer_Defeated (`4FC0B0`: flag, announcement, the map-clear byte `+241` (`4FC328`, or
+  `577F48` through the local player's map reveal), loss). A death reaches the gate on the frame
   after it, when the drain removes its tracking.
+- A finished object held for delivery (a building ready to place, a vehicle at a blocked exit)
+  goes with its factory: at a building's kill `BuildingClass::Detach_All(1)` (`44EBF0`) runs
+  AbandonProduction (`4C9FF0`: refund, delete, finished or not) on its own factory and, for a
+  Construction Yard, on every production no other factory can build. VERA has no per-building
+  factory: `plan_revalidation` now abandons a finished object once no factory of its category
+  remains (refund, delete, ready list), so a house cannot stay undefeated on a held object.
 - Blowup_All `4FC6D0`: TechnoClass::Array order (stable-id order; objects added during the sweep
   are visited after), limbo objects included. GetOriginalOwner (`70F820`) selects the house's
   own objects; a captive of another house whose original owner is the house goes to the first
@@ -528,18 +538,37 @@ House defeat (`feature/combat-house-defeat`, snapshot 198, hash feature 198), ow
   GetOriginalOwner, the CaptureManager node scan and SetOriginalOwnerToCivilian over 10 cases (the
   house's own objects in array order, nothing owned, an empty array, a captive of another house
   with and without a Civilian-side house, our own captive, two captives of one controller, the
-  trigger-held owner, a warped victim, a removal during the sweep); pinned in
-  `native_blowup_all_corpus` (the trigger-held owner skipped). Parity demonstrated within those
-  inputs. Reading only: Added_To_Game and Removed_From_Game, the call sites, the array order.
+  trigger-held owner, a warped victim, a removal during the sweep; the Civilian side lookup
+  supplied); `native_blowup_all_corpus` compares VERA's own receiver calls with the native ones
+  in order (target, damage, distance, warhead, attacker, flags, source house) and the node
+  rewrite (the trigger-held owner skipped). Parity demonstrated within those inputs for the
+  tracking routing, the gate's verdict and the sweep. Reading only: Added_To_Game and
+  Removed_From_Game, the call sites, the array order, the Detach_All abandonment.
 - Tests: the three corpora; a production short game in which the last refinery's deletion blows
-  up the army on the next frame with no kill credit; world tests for the straggler's death, the
-  captured Insignificant garrison, a dying MCV counted until its deletion and ChangeOwner; the
-  lifecycle tests for the add, the Limbo, the drain and the single destruction record. Older
-  hash schemas fold the retired counts recomputed from the entity store, so no pin moved.
-- Residuals (module docs): the separate house pass (T2-28: two houses defeated in one frame); the
-  IsToDie path (`4FC980`, no VERA producer); the trigger-held original owner (`+2CC`/`+2E0`,
-  TransferUnitsTo); MPlayer_Defeated's Harvester-Truce loop and Computer_Paranoid; the survivor
-  flag `+6D9` (not written).
+  up the army on the next frame with no kill credit; the on-map counts through Unlimbo and Limbo
+  (each class, the DontScore Unit quirk), ChangeOwner's moves on and off the map, a discarded
+  build's Remove_Tracking; a ready building abandoned with the last Construction Yard and a held
+  tank with the last War Factory; world tests for the straggler's death, the captured
+  Insignificant garrison, a dying MCV counted until its deletion; the lifecycle tests for the
+  add, the Limbo, the drain and the single destruction record. Older hash schemas fold the retired
+  counts recomputed from the entity store; no pinned-hash fixture has a house, so they meet it
+  only in relative comparisons.
+- Residuals (module docs): the separate house pass (T2-28, every defeat: earlier houses' AI saw
+  the defeated house's objects alive); the slave release (`6B0AE0`: a Slave Miner killed with no
+  attacker frees its slaves to the Civilian house; VERA has no slave release, so they die in the
+  sweep); the factory host (a house with two factories of a category losing the one its
+  production is attached to keeps the object); the IsToDie path (`4FC980`, no VERA producer);
+  the trigger-held original owner (`+2CC`/`+2E0`, TransferUnitsTo); MPlayer_Defeated's local
+  branch (map reveal, UI), Flag_Remove, the Harvester-Truce loop and Computer_Paranoid; the
+  survivor flag `+6D9` (a Technician survivor of an armed building drifts native's on-map
+  infantry count down each time it leaves the map; not written).
+- Critic (one pass): no blocker; five should-fix. Fixed: the held object that kept a house alive
+  after its factory died; the Blowup_All golden now observes VERA's calls in order; the map-clear
+  byte. Recorded: the slave release (its own mechanism, queued) and the `+6D9` survivor flag
+  (needs `Nominal=` and the Buildup-art fact). Minor fixes: Added_To_Game behind the alive gate,
+  four addresses, a false interner rationale (the lookup is case-insensitive), the gate oracle's
+  consumer, the missing on-map/ChangeOwner/discard tests, a plate overclaim, a stale scatter
+  label, the T2-28 trigger, the draw claim's evidence level.
 
 ## Native evidence inventory
 

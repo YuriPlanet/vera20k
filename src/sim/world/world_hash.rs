@@ -1054,7 +1054,10 @@ impl Simulation {
 
     /// The owner's stored buildings and other objects whose destruction is
     /// not yet recorded: the retired per-house counts that schemas before
-    /// `HouseDefeatTracking` fold.
+    /// `HouseDefeatTracking` fold. It reproduces them for a house created
+    /// before its objects whose counts were never set by hand; no pinned-hash
+    /// fixture has a house, so older schemas meet it only in relative
+    /// comparisons.
     pub(crate) fn owned_object_counts(&self, owner: crate::sim::intern::InternedId) -> (u32, u32) {
         self.substrate
             .entities

@@ -11,7 +11,7 @@ in a normal game the active unit, infantry and aircraft totals (+0x5564,
 building counter +0x5550 at BuildRefinery[2] (Rules +0x8E8). Blowup_All
 0x004FC6D0 and MPlayer_Defeated 0x004FC0B0 are recorded at entry and not run.
 
-Rust consumer: src/sim/house_tracking_tests.rs.
+Rust consumer: src/sim/world/house_defeat_tests.rs.
 """
 import struct
 from pathlib import Path

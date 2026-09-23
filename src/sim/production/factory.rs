@@ -265,6 +265,14 @@ impl Factory {
         if self.progress >= PRODUCTION_STEPS {
             return None;
         }
+        self.abandon_production(economy)
+    }
+
+    /// `FactoryClass::AbandonProduction @ 0x004C9FF0` itself: the active object
+    /// goes whether or not it is finished (`0x004CA0FC`), after the refund of
+    /// what was paid for it. `None` without an active object.
+    fn abandon_production(&mut self, economy: &mut Economy) -> Option<(i32, Option<u64>)> {
+        self.object.as_ref()?;
 
         // C8: refund the already-paid (spent) portion. `balance` is the remaining
         // unpaid amount, charged down per step; `original_balance` is the full-cost
@@ -485,6 +493,9 @@ pub enum CancelOutcome {
 pub(crate) struct RevalidationLifecycle {
     pub(crate) discarded_entity_ids: Vec<u64>,
     pub(crate) promoted: Vec<(InternedId, ProductionCategory, InternedId)>,
+    /// `(owner, type)` of each abandoned object that had finished: a finished
+    /// building also waits in `ready_by_owner`.
+    pub(crate) abandoned_finished: Vec<(InternedId, InternedId)>,
 }
 
 /// 3-way prerequisite eligibility (P6 consumer; defined now so the registry
@@ -866,14 +877,28 @@ impl FactoryRegistry {
                     BuildEligibility::PermanentlyBlocked
                 )
             };
-            // Abandon the active object only if it is IN-PROGRESS (not complete-held — a
-            // finished build awaiting delivery is not abandoned by this path) AND permanently
-            // blocked. A user (manual) pause is NOT a guard here — gamemd abandons a paused
-            // build too on permanent block.
-            let abandon_active = f
-                .object
-                .as_ref()
-                .is_some_and(|o| f.progress < PRODUCTION_STEPS && permanent(o.type_id));
+            // Abandon an IN-PROGRESS active object when it is permanently blocked. A user
+            // (manual) pause is NOT a guard here — gamemd abandons a paused build too on
+            // permanent block. A finished object held for delivery goes only with its
+            // factory: `BuildingClass::Detach_All(1) @ 0x0044EBF0`, run at a building's
+            // kill, abandons the building's own factory (`0x0044EC01..0x0044EC21`) and, for
+            // a Construction Yard, every factory whose object no other factory can build
+            // (`0x0044EC2B..0x0044EEC8`), finished or not. VERA has no per-building
+            // factory, so it abandons a finished object once no factory of its category
+            // remains (see `Simulation::object_destroy_callback`'s residual).
+            let abandon_active = f.object.as_ref().is_some_and(|o| {
+                if f.progress < PRODUCTION_STEPS {
+                    permanent(o.type_id)
+                } else {
+                    !crate::sim::production::production_tech::has_factory_for_owner(
+                        &sim.substrate.entities,
+                        rules,
+                        &owner_name,
+                        f.category,
+                        &sim.interner,
+                    )
+                }
+            });
             // Queued tail: collect permanently-blocked indices to drop + the first survivor
             // (the promote target after an abandon).
             let mut drop_queued: Vec<usize> = Vec::new();
@@ -921,6 +946,7 @@ impl FactoryRegistry {
         let mut lifecycle = RevalidationLifecycle {
             discarded_entity_ids: Vec::new(),
             promoted: Vec::new(),
+            abandoned_finished: Vec::new(),
         };
         for action in plan {
             let Some(f) = self.factories.get_mut(&(action.owner, action.category)) else {
@@ -934,11 +960,18 @@ impl FactoryRegistry {
             }
             if action.abandon_active {
                 let abandoned_entity_id = f.object.as_ref().and_then(|object| object.entity_id);
+                if f.progress >= PRODUCTION_STEPS
+                    && let Some(object) = f.object.as_ref()
+                {
+                    lifecycle
+                        .abandoned_finished
+                        .push((action.owner, object.type_id));
+                }
                 if let Some(house) = houses.get_mut(&action.owner) {
-                    let _ = f.cancel_active(&mut house.economy);
+                    let _ = f.abandon_production(&mut house.economy);
                 } else {
                     let mut throwaway = Economy::default();
-                    let _ = f.cancel_active(&mut throwaway);
+                    let _ = f.abandon_production(&mut throwaway);
                 }
                 if let Some(entity_id) = abandoned_entity_id {
                     lifecycle.discarded_entity_ids.push(entity_id);

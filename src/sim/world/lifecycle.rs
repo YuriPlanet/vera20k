@@ -888,11 +888,19 @@ impl Simulation {
             }
         }
         // `TechnoClass::Unlimbo` calls Added_To_Game once placement succeeded
-        // (`0x006F6D8F`), before the alive gate below.
-        self.update_house_tracking(
-            stable_id,
-            crate::sim::house_tracking::HouseTracking::added_to_game,
-        );
+        // (`0x006F6D8F`), behind its alive gate (`0x006F6D04`: a dead Techno
+        // returns success before it).
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.lifecycle.object_alive)
+        {
+            self.update_house_tracking(
+                stable_id,
+                crate::sim::house_tracking::HouseTracking::added_to_game,
+            );
+        }
         // TechnoUnlimbo6F6E65..AD runs this second mode-one query only
         // after successful Object Mark and the +90 alive gate. A failed Mark
         // must retain history. This precedes Foot4D722F's owner observation.
@@ -2754,9 +2762,14 @@ impl Simulation {
     /// (`0x007258D0`), leaving Logic, occupancy and liveness intact.
     ///
     /// RESIDUALS: the Building prelude also abandons the building's production
-    /// at the kill (`0x0044EC01..0x0044EEC8`, `0x004FAA10`); VERA has no
-    /// per-building factory pointer and drops a dead factory's work in the
-    /// same tick's production phase (`revalidate_and_step_factories`). The Foot
+    /// at the kill (`0x0044EC01..0x0044EEC8`, `0x004FAA10`), deleting its
+    /// object whether or not it is finished. VERA has no per-building factory
+    /// pointer: the next production phase (`revalidate_and_step_factories`)
+    /// abandons an unfinished build that lost its factory and a finished one
+    /// once no factory of its category remains. Trigger: a house with two
+    /// factories of a category loses the one its production is attached to.
+    /// Effect: natively the object is refunded and deleted at the kill; VERA
+    /// keeps it at the surviving factory. The Foot
     /// prelude removes the object from its Team (`TeamClass::Remove @
     /// 0x006EA870`, at `0x004D9744`); `TeamScriptVm` keeps its members and
     /// nothing removes a dying one, here or at UnInit. Trigger: a team member

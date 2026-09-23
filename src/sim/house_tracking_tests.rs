@@ -5,6 +5,7 @@
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_state::HouseState;
+use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
 
 const RULES: &str = "\
@@ -167,4 +168,110 @@ fn native_tracking_corpus() {
         compared += 1;
     }
     assert_eq!(compared, 34);
+}
+
+fn one_house() -> (Simulation, RuleSet, InternedId) {
+    let rules = RuleSet::from_ini(&IniFile::from_str(RULES)).unwrap();
+    let mut sim = Simulation::with_seed(3);
+    let house = sim.interner.intern("Americans");
+    sim.houses
+        .insert(house, HouseState::new(house, 0, None, true, 0, 10));
+    (sim, rules, house)
+}
+
+/// Added_To_Game at Unlimbo (`0x006F6D8F`) and Removed_From_Game at the first
+/// Limbo (`0x006F6BD1`) move the on-map counts the normal game reads.
+/// `DontScore=` skips them, except that a Unit is added without the test
+/// (`0x00502CF9`) and removed with it, so it stays counted.
+#[test]
+fn on_map_counts_follow_unlimbo_and_limbo() {
+    let (mut sim, rules, house) = one_house();
+    let kinds = [
+        "TANK", "GI", "PLANE", "BLDG", "TANKD", "GID", "PLANED", "BLDGD",
+    ];
+    let ids: Vec<u64> = kinds
+        .iter()
+        .enumerate()
+        .map(|(n, kind)| {
+            sim.spawn_object_at_height(kind, "Americans", 10 + 4 * n as u16, 10, 0, 0, &rules)
+                .unwrap_or_else(|| panic!("{kind} spawns"))
+        })
+        .collect();
+    let bldg = sim.interner.get("BLDG").unwrap();
+    let bldgd = sim.interner.get("BLDGD").unwrap();
+    let tracking = &sim.houses[&house].tracking;
+    assert_eq!(
+        tracking.active_for_test(),
+        (2, 1, 1),
+        "the DontScore unit is added"
+    );
+    assert_eq!(tracking.active_building_count_for_test(bldg), 1);
+    assert_eq!(tracking.active_building_count_for_test(bldgd), 0);
+
+    for id in ids {
+        sim.uninit_with_rules(id, &rules);
+    }
+    let tracking = &sim.houses[&house].tracking;
+    assert_eq!(tracking.active_for_test(), (1, 0, 0), "but not removed");
+    assert_eq!(tracking.active_building_count_for_test(bldg), 0);
+}
+
+/// TechnoClass::ChangeOwner moves the tracking (`0x007015DE`, `0x007015E6`)
+/// and, only for an object on the map, the on-map counts (`0x0070159D`,
+/// `0x0070178E`, both behind the InLimbo test).
+#[test]
+fn change_owner_moves_the_counts() {
+    let (mut sim, rules, first) = one_house();
+    let second = sim.interner.intern("Russians");
+    sim.houses
+        .insert(second, HouseState::new(second, 1, None, false, 0, 10));
+    let on_map = sim
+        .spawn_object_at_height("TANK", "Americans", 10, 10, 0, 0, &rules)
+        .unwrap();
+    let in_limbo = sim
+        .spawn_object_limbo_at_height("TANK", "Americans", 14, 10, 0, 0, &rules)
+        .unwrap();
+    let counts = |sim: &Simulation, house| {
+        let tracking = &sim.houses[&house].tracking;
+        (tracking.units_for_test(), tracking.active_for_test().0)
+    };
+    assert_eq!(counts(&sim, first), (2, 1));
+
+    sim.change_owner(on_map, second);
+    assert_eq!(
+        (counts(&sim, first), counts(&sim, second)),
+        ((1, 0), (1, 1))
+    );
+    sim.change_owner(in_limbo, second);
+    assert_eq!(
+        (counts(&sim, first), counts(&sim, second)),
+        ((0, 0), (2, 1))
+    );
+}
+
+/// A constructed object that never leaves limbo (a cancelled build) is
+/// deleted at once, and its destructor's Remove_Tracking goes with it.
+#[test]
+fn discarding_a_constructed_object_releases_its_tracking() {
+    let (mut sim, rules, house) = one_house();
+    let building = sim
+        .spawn_object_limbo_at_height("BLDG", "Americans", 10, 10, 0, 0, &rules)
+        .unwrap();
+    let unit = sim
+        .spawn_object_limbo_at_height("TANK", "Americans", 14, 10, 0, 0, &rules)
+        .unwrap();
+    let tracking = &sim.houses[&house].tracking;
+    assert_eq!(
+        (tracking.buildings_for_test(), tracking.units_for_test()),
+        (1, 1)
+    );
+
+    assert!(sim.discard_constructed_limbo(building));
+    assert!(sim.discard_constructed_limbo(unit));
+    let tracking = &sim.houses[&house].tracking;
+    assert_eq!(
+        (tracking.buildings_for_test(), tracking.units_for_test()),
+        (0, 0)
+    );
+    assert_eq!(tracking.active_for_test(), (0, 0, 0));
 }
