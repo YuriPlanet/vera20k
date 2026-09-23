@@ -9,7 +9,9 @@ on:
 
 concurrency:
   group: linux-arm.yml-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded pull-request runs only: every run on main finishes,
+  # so the README status badges never show "cancelled".
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
