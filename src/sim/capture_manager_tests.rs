@@ -1179,13 +1179,14 @@ fn an_attack_order_captures_without_damage() {
     assert_eq!(victims(&sim, mind), [gi]);
 }
 
-/// Retail `rulesmd.ini` (the local `ini/`): the stock controllers' managers
-/// and the mind-control globals bind.
+/// Retail `rulesmd.ini` (the local `ini/`; skipped without it): the stock
+/// controllers' managers and the mind-control globals bind.
 #[test]
 fn retail_rules_bind_the_stock_controllers() {
-    let rules =
-        RuleSet::from_ini(&IniFile::from_bytes(include_bytes!("../../ini/rulesmd.ini")).unwrap())
-            .unwrap();
+    let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+        return;
+    };
+    let rules = RuleSet::from_ini(&ini).unwrap();
     let limits = |kind: &str| {
         init_capture_manager(rules.object(kind).unwrap(), &rules)
             .map(|manager| (manager.max_control, manager.infinite))
