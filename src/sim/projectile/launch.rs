@@ -1,7 +1,8 @@
 //! Native FireAt launch math, with the stores and lookup boundaries retained.
 //!
-//! Owners: 6FE8EE..6FF014, 48A8D0/48A9D0, 4CAE30/4CB3D0,
-//! 4CADB0 and 4CACB0/4CAD00. This module does not resolve world receivers.
+//! Owners: 6FE663..6FE8E7 (launch scatter), 6FE8EE..6FF014, 48A8D0/48A9D0,
+//! 4CAE30/4CB3D0, 4CADB0 and 4CACB0/4CAD00, and SpawnShrapnel's child
+//! velocity (46A5D2..46A86D). This module does not resolve world receivers.
 
 use crate::map::retail_trig::{AcosTable, TrigTable};
 use crate::util::native_x87::{
@@ -9,12 +10,19 @@ use crate::util::native_x87::{
 };
 
 use super::{ProjectileCoord, ProjectileVelocity};
+use crate::sim::rng::SimRng;
 
 const PI_HALF: NativeF64Bits = NativeF64Bits::from_bits(0x3ff9_21fb_5444_2d18);
 const WORD_SCALE: NativeF64Bits = NativeF64Bits::from_bits(0xc0c4_5f07_af68_ecef);
 const RADIAN_SCALE: NativeF64Bits = NativeF64Bits::from_bits(0xbf19_222d_989f_5e57);
 const POSITIVE_HEIGHT_ANGLE: NativeF64Bits = NativeF64Bits::from_bits(0x3fe9_21d9_f4d3_7c12);
 const TRIG_SCALE: NativeF32Bits = NativeF32Bits::from_bits(0x4522_f983);
+/// `[0x007E3570]` = 1/0x7FFFFFFE, the scatter angle draw's bound.
+const INVERSE_DRAW_SPAN: NativeF64Bits = NativeF64Bits::from_bits(0x3e00_0000_0040_0000);
+/// `[0x007E3CC0]` = 2π.
+const TWO_PI: NativeF64Bits = NativeF64Bits::from_bits(0x4019_21fb_5444_2d18);
+/// SpawnShrapnel's fixed launch pitch, pushed as an immediate (`0x0046A787`).
+const SHRAPNEL_PITCH: NativeF64Bits = NativeF64Bits::from_bits(0x3fe9_2164_8732_995c);
 
 fn d(bits: NativeF64Bits) -> X87Value {
     X::load_f64(bits).expect("finite native launch input")
@@ -220,6 +228,191 @@ pub(crate) fn high_arc_root(
     int(sqrt(X::add(X::mul(x, x), X::mul(y, y)))) < height
 }
 
+/// `TechnoClass::FireAt`'s launch scatter (`0x006FE663..0x006FE8E7`), taken
+/// for an `Inaccurate=` `Arcing=` projectile: it moves the target delta by a
+/// drawn magnitude in a drawn direction, leaving Z. Two Scenario draws,
+/// magnitude then angle. The flak arm (`FlakScatter=` and not `Inviso=`;
+/// stock `FlakTProj`) scales `RandomRanged(0, BallisticScatter)` by the
+/// delta's length over the weapon's range (vt+0x168, `0x007012C0`); the plain
+/// arm draws the magnitude from `RandomRanged(BallisticScatter / 2,
+/// BallisticScatter)`. A zero range faults natively; here it scatters by zero.
+pub(crate) fn fireat_launch_scatter(
+    delta: ProjectileCoord,
+    ballistic_scatter: i32,
+    weapon_range: i32,
+    flak: bool,
+    rng: &mut SimRng,
+) -> ProjectileCoord {
+    let (trig, _) = crate::map::retail_trig::required_math_tables();
+    launch_scatter_with(
+        delta,
+        ballistic_scatter,
+        weapon_range,
+        flak,
+        |low, high| rng.next_range_i32_inclusive(low, high),
+        trig,
+    )
+}
+
+/// The scatter with its two `Random__RandomRanged` draws supplied.
+fn launch_scatter_with(
+    delta: ProjectileCoord,
+    ballistic_scatter: i32,
+    weapon_range: i32,
+    flak: bool,
+    mut random_ranged: impl FnMut(i32, i32) -> i32,
+    trig: &TrigTable,
+) -> ProjectileCoord {
+    let magnitude = if flak {
+        let distance = flak_scatter_distance(delta);
+        // 0x006FE727..0x006FE73D: IMUL, then IDIV by the range.
+        random_ranged(0, ballistic_scatter)
+            .wrapping_mul(distance)
+            .checked_div(weapon_range)
+            .unwrap_or(0)
+    } else {
+        // 0x006FE815..0x006FE81C: the halving is CDQ/SUB/SAR, toward zero.
+        random_ranged(ballistic_scatter / 2, ballistic_scatter)
+    };
+    let raw = random_ranged(0, 0x7fff_fffe);
+    scatter_delta(delta, magnitude, raw, trig)
+}
+
+/// `0x006FE6AD..0x006FE722`: the flak arm's length of the delta: X and Y
+/// stored as floats, Z loaded as an integer, `(x·x + y·y) + z·z` through
+/// `Sqrt_Approx`, stored as a float and truncated.
+fn flak_scatter_distance(delta: ProjectileCoord) -> i32 {
+    let float =
+        |value: i32| f(X::store_f32(X::load_i32(value)).expect("finite scatter delta component"));
+    let (x, y, z) = (float(delta.x), float(delta.y), X::load_i32(delta.z));
+    int(sqrt(X::add(
+        X::add(X::mul(x, x), X::mul(y, y)),
+        X::mul(z, z),
+    )))
+}
+
+/// The scatter's angle (`0x006FE75F..0x006FE796`, again at `0x006FE841..
+/// 0x006FE878`): the draw times 1/0x7FFFFFFE and 2π to a DirStruct word,
+/// then back to radians. Then `0x006FE79A..0x006FE7E9`: the new delta is
+/// `(cos·magnitude + x, y − sin·magnitude)`, each truncated.
+fn scatter_delta(
+    delta: ProjectileCoord,
+    magnitude: i32,
+    raw: i32,
+    trig: &TrigTable,
+) -> ProjectileCoord {
+    let angle = radians(angle_word(X::mul(
+        X::mul(X::load_i32(raw), d(INVERSE_DRAW_SPAN)),
+        d(TWO_PI),
+    )));
+    let magnitude = X::load_i32(magnitude);
+    let y = int(X::sub(
+        X::load_i32(delta.y),
+        X::mul(sin(trig, angle), magnitude),
+    ));
+    let x = int(X::add(
+        X::mul(cos(trig, angle), magnitude),
+        X::load_i32(delta.x),
+    ));
+    ProjectileCoord::new(x, y, delta.z)
+}
+
+/// `BulletClass::SpawnShrapnel`'s child launch velocity. Both branches turn
+/// the zeroed velocity's seed (100, 0, 0) toward the target, divide out its
+/// existing pitch and apply the fixed pitch `0x3FE921648732995C`. A child
+/// aimed at a hostile object (`0x0046A5D2..0x0046A86D`) is scaled to the child
+/// weapon's `Speed=` last; a child aimed at a random cell (`0x0046AA9D..
+/// 0x0046AD1D`) is scaled first, so the pitch acts on a Speed-long vector.
+pub(crate) fn shrapnel_launch_velocity(
+    origin: ProjectileCoord,
+    target: ProjectileCoord,
+    speed: i32,
+    random_cell: bool,
+) -> ProjectileVelocity {
+    let (trig, _) = crate::map::retail_trig::required_math_tables();
+    shrapnel_launch_with_table(origin, target, speed, random_cell, trig)
+}
+
+fn square(value: X87Value) -> X87Value {
+    X::mul(value, value)
+}
+
+fn shrapnel_launch_with_table(
+    origin: ProjectileCoord,
+    target: ProjectileCoord,
+    speed: i32,
+    random_cell: bool,
+    trig: &TrigTable,
+) -> ProjectileVelocity {
+    let zero = X::load_i32(0);
+    // 0x0046A623..0x0046A653: the heading toward the target.
+    let heading = radians(angle_word(atan(
+        round(X::sub(X::load_i32(origin.y), X::load_i32(target.y))),
+        round(X::sub(X::load_i32(target.x), X::load_i32(origin.x))),
+    )));
+    // 0x0046A658..0x0046A6EC: the seed turns to the heading at its 2-D
+    // length (0x0041C430).
+    let seed = X::load_i32(100);
+    let length = round(sqrt(X::add(square(seed), square(zero))));
+    let mut v = [
+        round(X::mul(cos(trig, heading), length)),
+        round(X::neg(X::mul(sin(trig, heading), length))),
+        zero,
+    ];
+    if random_cell {
+        // 0x0046AB75..0x0046AC04, with the inline length (z·z + x·x) + y·y.
+        v = scale_to_speed(v, speed, |[x, y, z]| {
+            X::add(X::add(square(z), square(x)), square(y))
+        });
+    }
+    // 0x0046A6F0..0x0046A738: the existing pitch over the 2-D length
+    // (0x0041C350), then the 3-D length: 0x0041C3C0's (x·x + y·y) + z·z, or
+    // inline (y·y + z·z) + x·x for a random cell (0x0046AC4F..0x0046AC73).
+    let [x, y, z] = v;
+    let pitch = radians(angle_word(atan(z, sqrt(X::add(square(x), square(y))))));
+    let magnitude = round(sqrt(if random_cell {
+        X::add(X::add(square(y), square(z)), square(x))
+    } else {
+        X::add(X::add(square(x), square(y)), square(z))
+    }));
+    if X::compare(d(pitch), zero) != X87Ordering::Equal {
+        let cosine = cos(trig, pitch);
+        v[0] = round(X::div(v[0], cosine).expect("nonzero existing pitch cosine"));
+        v[1] = round(X::div(v[1], cosine).expect("nonzero existing pitch cosine"));
+    }
+    // 0x0046A787..0x0046A7CE: the fixed pitch.
+    v = [
+        round(X::mul(cos(trig, SHRAPNEL_PITCH), v[0])),
+        round(X::mul(cos(trig, SHRAPNEL_PITCH), v[1])),
+        round(X::mul(sin(trig, SHRAPNEL_PITCH), magnitude)),
+    ];
+    if !random_cell {
+        // 0x0046A7DC..0x0046A86D, with 0x0041C3C0's length.
+        v = scale_to_speed(v, speed, |[x, y, z]| {
+            X::add(X::add(square(x), square(y)), square(z))
+        });
+    }
+    ProjectileVelocity::from_native(v.map(store))
+}
+
+/// A zero vector seeds (100, 0, 0); then `Speed / Sqrt_Approx(length²)`
+/// scales each axis.
+fn scale_to_speed(
+    mut v: [X87Value; 3],
+    speed: i32,
+    length2: impl Fn([X87Value; 3]) -> X87Value,
+) -> [X87Value; 3] {
+    let zero = X::load_i32(0);
+    if v.iter()
+        .all(|&axis| X::compare(axis, zero) == X87Ordering::Equal)
+    {
+        v[0] = X::load_i32(100);
+    }
+    let factor =
+        X::div(X::load_i32(speed), sqrt(length2(v))).expect("positive shrapnel velocity length");
+    v.map(|axis| round(X::mul(factor, axis)))
+}
+
 /// FireAt 6FE8EE..6FF014 for ordinary ROT<=0 and stock RadialFireSegments=0.
 /// The returned doubles are the six DWORDs copied by Bullet::Fire 468691..A0.
 pub(crate) fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
@@ -419,6 +612,102 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    fn coord(value: &Value) -> ProjectileCoord {
+        let axis = |index: usize| value[index].as_i64().unwrap() as i32;
+        ProjectileCoord::new(axis(0), axis(1), axis(2))
+    }
+
+    fn launch_scatter_corpus() -> Value {
+        serde_json::from_str(include_str!(
+            "../../../tools/projectile_oracle/launch_scatter.json"
+        ))
+        .unwrap()
+    }
+
+    /// `tools/projectile_oracle/launch_scatter.json`: FireAt's launch scatter
+    /// on the original instructions, both arms. The Rust scatter runs with
+    /// the recorded draws, and its `RandomRanged` bounds must match the
+    /// recorded arguments in order.
+    #[test]
+    #[ignore = "requires RA2_DIR with verified gamemd.exe math tables"]
+    fn original_launch_scatter_both_arms() {
+        let (trig, _) = tables();
+        let corpus = launch_scatter_corpus();
+        let rows = corpus["scatter"].as_array().unwrap();
+        assert_eq!(rows.len(), 87);
+        for (index, row) in rows.iter().enumerate() {
+            let input = &row["input"];
+            let int = |key: &str| input[key].as_i64().unwrap() as i32;
+            let flak = int("flak_scatter") != 0 && int("inviso") == 0;
+            let mut draws = input["draws"].as_array().unwrap().iter();
+            let mut bounds = Vec::new();
+            let result = launch_scatter_with(
+                coord(&input["delta"]),
+                int("scatter"),
+                int("range"),
+                flak,
+                |low, high| {
+                    bounds.push((low, high));
+                    draws.next().unwrap().as_i64().unwrap() as i32
+                },
+                trig,
+            );
+            let calls = row["calls"].as_array().unwrap();
+            let native: Vec<(i32, i32)> = calls
+                .iter()
+                .filter(|call| call[0] == "random_ranged")
+                .map(|call| {
+                    (
+                        call[1].as_i64().unwrap() as i32,
+                        call[2].as_i64().unwrap() as i32,
+                    )
+                })
+                .collect();
+            assert_eq!(bounds, native, "row {index}: the draws");
+            assert_eq!(result, coord(&row["result"]), "row {index}: {input}");
+            // Only the flak arm asks for the fired weapon's range.
+            let asks_range = calls
+                .iter()
+                .any(|call| call[0] == "weapon_range" && call[1] == input["weapon"]);
+            assert_eq!(asks_range, flak, "row {index}");
+        }
+    }
+
+    /// The same corpus's SpawnShrapnel rows: both branches' child velocity,
+    /// bit for bit, over headings, heights, the zero delta and zero speed.
+    #[test]
+    #[ignore = "requires RA2_DIR with verified gamemd.exe math tables"]
+    fn original_shrapnel_launch_velocity_both_branches() {
+        let (trig, _) = tables();
+        let corpus = launch_scatter_corpus();
+        let rows = corpus["shrapnel"].as_array().unwrap();
+        assert_eq!(rows.len(), 54);
+        for (index, row) in rows.iter().enumerate() {
+            let input = &row["input"];
+            let velocity = shrapnel_launch_with_table(
+                coord(&input["origin"]),
+                coord(&input["target"]),
+                input["speed"].as_i64().unwrap() as i32,
+                input["random_cell"].as_bool().unwrap(),
+                trig,
+            );
+            let actual = velocity
+                .native()
+                .map(|axis| format!("{:016x}", axis.bits()));
+            let expected: Vec<_> = row["bits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|bits| bits.as_str().unwrap())
+                .collect();
+            assert_eq!(
+                actual.as_slice(),
+                expected.as_slice(),
+                "row {index}: {input}"
+            );
         }
     }
 

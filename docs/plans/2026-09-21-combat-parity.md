@@ -42,15 +42,19 @@ the SpawnManager slot guard as #448 (`35149218`), the Scenario-stream death draw
 death anims (building DestructionEffects, Unit Death_Explosion with the ship-sinking gate, the
 Aircraft arm) as #451 (`1aa3041b`), mind control (CaptureManagerClass) as #457 (`32fc312b`), the
 Chrono Legionnaire's erase (TemporalClass) as #474 (`80f4494a`), the house defeat (tracking
-counts, the gate, Blowup_All) as #476 (`3783b0ee`). The Crazy Ivan bomb (BombClass, its clock,
-sounds, cursors and clicks) is on `feature/combat-ivan-bomb`. A production
+counts, the gate, Blowup_All) as #476 (`3783b0ee`), the Crazy Ivan bomb (BombClass, its clock,
+sounds, cursors and clicks) as #488 (`7d4b970c`). The launch scatter, shrapnel and cluster trig
+through the native tables is on `feature/combat-scatter-trig`. A production
 sortie showed the Carrier wing never attacks: every manager pass re-issues each Hornet's attack
 from sub-state 0 (`assign_child_attack`), so the aircraft attack run never completes and the wing
-never lands. Next, by player visibility: the Slave Miner's slave release at its death (`6B0AE0`),
-the other special warhead bodies (Magnetron and the rest), the table-based native trig that
-replaces host `sin`/`cos`/`atan` in homing, flak and shrapnel paths (research lane done: gamemd
-reads float32 tables, so exact portable results are possible), the ship sink, that wing cycle
-together with the aircraft attack loop (Mission_Attack 5..9, GetFireError), the Foot
+never lands. Research lanes finished 2026-09-24 (scratchpad, not tracked): the aircraft attack
+loop, Prism forwarding, Gattling spin-up and native GetFireError. Aircraft states 5..9 and Gattling
+both consume GetFireError codes, which VERA does not produce, so GetFireError is the next
+mechanism. Next, by player visibility: that fire-legality owner, then the aircraft attack loop
+(Mission_Attack 5..10) and the Carrier wing cycle, Gattling, Prism forwarding, the Slave Miner's
+slave release at its death (`6B0AE0`), the other special warhead bodies (Magnetron and the rest),
+homing launch and steering through the native tables (HomingTrack `5B20F0`, the sidewinder sine),
+the ship sink, the Foot
 Enter_Idle_Mode leaves (Infantry `51CBA0`, Unit `738970`, with the Mission_AreaGuard post and
 leash `4D6AA0` they need), open-topped passenger fire (a Chrono Legionnaire or Yuri in a Battle
 Fortress), the survivor flag `+6D9`, the death weapon as a real bullet (`Fire_Death_Weapon
@@ -648,6 +652,34 @@ Crazy Ivan bomb (`feature/combat-ivan-bomb`, snapshot 199, hash feature 199), ow
   dispatch; the test gaps above. Minor: the planter kept on the cloak path, x87 emulation where
   integers are exact, no check on the carrier index.
 
+Launch scatter trig (`feature/combat-scatter-trig`, no schema change), owner
+`sim/projectile/launch.rs` (native FireAt launch math) with `combat::inviso_scatter` (0x0049F420):
+- Before: FireAt's launch scatter (Flak Track, Flak Trooper and Sea Scorpion ground shots) used
+  host `cos`/`sin`, an exact `sqrt` for the flak distance and two wrong constants (1/(2^31-1) for
+  1/0x7FFFFFFE, a WORD_SCALE one ulp off); shrapnel children (elite Tesla Tank and Trooper,
+  comets) launched with host `hypot`/`cos`/`sin` rounded to integers; cluster children used host
+  trig rounded to nearest. Host libm can differ across platforms, and none of it was native.
+- Now: the scatter (`6FE663..6FE8E7`) draws `RandomRanged(0, BallisticScatter)` (flak) or
+  `(BallisticScatter/2, BallisticScatter)` (plain; signed bounds, native swap), scales the flak
+  roll by `ftol(Sqrt_Approx(f32 delta))` over the fired weapon's GetWeaponRange (vt+0x168,
+  `7012C0`, so an open-topped Flak Track's passengers cap it), maps the raw draw through the
+  image's constants to a DirStruct word, and offsets the delta by the retail table's cos/sin,
+  truncated. SpawnShrapnel's two branches differ: a child aimed at a hostile object
+  (`46A5B2..46A875`) scales to `Speed=` after the fixed pitch `0x3FE921648732995C`, a child aimed at
+  a random cell (`46AA66..46AD29`) before it. Clusters use `Coord__RandomDirectionNear`
+  (`49F420`) after `RandomRanged(0x100, 0x200)`.
+- Native execution: `tools/projectile_oracle/launch_scatter.py` runs the scatter block, both
+  shrapnel branches and `49F420` (87 + 54 + 792 rows); `launch::tests::original_launch_scatter_both_arms`
+  (draw bounds in order, the range query, the delta) and
+  `original_shrapnel_launch_velocity_both_branches` (velocity bits) compare with RA2_DIR's
+  tables; `inviso_scatter::tests::cluster_distances_match_the_native_helper` runs in CI. The
+  replaced code missed 24 of the 87 scatter rows and 577 of the 792 direction rows; its shrapnel
+  velocities were integers. Parity demonstrated within those inputs. Reading only: the call
+  sites and which children take which shrapnel branch.
+- Residuals: the projectile SHP frame (`468000`, render-only) still uses host `atan2`; MagBeam
+  wave edges (`762070`) and homing tables and steering (`5B20F0`, the sidewinder sine
+  `466BC2`) remain host or VERA math, with their mechanisms.
+
 ## Native evidence inventory
 
 Run `python -m tools.spatial_oracle.<stem> --check` (`flat_art`: `tools/projectile_oracle`).
@@ -690,6 +722,7 @@ Sidecars record binary identity; landing-era SHA-256 `1cdd1180e49024fbda8ad568ca
 | house_defeat_gate | `4F8E86..4F8F82` with the CounterClass readers | 21 | Blowup_All, MPlayer_Defeated stubbed |
 | house_blowup_all | `4FC6D0` with `70F820`, `4722F0`, `472330` | 10 | ReceiveDamage, `71AD40`, side lookup stubbed |
 | bomb_class | `438E70`, `438A70`, `438A00`, `438720`, `4389B0`, `438BF0` (with `50B6F0`, Sqrt_Approx, ftol); `6FA6F5`; arms `469343`/`4699C4`; `6FCB8D` | 97 | sounds, anim, damage, bridge calls, virtuals recorded |
+| launch_scatter (`tools/projectile_oracle`) | `6FE663..6FE8EE`; `46A5B2..46A875`, `46AA66..46AD29`; `49F420` (with Sqrt_Approx, sin/cos/atan2, ftol) | 87 + 54 + 792 | draws, GetWeaponRange, GetCoords supplied; child launch observed |
 
 Also `tools/infantry_scatter_oracle`, `tools/mcv_deploy_oracle`. Pre-branch main harnesses (review): techno_target_scan 171,
 vhp_scan 498, distributed_fire 151, foot_attack_move 638, estimated_damage 1066, object_health 718, cell_entry_crush_tail 68.
@@ -776,6 +809,10 @@ All saved and read back; no byte or prototype edits. One boundary repair (below,
   bombed-target gate), `438FCA` (the countdown). Created `5224D0` InfantryClass__IsEngineer (the
   vt+0x330 slot; every other class returns false) and replaced the CanAcquireTarget `7091D0` plate,
   whose Engineer term was UNCHECKED (comment `70924D`).
+- Launch scatter trig: renamed `49F420` Coord__RandomDirectionNear, `41C350` Vector3D__Length2D,
+  `41C430` Vector3D__Length2D_Twin (same body), `41C3C0` Vector3D__Length3D, `41C3F0`
+  Vector3D__SeedIfZero (all were FUN_); comments `6FE663` (the scatter) and `46A5B2`/`46AA66`
+  (the two shrapnel branches).
 - Comments, other: `4143EB`, `65E6BE`, `692766`, `41CD6E`, `4CDBE1`, `4CDC37`, `4CDCFB`, `566332`,
   `6EA089`, `6EC300`, `6E53A0`, `726C9C`, `71F4E0`, `55AFB0`, `481670`, `518C56`, `51D200`,
   `51D212`, Teleport `718080`, Foot `4DDC60` (EOL; no function), Foot `4DB800`
@@ -909,7 +946,8 @@ Whole-combat gaps (plan list plus review coverage top 10):
   crash; the building NowDead contact loop (`442511`, radio 0x17 and the C4 kill of contacts),
   AnimClass::Middle for every explosion anim, the deferred death of `Explodes=`/Selling
   buildings, death specials, the sale crew, passenger escape from dying transports.
-- Homing launch/steering non-native; host cos/sin/atan/hypot in Flak, cluster, shrapnel and homing tables.
+- Homing launch/steering non-native (VERA-built BAM tables, a cosine sidewinder where native uses sine);
+  the projectile SHP frame and MagBeam edges still use host trig.
 - Gattling stage pinned 0 (`combat_weapon.rs:1070`); Prism forwarding absent; Tesla overpower.
 - Legacy `tick_retaliation` beside `7087C0`; 2-D in_range twin (-512); retarget skips sequence reset.
 - FLH slope/building arms; vehicle click (+6E0, `692640`/`692666`, `5F4578`); fire legality.

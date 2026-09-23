@@ -453,6 +453,35 @@ mod tests {
         i32::from(rx) * LEPTONS_PER_CELL + sub.to_num::<i32>()
     }
 
+    /// `tools/projectile_oracle/launch_scatter.json`: the original helper
+    /// (`0x0049F420`, no cell snap) at the cluster distances 0x100, 0x155 and
+    /// 0x200 for every angle byte, and beside the map's edges.
+    #[test]
+    fn cluster_distances_match_the_native_helper() {
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/projectile_oracle/launch_scatter.json"
+        ))
+        .unwrap();
+        let rows = corpus["direction"].as_array().unwrap();
+        assert_eq!(rows.len(), 792);
+        for (index, row) in rows.iter().enumerate() {
+            let input = &row["input"];
+            let base = |axis: usize| input["base"][axis].as_i64().unwrap() as i32;
+            let (x, y) = random_direction_coord_for_byte(
+                (input["raw"].as_u64().unwrap() & 0xff) as u8,
+                base(0),
+                base(1),
+                input["distance"].as_i64().unwrap() as i32,
+            );
+            let native = |axis: usize| row["result"][axis].as_i64().unwrap() as i32;
+            assert_eq!(
+                (x, y, base(2)),
+                (native(0), native(1), native(2)),
+                "row {index}"
+            );
+        }
+    }
+
     #[test]
     fn all_256_binary_samples_match_the_radius_32_oracle() {
         let base = 65_536;

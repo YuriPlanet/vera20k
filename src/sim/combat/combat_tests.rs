@@ -8190,7 +8190,12 @@ fn gsi_04_01_projectile_shrapnel_captures_each_shared_dummy_lookup() {
         assert_eq!(spawn.initial_target_position, expected_positions[index]);
         assert_eq!(
             spawn.velocity,
-            shrapnel_launch_velocity(detonation.impact, expected_positions[index], 40)
+            crate::sim::projectile::launch::shrapnel_launch_velocity(
+                detonation.impact,
+                expected_positions[index],
+                40,
+                true
+            )
         );
     }
     assert_ne!(
