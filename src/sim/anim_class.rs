@@ -43,16 +43,18 @@
 //! (string at `0x008182F8`, NOT the neighbouring `RING1` at `0x008182F0`) and
 //! `[CombatDamage] FlameDamage2` otherwise; a `TerrainClass` owner
 //! (`What_Am_I` -> `0x24`) multiplies the per-frame value by 5.
-//! - Trigger: the `FIRE3` fires a destroyed building leaves behind
-//!   (`BuildingClass::DestructionEffects` loads the literal name at
-//!   `0x00441AEC`). The `BURN-S/M/L` family is commented out of
-//!   `[Animations]` and `INVISO` has no stock producer, so nothing else in
-//!   stock reaches it.
+//! - Trigger: the `FIRE3` anims `BuildingClass::DestructionEffects` starts,
+//!   for an `Explodes=` building, in each cardinal neighbour cell whose own
+//!   overlay has `Explodes=yes` (`0x00441A2B..0x00441B2E`; the neighbour's
+//!   `+0x44` overlay tested at `0x00441A90..0x00441AC2`, name loaded at
+//!   `0x00441AEC`).
+//!   No stock overlay has `Explodes=yes`, the `BURN-S/M/L` family is commented
+//!   out of `[Animations]` and `INVISO` has no stock producer, so stock play
+//!   never reaches it.
 //! - Player effect: `[FIRE3] Damage=.003` plus the `1.0` seed means exactly one
 //!   point of `Fire2` area damage on the fire's first ticked frame and then
-//!   none for another ~334 frames. Missing it costs one splash per burning
-//!   building.
-//! - Frequency: once per building death; magnitude 1.
+//!   none for another ~334 frames.
+//! - Frequency: none in stock; magnitude 1.
 //! - Downstream risk: low — it applies damage through the existing
 //!   `Apply_area_damage` path and consumes no RNG.
 //!   The `TerrainClass` x5 multiplier has no verified stock producer at all:

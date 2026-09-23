@@ -25,6 +25,7 @@ pub(crate) mod combat_fire_gate;
 pub(crate) mod combat_targeting;
 pub(crate) mod combat_weapon;
 pub(crate) mod damage;
+pub(crate) mod destruction_effects;
 pub(crate) mod fire_coord;
 pub(crate) mod fire_decision;
 pub(crate) mod greatest_threat;
@@ -1385,6 +1386,15 @@ pub struct ExplosionEffect {
     /// Sub-cell impact Y in leptons.
     pub sub_y: SimFixed,
     pub z: u8,
+    /// A death producer's own constructor call (`Death_Explosion`, the
+    /// Aircraft death arm, `DestructionEffects`): `AnimClass(type, coord,
+    /// delay, 1, 0x600, 0, 0)` at an exact coordinate. `None` rows construct
+    /// with the warhead impact's `(0, 1, 0x2600, -15)` at a level-rounded
+    /// coordinate: the impact anim, the InfDeath anims and the TechnoClass
+    /// debris anims. Natively the debris anims take `(center + 0x14 Z, 0, 1,
+    /// 0x600, 0, 0)` (`0x007024AA`, `0x00702566`); on stock their rows are
+    /// dropped as unbound art (GSI-05.14).
+    pub death: Option<destruction_effects::DeathAnimSpawn>,
 }
 
 /// One transient combat-light request emitted when active IronCurtain or
@@ -1478,6 +1488,7 @@ pub(crate) fn emit_infantry_death_anim(
         sub_x,
         sub_y,
         z,
+        death: None,
     });
     smudge_spawn_requests.push(SmudgeSpawnRequest::Anim {
         anim_name,
@@ -1527,6 +1538,7 @@ pub(crate) fn emit_warhead_detonation_effects(
         sub_x,
         sub_y,
         z,
+        death: None,
     });
     smudge_spawn_requests.push(SmudgeSpawnRequest::Anim {
         anim_name: interned_name,
@@ -2165,6 +2177,7 @@ fn throw_debris_for_death(
                 sub_x,
                 sub_y,
                 z,
+                death: None,
             });
         }
     }
@@ -2224,12 +2237,7 @@ fn append_selected_death_sounds(
 /// consuming smudge RNG (or interning the InfDeath AnimType) too early.
 enum ConcreteDeathSmudgePlan {
     Infantry(crate::sim::world::InfantryDeathPostlude),
-    Building {
-        rx: u16,
-        ry: u16,
-        z: i32,
-        foundation: String,
-    },
+    Building,
 }
 
 /// Build the native ReceiveDamage value ABI for one ordered area or direct

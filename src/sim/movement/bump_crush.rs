@@ -684,10 +684,13 @@ impl CrushTarget {
 /// `ReceiveDamage @ 0x00701900` and `FlyLocomotionClass::Process @ 0x004CD600`,
 /// and the crush loop at `0x007416A0` enters neither. Detonating a crushed
 /// Terrorist would be a regression, not a fix. Native's crush consequences are
-/// the crusher-positioned `CrushSound`, `FreeAllMindControlCaptures`,
-/// `Record_The_Kill` (score, trigger events, EVA and the crusher's veterancy,
-/// which this engine now pays), then unmark, limbo and `UnInit` — no anim, no
-/// smudge, no RNG.
+/// the crusher-positioned `CrushSound`, the victim's `vt+0x170` (`0x007418E5`:
+/// Infantry `0x00710460` `FreeAllMindControlCaptures`; Unit `0x00746D60`,
+/// `UnitClass::Death_Explosion` with its Scenario picks and anims, then the
+/// same release), `Record_The_Kill` (score, trigger events, EVA and the
+/// crusher's veterancy, which this engine now pays), then unmark, limbo and
+/// `UnInit`; no smudge. A crushed vehicle's `Death_Explosion` is not run
+/// here (residual in `combat/destruction_effects.rs`).
 ///
 /// RESIDUAL (GSI-08.17) — two real gaps sit underneath it.
 /// - **Overlay crushing — CLOSED.** `Per_Cell_Process @ 0x0073AFD4` flattens any

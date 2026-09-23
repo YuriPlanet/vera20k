@@ -1628,6 +1628,13 @@ impl Simulation {
                 );
             }
             crate::sim::combat::FatalLifecycleStage::BeforeDeathEffects => {
+                // RESIDUAL: this runs before the Techno death arm (sounds,
+                // debris, death weapon). Natively that arm returns first, and
+                // the Building NowDead block then ejects the occupants
+                // (`0x00442625`) and turns the light off (`0x0044264C`) just
+                // before DestructionEffects (`0x00442665`), so an ejected
+                // garrison's Scatter draws follow the debris and death-weapon
+                // draws there and precede them here.
                 if !matches!(category, EntityCategory::Unit | EntityCategory::Structure) {
                     return;
                 }

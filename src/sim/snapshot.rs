@@ -561,7 +561,13 @@ use crate::sim::world::Simulation;
 // Foot+698 launch lock and Foot+6A0 paralysis timer are saved and hashed.
 // 193 -> 194: Building+6E3 HasBeenCaptured is saved and hashed; a 193 save
 // cannot tell a captured building from one built by its owner.
-const SNAPSHOT_VERSION: u32 = 194;
+// 194 -> 195: death anims construct with the death producers' arguments
+// (flags 0x600, zAdjust 0, the exact coordinate) and a building's per-cell
+// `Explosion=` and `DestroyAnim=` anims are AnimStore members. The layout is
+// unchanged, but a 194 save holding a death anim draws and hashes it with the
+// impact's arguments, and one taken during a building's death resumes without
+// its anims and with different ids.
+const SNAPSHOT_VERSION: u32 = 195;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3476,7 +3482,8 @@ mod tests {
         // 191 -> 192: Fly moving/landing latch/AirportBound and flight attitude.
         // 192 -> 193: ParasiteClass and the victim's parasite/paralysis fields.
         // 193 -> 194: Building+6E3 HasBeenCaptured.
-        assert_eq!(super::SNAPSHOT_VERSION, 194);
+        // 194 -> 195: death anims take the death producers' arguments.
+        assert_eq!(super::SNAPSHOT_VERSION, 195);
     }
 
     #[test]

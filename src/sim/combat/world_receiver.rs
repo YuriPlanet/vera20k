@@ -1280,14 +1280,11 @@ fn finish_concrete_death(
     if category == EntityCategory::Structure && !entity.lifecycle.object_alive {
         return;
     }
-    let (type_id, owner, rx, ry, sub_x, sub_y, z, has_animation) = (
+    let (type_id, owner, rx, ry, has_animation) = (
         entity.type_ref(),
         entity.owner(),
         entity.position.rx,
         entity.position.ry,
-        entity.position.sub_x,
-        entity.position.sub_y,
-        entity.position.z,
         entity.animation.is_some(),
     );
     let mut concrete_smudge_plans = Vec::new();
@@ -1325,78 +1322,23 @@ fn finish_concrete_death(
     // TechnoClass's synchronous death weapon has returned. Capture the
     // immutable plan now; placement and all RNG stay at that postlude.
     if category == EntityCategory::Structure {
-        let foundation = rules
-            .object(world.interner.resolve(type_id))
-            .map(|obj| obj.foundation.as_str())
-            .unwrap_or("1x1");
-        concrete_smudge_plans.push(ConcreteDeathSmudgePlan::Building {
-            rx,
-            ry,
-            z: i32::from(z),
-            foundation: foundation.to_owned(),
-        });
+        concrete_smudge_plans.push(ConcreteDeathSmudgePlan::Building);
     }
 
-    // `UnitClass::Death_Explosion @ 0x00738680` for vehicles and
-    // `AircraftClass::ReceiveDamage @ 0x0041661F` for aircraft: after
-    // the killing warhead's own `AnimList=` anim, the dying object plays
-    // ONE anim drawn from its type's `Explosion=` list and then one from
-    // `DestroyAnim=`, both at its own coordinate, one `Random__Next()`
-    // draw each. Without this a Grizzly and an Apocalypse died with the
-    // same warhead-derived puff.
-    //
-    // INFANTRY are excluded deliberately: `get_xrefs_to 0x00738680`
-    // returns four callers, all `UnitClass`, and an operand scan for the
-    // `Explosion=` count (`type+0x73C`) finds readers only in
-    // `AircraftClass::ReceiveDamage` and
-    // `BuildingClass::DestructionEffects @ 0x0044194D`. Infantry death
-    // spawns from the `InfDeath`/`DeathAnims` table alone. No stock
-    // `[InfantryTypes]` section authors `Explosion=` either, so this is
-    // a contract correction rather than a visible one.
-    //
-    // RESIDUAL (GSI-08.11) — the BUILDING arm is not modelled. Native
-    // runs `BuildingClass::DestructionEffects @ 0x004415F0`, which plays
-    // the `Explosion=` list once PER FOUNDATION CELL at cell centre with
-    // a scatter helper and a `RandomRanged(0, 3)` anim delay, then one
-    // `DestroyAnim=` at the building coordinate; the sub-order of the
-    // scatter, delay and index draws is UNCHECKED, and getting it wrong
-    // would misroute the stream for every structure death. `Explodes=`
-    // (forcing the last `Explosion=` entry for a loaded miner) is
-    // likewise unread. Trigger: every building death, and every loaded
-    // miner death. Frequency: continuous.
-    //
-    // Landing that arm also un-latents a second gap: four of the
-    // buildings it would newly reach — the base power plant of every
-    // faction (`GAPOWR`, `NAPOWR`, `YAPOWR`) plus `YAROCK` — author an
-    // `Explosion=` list whose sixth entry (`gtpowexp`/`tstlexp`) has no
-    // art section, so one draw in six per foundation cell resolves to
-    // nothing VERA can construct. That is correct against gamemd, which
-    // also draws nothing there, but VERA skips the object entirely
-    // where native still constructs and discards one. Read the residual
-    // on `ArtRegistry::bind_anim_class_assets` before
-    // treating a missing power-plant explosion as a bug.
-    if matches!(category, EntityCategory::Unit | EntityCategory::Aircraft)
-        && let Some(obj) = rules.object(world.interner.resolve(type_id))
-    {
-        for list in [&obj.explosion_anims, &obj.destroy_anims] {
-            if list.is_empty() {
-                continue;
-            }
-            // `UnitClass::Death_Explosion @ 0x00738680` takes both picks on
-            // the Scenario stream (`[0x00A8B230]+0x218`: Explosion= at
-            // `0x007386A7`, DestroyAnim= at `0x0073881D`); the Aircraft arm
-            // loads the same instance at `0x0041663C`.
-            let index = (world.scenario_rng.next_u32() % list.len() as u32) as usize;
-            let shp_name = world.interner.intern(&list[index]);
-            effects.explosion_effects.push(ExplosionEffect {
-                shp_name,
-                rx,
-                ry,
-                sub_x,
-                sub_y,
-                z,
-            });
+    // `UnitClass::Death_Explosion @ 0x00738680` unless the unit sinks
+    // (`0x00737DE2`), and the Aircraft death arm (`0x0041661F`); the killing
+    // detonation's own impact anim follows its receivers. Infantry play none:
+    // every `Explosion=` reader is a Unit, Aircraft or Building body
+    // (`get_xrefs_to 0x00738680`; the `type+0x73C` operand scan), and
+    // infantry death anims come from `InfDeath`/`DeathAnims`.
+    match category {
+        EntityCategory::Unit if !world.unit_sinks_on_death(rules, dead_id) => {
+            world.unit_death_explosion(rules, dead_id, &mut effects.explosion_effects)
         }
+        EntityCategory::Aircraft => {
+            world.aircraft_death_explosion(rules, dead_id, &mut effects.explosion_effects)
+        }
+        _ => {}
     }
     // `UnitClass::ReceiveDamage` then lifts the dying unit off its cell
     // (`0x00737F7A`) before its passengers and crew leave. Passenger escape
@@ -1442,21 +1384,19 @@ fn finish_concrete_death(
             ConcreteDeathSmudgePlan::Infantry(postlude) => {
                 postlude.commit(world, rules, overlay_registry, effects);
             }
-            ConcreteDeathSmudgePlan::Building {
-                rx,
-                ry,
-                z,
-                foundation,
-            } => {
-                // DestructionEffects: the centre mark, then SpawnSurvivors
-                // (`0x00441F1B`) interleaves each foundation cell's survivor
-                // roll with that cell's own mark.
-                commit_smudges(
-                    world,
+            ConcreteDeathSmudgePlan::Building => {
+                // DestructionEffects (`0x004415F0`): the building's own anims
+                // and centre mark, then SpawnSurvivors (`0x00441F1B`), which
+                // interleaves each foundation cell's survivor roll with that
+                // cell's own mark.
+                let deferred = &mut effects.smudge_spawn_requests;
+                world.building_destruction_anims(
                     rules,
-                    overlay_registry,
-                    vec![building_center_smudge_request(rx, ry, z, &foundation)],
-                    &mut effects.smudge_spawn_requests,
+                    dead_id,
+                    &mut effects.explosion_effects,
+                    |world, request| {
+                        commit_smudges(world, rules, overlay_registry, vec![request], deferred);
+                    },
                 );
                 if callbacks_enabled(world) {
                     let deferred = &mut effects.smudge_spawn_requests;
