@@ -696,18 +696,9 @@ fn drive_piggyback_refuses_an_unstashed_active_drive() {
 /// constructor's 500.
 #[test]
 fn retail_kirov_and_disc_reach_their_authored_hover_altitude() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("ini")
-        .join("rulesmd.ini");
-    let bytes = std::fs::read(&path).unwrap_or_else(|e| {
-        panic!(
-            "cannot read {}: {e}. The gitignored ini/ directory is required; \
-             a fresh worktree needs it copied in from the main checkout.",
-            path.display()
-        )
-    });
-    let ini =
-        crate::rules::ini_parser::IniFile::from_bytes(&bytes).expect("retail rulesmd.ini parses");
+    let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+        return;
+    };
 
     // (section, JumpjetSpeed, JumpjetClimb, JumpjetCrash) as authored.
     for (id, speed, climb, crash) in [("ZEP", 5.0, 6.0_f32, 12.0), ("DISK", 16.0, 8.0, 15.0)] {

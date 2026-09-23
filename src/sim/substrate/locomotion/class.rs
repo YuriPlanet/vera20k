@@ -121,9 +121,9 @@ mod tests {
         // PARITY: the golden is the retail `ini/rulesmd.ini` byte content. Strip
         // `;` comments before counting: two Drive rows name the dormant Mech
         // GUID in trailing comments.
-        let rulesmd =
-            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/ini/rulesmd.ini"))
-                .expect("read retail rulesmd.ini");
+        let Some(rulesmd) = crate::rules::retail_ini_fixture::retail_ini_text("rulesmd.ini") else {
+            return;
+        };
         let mut histogram = BTreeMap::new();
         let mut locomotor_key_total = 0usize;
         let mut dormant_total = 0usize;

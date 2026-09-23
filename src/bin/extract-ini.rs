@@ -1,13 +1,20 @@
 //! Extract retail INI and data files from the .mix archives into `ini/`
-//! for research grepping. Run with: `cargo run --bin extract-ini`
+//! for research grepping and the retail-data tests.
+//! Run from the repository root with: `cargo run --bin extract-ini [RA2_DIR]`
+//!
+//! The install folder comes from the optional argument, then `$RA2_DIR`,
+//! then `config.toml` (`resolve_ra2_dir`).
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
-    let ra2_dir = Path::new("C:/Users/enok/Documents/Command and Conquer Red Alert II/");
+    let explicit = std::env::args_os().nth(1).map(PathBuf::from);
+    let (ra2_dir, _) = vera20k::asset_tools::root::resolve_ra2_dir(explicit.as_deref())
+        .unwrap_or_else(|error| panic!("{error}"));
+    let ra2_dir = ra2_dir.as_path();
     let out_dir = Path::new("ini");
 
     println!("Loading MIX archives from {}...", ra2_dir.display());

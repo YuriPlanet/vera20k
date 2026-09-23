@@ -934,7 +934,9 @@ mod tests {
             Ok(config) => config,
             Err(_) => return,
         };
-        if !config.paths.ra2_dir.exists() {
+        // Without config.toml the fallback root is the test binary's folder;
+        // require an actual install.
+        if !config.paths.ra2_dir.join("ra2md.mix").exists() {
             return;
         }
 

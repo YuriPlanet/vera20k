@@ -481,10 +481,9 @@ fn native_type_event_oracle_hash(events: &[NativeTypeConstructionEvent]) -> u64 
 
 #[test]
 fn retail_rulesmd_artmd_constructor_trace_matches_verified_base_oracle() {
-    let rules = IniFile::from_bytes(include_bytes!("../../ini/rulesmd.ini"))
-        .expect("stock RULESMD.INI parses");
-    let fixed_art = IniFile::from_bytes(include_bytes!("../../ini/artmd.ini"))
-        .expect("stock ARTMD.INI parses");
+    let Some((rules, fixed_art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
     let processed = RulesLayerStack::new(rules)
         .process_with_fixed_art(&fixed_art)
         .expect("stock base Rules pass processes");
@@ -585,10 +584,9 @@ fn retail_rulesmd_artmd_constructor_trace_matches_verified_base_oracle() {
 
 #[test]
 fn retail_cold_start_and_noncampaign_prepass_match_verified_native_oracles() {
-    let rules = IniFile::from_bytes(include_bytes!("../../ini/rulesmd.ini"))
-        .expect("stock RULESMD.INI parses");
-    let fixed_art = IniFile::from_bytes(include_bytes!("../../ini/artmd.ini"))
-        .expect("stock ARTMD.INI parses");
+    let Some((rules, fixed_art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
     let (startup, startup_boundaries) = process_native_rules_cold_start_inner(
         NativeRulesRegistryState::default(),
         &rules,

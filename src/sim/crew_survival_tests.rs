@@ -763,8 +763,10 @@ fn a_killing_hit_releases_the_bio_reactors_infantry() {
 /// receiver leave stock crew with native health ranges.
 #[test]
 fn retail_rules_crew_the_power_plant_and_the_mcv() {
-    let rules_ini = IniFile::from_bytes(include_bytes!("../../ini/rulesmd.ini")).unwrap();
-    let art_ini = IniFile::from_bytes(include_bytes!("../../ini/artmd.ini")).unwrap();
+    let Some((rules_ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art()
+    else {
+        return;
+    };
     let mut rules = RuleSet::from_ini(&rules_ini).unwrap();
     rules.merge_art_data(&crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
     let general = &rules.general;

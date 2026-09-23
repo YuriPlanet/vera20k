@@ -4473,20 +4473,11 @@ mod tests {
     /// Retail `rulesmd.ini`, read from the gitignored `ini/` corpus.
     ///
     /// The golden is retail INI bytes, not a hand-written fixture, so these are
-    /// parity checks on the authored data rather than Rust-vs-Rust.
+    /// parity checks on the authored data rather than Rust-vs-Rust. `None` (the
+    /// test skips) when `ini/` is absent; see `retail_ini_fixture`.
     #[cfg(test)]
-    fn retail_rules_ini() -> IniFile {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("ini")
-            .join("rulesmd.ini");
-        let bytes = std::fs::read(&path).unwrap_or_else(|e| {
-            panic!(
-                "cannot read {}: {e}. The gitignored ini/ directory is required; \
-                 a fresh worktree needs it copied in from the main checkout.",
-                path.display()
-            )
-        });
-        IniFile::from_bytes(&bytes).expect("retail rulesmd.ini parses")
+    fn retail_rules_ini() -> Option<IniFile> {
+        crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini")
     }
 
     /// The two stock sections that take their Jumpjet locomotor from the
@@ -4499,7 +4490,9 @@ mod tests {
     /// dropped every one of these values.
     #[test]
     fn retail_kirov_and_disc_keep_their_jumpjet_block_without_the_flag() {
-        let ini = retail_rules_ini();
+        let Some(ini) = retail_rules_ini() else {
+            return;
+        };
 
         for id in ["ZEP", "DISK"] {
             let section = ini.section(id).unwrap_or_else(|| panic!("[{id}] section"));
@@ -4557,7 +4550,9 @@ mod tests {
     /// constructor seed.
     #[test]
     fn retail_jumpjet_yes_sections_are_unchanged_by_dropping_the_gate() {
-        let ini = retail_rules_ini();
+        let Some(ini) = retail_rules_ini() else {
+            return;
+        };
         // Categories as the stock registries list them: the two jumpjet
         // infantry under `[InfantryTypes]`, the four choppers/transports under
         // `[VehicleTypes]`. Category does not reach the jumpjet block, but
@@ -4590,7 +4585,9 @@ mod tests {
     /// counted here.
     #[test]
     fn retail_never_authors_the_spelling_gamemd_reads_for_turn_rate_or_accel() {
-        let ini = retail_rules_ini();
+        let Some(ini) = retail_rules_ini() else {
+            return;
+        };
 
         let mut native_spelling = 0usize;
         let mut ini_spelling = 0usize;

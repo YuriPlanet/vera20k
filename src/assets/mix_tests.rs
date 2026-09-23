@@ -51,7 +51,10 @@ macro_rules! require_ra2_dir {
                 }
             },
         };
-        if !dir.exists() {
+        // Without config.toml, GameConfig::load falls back to the running
+        // executable's folder, which for a test binary is `target/`: require
+        // an actual install, not just an existing directory.
+        if !dir.join("ra2.mix").exists() {
             eprintln!("SKIPPED: RA2 assets not found at {}", dir.display());
             return;
         }
