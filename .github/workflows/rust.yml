@@ -36,6 +36,13 @@ jobs:
             experimental: true
           - os: macos-latest
             experimental: true
+          # ARM Linux and ARM Windows (free for public repos): more CPU/OS
+          # combinations for the same pinned values. Tests only; lints do not
+          # depend on the CPU, so the three clippy jobs cover them.
+          - os: ubuntu-24.04-arm
+            experimental: true
+          - os: windows-11-arm
+            experimental: true
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.experimental }}
     # About twice the slowest normal run (a cold-cache Windows build takes
