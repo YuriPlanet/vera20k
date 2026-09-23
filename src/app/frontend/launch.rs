@@ -258,6 +258,10 @@ mod tests {
             std::process::id()
         ));
         std::fs::create_dir(&directory).expect("create test directory");
+        // macOS keeps the temp dir under `/var`, a symlink to `/private/var`,
+        // which the tactical output guard rightly refuses; test the resolved path.
+        #[cfg(unix)]
+        let directory = std::fs::canonicalize(&directory).expect("canonical test directory");
         directory
     }
 
