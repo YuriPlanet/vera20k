@@ -819,9 +819,10 @@ impl Simulation {
         Ok(Some(stable_id))
     }
 
-    /// Create an object in limbo: stored in EntityStore and owner counts, but
-    /// not registered in map occupancy. Used by paradrop cargo loading, where
-    /// gamemd creates passengers directly into CargoClass without Unlimbo.
+    /// Create an object in limbo: stored in EntityStore and tracked by its
+    /// house (Add_Tracking), but not registered in map occupancy. Used by
+    /// paradrop cargo loading, where gamemd creates passengers directly into
+    /// CargoClass without Unlimbo.
     pub(crate) fn spawn_object_limbo_at_height(
         &mut self,
         type_id: &str,
@@ -906,7 +907,7 @@ impl Simulation {
 
     /// Run one result-bearing Unlimbo transaction against an already stored
     /// production object. Mark failure restores this same identity to limbo;
-    /// construction and owned-count accounting are deliberately not repeated.
+    /// construction and its Add_Tracking are deliberately not repeated.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn unlimbo_held_production_object(
         &mut self,
@@ -1078,8 +1079,6 @@ impl Simulation {
     /// its owner. Placement is a separate, result-bearing Reveal transaction.
     fn store_spawned_limbo(&mut self, mut ge: GameEntity) -> u64 {
         let stable_id = ge.stable_id();
-        let owner = self.interner.resolve(ge.owner()).to_string();
-        let category = ge.category;
 
         // This boundary receives newly constructed objects. Make those constructor
         // facts explicit so storage can never imply cell or logic presence.
@@ -1087,16 +1086,21 @@ impl Simulation {
         ge.lifecycle.in_limbo = true;
         ge.lifecycle.cell_marked = false;
         ge.in_logic_vector = false;
-        ge.owned_count_released = false;
+        ge.destruction_recorded = false;
 
         self.substrate.entities.insert(ge);
-        self.increment_owned_count(&owner, category);
+        // The class constructors and InitFromType call Add_Tracking.
+        self.update_house_tracking(
+            stable_id,
+            crate::sim::house_tracking::HouseTracking::add_tracking,
+        );
         stable_id
     }
 
     /// Delete a constructor-complete object that never successfully left
     /// limbo. The stable ID and constructor RNG draw stay spent, while the
-    /// transient store and owned-count effects are undone exactly once.
+    /// transient store and its tracking are undone exactly once (the
+    /// destructor's Remove_Tracking).
     pub(crate) fn discard_constructed_limbo(&mut self, stable_id: u64) -> bool {
         if !self.substrate.entities.contains(stable_id) {
             return false;
@@ -1120,14 +1124,16 @@ impl Simulation {
             .slave_bindings
             .remove(&stable_id)
             .unwrap_or_default();
+        self.update_house_tracking(
+            stable_id,
+            crate::sim::house_tracking::HouseTracking::remove_tracking,
+        );
         let entity = self
             .substrate
             .entities
             .remove(stable_id)
             .expect("constructor object existence checked above");
         debug_assert!(entity.lifecycle.in_limbo && !entity.lifecycle.cell_marked);
-        let owner = self.interner.resolve(entity.owner()).to_string();
-        self.decrement_owned_count(&owner, entity.category);
         for child_id in spawn_children.into_iter().chain(slave_children) {
             if self.substrate.entities.contains(child_id) {
                 let discarded = self.discard_constructed_limbo(child_id);
@@ -1154,9 +1160,10 @@ impl Simulation {
         true
     }
 
-    /// Spawn an object directly into limbo: stored in EntityStore and owner counts
-    /// but NOT registered in the active order or map occupancy. Registration
-    /// happens later at reveal/landing (e.g. paradrop drop). Returns the stable id.
+    /// Spawn an object directly into limbo: stored in EntityStore and tracked by
+    /// its house (Add_Tracking) but NOT registered in the active order or map
+    /// occupancy. Registration happens later at reveal/landing (e.g. paradrop
+    /// drop). Returns the stable id.
     pub(crate) fn create_limbo(&mut self, ge: GameEntity) -> u64 {
         self.store_spawned_limbo(ge)
     }

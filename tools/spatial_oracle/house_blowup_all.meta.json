@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original 0x004FC6D0 HouseClass::Blowup_All with GetOriginalOwner 0x0070F820, CaptureManagerClass::GetOriginalOwner 0x004722F0 and SetOriginalOwnerToCivilian 0x00472330",
+  "assumptions": [
+    "TechnoClass::Array items [0xA8EC7C], count [0xA8EC88]; HouseClass::Array items [0xA8022C], count [0xA80238]",
+    "Techno +21C Owner, +6C Health, +278 Temporal head, +2BC CaptureManager, +2C0 MindControlledBy, +2CC/+2E0 trigger original owner; House +34 HouseType, HouseType +BC side; CaptureManager +28 node items, +34 count; node {victim, original owner}; Rules +FA8 C4Warhead"
+  ],
+  "substitutions": [
+    "Recorded at entry and returned without running: ReceiveDamage (vtable +0x16C; optionally removes the object from the array), the SideClass lookup 0x006A46D0 (returns the case's Civilian side), the Temporal chain release 0x0071AD40"
+  ],
+  "entry_points": {
+    "blowup_all": "0x004FC6D0",
+    "get_original_owner": "0x0070F820",
+    "capture_original_owner": "0x004722F0",
+    "set_original_owner_to_civilian": "0x00472330"
+  },
+  "payload_sha256": "f8bb1dc5de545aad9661aee1d7bbe79742d17b47c82488d750c7dc560564e428"
+}

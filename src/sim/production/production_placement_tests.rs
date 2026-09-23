@@ -1291,11 +1291,7 @@ fn free_unit_total_placement_failure_refunds_once_and_leaves_no_entity() {
     }
     *super::credits_entry_for_owner(&mut sim, "Americans") = 100;
     let americans = sim.interner.get("Americans").expect("owner should exist");
-    let owned_units_before = sim
-        .houses
-        .get(&americans)
-        .expect("house should exist")
-        .owned_unit_count;
+    let owned_units_before = sim.owned_object_counts(americans).1;
     install_refinery_test_terrain(&mut sim);
     for ry in 0..64 {
         for rx in 0..64 {
@@ -1325,12 +1321,9 @@ fn free_unit_total_placement_failure_refunds_once_and_leaves_no_entity() {
     );
     assert_eq!(credits_for_owner(&sim, "Americans"), 1500);
     assert_eq!(
-        sim.houses
-            .get(&americans)
-            .expect("house should remain")
-            .owned_unit_count,
+        sim.owned_object_counts(americans).1,
         owned_units_before,
-        "constructed FreeUnit owner count must be released exactly once"
+        "the discarded FreeUnit must not stay counted"
     );
 
     let later = sim.advance_tick(&[], Some(&rules), &height_map, Some(&grid), None, 67);

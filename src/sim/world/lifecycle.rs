@@ -887,6 +887,12 @@ impl Simulation {
                 });
             }
         }
+        // `TechnoClass::Unlimbo` calls Added_To_Game once placement succeeded
+        // (`0x006F6D8F`), before the alive gate below.
+        self.update_house_tracking(
+            stable_id,
+            crate::sim::house_tracking::HouseTracking::added_to_game,
+        );
         // TechnoUnlimbo6F6E65..AD runs this second mode-one query only
         // after successful Object Mark and the +90 alive gate. A failed Mark
         // must retain history. This precedes Foot4D722F's owner observation.
@@ -2576,6 +2582,11 @@ impl Simulation {
             //6F6B6A; both precede Object Limbo. Repeated Limbo emits neither.
             self.fog.release_entity_sight(stable_id);
             self.remove_building_gap_before_limbo(stable_id);
+            // 6F6BD1: Removed_From_Game, also only on the first Limbo.
+            self.update_house_tracking(
+                stable_id,
+                crate::sim::house_tracking::HouseTracking::removed_from_game,
+            );
         }
         // BuildingClass owns this pass before the common TechnoClass Limbo can
         // clear committed type/cell facts or broadcast another expiry callback.
@@ -2595,14 +2606,16 @@ impl Simulation {
         self.object_conceal_with_context(stable_id, context)
     }
 
-    /// Existing Rust owner-count mutation with an explicit exactly-once guard.
-    pub(crate) fn release_owned_count_once(&mut self, stable_id: u64) {
-        let Some((owner, category, already_released, destroyed, killed_by, award, dont_score)) =
+    /// The UnInit-time score record (a destroyed object's loss, its killer's
+    /// kill and award), exactly once. The house counts move elsewhere:
+    /// Removed_From_Game with the Limbo, Remove_Tracking at the drain.
+    pub(crate) fn record_destruction_once(&mut self, stable_id: u64) {
+        let Some((owner, category, already_recorded, destroyed, killed_by, award, dont_score)) =
             self.substrate.entities.get(stable_id).map(|entity| {
                 (
                     entity.owner(),
                     entity.category,
-                    entity.owned_count_released,
+                    entity.destruction_recorded,
                     // A Temporal erase leaves at full health with its kill
                     // already recorded (`combat::record_kill_credit`).
                     entity.health.current == 0 || entity.killed_by.is_some(),
@@ -2614,14 +2627,12 @@ impl Simulation {
         else {
             return;
         };
-        if already_released {
+        if already_recorded {
             return;
         }
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            entity.owned_count_released = true;
+            entity.destruction_recorded = true;
         }
-        let owner_name = self.interner.resolve(owner).to_string();
-        self.decrement_owned_count(&owner_name, category);
         if destroyed && !dont_score {
             self.record_match_kill_and_loss(owner, category, killed_by, award);
         }
@@ -2631,8 +2642,8 @@ impl Simulation {
     /// kill for the house credited with destroying it, and that house's score
     /// award.
     ///
-    /// This runs at the single owned-count release point rather than in the
-    /// damage loop so it fires exactly once per object, but it does NOT
+    /// This runs at the single destruction record (`record_destruction_once`)
+    /// rather than in the damage loop so it fires exactly once per object, but it does NOT
     /// re-derive the killer here — `killed_by` was captured at the instant of
     /// destruction, which is where gamemd records it.
     ///
@@ -2691,7 +2702,7 @@ impl Simulation {
     /// `CausesDelayKill` building. Active gamemd runs the routed kill callback
     /// and virtual Destroy/reference notification before TechnoClass arms the
     /// timer and restores Alive/Health=1. This deliberately does not call
-    /// UnInit, Limbo, release owned counts, or enqueue physical deletion.
+    /// UnInit, Limbo, record the destruction, or enqueue physical deletion.
     pub(crate) fn postmortem_exact_zero_callbacks(
         &mut self,
         stable_id: u64,
@@ -2888,7 +2899,7 @@ impl Simulation {
         // Object UnInit5F6616 expires damage-fire owners before Building's
         // destructor43BDE0 destroys the remaining slot Anims. Do not run the
         // recovery path here: it converts coordinates and stops sounds early.
-        self.release_owned_count_once(stable_id);
+        self.record_destruction_once(stable_id);
         crate::sim::docking::bunker_link::break_links_on_despawn(self, stable_id);
         #[cfg(test)]
         self.trace_lifecycle_for_test(LifecycleTestEvent::UninitClassPre { stable_id });
@@ -3727,6 +3738,12 @@ impl Simulation {
     }
 
     fn finalize_and_remove_common(&mut self, stable_id: u64) {
+        // The Techno destructors (`0x0041410B`, `0x0043BF34`, `0x00517E2E`,
+        // `0x00735816`) call Remove_Tracking.
+        self.update_house_tracking(
+            stable_id,
+            crate::sim::house_tracking::HouseTracking::remove_tracking,
+        );
         self.release_house_base_tracking(stable_id);
         self.destroy_building_light(stable_id);
         self.clear_building_damage_fire_slots(stable_id, None);

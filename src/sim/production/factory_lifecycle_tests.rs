@@ -47,7 +47,11 @@ fn world(seed: u64) -> (Simulation, RuleSet, InternedId) {
     spawn_structure(&mut sim, 3, "Americans", "GACNST", 18, 10);
     spawn_structure(&mut sim, 4, "Americans", "TECH", 22, 10);
     // Raw structure fixture admission bypasses lifecycle accounting.
-    sim.houses.get_mut(&owner).unwrap().owned_building_count = 4;
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .tracking
+        .set_buildings_for_test(4);
     (sim, rules, owner)
 }
 
@@ -102,8 +106,7 @@ pub(super) fn children(sim: &Simulation, parent: u64) -> Vec<u64> {
 }
 
 fn counts(sim: &Simulation, owner: InternedId) -> (u32, u32) {
-    let house = &sim.houses[&owner];
-    (house.owned_building_count, house.owned_unit_count)
+    sim.owned_object_counts(owner)
 }
 
 fn assert_gone(sim: &Simulation, parent: u64, child_ids: &[u64]) {
@@ -339,7 +342,11 @@ fn terminal_infantry_delivery_failure_refunds_and_promotes() {
     for structure in 1..=4 {
         sim.substrate.entities.remove(structure);
     }
-    sim.houses.get_mut(&owner).unwrap().owned_building_count = 0;
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .tracking
+        .set_buildings_for_test(0);
     let before = sim.houses[&owner].economy.credits;
     let mut expected = sim.scenario_rng.clone();
     assert!(!tick_production(&mut sim, &rules, &BTreeMap::new(), None));
@@ -439,7 +446,7 @@ fn factory_loss_revalidation_disposes_parent_and_children_before_returning() {
         sim.advance_tick(&[], Some(&rules), &BTreeMap::new(), None, None, 67);
         assert_gone(&sim, parent, &child_ids);
         assert_eq!(sim.houses[&owner].economy.credits, before + spent);
-        assert_eq!(sim.houses[&owner].owned_unit_count, 0);
+        assert_eq!(sim.owned_object_counts(owner).1, 0);
         assert_eq!(sim.substrate.next_stable_object_id, allocated);
         assert_eq!(sim.scenario_rng.logical_state(), rng);
         assert!(

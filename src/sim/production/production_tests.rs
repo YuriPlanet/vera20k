@@ -1363,7 +1363,7 @@ fn naval_empty_fnpc_reuses_pending_identity_and_accounts_completion_once() {
             .test_arm_ready(americans, ProductionCategory::Ship)
     );
     let entity_count_before = sim.substrate.entities.len();
-    let owned_units_before = sim.houses[&americans].owned_unit_count;
+    let owned_units_before = sim.owned_object_counts(americans).1;
 
     assert!(!super::production_queue::tick_production(
         &mut sim,
@@ -1385,7 +1385,7 @@ fn naval_empty_fnpc_reuses_pending_identity_and_accounts_completion_once() {
     let held = sim.substrate.entities.get(held_id).unwrap();
     assert!(held.lifecycle.in_limbo && !held.lifecycle.cell_marked);
     assert_eq!(sim.substrate.entities.len(), entity_count_before);
-    assert_eq!(sim.houses[&americans].owned_unit_count, owned_units_before);
+    assert_eq!(sim.owned_object_counts(americans).1, owned_units_before);
     assert_eq!(
         sim.houses[&americans].stats.built, 1,
         "completion is accounted before the refused delivery"
@@ -1412,7 +1412,8 @@ fn naval_empty_fnpc_reuses_pending_identity_and_accounts_completion_once() {
     assert_eq!(retained_dummy.snapshot().coord, (0, 0));
     assert_eq!(sim.substrate.entities.len(), entity_count_before);
     assert_eq!(
-        sim.houses[&americans].owned_unit_count, owned_units_before,
+        sim.owned_object_counts(americans).1,
+        owned_units_before,
         "sentinel retry must not account for a second Unit"
     );
     assert_eq!(

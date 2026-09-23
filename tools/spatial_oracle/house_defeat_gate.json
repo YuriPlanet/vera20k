@@ -1,0 +1,194 @@
+[
+  {
+    "events": [
+      "blowup_all",
+      "mplayer_defeated"
+    ],
+    "input": {
+      "name": "short_no_base"
+    }
+  },
+  {
+    "events": [],
+    "input": {
+      "buildings": 1,
+      "name": "short_building"
+    }
+  },
+  {
+    "events": [
+      "blowup_all",
+      "mplayer_defeated"
+    ],
+    "input": {
+      "buildings": -1,
+      "name": "short_negative_buildings"
+    }
+  },
+  {
+    "events": [],
+    "input": {
+      "base_units": {
+        "0": 1
+      },
+      "name": "short_mcv_slot0"
+    }
+  },
+  {
+    "events": [],
+    "input": {
+      "base_units": {
+        "1": 1
+      },
+      "name": "short_mcv_slot1"
+    }
+  },
+  {
+    "events": [],
+    "input": {
+      "base_units": {
+        "2": 2
+      },
+      "name": "short_mcv_slot2"
+    }
+  },
+  {
+    "events": [
+      "blowup_all",
+      "mplayer_defeated"
+    ],
+    "input": {
+      "base_units": {
+        "0": 1,
+        "1": -1
+      },
+      "name": "short_mcv_cancelling"
+    }
+  },
+  {
+    "events": [
+      "blowup_all",
+      "mplayer_defeated"
+    ],
+    "input": {
+      "active_infantry": 3,
+      "active_units": 5,
+      "name": "short_ignores_units"
+    }
+  },
+  {
+    "events": [],
+    "input": {
+      "game_mode": 0,
+      "name": "campaign"
+    }
+  },
+  {
+    "events": [],
+    "input": {
+      "defeated": 1,
+      "name": "already_defeated"
+    }
+  },
+  {
+    "events": [],
+    "input": {
+      "frame": 0,
+      "name": "frame_zero"
+    }
+  },
+  {
+    "events": [],
+    "input": {
+      "name": "passive_house",
+      "passive": 1
+    }
+  },
+  {
+    "events": [
+      "blowup_all",
+      "mplayer_defeated"
+    ],
+    "input": {
+      "name": "normal_empty",
+      "short_game": 0
+    }
+  },
+  {
+    "events": [],
+    "input": {
+      "buildings": 1,
+      "name": "normal_building",
+      "short_game": 0
+    }
+  },
+  {
+    "events": [],
+    "input": {
+      "active_units": 1,
+      "name": "normal_units",
+      "short_game": 0
+    }
+  },
+  {
+    "events": [],
+    "input": {
+      "active_infantry": 1,
+      "name": "normal_infantry",
+      "short_game": 0
+    }
+  },
+  {
+    "events": [],
+    "input": {
+      "active_aircraft": 1,
+      "name": "normal_aircraft",
+      "short_game": 0
+    }
+  },
+  {
+    "events": [],
+    "input": {
+      "active_yarefn": 1,
+      "name": "normal_yarefn",
+      "short_game": 0
+    }
+  },
+  {
+    "events": [
+      "blowup_all",
+      "mplayer_defeated"
+    ],
+    "input": {
+      "active_yarefn": 1,
+      "build_refinery_2": false,
+      "name": "normal_no_build_refinery_2",
+      "short_game": 0
+    }
+  },
+  {
+    "events": [
+      "blowup_all",
+      "mplayer_defeated"
+    ],
+    "input": {
+      "active_infantry": 1,
+      "active_units": -1,
+      "name": "normal_cancelling_totals",
+      "short_game": 0
+    }
+  },
+  {
+    "events": [
+      "blowup_all",
+      "mplayer_defeated"
+    ],
+    "input": {
+      "base_units": {
+        "0": 1
+      },
+      "name": "normal_ignores_base_units",
+      "short_game": 0
+    }
+  }
+]

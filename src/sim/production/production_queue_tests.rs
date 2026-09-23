@@ -854,7 +854,7 @@ fn blocked_vehicle_delivery_keeps_completed_item_and_holds_next_queue_item() {
         super::lifecycle_tests::held_id(&sim, americans_id, ProductionCategory::Vehicle);
     let children_before = super::lifecycle_tests::children(&sim, held_id_before);
     assert_eq!(children_before.len(), 3);
-    let owned_before = sim.houses[&americans_id].owned_unit_count;
+    let owned_before = sim.owned_object_counts(americans_id).1;
     let rng_before = sim.scenario_rng.clone();
     let allocated_before = sim.substrate.next_stable_object_id;
     let spawned = tick_production(&mut sim, &rules, &height_map, Some(&grid));
@@ -918,7 +918,7 @@ fn blocked_vehicle_delivery_keeps_completed_item_and_holds_next_queue_item() {
     );
     assert_eq!(sim.scenario_rng.logical_state(), rng_before.logical_state());
     assert_eq!(sim.substrate.next_stable_object_id, allocated_before);
-    assert_eq!(sim.houses[&americans_id].owned_unit_count, owned_before + 0);
+    assert_eq!(sim.owned_object_counts(americans_id).1, owned_before + 0);
 }
 
 #[test]
@@ -973,7 +973,7 @@ fn pending_vehicle_delivery_success_consumes_completed_item_and_starts_next_item
         super::lifecycle_tests::held_id(&sim, americans_id, ProductionCategory::Vehicle);
     let children_before = super::lifecycle_tests::children(&sim, held_id_before);
     assert_eq!(children_before.len(), 3);
-    let owned_before = sim.houses[&americans_id].owned_unit_count;
+    let owned_before = sim.owned_object_counts(americans_id).1;
     let rng_before = sim.scenario_rng.clone();
     let allocated_before = sim.substrate.next_stable_object_id;
     let blocked = tick_production(&mut sim, &rules, &height_map, Some(&blocked_grid));
@@ -1092,7 +1092,7 @@ fn pending_vehicle_delivery_success_consumes_completed_item_and_starts_next_item
         );
     }
     assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
-    assert_eq!(sim.houses[&americans_id].owned_unit_count, owned_before + 4);
+    assert_eq!(sim.owned_object_counts(americans_id).1, owned_before + 4);
 }
 
 #[test]
@@ -1134,7 +1134,8 @@ fn paused_category_projection_and_factory_charge_remain_independent() {
     sim.houses
         .get_mut(&americans_id)
         .unwrap()
-        .owned_building_count = 2;
+        .tracking
+        .set_buildings_for_test(2);
     for _ in 0..40 {
         sim.advance_tick(&[], Some(&rules), &height_map, None, None, 67);
     }

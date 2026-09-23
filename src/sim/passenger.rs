@@ -1422,7 +1422,7 @@ ConditionYellow=50%
             .category = EntityCategory::Structure;
         let mut neutral_house = HouseState::new(neutral, 0, None, false, 0, 10);
         neutral_house.multiplay_passive = true;
-        neutral_house.owned_building_count = 1;
+        neutral_house.tracking.set_buildings_for_test(1);
         sim.houses.insert(neutral, neutral_house);
         sim.houses
             .insert(americans, HouseState::new(americans, 1, None, true, 0, 10));
@@ -1438,8 +1438,8 @@ ConditionYellow=50%
         assert!(reconcile_civilian_garrison_owner_for_building(
             &mut sim, &rules, bldg
         ));
-        assert_eq!(sim.houses[&neutral].owned_building_count, 0);
-        assert_eq!(sim.houses[&americans].owned_building_count, 1);
+        assert_eq!(sim.houses[&neutral].tracking.buildings_for_test(), 0);
+        assert_eq!(sim.houses[&americans].tracking.buildings_for_test(), 1);
 
         assert!(
             sim.substrate
@@ -1452,8 +1452,8 @@ ConditionYellow=50%
         assert!(reconcile_civilian_garrison_owner_for_building(
             &mut sim, &rules, bldg
         ));
-        assert_eq!(sim.houses[&neutral].owned_building_count, 1);
-        assert_eq!(sim.houses[&americans].owned_building_count, 0);
+        assert_eq!(sim.houses[&neutral].tracking.buildings_for_test(), 1);
+        assert_eq!(sim.houses[&americans].tracking.buildings_for_test(), 0);
     }
 
     #[test]

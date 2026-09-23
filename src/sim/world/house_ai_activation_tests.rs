@@ -158,8 +158,16 @@ fn house_anger_decay_uses_binary_frame_not_rust_tick() {
         sim.session.binary_frame = binary_frame;
         let owner = insert_house(&mut sim, "Computer1", false, 5);
         let peer = insert_house(&mut sim, "Computer2", false, 5);
-        sim.houses.get_mut(&owner).unwrap().owned_unit_count = 1;
-        sim.houses.get_mut(&peer).unwrap().owned_unit_count = 1;
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .tracking
+            .set_buildings_for_test(1);
+        sim.houses
+            .get_mut(&peer)
+            .unwrap()
+            .tracking
+            .set_buildings_for_test(1);
         sim.houses
             .get_mut(&owner)
             .unwrap()

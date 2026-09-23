@@ -98,6 +98,9 @@ pub(super) enum HashFeature {
     CrewSurvival = 194,
     MindControl = 196,
     Temporal = 197,
+    /// Replaces the two retired per-house counts with `house_tracking`;
+    /// earlier schemas recompute the retired counts from the entity store.
+    HouseDefeatTracking = 198,
 }
 
 impl HashSchema {
@@ -124,6 +127,7 @@ impl HashSchema {
                     | HashFeature::CrewSurvival
                     | HashFeature::MindControl
                     | HashFeature::Temporal
+                    | HashFeature::HouseDefeatTracking
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

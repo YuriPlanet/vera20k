@@ -102,7 +102,7 @@ impl Simulation {
             ge.debug_log = Some(crate::sim::debug_event_log::DebugEventLog::new());
         }
 
-        stamp_scoring_flags(ge, obj);
+        stamp_scoring_flags(ge, obj, rules);
         ge.sight_is_zero = obj.is_some_and(|object| object.sight == 0);
         if let Some(obj) = obj.filter(|obj| obj.has_turret || category == EntityCategory::Aircraft)
         {
@@ -261,14 +261,34 @@ fn install_authored_bridge(ge: &mut GameEntity, origin: ComponentOrigin) {
     }
 }
 
-/// Copy the rules-derived scoring flags onto a freshly built entity.
+/// Copy the rules-derived scoring and house-count flags onto a freshly built
+/// entity.
 ///
 /// Every spawn path calls this, so a type that must not appear on the score
-/// screen is honored no matter how the object came into the world. The flag is
-/// copied rather than looked up later because the score bookkeeping runs in the
-/// lifecycle authority, which deliberately holds no `RuleSet` borrow.
-fn stamp_scoring_flags(ge: &mut GameEntity, obj: Option<&crate::rules::object_type::ObjectType>) {
+/// screen is honored no matter how the object came into the world. The flags
+/// are copied rather than looked up later because the score bookkeeping and
+/// the house counts run in the lifecycle authority, which deliberately holds
+/// no `RuleSet` borrow.
+fn stamp_scoring_flags(
+    ge: &mut GameEntity,
+    obj: Option<&crate::rules::object_type::ObjectType>,
+    rules: Option<&RuleSet>,
+) {
     ge.dont_score = obj.is_some_and(|o| o.dont_score);
+    // Add_Tracking's building arm (`0x004FF761..0x004FF791`): vtable `+0x80`,
+    // or UndeploysInto (`+0x408`) with ResourceGatherer (`+0x5EC`).
+    let unit_like_building = ge.category == EntityCategory::Structure
+        && obj.is_some_and(|o| {
+            o.is_1x1_with_undeploy()
+                || o.undeploys_into
+                    .as_deref()
+                    .and_then(|undeploys| rules.and_then(|rules| rules.object(undeploys)))
+                    .is_some_and(|undeploys| undeploys.resource_gatherer)
+        });
+    ge.tracking_facts = crate::sim::house_tracking::TrackingFacts {
+        insignificant: obj.is_some_and(|o| o.insignificant),
+        unit_like_building,
+    };
 }
 
 fn stamp_building_cell_profile(

@@ -169,18 +169,27 @@ impl CaptureManagerState {
         self.nodes.iter().map(|node| node.victim)
     }
 
-    /// `GetOriginalOwner @ 0x004722F0`: reverse node scan. Natively it is
-    /// read only through `TechnoClass 0x0070F820` by the HouseClass defeat
-    /// blow-ups (`0x004FC6D0`, `0x004FC790`, `0x004FC820`, `0x004FC8D0`),
-    /// none of which VERA's `check_defeat` runs; FreeUnit reads its node
+    /// `GetOriginalOwner @ 0x004722F0`: reverse node scan, `None` (native
+    /// null) without a node. Read through `TechnoClass 0x0070F820` by the
+    /// HouseClass defeat blow-up (`house_defeat`); FreeUnit reads its node
     /// directly.
-    #[cfg(test)]
     pub(crate) fn original_owner(&self, victim: u64) -> Option<InternedId> {
         self.nodes
             .iter()
             .rev()
             .find(|node| node.victim == victim)
             .map(|node| node.original_owner)
+    }
+
+    /// The rewrite half of `SetOriginalOwnerToCivilian @ 0x00472330`: every
+    /// node controlling `victim` (reverse scan, all matches) now returns it
+    /// to `house`. The caller found the Civilian-side house.
+    pub(crate) fn set_original_owner(&mut self, victim: u64, house: InternedId) {
+        for node in self.nodes.iter_mut().rev() {
+            if node.victim == victim {
+                node.original_owner = house;
+            }
+        }
     }
 
     /// `RemoveNode @ 0x00471F90`, the pointer-expiry listener: a dead
@@ -213,6 +222,20 @@ impl CaptureManagerState {
     #[cfg(test)]
     pub(crate) fn reverse_nodes_for_test(&mut self) {
         self.nodes.reverse();
+    }
+
+    /// A manager holding these `(victim, original owner)` nodes in order.
+    #[cfg(test)]
+    pub(crate) fn with_nodes_for_test(nodes: &[(u64, InternedId)]) -> Self {
+        let mut state = Self::constructed(3, false);
+        state.nodes = nodes
+            .iter()
+            .map(|&(victim, original_owner)| ControlNode {
+                victim,
+                original_owner,
+            })
+            .collect();
+        state
     }
 }
 

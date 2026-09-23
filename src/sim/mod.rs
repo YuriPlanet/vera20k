@@ -144,6 +144,7 @@ pub(crate) mod tiberium_germinate;
 pub mod game_options;
 pub mod house_state;
 pub(crate) mod house_strategy;
+pub mod house_tracking;
 
 // --- Trigger runtime (map trigger evaluation during gameplay) ---
 pub mod team_script_vm;

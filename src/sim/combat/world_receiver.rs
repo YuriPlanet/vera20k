@@ -4475,7 +4475,7 @@ pub(crate) fn tick_combat(
     // inside each foot unit's own AI step, gated on the global frame counter;
     // the phased engine collects it here so deaths route through the same
     // death pipeline as weapon damage (death anim selection via the
-    // RadSiteWarhead, owned-count bookkeeping, survivor ejection).
+    // RadSiteWarhead, destruction bookkeeping, survivor ejection).
     if let Some(rad) = radiation_enabled.then_some(&mut world.radiation) {
         for det in effects.rad_detonations.drain(..) {
             rad.apply_detonation(

@@ -353,10 +353,11 @@ pub struct HouseState {
     /// warp-out clears the latch; otherwise that provider sets it.
     #[serde(default)]
     pub spy_sat_active: bool,
-    /// Running count of owned buildings. Updated on spawn/despawn.
-    pub owned_building_count: u32,
-    /// Running count of owned non-building units. Updated on spawn/despawn.
-    pub owned_unit_count: u32,
+    /// The object counts the defeat gate reads (`house_tracking`), written by
+    /// the lifecycle authority at construction, deletion, Limbo, Unlimbo and
+    /// owner change.
+    #[serde(default)]
+    pub(crate) tracking: crate::sim::house_tracking::HouseTracking,
     /// Historical House4FD150 primary base cell; updates at native building
     /// lifecycle boundaries rather than when a consumer requests a destination.
     pub base_center: Option<(u16, u16)>,
@@ -591,8 +592,7 @@ impl HouseState {
             outcome_state: None,
             map_is_clear: false,
             spy_sat_active: false,
-            owned_building_count: 0,
-            owned_unit_count: 0,
+            tracking: Default::default(),
             base_center: None,
             base_projection: crate::sim::world::HouseBaseState::default(),
             alternate_base_center: (0, 0),
@@ -981,8 +981,6 @@ mod ai_activation_latch_tests {
             house.multiplay_passive = true;
             house.difficulty = difficulty;
             house.economy.credits = 4321;
-            house.owned_building_count = 7;
-            house.owned_unit_count = 11;
 
             house.update_ai_activation(true, 5);
             let once = house.ai_activation;
@@ -1000,8 +998,6 @@ mod ai_activation_latch_tests {
             );
             assert_eq!(house.current_iq, 5);
             assert_eq!(house.economy.credits, 4321);
-            assert_eq!(house.owned_building_count, 7);
-            assert_eq!(house.owned_unit_count, 11);
             assert!(house.is_defeated);
             assert!(house.multiplay_passive);
             assert_eq!(house.difficulty, difficulty);

@@ -3277,7 +3277,8 @@ fn gsi_05_03_duplicate_uninit_repeats_direct_expiry_and_queue_but_finalizes_once
     sim.houses
         .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Unit);
-    sim.houses.get_mut(&owner).unwrap().owned_unit_count = 2;
+    // As its construction would: Add_Tracking.
+    sim.update_house_tracking(1, crate::sim::house_tracking::HouseTracking::add_tracking);
     let _ = sim.reveal(1);
 
     sim.lifecycle_test_events.clear();
@@ -3317,8 +3318,12 @@ fn gsi_05_03_duplicate_uninit_repeats_direct_expiry_and_queue_but_finalizes_once
     let repeat_start = sim.lifecycle_test_events.len();
     sim.uninit(1);
     let repeated_events = &sim.lifecycle_test_events[repeat_start..];
-    assert_eq!(sim.houses.get(&owner).unwrap().owned_unit_count, 1);
-    assert!(sim.substrate.entities.get(1).unwrap().owned_count_released);
+    // Removed_From_Game ran once (the first Limbo); the tracking waits for
+    // the destructor at the drain.
+    let tracking = &sim.houses.get(&owner).unwrap().tracking;
+    assert_eq!(tracking.active_for_test().0, 0);
+    assert_eq!(tracking.units_for_test(), 1);
+    assert!(sim.substrate.entities.get(1).unwrap().destruction_recorded);
     assert_eq!(sim.substrate.pending_delete, vec![1, 1]);
     let direct = repeated_events
         .iter()
@@ -3388,18 +3393,23 @@ fn gsi_05_03_duplicate_uninit_repeats_direct_expiry_and_queue_but_finalizes_once
     );
 }
 
+/// UnInit records the destruction once; the tracking leaves with the
+/// destructor at the drain, once however often the object was queued.
 #[test]
-fn lifecycle_authority_immediate_uninit_releases_owned_count_once() {
+fn lifecycle_authority_uninit_records_once_and_the_drain_removes_the_tracking() {
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("Americans");
     sim.houses
         .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Unit);
-    sim.houses.get_mut(&owner).unwrap().owned_unit_count = 2;
+    sim.update_house_tracking(1, crate::sim::house_tracking::HouseTracking::add_tracking);
 
     sim.uninit(1);
-    assert_eq!(sim.houses.get(&owner).unwrap().owned_unit_count, 1);
-    assert!(sim.substrate.entities.get(1).unwrap().owned_count_released);
+    sim.uninit(1);
+    assert_eq!(sim.houses.get(&owner).unwrap().tracking.units_for_test(), 1);
+    assert!(sim.substrate.entities.get(1).unwrap().destruction_recorded);
+    sim.flush_pending_delete();
+    assert_eq!(sim.houses.get(&owner).unwrap().tracking.units_for_test(), 0);
 }
 
 #[test]
@@ -3748,8 +3758,8 @@ fn score_stats_credit_the_killer_and_charge_the_victim_once() {
     // A stock Rhino (HTNK) is Cost=900, and the award is the victim's cost.
     victim.kill_award_points = 900;
 
-    // A repeated uninit must not double-count: the exactly-once owned-count
-    // guard covers the statistics too.
+    // A repeated uninit must not double-count: the destruction is recorded
+    // exactly once.
     sim.uninit(1);
     sim.uninit(1);
 
@@ -3919,22 +3929,30 @@ fn lifecycle_authority_animated_death_stays_represented_until_uninit() {
     sim.houses
         .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Unit);
-    sim.houses.get_mut(&owner).unwrap().owned_unit_count = 2;
+    sim.update_house_tracking(1, crate::sim::house_tracking::HouseTracking::add_tracking);
     let _ = sim.reveal(1);
 
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     entity.health.current = 0;
     entity.dying = true;
-    assert_eq!(sim.houses.get(&owner).unwrap().owned_unit_count, 2);
+    let tracking = &sim.houses.get(&owner).unwrap().tracking;
+    assert_eq!(
+        (tracking.units_for_test(), tracking.active_for_test().0),
+        (1, 1)
+    );
     let entity = sim.substrate.entities.get(1).unwrap();
-    assert!(!entity.owned_count_released);
+    assert!(!entity.destruction_recorded);
     assert!(entity.lifecycle.object_alive);
     assert!(!entity.lifecycle.in_limbo);
     assert!(entity.lifecycle.cell_marked);
     assert!(entity.in_logic_vector);
 
     sim.uninit(1);
-    assert_eq!(sim.houses.get(&owner).unwrap().owned_unit_count, 1);
+    let tracking = &sim.houses.get(&owner).unwrap().tracking;
+    assert_eq!(
+        (tracking.units_for_test(), tracking.active_for_test().0),
+        (1, 0)
+    );
     assert!(
         !sim.substrate
             .entities
@@ -8085,7 +8103,10 @@ fn display_registration_expires_with_a_resubmitted_uninit_owner() {
     sim.uninit(id);
     assert!(sim.substrate.entities.get(id).unwrap().lifecycle.in_limbo);
     sim.submit_entity_display(id, None, None);
-    assert_eq!(sim.substrate.display.layer_of(id), Some(DisplayLayer::GROUND));
+    assert_eq!(
+        sim.substrate.display.layer_of(id),
+        Some(DisplayLayer::GROUND)
+    );
     sim.process_pending_delete();
     assert!(!sim.substrate.entities.contains(id));
     assert_eq!(sim.substrate.display.layer_of(id), None);

@@ -180,11 +180,11 @@ mod tests {
             sim.houses[&owner].stats.units_killed, 1,
             "only TerrorBomb's first GI kill is credited"
         );
-        assert!(sim.substrate.entities.get(gi).unwrap().owned_count_released);
+        assert!(sim.substrate.entities.get(gi).unwrap().destruction_recorded);
         assert!(!sim.live_object_order_snapshot().contains(&gi));
         let head = sim.substrate.entities.get(terror).unwrap();
         assert!(head.infantry_terminal.is_some());
-        assert!(!head.owned_count_released);
+        assert!(!head.destruction_recorded);
         // The rules catalog supplies a default Die2 even without art input.
         // Drive its normal terminal visits through retirement before checking
         // the eventual total; this test does not assert animation duration.
@@ -194,7 +194,7 @@ mod tests {
                 .entities
                 .get(terror)
                 .unwrap()
-                .owned_count_released
+                .destruction_recorded
             {
                 break;
             }
@@ -205,7 +205,7 @@ mod tests {
                 .entities
                 .get(terror)
                 .unwrap()
-                .owned_count_released
+                .destruction_recorded
         );
         assert_eq!(sim.houses[&owner].stats.units_lost, 2);
         assert_eq!(sim.houses[&owner].stats.units_killed, 1);

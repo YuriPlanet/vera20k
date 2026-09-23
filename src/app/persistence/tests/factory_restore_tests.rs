@@ -114,7 +114,12 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
     producer.in_playfield = true;
     saved.substrate.entities.insert(producer);
     saved.add_entity_occupancy(producer_id);
-    saved.houses.get_mut(&owner).unwrap().owned_building_count = 1;
+    saved
+        .houses
+        .get_mut(&owner)
+        .unwrap()
+        .tracking
+        .set_buildings_for_test(1);
     // Seed a partially paid held object, then exercise a different live credit
     // writer before saving. The old factory balance could be stale at this edge.
     for _ in 0..5 {
@@ -307,13 +312,10 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
         let ready = saved.production.ready_by_owner.clone();
         // MatchStatistics is skipped by the existing snapshot format; this
         // admission change preserves the serialized counts and wallet only.
-        let counts = saved.houses.get(&owner).map(|house| {
-            (
-                house.owned_building_count,
-                house.owned_unit_count,
-                house.economy.credits,
-            )
-        });
+        let counts = saved
+            .houses
+            .get(&owner)
+            .map(|house| (house.tracking.clone(), house.economy.credits));
         let identities: Vec<_> = saved
             .substrate
             .entities
@@ -356,11 +358,10 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
         );
         assert_eq!(restored.production.ready_by_owner, ready, "{label}");
         assert_eq!(
-            restored.houses.get(&owner).map(|house| (
-                house.owned_building_count,
-                house.owned_unit_count,
-                house.economy.credits,
-            )),
+            restored
+                .houses
+                .get(&owner)
+                .map(|house| (house.tracking.clone(), house.economy.credits)),
             counts,
             "{label}"
         );

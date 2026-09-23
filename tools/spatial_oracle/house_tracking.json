@@ -1,0 +1,873 @@
+[
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 1
+    },
+    "events": [
+      [
+        "increment",
+        "units",
+        7
+      ],
+      [
+        "owned_type",
+        "unit_types",
+        7
+      ]
+    ],
+    "input": {
+      "call": "add",
+      "name": "add_unit",
+      "rtti": 1,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [],
+    "input": {
+      "call": "add",
+      "insignificant": 1,
+      "name": "add_unit_insignificant",
+      "rtti": 1,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [],
+    "input": {
+      "call": "add",
+      "dont_score": 1,
+      "name": "add_unit_dont_score",
+      "rtti": 1,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 1,
+      "units": 1
+    },
+    "events": [
+      [
+        "increment",
+        "units",
+        7
+      ],
+      [
+        "owned_type",
+        "unit_types",
+        7
+      ]
+    ],
+    "input": {
+      "call": "add",
+      "name": "add_naval_no_passengers",
+      "naval": 1,
+      "rtti": 1,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 1
+    },
+    "events": [
+      [
+        "increment",
+        "units",
+        7
+      ],
+      [
+        "owned_type",
+        "unit_types",
+        7
+      ]
+    ],
+    "input": {
+      "call": "add",
+      "name": "add_naval_transport",
+      "naval": 1,
+      "passengers": 3,
+      "rtti": 1,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 1,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [
+      [
+        "increment",
+        "aircraft",
+        7
+      ],
+      [
+        "owned_type",
+        "aircraft_types",
+        7
+      ]
+    ],
+    "input": {
+      "call": "add",
+      "name": "add_aircraft",
+      "rtti": 2,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [],
+    "input": {
+      "call": "add",
+      "dont_score": 1,
+      "name": "add_aircraft_dont_score",
+      "rtti": 2,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 1,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [
+      [
+        "increment",
+        "buildings",
+        7
+      ],
+      [
+        "owned_type",
+        "building_types",
+        7
+      ]
+    ],
+    "input": {
+      "call": "add",
+      "name": "add_building",
+      "rtti": 6,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [],
+    "input": {
+      "call": "add",
+      "insignificant": 1,
+      "name": "add_building_insignificant",
+      "rtti": 6,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [],
+    "input": {
+      "call": "add",
+      "dont_score": 1,
+      "name": "add_building_dont_score",
+      "rtti": 6,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 1
+    },
+    "events": [
+      [
+        "increment",
+        "buildings",
+        7
+      ],
+      [
+        "owned_type",
+        "building_types",
+        7
+      ]
+    ],
+    "input": {
+      "call": "add",
+      "name": "add_building_1x1_undeployer",
+      "precheck": 1,
+      "rtti": 6,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 1
+    },
+    "events": [
+      [
+        "increment",
+        "buildings",
+        7
+      ],
+      [
+        "owned_type",
+        "building_types",
+        7
+      ]
+    ],
+    "input": {
+      "call": "add",
+      "name": "add_building_undeploys_to_gatherer",
+      "rtti": 6,
+      "start": 5,
+      "undeploys_into": {
+        "resource_gatherer": 1
+      }
+    },
+    "latched": 0,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 1,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [
+      [
+        "increment",
+        "buildings",
+        7
+      ],
+      [
+        "owned_type",
+        "building_types",
+        7
+      ]
+    ],
+    "input": {
+      "call": "add",
+      "name": "add_building_undeploys_to_other",
+      "rtti": 6,
+      "start": 5,
+      "undeploys_into": {
+        "resource_gatherer": 0
+      }
+    },
+    "latched": 0,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 1,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [
+      [
+        "increment",
+        "infantry",
+        7
+      ],
+      [
+        "owned_type",
+        "infantry_types",
+        7
+      ]
+    ],
+    "input": {
+      "call": "add",
+      "name": "add_infantry",
+      "rtti": 15,
+      "start": 5
+    },
+    "latched": 1,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [
+      [
+        "increment",
+        "infantry",
+        7
+      ],
+      [
+        "owned_type",
+        "infantry_types",
+        7
+      ]
+    ],
+    "input": {
+      "call": "add",
+      "latched": 1,
+      "name": "add_infantry_latched",
+      "rtti": 15,
+      "start": 5
+    },
+    "latched": 1,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [
+      [
+        "increment",
+        "infantry",
+        7
+      ],
+      [
+        "owned_type",
+        "infantry_types",
+        7
+      ]
+    ],
+    "input": {
+      "byte_439": 1,
+      "call": "add",
+      "name": "add_infantry_byte_439",
+      "rtti": 15,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [],
+    "input": {
+      "call": "add",
+      "dont_score": 1,
+      "name": "add_infantry_dont_score",
+      "rtti": 15,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [],
+    "input": {
+      "call": "add",
+      "name": "add_other_rtti",
+      "rtti": 3,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 1
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": -1
+    },
+    "events": [
+      [
+        "decrement",
+        "units",
+        7
+      ]
+    ],
+    "input": {
+      "call": "remove",
+      "name": "remove_unit",
+      "rtti": 1,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [],
+    "input": {
+      "call": "remove",
+      "insignificant": 1,
+      "name": "remove_unit_insignificant",
+      "rtti": 1,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [],
+    "input": {
+      "call": "remove",
+      "dont_score": 1,
+      "name": "remove_unit_dont_score",
+      "rtti": 1,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": -1,
+      "units": -1
+    },
+    "events": [
+      [
+        "decrement",
+        "units",
+        7
+      ]
+    ],
+    "input": {
+      "call": "remove",
+      "name": "remove_naval_no_passengers",
+      "naval": 1,
+      "rtti": 1,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": -1
+    },
+    "events": [
+      [
+        "decrement",
+        "units",
+        7
+      ]
+    ],
+    "input": {
+      "call": "remove",
+      "name": "remove_naval_transport",
+      "naval": 1,
+      "passengers": 3,
+      "rtti": 1,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": -1,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [
+      [
+        "decrement",
+        "aircraft",
+        7
+      ]
+    ],
+    "input": {
+      "call": "remove",
+      "name": "remove_aircraft",
+      "rtti": 2,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [],
+    "input": {
+      "call": "remove",
+      "dont_score": 1,
+      "name": "remove_aircraft_dont_score",
+      "rtti": 2,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": -1,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [
+      [
+        "decrement",
+        "buildings",
+        7
+      ]
+    ],
+    "input": {
+      "call": "remove",
+      "name": "remove_building",
+      "rtti": 6,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [],
+    "input": {
+      "call": "remove",
+      "insignificant": 1,
+      "name": "remove_building_insignificant",
+      "rtti": 6,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [],
+    "input": {
+      "call": "remove",
+      "dont_score": 1,
+      "name": "remove_building_dont_score",
+      "rtti": 6,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": -1
+    },
+    "events": [
+      [
+        "decrement",
+        "buildings",
+        7
+      ]
+    ],
+    "input": {
+      "call": "remove",
+      "name": "remove_building_1x1_undeployer",
+      "precheck": 1,
+      "rtti": 6,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": -1
+    },
+    "events": [
+      [
+        "decrement",
+        "buildings",
+        7
+      ]
+    ],
+    "input": {
+      "call": "remove",
+      "name": "remove_building_undeploys_to_gatherer",
+      "rtti": 6,
+      "start": 5,
+      "undeploys_into": {
+        "resource_gatherer": 1
+      }
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": -1,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [
+      [
+        "decrement",
+        "buildings",
+        7
+      ]
+    ],
+    "input": {
+      "call": "remove",
+      "name": "remove_building_undeploys_to_other",
+      "rtti": 6,
+      "start": 5,
+      "undeploys_into": {
+        "resource_gatherer": 0
+      }
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [
+      [
+        "decrement",
+        "infantry",
+        7
+      ]
+    ],
+    "input": {
+      "call": "remove",
+      "name": "remove_infantry",
+      "rtti": 15,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": -1,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [
+      [
+        "decrement",
+        "infantry",
+        7
+      ]
+    ],
+    "input": {
+      "call": "remove",
+      "latched": 1,
+      "name": "remove_infantry_latched",
+      "rtti": 15,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [
+      [
+        "decrement",
+        "infantry",
+        7
+      ]
+    ],
+    "input": {
+      "byte_439": 1,
+      "call": "remove",
+      "name": "remove_infantry_byte_439",
+      "rtti": 15,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [],
+    "input": {
+      "call": "remove",
+      "dont_score": 1,
+      "name": "remove_infantry_dont_score",
+      "rtti": 15,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 0
+  },
+  {
+    "counts": {
+      "aircraft": 0,
+      "buildings": 0,
+      "infantry": 0,
+      "naval": 0,
+      "units": 0
+    },
+    "events": [],
+    "input": {
+      "call": "remove",
+      "name": "remove_other_rtti",
+      "rtti": 3,
+      "start": 5
+    },
+    "latched": 0,
+    "tracked": 0
+  }
+]

@@ -962,7 +962,7 @@ fn lifecycle_authority_immediate_combat_death_reaches_uninit_without_precleanup(
     assert!(dead.lifecycle.cell_marked);
     assert!(dead.radio_contacts.contains(2), "Techno Limbo owns BREAK");
     assert!(
-        !dead.owned_count_released,
+        !dead.destruction_recorded,
         "world lifecycle owns count release"
     );
     assert!(
@@ -1047,7 +1047,7 @@ fn lifecycle_authority_animated_combat_handoff_changes_only_dying_and_sequence()
     assert!(!dead.lifecycle.in_limbo);
     assert!(dead.lifecycle.cell_marked);
     assert!(dead.radio_contacts.contains(2));
-    assert!(!dead.owned_count_released);
+    assert!(!dead.destruction_recorded);
     assert!(
         store.get(2).unwrap().attack_target.is_some(),
         "selective removal listeners, not combat, own target invalidation"

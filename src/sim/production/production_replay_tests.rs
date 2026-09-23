@@ -125,13 +125,14 @@ fn scenario() -> (Simulation, RuleSet, BTreeMap<(u16, u16), u8>) {
         spawn_structure(&mut sim, sid + 1, owner, "GAPILE", *base_x + 2, 10);
         spawn_structure(&mut sim, sid + 2, owner, "GAWEAP", *base_x + 4, 10);
         spawn_structure(&mut sim, sid + 3, owner, "GAAIRC", *base_x + 6, 10);
-        // `spawn_structure` is a raw test helper and intentionally bypasses the
-        // lifecycle-owned count hook.  Keep this replay fixture in a live match
+        // `spawn_structure` is a raw test helper and intentionally bypasses
+        // construction's Add_Tracking.  Keep this replay fixture in a live match
         // so late defeat handling cannot freeze its command ordinal.
         sim.houses
             .get_mut(&oid)
             .expect("scenario house exists")
-            .owned_building_count = 4;
+            .tracking
+            .set_buildings_for_test(4);
     }
     (sim, rules, BTreeMap::new())
 }

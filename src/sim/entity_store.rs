@@ -402,8 +402,9 @@ impl EntityStore {
     }
 
     /// Move an entity to a new owner: updates `entity.owner` AND the `by_owner`
-    /// index together. Index only — does NOT touch HouseState owned-counts
-    /// (callers own that, because count semantics differ by transfer kind).
+    /// index together. Index only — does NOT touch the houses' tracking
+    /// counts; `Simulation::change_owner`, the only production caller, moves
+    /// them.
     /// No-op if the entity is absent or already owned by `new_owner`.
     pub fn change_owner(&mut self, stable_id: u64, new_owner: crate::sim::intern::InternedId) {
         self.touched.note(stable_id, self.entities.len());
