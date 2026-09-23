@@ -57,7 +57,7 @@ fn respond_to_base_attack(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn collect_area(
+pub(crate) fn collect_area(
     world: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
@@ -962,20 +962,7 @@ pub(crate) fn handle_death(
     // Death-weapon detonations use the destroyed object's game-space position.
     // The cell and z still drive damage/smudge dispatch; sub-cell leptons keep
     // AnimList placement aligned with the detonation CoordStruct shape.
-    let mut death_aoe: Vec<(
-        u16,
-        u16,
-        SimFixed,
-        SimFixed,
-        u8,
-        i32,
-        Option<combat_aoe::AoEAirImpact>,
-        i32,
-        InternedId,
-        InternedId,
-        u64,
-        InternedId,
-    )> = Vec::new();
+    let mut death_aoe: Vec<DeathBlast> = Vec::new();
     let mut despawned_ids: Vec<u64> = Vec::new();
     let mut immediate_uninit_ids: Vec<u64> = Vec::new();
     let mut explosion_effects: Vec<ExplosionEffect> = Vec::new();
@@ -1093,21 +1080,65 @@ pub(crate) fn handle_death(
                     current_weapon_ref,
                     &mut world.interner,
                 ) {
-                    death_aoe.push((
-                        rx,
-                        ry,
-                        sub_x,
-                        sub_y,
-                        z,
-                        world_z_leptons,
-                        air_impact,
-                        dmg,
-                        wh_id,
-                        weapon_id,
-                        dead_id,
-                        owner,
-                    ));
+                    // Fire_Death_Weapon @ 0x0070D690 detonates a real bullet at
+                    // the dying object: an IvanBomb warhead (the Crazy Ivan's
+                    // own bomber) plants a bomb on it instead of damaging
+                    // (DetonateAtCoord `0x00469343`), which goes off below.
+                    //
+                    // RESIDUAL — that bullet's DetonateAtCoord tail
+                    // (`0x00469AA4`) is not run: for an Inviso projectile it
+                    // takes one Scenario draw for the anim-coordinate scatter,
+                    // which VERA's projectile path takes and this death path
+                    // does not. Trigger: every death of a type whose death
+                    // weapon is Inviso (stock: IVAN, TERROR, DTRUCK, CAOILD,
+                    // CAMISC01/02, AMMOCRAT). Effect: the Scenario stream runs one
+                    // draw short of native per such death, and the death
+                    // weapon's own AnimList anim lands unscattered. Frequency:
+                    // common. Downstream: every later Scenario draw shifts.
+                    if rules
+                        .warhead(world.interner.resolve(wh_id))
+                        .is_some_and(|warhead| warhead.ivan_bomb)
+                    {
+                        world.bomb_attach(dead_id, Some(dead_id), rules);
+                    } else {
+                        death_aoe.push(DeathBlast {
+                            rx,
+                            ry,
+                            sub_x,
+                            sub_y,
+                            z,
+                            world_z_leptons,
+                            air_impact,
+                            damage: dmg,
+                            warhead: wh_id,
+                            weapon: Some(weapon_id),
+                            source: dead_id,
+                            source_house: Some(owner),
+                            bridge_hut: false,
+                        });
+                    }
                 }
+            }
+            // `0x00702672`: after its death weapon, the bomb it carries goes
+            // off (`BombClass::Detonate @ 0x00438720`), at its Location.
+            if let Some(blast) = world.take_bomb_blast(dead_id, rules)
+                && let Some(warhead) = rules.combat_damage.ivan_warhead.as_deref()
+            {
+                death_aoe.push(DeathBlast {
+                    rx,
+                    ry,
+                    sub_x,
+                    sub_y,
+                    z,
+                    world_z_leptons,
+                    air_impact,
+                    damage: rules.combat_damage.ivan_damage,
+                    warhead: world.interner.intern(warhead),
+                    weapon: None,
+                    source: blast.source,
+                    source_house: None,
+                    bridge_hut: blast.bridge_hut,
+                });
             }
 
             // The world fatal prelude already owns garrison ejection before
@@ -1117,21 +1148,22 @@ pub(crate) fn handle_death(
     }
 
     // Apply death explosion AoE damage.
-    for (
-        rx,
-        ry,
-        sub_x,
-        sub_y,
-        z,
-        world_z_leptons,
-        air_impact,
-        dmg,
-        wh_id,
-        weapon_id,
-        source_id,
-        owner_id,
-    ) in &death_aoe
-    {
+    for blast in &death_aoe {
+        let DeathBlast {
+            rx,
+            ry,
+            sub_x,
+            sub_y,
+            z,
+            world_z_leptons,
+            air_impact,
+            damage: dmg,
+            warhead: wh_id,
+            weapon,
+            source,
+            source_house,
+            bridge_hut,
+        } = blast;
         if let Some(warhead) = rules.warhead(world.interner.resolve(*wh_id)) {
             let routed_wall =
                 wall_overlay_flags_at(world.overlay_grid.as_ref(), overlay_registry, *rx, *ry)
@@ -1144,7 +1176,7 @@ pub(crate) fn handle_death(
                     (*rx, *ry),
                     *dmg,
                     warhead,
-                    (*source_id, Some(*owner_id), *wh_id),
+                    (*source, *source_house, *wh_id),
                     *air_impact,
                     i32::from(*z),
                 );
@@ -1156,7 +1188,9 @@ pub(crate) fn handle_death(
 
             #[cfg(test)]
             cell_target_detaches.extend(aoe.cell_target_detaches);
-            if !scenario_no_damage && !routed_wall && warhead.wall && *dmg > 0 {
+            // The bullet's DetonateAtCoord damages a bridge; a bomb calls
+            // Apply_area_damage directly.
+            if weapon.is_some() && !scenario_no_damage && !routed_wall && warhead.wall && *dmg > 0 {
                 let wh_iid = *wh_id;
                 bridge_damage_events.push(BridgeDamageEvent {
                     rx: *rx,
@@ -1170,7 +1204,8 @@ pub(crate) fn handle_death(
                     impact_z: *z as i32,
                 });
             }
-            if let Some(weapon) = rules.weapon(world.interner.resolve(*weapon_id))
+            if let Some(weapon) =
+                weapon.and_then(|weapon| rules.weapon(world.interner.resolve(weapon)))
                 && weapon.rad_level > 0
             {
                 rad_detonations.push(crate::sim::radiation::RadDetonation {
@@ -1227,6 +1262,16 @@ pub(crate) fn handle_death(
                 outer_anim_requests,
                 &mut smudge_spawn_requests,
             );
+            // `0x0043896A`/`0x00438982`: a bombed bridge-repair hut drops
+            // its bridge after the blast.
+            if *bridge_hut {
+                crate::sim::world::bridge_orchestrator::dispatch_bridge_collapse_from_hut_with_overlay_registry(
+                    world,
+                    rules,
+                    (*rx, *ry),
+                    overlay_registry,
+                );
+            }
         }
     }
     let mut effects = DeathEffects {
@@ -1265,6 +1310,25 @@ pub(crate) fn handle_death(
     }
 
     effects
+}
+
+/// One Apply_area_damage a death sets off, in order: its death weapon, then
+/// the bomb it carried.
+struct DeathBlast {
+    rx: u16,
+    ry: u16,
+    sub_x: SimFixed,
+    sub_y: SimFixed,
+    z: u8,
+    world_z_leptons: i32,
+    air_impact: Option<combat_aoe::AoEAirImpact>,
+    damage: i32,
+    warhead: InternedId,
+    /// The death weapon; `None` for a bomb.
+    weapon: Option<InternedId>,
+    source: u64,
+    source_house: Option<InternedId>,
+    bridge_hut: bool,
 }
 
 /// Concrete receiver work after shared Techno death effects return.
@@ -1605,6 +1669,22 @@ fn emit_one_projectile_detonation(
                 ProjectileTarget::None => crate::sim::temporal::TemporalShotTarget::None,
             };
             world.temporal_detonation(detonation.source_id, target, rules);
+        }
+        SpecialDetonationAction::IvanBomb => {
+            // 0x00469343..0x00469375: the bullet's owner plants on a Techno.
+            let target = match detonation.target {
+                ProjectileTarget::Entity(id) => Some(id),
+                ProjectileTarget::Cell { .. }
+                | ProjectileTarget::None
+                | ProjectileTarget::DummyCell => None,
+            };
+            world.bomb_attach(detonation.source_id, target, rules);
+        }
+        SpecialDetonationAction::BombDisarm => {
+            // 0x004699C4..0x004699FE: a bombed Object target is defused.
+            if let ProjectileTarget::Entity(id) = detonation.target {
+                world.bomb_defuse(id);
+            }
         }
         claimed => {
             log::debug!(
@@ -3324,10 +3404,11 @@ fn emit_admitted_fire(
         );
         // An Inviso shot detonates here, so it runs `BulletClass::
         // DetonateAtCoord`'s special chain as well. Its MindControl
-        // (`0x0046920B`) and Temporal (`0x00469423`) arms claim the impact, so
-        // no area damage. RESIDUAL: the chain's other arms are not dispatched
-        // on this path; an Inviso special warhead of another kind (the Giant
-        // Squid's Parasite grapple) still takes ordinary area damage here.
+        // (`0x0046920B`), IvanBomb (`0x00469343`), Temporal (`0x00469423`) and
+        // BombDisarm (`0x004699C4`) arms claim the impact, so no area damage.
+        // RESIDUAL: the chain's other arms are not dispatched on this path; an
+        // Inviso special warhead of another kind (the Giant Squid's Parasite
+        // grapple) still takes ordinary area damage here.
         let special_action = projectile_special_detonation_action(
             SpecialDetonationFlags::of(warhead),
             SpecialDetonationTarget {
@@ -3349,6 +3430,16 @@ fn emit_admitted_fire(
                 TargetKind::Cell(..) => crate::sim::temporal::TemporalShotTarget::Cell,
             };
             world.temporal_detonation(snap.stable_id, target, rules);
+        } else if special_action == SpecialDetonationAction::IvanBomb {
+            let target = match snap.target {
+                TargetKind::Entity(id) => Some(id),
+                TargetKind::Cell(..) => None,
+            };
+            world.bomb_attach(snap.stable_id, target, rules);
+        } else if special_action == SpecialDetonationAction::BombDisarm {
+            if let TargetKind::Entity(id) = snap.target {
+                world.bomb_defuse(id);
+            }
         } else {
             let routed_wall = wall_overlay_flags_at(
                 world.overlay_grid.as_ref(),

@@ -319,3 +319,84 @@ fn hut_drop_in_owns_order_footprints_and_restore_without_teardown_side_effects()
         );
     }
 }
+
+/// A bomb on a bridge-repair hut drops the hut's bridge after its blast
+/// (`BombClass::Detonate`, `0x0043896A`), whether its fuse runs out or the hut
+/// dies carrying it (`0x00702672`); the same death without a bomb leaves the
+/// bridge standing.
+#[test]
+fn a_bombed_bridge_hut_drops_its_bridge() {
+    use crate::sim::house_state::HouseState;
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=IVAN\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n0=CABHUT\n\
+         [IVAN]\nStrength=125\nSpeed=4\n[CABHUT]\nStrength=1000\nFoundation=1x1\n\
+         BridgeRepairHut=yes\n[CombatDamage]\nIvanWarhead=IvanWH\nIvanDamage=450\n\
+         IvanTimedDelay=450\n[Warheads]\n0=IvanWH\n1=Super\n\
+         [IvanWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         CellSpread=1.5\n[Super]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .unwrap();
+    for (bombed, killed) in [(true, false), (true, true), (false, true)] {
+        let mut sim = Simulation::with_seed(34);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        sim.resolved_terrain = Some(water_below_bridge_terrain(4));
+        let mut bridge = BridgeRuntimeState::default();
+        for y in [3, 4, 5] {
+            bridge.test_seed_cell(4, y, seed_bridge_cell(0xD4));
+        }
+        sim.bridge_state = Some(bridge);
+        for (side, name) in ["Americans", "Russians"].into_iter().enumerate() {
+            let house = sim.interner.intern(name);
+            sim.houses.insert(
+                house,
+                HouseState::new(house, side as u8, None, false, 1000, 10),
+            );
+            sim.session.house_order.push(house);
+        }
+        // Beside the span, inside its 5x5 scan.
+        let hut = sim
+            .spawn_object_at_height("CABHUT", "Americans", 2, 4, 0, 0, &rules)
+            .unwrap();
+        let ivan = sim
+            .spawn_object_at_height("IVAN", "Russians", 0, 0, 0, 0, &rules)
+            .unwrap();
+        sim.session.binary_frame = 100;
+        if bombed {
+            sim.bomb_attach(ivan, Some(hut), &rules);
+        }
+        if killed {
+            let super_wh = sim.interner.intern("Super");
+            let hit = crate::sim::combat::EntityDamageEvent::direct_receiver(
+                hut,
+                1000,
+                0,
+                crate::sim::combat::RAD_NO_ATTACKER,
+                None,
+                super_wh,
+                crate::sim::combat::ReceiverCallFlags {
+                    ignore_defenses: true,
+                    arg6: false,
+                },
+            );
+            sim.commit_direct_damage_receiver(&rules, None, hit);
+        } else {
+            sim.session.binary_frame = 100 + 451;
+            sim.bomb_fuse_step(hut, &rules, None);
+            assert_eq!(
+                sim.substrate.entities.get(hut).unwrap().health.current,
+                1000 - 450,
+                "the hut takes the blast"
+            );
+        }
+        assert!(sim.bomb_carriers().is_empty());
+        for y in [3, 4, 5] {
+            let cell = sim.bridge_state.as_ref().unwrap().cell(4, y).unwrap();
+            assert_eq!(
+                cell.damage_state == DamageState::Destroyed,
+                bombed,
+                "bombed {bombed}, killed {killed}: cell (4, {y})"
+            );
+        }
+    }
+}

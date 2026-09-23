@@ -577,7 +577,10 @@ use crate::sim::world::Simulation;
 // place of the two retired owned counts; an entity keeps its DontScore and
 // tracking facts, and `owned_count_released` is renamed
 // `destruction_recorded`. A 197 save holds none of the counts.
-const SNAPSHOT_VERSION: u32 = 198;
+// 198 -> 199: a Crazy Ivan bomb: the carrier keeps its bomb (planter, house,
+// fuse, who sees it); the carrier index is rebuilt on load. A 198 save has
+// no bombs.
+const SNAPSHOT_VERSION: u32 = 199;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1308,6 +1311,19 @@ fn restore_object_references(
             )?;
         }
 
+        // A bomb's planter (`BombClass+0x24`) is a pointer its expiry nulls
+        // (`BombListClass::PointerGotInvalid @ 0x00439150`).
+        if let Some(planter) = entity.bomb.and_then(|bomb| bomb.planter()) {
+            require_resolved_reference(
+                entity_ids.contains(&planter),
+                "EntityStore",
+                entity_id,
+                "bomb.planter",
+                "EntityStore",
+                planter,
+            )?;
+        }
+
         if let Some(TargetKind::Entity(target_id)) =
             entity.attack_target.as_ref().map(|target| target.target)
         {
@@ -1917,6 +1933,7 @@ impl Simulation {
         }
         self.rebuild_logic_membership();
         self.rebuild_building_anim_slot_indices();
+        self.rebuild_bomb_carriers();
         self.substrate
             .occupancy
             .restore_memberships(&self.substrate.entities)
@@ -3516,7 +3533,7 @@ mod tests {
         // 195 -> 196: mind-control nodes, overload state and victim links.
         // 196 -> 197: TemporalClass links and the warped object's chain head.
         // 197 -> 198: the house defeat counts.
-        assert_eq!(super::SNAPSHOT_VERSION, 198);
+        assert_eq!(super::SNAPSHOT_VERSION, 199);
     }
 
     #[test]

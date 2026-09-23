@@ -824,6 +824,10 @@ pub struct GameEntity {
     /// TemporalTargetingMe), written only by `temporal`.
     #[serde(default)]
     pub temporal: crate::sim::temporal::TemporalState,
+    /// The Crazy Ivan bomb it carries (`ObjectClass+0x38` and its
+    /// `BombClass`), written only by `bomb`.
+    #[serde(default)]
+    pub bomb: Option<crate::sim::bomb::Bomb>,
     /// Psychedelic/chaos runtime, separate from reversible mind control.
     #[serde(default)]
     pub berserk: BerserkState,
@@ -1448,6 +1452,7 @@ impl GameEntity {
             invulnerability: None,
             mind_control: Default::default(),
             temporal: Default::default(),
+            bomb: None,
             berserk: BerserkState::default(),
             drive_locomotion: None,
             ship_locomotion: None,

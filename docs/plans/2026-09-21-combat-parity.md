@@ -41,18 +41,20 @@ the SpawnManager slot guard as #448 (`35149218`), the Scenario-stream death draw
 (`280a9243`), crew survival (building SpawnSurvivors, vehicle crew) as #450 (`bf55a511`), the
 death anims (building DestructionEffects, Unit Death_Explosion with the ship-sinking gate, the
 Aircraft arm) as #451 (`1aa3041b`), mind control (CaptureManagerClass) as #457 (`32fc312b`), the
-Chrono Legionnaire's erase (TemporalClass) as #474 (`80f4494a`). The house defeat (tracking
-counts, the gate, Blowup_All) is on `feature/combat-house-defeat`. A production
+Chrono Legionnaire's erase (TemporalClass) as #474 (`80f4494a`), the house defeat (tracking
+counts, the gate, Blowup_All) as #476 (`3783b0ee`). The Crazy Ivan bomb (BombClass, its clock,
+sounds, cursors and clicks) is on `feature/combat-ivan-bomb`. A production
 sortie showed the Carrier wing never attacks: every manager pass re-issues each Hornet's attack
 from sub-state 0 (`assign_child_attack`), so the aircraft attack run never completes and the wing
-never lands. Next, by player visibility: the Crazy Ivan bomb (BombClass; reading lane and a
-70-case native oracle ready), the Slave Miner's slave release at its death (`6B0AE0`), the other
-special warhead bodies (Magnetron and the rest), the table-based native trig that replaces host
-`sin`/`cos`/`atan` in homing, flak and shrapnel paths (research lane done: gamemd reads float32
-tables, so exact portable results are possible), the ship sink, that wing cycle together with the
-aircraft attack loop (Mission_Attack 5..9, GetFireError), the Foot Enter_Idle_Mode leaves (Infantry
-`51CBA0`, Unit `738970`, with the Mission_AreaGuard post and leash `4D6AA0` they need), open-topped
-passenger fire (a Chrono Legionnaire or Yuri in a Battle Fortress), the survivor flag `+6D9`, and
+never lands. Next, by player visibility: the Slave Miner's slave release at its death (`6B0AE0`),
+the other special warhead bodies (Magnetron and the rest), the table-based native trig that
+replaces host `sin`/`cos`/`atan` in homing, flak and shrapnel paths (research lane done: gamemd
+reads float32 tables, so exact portable results are possible), the ship sink, that wing cycle
+together with the aircraft attack loop (Mission_Attack 5..9, GetFireError), the Foot
+Enter_Idle_Mode leaves (Infantry `51CBA0`, Unit `738970`, with the Mission_AreaGuard post and
+leash `4D6AA0` they need), open-topped passenger fire (a Chrono Legionnaire or Yuri in a Battle
+Fortress), the survivor flag `+6D9`, the death weapon as a real bullet (`Fire_Death_Weapon
+70D690`: DetonateAtCoord's tail and its Inviso scatter draw on every Inviso death weapon), and
 constructing each death object at its native call.
 
 ## Landed mechanisms
@@ -570,6 +572,82 @@ House defeat (`feature/combat-house-defeat`, snapshot 198, hash feature 198), ow
   consumer, the missing on-map/ChangeOwner/discard tests, a plate overclaim, a stale scatter
   label, the T2-28 trigger, the draw claim's evidence level.
 
+Crazy Ivan bomb (`feature/combat-ivan-bomb`, snapshot 199, hash feature 199), owner
+`sim/bomb.rs` (`BombList` on `Simulation`; each record on its carrier's `GameEntity::bomb`):
+- Before: the IvanBomber shot was 400 plain damage at its target; there was no bomb, fuse, clock,
+  sound, disarm or cursor, and none of the rules keys were read.
+- Plant: DetonateAtCoord's IvanBomb arm (`469343`, both deliveries; the stock weapons are Inviso)
+  calls `BombListClass::Attach 438E70`: an Infantry firer and a Techno target without a bomb, with
+  no alliance, Bombable, building or health test. It stores the planter, the planter's house and
+  the fuse `end = frame + IvanTimedDelay` (a 32-bit add), sets the countdown to 1 and plays
+  BombAttachSound for the planter's player. The shot deals no damage.
+- Fuse and blast: the carrier's AI_Update (`6FA6F5`, between passive acquire and the Slave and
+  Capture managers) sets the bomb off out of limbo once `Frame > end`: IvanTimedDelay + 1 frames
+  after the attach. Detonate (`438720`): the record goes first; a carrier in limbo is silent;
+  otherwise Apply_area_damage at the Location for IvanDamage with IvanWarhead, the planter as
+  source (none once it expired) and no source house, then the warhead's anim, then a
+  BridgeRepairHut carrier's bridge (the shared C4 hut dispatch). The carrier's death sets it off
+  after its death weapon (`702672`), and a dying Crazy Ivan's Explodes death weapon bombs himself.
+- Removal: Defuse (`4389B0`) on an Engineer's BombDisarm hit, UnInit (sold, crushed, erased), a
+  building changing hands unless CanBeOccupied, and the destructor; the planter's expiry nulls the
+  source (`439150`, on every pointer-expiry path). GetFireError refuses BombDisarm at an unbombed
+  target and IvanBomb at a bombed one (`6FCB8D`, `6FCBAD`). A human player's Engineer never picks
+  its own target (CanAcquireTarget `70924D`), so it defuses only when ordered; a computer's
+  defuses a bomb beside it unordered.
+- Who sees it: UpdateAll (`438BF0`, after ore growth and before Teams and the object vector)
+  refreshes BombVisible every 46th call and on the second call after an attach: the planter's
+  house, or any house with a BombSight object on the map (the Unlimbo/Limbo detector list) within
+  `BombSight << 8` (Sqrt_Approx and ftol, which for a BombSight of 1 to 63 equals `d² < range²`;
+  VERA compares in integers). Each bomb keeps the answer for every house (`seen_by`: saved like
+  `+0x68`, not hashed); a load restarts the countdown at 45 (`439110`) and rebuilds the carrier
+  index from the carried records, which debug builds check at every refresh.
+- Presentation: DrawExtras (`6F519B`) draws BOMBCURS.SHP in the mouse palette (convert
+  `[87F6C8]` from MOUSEPAL.PAL), frame GetClockFrame, centered on the render point (vt+0xAC: a
+  building's art anchor, `459EF0`), over a seen, unshrouded carrier that is drawn (not in limbo or
+  a transport), before the veterancy chevrons. BombTickingSound loops at the carrier for every
+  player while it is out of limbo, under its own loop handle. Cursors: an Ivan offers IvanBomb
+  (row 38, a still frame; the atlas animated it) on a target without a bomb, enemy or friendly
+  (AttackCursorOnFriendlies), and falls back to Select over a bombed one (GetFireError), or
+  NoIvanBomb (row 19) under force-fire; an Engineer offers DisarmBomb (row 59) over any bombed
+  object its player sees, force-fire or not (`51E462`); a lone selected object over itself keeps
+  its self action. Clicks: DisarmBomb and a friendly IvanBomb are Attack orders (`51F190`,
+  `4D74E0`; ForceAttack past VERA's alliance gate, which native's event does not have). Each
+  selected object takes its own action (`4AE844`): over an enemy the Engineers defuse and the rest
+  attack; over a friend the click orders only when the object owning the cursor is one of the
+  Engineers or Ivans. An Ivan never attacks what it cannot bomb. Before this, an Ivan could not
+  bomb a friend by clicking it, nor an Engineer defuse one.
+- Native execution: `bomb_class.py` runs Attach, IsTimerExpired, GetClockFrame, Detonate, Defuse,
+  UpdateAll (with IsHumanPlayer, Sqrt_Approx and ftol), the AI_Update fuse check, the two
+  DetonateAtCoord arms and the GetFireError gates over 97 cases. `native_bomb_corpus` compares 49
+  state-machine rows (death-bomb, spent and carrier-less records have no VERA state; the arm rows
+  reduce to Attach's and Defuse's gates), `native_update_all_corpus` 22 UpdateAll rows (countdown,
+  BombVisible, loop coordinate; the purge and campaign rows excluded) and
+  `bomb_fire_error_gates_match_native` the 5 gate rows. Parity demonstrated within those inputs.
+  Reading only: the call sites, the tick slot, the draw, the cursors and clicks.
+- Tests: the corpora (with Attach's countdown); a production plant going off at start + 451 for
+  450; the blast centered on an off-center carrier's Location, credited to the planter's house; a
+  chain (a blast killing a second carrier sets its bomb off); a dying Ivan (one 450 blast, his
+  house credited) and a bombed one (one blast, the planter credited); a bombed bridge hut dropping
+  its bridge by fuse and by death, not by death alone; the fuse held in limbo; the planter's death;
+  removal and capture; an Engineer's defuse, and only a computer's unordered; a snapshot keeping
+  the bomb and BombVisible and restarting the countdown; the refresh cadence through real frames
+  and its absence from the hash; the loop's owner key and its limbo stop; the cursor and click
+  decisions, force-fire, self and mixed selections.
+- Residuals (module docs): the death bomb (kind 1: no native writer); the DETONATE action (off in
+  stock); campaign visibility (a PlayerControl house, `0050B6F0`); the CaptureManager's slot (VERA
+  runs it before the mission step, passive acquire and the fuse; a bombed Yuri or Mastermind's
+  draws come in a different order); the death weapon's Inviso scatter draw (death-weapon owner,
+  queued above); the hut's low/high choice belongs to the shared hut dispatcher (its fallback
+  search is residual GSI-04.14); no render capture of the clock yet (palette and anchor rest on
+  reading).
+- Critic (one pass): one blocker, five should-fix, three minor; all fixed but the clock's render
+  capture. The blocker: a human player's Engineer acquired bombed enemies on its own and defused
+  its side's bombs (CanAcquireTarget's Engineer term). Should-fix: the fuse ran before the mission
+  step and passive acquire; the clock showed over carriers in limbo; building clocks sat below the
+  art anchor; mixed selections, force-fire and self clicks disagreed with native's per-object
+  dispatch; the test gaps above. Minor: the planter kept on the cloak path, x87 emulation where
+  integers are exact, no check on the carrier index.
+
 ## Native evidence inventory
 
 Run `python -m tools.spatial_oracle.<stem> --check` (`flat_art`: `tools/projectile_oracle`).
@@ -611,6 +689,7 @@ Sidecars record binary identity; landing-era SHA-256 `1cdd1180e49024fbda8ad568ca
 | house_tracking | `4FF700`, `4FF550` | 36 | virtuals, counter increments, owned-type sets recorded |
 | house_defeat_gate | `4F8E86..4F8F82` with the CounterClass readers | 21 | Blowup_All, MPlayer_Defeated stubbed |
 | house_blowup_all | `4FC6D0` with `70F820`, `4722F0`, `472330` | 10 | ReceiveDamage, `71AD40`, side lookup stubbed |
+| bomb_class | `438E70`, `438A70`, `438A00`, `438720`, `4389B0`, `438BF0` (with `50B6F0`, Sqrt_Approx, ftol); `6FA6F5`; arms `469343`/`4699C4`; `6FCB8D` | 97 | sounds, anim, damage, bridge calls, virtuals recorded |
 
 Also `tools/infantry_scatter_oracle`, `tools/mcv_deploy_oracle`. Pre-branch main harnesses (review): techno_target_scan 171,
 vhp_scan 498, distributed_fire 151, foot_attack_move 638, estimated_damage 1066, object_health 718, cell_entry_crush_tail 68.
@@ -687,6 +766,16 @@ All saved and read back; no byte or prototype edits. One boundary repair (below,
   and `5025F0` Removed_From_Game (the DontScore asymmetry, `+6D9`), `4FC6D0` Blowup_All (replacing
   the UNVERIFIED survival note), `4FC0B0` MPlayer_Defeated, `4722F0`; comments on the gate
   `4F8E86`, `4F8EC6`, `4F8F21`, `4F8F7B`.
+- Crazy Ivan bomb: renamed `438E70` BombListClass__Attach and `438BF0` __UpdateAll (were
+  BombClass__), `438A00` BombClass__GetClockFrame (was IvanBomb__), and the FUN_ `439080`
+  __AddDetector, `4390D0` __RemoveDetector, `439110` __Clear, `439150` __PointerGotInvalid,
+  `4389F0` BombClass__GetType, `51F190` InfantryClass__ClickedAction_Object; plates on those and
+  `438720` Detonate, `4389B0` Defuse, `438A70` IsTimerExpired (the old Attach and Detonate plates
+  called it a C4/demo-truck mechanism with the wrong fields); comments `6F519B` (the clock),
+  `51E462` (DisarmBomb), `51EB24` (IvanBomb), `700542` (the GetFireError gate), `438EA3` (Attach's
+  bombed-target gate), `438FCA` (the countdown). Created `5224D0` InfantryClass__IsEngineer (the
+  vt+0x330 slot; every other class returns false) and replaced the CanAcquireTarget `7091D0` plate,
+  whose Engineer term was UNCHECKED (comment `70924D`).
 - Comments, other: `4143EB`, `65E6BE`, `692766`, `41CD6E`, `4CDBE1`, `4CDC37`, `4CDCFB`, `566332`,
   `6EA089`, `6EC300`, `6E53A0`, `726C9C`, `71F4E0`, `55AFB0`, `481670`, `518C56`, `51D200`,
   `51D212`, Teleport `718080`, Foot `4DDC60` (EOL; no function), Foot `4DB800`

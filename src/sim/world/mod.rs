@@ -1127,6 +1127,11 @@ pub struct Simulation {
     /// post-combat step; foot units take periodic damage from their cell.
     #[serde(default)]
     pub radiation: crate::sim::radiation::RadiationState,
+    /// `BombListClass`: the carriers of live Crazy Ivan bombs (each record
+    /// sits on its carrier) and the BombVisible countdown, owned by `bomb`.
+    /// Not saved: a load clears it and rebuilds the carriers.
+    #[serde(skip)]
+    pub(crate) bombs: crate::sim::bomb::BombList,
     /// The map's isometric playfield diamond ([Map] Size width + the raw
     /// LocalSize rect), set at map init. Threaded into the cell-rect occupancy
     /// validator's final playfield-corner test (the engine diamond, not a
@@ -2914,6 +2919,7 @@ impl Simulation {
             scenario_normal_lighting: default_scenario_normal_lighting(),
             smudge_grid: None,
             radiation: crate::sim::radiation::RadiationState::default(),
+            bombs: crate::sim::bomb::BombList::default(),
             playfield_bounds: None,
             playfield_size_height: None,
             playfield_revision: 0,
@@ -3195,6 +3201,9 @@ impl Simulation {
         &self,
         id: crate::sim::anim_class::AnimId,
     ) -> Option<crate::sim::anim_class::AnimWorldCoord> {
+        if let Some(carrier) = crate::sim::bomb::ticking_sound_carrier(id) {
+            return self.bomb_ticking_coord(carrier);
+        }
         if let Some(coord) = self.anim_absolute_coord(id) {
             return Some(coord);
         }
@@ -4308,6 +4317,19 @@ impl Simulation {
         };
         if old_owner == new_owner {
             return;
+        }
+        // `BuildingClass::ChangeOwner` first (`0x00448277..0x0044828E`): a
+        // building changing hands loses its bomb unless it is
+        // `CanBeOccupied=`. A rules-less transfer (tests only) cannot read
+        // the type and keeps it.
+        if category == EntityCategory::Structure
+            && let Some(rules) = rules
+            && let Some(entity) = self.substrate.entities.get(stable_id)
+            && !rules
+                .object(self.interner.resolve(entity.type_ref()))
+                .is_some_and(|object| object.can_be_occupied)
+        {
+            self.bomb_defuse(stable_id);
         }
         if category == EntityCategory::Structure {
             //448260: gap removal precedes ordinary sight release and owner
@@ -5999,6 +6021,8 @@ impl Simulation {
         if let Some(rules) = rules {
             self.tick_scenario_lighting_transition(rules);
             self.tick_ore_growth_rungs(rules, overlay_registry);
+            // `BombListClass::UpdateAll` follows growth and spread (0x0055B4E1).
+            self.bomb_list_update(rules);
             if self.session.game_options.super_weapons {
                 crate::sim::superweapon::tick_active_superweapon_effects(
                     self,

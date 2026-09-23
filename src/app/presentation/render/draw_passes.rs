@@ -496,6 +496,22 @@ pub(super) fn dispatch_draw_passes(
         building_status_tex,
         "status_building",
     );
+    // The Crazy Ivan bomb clock, drawn before the veterancy chevrons that
+    // share the occupant pass, as `DrawExtras` orders them.
+    let bomb_clock_tex = state
+        .match_state
+        .match_presentation
+        .selection_overlay
+        .as_ref()
+        .and_then(|o| o.bomb_clock())
+        .map(|clock| clock.texture());
+    draw_pooled_no_depth(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        bomb_clock_tex,
+        "bomb_clocks",
+    );
     // Occupant pips for garrisoned buildings (pips.shp frames 6-12).
     let occupant_pip_tex = state
         .match_state

@@ -337,13 +337,8 @@ const CURSOR_DEFS: &[(CursorId, usize, usize, u64, CursorHotspot)] = &[
         ANIM_INTERVAL_MS,
         CursorHotspot::CenterMiddle,
     ),
-    (
-        CursorId::IvanBomb,
-        204,
-        5,
-        ANIM_INTERVAL_MS,
-        CursorHotspot::CenterMiddle,
-    ),
+    // Row 38 (`0x0082D450`): start 204, count 5, rate 0 — a still frame.
+    (CursorId::IvanBomb, 204, 5, 0, CursorHotspot::CenterMiddle),
     (
         CursorId::Detonate,
         299,

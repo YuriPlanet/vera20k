@@ -104,6 +104,110 @@ pub struct SelectionOverlay {
     tiberium_pip_frame_w: u32,
     tiberium_pip_frame_h: u32,
     tiberium_pip_canvas_adj: (f32, f32),
+    /// BOMBCURS.SHP, the Crazy Ivan bomb clock.
+    bomb_clock: Option<CenteredShapeStrip>,
+}
+
+/// Every frame of one SHP packed side by side at its stored size, each with
+/// the offset `CC_Draw_Shape @ 0x004AED70` gives a centered draw (flag
+/// `0x200`): back by the integer canvas half, then on by the stored frame
+/// origin.
+pub struct CenteredShapeStrip {
+    texture: BatchTexture,
+    atlas_w: f32,
+    atlas_h: f32,
+    frames: Vec<CenteredShapeFrame>,
+}
+
+struct CenteredShapeFrame {
+    x: u32,
+    w: u32,
+    h: u32,
+    offset: (i32, i32),
+}
+
+impl CenteredShapeStrip {
+    pub fn texture(&self) -> &BatchTexture {
+        &self.texture
+    }
+
+    /// `frame` drawn centered on `point`; `None` for a frame the file lacks
+    /// or one without pixels.
+    pub fn instance(&self, frame: usize, point: (f32, f32), depth: f32) -> Option<SpriteInstance> {
+        let f = self.frames.get(frame).filter(|f| f.w > 0 && f.h > 0)?;
+        Some(SpriteInstance {
+            position: [point.0 + f.offset.0 as f32, point.1 + f.offset.1 as f32],
+            size: [f.w as f32, f.h as f32],
+            uv_origin: [f.x as f32 / self.atlas_w, 0.0],
+            uv_size: [f.w as f32 / self.atlas_w, f.h as f32 / self.atlas_h],
+            depth,
+            tint: [1.0, 1.0, 1.0],
+            alpha: 1.0,
+            ..Default::default()
+        })
+    }
+}
+
+/// Decode `shp_name` in `pal_name` into a [`CenteredShapeStrip`].
+fn load_centered_shape_strip(
+    gpu: &GpuContext,
+    batch: &BatchRenderer,
+    assets: &AssetManager,
+    shp_name: &str,
+    pal_name: &str,
+) -> Option<CenteredShapeStrip> {
+    let shp = ShpFile::from_bytes(&assets.get(shp_name)?).ok()?;
+    let palette = Palette::from_bytes(&assets.get(pal_name)?).ok()?;
+    let atlas_w: u32 = shp
+        .frames
+        .iter()
+        .map(|f| u32::from(f.frame_width))
+        .sum::<u32>()
+        .max(1);
+    let atlas_h: u32 = shp
+        .frames
+        .iter()
+        .map(|f| u32::from(f.frame_height))
+        .max()
+        .unwrap_or(0)
+        .max(1);
+    let mut rgba = vec![0u8; (atlas_w * atlas_h * 4) as usize];
+    let mut frames = Vec::with_capacity(shp.frames.len());
+    let mut x = 0;
+    for frame in &shp.frames {
+        let (w, h) = (u32::from(frame.frame_width), u32::from(frame.frame_height));
+        for py in 0..h {
+            for px in 0..w {
+                let index = frame.pixels[(py * w + px) as usize];
+                if index == 0 {
+                    continue;
+                }
+                let color = palette.colors[index as usize];
+                let dst = ((py * atlas_w + x + px) * 4) as usize;
+                rgba[dst..dst + 4].copy_from_slice(&[color.r, color.g, color.b, 255]);
+            }
+        }
+        frames.push(CenteredShapeFrame {
+            x,
+            w,
+            h,
+            offset: (
+                i32::from(frame.frame_x) - i32::from(shp.width / 2),
+                i32::from(frame.frame_y) - i32::from(shp.height / 2),
+            ),
+        });
+        x += w;
+    }
+    log::info!(
+        "{shp_name} strip in {pal_name}: {atlas_w}x{atlas_h}, {} frames",
+        frames.len()
+    );
+    Some(CenteredShapeStrip {
+        texture: batch.create_texture(gpu, &rgba, atlas_w, atlas_h),
+        atlas_w: atlas_w as f32,
+        atlas_h: atlas_h as f32,
+        frames,
+    })
 }
 
 impl SelectionOverlay {
@@ -196,6 +300,13 @@ impl SelectionOverlay {
             tib_adj_y,
         ) = load_tiberium_pip_atlas(gpu, batch, assets).unwrap_or((None, 0, 0, 0.0, 0.0));
 
+        // `Rules+0xFE0`, BOMBCURS.SHP by name (0x0066C5F4), drawn through the
+        // convert `[0x0087F6C8]` that Init_Game builds from MOUSEPAL.PAL
+        // (0x0052C13D..0x0052C1DD).
+        let bomb_clock = assets.and_then(|assets| {
+            load_centered_shape_strip(gpu, batch, assets, "bombcurs.shp", "mousepal.pal")
+        });
+
         Self {
             drag_texture,
             preview_valid_texture,
@@ -228,7 +339,13 @@ impl SelectionOverlay {
             tiberium_pip_frame_w,
             tiberium_pip_frame_h,
             tiberium_pip_canvas_adj: (tib_adj_x, tib_adj_y),
+            bomb_clock,
         }
+    }
+
+    /// The Crazy Ivan bomb clock art (BOMBCURS.SHP), when the assets have it.
+    pub fn bomb_clock(&self) -> Option<&CenteredShapeStrip> {
+        self.bomb_clock.as_ref()
     }
 
     /// Build sprite instances for the selection drag rectangle outline.

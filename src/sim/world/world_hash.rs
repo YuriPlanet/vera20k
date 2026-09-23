@@ -2200,6 +2200,13 @@ impl Simulation {
                 0x274_u32.hash(hasher);
                 entity.temporal.hash(hasher);
             }
+            // A carried bomb (+38); an unbombed object folds nothing.
+            if schema.includes(HashFeature::IvanBomb)
+                && let Some(bomb) = &entity.bomb
+            {
+                0x38_u32.hash(hasher);
+                bomb.hash(hasher);
+            }
             // Homing missile flight state. `HomingState` has a manual `Hash`
             // impl that excludes the render-only `pitch: f32` field — see
             // sim::movement::homing_movement.

@@ -185,6 +185,12 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     // `Primary=`/`Secondary=` is the wrong test for a `TurretCount>0` type —
     // it hid the force-fire cursor for the Prism Tank and the Gattling Cannon.
     if modifier == crate::app::input::context_order::OrderModifier::ForceFire {
+        if let Some(kind) = hover
+            .as_ref()
+            .and_then(|hover| forced_bomb_feedback(sim, &selected, best_id, hover, state.rules()))
+        {
+            return Some(kind);
+        }
         let best_is_armed = best_id.is_some_and(|id| {
             sim.entities().get(id).is_some_and(|e| {
                 let type_str = sim.interner.resolve(e.type_ref());
@@ -499,7 +505,15 @@ fn capability_cursor_for_hover(
     }
 
     // The caller already resolved the single object whose action drives the
-    // cursor for the whole selection, matching gamemd's DetermineAction.
+    // cursor for the whole selection, matching gamemd's DetermineAction. A
+    // single selected object over itself takes the self action (4,
+    // `TechnoClass::What_Action_OnObject`), never IvanBomb.
+    let single_self = selected.len() == 1 && selected[0] == hover.stable_id;
+    let best_is_ivan = !single_self
+        && best_id
+            .and_then(|id| sim.entities().get(id))
+            .and_then(|e| rules.and_then(|r| r.object(sim.interner.resolve(e.type_ref()))))
+            .is_some_and(|obj| obj.ivan);
     if let Some(best_id) = best_id {
         if let (Some(sel_entity), Some(sel_obj)) = (
             sim.entities().get(best_id),
@@ -507,6 +521,18 @@ fn capability_cursor_for_hover(
                 .get(best_id)
                 .and_then(|e| rules.and_then(|r| r.object(sim.interner.resolve(e.type_ref())))),
         ) {
+            // `InfantryClass::What_Action_OnObject @ 0x0051E3B0`, right after
+            // the base action (0x0051E462..0x0051E49B): an Engineer of the
+            // local player over any object carrying a bomb that player sees
+            // (`+0x38`, `+0x68`) — own, allied or enemy — offers DisarmBomb.
+            if sel_entity.category == EntityCategory::Infantry
+                && sel_obj.engineer
+                && hovered_entity.is_some_and(|e| e.bomb.is_some())
+                && sim.bomb_seen_by(hover.stable_id, sel_entity.owner())
+            {
+                return CursorFeedbackKind::DisarmBomb;
+            }
+
             // 2. C4 plant: SEAL / Tanya / Psi-Corp Trooper hovering an enemy
             //    structure with CanC4=yes, not InvisibleInGame, not iron-curtained.
             //    SabotageCursor flag remains in the data model (parsed in
@@ -586,29 +612,33 @@ fn capability_cursor_for_hover(
             }
 
             // 7. AttackCursorOnFriendlies — treat friendly targets as attack targets.
-            if sel_obj.attack_cursor_on_friendlies {
-                if matches!(
+            //    Not over the lone selected object itself, which takes its self
+            //    action first.
+            if sel_obj.attack_cursor_on_friendlies
+                && !single_self
+                && matches!(
                     hover.kind,
                     HoverTargetKind::FriendlyUnit | HoverTargetKind::FriendlyStructure
-                ) {
-                    let in_range = resolved_unit_in_range(
-                        sim,
-                        best_id,
-                        hover.stable_id,
-                        rules,
-                        sim.resolved_terrain.as_ref(),
-                        overlay_registry,
-                    );
-                    return if in_range {
-                        if hover.kind == HoverTargetKind::FriendlyUnit {
-                            CursorFeedbackKind::EnemyUnit
-                        } else {
-                            CursorFeedbackKind::EnemyStructure
-                        }
+                )
+            {
+                let in_range = resolved_unit_in_range(
+                    sim,
+                    best_id,
+                    hover.stable_id,
+                    rules,
+                    sim.resolved_terrain.as_ref(),
+                    overlay_registry,
+                );
+                let kind = if in_range {
+                    if hover.kind == HoverTargetKind::FriendlyUnit {
+                        CursorFeedbackKind::EnemyUnit
                     } else {
-                        CursorFeedbackKind::EnemyOutOfRange
-                    };
-                }
+                        CursorFeedbackKind::EnemyStructure
+                    }
+                } else {
+                    CursorFeedbackKind::EnemyOutOfRange
+                };
+                return ivan_attack_feedback(kind, best_is_ivan, hovered_entity, hovered_obj);
             }
 
             // 8. Harvester docking — selected miner hovering own/ally refinery.
@@ -665,7 +695,7 @@ fn capability_cursor_for_hover(
                     overlay_registry,
                 )
             });
-            if in_range {
+            let kind = if in_range {
                 if hover.kind == HoverTargetKind::EnemyUnit {
                     CursorFeedbackKind::EnemyUnit
                 } else {
@@ -673,10 +703,95 @@ fn capability_cursor_for_hover(
                 }
             } else {
                 CursorFeedbackKind::EnemyOutOfRange
-            }
+            };
+            ivan_attack_feedback(kind, best_is_ivan, hovered_entity, hovered_obj)
         }
         HoverTargetKind::HiddenEnemy => CursorFeedbackKind::Invalid,
     }
+}
+
+/// `InfantryClass::What_Action_OnObject` (`0x0051EB24..0x0051EB7E`) for a
+/// Crazy Ivan (`Ivan=`) whose action is Attack: IvanBomb on a `Bombable=`
+/// target without a bomb, NoIvanBomb (NoMove's cursor row) on any other.
+/// A target that already carries one only reaches it by force-fire: the base
+/// action is Attack only while `GetFireError` (vtable `+0x3C0`, 0x00700542)
+/// allows the shot, and the IvanBomb gate (0x006FCBAD) refuses it, so the
+/// action falls back to Select (`TechnoClass::What_Action_OnObject`,
+/// 0x0070056C).
+fn ivan_attack_feedback(
+    kind: CursorFeedbackKind,
+    selector_is_ivan: bool,
+    target: Option<&crate::sim::game_entity::GameEntity>,
+    target_obj: Option<&crate::rules::object_type::ObjectType>,
+) -> CursorFeedbackKind {
+    let attack = matches!(
+        kind,
+        CursorFeedbackKind::EnemyUnit
+            | CursorFeedbackKind::EnemyStructure
+            | CursorFeedbackKind::EnemyOutOfRange
+    );
+    if !selector_is_ivan || !attack {
+        return kind;
+    }
+    ivan_bomb_action(target, target_obj, false)
+}
+
+/// The Crazy Ivan's action over an object (`0x0051EB24`): IvanBomb on a
+/// `Bombable=` target without a bomb, NoIvanBomb (NoMove's row) otherwise —
+/// except that without force-fire a bombed target never gets an Attack base
+/// action (its `GetFireError` refuses it), so it reads Select instead.
+fn ivan_bomb_action(
+    target: Option<&crate::sim::game_entity::GameEntity>,
+    target_obj: Option<&crate::rules::object_type::ObjectType>,
+    forced: bool,
+) -> CursorFeedbackKind {
+    if target.is_some_and(|target| target.bomb.is_some()) {
+        if forced {
+            CursorFeedbackKind::Invalid
+        } else {
+            CursorFeedbackKind::FriendlyUnit
+        }
+    } else if target_obj.is_some_and(|obj| obj.bombable) {
+        CursorFeedbackKind::IvanBomb
+    } else {
+        CursorFeedbackKind::Invalid
+    }
+}
+
+/// The bomb actions under force-fire. `InfantryClass::What_Action_OnObject`
+/// checks DisarmBomb right after the base action (`0x0051E462`; only the
+/// ToggleSelect return precedes it), so it wins over the forced Attack; a
+/// Crazy Ivan's forced Attack becomes IvanBomb or NoIvanBomb (`0x0051EB24`).
+/// A single selected object over itself keeps its self action.
+fn forced_bomb_feedback(
+    sim: &crate::sim::world::Simulation,
+    selected: &[u64],
+    best_id: Option<u64>,
+    hover: &crate::app::input::entity_pick::HoverTargetKindWithId,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+) -> Option<CursorFeedbackKind> {
+    use crate::map::entities::EntityCategory;
+    let rules = rules?;
+    let best = best_id.and_then(|id| sim.entities().get(id))?;
+    let best_obj = rules.object(sim.interner.resolve(best.type_ref()))?;
+    let target = sim.entities().get(hover.stable_id)?;
+    if best.category == EntityCategory::Infantry
+        && best_obj.engineer
+        && target.bomb.is_some()
+        && sim.bomb_seen_by(hover.stable_id, best.owner())
+    {
+        return Some(CursorFeedbackKind::DisarmBomb);
+    }
+    if selected.len() == 1 && selected[0] == hover.stable_id {
+        return None;
+    }
+    best_obj.ivan.then(|| {
+        ivan_bomb_action(
+            Some(target),
+            rules.object(sim.interner.resolve(target.type_ref())),
+            true,
+        )
+    })
 }
 
 /// Does the object that owns the cursor have a weapon that reaches the target?
@@ -778,7 +893,7 @@ fn resolved_unit_in_range(
 /// gamemd's resolver takes a cell *or* an object: with a cell it measures to the
 /// cell centre at ground level, with an object to that object's own world point.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ActionDistanceTarget {
+pub(crate) enum ActionDistanceTarget {
     /// Cell centre, in cell coordinates.
     CellCentre(u16, u16),
     /// A specific object's world point.
@@ -835,7 +950,7 @@ fn isqrt_u64(value: u64) -> u64 {
 /// away, while an equal score replaces only on a strictly smaller distance.
 /// Distance is 3-D Euclidean in leptons — to the cell centre when a cell was
 /// supplied, otherwise to the target object's own world point.
-fn select_best_for_action(
+pub(crate) fn select_best_for_action(
     sim: &crate::sim::world::Simulation,
     selected: &[u64],
     target: ActionDistanceTarget,
@@ -946,6 +1061,11 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         CursorFeedbackKind::Enter => Some(CursorId::Enter),
         CursorFeedbackKind::EngineerRepair => Some(CursorId::EngineerRepair),
         CursorFeedbackKind::Demolish => Some(CursorId::Demolish),
+        // `DisplayClass::SetCursorFromAction @ 0x004AAE90`: action 0x35 ->
+        // row 0x26, action 0x39 -> row 0x3B (action 0x36 NoIvanBomb shares
+        // NoMove's row 0x13, so it is `Invalid`).
+        CursorFeedbackKind::IvanBomb => Some(CursorId::IvanBomb),
+        CursorFeedbackKind::DisarmBomb => Some(CursorId::Disarm),
         CursorFeedbackKind::Deploy => Some(CursorId::Deploy),
         CursorFeedbackKind::RepairMode(valid) => Some(if valid {
             CursorId::Repair
@@ -1800,6 +1920,157 @@ mod tests {
             best,
             Some(far),
             "sub-cell position decides the tie, not the cell index",
+        );
+    }
+
+    /// Stock Crazy Ivan, Engineer and a heavy tank, with their weapons.
+    fn bomb_cursor_rules() -> RuleSet {
+        RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n\
+             0=IVAN\n\
+             1=ENGINEER\n\
+             [VehicleTypes]\n\
+             0=HTNK\n\
+             [Warheads]\n\
+             0=IvanBomb\n\
+             1=BombDisarm\n\
+             2=AP\n\
+             [CombatDamage]\n\
+             IvanTimedDelay=450\n\
+             [IVAN]\n\
+             Strength=125\n\
+             Primary=IvanBomber\n\
+             Ivan=yes\n\
+             AttackCursorOnFriendlies=yes\n\
+             [ENGINEER]\n\
+             Strength=75\n\
+             Primary=DefuseKit\n\
+             Engineer=yes\n\
+             BombSight=4\n\
+             [HTNK]\n\
+             Strength=900\n\
+             Primary=120mm\n\
+             [IvanBomber]\n\
+             Range=1.5\n\
+             Projectile=Invisible\n\
+             Warhead=IvanBomb\n\
+             [DefuseKit]\n\
+             Range=1.5\n\
+             Projectile=InvisibleAll\n\
+             Warhead=BombDisarm\n\
+             [120mm]\n\
+             Range=5.75\n\
+             Projectile=Invisible\n\
+             Warhead=AP\n\
+             [Invisible]\n\
+             Inviso=yes\n\
+             [InvisibleAll]\n\
+             Inviso=yes\n\
+             [IvanBomb]\n\
+             IvanBomb=yes\n\
+             [BombDisarm]\n\
+             BombDisarm=yes\n\
+             [AP]\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        ))
+        .expect("bomb cursor rules")
+    }
+
+    fn bomb_hover(
+        sim: &Simulation,
+        rules: &RuleSet,
+        actor: u64,
+        kind: HoverTargetKind,
+        target: u64,
+    ) -> CursorFeedbackKind {
+        let hover = HoverTargetKindWithId {
+            kind,
+            stable_id: target,
+        };
+        capability_cursor_for_hover(sim, &[actor], Some(actor), &hover, Some(rules), None, None)
+    }
+
+    /// `InfantryClass::What_Action_OnObject`: a Crazy Ivan offers IvanBomb on
+    /// any target without a bomb — enemy or, by AttackCursorOnFriendlies, own —
+    /// and falls back to Select on one that carries a bomb; an Engineer
+    /// offers DisarmBomb on any bombed object its player sees, own or enemy,
+    /// and nothing on an unseen one.
+    #[test]
+    fn crazy_ivan_and_engineer_bomb_cursors() {
+        let rules = bomb_cursor_rules();
+        let mut sim = Simulation::new();
+        sim.resolve_type_handles(&rules);
+        let height_map: BTreeMap<(u16, u16), u8> = BTreeMap::new();
+        for house in ["Americans", "Soviets"] {
+            let id = sim.interner.intern(house);
+            sim.session.house_order.push(id);
+        }
+        let mut spawn = |kind: &str, owner: &str, rx: u16| {
+            sim.spawn_object(kind, owner, rx, 5, 0, &rules, &height_map)
+                .expect("spawned")
+        };
+        let ivan = spawn("IVAN", "Americans", 5);
+        let engineer = spawn("ENGINEER", "Americans", 7);
+        let own_tank = spawn("HTNK", "Americans", 9);
+        let enemy_tank = spawn("HTNK", "Soviets", 11);
+        let enemy_ivan = spawn("IVAN", "Soviets", 20);
+        let far_tank = spawn("HTNK", "Soviets", 22);
+
+        use HoverTargetKind::{EnemyUnit, FriendlyUnit};
+        assert_eq!(
+            bomb_hover(&sim, &rules, ivan, EnemyUnit, enemy_tank),
+            CursorFeedbackKind::IvanBomb
+        );
+        assert_eq!(
+            bomb_hover(&sim, &rules, ivan, FriendlyUnit, own_tank),
+            CursorFeedbackKind::IvanBomb,
+            "AttackCursorOnFriendlies"
+        );
+        assert_eq!(
+            bomb_hover(&sim, &rules, engineer, FriendlyUnit, own_tank),
+            CursorFeedbackKind::FriendlyUnit,
+            "no bomb, no DisarmBomb"
+        );
+
+        // The Ivan plants on the enemy tank and on the own tank; a Soviet Ivan
+        // plants on a Soviet tank nobody American stands near.
+        sim.bomb_attach(ivan, Some(enemy_tank), &rules);
+        sim.bomb_attach(ivan, Some(own_tank), &rules);
+        sim.bomb_attach(enemy_ivan, Some(far_tank), &rules);
+        sim.bomb_list_update(&rules);
+        sim.bomb_list_update(&rules);
+
+        assert_eq!(
+            bomb_hover(&sim, &rules, ivan, EnemyUnit, enemy_tank),
+            CursorFeedbackKind::FriendlyUnit,
+            "a bombed target falls back to Select"
+        );
+        assert_eq!(
+            bomb_hover(&sim, &rules, engineer, EnemyUnit, enemy_tank),
+            CursorFeedbackKind::DisarmBomb
+        );
+        assert_eq!(
+            bomb_hover(&sim, &rules, engineer, FriendlyUnit, own_tank),
+            CursorFeedbackKind::DisarmBomb,
+            "own units are defused too"
+        );
+        assert_ne!(
+            bomb_hover(&sim, &rules, engineer, EnemyUnit, far_tank),
+            CursorFeedbackKind::DisarmBomb,
+            "a bomb the player does not see"
+        );
+    }
+
+    #[test]
+    fn bomb_cursor_rows() {
+        use super::cursor_id_for_feedback;
+        assert_eq!(
+            cursor_id_for_feedback(CursorFeedbackKind::IvanBomb),
+            Some(CursorId::IvanBomb)
+        );
+        assert_eq!(
+            cursor_id_for_feedback(CursorFeedbackKind::DisarmBomb),
+            Some(CursorId::Disarm)
         );
     }
 }

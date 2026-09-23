@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original BombListClass::Attach 0x00438E70, BombClass::IsTimerExpired 0x00438A70, GetClockFrame 0x00438A00, Detonate 0x00438720, Defuse 0x004389B0, BombListClass::UpdateAll 0x00438BF0; the fuse check in TechnoClass::AI_Update 0x006FA6F5..0x006FA717, DetonateAtCoord's IvanBomb (0x00469343..0x00469375) and BombDisarm (0x004699C4..0x004699FE) arms, GetFireError's bomb gates 0x006FCB8D..0x006FCBCD",
+  "assumptions": [
+    "Rules [0x8871E0] +20C BombTickingSound, +210 BombAttachSound, +FC8 IvanWarhead, +FCC IvanDamage, +FD0 IvanTimedDelay, +FD8 IvanIconFlickerRate; frame [0xA8ED84]; GameMode [0xA8B238]; PlayerPtr [0xA83D4C]; bridge isotile base [0xABAD1C]",
+    "BombList 0x87F5D8 (+4 items, +8 capacity, +0x10 count, +0x1C detector items, +0x28 detector count, +0x30 visibility countdown); g_BombClass_Array 0x89C668; House +1EC IsHuman, +1ED PlayerControl",
+    "Bomb +0 vtable, +24 planter, +28 house, +2C carrier, +30 kind, +34 start, +38 end, +3C sound handle, +50 ticking sound, +54 sound started, +58 spent; Techno +14 abstract flags, +38 bomb, +68 visible, +80 redraw, +81 InLimbo, +9C Location, +21C Owner, +520 type (+5F8 BombSight, +16B6 BridgeRepairHut); cell +38 isotile, +44 overlay, +EC land",
+    "Warhead +157 IvanBomb, +16E BombDisarm; bullet +B0 owner, +10C target, +128 warhead"
+  ],
+  "substitutions": [
+    "Recorded at entry and returned without running: operator new 0x007C8E17 (fresh buffers), AbstractClass ctor 0x00410170, VocHandle init 0x00405BE0 / stop 0x00405FD0 / release 0x00405D40, VocClass::PlayAt 0x007509E0, AnimClass::UpdateLoopingSound 0x00750D40, a spent bomb's deleting destructor (+20), WhatAmI (+2C), owning house (+3C), GetCoords (+48, the case's location), GetTechnoType (+84) and cell (+1B8) virtuals, Apply_area_damage 0x00489280, MapClass cell lookup 0x005657A0 (fake cells), 0x0048ACE0 (the case's z adjust), SelectDamageAnimation 0x0048A4F0, the AnimClass ctor 0x00421EA0, the bridge collapses 0x00574C20 / 0x00574000; in the call-site fragments, Attach, Defuse and Detonate"
+  ],
+  "entry_points": {
+    "attach": "0x00438E70",
+    "is_timer_expired": "0x00438A70",
+    "get_clock_frame": "0x00438A00",
+    "detonate": "0x00438720",
+    "defuse": "0x004389B0",
+    "update_all": "0x00438BF0",
+    "expiry_fragment": "0x006FA6F5",
+    "ivan_arm": "0x00469343",
+    "disarm_arm": "0x004699C4",
+    "fire_error_gates": "0x006FCB8D"
+  },
+  "payload_sha256": "ddbf8293606e04d280f954258664ef8c6fe8b2ffb38b67385f1fb51c769b3548"
+}
