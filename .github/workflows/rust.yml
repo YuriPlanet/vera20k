@@ -33,6 +33,9 @@ jobs:
             experimental: true
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.experimental }}
+    # About twice the slowest normal run (a cold-cache Windows build takes
+    # ~21 min), so a hung test fails fast without false timeouts.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
