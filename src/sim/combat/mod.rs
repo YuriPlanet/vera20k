@@ -2075,7 +2075,9 @@ impl DeathEffects {
 }
 
 /// The debris block of `TechnoClass::ReceiveDamage @ 0x00701900`, wired to the
-/// dying object.
+/// dying object. Every draw is on the Scenario stream (`[0x00A8B230]+0x218`:
+/// the count at `0x007022BA..0x007022C8`, the per-piece pick at `0x0070232B`,
+/// and the VoxelAnim constructor's seven), not the death sounds' stream.
 ///
 /// The entry gate is `0x00702232`..`0x0070227B` and it is a *drop-in* gate, not
 /// a water gate. `0x0070223D MOV AL,[ESI+0x8F] / TEST AL,AL / JZ 0x00702281`
@@ -2136,7 +2138,7 @@ fn throw_debris_for_death(
     sub_y: SimFixed,
     z: u8,
     world_z_leptons: i32,
-    main_rng: &mut SimRng,
+    scenario_rng: &mut SimRng,
     voxel_debris: &mut Vec<crate::sim::voxel_anim::VoxelDebrisSpawn>,
     explosion_effects: &mut Vec<ExplosionEffect>,
 ) {
@@ -2174,7 +2176,7 @@ fn throw_debris_for_death(
         &data,
         Some(owner),
         glam::IVec3::new(world_x, world_y, world_z_leptons),
-        main_rng,
+        scenario_rng,
     ) else {
         // A launch velocity outside the verified x87 domain needs a modded
         // `[VoxelAnims]` value far past any stock one; the draws are already

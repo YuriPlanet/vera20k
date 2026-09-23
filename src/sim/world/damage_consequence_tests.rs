@@ -155,11 +155,13 @@ fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
         ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     assert!(sim.substrate.entities.get(victim).is_none());
-    // Captured from the real frame on pre-refactor 8a27b871; Rust regression,
-    // not a gamemd-derived golden. Fingerprint includes the complete debris body.
-    assert_eq!(sim.scenario_rng.state(), 13042760425816376097);
-    assert_eq!(sim.main_rng.state(), 2066545679410230777);
-    assert_eq!(debris_fingerprint(&sim, ids[0]), 14700842514585490858);
+    // Rust regression, not a gamemd-derived golden. Fingerprint includes the
+    // complete debris body. Re-captured when the debris and Explosion= draws
+    // moved to the Scenario stream (`0x007022C8`, `0x007386A7`); only the
+    // death sound stays on the main stream.
+    assert_eq!(sim.scenario_rng.state(), 3954386809370758752);
+    assert_eq!(sim.main_rng.state(), 6706932826526710953);
+    assert_eq!(debris_fingerprint(&sim, ids[0]), 14963367010939196946);
     let next_id = sim.allocate_stable_id();
     assert_eq!(next_id, spark + 1);
     sim.advance_tick(&[], Some(&rules), &BTreeMap::new(), Some(&grid), None, 100);
@@ -251,9 +253,11 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
         ["DEATHREPORT", "DESTROYREPORT", "DieA"]
     );
     assert!(sim.particle_systems().is_empty());
-    // Captured from the real Bullet AI on pre-refactor 8a27b871.
-    assert_eq!(sim.scenario_rng.state(), 3542812114296063344);
-    assert_eq!(sim.main_rng.state(), 2066545679410230777);
+    // Rust regression from the real Bullet AI, re-captured when the debris and
+    // Explosion= draws moved to the Scenario stream; only the death sound
+    // stays on the main stream.
+    assert_eq!(sim.scenario_rng.state(), 2066545679410230777);
+    assert_eq!(sim.main_rng.state(), 6706932826526710953);
     assert_eq!(debris_fingerprint(&sim, ids[0]), 8120097345519581533);
     // Retired objects remain physically resolvable until the shared drain.
     // Visiting again must not deliver another death transaction.

@@ -1075,7 +1075,7 @@ pub(crate) fn handle_death(
                     sub_y,
                     z,
                     world_z_leptons,
-                    &mut world.main_rng,
+                    &mut world.scenario_rng,
                     &mut voxel_debris,
                     &mut explosion_effects,
                 );
@@ -1388,7 +1388,11 @@ fn finish_concrete_death(
             if list.is_empty() {
                 continue;
             }
-            let index = (world.main_rng.next_u32() % list.len() as u32) as usize;
+            // `UnitClass::Death_Explosion @ 0x00738680` takes both picks on
+            // the Scenario stream (`[0x00A8B230]+0x218`: Explosion= at
+            // `0x007386A7`, DestroyAnim= at `0x0073881D`); the Aircraft arm
+            // loads the same instance at `0x0041663C`.
+            let index = (world.scenario_rng.next_u32() % list.len() as u32) as usize;
             let shp_name = world.interner.intern(&list[index]);
             effects.explosion_effects.push(ExplosionEffect {
                 shp_name,
