@@ -431,9 +431,10 @@ for those mechanisms; Team membership memo `6FF7A3`; Sonic may target allied inf
 Also queued from the parasite work: Enter_Idle_Mode Area Guard arm (Infantry `51CD3E..`, Unit
 `738B67..`; DefaultToGuardArea, GUARD_AREA ability, IQ vs Rules+1440, slave links); Inviso
 (instant) deliveries skip the special detonation arms (squid, possibly other Inviso specials);
-skip limboed attackers in the combat pass; spawn-manager slot handler lacks the native
-alive-child check (Limbo does broadcast); ToProtect response not gated on the damage result;
-debris/aircraft Explosion picks use `main_rng` where native uses Scenario.
+skip limboed attackers in the combat pass; ToProtect response not gated on the damage result.
+Done since: the spawn-manager alive-child guard (#448); the death debris and Unit/Aircraft
+Explosion=/DestroyAnim= picks now draw on the Scenario stream (`7022C8`, `70232B`, `7386A7`,
+`73881D`, `41663C`), with only the death sounds on the main stream (`feature/combat-death-rng-stream`).
 
 Whole-combat gaps (plan list plus review coverage top 10):
 - Special warheads: 10 bodies no-op (`projectile.rs:856`); Parasite ported (squid residual).
