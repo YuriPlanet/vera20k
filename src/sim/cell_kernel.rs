@@ -138,6 +138,12 @@ pub(crate) fn native_xyz_distance(dx: i32, dy: i32, dz: i32) -> i32 {
     native_distance([dz, dy, dx])
 }
 
+/// `CoordStruct::Distance3D` 0x0041C380 over a signed delta: `(x*x + y*y)
+/// + z*z` in x87, `Sqrt_Approx` 0x4CAC40 and the truncating `Math_ftol`.
+pub(crate) fn native_coord_distance(dx: i32, dy: i32, dz: i32) -> i32 {
+    native_distance([dx, dy, dz])
+}
+
 /// Shared x87 shape: squares are accumulated in the given order, each square
 /// added to the running sum before the next component.
 fn native_distance(components: impl IntoIterator<Item = i32>) -> i32 {

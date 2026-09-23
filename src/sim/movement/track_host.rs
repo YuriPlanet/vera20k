@@ -1162,7 +1162,7 @@ impl Simulation {
 
     /// Bounded Unit738970 receiver. Existing idle selectors cover ordinary
     /// human vehicles/miners; deploy/radio/AI arms remain receiver residuals.
-    fn track_enter_idle_mode(&mut self, id: u64, rules: Option<&RuleSet>) -> bool {
+    pub(super) fn track_enter_idle_mode(&mut self, id: u64, rules: Option<&RuleSet>) -> bool {
         // Foot4D82D9 -> Techno709A54 lets a held Temporal target go first.
         self.temporal_release_if_warping(id);
         let Some(entity) = self.substrate.entities.get_mut(id) else {

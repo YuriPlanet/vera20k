@@ -7,10 +7,15 @@ use crate::sim::components::DriveCoord;
 use crate::sim::movement::ground_pose;
 
 impl Simulation {
-    /// Resolve the ordinary grounded Walk Cell-click corridor before event
-    /// encoding. None leaves other actor/caller families on their existing
-    /// input adapter; it is not permission to reinterpret a decoded Move.
-    pub(crate) fn ordinary_ground_walk_cell_input(
+    /// Resolve the ordinary grounded Foot Cell-click corridor (4DE1D0) before
+    /// event encoding, for Walk infantry and Drive/Ship Units. The receiver is
+    /// class-generic: Unit differs only in +70 (0x7404B0, action 1 for these
+    /// grounded non-Teleporter movers) and What_Am_I, and reads its locomotor
+    /// only through Foot+4C (0x4DBDF0). Unit reach: BandBox_LeftUp -> 4AE750 ->
+    /// 738910 -> 4D7D50 -> 4D806F -> 4DE1D0 (static chain). None leaves other
+    /// actor/caller families on their existing input adapter; it is not
+    /// permission to reinterpret a decoded Move.
+    pub(crate) fn ordinary_ground_foot_cell_input(
         &self,
         viewer: crate::sim::intern::InternedId,
         id: u64,
@@ -19,7 +24,16 @@ impl Simulation {
     ) -> Option<Result<Option<(u16, u16)>, String>> {
         let entity = self.substrate.entities.get(id)?;
         let object = rules.object(self.interner.resolve(entity.type_ref()))?;
-        if entity.locomotor.as_ref()?.active_kind() != LocomotorKind::Walk
+        let receiver = match entity.locomotor.as_ref()?.active_kind() {
+            LocomotorKind::Walk => true,
+            LocomotorKind::Drive | LocomotorKind::Ship => {
+                entity.category == crate::map::entities::EntityCategory::Unit
+            }
+            _ => false,
+        };
+        //Teleporter (+CD4) needs the per-object +70 action; Subterranean is
+        //the +D2C type term (ReadINI 71607E..8A) this port does not model.
+        if !receiver
             || object.teleporter
             || object.jumpjet
             || object.movement_zone == MovementZone::Subterranean
@@ -36,8 +50,8 @@ impl Simulation {
         let current = ground_pose::position_world_coord(&entity.position);
         let cells = NativeCellQuery::isolated(terrain);
         //Classify the bounded ordinary-ground arm without changing canonical
-        //query state. High/falling Walk and non-Walk input retain their prior
-        //adapter pending their own +70 action selection contract.
+        //query state. High/falling movers retain their prior adapter pending
+        //their own +70 action selection contract.
         let ground = match query_ground(&cells, current) {
             Ok(ground) => ground,
             Err(error) => return Some(Err(error)),
@@ -65,14 +79,14 @@ impl Simulation {
                 "input Dummy visibility outside the constructor-derived domain".into(),
             ));
         }
-        Some(resolve_walk_cell_click(
+        Some(resolve_foot_cell_click(
             &cells,
             zones,
             &self.substrate.raw_cell_occupation,
             bounds,
             size,
             self.session.binary_frame,
-            &WalkCellClick {
+            &FootCellClick {
                 clicked: (clicked.0 as i16, clicked.1 as i16),
                 action: 1,
                 current,
@@ -117,9 +131,9 @@ use crate::sim::occupancy::RawCellOccupationGrid;
 use crate::sim::pathfinding::zone_map::{ZoneGrid, ZoneQueryCell};
 use crate::util::lepton::{BRIDGE_HEIGHT_DELTA_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
 
-/// Values read by the ordinary Infantry/Walk4DE1D0 input receiver. The +70
-/// action has already been selected at the input boundary; it is not a mission.
-struct WalkCellClick {
+/// Values read by the ordinary Foot 4DE1D0 input receiver. The +70 action
+/// has already been selected at the input boundary; it is not a mission.
+struct FootCellClick {
     clicked: (i16, i16),
     action: u32,
     current: DriveCoord,
@@ -175,17 +189,18 @@ fn coordinate_is_shrouded(
     Ok(true)
 }
 
-/// Original4DE1D0 under the ordinary Walk type/actor gates. No A* search and
-/// no entity/mission/navigation mutation occurs here. Native comparisons live
-/// in tools/spatial_oracle/walk_move_admission (original input action supplied).
-fn resolve_walk_cell_click(
+/// Original 4DE1D0 under the ordinary grounded Foot type/actor gates. No A*
+/// search and no entity/mission/navigation mutation occurs here. Native
+/// comparisons live in tools/spatial_oracle/walk_move_admission (Infantry and
+/// Unit/Drive receivers, original input action supplied).
+fn resolve_foot_cell_click(
     cells: &NativeCellQuery<'_>,
     zones: &ZoneGrid,
     raw: &RawCellOccupationGrid,
     bounds: PlayfieldBounds,
     size: (i32, i32),
     frame: u32,
-    click: &WalkCellClick,
+    click: &FootCellClick,
     open: impl Fn(NativeCellIdentity) -> Result<bool, String>,
 ) -> Result<Option<(u16, u16)>, String> {
     let terrain = cells.terrain();
@@ -217,7 +232,7 @@ fn resolve_walk_cell_click(
         false
     };
     if click.movement_zone == MovementZone::Subterranean {
-        return Err("Subterranean input receiver is outside the ordinary Walk domain".into());
+        return Err("Subterranean input receiver is outside the ordinary Foot domain".into());
     }
     let special = high_flying || click.jumpjet_type;
     let source_bridge = ground_pose::navigation_should_be_on_bridge(

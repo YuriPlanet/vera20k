@@ -1,5 +1,5 @@
-//! Original MoveTo/Foot caller comparisons. Unit preprocessing rows remain
-//! evidence for its pending complete setter; these tests do not claim that port.
+//! Original MoveTo/Foot and ordinary Unit destination comparisons. The complete
+//! Unit setter (radio, force-reassign and skip-MoveTo) remains a required port.
 use super::*;
 use crate::sim::components::{FootPathQueue, FootPathRuntime};
 use crate::sim::movement::locomotor::LocomotorState;
@@ -145,7 +145,14 @@ fn compare(e: &GameEntity, row: &Value) {
         ("aux", json!(e.navigation.nav_com_aux.is_some())),
         (
             "path",
-            json!(e.navigation.path_replay.remaining_directions()),
+            json!(
+                e.navigation
+                    .path_replay
+                    .directions
+                    .iter()
+                    .map(|&v| { if v == u8::MAX { -1 } else { i32::from(v) } })
+                    .collect::<Vec<_>>()
+            ),
         ),
         ("reference", json!(e.navigation.path_replay.reference_cell)),
         (
@@ -164,13 +171,75 @@ fn compare(e: &GameEntity, row: &Value) {
 }
 
 #[test]
+fn ordinary_track_orders_match_native_without_an_eager_path_or_power_change() {
+    let mut checked = 0;
+    for row in corpus() {
+        let input = &row["input"];
+        if input["entry"] != "unit"
+            || input.get("same_nav").is_some()
+            || input.get("skip_move").is_some()
+        {
+            continue;
+        }
+        checked += 1;
+        let terrain = terrain(input["bridge"] == true);
+        for blocked in [false, true] {
+            let mut entities = EntityStore::new();
+            entities.insert(actor(input));
+            let mut grid = crate::sim::pathfinding::PathGrid::new(32, 32);
+            if blocked {
+                // A wall surrounding the requested cell is irrelevant until
+                // Process; its accepted NavCom must not be redirected/refused.
+                for y in 0..32 {
+                    grid.set_blocked(11, y, true);
+                }
+            }
+            assert!(
+                super::super::movement_commands::issue_move_command_with_layered(
+                    &mut entities,
+                    &grid,
+                    1,
+                    (11, 10),
+                    SimFixed::from_num(768),
+                    false,
+                    None,
+                    None,
+                    Some(&terrain),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    super::super::DestinationTiming::new(100, 22),
+                )
+            );
+            let entity = entities.get(1).unwrap();
+            compare(entity, &row);
+            let restored: GameEntity =
+                serde_json::from_value(serde_json::to_value(entity).unwrap()).unwrap();
+            compare(&restored, &row);
+            let request = entity.movement_target.as_ref().unwrap();
+            assert_eq!(request.final_goal, Some((11, 10)));
+            assert!(
+                entity
+                    .navigation
+                    .path_replay
+                    .remaining_directions()
+                    .is_empty()
+            );
+        }
+    }
+    assert_eq!(checked, 24);
+}
+
+#[test]
 fn track_move_to_and_accepted_foot_calls_match_original_warp_and_zero_semantics() {
     let rows = corpus();
-    assert_eq!(rows.len(), 126);
+    assert_eq!(rows.len(), 132);
     let mut counts = [0, 0, 0];
     for row in rows {
         let input = &row["input"];
-        // These30 original full Unit calls preserve the still-required class
+        // These36 original full Unit calls preserve the still-required class
         // queue/force/one-shot latch evidence; no Rust whole-Unit claim here.
         if input["entry"] == "unit" {
             counts[2] += 1;
@@ -195,7 +264,66 @@ fn track_move_to_and_accepted_foot_calls_match_original_warp_and_zero_semantics(
             serde_json::from_value(serde_json::to_value(&e).unwrap()).unwrap();
         compare(&restored, &row);
     }
-    assert_eq!(counts, [72, 24, 30]);
+    assert_eq!(counts, [72, 24, 36]);
+}
+
+/// The Unit Cell setter clears NavQueue behind its flag (0x7422E8..0x7422F4)
+/// and the NULL setter at 0x7423BE; the NULL rows start with a NavCom, since
+/// 0x741A80 returns before any write without one. Every Rust order passes
+/// flag 1, so the flag-0 contrast rows are not replayed.
+#[test]
+fn unit_setters_clear_navqueue_like_the_original() {
+    let mut checked = 0;
+    for row in corpus() {
+        let input = &row["input"];
+        if input.get("nav_queue").is_none() || input["flag"] == 0 {
+            continue;
+        }
+        let mut e = actor(input);
+        e.navigation.nav_queue = vec![NavTargetRef::cell(11, 10); 2];
+        let expected = row["nav_queue"].as_u64().unwrap() as usize;
+        if input["null"] == true {
+            e.navigation.nav_com = Some(NavTargetRef::cell(11, 10));
+            let mut sim = crate::sim::world::Simulation::new();
+            sim.session.binary_frame = 100;
+            sim.substrate.entities.insert(e);
+            assert!(sim.set_unit_null_destination(1, None));
+            let e = sim.substrate.entities.get(1).unwrap();
+            assert_eq!(e.navigation.nav_queue.len(), expected, "{row}");
+            assert!(e.navigation.nav_com.is_none(), "{row}");
+        } else {
+            let mut entities = EntityStore::new();
+            entities.insert(e);
+            assert!(
+                super::super::movement_commands::issue_move_command_with_layered(
+                    &mut entities,
+                    &crate::sim::pathfinding::PathGrid::new(32, 32),
+                    1,
+                    (11, 10),
+                    SimFixed::from_num(768),
+                    false,
+                    None,
+                    None,
+                    Some(&terrain(false)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    super::super::DestinationTiming::new(100, 22),
+                )
+            );
+            let e = entities.get(1).unwrap();
+            assert_eq!(e.navigation.nav_queue.len(), expected, "{row}");
+            assert_eq!(
+                e.navigation.nav_com,
+                Some(NavTargetRef::cell(11, 10)),
+                "{row}"
+            );
+        }
+        checked += 1;
+    }
+    assert_eq!(checked, 4);
 }
 
 #[test]

@@ -191,7 +191,7 @@ mod schema166_receipt {
 // Schema171: retained timers/track ownership and signed-health/hash composition.
 // All201 baseline/candidate positions and RNG states matched. See the PR415
 // section of docs/research/TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md.
-const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 3987870092531804647;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 11758179770716394862;
 // Schema174 removes folds instead of adding them: OreGrowthState's node-era
 // scanner cursor, candidate lists and sample counters, and ProductionState's
 // fallback ore overlay id. The pre-174 projection folds the values those fields
@@ -200,10 +200,10 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 398787009
 // id. It is not a general reconstruction; a scenario finalized by the map
 // loader held Some(first TIB* id). The projection must still equal the previous
 // current pin, asserted below. Rust hash-composition ratchet, not a native golden.
-const BRIDGE_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 6311521725375046682;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 7141270051079510302;
 // v181 folds Foot+580, including default1.0. The pre-181 assertion below
 // reproduces the previous whole fixture hash; path and RNG pins are unchanged.
-const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 6927658555461959538;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 9472910749278510479;
 // Snapshot182 adds ordered display vectors. The pre-182 projection below
 // must reproduce the previous whole-fixture hash, including all RNG/state.
 // Schema186 removes the always-None release-tail byte. No aircraft participate;
@@ -212,8 +212,15 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 69276585554619595
 // Schema189 folds retained Techno+3D4; Before(189) below reproduces v188.
 // v190 adds saved Foot neighbor history. Before(190) reproduces the full v189
 // fixture; its legacy grid has no retained plane. Route/RNG pins are unchanged.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x8179_79E2_8FBC_8D79;
-const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 121431099463487950;
+// 2026-09-23 Drive/Ship Process path request (behavior, not composition):
+// Drive/Ship orders from every producer (player, pursuit, rally, miners) are
+// accepted by the Unit setter without an order-time A*, PowerOn or redirect.
+// This fixture has no native zone topology, so the first Process searches in
+// the legacy inline lane, not the Find_Path owner. The pins move with that
+// state; the RNG stream pins, per-tick replay equality and route tripwires in
+// this file are unchanged. The old values are in the commit that moved them.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x2481_EE6B_485C_9106;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 13105929486377201168;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
@@ -812,17 +819,17 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(187)),
-        4657864725764756298,
+        2652892017388932145,
         "schema187 only replaces zero remaining-shot fields with the retained index in this fixture"
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
-        17815022180346188402,
+        1605588890476307425,
         "v189 adds only the retained Techno+3D4 hash fold"
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
-        2395935886825451856,
+        1219708409912548863,
         "v190 changes only the Foot neighbor-history hash composition in this fixture"
     );
     assert_eq!(

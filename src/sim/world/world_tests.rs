@@ -5696,14 +5696,18 @@ fn test_real_ship_move_command_can_path_under_bridge_when_too_big() {
         },
     );
 
-    let _ = sim.advance_tick(
-        &[cmd],
-        Some(&rules),
-        &BTreeMap::new(),
-        Some(&path_grid),
-        None,
-        100,
-    );
+    // The Move dispatches at this frame's EventClass tail; Ship69F450
+    // accepts without a route, and the next frame's first Process requests it.
+    for commands in [vec![cmd], Vec::new()] {
+        let _ = sim.advance_tick(
+            &commands,
+            Some(&rules),
+            &BTreeMap::new(),
+            Some(&path_grid),
+            None,
+            100,
+        );
+    }
     let initial_path = sim
         .substrate
         .entities
@@ -8483,6 +8487,10 @@ fn parked_friendly_on_the_route_is_scattered_out_of_the_way() {
     );
     let first = sim.advance_tick(&[cmd], Some(&rules), &heights, Some(&grid), None, 100);
     let mut refusals = first.movement.selection_admission_refusals;
+    // The Move dispatches at this frame's EventClass tail; the next frame's
+    // first Process requests the route (Unit741970 accepts without one).
+    let second = sim.advance_tick(&[], Some(&rules), &heights, Some(&grid), None, 100);
+    refusals += second.movement.selection_admission_refusals;
 
     // The route A* actually returned, before anything is parked on it. The
     // fixture is only meaningful if the blocker cell is on it.
@@ -8586,6 +8594,30 @@ fn stacking_world(size: u16) -> (Simulation, RuleSet, PathGrid) {
     let grid = PathGrid::from_resolved_terrain(&terrain);
     sim.zone_grid = Some(ZoneGrid::build(&grid, &sim.terrain_costs, size, size));
     sim.resolved_terrain = Some(terrain);
+    (sim, rules, grid)
+}
+
+/// `stacking_world` with production-shaped native zone topology and Map
+/// Size, so the Find_Path owner (precheck, target answer, FNPC redirect)
+/// serves the first Drive request as it does in a loaded map.
+fn stacking_world_native(size: u16) -> (Simulation, RuleSet, PathGrid) {
+    use crate::sim::pathfinding::zone_map::ZoneGrid;
+    let (mut sim, rules, grid) = stacking_world(size);
+    let bounds = crate::sim::cell_rect::PlayfieldBounds {
+        base: i32::from(size),
+        ..sim.playfield_bounds.unwrap()
+    };
+    sim.playfield_bounds = Some(bounds);
+    sim.playfield_size_height = Some(i32::from(size));
+    sim.zone_grid = Some(ZoneGrid::build_with_native_map_context(
+        &grid,
+        &sim.terrain_costs,
+        sim.resolved_terrain.as_ref().unwrap(),
+        &[],
+        Some((i32::from(size), i32::from(size))),
+        Some(bounds),
+    ));
+    assert!(sim.zone_grid.as_ref().unwrap().has_native_topology());
     (sim, rules, grid)
 }
 
@@ -8939,7 +8971,12 @@ fn derived_transit_separation_bound_is_inside_one_cell() {
 
 #[test]
 fn repro_second_vehicle_ordered_onto_an_occupied_cell() {
-    let (mut sim, rules, grid) = stacking_world(24);
+    // Unit741970 names the occupied cell unchanged; the first Process's
+    // Find_Path answers code 6 there and, beyond CloseEnough, retargets to an
+    // FNPC cell (0x4D3A92..0x4D3E0A). That owner needs native topology; the
+    // compatibility zone grid keeps the legacy search, which drives into the
+    // blocker's cell.
+    let (mut sim, rules, grid) = stacking_world_native(24);
     let heights = empty_heights();
 
     let blocker = sim
@@ -10548,9 +10585,10 @@ fn defeat_of_a_non_passive_house_emits_player_defeated() {
 }
 
 /// I9c regression, a first search. Resuming an attack-move with no target and
-/// no path issues a fresh move (`tick_order_intents_post_combat`). That search
-/// passed "not a crusher", so after I9a a `Crusher=yes` tank resuming its
-/// attack-move was refused a sandbag cell the crossing and every repath admit.
+/// no path issues a fresh move (`tick_order_intents_post_combat`), whose
+/// first Process searches. That search once passed "not a crusher", so after
+/// I9a a `Crusher=yes` tank resuming its attack-move was refused a sandbag
+/// cell the crossing and every repath admit.
 #[test]
 fn attack_move_resume_lets_a_crusher_tank_through_a_sandbag_cell() {
     use crate::map::resolved_terrain::zone_class;
@@ -10570,7 +10608,11 @@ fn attack_move_resume_lets_a_crusher_tank_through_a_sandbag_cell() {
             goal_ry: 0,
         });
         sim.substrate.entities.insert(entity);
+        // The Process reads type names; snapshot after the entity interned its.
+        sim.interner = crate::sim::intern::test_interner();
         sim.tick_order_intents_post_combat(Some(&path), None);
+        sim.process_ground_locomotor_for_test(1, None, Some(&path), None)
+            .expect("the first Process requests the route");
         sim.substrate
             .entities
             .get(1)

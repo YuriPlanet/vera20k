@@ -399,7 +399,7 @@ mod gsi_04_03b_tests {
     }
 
     #[test]
-    fn gsi_04_05_sequential_miner_process_reserves_head_before_next_order() {
+    fn gsi_04_05_sequential_miner_process_reserves_head_before_next_process() {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("AMERICANS");
         let type_ref = sim.interner.intern("HARV");
@@ -481,13 +481,14 @@ mod gsi_04_03b_tests {
             Some(shared_head),
             "the second miner must observe the first Process head mark immediately"
         );
-        assert_ne!(
+        // Unit741970 names the reserved cell unchanged; only the second
+        // miner's own Process refuses the reserved head (above).
+        assert_eq!(
             second
                 .movement_target
                 .as_ref()
                 .and_then(|movement| movement.final_goal),
-            Some(shared_head),
-            "the next miner order must observe the preceding Process reservation"
+            Some(shared_head)
         );
         assert!(sim.substrate.occupancy.contains_entity(1, 2, 1));
         assert!(sim.substrate.occupancy.contains_entity(3, 2, 2));
@@ -2584,15 +2585,20 @@ fn issue_stock_miner_drive_move_with_overlay_registry(
         return false;
     };
 
-    let activation_snapshot = if info.is_teleporter && info.is_harvester {
-        sim.substrate.entities.get_mut(entity_id).map(|entity| {
-            let snapshot = movement::locomotor_owner::DriveActivationSnapshot::capture(entity);
-            movement::locomotor_owner::begin_drive_for_teleporter(entity, sim.session.binary_frame);
-            snapshot
-        })
-    } else {
-        None
-    };
+    // Unit741970's class refusals return before its Teleporter swap
+    // (0x7423CD), and the Drive setter behind the swap accepts without a
+    // route, so an activated Drive is never rolled back: a later Process
+    // FindPath failure clears the destination and the idle restore gate
+    // returns the Chrono Miner to Teleport.
+    if info.is_teleporter && info.is_harvester {
+        let Some(entity) = sim.substrate.entities.get_mut(entity_id) else {
+            return false;
+        };
+        if !movement::can_accept_destination(entity) {
+            return false;
+        }
+        movement::locomotor_owner::begin_drive_for_teleporter(entity, sim.session.binary_frame);
+    }
 
     let terrain_costs = sim.terrain_costs.get(&info.speed_type);
     let blocker_neighbor_counts = movement::bump_crush::build_blocker_neighbor_counts_with_overlays(
@@ -2623,11 +2629,6 @@ fn issue_stock_miner_drive_move_with_overlay_registry(
         crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, rules.into()),
     );
     if !issued {
-        if let Some(snapshot) = activation_snapshot
-            && let Some(entity) = sim.substrate.entities.get_mut(entity_id)
-        {
-            snapshot.restore(entity);
-        }
         return false;
     }
 
@@ -2644,7 +2645,16 @@ fn issue_stock_miner_drive_move_with_overlay_registry(
     true
 }
 
-/// Issue a move command only if the entity isn't already pathing to this target.
+/// Issue a move command only if the entity's retained destination is not
+/// already this cell.
+///
+/// The destination is the NavCom the setter publishes: a Drive/Ship order
+/// accepts without a route (the first Process requests it) and keeps NavCom
+/// through the Foot+64C retry ladder, so the gate must not read the route.
+/// A Find_Path redirect (code 6 FNPC, code 7) or the command-time redirect
+/// of the remaining adapter locomotors publishes a different cell, and the
+/// next call re-issues the original target (VERA-internal dock approach;
+/// native Mission_Harvest's drive is not ported).
 pub(crate) fn issue_move_if_idle(
     sim: &mut Simulation,
     rules: Option<&RuleSet>,
@@ -2657,13 +2667,12 @@ pub(crate) fn issue_move_if_idle(
     if target.0 >= grid.width() || target.1 >= grid.height() {
         return;
     }
-    let already = sim
-        .substrate
-        .entities
-        .get(entity_id)
-        .and_then(|e| e.movement_target.as_ref())
-        .and_then(|mt| mt.path.last().copied())
-        .is_some_and(|goal| goal == target);
+    let already = sim.substrate.entities.get(entity_id).is_some_and(|e| {
+        e.navigation.nav_com
+            == Some(crate::sim::components::NavTargetRef::cell(
+                target.0, target.1,
+            ))
+    });
     if !already {
         let blocker_neighbor_counts =
             movement::bump_crush::build_blocker_neighbor_counts_with_overlays(

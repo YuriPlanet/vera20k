@@ -1566,13 +1566,23 @@ fn naval_delivery_success_uses_producer_rally_then_move_and_recentres() {
         Some(crate::sim::components::NavTargetRef::cell(20, 10)),
         "the producer rally remains the represented owner destination"
     );
+    // The Ship setter accepts the rally without a route; its first Process
+    // requests one.
     assert_eq!(
         produced
             .movement_target
             .as_ref()
-            .and_then(|movement| movement.path.last().copied()),
+            .and_then(|movement| movement.final_goal),
         Some((20, 10)),
         "selected producer's rally target owns the destination"
+    );
+    assert_eq!(
+        produced
+            .ship_locomotion
+            .as_ref()
+            .and_then(|ship| ship.destination)
+            .map(|coord| (coord.x / 256, coord.y / 256)),
+        Some((20, 10))
     );
     assert_eq!(
         produced.mission.queued(),
@@ -1672,13 +1682,13 @@ fn naval_rally_destination_and_move_survive_without_path_grid() {
 }
 
 #[test]
-fn naval_rally_destination_and_move_survive_failed_immediate_path() {
+fn naval_rally_destination_and_move_survive_beyond_the_path_grid() {
     let rules = naval_production_rules();
     let mut sim = Simulation::new();
     let terrain = water_terrain(40, 40);
     // The rally fast path exits the 4x4 yard at this cache's last cell. The
-    // distant rally and its complete ten-cell substitute search are outside
-    // the deliberately truncated immediate-path cache.
+    // distant rally lies outside the deliberately truncated path grid; the
+    // Ship setter publishes it without a search.
     let grid = PathGrid::test_all_passable(15, 15);
     sim.resolved_terrain = Some(terrain);
     sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
@@ -1733,22 +1743,25 @@ fn naval_rally_destination_and_move_survive_failed_immediate_path() {
                     .resolve(entity.type_ref)
                     .eq_ignore_ascii_case("DEST")
         })
-        .expect("naval Unit still delivers when immediate A* fails");
+        .expect("naval Unit delivers toward a rally beyond the path grid");
     assert_eq!((produced.position.rx, produced.position.ry), (14, 14));
     assert_eq!(
         produced.navigation.nav_com,
         Some(crate::sim::components::NavTargetRef::cell(39, 39)),
-        "failed A* cannot erase the producer-owned destination"
+        "the producer-owned destination is published unchanged"
     );
     assert_eq!(
         produced.mission.queued(),
         crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Move),
-        "failed A* cannot suppress the native deferred Move mission"
+        "ExitObject queues the native deferred Move mission"
     );
-    assert!(
-        produced.movement_target.is_none(),
-        "the fixture must actually force the immediate-path failure"
-    );
+    // Unit741970 -> Ship69F450 installs no route; the first Process asks.
+    let request = produced
+        .movement_target
+        .as_ref()
+        .expect("scheduled Process");
+    assert!(request.path.is_empty());
+    assert_eq!(request.final_goal, Some((39, 39)));
 }
 
 #[test]

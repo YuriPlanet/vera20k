@@ -667,16 +667,27 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             // The harvest order commits mission Harvest, so its ack is the
             // VoiceHarvest slot (e.g. CMIN ChronoMinerHarvest); a non-miner in
             // the same selection commits Move and would speak VoiceMove.
-            // Non-miner units in selection just move to that cell.
+            // Non-miner units in selection just move to that cell, through the
+            // same 4DE1D0 cell receiver as an ordinary Move click.
             for &stable_id in &selected_units {
                 if !selected_miner_ids.contains(&stable_id) {
+                    let Some(goal) = crate::app::input::commands::ordinary_cell_move_goal(
+                        sim,
+                        &resources.rules,
+                        owner_id,
+                        stable_id,
+                        (target_rx, target_ry),
+                        !queue_mode,
+                    ) else {
+                        continue;
+                    };
                     queued.push(CommandEnvelope::new(
                         owner_id,
                         execute_tick,
                         Command::Move {
                             entity_id: stable_id,
-                            target_rx,
-                            target_ry,
+                            target_rx: goal.0,
+                            target_ry: goal.1,
                             queue: queue_mode,
                             group_id: None,
                         },
@@ -789,13 +800,25 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 // are selected.
                 if mobile_count > 0 {
                     for &stable_id in &selected_units {
+                        // Each mobile resolves the clicked cell through its
+                        // own 4DE1D0 receiver, as for an ordinary Move click.
+                        let Some(goal) = crate::app::input::commands::ordinary_cell_move_goal(
+                            sim,
+                            &resources.rules,
+                            owner_id,
+                            stable_id,
+                            (target_rx, target_ry),
+                            !queue_mode,
+                        ) else {
+                            continue;
+                        };
                         queued.push(CommandEnvelope::new(
                             owner_id,
                             execute_tick,
                             Command::Move {
                                 entity_id: stable_id,
-                                target_rx,
-                                target_ry,
+                                target_rx: goal.0,
+                                target_ry: goal.1,
                                 queue: queue_mode,
                                 group_id: None,
                             },

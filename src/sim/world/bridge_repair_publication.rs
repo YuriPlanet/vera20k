@@ -262,3 +262,6 @@ mod tests;
 #[cfg(test)]
 #[path = "walk_failed_path_tests.rs"]
 mod walk_failed_path_tests;
+#[cfg(test)]
+#[path = "track_path_continuation_tests.rs"]
+mod track_path_continuation_tests;

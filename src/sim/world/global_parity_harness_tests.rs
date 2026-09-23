@@ -659,7 +659,7 @@ const GLOBAL_PRE_SUSTAINED_SIGHT_V142_HASH: u64 = 0x4E6E_0CFE_23A8_03A7;
 
 // Schema171: fresh-turn admission/residual clearing and retained-owner hashes.
 // See TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md, PR415 causal attribution.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 11150992376934496020;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 6253505454643889889;
 // Schema174 removes folds instead of adding them: OreGrowthState's node-era
 // scanner cursor, candidate lists and sample counters, and ProductionState's
 // fallback ore overlay id. The pre-174 projection folds the values those fields
@@ -668,10 +668,10 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 111509923
 // id. It is not a general reconstruction; a scenario finalized by the map
 // loader held Some(first TIB* id). The projection must still equal the previous
 // current pin, asserted below. Rust hash-composition ratchet, not a native golden.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 17631878483843703671;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 7337253733368053792;
 // v181 adds the default Foot+580 factor to every entity's hash. The pre-181
 // assertion below retains the previous entire fixture state/RNG ratchet.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xBC5E_52DA_969F_F60C;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0x39B8_4BB8_13FA_9540;
 // Snapshot182 adds ordered display vectors. The pre-182 projection below
 // must reproduce the previous whole-fixture hash, including all RNG/state.
 // Schema186 removes the always-None release-tail byte from each entity. This
@@ -682,8 +682,15 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xBC5E_52DA_969F_
 // Schema189 folds retained Techno+3D4; Before(189) below reproduces v188.
 // v190 adds saved Foot neighbor history. Before(190) reproduces the full v189
 // fixture; its legacy grid has no retained plane. Route/RNG pins are unchanged.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x1EB4_793B_5056_9A45;
-const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 12759965280527249411;
+// 2026-09-23 Drive/Ship Process path request (behavior, not composition):
+// Drive/Ship orders from every producer (player, pursuit, rally, miners) are
+// accepted by the Unit setter without an order-time A*, PowerOn or redirect.
+// This fixture has no native zone topology, so the first Process searches in
+// the legacy inline lane, not the Find_Path owner. The pins move with that
+// state; the RNG stream pins, per-tick replay equality and route tripwires in
+// this file are unchanged. The old values are in the commit that moved them.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0xC260_4CB7_38C8_1163;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 17624005817075191540;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -1012,17 +1019,17 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     let final_hash = *replayed.last().expect("at least one tick recorded");
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
-        0x6AA2_FA03_DF44_4115,
+        0xCDF9_3696_B30C_8B40,
         "v190 changes only the Foot neighbor-history hash composition in this fixture"
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
-        0xC373_742E_090E_5AAC,
+        0x745D_8FBD_3DE8_6044,
         "v189 adds only the retained Techno+3D4 hash fold"
     );
     let before_burst_hash = rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(187));
     assert_eq!(
-        before_burst_hash, 0x1924_EA0D_29FA_97C5,
+        before_burst_hash, 0xD750_5749_C7A2_A94F,
         "schema187 only replaces zero remaining-shot fields with the retained index in this fixture"
     );
     let before_release_hash =
@@ -1077,8 +1084,10 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     println!(
         "[global power composition] current={final_hash:016X} before_power={before_power_hash:016X}"
     );
+    // 2026-09-23: moved by the Drive/Ship order and first-Process behavior
+    // change (see GLOBAL_HARNESS_FINAL_HASH), not by a hash owner.
     assert_eq!(
-        before_power_hash, 10935192780293401891,
+        before_power_hash, 5633002731626426831,
         "full08 projection moved: investigate behavior or another hash owner; do not rebaseline"
     );
 

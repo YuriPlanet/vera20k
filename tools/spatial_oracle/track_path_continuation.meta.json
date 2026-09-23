@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Unit Cell setter then Drive/Ship outer Process through the no-queue Find_Path continuation: 6 supplied found routes, 18 supplied refusals (retry ladder, CloseEnough stop for Move/AreaGuard with Guard and Enter contrasts, the Enter-without-contact setter keeping the path word, zone recheck), 8 original-wrapper AStar-NULL rows (near/far, human/nonhuman) and 2 original-wrapper found rows. No head selection, Process_Track, NavQueue, code-3/code-6 cell answers or Rust parity claim.",
+  "assumptions": [
+    "Fixture from track_destination (real Unit/Drive/Ship vtables, 32x32 original Cell table, Rules at EXTRA+0x10000 with BlockagePathDelay 22) plus unit_entry owner prestate (0xA8E9A0=1, House indices). Actor Cell 10,10 centre, no paid head, no NavQueue, no TarCom, no radio contact, body facing 0 (octant 0).",
+    "Rules PathDelay double 0.01 (9 frames), CloseEnough 128 unless the row sets it. MovementZone 0 zone lookup [1,2] over zeroed records; far_zone assigns record index 1 (zone 2) to the listed cells. Map width/height and bounds are the inherited fixture values.",
+    "Setter at frame 100; Process at frame 101 (timer +640 expired). Foot+64C supplied after the setter (10 unless the row sets it). Mission Guard(5) unless set: Move 2, Enter 7, AreaGuard 11. House+1EC human byte per row; GameMode is the fixture default (0).",
+    "The fixture path prestate 2,3,4,5 survives the setter only for Enter without a radio contact (0x741C54..0x741C78); empty_path supplies Foot+5E0=-1 after it to reach the continuation."
+  ],
+  "substitutions": [
+    "found/failed rows: Find_Path 0x4D3920 returns AL=1 after writing the route (then -1 words) to Foot+5E0, or AL=0 with no writes; original stdcall 12 cleanup.",
+    "native rows: only the AStar core 0x4CBBA0 is supplied (stdcall 24 cleanup): EAX=0, or a PathType in the shape of AStar_reconstruct_path 0x42AA90 (moves then -1 in the wrapper buffer, cost = moves, length = moves + 1); the Find_Path wrapper (copy, Mark, timers, Unit vt+540 = 0x41C140 no-op), Unit receivers, setters and continuation execute.",
+    "Only OS Interlocked imports inherited from the fixture."
+  ],
+  "entry_points": {
+    "unit_destination": "0x00741970",
+    "find_path": "0x004D3920",
+    "astar_core": "0x004CBBA0",
+    "failed_receiver": "0x004D55C0",
+    "zone_precheck": "0x004D3810",
+    "drive": "0x004B0500",
+    "ship": "0x0069FC10",
+    "drive_returned": "0x004B0A7E",
+    "ship_returned": "0x006A0147",
+    "drive_head_selection": "0x004B32A1",
+    "ship_head_selection": "0x006A28F1"
+  },
+  "payload_sha256": "3fc4eb988b4e2d457851b95c7b5681d03619f153d48db3fc4cf07869474d292f"
+}

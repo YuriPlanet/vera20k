@@ -129,6 +129,11 @@ impl Simulation {
         let sim = self;
         let one = [stable_id];
         let mut outcome = GroundLocomotorOutcome::default();
+        // Grid-less component fixtures keep the pass's empty-arrival cleanup;
+        // the pass searches with the Simulation grid or the caller's.
+        if path_grid.is_some() || sim.path_grid.is_some() {
+            sim.complete_pending_track_order(stable_id, rules);
+        }
         let movement_before = sim.substrate.entities.get(stable_id).map(|entity| {
             (
                 (entity.position.rx, entity.position.ry),
@@ -195,18 +200,30 @@ impl Simulation {
                 cause,
             })?
         };
-        if let Some(request) = pending_movement.take_walk_path_request() {
-            let resumed = sim
-                .run_walk_path_request(&request, rules, path_grid, overlay_registry)
+        if let Some(request) = pending_movement.take_foot_path_request() {
+            let lent = pending_movement.lent_block_set(request.owner());
+            let outcome = sim
+                .run_foot_path_request(&request, lent, rules, path_grid, overlay_registry)
                 .map_err(|cause| super::FrameAdvanceError {
                     tick: sim.session.tick,
                     binary_frame: sim.session.binary_frame,
                     entity_id: stable_id,
                     cause,
                 })?;
-            if resumed {
+            if outcome == movement::FootPathOutcome::Returned
+                && let movement::movement_tick::FootPathCaller::Track(family) = request.caller
+            {
+                // Drive4B0AAA / Ship6A0173: Process_Track follows every
+                // returned Process_Movement of a live Foot.
+                pending_movement.record_native_track(movement::track_process::TrackInvocation {
+                    entity_id: request.entity_id,
+                    family,
+                    apply_fresh_occupation: false,
+                });
+            }
+            if outcome == movement::FootPathOutcome::Resume {
                 let current_grid = sim.path_grid_snapshot();
-                pending_movement.resume_walk_path_request(
+                pending_movement.resume_foot_path_request(
                     request,
                     &mut sim.substrate.entities,
                     current_grid.as_deref().or(path_grid),

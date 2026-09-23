@@ -18,7 +18,13 @@
 //! Walk updates it on each paid step and publishes its high-byte mirror.
 //!
 //! ## Sub-modules
-//! - `movement_commands` — A* pathfinding and MovementTarget attachment
+//! - `movement_commands` — destination setters and the MovementTarget
+//!   scheduling adapter; Walk, Drive and Ship accept without a search, the
+//!   remaining locomotors keep their command-time A* adapter
+//! - `foot_path` — the shared `FootClass::Find_Path` (0x4D3920) owner that a
+//!   Walk or Drive/Ship no-queue Process request runs at Simulation level
+//! - `walk_path` / `track_path` — the Walk and Drive/Ship continuations after
+//!   Find_Path and the class receivers they reach
 //! - `movement_tick` — per-tick ground movement state machine (the main loop)
 //!
 //! ## Dependency rules
@@ -58,6 +64,10 @@ mod cell_arrival;
 mod drive_locomotion;
 mod foot_coordinate;
 mod foot_mark;
+mod foot_path;
+#[cfg(test)]
+pub(crate) use foot_path::FindPathResult;
+pub(crate) use foot_path::FootPathOutcome;
 mod foot_speed;
 pub(crate) mod ground_pose;
 pub(crate) mod infantry_entry;
@@ -83,6 +93,7 @@ mod track_entry;
 mod track_fresh_dispatch;
 pub(crate) mod track_head;
 mod track_host;
+mod track_path;
 pub(crate) mod track_process;
 mod track_speed;
 #[cfg(test)]
@@ -130,7 +141,7 @@ pub use movement_commands::{
     set_destination_for_teleporter_entity, stop_navigation_at_committed_head,
 };
 pub(crate) use movement_commands::{
-    issue_move_command_with_destination, issue_move_command_with_layered,
+    can_accept_destination, issue_move_command_with_destination, issue_move_command_with_layered,
     prepare_walk_cell_destination, retain_committed_movement,
 };
 #[cfg(test)]
