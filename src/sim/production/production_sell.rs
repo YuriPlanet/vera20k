@@ -875,6 +875,9 @@ fn tick_ai_low_credit_sell_decisions(sim: &mut Simulation, rules: &RuleSet) {
                     entity.owner(),
                     entity.is_active()
                         && !entity.lifecycle.in_limbo
+                        // UpdateRepairAndPower's only caller (`0x004401B6`)
+                        // lies past the frozen jump.
+                        && !entity.ai_frozen()
                         && entity.was_attacked_by_enemy
                         && !matches!(
                             mission,
@@ -926,7 +929,10 @@ pub fn tick_repairs(sim: &mut Simulation, rules: &RuleSet) {
         .entities
         .values()
         .filter(|entity| {
-            !entity.dying && entity.repairing && entity.category == EntityCategory::Structure
+            !entity.dying
+                && entity.repairing
+                && entity.category == EntityCategory::Structure
+                && !entity.ai_frozen()
         })
         .filter_map(|entity| {
             let obj = sim.object_type(entity.type_ref(), rules)?;

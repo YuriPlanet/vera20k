@@ -1272,6 +1272,51 @@
       {
         "next": "0x0",
         "prev": "0x0",
+        "target": "0x0",
+        "warp_per_step": 8,
+        "warp_remaining": 0
+      }
+    ],
+    "events": [
+      [
+        "idle",
+        "owner0",
+        "0x0",
+        "0x1"
+      ],
+      [
+        "idle",
+        "owner0",
+        "0x0",
+        "0x1"
+      ]
+    ],
+    "input": {
+      "attackers": [
+        {
+          "damage": 8
+        }
+      ],
+      "detached": true,
+      "name": "detached_erase",
+      "target": {
+        "coords": [
+          4000,
+          4000,
+          0
+        ],
+        "rtti": 1
+      },
+      "warp_remaining": 8
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
         "target": "target",
         "warp_per_step": 5,
         "warp_remaining": 3995

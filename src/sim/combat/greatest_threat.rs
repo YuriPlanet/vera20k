@@ -1156,9 +1156,22 @@ fn evaluate_candidate(ctx: &ScanContext<'_>, candidate: &GameEntity) -> Option<i
         &scanner_facts,
         &candidate_facts,
     )?;
-    // G3 sits between selection and the verses gate. The conditional native
-    // +3BC FIRE_ILLEGAL probe and null-weapon continuation remain separate gaps
-    // in the existing early ladder; this check adds neither callback nor RNG.
+    // G2b — the GetFireError probe (`0x006F7CDB..0x006F7CF1`, taken because
+    // no represented flag word carries `0x18200`) rejects FIRE_ILLEGAL. Only
+    // its Temporal arm is represented: a candidate being warped out is illegal
+    // to a weapon whose warhead is not `Temporal=` (`0x006FC5D5..0x006FC600`).
+    // RESIDUAL: the probe's other arms are not ported, including those before
+    // this one that answer 3 or 6 (`vt+0x37C`, weapon `+0x14F`) and so would
+    // let a warped candidate through. Trigger: those attacker states during a
+    // warp. Effect: VERA rejects the candidate where native scores it and
+    // drops it at fire admission.
+    if candidate.is_warped_out() && !selected.warhead.temporal {
+        return None;
+    }
+    // G3 sits between selection and the verses gate. The rest of the
+    // conditional native +3BC FIRE_ILLEGAL probe and the null-weapon
+    // continuation remain separate gaps in the existing early ladder; this
+    // check adds neither callback nor RNG.
     if rejects_vhp_candidate(ctx.attacker_obj.vhp_scan, candidate.estimated_health.get()) {
         return None;
     }

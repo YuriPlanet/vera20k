@@ -69,15 +69,18 @@ impl BunkerRuntime {
 /// so the installing unit can take the install cell.
 pub fn tick_bunker_install(sim: &mut Simulation, rules: &RuleSet, path_grid: Option<&PathGrid>) {
     for building_id in sim.substrate.entities.keys_sorted() {
+        // The install is the bunker's mission, which holds while the bunker
+        // is warped (`GameEntity::ai_frozen`).
         let active = sim.substrate.entities.get(building_id).is_some_and(|b| {
-            matches!(
-                b.bunker_runtime.map(|rt| rt.state),
-                Some(BunkerState::ArriveWait)
-                    | Some(BunkerState::ClearWait)
-                    | Some(BunkerState::TurnToBuilding)
-                    | Some(BunkerState::TrackStep)
-                    | Some(BunkerState::TurnSouth)
-            )
+            !b.ai_frozen()
+                && matches!(
+                    b.bunker_runtime.map(|rt| rt.state),
+                    Some(BunkerState::ArriveWait)
+                        | Some(BunkerState::ClearWait)
+                        | Some(BunkerState::TurnToBuilding)
+                        | Some(BunkerState::TrackStep)
+                        | Some(BunkerState::TurnSouth)
+                )
         });
         if active {
             step_install(sim, rules, path_grid, building_id);

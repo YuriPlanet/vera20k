@@ -9,8 +9,15 @@
 //! [`Simulation::temporal_initiate_warp`] on the bullet's target. The TARGET
 //! owns the tick: each class's AI calls its chain head's `Update` (vtable
 //! `+0x5C`) first (Unit `0x00736204`, Infantry `0x0051BB6E`, Aircraft
-//! `0x00414BDB`, Building `0x0043FCF9`) and then freezes the rest of its AI
-//! while warped. The head subtracts its own weapon's `Damage=` and every
+//! `0x00414BDB`, Building `0x0043FCF9`) and then, while warped, returns
+//! before FootClass::AI or TechnoClass::AI_Update: none of its missions,
+//! managers, repair, stance, deploy or animation work runs. VERA runs parts of
+//! that AI in their own frame phases, and each consults
+//! [`GameEntity::ai_frozen`]: idle actions, fear, deploy, building repair and
+//! the AI's low-credit sale, depot service, spawn managers, boarding and
+//! unloading, construction, facing and turrets, the sprite stage, the legacy
+//! order intents, engineer, bridge-repair and C4 orders, gates, aircraft docks
+//! and bunker installs. The head subtracts its own weapon's `Damage=` and every
 //! chained attacker's from `WarpRemaining`, which the first attacker set to the
 //! target's `Strength=` times ten; at zero the target is erased: `WarpAway=`,
 //! no death, no survivors.
@@ -23,14 +30,17 @@
 //! this module writes either.
 //!
 //! Releases (`TemporalClass::LetGo @ 0x0071ABC0`): the attacker retargets
-//! (`0x0071AF61`) or is itself warped by its victim-to-be (`0x0071B162`),
-//! enters a new cell (the PerCellProcess tail `0x006F5090` at `0x006F50B4`),
-//! enters idle mode (`TechnoClass::Enter_Idle_Mode @ 0x00709A54`, reached from
-//! every Foot leaf through `0x004D82D9`), expires (`0x0071AB7A`), changes house
-//! through CaptureManager (`0x004723F3`), strays beyond
-//! `OpenToppedWarpDistance=` from an open transport (`0x0071A841`), or leaves
-//! an IFV's gunner seat (`0x00746557`). Nothing heals: the victim resumes at
-//! full health and a later attacker starts again at `Strength * 10`.
+//! (`0x0071AF61`); a new warp's victim lets its own victim go (`0x0071B162`);
+//! the attacker enters a new cell (the PerCellProcess tail `0x006F5090` at
+//! `0x006F50B4`), enters idle mode (`TechnoClass::Enter_Idle_Mode @
+//! 0x00709A54`, reached from the Unit and Infantry leaves through
+//! `0x004D82D9` and from the Aircraft leaf only past its mission checks,
+//! `0x00417782`; the Attack mission's idle exit after a Stop is one such
+//! entry), expires (`0x0071AB7A`), changes house through CaptureManager
+//! (`0x004723F3`), strays beyond `OpenToppedWarpDistance=` from an open
+//! transport (`0x0071A841`), or leaves an IFV's gunner seat (`0x00746557`).
+//! Nothing heals: the victim resumes at full health and a later attacker
+//! starts again at `Strength * 10`.
 //!
 //! Scenario draws: none in the Temporal functions themselves (InitiateWarp,
 //! CanWarpTarget, Update, SumChainDamage, LetGo, ClearLinkedList and the
@@ -42,8 +52,14 @@
 //! addresses cited here. Native execution, compared in the `native_` tests:
 //! `tools/spatial_oracle/temporal_update.py` runs the original Update with
 //! SumChainDamage, LetGo, ClearLinkedList, Sqrt_Approx and ftol (the step, the
-//! chain sum and its depth cap, the erase test, the open-topped release
-//! boundary, the erase's call order). Retail data: `[ChronoBeam]
+//! chain sum and its depth cap, the erase test and its callees in order, the
+//! no-target erase, the corrupt-head release, the open-topped release
+//! boundary); `tools/spatial_oracle/temporal_initiate_warp.py` runs the
+//! original InitiateWarp with CanWarpTarget, LetGo and Contact_With_Whom
+//! (`Strength * 10` and its wrap, the insert after the head, the refusals, the
+//! releases, the notices). Read, not executed: the per-class prologues and
+//! the sparkle cadence, the pointer-expiry forward, the gunner hand-over and
+//! the release sites. Retail data: `[ChronoBeam]
 //! Temporal=yes` on `[NeutronRifle]` (8), `[NeutronRifleE]` (16) and the IFV's
 //! `[CRNeutronRifle]` (5), all Inviso; `[General] WarpAway=`,
 //! `ChronoSparkle1=`; `[CombatDamage] OpenToppedWarpDistance=`.
@@ -53,11 +69,12 @@
 //!   `0x007197D0`) and owns `+0x271`. [`GameEntity::is_warped_out`] folds it in
 //!   for every reader, but the per-class AI prologue (the sparkle and the
 //!   frozen AI, Unit `0x00736217..0x0073634D` and its Infantry, Aircraft and
-//!   Building twins) runs for the temporal writer only: VERA's teleport state
-//!   machine keeps its own destination, which the frozen branch's
-//!   `Set_Destination(0, 1)` would cancel. Trigger: a Chrono Legionnaire or
-//!   Chrono Miner teleporting. Effect: no ChronoSparkle1 during the teleport
-//!   and the object's own AI keeps running. Frequency: every Chrono teleport.
+//!   Building twins) and the phase gates ([`GameEntity::ai_frozen`]) cover the
+//!   temporal writer only: VERA's teleport state machine keeps its own
+//!   destination, which the frozen branch's `Set_Destination(0, 1)` would
+//!   cancel. Trigger: a Chrono Legionnaire or Chrono Miner teleporting.
+//!   Effect: no ChronoSparkle1 during the teleport and the object's own AI
+//!   keeps running. Frequency: every Chrono teleport.
 //! - A warped object's locomotor processes only when `+0x271`, or `+0x270`
 //!   with `+0x27C` (written 1 by `SuperClass::Launch @ 0x006CCC3D` and two
 //!   unnamed Foot sites `0x004DF9EA`/`0x005231C1`), is set; VERA has no
@@ -72,16 +89,24 @@
 //! - House `+0x1FC` (set at a building's warp start, release and erase; read
 //!   for the player house at `0x004F926C`) is not identified.
 //! - The online latch's readers VERA wires are Is_Operational, power drain,
-//!   radar, and the refinery and depot probes (`0x0043C422`, `0x0043C7FB`).
-//!   Not wired: `HouseClass::CanBuild`'s upgrade-prerequisite scan
-//!   (`0x004F7DE6..0x004F7E4E`: a prerequisite that is an upgrade counts
-//!   only on an online, unsold host carrying it; plain prerequisites use the
-//!   house counters, which ignore the latch), AI_ManageProduction
-//!   (`0x0050B020`), CheckDockArrayOccupancy (`0x0044E855`),
-//!   PowerCheck_Upgrade (`0x00450605`), and the unidentified readers
-//!   `0x0044017E`, `0x00445701`, `0x00456768`, `0x005F7962`. Trigger: a warp
-//!   on a building carrying an upgrade prerequisite. Effect: the option it
-//!   enables stays available for the warp's duration.
+//!   radar, the refinery's and an absorber's CanEnter (`0x0043C422`) and the
+//!   depot probe (`0x0043C7FB`). Not wired:
+//!   - `TechnoTypeClass::FindFactory @ 0x005F7900` with its online argument
+//!     (`(1,1,1)`, `production_tech::revalidate_eligibility`): production of
+//!     a category whose every factory is warped suspends natively; VERA's
+//!     `BuildEligibility::TemporarilyBlocked` seam has no consumer. Trigger:
+//!     a warp on a house's only factory of a kind. Effect: VERA keeps
+//!     producing during the warp.
+//!   - `HouseClass::CanBuild`'s upgrade-prerequisite scan
+//!     (`0x004F7DE6..0x004F7E4E`: an upgrade prerequisite counts only on an
+//!     online, unsold host; plain prerequisites use the house counters), the
+//!     AI's AI_ManageProduction (`0x0050B020`), CheckDockArrayOccupancy
+//!     (`0x0044E855`) and PowerCheck_Upgrade (`0x00450605`). Effect: an
+//!     option enabled by a warped upgrade host stays available.
+//!   - The player-only BuildingClass virtual `+0x4E0` (`0x004456D0`,
+//!     unidentified) and the sensor-range circle (`0x00456750`,
+//!     presentation). `0x0044017E` lies past BuildingClass::Update's frozen
+//!     jump, so no warp reaches it.
 //! - A building's erase kills its garrison through `0x004585C0(0)` and deletes
 //!   absorbed passengers outright before Record_The_Kill; VERA's carrier
 //!   UnInit purges both inside the building's UnInit (each at health 0 with no
@@ -95,7 +120,38 @@
 //! - VERA fires in the combat phase after the live-object pass, so a warp
 //!   started this frame takes its first step on the target's next AI visit,
 //!   where native steps a target later in the logic vector the same frame.
-//!   Trigger: every warp start. Effect: an erase can land one frame late.
+//!   Trigger: a warp start on a target after its attacker in the vector.
+//!   Effect: the erase lands one frame late, the target gets one more
+//!   unfrozen AI and locomotor turn on the shot's frame, and the power and
+//!   online recomputation follows a frame later.
+//! - VERA's Stop assigns a Stop mission where the native IDLE event
+//!   (`0x004C74CB..0x004C76BB`) assigns none, so a legionnaire on Attack lets
+//!   go with the event instead of on its Attack mission's next dispatch (up
+//!   to one Attack cadence later); on any other mission the beam holds, as
+//!   natively.
+//! - An engineer turned away from a warped building (`0x00519EF2`) is not
+//!   given `Set_Destination(0, 1)` and the scatter (`vtable+0x174`): VERA's
+//!   adjacent capture simply waits and captures on release. The Selling arm
+//!   before it (`0x00519EB2`) has no VERA state: a sale completes at once.
+//! - `UnitClass::Receive_Radio` answers WANT_RIDE (`0x24`) with 0 while
+//!   warped (`0x0073745C..0x00737473`); the message is dormant in stock YR
+//!   and not represented.
+//! - The house blow-up's chain release (`0x0071AD40`, idling the neighbours
+//!   but not itself) arrives with the house-defeat mechanism.
+//! - A transport's death or grinding ejects its first passenger through
+//!   RemoveGunner (`0x00737FD4`, `0x0073A0C8`/`0x0073A0DF`); VERA's passenger
+//!   escape residual (`crew_survival`) covers those paths.
+//! - Open-topped passengers do not fire yet, so the open-topped release
+//!   (`0x0071A841`) has no production producer; the corpus pins its
+//!   boundary.
+//! - The cursor readers of `+0x270` (What_Action: Techno `0x006FFF07`,
+//!   `0x007005CD`, `0x00700731`; Infantry `0x0051E59B`; Unit `0x00740165`,
+//!   `0x007402CA`) belong to the app; the sim accepts an Attack order on a
+//!   warped target that the native cursor would not offer, and fire
+//!   admission drops it.
+//! - Voxel animation and harvest-overlay frames keep stepping for a warped
+//!   object; their native owners are not established (the sprite stage steps
+//!   in TechnoClass::AI_Update at `0x006FAC4D` and holds).
 
 use serde::{Deserialize, Serialize};
 
@@ -176,11 +232,6 @@ impl TemporalState {
         )
     }
 
-    #[cfg(test)]
-    pub(crate) fn head_for_test(&self) -> Option<u64> {
-        self.head
-    }
-
     /// A target warped by `head`, for fixtures outside this module.
     #[cfg(test)]
     pub(crate) fn warped_by_for_test(head: u64) -> Self {
@@ -188,16 +239,6 @@ impl TemporalState {
             link: None,
             head: Some(head),
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn warp_remaining_for_test(&self) -> Option<i32> {
-        self.link.as_ref().map(|link| link.warp_remaining)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn chain_for_test(&self) -> Option<(Option<u64>, Option<u64>)> {
-        self.link.as_ref().map(|link| (link.prev, link.next))
     }
 }
 
@@ -210,6 +251,17 @@ impl GameEntity {
                 .teleport_state
                 .as_ref()
                 .is_some_and(|teleport| teleport.warp_out_active())
+    }
+
+    /// The frozen branch of every class's AI while a Temporal chain warps the
+    /// object: the leaf returns (Unit `0x0073635A`, Infantry `0x0051BC17`,
+    /// Aircraft `0x00414D2B`, Building `0x0043FD14` -> `0x0044057A`) before
+    /// FootClass::AI (`0x0073647B`, `0x0051BC9F`, `0x00414DA3`) or
+    /// TechnoClass::AI_Update (`0x0043FE56`), so none of its missions,
+    /// managers, repair, stance, deploy or animation work runs. VERA runs
+    /// parts of that AI in their own frame phases; each consults this.
+    pub fn ai_frozen(&self) -> bool {
+        self.temporal.is_warped()
     }
 
     /// `TechnoClass+0x271` (vtable `+0x1D8`, `0x0070C5C0`): the teleport's
@@ -283,7 +335,7 @@ impl Simulation {
 
     /// The Temporal arm of `BulletClass::DetonateAtCoord` (`0x00469423..
     /// 0x004694C6`): no firer or no target ends it; a Foot outside the ground
-    /// layer is not warped (`0x00469453`, InWhichLayer `!= 2`); a Unit in a
+    /// layer is not warped (`0x0046946C`, InWhichLayer `!= 2`); a Unit in a
     /// Tank Bunker hands the firer its bunker, which the firer retargets and
     /// warps instead (`0x0046946B..0x004694A5`).
     ///
@@ -446,10 +498,9 @@ impl Simulation {
     /// The first attacker's notice (`0x0071AFBC..0x0071B0CF`): a harvester
     /// raises the ore-miner alert (`CreateRadarEvent(4)` and the EVA, both
     /// gated on the player's own house, which the app applies); a building
-    /// that is not `Insignificant=` notifies its house it is under attack.
-    ///
-    /// RESIDUAL: the building's `!vtable+0x80` pre-check (`0x00457620`) is
-    /// not modelled, as on the damage path.
+    /// that is not `Insignificant=` and not a 1x1 undeployer (`vtable+0x80`,
+    /// `0x00465D40`, as on the damage path) notifies its house it is under
+    /// attack.
     fn temporal_warp_start_notice(&mut self, target: u64, rules: &RuleSet) {
         let Some(entity) = self.substrate.entities.get(target) else {
             return;
@@ -459,7 +510,11 @@ impl Simulation {
         };
         let structure = match entity.category {
             EntityCategory::Unit if object.harvester => false,
-            EntityCategory::Structure if !object.insignificant => true,
+            EntityCategory::Structure
+                if !object.insignificant && !object.is_1x1_with_undeploy() =>
+            {
+                true
+            }
             _ => return,
         };
         let event = crate::sim::combat::UnderAttackEvent {
@@ -474,7 +529,8 @@ impl Simulation {
 
     /// `TemporalClass::CanWarpTarget @ 0x0071AE50`: a `Warpable=` type, not
     /// under the Iron Curtain or a Force Shield (vtable `+0x160`), and not a
-    /// Unit still standing in the war factory its first radio contact names.
+    /// Unit still standing in the war factory its radio contact slot 0 names
+    /// (`0x0065AD30(0)`: the slot itself, not the first filled one).
     fn can_warp_target(&self, target: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(target) else {
             return false;
@@ -492,7 +548,7 @@ impl Simulation {
             return false;
         }
         if entity.category == EntityCategory::Unit
-            && let Some(contact) = entity.radio_contacts.iter_live().next()
+            && let Some(contact) = entity.radio_contacts.slot(0)
             && let Some(factory) = self.substrate.entities.get(contact)
             && factory.category == EntityCategory::Structure
             && self
@@ -610,7 +666,11 @@ impl Simulation {
     /// The erase (`0x0071A895..0x0071AB02`).
     fn temporal_erase(&mut self, head: u64, target: Option<u64>, rules: &RuleSet) {
         let Some(target) = target.filter(|&target| self.substrate.entities.contains(target)) else {
-            // 0x0071A895..0x0071A8B5: no target — clear and idle.
+            // 0x0071A895..0x0071A8B5: no target — clear and idle; then the
+            // `0x0071A90E` retest jumps to the common tail, which clears and
+            // idles again (`0x0071AAE7..0x0071AB02`).
+            self.temporal_clear_fields(head);
+            self.temporal_owner_idle(head, rules);
             self.temporal_clear_fields(head);
             self.temporal_owner_idle(head, rules);
             return;
@@ -713,6 +773,8 @@ impl Simulation {
     /// Temporal firer is a Foot; a building or aircraft firer has no VERA
     /// idle selector.
     fn temporal_owner_idle(&mut self, attacker: u64, rules: &RuleSet) {
+        #[cfg(test)]
+        IDLE_TRACE.with(|trace| trace.borrow_mut().push(attacker));
         if self.substrate.entities.get(attacker).is_some_and(|entity| {
             matches!(
                 entity.category,
@@ -782,26 +844,32 @@ impl Simulation {
         self.temporal_clear_fields(attacker);
     }
 
-    /// `ClearLinkedList @ 0x0071ADE0`: frees the target and every link on the
-    /// chain, idling each attacker.
+    /// `ClearLinkedList @ 0x0071ADE0`: frees the target, then walks Next and
+    /// Prev, unlinking a neighbour's back-link only where it points here
+    /// (`0x0071AE02`, `0x0071AE19`), and idles each attacker last.
     fn temporal_clear_linked_list(&mut self, attacker: u64, rules: &RuleSet) {
-        let Some(link) = self.temporal_link(attacker).cloned() else {
+        // A link without a target faults natively (`0x0071ADE9` writes
+        // through it); VERA stops, which also ends any walk of a cycle.
+        let Some(target) = self.temporal_link(attacker).and_then(|link| link.target) else {
             return;
         };
-        if let Some(target) = link.target {
-            self.set_temporal_head(target, None);
-        }
+        self.set_temporal_head(target, None);
         if let Some(stored) = self.temporal_link_mut(attacker) {
             stored.target = None;
         }
-        if let Some(next) = link.next {
-            if let Some(next_link) = self.temporal_link_mut(next) {
+        if let Some(next) = self.temporal_link(attacker).and_then(|link| link.next) {
+            if let Some(next_link) = self.temporal_link_mut(next)
+                && next_link.prev == Some(attacker)
+            {
                 next_link.prev = None;
             }
             self.temporal_clear_linked_list(next, rules);
         }
-        if let Some(prev) = link.prev {
-            if let Some(prev_link) = self.temporal_link_mut(prev) {
+        // Prev is read again after the Next walk (`0x0071AE12`).
+        if let Some(prev) = self.temporal_link(attacker).and_then(|link| link.prev) {
+            if let Some(prev_link) = self.temporal_link_mut(prev)
+                && prev_link.next == Some(attacker)
+            {
                 prev_link.next = None;
             }
             self.temporal_clear_linked_list(prev, rules);
@@ -813,7 +881,9 @@ impl Simulation {
     /// `TechnoClass::PointerExpired`'s forward (`0x00707B34` ->
     /// `0x0071AB60`), outside the removal gate: the attacker's own expiry lets
     /// go; its target's expiry clears the link and idles the attacker without
-    /// relinking the chain.
+    /// relinking the chain. `rules` is absent only for a rules-less UnInit
+    /// (fixtures; production passes the frame's rules), which has no idle
+    /// selector, so the idle is skipped there.
     pub(crate) fn temporal_pointer_expired(
         &mut self,
         listener: u64,
@@ -965,17 +1035,23 @@ impl Simulation {
         if category == EntityCategory::Structure {
             self.temporal_building_sparkle(id, rules);
         }
-        // Frozen: TarCom drops, and a Foot's NavCom (`Set_Destination(0, 1)`).
-        // The locomotor keeps its own state: its setters refuse while warped
+        // Frozen: TarCom drops, and a Foot's NavCom (`Set_Destination(0, 1)`),
+        // which also ends its path (`UnitClass::Set_Destination @ 0x00741970`
+        // resets the path head): VERA's path executor stops with it, as for
+        // every concrete null destination (`mission::authority`). The
+        // locomotor keeps its own state: its setters refuse while warped
         // (Drive `0x004AFD71`, Walk `0x0075ACD0`), and it does not process.
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             if entity.attack_target.is_some() {
                 crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
             }
-            if category != EntityCategory::Structure && entity.navigation.nav_com.is_some() {
+            if category != EntityCategory::Structure
+                && (entity.navigation.nav_com.is_some() || entity.movement_target.is_some())
+            {
                 crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
                     entity, None,
                 );
+                entity.movement_target = None;
             }
         }
         true
@@ -1051,6 +1127,19 @@ impl Simulation {
             self.spawn_temporal_anim(&name, coord, Some(PORT_SPARKLE_Z_ADJUST), rules);
         }
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Every `Enter_Idle_Mode` this module issues, in order, for the native
+    /// corpus.
+    static IDLE_TRACE: std::cell::RefCell<Vec<u64>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Drain the idle trace (see `IDLE_TRACE`).
+#[cfg(test)]
+fn take_idle_trace() -> Vec<u64> {
+    IDLE_TRACE.with(|trace| std::mem::take(&mut *trace.borrow_mut()))
 }
 
 /// `(frame + phase) % 24 == 0` under the native signed IDIV.

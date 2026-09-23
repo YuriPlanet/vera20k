@@ -5554,6 +5554,11 @@ impl Simulation {
         let mut finished: Vec<u64> = Vec::new();
         for &sid in &keys {
             if let Some(entity) = self.substrate.entities.get_mut(sid) {
+                // Construction and deconstruction are the building's missions,
+                // which hold while it is warped (`GameEntity::ai_frozen`).
+                if entity.ai_frozen() {
+                    continue;
+                }
                 if let Some(ref mut bu) = entity.building_up {
                     bu.elapsed_ticks = bu.elapsed_ticks.saturating_add(1);
                     if bu.elapsed_ticks >= bu.total_ticks {
@@ -5582,6 +5587,9 @@ impl Simulation {
         let mut finished: Vec<u64> = Vec::new();
         for &sid in &keys {
             if let Some(entity) = self.substrate.entities.get_mut(sid) {
+                if entity.ai_frozen() {
+                    continue;
+                }
                 if let Some(ref mut bd) = entity.building_down {
                     bd.elapsed_ticks = bd.elapsed_ticks.saturating_add(1);
                     if bd.elapsed_ticks >= bd.total_ticks {

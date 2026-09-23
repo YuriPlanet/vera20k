@@ -4374,7 +4374,8 @@ pub(crate) fn tick_combat(
             let Some(e) = world.substrate.entities.get(id) else {
                 continue;
             };
-            if e.category != EntityCategory::Unit {
+            // A warped Unit's AI returns before Facing_Update (`ai_frozen`).
+            if e.category != EntityCategory::Unit || e.ai_frozen() {
                 continue;
             }
             emit.unit_facing.push(UnitFacingUpdate::from_facing_update(

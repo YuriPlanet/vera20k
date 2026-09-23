@@ -396,7 +396,7 @@ impl Simulation {
             .substrate
             .entities
             .get(stable_id)
-            .is_some_and(|entity| entity.temporal.is_warped())
+            .is_some_and(crate::sim::game_entity::GameEntity::ai_frozen)
         {
             return Ok(outcome);
         }

@@ -216,6 +216,10 @@ class Fixture:
             u.mem_write(node(last) + 0x40, dwords(0))
             u.mem_write(node(last - 1) + 0x44, dwords(0))
         u.mem_write(TARGET + 0x278, dwords(node(0)))
+        if case.get("detached"):
+            # The head lost its Target (a non-removal expiry) while the victim
+            # still names it.
+            u.mem_write(node(0) + 0x28, dwords(0))
         self.call(UPDATE, node(0))
         after = []
         for n in range(len(attackers)):
@@ -261,6 +265,8 @@ def inputs():
              target=dict(rtti=6, coords=[5000, 5000, 0], occupants=2)),
         dict(name="building_step", attackers=[dict(damage=8)], warp_remaining=4000,
              target=dict(rtti=6, coords=[5000, 5000, 0])),
+        dict(name="detached_erase", attackers=[dict(damage=8)], warp_remaining=8,
+             detached=True, target=unit_at(4000, 4000, 0)),
     ]
     # The open-topped release: owner at the origin, target at a distance.
     for name, coords in (("straight_1792", [1792, 0, 0]), ("straight_1793", [1793, 0, 0]),

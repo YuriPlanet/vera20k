@@ -29,6 +29,8 @@ C4Warhead=Super
 [BuildingTypes]
 0=GAPOWR
 1=GACNST
+2=YAPOWR
+3=GAWEAP
 [Warheads]
 0=ChronoBeam
 1=Super
@@ -80,13 +82,24 @@ Passengers=1
 Gunner=yes
 [GAPOWR]
 Strength=750
-Cost=800
+Cost=900
 Foundation=2x2
 Power=100
 [GACNST]
 Strength=1000
 Foundation=4x4
 Power=-50
+[GAWEAP]
+Strength=1000
+Foundation=3x3
+WeaponsFactory=yes
+Factory=UnitType
+[YAPOWR]
+Strength=1000
+Foundation=3x3
+Power=150
+InfantryAbsorb=yes
+Passengers=5
 [NeutronRifle]
 Damage=8
 ROF=120
@@ -147,7 +160,12 @@ LoopCount=1
 ";
 
 fn rules() -> RuleSet {
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(RULES)).expect("temporal rules");
+    rules_from(RULES)
+}
+
+/// The fixture's rules over an edited copy of [`RULES`].
+fn rules_from(text: &str) -> RuleSet {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(text)).expect("temporal rules");
     let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(ART));
     art.bind_anim_frame_count_for_test("WARPAWAY", 20);
     art.bind_anim_frame_count_for_test("CHRONOSK", 3);
@@ -224,12 +242,14 @@ fn chain(sim: &mut Simulation, target: u64, attackers: &[u64], warp_remaining: i
         .head = attackers.first().copied();
 }
 
-/// Place an object at an exact lepton coordinate (shifted by `ORIGIN` so the
-/// oracle's negative coordinates fit VERA's unsigned cells).
+/// Where [`place`] puts the oracle's origin, so its negative coordinates fit
+/// VERA's unsigned cells.
+const PLACE_ORIGIN: i32 = 16 * 256;
+
+/// Place an object at an exact lepton coordinate, shifted by [`PLACE_ORIGIN`].
 fn place(sim: &mut Simulation, id: u64, coord: [i32; 3]) {
-    const ORIGIN: i32 = 16 * 256;
     let entity = sim.substrate.entities.get_mut(id).unwrap();
-    let (x, y) = (coord[0] + ORIGIN, coord[1] + ORIGIN);
+    let (x, y) = (coord[0] + PLACE_ORIGIN, coord[1] + PLACE_ORIGIN);
     entity.position.rx = (x / 256) as u16;
     entity.position.ry = (y / 256) as u16;
     entity.position.sub_x = crate::util::fixed_math::SimFixed::from_num(x % 256);
@@ -312,6 +332,8 @@ struct NativeInput {
     target: NativeTarget,
     #[serde(default)]
     corrupt_head: bool,
+    #[serde(default)]
+    detached: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -359,21 +381,26 @@ fn native_name(value: Option<u64>, target: u64, attackers: &[u64]) -> String {
 
 /// `TemporalClass::Update @ 0x0071A760` against the original, case by case:
 /// the step (the head's weapon plus SumChainDamage to depth 0x32), the erase
-/// at `<= 0` and its effects, the corrupt-head release, and the open-topped
-/// release boundary through `Sqrt_Approx` and `ftol` (`distance_3d_leptons`).
+/// at `<= 0` and its callees (the WarpAway coordinate and constructor flags,
+/// VeterancyStruct::Add's two costs, the Enter_Idle_Mode calls in order), the
+/// no-target erase, the corrupt-head release, and the open-topped release
+/// boundary through `Sqrt_Approx` and `ftol` (`distance_3d_leptons`).
 ///
 /// The oracle stubs UnInit, so its chained attackers keep their links after
-/// an erase; VERA's UnInit runs the pointer-expiry forward (`0x0071AB60`),
-/// which clears them as the native forward does. Its `idle` events are the
-/// Update's own; VERA queues the same Guard. `kill_occupants` (the building
-/// erase's `0x004585C0`) and `mark` (presentation) are module residuals.
+/// an erase and its `idle` events are the Update's own; VERA's UnInit runs
+/// the pointer-expiry forward (`0x0071AB60`, read, not executed), which
+/// clears every chained link and idles its owner once before the Update's
+/// own idles. Record_The_Kill is stubbed too; VERA's award adds the same
+/// `Add(owner cost, target cost)` a second time (the "experience twice").
+/// `kill_occupants` (the building erase's `0x004585C0`) and `mark`
+/// (presentation) are module residuals.
 #[test]
 fn native_update_corpus() {
     let cases: Vec<NativeCase> = serde_json::from_str(include_str!(
         "../../tools/spatial_oracle/temporal_update.json"
     ))
     .unwrap();
-    assert_eq!(cases.len(), 28);
+    assert_eq!(cases.len(), 29);
     let rules = rules();
     for case in cases {
         let name = case.input.name.as_str();
@@ -435,10 +462,24 @@ fn native_update_corpus() {
             });
             set(&mut sim, before_last, &|link| link.next = None);
         }
+        if case.input.detached {
+            sim.substrate
+                .entities
+                .get_mut(attackers[0])
+                .unwrap()
+                .temporal
+                .link
+                .as_mut()
+                .unwrap()
+                .target = None;
+        }
         let kills_before = house_stats(&sim, "Russians");
         let lost_before = unit_lost_events(&sim);
+        let head_before = entity(&sim, attackers[0]).clone();
+        let _ = take_idle_trace();
 
         sim.temporal_update_head(attackers[0], &rules);
+        let idle_trace = take_idle_trace();
 
         let events: Vec<&str> = case
             .events
@@ -482,19 +523,76 @@ fn native_update_corpus() {
                 "{name}: temporal{n} links"
             );
         }
-        // The erase's effects, in the corpus's terms.
+        // The erase's callees, in the corpus's terms.
+        let anims = warp_away_anims(&sim);
+        let native_anim = case.events.iter().find(|event| event[0] == "anim");
         assert_eq!(
-            warp_away_anims(&sim).len(),
-            usize::from(events.contains(&"anim")),
+            anims.len(),
+            usize::from(native_anim.is_some()),
             "{name}: WarpAway"
         );
-        if native_erase {
-            let at = warp_away_anims(&sim)[0];
-            let location = location_coord(entity(&sim, target));
-            assert_eq!((at.x, at.y, at.z), (location.x, location.y, location.z));
+        if let Some(native_anim) = native_anim {
+            // AnimClass(WarpAway, Location, 0, 1, 0x600, 0, 0).
             assert_eq!(
-                veterancy(&sim, attackers[0]) > 0.0,
-                events.contains(&"veterancy_add"),
+                native_anim[5], TEMPORAL_ANIM_DRAW_FLAGS,
+                "{name}: anim flags"
+            );
+            if case.input.target.rtti == 1 {
+                let native_at: [i32; 3] = serde_json::from_value(native_anim[2].clone()).unwrap();
+                let at = anims[0];
+                assert_eq!(
+                    [at.x - PLACE_ORIGIN, at.y - PLACE_ORIGIN, at.z],
+                    native_at,
+                    "{name}: WarpAway at the target's Location"
+                );
+            }
+        }
+        // Update's Enter_Idle_Mode calls, in order. An erase's UnInit first
+        // idles every chained attacker through the forward.
+        let native_idles: Vec<u64> = case
+            .events
+            .iter()
+            .filter(|event| event[0] == "idle")
+            .map(|event| {
+                let owner = event[1].as_str().unwrap();
+                attackers[owner["owner".len()..].parse::<usize>().unwrap()]
+            })
+            .collect();
+        let own_idles = if native_erase {
+            let (forward, own) = idle_trace.split_at(idle_trace.len() - native_idles.len());
+            let mut forward = forward.to_vec();
+            forward.sort_unstable();
+            let mut chained = attackers.clone();
+            chained.sort_unstable();
+            assert_eq!(forward, chained, "{name}: the forward idles each link once");
+            own.to_vec()
+        } else {
+            idle_trace
+        };
+        assert_eq!(own_idles, native_idles, "{name}: Enter_Idle_Mode calls");
+        if native_erase {
+            // VeterancyStruct::Add(owner cost, target cost) in the Update,
+            // then Record_The_Kill's own award of the same pair.
+            let mut expected = head_before;
+            if let Some(add) = case.events.iter().find(|event| event[0] == "veterancy_add") {
+                let (owner_cost, target_cost) = (
+                    add[2].as_i64().unwrap() as i32,
+                    add[3].as_i64().unwrap() as i32,
+                );
+                for _ in 0..2 {
+                    crate::sim::combat::veterancy::award_kill(
+                        &mut expected,
+                        owner_cost,
+                        target_cost,
+                        true,
+                        rules.general.veteran_ratio,
+                        rules.general.veteran_cap,
+                    );
+                }
+            }
+            assert_eq!(
+                veterancy(&sim, attackers[0]),
+                f32::from_bits(expected.veterancy_raw.bits()),
                 "{name}: VeterancyStruct::Add"
             );
             let kills = house_stats(&sim, "Russians");
@@ -519,21 +617,13 @@ fn native_update_corpus() {
                 "{name}: unit lost"
             );
         }
-        let idles = events.iter().filter(|&&event| event == "idle").count();
-        if idles > 0 {
-            // Enter_Idle_Mode(0, 1) on an Attack-mission Foot queues Guard.
-            let idled: Vec<u64> = if case.input.corrupt_head {
-                attackers.clone()
-            } else {
-                vec![attackers[0]]
-            };
-            for id in idled {
-                assert_eq!(
-                    entity(&sim, id).mission.queued().known(),
-                    Some(MissionType::Guard),
-                    "{name}: idle"
-                );
-            }
+        // Enter_Idle_Mode(0, 1) on an Attack-mission Foot queues Guard.
+        for &id in &own_idles {
+            assert_eq!(
+                entity(&sim, id).mission.queued().known(),
+                Some(MissionType::Guard),
+                "{name}: idle"
+            );
         }
     }
 }
@@ -561,68 +651,6 @@ fn native_open_topped_boundary_is_distance_3d() {
         checked += 1;
     }
     assert_eq!(checked, 16);
-}
-
-/// InitiateWarp: the first attacker heads the chain with Strength * 10; each
-/// later one inserts right after the head. The target is deselected.
-#[test]
-fn initiate_warp_heads_the_chain_and_inserts_after_the_head() {
-    let rules = rules();
-    let mut sim = sim(2);
-    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
-    let first = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
-    let second = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 11);
-    let third = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 12);
-    sim.substrate.entities.get_mut(tank).unwrap().selected = true;
-
-    sim.temporal_initiate_warp(first, Some(tank), &rules);
-    assert_eq!(head_of(&sim, tank), Some(first));
-    assert_eq!(link(&sim, first).warp_remaining, 4000, "Strength=400 * 10");
-    assert!(!entity(&sim, tank).selected, "Deselect");
-    assert!(entity(&sim, tank).is_warped_out());
-
-    sim.temporal_initiate_warp(second, Some(tank), &rules);
-    sim.temporal_initiate_warp(third, Some(tank), &rules);
-    assert_eq!(head_of(&sim, tank), Some(first));
-    let (head, a, b) = (link(&sim, first), link(&sim, third), link(&sim, second));
-    assert_eq!((head.prev, head.next), (None, Some(third)));
-    assert_eq!((a.prev, a.next), (Some(first), Some(second)));
-    assert_eq!((b.prev, b.next), (Some(third), None));
-    assert_eq!(head.warp_remaining, 4000, "later attackers leave it alone");
-}
-
-/// CanWarpTarget refuses an Iron-Curtained target and a `Warpable=no` type,
-/// and an attacker being warped cannot start a warp of its own.
-#[test]
-fn warp_start_refusals() {
-    let text = RULES.replace("[GACNST]\n", "[GACNST]\nWarpable=no\n");
-    let rules = RuleSet::from_ini(&IniFile::from_str(&text)).unwrap();
-    let mut sim = sim(3);
-    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
-    let yard = spawn(&mut sim, &rules, "GACNST", "Americans", 20, 20);
-    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
-    let other = spawn(&mut sim, &rules, "CLEG", "Allies2", 8, 10);
-
-    crate::sim::superweapon::invulnerability::apply_invulnerability(
-        sim.substrate.entities.get_mut(tank).unwrap(),
-        sim.session.binary_frame,
-        100,
-        crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain,
-    );
-    sim.temporal_initiate_warp(cleg, Some(tank), &rules);
-    assert_eq!(head_of(&sim, tank), None, "Iron Curtain");
-    assert!(!entity(&sim, cleg).temporal.is_warping_someone());
-
-    sim.temporal_initiate_warp(cleg, Some(yard), &rules);
-    assert_eq!(head_of(&sim, yard), None, "Warpable=no");
-
-    // `other` warps the legionnaire, which then cannot start on the yard's
-    // neighbour.
-    let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 26, 10);
-    sim.temporal_initiate_warp(other, Some(cleg), &rules);
-    assert_eq!(head_of(&sim, cleg), Some(other));
-    sim.temporal_initiate_warp(cleg, Some(plant), &rules);
-    assert_eq!(head_of(&sim, plant), None, "an attacker being warped");
 }
 
 /// A warp's start makes a victim that was itself warping let go
@@ -851,16 +879,31 @@ fn a_warped_object_is_frozen_and_immune() {
 
 /// Through the production fire path: a Chrono Legionnaire ordered to attack a
 /// Rhino warps it with no damage and erases it after Strength * 10 / Damage
-/// = 500 of the tank's AI turns. Nothing survives, WarpAway plays at the
-/// tank's Location, the kill is scored and the legionnaire gains experience
-/// twice (the Update's Add and Record_The_Kill's).
+/// = 500 of the tank's AI turns, the first on the frame after the shot. The
+/// tank is spawned first, so it precedes the legionnaire in the logic vector:
+/// natively its AI has already run when the shot lands, as in VERA, whose fire
+/// phase follows the live pass (for the reverse order see the module's
+/// fire-phase residual). Nothing survives, WarpAway plays, the kill is scored
+/// and the legionnaire gains `Add(1500, 900)` twice (the Update's and
+/// Record_The_Kill's).
 #[test]
 fn a_chrono_legionnaire_erases_a_tank() {
     use crate::sim::command::{Command, CommandEnvelope};
     let rules = rules();
     let (mut sim, grid) = arena(11, &rules);
-    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
     let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 13, 10);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    let mut experienced = entity(&sim, cleg).clone();
+    for _ in 0..2 {
+        crate::sim::combat::veterancy::award_kill(
+            &mut experienced,
+            1500,
+            900,
+            true,
+            rules.general.veteran_ratio,
+            rules.general.veteran_cap,
+        );
+    }
     let owner = sim.interner.intern("Russians");
     sim.queue_command(CommandEnvelope::new(
         owner,
@@ -902,7 +945,11 @@ fn a_chrono_legionnaire_erases_a_tank() {
     let stats = house_stats(&sim, "Russians");
     assert_eq!(stats.units_killed, 1);
     assert_eq!(house_stats(&sim, "Americans").units_lost, 1);
-    assert!(veterancy(&sim, cleg) > 0.0);
+    assert_eq!(
+        veterancy(&sim, cleg),
+        f32::from_bits(experienced.veterancy_raw.bits()),
+        "experience twice"
+    );
     assert!(!entity(&sim, cleg).temporal.is_warping_someone());
     assert!(
         !sim.substrate.entities.values().any(|entity| entity.category
@@ -1029,14 +1076,23 @@ fn a_warp_in_progress_survives_a_snapshot() {
     sim.temporal_initiate_warp(a, Some(tank), &rules);
     sim.temporal_initiate_warp(b, Some(tank), &rules);
     sim.temporal_update_head(a, &rules);
+    // A load restarts the Scenario stream from Seed0; put the source there too.
+    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    let saved_hash = sim.state_hash();
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "temporal", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .expect("snapshot")
         .sim;
+    assert_eq!(
+        restored.state_hash(),
+        saved_hash,
+        "the load restores the hash"
+    );
     restored
         .restore_after_snapshot_load()
         .expect("temporal links resolve");
     let hash = restored.state_hash();
+    assert_eq!(hash, saved_hash, "and the relink keeps it");
     assert_eq!(
         restored.substrate.entities.get(tank).unwrap().temporal,
         entity(&sim, tank).temporal
@@ -1054,6 +1110,517 @@ fn a_warp_in_progress_survives_a_snapshot() {
         hash,
         "the chain is hashed"
     );
+}
+
+/// The freeze reaches the phases VERA runs outside the AI shell
+/// (`GameEntity::ai_frozen`): a warped guarding infantryman takes no idle
+/// turn (no Scenario draw), and a warped building neither repairs nor bills
+/// (UpdateRepairAndPower's only caller `0x004401B6` lies past the frozen
+/// jump).
+#[test]
+fn a_warped_object_runs_none_of_its_ai_phases() {
+    let rules = rules();
+    let mut sim = sim(21);
+    let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
+    let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 16, 16);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    let cleg2 = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 12);
+    {
+        let building = sim.substrate.entities.get_mut(plant).unwrap();
+        building.health.current = 300;
+        building.repairing = true;
+    }
+    let americans = sim.interner.get("Americans").unwrap();
+    sim.houses.get_mut(&americans).unwrap().economy.credits = 5000;
+    let now = sim.session.binary_frame;
+    let _ = sim.mission_assign_exact(gi, MissionId::from_known(MissionType::Guard), now);
+    let idle_turn = |sim: &mut Simulation, frame: u32| {
+        sim.substrate.entities.get_mut(gi).unwrap().animation = Some(
+            crate::sim::animation::Animation::new(crate::sim::animation::SequenceKind::Stand),
+        );
+        let order = sim.live_object_order_snapshot();
+        let before = sim.scenario_rng.logical_state();
+        crate::sim::infantry::tick_idle_actions(
+            &mut sim.substrate.entities,
+            &order,
+            &sim.houses,
+            &rules,
+            &sim.interner,
+            &mut sim.scenario_rng,
+            frame,
+        );
+        sim.scenario_rng.logical_state() != before
+    };
+    assert!(
+        idle_turn(&mut sim, now.wrapping_add(10_000)),
+        "the control draws"
+    );
+    sim.temporal_initiate_warp(cleg, Some(gi), &rules);
+    sim.temporal_initiate_warp(cleg2, Some(plant), &rules);
+    let credits_before = sim.houses[&sim.interner.get("Americans").unwrap()]
+        .economy
+        .credits;
+    assert!(
+        !idle_turn(&mut sim, now.wrapping_add(200_000)),
+        "no idle draw while warped"
+    );
+    crate::sim::production::tick_repairs(&mut sim, &rules);
+    assert_eq!(entity(&sim, plant).health.current, 300, "no repair");
+    assert_eq!(
+        sim.houses[&sim.interner.get("Americans").unwrap()]
+            .economy
+            .credits,
+        credits_before,
+        "no bill"
+    );
+    // Released, the building repairs again.
+    sim.temporal_let_go(cleg2);
+    crate::sim::production::tick_repairs(&mut sim, &rules);
+    assert!(entity(&sim, plant).health.current > 300);
+}
+
+/// Evaluate_Candidate probes GetFireError first (`0x006F7CE8`), whose
+/// `0x006FC5D5` arm makes a warped candidate illegal to any non-Temporal
+/// weapon: a GI's scan passes over the warped tank, a second legionnaire's
+/// does not.
+#[test]
+fn only_a_temporal_scanner_acquires_a_warped_enemy() {
+    let rules = rules();
+    let mut sim = sim(22);
+    let tank = spawn(&mut sim, &rules, "HTNK", "Russians", 12, 10);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Americans", 12, 13);
+    let gi = spawn(&mut sim, &rules, "E1", "Americans", 10, 10);
+    let second = spawn(&mut sim, &rules, "CLEG", "Americans", 10, 11);
+    let acquire = |sim: &Simulation, scanner: u64| {
+        crate::sim::combat::acquire_best_target_for_entity(
+            &sim.substrate.entities,
+            &sim.substrate.occupancy,
+            &rules,
+            &sim.interner,
+            scanner,
+            None,
+            None,
+            false,
+            crate::sim::combat::ScanMission::Guard,
+            None,
+            crate::sim::combat::line_of_fire::LineOfFireInputs::default(),
+        )
+    };
+    assert_eq!(acquire(&sim, gi), Some(tank), "the control");
+    sim.temporal_initiate_warp(cleg, Some(tank), &rules);
+    assert_eq!(acquire(&sim, gi), None, "a GI passes over it");
+    assert_eq!(
+        acquire(&sim, second),
+        Some(tank),
+        "a Temporal scanner does not"
+    );
+}
+
+/// Stop clears the TarCom (`0x004C75F8`) and assigns no mission; the
+/// legionnaire's Attack mission then takes its idle exit and lets go
+/// (`0x00709A54`). VERA's Stop replaces the mission, so it lets go with the
+/// event.
+#[test]
+fn stop_frees_the_legionnaires_victim() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    let rules = rules();
+    let (mut sim, grid) = arena(23, &rules);
+    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 13, 10);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    let owner = sim.interner.intern("Russians");
+    let step = |sim: &mut Simulation| {
+        let commands = sim.take_due_commands();
+        sim.advance_tick(
+            &commands,
+            Some(&rules),
+            &std::collections::BTreeMap::new(),
+            Some(&grid),
+            None,
+            33,
+        );
+    };
+    sim.queue_command(CommandEnvelope::new(
+        owner,
+        sim.session.tick + 1,
+        Command::Attack {
+            attacker_id: cleg,
+            target_id: tank,
+        },
+    ));
+    for _ in 0..200 {
+        step(&mut sim);
+        if head_of(&sim, tank).is_some() {
+            break;
+        }
+    }
+    assert_eq!(head_of(&sim, tank), Some(cleg));
+    sim.queue_command(CommandEnvelope::new(
+        owner,
+        sim.session.tick + 1,
+        Command::Stop { entity_id: cleg },
+    ));
+    step(&mut sim);
+    step(&mut sim);
+    assert_eq!(head_of(&sim, tank), None, "released");
+    assert!(!entity(&sim, cleg).temporal.is_warping_someone());
+}
+
+/// The freeze's `Set_Destination(0, 1)` ends the Foot's path
+/// (`UnitClass::Set_Destination @ 0x00741970` resets the path head), so a
+/// tank warped mid-drive and released does not resume its order.
+#[test]
+fn a_released_mover_does_not_resume_its_order() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    let rules = rules();
+    let (mut sim, grid) = arena(24, &rules);
+    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 4, 16);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 4, 26);
+    let owner = sim.interner.intern("Americans");
+    let step = |sim: &mut Simulation| {
+        let commands = sim.take_due_commands();
+        sim.advance_tick(
+            &commands,
+            Some(&rules),
+            &std::collections::BTreeMap::new(),
+            Some(&grid),
+            None,
+            33,
+        );
+    };
+    sim.queue_command(CommandEnvelope::new(
+        owner,
+        sim.session.tick + 1,
+        Command::Move {
+            entity_id: tank,
+            target_rx: 28,
+            target_ry: 16,
+            queue: false,
+            group_id: None,
+        },
+    ));
+    for _ in 0..40 {
+        step(&mut sim);
+    }
+    assert!(entity(&sim, tank).movement_target.is_some(), "under way");
+    sim.temporal_initiate_warp(cleg, Some(tank), &rules);
+    for _ in 0..10 {
+        step(&mut sim);
+    }
+    assert!(
+        entity(&sim, tank).movement_target.is_none(),
+        "the path ends"
+    );
+    let frozen_at = entity(&sim, tank).position.rx;
+    sim.temporal_let_go(cleg);
+    for _ in 0..150 {
+        step(&mut sim);
+    }
+    let tank_entity = entity(&sim, tank);
+    assert!(tank_entity.movement_target.is_none(), "no order resumed");
+    assert!(
+        tank_entity.position.rx <= frozen_at + 1,
+        "it finishes at most its current track: {} from {frozen_at}",
+        tank_entity.position.rx
+    );
+}
+
+/// InfantryClass::PerCellProcess turns an engineer away from a building
+/// being warped (`0x00519EF2`); released, the building can be captured.
+#[test]
+fn a_warped_building_cannot_be_captured() {
+    let rules = rules();
+    let mut sim = sim(25);
+    let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 16, 16);
+    let engineer = spawn(&mut sim, &rules, "E1", "Russians", 15, 16);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    sim.substrate
+        .entities
+        .get_mut(engineer)
+        .unwrap()
+        .capture_target = Some(plant);
+    let americans = sim.interner.get("Americans").unwrap();
+    let russians = sim.interner.get("Russians").unwrap();
+    sim.temporal_initiate_warp(cleg, Some(plant), &rules);
+    assert!(!sim.tick_capture_orders(&rules, &std::collections::BTreeSet::new()));
+    assert_eq!(entity(&sim, plant).owner(), americans, "turned away");
+    sim.temporal_let_go(cleg);
+    assert!(sim.tick_capture_orders(&rules, &std::collections::BTreeSet::new()));
+    assert_eq!(entity(&sim, plant).owner(), russians, "captured once free");
+}
+
+/// CanEnter (0x0F) is refused while the transport is warped: a Unit tests
+/// `+0x270` (`0x007375BA`), an absorbing building its online latch
+/// (`0x0043C422`).
+#[test]
+fn a_warped_transport_admits_no_one() {
+    let rules = rules();
+    let mut sim = sim(26);
+    let fortress = spawn(&mut sim, &rules, "BFRT", "Americans", 12, 12);
+    let reactor = spawn(&mut sim, &rules, "YAPOWR", "Americans", 16, 16);
+    let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    let cleg2 = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 12);
+    for carrier in [fortress, reactor] {
+        let entity = sim.substrate.entities.get_mut(carrier).unwrap();
+        if entity.passenger_role.cargo().is_none() {
+            entity.passenger_role = crate::sim::passenger::PassengerRole::Transport {
+                cargo: crate::sim::passenger::PassengerCargo::new(5, 0),
+            };
+        }
+    }
+    let admits = |sim: &Simulation, carrier: u64| {
+        let passenger = sim.substrate.entities.get(gi).unwrap();
+        let transport = sim.substrate.entities.get(carrier).unwrap();
+        crate::sim::passenger::can_enter_transport(
+            passenger,
+            transport,
+            rules.object("E1").unwrap(),
+            rules
+                .object(sim.interner.resolve(transport.type_ref()))
+                .unwrap(),
+            transport.passenger_role.cargo().unwrap(),
+            &rules,
+            &sim.houses,
+            None,
+        )
+    };
+    assert!(admits(&sim, fortress));
+    assert!(admits(&sim, reactor));
+    sim.temporal_initiate_warp(cleg, Some(fortress), &rules);
+    sim.temporal_initiate_warp(cleg2, Some(reactor), &rules);
+    assert!(!admits(&sim, fortress), "a warped Unit transport");
+    assert!(!admits(&sim, reactor), "a warped absorber");
+    sim.temporal_let_go(cleg);
+    sim.temporal_let_go(cleg2);
+    assert!(admits(&sim, fortress));
+    assert!(admits(&sim, reactor));
+}
+
+#[derive(serde::Deserialize)]
+struct NativeWarpCase {
+    input: serde_json::Value,
+    attackers: Vec<NativeNode>,
+    events: Vec<serde_json::Value>,
+    target_head: String,
+    target_warped: u8,
+    other_head: Option<String>,
+    other_warped: Option<u8>,
+}
+
+/// `TemporalClass::InitiateWarp @ 0x0071AF20` against the original, case by
+/// case (`tools/spatial_oracle/temporal_initiate_warp.json`, which also
+/// executes CanWarpTarget, LetGo and Contact_With_Whom): `Strength * 10` with
+/// its 32-bit wrap, the head and insert-after-head branches, CanWarpTarget's
+/// refusals (radio contact slot 0 only, the war factory in the unit's own
+/// cell), the warped-attacker refusal, the release of the firer's previous
+/// victim even when the new warp is refused or has no Techno, the victim's
+/// own release, the harvester and building notices and the building going
+/// offline. VERA emits the harvester notice for every house and the app keeps
+/// the local owner's; VERA always has a player, so Deselect is compared only
+/// where the case has one. The spawn kill and FreeAll (read: both run before
+/// CanWarpTarget), the gattling spin-down and Mark are not compared.
+#[test]
+fn native_initiate_warp_corpus() {
+    let cases: Vec<NativeWarpCase> = serde_json::from_str(include_str!(
+        "../../tools/spatial_oracle/temporal_initiate_warp.json"
+    ))
+    .unwrap();
+    assert_eq!(cases.len(), 30);
+    for case in cases {
+        let input = &case.input;
+        let name = input["name"].as_str().unwrap();
+        let target_in = &input["target"];
+        let flag = |key: &str| {
+            target_in.get(key).is_some_and(|value| {
+                value.as_bool() == Some(true) || value.as_u64().is_some_and(|n| n != 0)
+            })
+        };
+        let rtti = target_in["rtti"].as_u64().unwrap_or(1);
+        let (kind, section) = match rtti {
+            1 => ("HTNK", "[HTNK]\n"),
+            2 => ("E1", "[E1]\n"),
+            6 => ("GAPOWR", "[GAPOWR]\n"),
+            other => panic!("{name}: rtti {other}"),
+        };
+        // Duplicate keys are first-wins, so the case's keys go first.
+        let mut keys = format!(
+            "Strength={}\n",
+            target_in["strength"].as_i64().unwrap_or(400)
+        );
+        if target_in["warpable"].as_u64() == Some(0) {
+            keys.push_str("Warpable=no\n");
+        }
+        if flag("insignificant") {
+            keys.push_str("Insignificant=yes\n");
+        }
+        if flag("harvester") {
+            keys.push_str("Harvester=yes\n");
+        }
+        if flag("precheck") {
+            keys.push_str("UndeploysInto=HTNK\nFoundation=1x1\n");
+        }
+        let mut text = RULES.to_string();
+        let at = text.find(section).unwrap() + section.len();
+        text.insert_str(at, &keys);
+        let rules = rules_from(&text);
+
+        let mut sim = sim(27);
+        let owner = if flag("local") {
+            "Americans"
+        } else {
+            "Allies2"
+        };
+        let target = spawn(&mut sim, &rules, kind, owner, 20, 20);
+        if let Some(factory) = target_in.get("factory") {
+            let weapons = factory["weapons_factory"].as_u64().unwrap_or(1) != 0;
+            let factory_id = spawn(
+                &mut sim,
+                &rules,
+                if weapons { "GAWEAP" } else { "GAPOWR" },
+                "Allies2",
+                26,
+                26,
+            );
+            if factory["in_cell"].as_bool().unwrap_or(true) {
+                // Footprint over the target's cell (Look_up_building_in_cell).
+                let building = sim.substrate.entities.get_mut(factory_id).unwrap();
+                building.position.rx = 19;
+                building.position.ry = 19;
+            }
+            let contacts = &mut sim
+                .substrate
+                .entities
+                .get_mut(target)
+                .unwrap()
+                .radio_contacts;
+            contacts.set_capacity(2);
+            let slot = factory["slot"].as_u64().unwrap_or(0) as usize;
+            for _ in 0..slot {
+                contacts.insert(u64::MAX);
+            }
+            contacts.insert(factory_id);
+            contacts.remove(u64::MAX);
+            assert_eq!(contacts.slot(slot), Some(factory_id));
+        }
+        if flag("iron_curtain") {
+            let frame = sim.session.binary_frame;
+            crate::sim::superweapon::invulnerability::apply_invulnerability(
+                sim.substrate.entities.get_mut(target).unwrap(),
+                frame,
+                100,
+                crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain,
+            );
+        }
+        let attacker_count = input["attackers"].as_array().map_or(1, Vec::len);
+        let attackers: Vec<u64> = (0..attacker_count)
+            .map(|n| spawn(&mut sim, &rules, "CLEG", "Russians", 2 + n as u16, 2))
+            .collect();
+        if input["attackers"][0]["warped"].as_bool() == Some(true) {
+            sim.substrate
+                .entities
+                .get_mut(attackers[0])
+                .unwrap()
+                .temporal
+                .head = Some(u64::MAX);
+        }
+        if let Some(order) = input["chain"].as_array() {
+            let order: Vec<u64> = order
+                .iter()
+                .map(|n| attackers[n.as_u64().unwrap() as usize])
+                .collect();
+            chain(&mut sim, target, &order, 777);
+        }
+        let other = spawn(&mut sim, &rules, "HTNK", "Allies2", 26, 20);
+        if input["previous_victim"].as_bool() == Some(true) {
+            chain(&mut sim, other, &[attackers[0]], 1234);
+        }
+        if input["victim_warping"].as_bool() == Some(true) {
+            sim.substrate
+                .entities
+                .get_mut(target)
+                .unwrap()
+                .temporal
+                .link = Some(TemporalLink::default());
+            chain(&mut sim, other, &[target], 555);
+        }
+        sim.substrate.entities.get_mut(target).unwrap().selected = true;
+        let notices_before = sim.sound_events.len();
+
+        let shot = (input["null_target"].as_bool() != Some(true)).then_some(target);
+        sim.temporal_initiate_warp(attackers[0], shot, &rules);
+
+        let label = |value: Option<u64>| native_name(value, target, &attackers);
+        assert_eq!(
+            label(head_of(&sim, target)),
+            case.target_head,
+            "{name}: head"
+        );
+        assert_eq!(
+            entity(&sim, target).temporal.is_warped(),
+            case.target_warped == 1,
+            "{name}: +0x270"
+        );
+        for (n, native) in case.attackers.iter().enumerate() {
+            let link = link(&sim, attackers[n]);
+            assert_eq!(
+                (label(link.target), label(link.prev), label(link.next)),
+                (
+                    native.target.clone(),
+                    native.prev.clone(),
+                    native.next.clone()
+                ),
+                "{name}: temporal{n} links"
+            );
+            assert_eq!(
+                link.warp_remaining, native.warp_remaining,
+                "{name}: temporal{n} WarpRemaining"
+            );
+        }
+        if let (Some(head), Some(warped)) = (&case.other_head, case.other_warped) {
+            assert_eq!(
+                head == "0x0",
+                head_of(&sim, other).is_none(),
+                "{name}: other head"
+            );
+            assert_eq!(
+                entity(&sim, other).temporal.is_warped(),
+                warped == 1,
+                "{name}"
+            );
+        }
+        let native = |kind: &str| case.events.iter().any(|event| event[0] == kind);
+        if input["player"].as_bool() != Some(false) {
+            assert_eq!(
+                !entity(&sim, target).selected,
+                native("deselect"),
+                "{name}: Deselect"
+            );
+        }
+        if rtti == 6 {
+            assert_eq!(
+                !entity(&sim, target).building_online(),
+                native("building_offline"),
+                "{name}: the online latch"
+            );
+        }
+        let notices: Vec<bool> = sim.sound_events[notices_before..]
+            .iter()
+            .filter_map(|event| match event {
+                SimSoundEvent::UnderAttack { miner, .. } => Some(*miner),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            notices.contains(&false),
+            native("notify_under_attack"),
+            "{name}: NotifyUnderAttack"
+        );
+        assert_eq!(
+            notices.contains(&true) && flag("local"),
+            native("radar_event"),
+            "{name}: the harvester alert"
+        );
+    }
 }
 
 /// A flat 32x32 clear map with its playfield, zones and path grid.

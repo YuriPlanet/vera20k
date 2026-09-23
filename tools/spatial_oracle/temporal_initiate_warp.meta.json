@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original 0x0071AF20 TemporalClass::InitiateWarp with CanWarpTarget 0x0071AE50, LetGo 0x0071ABC0 and RadioClass::Contact_With_Whom 0x0065AD30",
+  "assumptions": [
+    "TemporalClass +24 Owner, +28 Target, +40 Prev, +44 Next, +48 WarpRemaining",
+    "Techno +21C Owner house, +270 warped, +274 TemporalImUsing, +278 chain head, +2BC CaptureManager, +2D0 SpawnManager, +9C Location, +E4 radio contacts; Unit +6C4 type; Building +520 type",
+    "TechnoType +A0 Strength, +D3A Warpable, +232 Insignificant, +CD5 IsGattling; UnitType +E0E Harvester; BuildingType +16BD WeaponsFactory; House +5778, +1FC; [0xA83D4C] PlayerPtr"
+  ],
+  "substitutions": [
+    "Recorded at entry and returned without running: GetTechnoType, WhatAmI, the centre coordinate, the building pre-check vt+0x80, Mark, Deselect, the Iron Curtain test vt+0x160, Kill_All_Spawns, CaptureManager FreeAll, MapClass::Get_CellClass_At_Coord, Look_up_building_in_cell, CreateRadarEvent (returns the case's radar_accepts), VoxClass::PlayEVA, HouseClass::NotifyUnderAttack, UpdateGattlingStage, the building offline/online calls"
+  ],
+  "entry_points": {
+    "initiate_warp": "0x0071AF20",
+    "can_warp_target": "0x0071AE50",
+    "let_go": "0x0071ABC0",
+    "contact_with_whom": "0x0065AD30"
+  },
+  "payload_sha256": "0d831d093852e3d95c709c8f01924eb4d604e94a669775bf1ddd88ea915413b6"
+}

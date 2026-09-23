@@ -352,6 +352,11 @@ fn tick_animations_impl(
         if entity.dying && !tick_dying {
             continue;
         }
+        // The stage steps in TechnoClass::AI_Update (`0x006FAC4D`), which a
+        // warped object never reaches (`GameEntity::ai_frozen`): its pose holds.
+        if !entity.dying && entity.ai_frozen() {
+            continue;
+        }
         let type_ref = entity.type_ref();
         let Some(anim) = entity.animation.as_mut() else {
             // Dying entity with no animation → ready for despawn.

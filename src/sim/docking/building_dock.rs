@@ -618,6 +618,22 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
             continue;
         };
 
+        // A warped object runs none of its AI (`GameEntity::ai_frozen`): the
+        // approach is the waiter's own mission, the service step and the
+        // release the depot's (`MissionRepairAndProduce`). Its timer holds.
+        let actor = match snap.phase {
+            DockPhase::Servicing | DockPhase::ExitDock => snap.dock_building_id,
+            DockPhase::Approach | DockPhase::WaitForDock | DockPhase::EnterDock => snap.id,
+        };
+        if sim
+            .substrate
+            .entities
+            .get(actor)
+            .is_some_and(crate::sim::game_entity::GameEntity::ai_frozen)
+        {
+            continue;
+        }
+
         let (dock_rx, dock_ry) = depot_dock_cell(depot_rx, depot_ry, &foundation);
         let dist = cell_distance(snap.rx, snap.ry, dock_rx, dock_ry);
 
