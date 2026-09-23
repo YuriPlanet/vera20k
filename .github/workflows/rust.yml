@@ -13,22 +13,27 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # rust-lld ships with rustup and links the large test binary much faster
+  # than link.exe (the maintainer's checkouts use it too). Windows-only key.
+  CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: rust-lld
+
+# Tests and lints run as separate jobs so they build in parallel. Each runs on
+# all three platforms. Linux and macOS stay informational (continue-on-error)
+# until they have been green for a while. The macOS runners are ARM64, the only
+# non-x86 job, so its pinned golden values also check cross-architecture
+# determinism.
 jobs:
   test:
-    name: ${{ matrix.os }}
+    name: test (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             experimental: false
-          # Linux is not yet a tested platform: its failures are reported
-          # (and filed as issues) without failing the run.
           - os: ubuntu-latest
             experimental: true
-          # macOS runners are ARM64 (Apple Silicon): the only non-x86 job, so
-          # the pinned golden values here also check cross-architecture
-          # determinism. Informational until it has been green for a while.
           - os: macos-latest
             experimental: true
     runs-on: ${{ matrix.os }}
@@ -39,15 +44,38 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - name: Library tests
+        run: cargo test -p vera20k --lib
+
+  lint:
+    name: clippy (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            experimental: false
+          - os: ubuntu-latest
+            experimental: true
+          - os: macos-latest
+            experimental: true
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
-      - name: Check binaries
-        run: cargo check -p vera20k --bins
-      - name: Library tests
-        run: cargo test -p vera20k --lib
-      - name: Clippy (library)
-        run: cargo clippy -p vera20k --lib
+      # Clippy checks the binaries too, so it replaces a separate
+      # `cargo check --bins` pass. It reports warnings without failing.
+      - name: Clippy (library and binaries)
+        run: cargo clippy -p vera20k --lib --bins
