@@ -36,12 +36,15 @@ deferred Drive/Ship path request is parked, not landed, on `wip/track-order-defe
 mechanisms by player-visible combat gaps; one PR and one critic pass per mechanism.
 
 Checkpoint (2026-09-23): the landing PR merged as #444 (`9bab8fba`), Parasite (attack dogs,
-Terror Drones) as #446 (`24ff63b7`). The Techno death broadcast and Stun is on
-`feature/combat-death-stun`. Next, by player visibility: the Foot Enter_Idle_Mode leaves
-(Infantry `51CBA0`, Unit `738970`: Area Guard for DefaultToGuardArea types and IQ-gated AI
-units), then the remaining special warhead bodies starting with mind control, building
-destruction effects (`4415F0`, the NowDead contact loop), and aircraft GetFireError with
-Mission_Attack 5..9.
+Terror Drones) as #446 (`24ff63b7`), the Techno death broadcast and Stun as #447 (`ab80dd3f`).
+The SpawnManager slot guard (carrier docking) is on `feature/combat-carrier-dock`. A production
+sortie showed the Carrier wing never attacks: every manager pass re-issues each Hornet's attack
+from sub-state 0 (`assign_child_attack`), so the aircraft attack run never completes and the wing
+never lands. Next, by player visibility: that wing cycle together with the aircraft attack loop
+(Mission_Attack 5..9, GetFireError), the Foot Enter_Idle_Mode leaves (Infantry `51CBA0`, Unit
+`738970`, with the Mission_AreaGuard post and leash `4D6AA0` they need), the remaining special
+warhead bodies starting with mind control, and building destruction effects (`4415F0`, the
+NowDead contact loop).
 
 ## Landed mechanisms
 
@@ -217,6 +220,24 @@ Techno death broadcast and Stun (`feature/combat-death-stun`, no schema change),
   the alive-child guard `6B7CDD..6B7CF4`, so the Hornet stays in limbo); a third roster walk per
   death at the 20k scale (cache the order or index reverse references); ToProtect on the killing
   hit (`702D24` table).
+
+SpawnManager slot guard (`feature/combat-carrier-dock`), owner `sim/spawn_manager.rs`:
+- `SpawnManagerClass::PointerExpired` `6B7C60` keeps a slot while its child has Health, is not on
+  the retreat tracker (+6CA: cleared by the aircraft constructor, set only by
+  `SpawnRetreat__Push` `54E47D`, whose callers all free the slot straight after) and the slot is
+  not a missile slot (`6B7CDD..6B7CF2`). VERA freed the slot on any expiry, and `step_landing`'s
+  Limbo broadcasts (`5F4D61`), so a docking Hornet would free its own slot, stay in limbo for good
+  and leave the slot to a full `SpawnRegenRate` rebuild (600 frames) instead of the 150-frame
+  reload.
+- Latent in play: VERA does not land a recalled Hornet yet (the Fly arrival BeginLanding call
+  `4CF520` is unported; the recall Move ends in Idle, then Guard), so no production frame reaches
+  the dock today. The test stages the landing step by hand: the Hornet keeps its slot, reloads on
+  `SpawnReloadRate` and is ready again (fails without the guard). Rust regression only.
+- Critic (one pass): guard matches native; wording fixed (latency, +6CA writers). Follow-ups for
+  the Carrier wing mechanism: native state 3 re-issues Assign_Target and QueueMission(Attack) each
+  pass as no-ops when unchanged (`6B7718`, `6B772C`), where VERA restarts the attack run from
+  sub-state 0; Kill_All_Spawns crashes airborne MissileSpawn=no children (`SpawnRetreat__Push` ->
+  vt+3DC `AircraftClass::Crash` `4DEBB0`), where VERA lets them fly on; the Fly arrival landing.
 
 ## Native evidence inventory
 

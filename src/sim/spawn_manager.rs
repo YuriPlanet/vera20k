@@ -1297,7 +1297,8 @@ pub fn detonate_missiles(sim: &mut Simulation, detonated: &[u64]) {
 /// if      (expired == CurrentTarget) { CurrentTarget = 0;
 ///                                      if (QueuedTarget == 0) ClearAllTargets(); }
 /// else if (expired == QueuedTarget)  { QueuedTarget = 0; }
-/// else if (expired is a slot child)  { slot.Spawn = 0; slot.State = 7;
+/// else if (expired is a slot child)  { if (child alive) return;  // see below
+///                                      slot.Spawn = 0; slot.State = 7;
 ///                                      slot.Timer = SpawnRegenRate; }
 /// else if (expired == Owner)         { Kill_All_Spawns(); ClearAllTargets(); }
 /// ```
@@ -1311,18 +1312,20 @@ pub fn detonate_missiles(sim: &mut Simulation, detonated: &[u64]) {
 /// The owner arm is handled by `Simulation::spawn_manager_owner_expired`, which
 /// calls [`kill_all_spawns`] and [`clear_all_spawn_targets`] directly.
 ///
-/// **Slot-arm difference.** Native guards the slot arm with an *alive-child*
-/// test — `child+0x6C > 0 && child+0x6CA == 0 && node+0x14 != 1`, i.e. health
-/// above zero, not already on the retreat list, and not a missile slot.
-/// `+0x6C` is Health, proven by state 6 writing `childType+0xA0` (`Strength=`)
-/// into `+0x6C`/`+0x70`. The guard exists because native delivers
-/// `PointerExpired` for *living* children too, on limbo — a Hornet docking
-/// would otherwise expire its own slot. DEFECT, not yet ported: VERA omits the
-/// guard although `Simulation::techno_limbo` does broadcast (through
-/// `object_conceal_with_context`), so a Hornet limboed by `step_landing` frees
-/// its own slot, `restore_docked_child` then finds no child, and the slot never
-/// leaves Reloading. Trigger: every carrier recall. Owner: the next
-/// SpawnManager mechanism, with a carrier recall test.
+/// **Slot-arm alive-child guard** (`0x006B7CDD..0x006B7CF2`): the slot is
+/// kept, and nothing else happens, while `child+0x6C > 0 && child+0x6CA == 0
+/// && node+0x14 != 1`, i.e. the child has Health, is not on the retreat
+/// tracker, and the slot is not a missile slot. `+0x6C` is Health, proven by
+/// state 6 writing `childType+0xA0` (`Strength=`) into `+0x6C`/`+0x70`. The
+/// guard exists because `ObjectClass::Limbo` broadcasts (`0x005F4D61`), and a
+/// Hornet docking through `step_landing`'s Limbo would otherwise expire its own
+/// slot and strand itself in limbo. `+0x6CA` needs no VERA field: on an
+/// aircraft the constructor clears it (`0x00413D4E`) and only
+/// `SpawnRetreat__Push` sets it (`0x0054E47D`, a `MissileSpawn=` child), and
+/// every Push caller frees the slot right after — Kill_All_Spawns directly
+/// (`0x006B71C2`), the launch and ClearAllTargets through this routine
+/// (`0x006B7ACD`, `0x006B7C16`) — except a missile slot's launch, and a
+/// missile slot is freed on any expiry by the `is_missile_spawn` test.
 pub fn notify_pointer_expired(sim: &mut Simulation, listener_id: u64, expired_id: u64) {
     if listener_id == expired_id {
         // The owner arm; `Simulation::spawn_manager_owner_expired` already ran it.
@@ -1361,6 +1364,16 @@ pub fn notify_pointer_expired(sim: &mut Simulation, listener_id: u64, expired_id
         return;
     }
     if let Some(index) = slot_index {
+        let child_alive = sim
+            .substrate
+            .entities
+            .get(expired_id)
+            .is_some_and(|child| child.health.current > 0);
+        let missile_slot =
+            manager_field(sim, listener_id, |m| m.slots[index].is_missile_spawn).unwrap_or(false);
+        if child_alive && !missile_slot {
+            return;
+        }
         let frame = sim.session.binary_frame;
         with_slot(sim, listener_id, index, |slot| {
             slot.spawn = None;
