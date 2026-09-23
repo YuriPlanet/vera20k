@@ -3051,25 +3051,23 @@ fn gsi_04_07_damage_full_capture_manager_blocks_retaliation() {
             ai_counter: 0,
             dispatch_timer: MissionDispatchTimer::at_frame(0),
         });
-        let mut manager = crate::sim::capture_manager::init_capture_manager(
-            rules.object("YAPSYT").expect("YAPSYT type"),
-            &rules,
-        )
-        .expect("Primary MindControl weapon constructs CaptureManager");
-        assert_eq!(manager.max_control, 3, "stock tower link limit");
-
-        for offset in 0..link_count {
-            let id = 10 + offset as u64;
+        let links: Vec<u64> = (0..link_count).map(|offset| 10 + offset as u64).collect();
+        for (offset, &id) in links.iter().enumerate() {
             let mut controlled = make_entity(id, "LINK", 10 + offset as u16, 5, 100);
             controlled.owner = victim_owner;
             controlled.type_ref = link_type;
-            controlled.mind_controlled = true;
+            controlled.mind_control =
+                crate::sim::capture_manager::MindControlLink::controlled_by_for_test(2);
             controlled.lifecycle.in_limbo = false;
             controlled.lifecycle.cell_marked = true;
             entities.insert(controlled);
-            manager.link_controlled_entity(id);
         }
-        victim.capture_manager = Some(manager);
+        // The stock tower's link limit (`[MultipleMindControlTower] Damage=3`).
+        victim.capture_manager = Some(
+            crate::sim::capture_manager::CaptureManagerState::with_victims_for_test(
+                3, false, &links,
+            ),
+        );
         entities.insert(victim);
 
         let event = EntityDamageEvent::area(2, 1, 0, 1, Some(source_owner), hit_wh);
@@ -3110,8 +3108,8 @@ fn gsi_04_07_damage_full_capture_manager_blocks_retaliation() {
                 .capture_manager
                 .as_ref()
                 .expect("manager retained")
-                .controlled_entity_ids
-                .clone(),
+                .victims()
+                .collect(),
         }
     }
 

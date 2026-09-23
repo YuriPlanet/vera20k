@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original static initializers 0x00471540..0x004716B0 of the CaptureManager file; [0x0089E178] and [0x0089E16C]",
+  "assumptions": [
+    "Initializers run in address order, as the CRT table lists this file's; each reads only rdata or earlier results"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "level_height": "0x00471610",
+    "bridge_height": "0x004716B0"
+  },
+  "payload_sha256": "dabb4e674745a4ff8d7c56eede6f7b445b73e3efb835229bcbdf074c0d85de56"
+}

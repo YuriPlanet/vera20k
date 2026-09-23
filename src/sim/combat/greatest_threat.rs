@@ -1321,7 +1321,7 @@ fn evaluate_candidate(ctx: &ScanContext<'_>, candidate: &GameEntity) -> Option<i
     // Grizzly on Guard opens fire on passing traffic.
     if candidate_obj.insignificant
         && candidate.category != EntityCategory::Structure
-        && !candidate.mind_controlled
+        && !candidate.mind_control.is_mind_controlled()
     {
         return None;
     }

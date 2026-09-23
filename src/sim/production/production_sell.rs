@@ -743,6 +743,11 @@ pub fn sell_building(sim: &mut Simulation, rules: &RuleSet, stable_id: u64) -> b
         return false;
     };
 
+    // Native Selling ends Is_Operational (`0x004555D0`), so the next Update's
+    // off edge (`0x004549B0`) frees a Psychic Tower's captives (FreeAll at
+    // `0x00454B47`) at the start of the sell-down, long before the building
+    // goes. BuildingClass UnInit frees none, so the sale is where they go.
+    sim.free_all_captures(stable_id, rules);
     let refund = sell_refund_for_building(obj);
     let ejected = eject_sell_survivors(sim, rules, &owner_name, obj, position);
     // Eject garrison occupants alive before removing the building (gamemd SellBuilding).

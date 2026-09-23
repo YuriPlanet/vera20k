@@ -38,16 +38,16 @@ mechanisms by player-visible combat gaps; one PR and one critic pass per mechani
 Checkpoint (2026-09-23): the landing PR merged as #444 (`9bab8fba`), Parasite (attack dogs,
 Terror Drones) as #446 (`24ff63b7`), the Techno death broadcast and Stun as #447 (`ab80dd3f`),
 the SpawnManager slot guard as #448 (`35149218`), the Scenario-stream death draws as #449
-(`280a9243`), crew survival (building SpawnSurvivors, vehicle crew) as #450 (`bf55a511`). The
+(`280a9243`), crew survival (building SpawnSurvivors, vehicle crew) as #450 (`bf55a511`), the
 death anims (building DestructionEffects, Unit Death_Explosion with the ship-sinking gate, the
-Aircraft arm) are on `feature/combat-destruction-anims`; the next destruction item is constructing
-each death object at its native call. A production sortie showed the Carrier wing never attacks:
-every manager pass re-issues each Hornet's attack from sub-state 0 (`assign_child_attack`), so the aircraft attack run never completes and the wing
-never lands. Next, by player visibility: that wing cycle together with the aircraft attack loop
-(Mission_Attack 5..9, GetFireError), the Foot Enter_Idle_Mode leaves (Infantry `51CBA0`, Unit
-`738970`, with the Mission_AreaGuard post and leash `4D6AA0` they need), the remaining special
-warhead bodies starting with mind control, and building destruction effects (`4415F0`, the
-NowDead contact loop).
+Aircraft arm) as #451 (`1aa3041b`). Mind control (CaptureManagerClass) is on
+`feature/combat-mind-control`. A production sortie showed the Carrier wing never attacks: every
+manager pass re-issues each Hornet's attack from sub-state 0 (`assign_child_attack`), so the
+aircraft attack run never completes and the wing never lands. Next, by player visibility: the
+remaining special warhead bodies (Temporal, IvanBomb, Magnetron and the rest), the ship sink, that
+wing cycle together with the aircraft attack loop (Mission_Attack 5..9, GetFireError), the Foot
+Enter_Idle_Mode leaves (Infantry `51CBA0`, Unit `738970`, with the Mission_AreaGuard post and leash
+`4D6AA0` they need), and constructing each death object at its native call.
 
 ## Landed mechanisms
 
@@ -337,6 +337,81 @@ Death anims (`feature/combat-destruction-anims`, snapshot 195), owner
   effect-catalog, FIRE3, debris and address docs. Deferred with a residual: constructing each
   death object at its native call.
 
+Mind control (`feature/combat-mind-control`, snapshot 196, hash feature 196), owner
+`capture_manager.rs`:
+- Capture: the MindControl arm of `BulletClass::DetonateAtCoord` (`46920B`) claims the impact
+  (no area damage) and calls CaptureUnit `471D40` on the bullet's own target. Stock
+  `[PsychicControl]` is Inviso, so VERA's immediate delivery now runs that arm too; before, every
+  Yuri, Yuri Prime, Psychic Commando, Mastermind and Psychic Tower shot dealt 1-3 ordinary damage.
+  CaptureUnit: CanCapture `471C90` (house, ImmuneToPsionics, tank bunker, already controlled,
+  Iron Curtain, capacity with the single-link replacement, Selling/Construction), ChangeOwner,
+  the node with the original house, `+2C0`, the `70F850` reset to Guard, DecideUnitFate `4723B0`
+  (one Scenario `RandomRanged(1, 100)` for a computer-owned result; the controller's house picks
+  the AICapture table), the MINDANIM ring attached at the victim's GetCoords raised by
+  `MindControlRingOffset=`, or for a building by `Height=` levels of 104 leptons.
+- Release: FreeUnit `471FF0` / FreeAll `472140` from the controller's death arm (`702112`, before
+  its death sounds), Foot UnInit (`4DE5DD`), a drain link on it (`70FDBD`), a Psychic Tower's
+  operational off edge (FreeAll `454B47`, which a sale reaches through Selling; VERA's synchronous
+  sale frees at its start), the single-link replacement and a captive boarding a building (the
+  PerCellProcess sites): ring UnInit, MindClearedSound, ChangeOwner back, DecideUnitFate. A
+  captive's death only drops its node. The victim's `+2C0` also bars deploying an MCV (`700ED0`)
+  and repacking a Construction Yard (`449C15`, `44F614`).
+- Gates: GetFireError's CanCapture (`6FCB24`) in the weapon ladder (frame-free gates) and at fire
+  admission (the live check, with the Iron Curtain), IsFull in ShouldRetaliate `70882F` and
+  CanAcquireTarget `709230`, the transport and garrison radio refusals (`7375F3`, `43C4A0`,
+  `43C5CB`, CanDock `457D98` on the occupier).
+- The Mastermind overload (`471A50`, from AI_Update `6FA730` before the IsAlive gate): above three
+  captives, C4 self-damage per `Overload*=` row, the voice once per episode, five spark systems
+  (ten Scenario draws), the lean's sign draw.
+- TechnoClass::ChangeOwner's mission half (`7014A0`) now covers every class (Guard queue,
+  archive clear, Rescue, Enter_Idle_Mode with the Foot selector and the Building Guard), which a
+  release needs so the returned unit stops fighting its own side; it also changes engineer
+  capture and garrison transfer. It drops VERA's legacy `order_intent` with TarCom and NavCom, so
+  no attack-move goal or guard anchor survives an owner change.
+- Corrected consumers: CanAcquireTarget (was the victim flag), ShouldRetaliate (dropped the victim
+  flag), CanDock (tests the occupier, not the building), CanAutoCloak (the term is the Magnetron's
+  `+6AD`), the detach-sweep note (`+294` is the Airstrike link), the miner note (miners are
+  immune).
+- Native execution (Unicorn, `tools/spatial_oracle/`), pinned in `capture_manager::tests::native_*`:
+  `capture_decide_fate.py` runs the original DecideUnitFate over 156 rows (each reason and its
+  boundaries, including negative power totals and a 0/0 health ratio, which native reads as
+  Wounded because FCOMP sets C0 when unordered; VERA read it as Normal and was fixed; the draw;
+  the walk through choices 1-6, an exhausted table and a negative weight); `capture_overload_update.py`
+  runs the original constructor and Update frame by frame over 22 cases (first check on the 31st
+  frame, each row and its boundaries, the damage arguments, the voice latch and its re-arm, spark
+  offsets `{X+r2, Y+r1, Z+100}` with a zero target, the lean draw's gates, a finite manager, zero
+  frames, a killing overload); `capture_ring_height.py` runs the static initializer that sets a
+  building ring's level height to 104. Parity demonstrated for those functions within those
+  inputs; the fixtures stub ReceiveDamage, PlayAt, operator new, the ParticleSystem constructor,
+  the grinder/absorber seeks and Queue_Mission.
+- Tests `capture_manager::tests` (25): the three native corpora, weapon-0 managers (rookie
+  weapon), capture with its draw, the building ring, single-link release, CanCapture gates (an
+  ally too), the ladder gate, death release newest-first with its draw, silent victim death, Foot
+  UnInit, tower off edge, a tower sale with a save/load after it, the MCV and Construction Yard
+  refusals, the build-up gate, the dropped order, a captive boarding an absorber, the Unit
+  transport refusals, the Iron Curtain at fire time, a killing overload's draw order, the fate
+  walk, the overload cadence, snapshot and hash, a production Yuri attack order, retail binding.
+  Everything outside the native corpora is Rust regression only.
+- Critic (one pass): two blockers fixed (a captured MCV deployed and a captured Construction Yard
+  repacked; a sold Psychic Tower kept its captives and broke later saves), plus the build-up and
+  repack gate, the legacy order, the rookie manager, the local-player capture sound, stale docs
+  and the aircraft-transport refusal. Follow-ups outside the mechanism: AI_Update's allied-target
+  drop (`6FA30C..6FA46C`); open-topped passengers fire from the transport, which has no manager,
+  so a Yuri inside a Battle Fortress cannot capture; the unused mind-control cursors; the house
+  defeat blow-up below.
+- Residuals (module doc): the Psychic Dominator and `+2C4`; DecideUnitFate's Team, Grinder and
+  Bio Reactor arms (hunt instead); link lines and the overload flash (presentation); the overload
+  lean (no rocking producer); the Temporal warp release; the crushed controller's release timing;
+  object tag events 6/0x2C; the Iron Curtain gate absent from the frame-free weapon ladder; Inviso
+  special warheads other than MindControl (the squid grapple) still take area damage on the
+  immediate path.
+
+House defeat (found while tracing GetOriginalOwner, not yet a mechanism): `0x004FC6D0` (Ghidra
+called it ScatterAllUnits; now `HouseClass__Blowup_All`) kills every Techno whose original owner is
+the house with full-health C4 damage, called from HouseClass::Update on the `+1F6`/`+298` timer
+(`4F87FA`) and when a house object count sum reaches zero (`4F8F7B`). VERA's `check_defeat` says
+gamemd keeps a defeated house's units, citing the old label. Needs its own trace before any change.
+
 ## Native evidence inventory
 
 Run `python -m tools.spatial_oracle.<stem> --check` (`flat_art`: `tools/projectile_oracle`).
@@ -544,7 +619,8 @@ Explosion=/DestroyAnim= picks now draw on the Scenario stream (`7022C8`, `70232B
 `73881D`, `41663C`), with only the death sounds on the main stream (`feature/combat-death-rng-stream`).
 
 Whole-combat gaps (plan list plus review coverage top 10):
-- Special warheads: 10 bodies no-op (`projectile.rs:856`); Parasite ported (squid residual).
+- Special warheads: 9 bodies no-op (`projectile.rs:856`); Parasite ported (squid residual), mind
+  control ported (Psychic Dominator residual).
 - Destruction: construct each death object at its native call (voxel debris, debris anims,
   death anims, InfDeath anims and the death weapon's impact anim inline in the receiver, the
   outer impact anim after its receivers; the fatal prelude after the Techno death arm; verify the

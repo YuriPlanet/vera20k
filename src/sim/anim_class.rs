@@ -1564,6 +1564,16 @@ impl Simulation {
         true
     }
 
+    /// A producer's plain post-construction `AnimClass +0x100` (ZAdjust)
+    /// write, such as CaptureUnit's building ring (`0x00471F66`).
+    pub(crate) fn set_anim_z_adjust(&mut self, id: AnimId, z_adjust: i32) -> bool {
+        let Some(anim) = self.anim_mut_by_id(id) else {
+            return false;
+        };
+        anim.z_adjust = z_adjust;
+        true
+    }
+
     pub(crate) fn update_building_damage_fire(&mut self, building_id: u64, rules: &RuleSet) {
         let Some((current, type_ref, position, prior_state, category)) =
             self.substrate.entities.get(building_id).map(|entity| {

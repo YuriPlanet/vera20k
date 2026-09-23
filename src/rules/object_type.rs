@@ -922,6 +922,14 @@ pub struct ObjectType {
     pub type_immune: bool,
     /// Psychedelic/mind-control immunity. Buildings default true natively.
     pub immune_to_psionics: bool,
+    /// `MindControlRingOffset=` (`TechnoTypeClass+0x60C`, ReadINI
+    /// `0x00714350`; constructor default 0x8C at `0x0071103A`): the capture
+    /// ring's height above a captured non-building's coordinate.
+    pub mind_control_ring_offset: i32,
+    /// A type's own `MindClearedSound=` (`TechnoTypeClass+0x5B0`, ReadINI
+    /// `0x0071395E`); FreeUnit prefers it to the global one. No stock type
+    /// authors it.
+    pub mind_cleared_sound: Option<String>,
     /// PsychicDamage immunity. Buildings default true natively.
     pub immune_to_psionic_weapons: bool,
     /// Poison-warhead immunity.
@@ -2089,6 +2097,12 @@ impl ObjectType {
             immune_to_psionics: section
                 .get_bool("ImmuneToPsionics")
                 .unwrap_or(category == ObjectCategory::Building),
+            mind_control_ring_offset: section.get_i32("MindControlRingOffset").unwrap_or(0x8C),
+            // "none" finds no sound (-1), which FreeUnit reads as unset.
+            mind_cleared_sound: section
+                .get("MindClearedSound")
+                .map(|sound| sound.trim().to_string())
+                .filter(|sound| !sound.is_empty() && !sound.eq_ignore_ascii_case("none")),
             immune_to_psionic_weapons: section
                 .get_bool("ImmuneToPsionicWeapons")
                 .unwrap_or(category == ObjectCategory::Building),

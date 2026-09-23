@@ -3013,17 +3013,14 @@ impl Simulation {
     /// went through a blocked-step Override.
     ///
     /// RESIDUALS, recorded rather than guessed:
-    /// - The native suppression clause skips the whole block for a listener
-    ///   whose manager sub-object points at the detaching object while that
-    ///   object is still alive and active — a mind-control / capture link
-    ///   holding its live victim as its target. It exists precisely so that the
-    ///   owner change *performed by* mind control does not make the controller
-    ///   drop its own new victim. VERA models mind control as a per-entity flag
-    ///   with no controller-to-victim link, so the clause cannot be evaluated
-    ///   and is omitted. Consequence: once VERA gives mind control a controller
-    ///   link, a controller will lose its target here where the original keeps
-    ///   it — every control event. Today the arm is unreachable because no
-    ///   controller link exists to hold the victim as a target.
+    /// - The native suppression clause (`0x0070D4DB..0x0070D4FB`) skips the
+    ///   whole block for a listener whose `+0x294` manager points at the
+    ///   detaching object: the Boris Airstrike link (`AirstrikeClass`,
+    ///   `+0x294` written by `0x0041D540..0x0041DCD9`), not mind control
+    ///   (`+0x2BC`, whose manager has no such field). VERA has no Airstrike
+    ///   manager, so the clause is omitted. A mind-control capture DOES run
+    ///   this sweep in full: the firing controller drops its new victim as
+    ///   its target.
     /// - The aircraft-Patrol arm, which clears two patrol-cursor fields on an
     ///   aircraft whose committed mission is Patrol. Neither field is
     ///   represented; the arm is a no-op for every ground object.
@@ -3630,6 +3627,18 @@ impl Simulation {
         // Consume deferred/retained Infantry lifetime before pointer-expiry
         // callbacks, including an UnInit that overtakes receiver delivery.
         entity.infantry_terminal = None;
+        // `FootClass::UnInit @ 0x004DE5DD` frees a controller's captives
+        // first (a crushed or otherwise removed Yuri or Mastermind).
+        let foot = matches!(
+            entity.category,
+            EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+        );
+        if foot
+            && entity.capture_manager.is_some()
+            && let Some(rules) = context.rules()
+        {
+            self.free_all_captures(stable_id, rules);
+        }
 
         self.run_represented_uninit_pre_hook(stable_id);
         self.uninit_carried_passengers(stable_id, context);

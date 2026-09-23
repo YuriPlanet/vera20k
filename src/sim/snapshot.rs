@@ -567,7 +567,10 @@ use crate::sim::world::Simulation;
 // unchanged, but a 194 save holding a death anim draws and hashes it with the
 // impact's arguments, and one taken during a building's death resumes without
 // its anims and with different ids.
-const SNAPSHOT_VERSION: u32 = 195;
+// 195 -> 196: mind control: the CaptureManager keeps each node's original
+// house and the overload countdown and voice latch; the victim keeps its
+// controller and ring anim. A 195 save cannot tell whom a captive returns to.
+const SNAPSHOT_VERSION: u32 = 196;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1379,16 +1382,26 @@ fn restore_object_references(
             )?;
         }
         if let Some(manager) = entity.capture_manager.as_ref() {
-            for &target_id in &manager.controlled_entity_ids {
+            for target_id in manager.victims() {
                 require_resolved_reference(
                     entity_ids.contains(&target_id),
                     "EntityStore",
                     entity_id,
-                    "capture_manager.controlled_entity_ids",
+                    "capture_manager.nodes",
                     "EntityStore",
                     target_id,
                 )?;
             }
+        }
+        if let Some(controller_id) = entity.mind_control.controller() {
+            require_resolved_reference(
+                entity_ids.contains(&controller_id),
+                "EntityStore",
+                entity_id,
+                "mind_control.controller",
+                "EntityStore",
+                controller_id,
+            )?;
         }
         if let Some(plant) = entity.c4_plant.as_ref() {
             require_resolved_reference(
@@ -3483,7 +3496,8 @@ mod tests {
         // 192 -> 193: ParasiteClass and the victim's parasite/paralysis fields.
         // 193 -> 194: Building+6E3 HasBeenCaptured.
         // 194 -> 195: death anims take the death producers' arguments.
-        assert_eq!(super::SNAPSHOT_VERSION, 195);
+        // 195 -> 196: mind-control nodes, overload state and victim links.
+        assert_eq!(super::SNAPSHOT_VERSION, 196);
     }
 
     #[test]
@@ -5439,11 +5453,13 @@ mod tests {
         aircraft.berserk.timer = -17;
         aircraft.was_attacked_by_enemy = true;
         aircraft.damage_smoke_system_id = Some(2);
-        aircraft.capture_manager = Some(crate::sim::capture_manager::CaptureManagerState {
-            max_control: 3,
-            infinite_mind_control: false,
-            controlled_entity_ids: vec![3, 4],
-        });
+        aircraft.capture_manager = Some(
+            crate::sim::capture_manager::CaptureManagerState::with_victims_for_test(
+                3,
+                false,
+                &[3, 4],
+            ),
+        );
         aircraft.pending_c4_detonation = Some(crate::sim::components::PendingC4Detonation {
             start_frame: 11,
             duration_frames: 35,
@@ -5616,8 +5632,7 @@ mod tests {
             .capture_manager
             .as_mut()
             .unwrap()
-            .controlled_entity_ids
-            .reverse();
+            .reverse_nodes_for_test();
         assert_ne!(sim.state_hash(), expected_hash, "MCNode order is hashed");
         sim.substrate
             .entities
@@ -5626,8 +5641,7 @@ mod tests {
             .capture_manager
             .as_mut()
             .unwrap()
-            .controlled_entity_ids
-            .reverse();
+            .reverse_nodes_for_test();
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "gsi_04_07_air_spatial", 0);
         assert_eq!(
@@ -5658,8 +5672,8 @@ mod tests {
             entity
                 .capture_manager
                 .as_ref()
-                .map(|manager| manager.controlled_entity_ids.as_slice()),
-            Some([3, 4].as_slice())
+                .map(|manager| manager.victims().collect::<Vec<_>>()),
+            Some(vec![3, 4])
         );
         assert_eq!(restored.houses.get(&owner).unwrap().current_iq, 2);
         assert_eq!(

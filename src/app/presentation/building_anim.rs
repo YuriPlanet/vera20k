@@ -269,7 +269,8 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
                 }
             }
             GameSoundEvent::CloakSound { sound_id, source }
-            | GameSoundEvent::WallCrushed { sound_id, source } => {
+            | GameSoundEvent::WallCrushed { sound_id, source }
+            | GameSoundEvent::VocAt { sound_id, source } => {
                 // RulesClass::ReadAudioVisual @ 0x006691E0 (CloakSound) and
                 // ObjectTypeClass::ReadINI @ 0x005F93B5 (CrushSound) store only
                 // the VocClass::FindByName @ 0x007514D0 result. An invalid name

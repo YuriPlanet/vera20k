@@ -853,31 +853,30 @@ pub fn projectile_shrapnel_count(
 /// `0x00469c13`) into a 2/4/8 bit mask and passes it with the impact coord and
 /// `bullet+0x6c`; the exact visual `0x0048a620` produces is UNCHECKED here.
 ///
-/// RESIDUAL — **no special effect body is implemented in VERA.** Every variant
-/// except `OrdinaryDamage` currently claims the detonation, suppresses damage
-/// and shrapnel exactly as native does, and then runs the shared tail without
-/// performing its effect. Per-variant native callees are named below; the
-/// unimplemented effect families are ports M15b (Parasite), M15c (MindControl)
-/// and M15d (the rest).
-/// - Trigger: any impact whose warhead carries one of the eleven flags. In
-///   stock `rulesmd.ini` that is 14 warhead sections, named by 24 weapon
-///   sections through an exact-case `Warhead=`, of which 22 are actually
-///   mounted (`TankMakeupKit` and `CRMakeupKit` are named by no mount key;
-///   gamemd's INI lookup is case-sensitive, and there is no near-miss
-///   spelling of any of the eleven keys or of `Warhead=` in stock) — carried
-///   by Yuri/Yuri Prime/Psychic Tower/Mastermind, attack dogs, Terror Drones,
-///   Giant Squids, Chrono Legionnaires, Crazy Ivan, Engineers, Spies,
-///   Magnetrons, Tesla Troopers, the IFV's chrono weapon, Boris and the Weed
-///   Guy.
+/// RESIDUAL — **nine special effect bodies are not implemented in VERA.**
+/// MindControl (`capture_manager`) and Parasite (`combat/parasite.rs`, visible
+/// projectiles) run their bodies. Every other variant except
+/// `OrdinaryDamage` claims the detonation, suppresses damage and shrapnel
+/// exactly as native does, and then runs the shared tail without performing
+/// its effect. Per-variant native callees are named below; the unimplemented
+/// families are port M15d.
+/// - Trigger: any impact whose warhead carries one of the nine unported
+///   flags. The stock census across all eleven flags was 14 warhead
+///   sections, named by 24 weapon sections through an exact-case `Warhead=`,
+///   of which 22 are mounted (`TankMakeupKit` and `CRMakeupKit` are named by
+///   no mount key; gamemd's INI lookup is case-sensitive); its carriers other
+///   than the mind controllers and Terror Drones are attack dogs, Giant
+///   Squids (Inviso, so their Parasite arm is not dispatched either), Chrono
+///   Legionnaires, Crazy Ivan, Engineers, Spies, Magnetrons, Tesla Troopers,
+///   the IFV's chrono weapon, Boris and the Weed Guy.
 /// - Player effect: the shot lands, plays its animation and leaves its crater,
-///   but nobody is controlled, attached to, erased, bombed, defused, disguised
-///   or lifted, and the target takes no damage from that shot.
+///   but nobody is attached to, erased, bombed, defused, disguised or lifted,
+///   and the target takes no damage from that shot.
 /// - Frequency: continuous in ordinary skirmish — an attack dog appears in
-///   almost every game and a Yuri beam fires every few seconds in any Yuri
-///   game.
+///   almost every game.
 /// - Downstream risk: the ports add snapshotted, hashed entity state
-///   (`ParasiteClass`, the victim-side mind-control link, `TemporalClass`,
-///   `BombClass`), so each carries its own `SNAPSHOT_VERSION` bump.
+///   (`TemporalClass`, `BombClass`), so each carries its own
+///   `SNAPSHOT_VERSION` bump.
 ///
 /// RESIDUAL — **the `[ESP+0xf]` ordinary-arm visual bypass is not modelled.**
 /// `0x004690c9` zeroes `[ESP+0xf]` on entry and `0x00469a9f` is its only
@@ -908,7 +907,8 @@ pub fn projectile_shrapnel_count(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpecialDetonationAction {
     /// `MindControl=` (`WarheadTypeClass+0x155`), test `0x00469211` ->
-    /// `CaptureManagerClass::CaptureUnit @ 0x00471d40`. UNIMPLEMENTED (M15c).
+    /// `CaptureManagerClass::CaptureUnit @ 0x00471d40`, ported in
+    /// `capture_manager` (the Inviso delivery dispatches it too).
     MindControl,
     /// `IvanBomb=` (`+0x157`), test `0x00469343` ->
     /// `BombClass::Attach @ 0x00438e70`. UNIMPLEMENTED (M15d).

@@ -118,7 +118,7 @@ impl Simulation {
     /// `CRElectricBolt` shot. It does NOT cover shrapnel bolts, which reach
     /// `CreateElectricBolt` through a different seam — see the residual below.
     ///
-    /// RESIDUAL (GSI-05.13) — the shrapnel seam and three other native
+    /// RESIDUAL (GSI-05.13) — the shrapnel seam and two other native
     /// producers are not wired. Their reachability is settled rather than
     /// assumed:
     /// - `BulletClass::SpawnShrapnel @ 0x0046A310` calls `CreateElectricBolt`
@@ -139,16 +139,14 @@ impl Simulation {
     ///   REACHABLE: stock authors it once, on `[RepairBullet]`
     ///   (`AttachedParticleSystem=WeldingSys`), carried by the IFV's
     ///   `Weapon2`/`EliteWeapon2` — the repair IFV's welding sparks.
-    /// - `CaptureManagerClass::Update @ 0x00471C15`, mind-control overload past
-    ///   the first `OverloadCount` tier. REACHABLE in any Yuri match; five
-    ///   iterations, each taking two `RandomRanged(-200, 200)` draws first.
     /// - `UnitClass::AI @ 0x007361A4`, mid-deploy, gated on `Techno+0x1C8` and
     ///   a coordinate/frame modulo. REACHABLE but rare — a few frames per MCV
     ///   or Slave Miner deploy, taking two `RandomRanged(-100, 100)` draws.
     ///
-    /// - Trigger: an elite Tesla shot, repairing with an IFV, overloading a
-    ///   mind-controller, or deploying an MCV. (The parasite bite's
-    ///   `DefaultSparkSystem` at `0x0062A103` is wired in `combat/parasite.rs`.)
+    /// - Trigger: an elite Tesla shot, repairing with an IFV, or deploying an
+    ///   MCV. (The parasite bite's `DefaultSparkSystem` at `0x0062A103` is
+    ///   wired in `combat/parasite.rs`, the Mastermind overload's at
+    ///   `0x00471C15` in `capture_manager.rs`.)
     /// - Player effect: none of those throws sparks. The IFV repair arm is the
     ///   one a player watches — a repair beam with no welding shower.
     /// - Frequency: the shrapnel arm is the common one — it follows every
@@ -158,8 +156,8 @@ impl Simulation {
     /// - Downstream risk: the `Fire_At` arm needs the `Techno+0x308` slot and
     ///   its clearing writer, which is UNCHECKED — the offset is shared across
     ///   several classes and the search for the writer was not settled. The
-    ///   overload and deploy arms take RNG draws *before* their spawn, so both
-    ///   move the shared stream and want their own slice with a re-baseline.
+    ///   deploy arm takes RNG draws *before* its spawn, so it moves the shared
+    ///   stream and wants its own slice with a re-baseline.
     ///
     /// NOT_APPLICABLE_PROVEN, and recorded so it is not re-attempted: the
     /// `DamageParticleSystems=` Spark producer in

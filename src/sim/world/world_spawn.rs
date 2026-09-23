@@ -1474,9 +1474,15 @@ impl Simulation {
         }
         // Deploy asks CanDeploySlashUnload (vslot +0x314, 0x00700D50) first
         // (0x007393CC); its DeploysInto arm refuses a unit a parasite is
-        // eating (0x00700EB4..0x00700EBC), and that refusal clears Unit+0x68C
+        // eating (0x00700EB4..0x00700EBC) and, when DeploysInto is a
+        // `ConstructionYard=` building, a mind-controlled one (+0x2C0,
+        // 0x00700EC6..0x00700ED8), and that refusal clears Unit+0x68C
         // (0x00739AA7). The predicate's other arms are not represented here.
-        if source.parasite_eating_me.is_some() {
+        let stolen_mcv = source.mind_control.is_mind_controlled()
+            && construction_yard_type_for_mcv(self.interner.resolve(source.type_ref()), rules)
+                .and_then(|yard| rules.object(&yard))
+                .is_some_and(|yard| yard.construction_yard);
+        if source.parasite_eating_me.is_some() || stolen_mcv {
             if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
                 entity.mcv_deploy_pending = false;
             }
@@ -1843,6 +1849,12 @@ impl Simulation {
 
     fn construction_yard_redeploy_core_gate(&self, entity: &GameEntity) -> bool {
         if !self.session.game_options.mcv_redeploy || !entity.radio_contacts.is_empty() {
+            return false;
+        }
+        // `BuildingClass::CanUndeployMCV @ 0x00449C15` and
+        // `ShouldShowDeployButton @ 0x0044F614`: a mind-controlled yard (+0x2C0)
+        // cannot repack.
+        if entity.mind_control.is_mind_controlled() {
             return false;
         }
         self.houses

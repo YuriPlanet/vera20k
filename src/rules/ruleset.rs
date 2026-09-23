@@ -2753,6 +2753,9 @@ pub struct RuleSet {
     /// IonCannonWarhead=`, `C4Warhead=`, `CrushWarhead=`). Resolution to interned IDs happens
     /// at world init.
     pub bridge_warheads: crate::rules::bridge_warheads::BridgeWarheads,
+    /// Mind-control globals: ring anim, Mastermind overload, sounds and the
+    /// AI capture-decision tables.
+    pub mind_control: crate::rules::mind_control_rules::MindControlRules,
     /// The three hardcoded missile-spawn families (`[General] V3RocketType=`,
     /// `DMislType=`, `CMislType=`) with their launch frames, impact damage and
     /// warheads. Read by the spawn manager to classify a spawn child and by the
@@ -3403,6 +3406,8 @@ impl RuleSet {
             .map(crate::rules::bridge_warheads::BridgeWarheads::from_ini_section)
             .unwrap_or_default();
 
+        let mind_control = crate::rules::mind_control_rules::MindControlRules::from_ini(ini);
+
         // [General] rocket type/frame slots + [CombatDamage] missile warheads.
         let missile_spawn = crate::rules::missile_spawn::MissileSpawnRules::from_ini_sections(
             ini.section("General"),
@@ -3558,6 +3563,7 @@ impl RuleSet {
             super_weapon_order,
             combat_damage,
             bridge_warheads,
+            mind_control,
             missile_spawn,
             c4_delay_ticks,
             particle_types,

@@ -277,9 +277,26 @@ pub fn can_enter_transport(
         if passenger.owner() != transport.owner() {
             return false;
         }
-        // UnitClass::Receive_Radio 0x0F 0x007375FC..0x0073760A: a Foot a
-        // parasite is eating may not load.
+        // UnitClass::Receive_Radio 0x0F 0x007375F3..0x0073761D: a controlled
+        // Foot, one a parasite is eating, or one controlling a captive may not
+        // load. An absorbing building's Receive_Radio (`0x0043C4A0`) refuses
+        // only the controller; a captive boarding it is released first.
+        // AircraftClass's radio tests neither (no stock aircraft carries
+        // passengers).
+        use crate::map::entities::EntityCategory;
+        if transport.category == EntityCategory::Unit && passenger.mind_control.is_mind_controlled()
+        {
+            return false;
+        }
         if passenger.parasite_eating_me.is_some() {
+            return false;
+        }
+        if transport.category != EntityCategory::Aircraft
+            && passenger
+                .capture_manager
+                .as_ref()
+                .is_some_and(|manager| manager.has_any())
+        {
             return false;
         }
     }
@@ -326,7 +343,15 @@ pub fn can_dock_occupier_garrison(
     ) {
         return false;
     }
-    if building.mind_controlled {
+    // BuildingClass::CanDock `0x00457D98` and Receive_Radio `0x0043C5CB..
+    // 0x0043C5EF` refuse an infantry that controls a captive or is itself
+    // controlled.
+    if passenger
+        .capture_manager
+        .as_ref()
+        .is_some_and(|manager| manager.has_any())
+        || passenger.mind_control.is_mind_controlled()
+    {
         return false;
     }
     true
@@ -526,6 +551,17 @@ fn process_boarding_passenger(sim: &mut Simulation, rules: &RuleSet, pax_id: u64
         .is_some_and(|cargo| cargo.can_accept(pax_size));
 
     if can_board {
+        // PerCellProcess releases a captive before it enters (`0x0051A2DA`,
+        // `0x0051A438`, `0x0073A2CD`, `0x0073A72B`); the transport radio gates
+        // leave only absorbing buildings to reach this.
+        if let Some(controller) = sim
+            .substrate
+            .entities
+            .get(pax_id)
+            .and_then(|pax| pax.mind_control.controller())
+        {
+            sim.free_unit(controller, pax_id, rules);
+        }
         // CargoClass::AddPassenger conceals the passenger before splicing it
         // into the cargo chain. Techno Limbo owns BREAK, Mark removal, and
         // LogicVector removal in that order.
@@ -1738,21 +1774,26 @@ ConditionYellow=50%
         );
     }
 
+    /// BuildingClass::CanDock tests the entering infantry (`0x00457D98`), not
+    /// the building: a controlled occupier is refused, a controlled building
+    /// is not.
     #[test]
-    fn test_can_enter_garrison_rejects_mind_controlled_target() {
+    fn test_can_enter_garrison_rejects_a_mind_controlled_occupier() {
         let mut sim = Simulation::new();
         let rules = garrison_test_rules();
         let bldg = spawn_garrison_building(&mut sim, &rules, "CAGAS01", "Americans", 10, 10);
         let pax = spawn_boarding_occupier(&mut sim, "E1", "Americans", bldg, 10, 11);
-        sim.substrate
-            .entities
-            .get_mut(bldg)
-            .unwrap()
-            .mind_controlled = true;
-
+        sim.substrate.entities.get_mut(bldg).unwrap().mind_control =
+            crate::sim::capture_manager::MindControlLink::controlled_by_for_test(999);
+        assert!(
+            can_enter_garrison_fixture(&sim, &rules, pax, bldg),
+            "a controlled building does not refuse by itself"
+        );
+        sim.substrate.entities.get_mut(pax).unwrap().mind_control =
+            crate::sim::capture_manager::MindControlLink::controlled_by_for_test(999);
         assert!(
             !can_enter_garrison_fixture(&sim, &rules, pax, bldg),
-            "CanDock rejects target buildings where IsMindControlled is true"
+            "CanDock rejects an occupier whose IsMindControlled is true"
         );
     }
 

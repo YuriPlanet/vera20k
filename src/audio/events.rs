@@ -195,6 +195,13 @@ pub enum GameSoundEvent {
         source: Option<SoundSource>,
     },
 
+    /// One-shot positional `VocClass::PlayAt` of a rules-named sound (the
+    /// mind-control capture, release and overload sounds).
+    VocAt {
+        sound_id: String,
+        source: Option<SoundSource>,
+    },
+
     /// Positional SFX from [AudioVisual] BuildingGarrisonedSound — plays at
     /// the building's screen position when the first occupant enters.
     BuildingGarrisonedSfx {
@@ -385,6 +392,7 @@ impl GameSoundEvent {
             | Self::UnitPromoted { sound_id, .. }
             | Self::CloakSound { sound_id, .. }
             | Self::WallCrushed { sound_id, .. }
+            | Self::VocAt { sound_id, .. }
             | Self::UiSound { sound_id }
             | Self::CreditTick { sound_id }
             | Self::BaseUnderAttackSfx { sound_id }
@@ -421,6 +429,7 @@ impl GameSoundEvent {
             | Self::UnitPromoted { source, .. }
             | Self::CloakSound { source, .. }
             | Self::WallCrushed { source, .. }
+            | Self::VocAt { source, .. }
             | Self::BuildingGarrisonedSfx { source, .. }
             | Self::C4Planted { source, .. }
             | Self::RefineryExitSfx { source, .. }
@@ -570,14 +579,12 @@ impl GameSoundEvent {
 /// - The seven `Crate*Sound` keys (`+0x1E4`..`+0x1FC`): `sim/crates` places
 ///   and regenerates crates but nothing picks one up, so there is no VERA
 ///   producer to hang them on. The gap is a crate-pickup gap, not an audio one.
-/// - `MindClearedSound` (`+0x264`) — native consumer
-///   `CaptureManagerClass::FreeUnit @ 0x004720C5`; `MasterMindOverloadDeath`‑
-///   `Sound` (`+0x258`) — `CaptureManagerClass::Update @ 0x00471B39`;
-///   `PlaceBeaconSound` (`+0x1CC`) — `RadarClass::PlaceBeacon @ 0x00430D8E`
-///   (each found by an operand sweep for that `RulesClass` offset, which is
-///   capped and therefore not an exhaustive enumeration of readers). VERA has
-///   no mind-control release path, no MasterMind overload and no beacons, so
-///   none of the three has a producer to wire.
+/// - `PlaceBeaconSound` (`+0x1CC`) — `RadarClass::PlaceBeacon @ 0x00430D8E`
+///   (found by an operand sweep for that `RulesClass` offset, which is capped
+///   and therefore not an exhaustive enumeration of readers). VERA has no
+///   beacons, so there is no producer to wire. (`MindClearedSound`,
+///   `MasterMindOverloadDeathSound` and `YuriMindControlSound` are landed as
+///   [`GameSoundEvent::VocAt`] from `sim/capture_manager.rs`.)
 /// - `ImpactWaterSound` (`+0x200`): no producer; the native reader was not
 ///   isolated. (`CreditTicks` (`+0x6D0`, count `+0x6DC`) is landed as
 ///   [`GameSoundEvent::CreditTick`] — reader `CreditsClass::Draw @ 0x004A24F4`.)

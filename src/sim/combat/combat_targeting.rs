@@ -407,11 +407,12 @@ pub(crate) fn should_retaliate_from_damage(
     };
     if !victim_type.can_retaliate
         || victim.bunker_link.installed_in().is_some()
-        || victim.mind_controlled
+        // `0x0070882F`: a full CaptureManager; being controlled is no gate
+        // (no `IsMindControlled` call in `0x007087C0..0x00708B17`).
         || victim
             .capture_manager
             .as_ref()
-            .is_some_and(|manager| manager.blocks_retaliation())
+            .is_some_and(|manager| manager.is_full())
         || victim.spawn_manager.is_some()
         || victim_type
             .enslaves
