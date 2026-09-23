@@ -117,7 +117,7 @@ fn drive_ship_prefixes_match_original_fraction_bits_setter_gates_distance_and_wa
         let speed = current_speed(getter).unwrap();
         assert_eq!(expected["getters"], 1, "retry must still evaluate getter");
         assert_eq!(
-            invocation_budget(
+            super::super::track_process::invocation_budget(
                 speed,
                 integer(input, "residual", 7),
                 flag(input, "retry", false)

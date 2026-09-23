@@ -89,7 +89,6 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
     assert!(committed_track_head(accepted).is_some());
     assert!(accepted.drive_locomotion.as_ref().unwrap().track.turn_index >= 0);
 
-    let mut retired_frame = None;
     for frame in 1..160 {
         super::movement_tick::tick_movement_object_with_grids(
             &mut sim.substrate.entities,
@@ -120,11 +119,10 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
         );
         let entity = sim.substrate.entities.get(1).unwrap();
         if entity.low_bridge_tube_state.is_some() {
-            assert_eq!(
-                retired_frame,
-                Some(frame - 1),
-                "the next Process enters the tube"
-            );
+            // Terminal4B22AF->4B1F5C writes residual and returns AL=0 at
+            // 4B25F9; the outer Process continues into Process_Movement
+            // (0x4B0647) and Process_Track(1) (0x4B0AAA), whose direction-8
+            // admission 4B12xx enters the tube in the SAME Process.
             assert!(
                 committed_track_head(entity).is_none(),
                 "ordinary curve retires before tube ownership"
@@ -151,14 +149,10 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
             assert!(!sim.substrate.occupancy.contains_entity(1, 0, 1));
             return;
         }
-        if committed_track_head(entity).is_none() {
-            // Terminal4B22AF->4B1F5C writes residual and returns at4B25F9.
-            // Direction8 admission4B12xx runs on the following Process visit.
-            assert_eq!(retired_frame, None);
-            retired_frame = Some(frame);
-            assert_eq!((entity.position.rx, entity.position.ry), (1, 0));
-            assert!(entity.lifecycle.cell_marked);
-        }
+        assert!(
+            committed_track_head(entity).is_some(),
+            "the curve cannot retire without the same Process entering the tube"
+        );
         assert!(
             entity.position.rx <= 1,
             "tube steps cannot become ordinary ground curves"
@@ -1304,7 +1298,11 @@ fn forced_track_object_turn_relinks_each_committed_cell_without_a_movement_targe
         (SIM_ZERO, SIM_ZERO)
     );
     let drive = entity.drive_locomotion.as_ref().unwrap();
-    assert_eq!(drive.destination, Some(head));
+    // The terminal keeps +34 (no NavCom skips the arrival arm, 0x4B2121), so
+    // the same Process continues into Process_Movement; this grid-less
+    // fixture reaches the legacy inline lane there, not the no-queue arm.
+    // `forced_track_end_requests_its_own_cell_in_the_same_process` covers
+    // that continuation on native topology.
     assert_eq!(drive.head_to, None);
     assert_eq!(drive.occupation_head_to, None);
     assert!(!drive.track_valid);

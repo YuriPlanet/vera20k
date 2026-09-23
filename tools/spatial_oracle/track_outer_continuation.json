@@ -11840,6 +11840,1387 @@
       "falling": 0,
       "latch": 0,
       "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 4294967295,
+      "valid": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 0,
+      "valid": 1
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "entry": "004B055A",
+    "events": [
+      {
+        "address": "004B0F20",
+        "argument": 0,
+        "caller_return": "004B057B",
+        "event": "external_track",
+        "phase": "active",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 0,
+          "valid": 1
+        },
+        "supplied_al": 0
+      },
+      {
+        "address": "20005200",
+        "event": "is_moving",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_return": 1
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "20005300",
+        "event": "supplied_navcom_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "20005400",
+        "event": "navcom_coord",
+        "requester": "20002000",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_coord": [
+          2688,
+          2432,
+          48
+        ]
+      },
+      {
+        "address": "004B2630",
+        "args": [
+          1,
+          0
+        ],
+        "caller_return": "004B064C",
+        "event": "external_fresh",
+        "output_before": 0,
+        "output_pointer": "100FF024",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0,
+        "supplied_output": 0
+      },
+      {
+        "address": "004B0F20",
+        "argument": 1,
+        "caller_return": "004B0AAF",
+        "event": "external_track",
+        "phase": "postfresh",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0
+      }
+    ],
+    "input": {
+      "family": "drive",
+      "navcom": true,
+      "navcom_rtti": 15,
+      "reaim": true,
+      "stage": "after_active"
+    },
+    "original_code_and_unit_vtable_unchanged": true,
+    "output_byte": 0,
+    "returned_al": null,
+    "visited_boundaries": [
+      "004B055A",
+      "004B0F20",
+      "004B057B",
+      "004B2630",
+      "004B0F20"
+    ],
+    "writes": [
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      }
+    ]
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 4294967295,
+      "valid": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 0,
+      "valid": 1
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "entry": "004B055A",
+    "events": [
+      {
+        "address": "004B0F20",
+        "argument": 0,
+        "caller_return": "004B057B",
+        "event": "external_track",
+        "phase": "active",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 0,
+          "valid": 1
+        },
+        "supplied_al": 0
+      },
+      {
+        "address": "20005200",
+        "event": "is_moving",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_return": 1
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "20005300",
+        "event": "supplied_navcom_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "20005400",
+        "event": "navcom_coord",
+        "requester": "20002000",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_coord": [
+          2944,
+          2432,
+          48
+        ]
+      },
+      {
+        "address": "20005500",
+        "coord": [
+          2944,
+          2432,
+          48
+        ],
+        "event": "move_to",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "004B2630",
+        "args": [
+          1,
+          0
+        ],
+        "caller_return": "004B064C",
+        "event": "external_fresh",
+        "output_before": 0,
+        "output_pointer": "100FF024",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0,
+        "supplied_output": 0
+      },
+      {
+        "address": "004B0F20",
+        "argument": 1,
+        "caller_return": "004B0AAF",
+        "event": "external_track",
+        "phase": "postfresh",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0
+      }
+    ],
+    "input": {
+      "family": "drive",
+      "navcom": true,
+      "navcom_coord": [
+        2944,
+        2432,
+        48
+      ],
+      "navcom_rtti": 15,
+      "reaim": true,
+      "stage": "after_active"
+    },
+    "original_code_and_unit_vtable_unchanged": true,
+    "output_byte": 0,
+    "returned_al": null,
+    "visited_boundaries": [
+      "004B055A",
+      "004B0F20",
+      "004B057B",
+      "004B2630",
+      "004B0F20"
+    ],
+    "writes": [
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      }
+    ]
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 4294967295,
+      "valid": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 0,
+      "valid": 1
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "entry": "004B055A",
+    "events": [
+      {
+        "address": "004B0F20",
+        "argument": 0,
+        "caller_return": "004B057B",
+        "event": "external_track",
+        "phase": "active",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 0,
+          "valid": 1
+        },
+        "supplied_al": 0
+      },
+      {
+        "address": "20005200",
+        "event": "is_moving",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_return": 1
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "20005300",
+        "event": "supplied_navcom_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "20005400",
+        "event": "navcom_coord",
+        "requester": "20002000",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_coord": [
+          2688,
+          2432,
+          49
+        ]
+      },
+      {
+        "address": "20005500",
+        "coord": [
+          2688,
+          2432,
+          49
+        ],
+        "event": "move_to",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "004B2630",
+        "args": [
+          1,
+          0
+        ],
+        "caller_return": "004B064C",
+        "event": "external_fresh",
+        "output_before": 0,
+        "output_pointer": "100FF024",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0,
+        "supplied_output": 0
+      },
+      {
+        "address": "004B0F20",
+        "argument": 1,
+        "caller_return": "004B0AAF",
+        "event": "external_track",
+        "phase": "postfresh",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0
+      }
+    ],
+    "input": {
+      "family": "drive",
+      "navcom": true,
+      "navcom_coord": [
+        2688,
+        2432,
+        49
+      ],
+      "navcom_rtti": 15,
+      "reaim": true,
+      "stage": "after_active"
+    },
+    "original_code_and_unit_vtable_unchanged": true,
+    "output_byte": 0,
+    "returned_al": null,
+    "visited_boundaries": [
+      "004B055A",
+      "004B0F20",
+      "004B057B",
+      "004B2630",
+      "004B0F20"
+    ],
+    "writes": [
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      }
+    ]
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 4294967295,
+      "valid": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 0,
+      "valid": 1
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "entry": "004B055A",
+    "events": [
+      {
+        "address": "004B0F20",
+        "argument": 0,
+        "caller_return": "004B057B",
+        "event": "external_track",
+        "phase": "active",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 0,
+          "valid": 1
+        },
+        "supplied_al": 0
+      },
+      {
+        "address": "20005200",
+        "event": "is_moving",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_return": 1
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "20005300",
+        "event": "supplied_navcom_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "004B2630",
+        "args": [
+          1,
+          0
+        ],
+        "caller_return": "004B064C",
+        "event": "external_fresh",
+        "output_before": 0,
+        "output_pointer": "100FF024",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0,
+        "supplied_output": 0
+      },
+      {
+        "address": "004B0F20",
+        "argument": 1,
+        "caller_return": "004B0AAF",
+        "event": "external_track",
+        "phase": "postfresh",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0
+      }
+    ],
+    "input": {
+      "family": "drive",
+      "navcom": true,
+      "navcom_coord": [
+        2944,
+        2432,
+        48
+      ],
+      "navcom_rtti": 1,
+      "reaim": true,
+      "stage": "after_active"
+    },
+    "original_code_and_unit_vtable_unchanged": true,
+    "output_byte": 0,
+    "returned_al": null,
+    "visited_boundaries": [
+      "004B055A",
+      "004B0F20",
+      "004B057B",
+      "004B2630",
+      "004B0F20"
+    ],
+    "writes": [
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      }
+    ]
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 4294967295,
+      "valid": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 0,
+      "valid": 1
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "entry": "004B055A",
+    "events": [
+      {
+        "address": "004B0F20",
+        "argument": 0,
+        "caller_return": "004B057B",
+        "event": "external_track",
+        "phase": "active",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 0,
+          "valid": 1
+        },
+        "supplied_al": 0
+      },
+      {
+        "address": "20005200",
+        "event": "is_moving",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_return": 1
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      }
+    ],
+    "input": {
+      "family": "drive",
+      "navcom": true,
+      "navcom_coord": [
+        2944,
+        2432,
+        48
+      ],
+      "navcom_rtti": 15,
+      "reaim": true,
+      "stage": "after_active",
+      "unit_6d1": 1
+    },
+    "original_code_and_unit_vtable_unchanged": true,
+    "output_byte": null,
+    "returned_al": null,
+    "visited_boundaries": [
+      "004B055A",
+      "004B0F20",
+      "004B057B"
+    ],
+    "writes": []
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 4294967295,
+      "valid": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 0,
+      "valid": 1
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "entry": "004B055A",
+    "events": [
+      {
+        "address": "004B0F20",
+        "argument": 0,
+        "caller_return": "004B057B",
+        "event": "external_track",
+        "phase": "active",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 0,
+          "valid": 1
+        },
+        "supplied_al": 0
+      },
+      {
+        "address": "20005200",
+        "event": "is_moving",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_return": 0
+      }
+    ],
+    "input": {
+      "family": "drive",
+      "is_moving": 0,
+      "navcom": true,
+      "navcom_coord": [
+        2944,
+        2432,
+        48
+      ],
+      "navcom_rtti": 15,
+      "queue_head": -1,
+      "reaim": true,
+      "stage": "after_active"
+    },
+    "original_code_and_unit_vtable_unchanged": true,
+    "output_byte": null,
+    "returned_al": null,
+    "visited_boundaries": [
+      "004B055A",
+      "004B0F20",
+      "004B057B"
+    ],
+    "writes": []
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 4294967295,
+      "valid": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 0,
+      "valid": 1
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "004B078C",
+    "entry": "004B055A",
+    "events": [
+      {
+        "address": "004B0F20",
+        "argument": 0,
+        "caller_return": "004B057B",
+        "event": "external_track",
+        "phase": "active",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 0,
+          "valid": 1
+        },
+        "supplied_al": 0
+      },
+      {
+        "address": "20005200",
+        "event": "is_moving",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "20005300",
+        "event": "supplied_navcom_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "20005400",
+        "event": "navcom_coord",
+        "requester": "20002000",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_coord": [
+          2944,
+          2432,
+          48
+        ]
+      },
+      {
+        "address": "20005500",
+        "coord": [
+          2944,
+          2432,
+          48
+        ],
+        "event": "move_to",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "004B2630",
+        "args": [
+          1,
+          0
+        ],
+        "caller_return": "004B064C",
+        "event": "external_fresh",
+        "output_before": 0,
+        "output_pointer": "100FF024",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0,
+        "supplied_output": 0
+      },
+      {
+        "address": "004B0F20",
+        "argument": 1,
+        "caller_return": "004B0AAF",
+        "event": "external_track",
+        "phase": "postfresh",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0
+      }
+    ],
+    "input": {
+      "family": "drive",
+      "is_moving": 0,
+      "navcom": true,
+      "navcom_coord": [
+        2944,
+        2432,
+        48
+      ],
+      "navcom_rtti": 15,
+      "queue_head": 2,
+      "reaim": true,
+      "stage": "after_active"
+    },
+    "original_code_and_unit_vtable_unchanged": true,
+    "output_byte": 0,
+    "returned_al": null,
+    "visited_boundaries": [
+      "004B055A",
+      "004B0F20",
+      "004B057B",
+      "004B2630",
+      "004B0F20"
+    ],
+    "writes": [
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      }
+    ]
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
       "navcom": 0,
       "navcom_aux": 324469318,
       "owner_link": 536879104,
@@ -26205,6 +27586,1059 @@
       "0069FC8B"
     ],
     "writes": []
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 4294967295,
+      "valid": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 0,
+      "valid": 1
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "entry": "0069FC6A",
+    "events": [
+      {
+        "address": "006A05F0",
+        "argument": 0,
+        "caller_return": "0069FC8B",
+        "event": "external_track",
+        "phase": "active",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 0,
+          "valid": 1
+        },
+        "supplied_al": 0
+      },
+      {
+        "address": "20005200",
+        "event": "is_moving",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_return": 1
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "006A1C80",
+        "args": [
+          1,
+          0
+        ],
+        "caller_return": "0069FCF3",
+        "event": "external_fresh",
+        "output_before": 0,
+        "output_pointer": "100FF024",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0,
+        "supplied_output": 0
+      },
+      {
+        "address": "006A05F0",
+        "argument": 1,
+        "caller_return": "006A0178",
+        "event": "external_track",
+        "phase": "postfresh",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0
+      }
+    ],
+    "input": {
+      "family": "ship",
+      "navcom": true,
+      "navcom_rtti": 15,
+      "reaim": true,
+      "stage": "after_active"
+    },
+    "original_code_and_unit_vtable_unchanged": true,
+    "output_byte": 0,
+    "returned_al": null,
+    "visited_boundaries": [
+      "0069FC6A",
+      "006A05F0",
+      "0069FC8B",
+      "006A1C80",
+      "006A05F0"
+    ],
+    "writes": [
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      }
+    ]
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 4294967295,
+      "valid": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 0,
+      "valid": 1
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "entry": "0069FC6A",
+    "events": [
+      {
+        "address": "006A05F0",
+        "argument": 0,
+        "caller_return": "0069FC8B",
+        "event": "external_track",
+        "phase": "active",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 0,
+          "valid": 1
+        },
+        "supplied_al": 0
+      },
+      {
+        "address": "20005200",
+        "event": "is_moving",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_return": 1
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "006A1C80",
+        "args": [
+          1,
+          0
+        ],
+        "caller_return": "0069FCF3",
+        "event": "external_fresh",
+        "output_before": 0,
+        "output_pointer": "100FF024",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0,
+        "supplied_output": 0
+      },
+      {
+        "address": "006A05F0",
+        "argument": 1,
+        "caller_return": "006A0178",
+        "event": "external_track",
+        "phase": "postfresh",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0
+      }
+    ],
+    "input": {
+      "family": "ship",
+      "navcom": true,
+      "navcom_coord": [
+        2944,
+        2432,
+        48
+      ],
+      "navcom_rtti": 15,
+      "reaim": true,
+      "stage": "after_active"
+    },
+    "original_code_and_unit_vtable_unchanged": true,
+    "output_byte": 0,
+    "returned_al": null,
+    "visited_boundaries": [
+      "0069FC6A",
+      "006A05F0",
+      "0069FC8B",
+      "006A1C80",
+      "006A05F0"
+    ],
+    "writes": [
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      }
+    ]
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 4294967295,
+      "valid": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 0,
+      "valid": 1
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "entry": "0069FC6A",
+    "events": [
+      {
+        "address": "006A05F0",
+        "argument": 0,
+        "caller_return": "0069FC8B",
+        "event": "external_track",
+        "phase": "active",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 0,
+          "valid": 1
+        },
+        "supplied_al": 0
+      },
+      {
+        "address": "20005200",
+        "event": "is_moving",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_return": 1
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "006A1C80",
+        "args": [
+          1,
+          0
+        ],
+        "caller_return": "0069FCF3",
+        "event": "external_fresh",
+        "output_before": 0,
+        "output_pointer": "100FF024",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0,
+        "supplied_output": 0
+      },
+      {
+        "address": "006A05F0",
+        "argument": 1,
+        "caller_return": "006A0178",
+        "event": "external_track",
+        "phase": "postfresh",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0
+      }
+    ],
+    "input": {
+      "family": "ship",
+      "navcom": true,
+      "navcom_coord": [
+        2688,
+        2432,
+        49
+      ],
+      "navcom_rtti": 15,
+      "reaim": true,
+      "stage": "after_active"
+    },
+    "original_code_and_unit_vtable_unchanged": true,
+    "output_byte": 0,
+    "returned_al": null,
+    "visited_boundaries": [
+      "0069FC6A",
+      "006A05F0",
+      "0069FC8B",
+      "006A1C80",
+      "006A05F0"
+    ],
+    "writes": [
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      }
+    ]
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 4294967295,
+      "valid": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 0,
+      "valid": 1
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "entry": "0069FC6A",
+    "events": [
+      {
+        "address": "006A05F0",
+        "argument": 0,
+        "caller_return": "0069FC8B",
+        "event": "external_track",
+        "phase": "active",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 0,
+          "valid": 1
+        },
+        "supplied_al": 0
+      },
+      {
+        "address": "20005200",
+        "event": "is_moving",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_return": 1
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "006A1C80",
+        "args": [
+          1,
+          0
+        ],
+        "caller_return": "0069FCF3",
+        "event": "external_fresh",
+        "output_before": 0,
+        "output_pointer": "100FF024",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0,
+        "supplied_output": 0
+      },
+      {
+        "address": "006A05F0",
+        "argument": 1,
+        "caller_return": "006A0178",
+        "event": "external_track",
+        "phase": "postfresh",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0
+      }
+    ],
+    "input": {
+      "family": "ship",
+      "navcom": true,
+      "navcom_coord": [
+        2944,
+        2432,
+        48
+      ],
+      "navcom_rtti": 1,
+      "reaim": true,
+      "stage": "after_active"
+    },
+    "original_code_and_unit_vtable_unchanged": true,
+    "output_byte": 0,
+    "returned_al": null,
+    "visited_boundaries": [
+      "0069FC6A",
+      "006A05F0",
+      "0069FC8B",
+      "006A1C80",
+      "006A05F0"
+    ],
+    "writes": [
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      }
+    ]
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 4294967295,
+      "valid": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 0,
+      "valid": 1
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "entry": "0069FC6A",
+    "events": [
+      {
+        "address": "006A05F0",
+        "argument": 0,
+        "caller_return": "0069FC8B",
+        "event": "external_track",
+        "phase": "active",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 0,
+          "valid": 1
+        },
+        "supplied_al": 0
+      },
+      {
+        "address": "20005200",
+        "event": "is_moving",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_return": 1
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      }
+    ],
+    "input": {
+      "family": "ship",
+      "navcom": true,
+      "navcom_coord": [
+        2944,
+        2432,
+        48
+      ],
+      "navcom_rtti": 15,
+      "reaim": true,
+      "stage": "after_active",
+      "unit_6d1": 1
+    },
+    "original_code_and_unit_vtable_unchanged": true,
+    "output_byte": null,
+    "returned_al": null,
+    "visited_boundaries": [
+      "0069FC6A",
+      "006A05F0",
+      "0069FC8B"
+    ],
+    "writes": []
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 4294967295,
+      "valid": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 0,
+      "valid": 1
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "entry": "0069FC6A",
+    "events": [
+      {
+        "address": "006A05F0",
+        "argument": 0,
+        "caller_return": "0069FC8B",
+        "event": "external_track",
+        "phase": "active",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 0,
+          "valid": 1
+        },
+        "supplied_al": 0
+      },
+      {
+        "address": "20005200",
+        "event": "is_moving",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_return": 0
+      }
+    ],
+    "input": {
+      "family": "ship",
+      "is_moving": 0,
+      "navcom": true,
+      "navcom_coord": [
+        2944,
+        2432,
+        48
+      ],
+      "navcom_rtti": 15,
+      "queue_head": -1,
+      "reaim": true,
+      "stage": "after_active"
+    },
+    "original_code_and_unit_vtable_unchanged": true,
+    "output_byte": null,
+    "returned_al": null,
+    "visited_boundaries": [
+      "0069FC6A",
+      "006A05F0",
+      "0069FC8B"
+    ],
+    "writes": []
+  },
+  {
+    "after": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 4294967295,
+      "valid": 0
+    },
+    "before": {
+      "alive": 1,
+      "falling": 0,
+      "latch": 0,
+      "limbo": 0,
+      "navcom": 536883200,
+      "navcom_aux": 324469318,
+      "owner_link": 536879104,
+      "queue_count": 0,
+      "residual": 79225,
+      "selector": 0,
+      "valid": 1
+    },
+    "boundary": "common_process_tail",
+    "boundary_address": "0069FE39",
+    "entry": "0069FC6A",
+    "events": [
+      {
+        "address": "006A05F0",
+        "argument": 0,
+        "caller_return": "0069FC8B",
+        "event": "external_track",
+        "phase": "active",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 0,
+          "valid": 1
+        },
+        "supplied_al": 0
+      },
+      {
+        "address": "20005200",
+        "event": "is_moving",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_return": 0
+      },
+      {
+        "address": "00746E20",
+        "event": "native_unit_rtti",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        }
+      },
+      {
+        "address": "006A1C80",
+        "args": [
+          1,
+          0
+        ],
+        "caller_return": "0069FCF3",
+        "event": "external_fresh",
+        "output_before": 0,
+        "output_pointer": "100FF024",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0,
+        "supplied_output": 0
+      },
+      {
+        "address": "006A05F0",
+        "argument": 1,
+        "caller_return": "006A0178",
+        "event": "external_track",
+        "phase": "postfresh",
+        "state": {
+          "alive": 1,
+          "falling": 0,
+          "latch": 0,
+          "limbo": 0,
+          "navcom": 536883200,
+          "navcom_aux": 324469318,
+          "owner_link": 536879104,
+          "queue_count": 0,
+          "residual": 79225,
+          "selector": 4294967295,
+          "valid": 0
+        },
+        "supplied_al": 0
+      }
+    ],
+    "input": {
+      "family": "ship",
+      "is_moving": 0,
+      "navcom": true,
+      "navcom_coord": [
+        2944,
+        2432,
+        48
+      ],
+      "navcom_rtti": 15,
+      "queue_head": 2,
+      "reaim": true,
+      "stage": "after_active"
+    },
+    "original_code_and_unit_vtable_unchanged": true,
+    "output_byte": 0,
+    "returned_al": null,
+    "visited_boundaries": [
+      "0069FC6A",
+      "006A05F0",
+      "0069FC8B",
+      "006A1C80",
+      "006A05F0"
+    ],
+    "writes": [
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      },
+      {
+        "address": "100FF024",
+        "size": 1,
+        "value": 0
+      }
+    ]
   },
   {
     "after": {

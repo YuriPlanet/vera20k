@@ -332,10 +332,12 @@ fn deferred_restore_completes_toward_navcom_over_a_stale_destination() {
     assert_eq!((timer.start_frame(), timer.duration()), (101, 0));
 }
 
-/// A track that ended short keeps +34 and a NavCom naming the same cell: the
-/// deferred order only reschedules, with no setter tail or timer write.
+/// A deferred order whose adapter is missing while +34 and a NavCom name the
+/// same cell (Enter_Idle_Mode taking a NavQueue waypoint at an arrival, whose
+/// true return ends that Process) only reschedules, with no setter tail or
+/// timer write.
 #[test]
-fn deferred_short_track_end_reschedules_without_a_setter() {
+fn deferred_order_with_a_retained_destination_reschedules_without_a_setter() {
     let (mut sim, rules, _registry, id) = unit(&json!({"family": "drive"}));
     order(&mut sim, &rules, id, (13, 10));
     let e = sim.substrate.entities.get_mut(id).unwrap();
@@ -509,4 +511,262 @@ fn first_process_request_waits_for_the_movement_timer_and_keeps_power() {
             "{row}"
         );
     }
+}
+
+fn visit(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    registry: &crate::map::overlay_types::OverlayTypeRegistry,
+    id: u64,
+    frame: u32,
+) {
+    sim.session.binary_frame = frame;
+    let grid = sim.path_grid.clone();
+    sim.process_ground_locomotor_for_test(id, Some(rules), grid.as_deref(), Some(registry))
+        .unwrap();
+}
+
+/// Drive 0x4B0583..0x4B0667 / Ship 0x69FC93..0x69FD0E: when Process_Track(0)
+/// ends a track short of +34, the same Process runs Process_Movement and
+/// Process_Track(1), so the next head is committed in that call and no
+/// Process leaves the moving unit without one.
+#[test]
+fn track_end_selects_the_next_head_in_the_same_process() {
+    use crate::sim::movement::track_head::committed_track_head;
+    for family in ["drive", "ship"] {
+        let (mut sim, rules, registry, id) = unit(&json!({"family": family}));
+        sim.substrate.entities.get_mut(id).unwrap().facing = 0x40;
+        order(&mut sim, &rules, id, (16, 10));
+        let mut heads = Vec::new();
+        for frame in 101..600 {
+            visit(&mut sim, &rules, &registry, id, frame);
+            let e = sim.substrate.entities.get(id).unwrap();
+            match committed_track_head(e) {
+                Some(head) if heads.last() != Some(&head) => heads.push(head),
+                Some(_) => {}
+                None if (e.position.rx, e.position.ry) == (16, 10) => break,
+                None => assert!(
+                    heads.is_empty(),
+                    "{family}: frame {frame} left the unit without a head at {:?}",
+                    (e.position.rx, e.position.ry)
+                ),
+            }
+        }
+        let e = sim.substrate.entities.get(id).unwrap();
+        assert_eq!((e.position.rx, e.position.ry), (16, 10), "{family} arrives");
+        assert!(heads.len() >= 3, "{family}: {heads:?}");
+    }
+}
+
+/// A moving tank ordered elsewhere keeps its committed head (Unit 0x741970
+/// clears only the path word). The Process whose Process_Track(0) ends that
+/// track requests the new route itself: its no-queue arm runs Find_Path in
+/// that frame, which installs the route, and the found-route continuation
+/// reloads +64C (0x4B3285); head selection may first turn.
+#[test]
+fn reorder_requests_the_new_route_in_the_process_that_ends_the_head() {
+    use crate::sim::movement::track_head::committed_track_head;
+    let (mut sim, rules, registry, id) = unit(&json!({"family": "drive"}));
+    sim.substrate.entities.get_mut(id).unwrap().facing = 0x40;
+    order(&mut sim, &rules, id, (20, 10));
+    let mut frame = 101;
+    let retained = loop {
+        visit(&mut sim, &rules, &registry, id, frame);
+        frame += 1;
+        if let Some(head) = committed_track_head(sim.substrate.entities.get(id).unwrap()) {
+            break head;
+        }
+    };
+    sim.session.binary_frame = frame;
+    order(&mut sim, &rules, id, (10, 16));
+    loop {
+        assert!(frame < 400, "the retained head never ended");
+        visit(&mut sim, &rules, &registry, id, frame);
+        let e = sim.substrate.entities.get(id).unwrap();
+        if committed_track_head(e) == Some(retained) {
+            frame += 1;
+            continue;
+        }
+        // The arm's PathDelay write (0x4B284B) is overwritten by the Find_Path
+        // wrapper's +640 = (Frame, 0) after any core result (0x4D3EB2).
+        let timer = e.navigation.path_runtime.movement_timer;
+        assert_eq!((timer.start_frame(), timer.duration()), (frame as i32, 0));
+        assert_eq!(e.navigation.path_runtime.retries_left, 10);
+        assert!(
+            e.movement_target.as_ref().is_some_and(
+                |target| target.final_goal == Some((10, 16)) && !target.path.is_empty()
+            ),
+            "the Process that ended the head installed the new route"
+        );
+        return;
+    }
+}
+
+/// Force_Track (0x4B0C40) writes +34 = head. At the track end no NavCom skips
+/// the arrival arm (0x4B2121), so +34 stays and Is_Moving holds: the same
+/// Process continues into Process_Movement, whose no-queue arm asks Find_Path
+/// for the unit's own cell in that frame and keeps +34.
+#[test]
+fn forced_track_end_requests_its_own_cell_in_the_same_process() {
+    use crate::sim::movement::track_head::committed_track_head;
+    let (mut sim, rules, registry, id) = unit(&json!({"family": "drive"}));
+    // A bib step carries no route: clear the oracle prestate's path words.
+    // Force_Track sets only the target fraction; with no acceleration factor
+    // in the fixture rules the Accelerates ramp would never leave 0.
+    let e = sim.substrate.entities.get_mut(id).unwrap();
+    e.navigation.path_replay = FootPathQueue::default();
+    e.drive_accelerates = false;
+    let head = DriveCoord {
+        x: 10 * 256,
+        y: 11 * 256,
+        z: 0,
+    };
+    assert!(sim.force_drive_track(id, 0x47, head));
+    for frame in 101..300 {
+        visit(&mut sim, &rules, &registry, id, frame);
+        let e = sim.substrate.entities.get(id).unwrap();
+        if committed_track_head(e).is_some() {
+            continue;
+        }
+        assert!(e.navigation.nav_com.is_none());
+        assert_eq!(e.drive_locomotion.as_ref().unwrap().destination, Some(head));
+        // The Find_Path wrapper's +640 = (Frame, 0) (0x4D3EB2) dates this
+        // Process's request.
+        let timer = e.navigation.path_runtime.movement_timer;
+        assert_eq!((timer.start_frame(), timer.duration()), (frame as i32, 0));
+        assert!(
+            e.movement_target.is_some(),
+            "the retained +34 keeps scheduling"
+        );
+        return;
+    }
+    panic!("the forced track never ended");
+}
+
+/// tools/spatial_oracle/track_outer_continuation after-active rows: which
+/// states after Process_Track(0) continue into Process_Movement (the native
+/// `external_fresh` event) and which Unit->Infantry NavComs are re-aimed
+/// (`move_to`). The oracle supplies the Process_Track AL, liveness and
+/// selector retirement, Is_Moving and the NavCom answers; each becomes the
+/// equivalent Rust state (a destination for Is_Moving, a NavCom object with
+/// that coordinate). The out byte and owner gate before Process_Track(1)
+/// belong to the Process host and are not replayed here.
+#[test]
+fn after_active_rows_gate_the_same_call_continuation() {
+    use crate::sim::movement::track_process::TrackFamily;
+    let rows: Vec<Value> = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/track_outer_continuation.json"
+    ))
+    .unwrap();
+    let destination = DriveCoord {
+        x: 2688,
+        y: 2432,
+        z: 48,
+    };
+    let int = |input: &Value, key: &str, default: i64| input[key].as_i64().unwrap_or(default);
+    let mut replayed = 0;
+    for row in rows
+        .iter()
+        .filter(|row| row["input"]["stage"] == "after_active")
+    {
+        let input = &row["input"];
+        let (mut sim, rules, _registry, id) = unit(&json!({"family": input["family"]}));
+        let family = if input["family"] == "drive" {
+            TrackFamily::Drive
+        } else {
+            TrackFamily::Ship
+        };
+        let navcom = (input["navcom"] == true).then(|| {
+            let coord = input["navcom_coord"]
+                .as_array()
+                .map_or(destination, |c| DriveCoord {
+                    x: c[0].as_i64().unwrap() as i32,
+                    y: c[1].as_i64().unwrap() as i32,
+                    z: c[2].as_i64().unwrap() as i32,
+                });
+            let infantry = int(input, "navcom_rtti", 11) == 15;
+            let target = sim
+                .spawn_object(
+                    if infantry { "ENGINEER" } else { "DRV" },
+                    "Americans",
+                    20,
+                    20,
+                    0,
+                    &rules,
+                    &BTreeMap::new(),
+                )
+                .unwrap();
+            if infantry {
+                let t = sim.substrate.entities.get_mut(target).unwrap();
+                t.locomotor.as_mut().unwrap().set_step_head(Some(coord));
+            }
+            (NavTargetRef::Entity { id: target }, coord)
+        });
+        let e = sim.substrate.entities.get_mut(id).unwrap();
+        e.lifecycle.object_alive = int(input, "active_alive", 1) != 0;
+        let selector = if input["active_retires"] == false {
+            0
+        } else {
+            -1
+        };
+        let moving = int(input, "is_moving", 1) != 0;
+        match family {
+            TrackFamily::Drive => {
+                let d = e.drive_locomotion.get_or_insert_with(Default::default);
+                d.track.turn_index = selector;
+                d.destination = moving.then_some(destination);
+                d.head_to = None;
+            }
+            TrackFamily::Ship => {
+                let s = e.ship_locomotion.get_or_insert_with(Default::default);
+                s.track.turn_index = selector;
+                s.destination = moving.then_some(destination);
+                s.head_to = None;
+            }
+        }
+        let queue_head = int(input, "queue_head", -1);
+        e.navigation.path_replay = FootPathQueue {
+            directions: if queue_head < 0 {
+                Vec::new()
+            } else {
+                vec![queue_head as u8]
+            },
+            cursor: 0,
+            reference_cell: None,
+        };
+        if int(input, "unit_6d1", 0) != 0 {
+            let mut miner = crate::sim::miner::Miner::new(
+                crate::sim::miner::MinerKind::War,
+                &crate::sim::miner::MinerConfig::default(),
+                0,
+            );
+            miner.unload_active = true;
+            e.miner = Some(miner);
+        }
+        e.navigation.nav_com = navcom.map(|(target, _)| target);
+        let aborted = int(input, "active_return", 0) & 0xFF != 0;
+        let continued = !aborted
+            && sim
+                .begin_track_end_continuation(id, family, Some(&rules))
+                .unwrap();
+        let events = row["events"].as_array().unwrap();
+        let native_fresh = events
+            .iter()
+            .any(|event| event["event"] == "external_fresh");
+        assert_eq!(continued, native_fresh, "{input}");
+        let moved = events.iter().any(|event| event["event"] == "move_to");
+        let e = sim.substrate.entities.get(id).unwrap();
+        let after = match family {
+            TrackFamily::Drive => e.drive_locomotion.as_ref().unwrap().destination,
+            TrackFamily::Ship => e.ship_locomotion.as_ref().unwrap().destination,
+        };
+        let expected = if moved {
+            navcom.map(|(_, coord)| coord)
+        } else {
+            moving.then_some(destination)
+        };
+        assert_eq!(after, expected, "{input}");
+        replayed += 1;
+    }
+    assert_eq!(replayed, 97 + 14);
 }

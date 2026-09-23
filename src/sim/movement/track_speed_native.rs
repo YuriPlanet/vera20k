@@ -184,11 +184,6 @@ pub(crate) fn track_prefix(input: TrackSpeedInputs) -> Result<TrackSpeedOutput, 
     Ok(output)
 }
 
-/// Original retry flag masks only the already-evaluated getter contribution.
-pub(crate) fn invocation_budget(current_speed: i32, residual: i32, retry: bool) -> i32 {
-    residual.wrapping_add(if retry { 0 } else { current_speed })
-}
-
 #[cfg(test)]
 #[path = "track_speed_native_tests.rs"]
 mod tests;

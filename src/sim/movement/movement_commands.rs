@@ -999,6 +999,32 @@ pub(super) fn schedule_track_process(entity: &mut GameEntity, target: (u16, u16)
     prepare_destination_execution(entity, target, speed);
 }
 
+/// A Drive/Ship route the track terminal spent short of the retained
+/// locomotor destination (+34): the adapter keeps scheduling with an empty
+/// route, so the next Process_Movement reaches the no-queue arm (Drive
+/// 0x4B281C / Ship 0x6A1E75), in the same Process after the track end
+/// (`track_continuation`) or on the next visit. With no destination left it
+/// retires.
+pub(super) fn spend_track_route(entity: &mut GameEntity) {
+    let destination = match entity.locomotor.as_ref().map(|loco| loco.active_kind()) {
+        Some(LocomotorKind::Drive) => entity.drive_locomotion.as_ref().and_then(|d| d.destination),
+        Some(LocomotorKind::Ship) => entity.ship_locomotion.as_ref().and_then(|s| s.destination),
+        _ => None,
+    };
+    if destination.is_none() {
+        entity.movement_target = None;
+        return;
+    }
+    if let Some(target) = entity.movement_target.as_mut() {
+        target.path.clear();
+        target.path_layers.clear();
+        target.next_index = 0;
+        target.move_dir_x = SIM_ZERO;
+        target.move_dir_y = SIM_ZERO;
+        target.move_dir_len = SIM_ZERO;
+    }
+}
+
 /// MovementTarget is only the scheduling adapter. Retain a paid head, never
 /// turn or search at order time. The ordinary Process owns the first route
 /// and subsequent head selection for Walk, Drive and Ship.

@@ -191,7 +191,7 @@ mod schema166_receipt {
 // Schema171: retained timers/track ownership and signed-health/hash composition.
 // All201 baseline/candidate positions and RNG states matched. See the PR415
 // section of docs/research/TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md.
-const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 11758179770716394862;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 18105615356795411863;
 // Schema174 removes folds instead of adding them: OreGrowthState's node-era
 // scanner cursor, candidate lists and sample counters, and ProductionState's
 // fallback ore overlay id. The pre-174 projection folds the values those fields
@@ -200,10 +200,10 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 117581797
 // id. It is not a general reconstruction; a scenario finalized by the map
 // loader held Some(first TIB* id). The projection must still equal the previous
 // current pin, asserted below. Rust hash-composition ratchet, not a native golden.
-const BRIDGE_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 7141270051079510302;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 3152564423164500948;
 // v181 folds Foot+580, including default1.0. The pre-181 assertion below
 // reproduces the previous whole fixture hash; path and RNG pins are unchanged.
-const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 9472910749278510479;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 5133961335488828472;
 // Snapshot182 adds ordered display vectors. The pre-182 projection below
 // must reproduce the previous whole-fixture hash, including all RNG/state.
 // Schema186 removes the always-None release-tail byte. No aircraft participate;
@@ -219,8 +219,16 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 94729107492785104
 // the legacy inline lane, not the Find_Path owner. The pins move with that
 // state; the RNG stream pins, per-tick replay equality and route tripwires in
 // this file are unchanged. The old values are in the commit that moved them.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x2481_EE6B_485C_9106;
-const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 13105929486377201168;
+// 2026-09-23 Drive/Ship same-call track-end continuation (behavior): when
+// Process_Track(0) ends a track the same Process runs Process_Movement and
+// Process_Track(1) (residual-only budget; its speed prefix runs again).
+// First divergence from main: tick 30, the tank's first track end, now
+// continuing into the next track in that Process. The prefix's second ramp in
+// track-end frames moves the arrival from tick 165 to 168; the scenario-RNG
+// draws are the same sequence, moved with the arrival's Guard mission, so the
+// absolute RNG state pin changes too. Old values: the commit that moved them.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0xE38B_348B_1940_AF9A;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 17631648094789127815;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
@@ -790,7 +798,7 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
             rep.mapgen_rng.state()
         ),
         (
-            0x3510_2508_391B_4C32,
+            0x8402_2EB6_81CB_D6E1,
             0x9C68_CC8B_9F2C_82ED,
             0x1CE8_1848_7043_6163
         ),
@@ -819,17 +827,17 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(187)),
-        2652892017388932145,
+        8163171162605162435,
         "schema187 only replaces zero remaining-shot fields with the retained index in this fixture"
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
-        1605588890476307425,
+        7827498256350216922,
         "v189 adds only the retained Techno+3D4 hash fold"
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
-        1219708409912548863,
+        27276201916352779,
         "v190 changes only the Foot neighbor-history hash composition in this fixture"
     );
     assert_eq!(

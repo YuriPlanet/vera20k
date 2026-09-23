@@ -1075,19 +1075,44 @@ impl Simulation {
         // Frozen: TarCom drops, and a Foot's NavCom (`Set_Destination(0, 1)`),
         // which also ends its path (`UnitClass::Set_Destination @ 0x00741970`
         // resets the path head): VERA's path executor stops with it, as for
-        // every concrete null destination (`mission::authority`). The
-        // locomotor keeps its own state: its setters refuse while warped
-        // (Drive `0x004AFD71`, Walk `0x0075ACD0`), and it does not process.
+        // every concrete null destination (`mission::authority`). For a
+        // Drive/Ship Unit that setter also reaches the locomotor Stop, which
+        // nulls +34 with no warp gate (Drive `0x004AFE00`, Ship `0x0069F510`;
+        // none in `0x00741970` or Foot `0x004D94B0` either), so a released
+        // unit only finishes its current track. The locomotor's Move_To
+        // refuses while warped (Drive `0x004AFD71`, Walk `0x0075ACD0`), and it
+        // does not process.
+        let track_unit = category == EntityCategory::Unit
+            && self
+                .substrate
+                .entities
+                .get(id)
+                .and_then(|entity| entity.locomotor.as_ref())
+                .is_some_and(|loco| {
+                    matches!(
+                        loco.active_kind(),
+                        crate::rules::locomotor_type::LocomotorKind::Drive
+                            | crate::rules::locomotor_type::LocomotorKind::Ship
+                    )
+                });
+        let mut clears_destination = false;
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             if entity.attack_target.is_some() {
                 crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
             }
-            if category != EntityCategory::Structure
-                && (entity.navigation.nav_com.is_some() || entity.movement_target.is_some())
-            {
-                crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
-                    entity, None,
-                );
+            clears_destination = category != EntityCategory::Structure
+                && (entity.navigation.nav_com.is_some() || entity.movement_target.is_some());
+        }
+        if clears_destination {
+            if track_unit {
+                self.set_unit_null_destination(id, Some(rules));
+            }
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
+                if !track_unit {
+                    crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
+                        entity, None,
+                    );
+                }
                 entity.movement_target = None;
             }
         }

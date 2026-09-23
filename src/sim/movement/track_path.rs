@@ -16,7 +16,9 @@
 //!   0x4B2E77 tail.
 //!
 //! The outer Process calls Process_Track after every return (0x4B0AAA /
-//! 0x6A0173) unless the Foot vanished (out byte, 0x4B28BE / 0x6A1F0E).
+//! 0x6A0173) unless the Foot vanished (out byte, 0x4B28BE / 0x6A1F0E). When
+//! Process_Track(0) ends a track, the same Process reaches this owner again
+//! (`track_continuation`).
 //!
 //! Reach of the failure ladder: Find_Path's Unit receiver (+0x500 =
 //! 0x4D55C0 -> locomotor Stop) clears the destination on every core failure,
@@ -26,23 +28,15 @@
 //! The ladder is ported because native reaches it after that relocation.
 //!
 //! Residuals:
-//! - Same-call reselection. When Process_Track(0) ends a track, native
-//!   Process calls Process_Movement in the SAME call (Drive
-//!   0x4B0576..0x4B0647, then Process_Track(1) at 0x4B0AA8; Ship
-//!   0x69FC86..0x69FCEE / 0x6A0171). The Rust track host selects the next
-//!   head on the next visit, so a request after a track end (a re-order of a
-//!   moving unit, a route ending short) and its Find_Path, +640/+64C writes
-//!   and head reservation come one frame late. Frequency: every such track
-//!   end; the host structure predates this owner.
 //! - 24-word copy. Find_Path copies at most 24 - prefix words into Foot+5E0
 //!   (0x4D3E82..0x4D3E9F); VERA installs the whole route, so the native
 //!   re-request every 24 cells does not happen. Effect: a long route is not
 //!   re-planned mid-way.
 //! - Adapter-only stops. Stop writers that drop only the scheduling adapter
 //!   (the Guard command, pursuit ClearMovement, retaliation) leave NavCom, +34
-//!   and path words; a track end then re-arms the deferred order and, with
-//!   words left, the legacy inline search rebuilds the route (as main's
-//!   pending pass did). Their native null-destination payloads are unverified.
+//!   and path words; the track end's same-call continuation reinstalls the
+//!   adapter and, with words left, the legacy inline search rebuilds the
+//!   route. Their native null-destination payloads are unverified.
 
 use super::foot_path::FootPathOutcome;
 use super::ground_pose;
@@ -627,10 +621,11 @@ impl Simulation {
     /// A Drive/Ship order that Rust deferred to the movement tick (the
     /// `pending_arrival_clear` flag), finished before the locomotor Process,
     /// where natively its setter already ran:
-    /// - a track that ended away from its retained destination keeps the
-    ///   locomotor destination (+34) and a NavCom naming the same cell, so
-    ///   only the scheduling adapter is missing; the no-queue arm (Drive
-    ///   0x4B281C / Ship 0x6A1E75) requests the route, gated by Foot+640;
+    /// - Enter_Idle_Mode took a NavQueue waypoint at an arrival (its true
+    ///   return ended that Process, 0x4B2273): +34 and a NavCom naming the
+    ///   same cell remain and only the scheduling adapter is missing; the
+    ///   no-queue arm (Drive 0x4B281C / Ship 0x6A1E75) requests the route,
+    ///   gated by Foot+640;
     /// - a mission restore represents `Assign_Destination(saved, 1)` (Unit
     ///   0x741970) by NavCom alone (`mission::authority`), while +34 may still
     ///   hold an older order (a pursuit cell). Native NavCom and +34 never

@@ -7,7 +7,7 @@
     1,
     33621247
   ],
-  "scope": "Original outer Drive/Ship Process continuation branches, call ordering and arguments around explicitly supplied fresh/track/destination/idle callees",
+  "scope": "Original outer Drive/Ship Process continuation branches, call ordering and arguments around explicitly supplied fresh/track/destination/idle/NavCom-coordinate/Move_To callees",
   "assumptions": [
     "Interior frames start at ordinary fresh setup4B0A6B/6A0134, active gate4B055A/69FC6A, or live sampler4B0775/69FE22. The saved register/local/RET4 stack, ESI=class+4, EDI=complete class, EBX=0 and ECX=owner are supplied exactly in execute(). Floor/slope interpolation and type sampling before the active gate are outside entry; this is not a full Process oracle",
     "Original direct CALLs execute and produce their stack arguments/return address. Segmented execution stops at declared external fresh/TrackProcess entry, executes a scratch x86 fixture body, then resumes at the native return address. Fresh AL/output/alive/link and TrackProcess AL/retirement/alive/link are supplied, not discovered native callee behavior",
@@ -17,12 +17,14 @@
     "Early destination rows execute original same-cell/Guard predicates, original Unit GetCell41BEA0 and original FootStop4DF0D0. Queue counts0/1/3 cross supplied receiver AL0/255 and owner alive0/1. Negative controls cover mismatched cell, non-Cell supplied RTTI, Move mission, mismatched Z/null destination, valid track and active-track bypass",
     "Destination and idle receivers are only dispatch fixtures. The original Unit vtable identity is asserted: +480->741970, +484->738970, +1B8->41BEA0. No destination refusal, NavQueue dequeue, END, mission promotion or receiver parity is claimed. Original Unit RTTI746E20 remains executable",
     "Producer reachability of synthetic callback results is not established. Owner unlink after fresh is supplied only with output nonzero, matching the protected caller boundary. Ship post-track null owner has no observed null guard and is excluded rather than normalized",
-    "Every original RET4 must restore all saved registers and stack and returns AL0; all rows verify unchanged original code ranges, original Unit vtable, live Facing fields and supplied residual. Observers only record calls/stores and never mutate execution"
+    "Every original RET4 must restore all saved registers and stack and returns AL0; all rows verify unchanged original code ranges, original Unit vtable, live Facing fields and supplied residual. Observers only record calls/stores and never mutate execution",
+    "Re-aim rows (after-active, NavCom set) cross NavCom RTTI15/1, a coordinate equal to the class destination, differing in X or only in Z, and the eligibility controls (Unit+6D1, not moving with and without a path word). Drive executes its Unit->Infantry block 4B05D0..4B063B; the Ship rows are the contrast (no such block). Only the NavCom coordinate getter and Move_To are supplied; the NavCom object is the fixture Cell with a supplied RTTI, so no Infantry coordinate semantics are claimed"
   ],
   "substitutions": [
     "Direct Process_Movement and Process_Track callee bodies are replaced at explicit execution boundaries by scratch x86 return bodies; original caller CALLs and all caller branches remain unpatched",
     "Copied owner vtable replaces only +480/+484 with scratch receiver bodies that write the declared alive byte and return declared EAX using RET8. Their entry records native receiver identity, args and pre-callback state",
-    "Supplied class-interface vtable+10 IsMoving uses RET4; supplied NavCom vtable+2C returns declared RTTI. Original owner GetCell and Unit RTTI execute from original copied slots. No original vtable/code byte is replaced"
+    "Supplied class-interface vtable+10 IsMoving uses RET4; supplied NavCom vtable+2C returns declared RTTI. Original owner GetCell and Unit RTTI execute from original copied slots. No original vtable/code byte is replaced",
+    "Supplied NavCom vtable+4C writes the declared coordinate to its out argument and returns it (RET8); supplied interface vtable+44 Move_To records its by-value coordinate and returns 0 (RET10)"
   ],
   "entry_points": {
     "drive_active_gate": "0x004B055A",
@@ -60,12 +62,13 @@
     "00746E20..00746E26": "2db31f4e09597946e56e859813bfdad7046d457c32332c3a882654d1e3ffdf67"
   },
   "case_counts": {
-    "total": 254,
+    "total": 268,
     "core_return_output_alive_matrix": 128,
     "supplemental_callback_state": 38,
     "active_eligibility": 14,
+    "infantry_navcom_reaim": 14,
     "live_sampler": 8,
     "early_destination_and_controls": 66
   },
-  "payload_sha256": "1875a1679cc7771815f97531eecf5023b994b86874598f4790e34b48ff40f023"
+  "payload_sha256": "5c9ac241dc5005778a532eb6c80a0cbf222e67456b52b7009cd56ef15db98689"
 }

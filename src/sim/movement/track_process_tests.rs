@@ -40,7 +40,7 @@ fn post_placement_gates_reload_cursor_and_preserve_the_paid_raw_descriptor() {
                 reversed: initial["reversed"].as_bool().unwrap(),
                 residual: 6,
             };
-            let mut call = TrackProcess::begin(family, &progress, 9);
+            let mut call = TrackProcess::begin(family, &progress, 9, false);
             let Some(TrackPayment::Sample(sample)) = call.pay_current(&progress) else {
                 panic!("native case pays the initial point: {name} {input}");
             };
@@ -154,7 +154,7 @@ fn retained_cursor_and_paid_samples_match_original_drive_and_ship() {
                 residual: integer(&input["budget"]),
             };
             let residual_before = progress.residual;
-            let mut call = TrackProcess::begin(family, &progress, 0);
+            let mut call = TrackProcess::begin(family, &progress, 0, false);
             match call.pay_current(&progress).unwrap() {
                 TrackPayment::Exhausted => assert_eq!(output["kind"], "unpaid"),
                 TrackPayment::Sample(sample) => {
@@ -342,7 +342,7 @@ fn accepted_chain_advances_refetched_cursor_and_preserves_old_residual_until_sto
         reversed: false,
         residual: 6,
     };
-    let mut call = TrackProcess::begin(TrackFamily::Drive, &progress, 9);
+    let mut call = TrackProcess::begin(TrackFamily::Drive, &progress, 9, false);
     let TrackPayment::Sample(sample) = call.pay_current(&progress).unwrap() else {
         panic!("paid first sample")
     };
@@ -385,7 +385,7 @@ fn callback_mutations_keep_paid_raw_cache_but_transform_and_residual_use_live_st
                 residual: integer(&initial["residual"]),
             };
             // The fixture enters after budget calculation with budget15.
-            let mut call = TrackProcess::begin(family, &progress, 9);
+            let mut call = TrackProcess::begin(family, &progress, 9, false);
             let TrackPayment::Sample(first) = call.pay_current(&progress).unwrap() else {
                 panic!("{name} first paid point: {input}")
             };
