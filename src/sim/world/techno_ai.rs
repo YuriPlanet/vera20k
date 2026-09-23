@@ -490,6 +490,19 @@ fn techno_ai_shell(
     rules: Option<&RuleSet>,
     ctx: ObjectAiCtx<'_>,
 ) {
+    // Each leaf runs its chain head's TemporalClass::Update first (Unit
+    // 0x00736204, Infantry 0x0051BB6E, Aircraft 0x00414BDB; a Building after
+    // its damage fire at 0x0043FC39, 0x0043FCF9) and a warped object returns
+    // before the common Techno body. VERA's object turn then skips its
+    // locomotor for the same reason.
+    if let Some(rules) = rules {
+        if category == EntityCategory::Structure {
+            sim.update_building_damage_fire(id, rules);
+        }
+        if sim.temporal_ai_prologue(id, rules) {
+            return;
+        }
+    }
     // Techno6F9F6E..9F precedes promotion, missions and acquisition for every
     // Techno category. object_ai_visit_one excludes the entry-active Tube leaf
     // before this common owner. Actual health and this retained estimate differ.
@@ -527,10 +540,10 @@ fn techno_ai_shell(
         }
         EntityCategory::Structure => {
             if let Some(rules) = rules {
-                // Building43FC39 damage-fire and43FD2C ProduceCash precede
-                // the shared Techno call at43FE56. A yellow-crossing selfheal
-                // must not retire damage fire one native frame early.
-                sim.update_building_damage_fire(id, rules);
+                // Building43FC39 damage-fire (run above, before the warp
+                // update) and43FD2C ProduceCash precede the shared Techno call
+                // at43FE56. A yellow-crossing selfheal must not retire damage
+                // fire one native frame early.
                 crate::sim::credit_income::produce_cash_step(sim, id, rules);
                 sim.update_building_absorb_anim(id, rules);
                 sim.update_building_storage_anims(id, rules);
@@ -1241,6 +1254,11 @@ fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
     };
+    // `TechnoClass::CanAcquireTarget`'s first test (`0x007091D6`, vtable
+    // `+0x1DC`): an object whose TemporalClass holds a target acquires none.
+    if entity.temporal.is_warping_someone() {
+        return false;
+    }
     let Some(obj) = rules.object(sim.interner.resolve(entity.type_ref())) else {
         return false;
     };

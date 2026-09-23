@@ -1,0 +1,1073 @@
+[
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "first_attacker",
+      "target": {
+        "rtti": 1
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 0
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "strength_zero",
+      "target": {
+        "rtti": 1,
+        "strength": 0
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": -10
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "strength_negative",
+      "target": {
+        "rtti": 1,
+        "strength": -1
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 2147483640
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "strength_at_wrap",
+      "target": {
+        "rtti": 1,
+        "strength": 214748364
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": -2147483646
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "strength_past_wrap",
+      "target": {
+        "rtti": 1,
+        "strength": 214748365
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "temporal1",
+        "target": "target",
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 777
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "attackers": [
+        {},
+        {}
+      ],
+      "chain": [
+        1
+      ],
+      "name": "second_attacker",
+      "target": {
+        "rtti": 1
+      }
+    },
+    "target_head": "temporal1",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "temporal2",
+        "prev": "temporal1",
+        "target": "target",
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 777
+      },
+      {
+        "next": "0x0",
+        "prev": "temporal0",
+        "target": "target",
+        "warp_remaining": 0
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "attackers": [
+        {},
+        {},
+        {}
+      ],
+      "chain": [
+        1,
+        2
+      ],
+      "name": "third_attacker",
+      "target": {
+        "rtti": 1
+      }
+    },
+    "target_head": "temporal1",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "radar_event",
+        4,
+        15,
+        15
+      ],
+      [
+        "eva",
+        "0x824784"
+      ],
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "harvester_local",
+      "target": {
+        "harvester": 1,
+        "local": true,
+        "rtti": 1
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "radar_event",
+        4,
+        15,
+        15
+      ],
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "harvester_local_radar_deduped",
+      "radar_accepts": 0,
+      "target": {
+        "harvester": 1,
+        "local": true,
+        "rtti": 1
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "harvester_other_house",
+      "target": {
+        "harvester": 1,
+        "rtti": 1
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        2
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "harvester_no_player",
+      "player": false,
+      "target": {
+        "harvester": 1,
+        "rtti": 1
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "infantry_target",
+      "target": {
+        "rtti": 2
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "notify_under_attack",
+        "target_house",
+        "target"
+      ],
+      [
+        "building_offline",
+        "target"
+      ],
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 1,
+    "house_power_recheck": 1,
+    "input": {
+      "name": "building_first",
+      "target": {
+        "coords": [
+          5000,
+          5000,
+          0
+        ],
+        "rtti": 6
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "building_offline",
+        "target"
+      ],
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 1,
+    "house_power_recheck": 1,
+    "input": {
+      "name": "building_insignificant",
+      "target": {
+        "coords": [
+          5000,
+          5000,
+          0
+        ],
+        "insignificant": 1,
+        "rtti": 6
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "building_offline",
+        "target"
+      ],
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 1,
+    "house_power_recheck": 1,
+    "input": {
+      "name": "building_precheck",
+      "target": {
+        "coords": [
+          5000,
+          5000,
+          0
+        ],
+        "precheck": 1,
+        "rtti": 6
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "temporal1",
+        "target": "target",
+        "warp_remaining": 0
+      },
+      {
+        "next": "temporal0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 777
+      }
+    ],
+    "events": [
+      [
+        "building_offline",
+        "target"
+      ],
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 1,
+    "house_power_recheck": 1,
+    "input": {
+      "attackers": [
+        {},
+        {}
+      ],
+      "chain": [
+        1
+      ],
+      "name": "building_second_attacker",
+      "target": {
+        "coords": [
+          5000,
+          5000,
+          0
+        ],
+        "rtti": 6
+      }
+    },
+    "target_head": "temporal1",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "gattling",
+        "target",
+        1
+      ],
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "gattling",
+      "target": {
+        "gattling": 1,
+        "rtti": 1
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "kill_spawns",
+        "spawns"
+      ],
+      [
+        "free_all",
+        "captives"
+      ],
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "spawns_and_captives",
+      "target": {
+        "captives": true,
+        "rtti": 1,
+        "spawns": true
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_remaining": 0
+      }
+    ],
+    "events": [
+      [
+        "kill_spawns",
+        "spawns"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "refused_iron_curtain",
+      "target": {
+        "iron_curtain": 1,
+        "rtti": 1,
+        "spawns": true
+      }
+    },
+    "target_head": "0x0",
+    "target_warped": 0
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_remaining": 0
+      }
+    ],
+    "events": [],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "refused_unwarpable",
+      "target": {
+        "rtti": 1,
+        "warpable": 0
+      }
+    },
+    "target_head": "0x0",
+    "target_warped": 0
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_remaining": 0
+      }
+    ],
+    "events": [],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "refused_in_factory",
+      "target": {
+        "factory": {},
+        "rtti": 1
+      }
+    },
+    "target_head": "0x0",
+    "target_warped": 0
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "factory_contact_elsewhere",
+      "target": {
+        "factory": {
+          "in_cell": false
+        },
+        "rtti": 1
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "factory_contact_not_weapons",
+      "target": {
+        "factory": {
+          "weapons_factory": 0
+        },
+        "rtti": 1
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "factory_contact_slot1",
+      "target": {
+        "factory": {
+          "slot": 1
+        },
+        "rtti": 1
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "notify_under_attack",
+        "target_house",
+        "target"
+      ],
+      [
+        "building_offline",
+        "target"
+      ],
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 1,
+    "house_power_recheck": 1,
+    "input": {
+      "name": "factory_building_target",
+      "target": {
+        "coords": [
+          5000,
+          5000,
+          0
+        ],
+        "factory": {},
+        "rtti": 6
+      }
+    },
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_remaining": 0
+      }
+    ],
+    "events": [],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "attackers": [
+        {
+          "warped": true
+        }
+      ],
+      "name": "attacker_warped",
+      "target": {
+        "rtti": 1
+      }
+    },
+    "target_head": "0x0",
+    "target_warped": 0
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "previous",
+        2
+      ],
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "retarget_releases",
+      "previous_victim": true,
+      "target": {
+        "rtti": 1
+      }
+    },
+    "other_head": "0x0",
+    "other_warped": 0,
+    "target_head": "temporal0",
+    "target_warped": 1
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_remaining": 1234
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "previous",
+        2
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "retarget_refused_still_releases",
+      "previous_victim": true,
+      "target": {
+        "iron_curtain": 1,
+        "rtti": 1
+      }
+    },
+    "other_head": "0x0",
+    "other_warped": 0,
+    "target_head": "0x0",
+    "target_warped": 0
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "0x0",
+        "warp_remaining": 1234
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "previous",
+        2
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "null_target_releases",
+      "null_target": true,
+      "previous_victim": true
+    },
+    "other_head": "0x0",
+    "other_warped": 0,
+    "target_head": "0x0",
+    "target_warped": 0
+  },
+  {
+    "attackers": [
+      {
+        "next": "0x0",
+        "prev": "0x0",
+        "target": "target",
+        "warp_remaining": 4000
+      }
+    ],
+    "events": [
+      [
+        "mark",
+        "target",
+        2
+      ],
+      [
+        "mark",
+        "victims_victim",
+        2
+      ],
+      [
+        "deselect",
+        "target"
+      ]
+    ],
+    "house_1fc": 0,
+    "house_power_recheck": 0,
+    "input": {
+      "name": "victim_warping_lets_go",
+      "target": {
+        "rtti": 1
+      },
+      "victim_warping": true
+    },
+    "other_head": "0x0",
+    "other_warped": 0,
+    "target_head": "temporal0",
+    "target_warped": 1
+  }
+]

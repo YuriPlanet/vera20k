@@ -737,6 +737,7 @@ mod tests {
             immune: false,
             type_immune: false,
             immune_to_psionics: false,
+            warpable: true,
             mind_control_ring_offset: 0x8C,
             mind_cleared_sound: None,
             immune_to_psionic_weapons: false,

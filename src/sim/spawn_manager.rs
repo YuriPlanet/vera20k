@@ -321,11 +321,11 @@ pub fn tick_spawn_managers(
 ) {
     let frame = sim.session.binary_frame;
     for &owner_id in order {
-        let has_manager = sim
-            .substrate
-            .entities
-            .get(owner_id)
-            .is_some_and(|e| e.spawn_manager.is_some() && e.lifecycle.object_alive);
+        // A warped owner's AI_Update does not run (`GameEntity::ai_frozen`),
+        // so the spawns its warp start killed wait for its release.
+        let has_manager = sim.substrate.entities.get(owner_id).is_some_and(|e| {
+            e.spawn_manager.is_some() && e.lifecycle.object_alive && !e.ai_frozen()
+        });
         if !has_manager {
             continue;
         }

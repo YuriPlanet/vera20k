@@ -2126,10 +2126,7 @@ fn apply_selection_mutation(
         let type_id = sim.interner.resolve(entity.type_ref());
         let admitted = entity.lifecycle.object_alive
             && !entity.lifecycle.in_limbo
-            && !entity
-                .teleport_state
-                .as_ref()
-                .is_some_and(|teleport| teleport.warp_out_active())
+            && !entity.is_warped_out()
             && state
                 .rules()
                 .is_none_or(|rules| rules.object(type_id).is_none_or(|object| object.selectable));

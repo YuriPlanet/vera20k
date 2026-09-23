@@ -123,13 +123,10 @@ impl DriveActivationSnapshot {
     }
 }
 
-/// Techno70C5B0/70C5C0 expose the represented warp bytes to Walk/Fly.
-/// The entity TeleportState is the current writer, before the saved payload copy.
+/// Techno70C5B0/70C5C0 expose the represented warp bytes to Walk/Fly: the
+/// teleport's warp-out and warp-in and a Temporal warp.
 pub(crate) fn owner_is_warping(entity: &GameEntity) -> bool {
-    entity
-        .teleport_state
-        .as_ref()
-        .is_some_and(|t| t.warp_in_active() || t.warp_out_active())
+    entity.is_warping_in() || entity.is_warped_out()
 }
 
 #[cfg(test)]

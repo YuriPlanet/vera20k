@@ -420,17 +420,22 @@ pub(crate) fn mission_enter_dispatch(sim: &mut Simulation, rules: &RuleSet, id: 
         .entities
         .get(dock_building_id)
         .filter(|depot| depot.health.current > 0 && !depot.dying && depot.owner() == owner)
-        .and_then(|depot| sim.object_type(depot.type_ref(), rules))
-        .filter(|obj| obj.unit_repair)
-        .map(|obj| obj.dock_contact_capacity() as usize);
+        .and_then(|depot| {
+            sim.object_type(depot.type_ref(), rules)
+                .map(|obj| (obj, depot.building_online()))
+        })
+        .filter(|(obj, _)| obj.unit_repair)
+        .map(|(obj, online)| (obj.dock_contact_capacity() as usize, online));
 
-    if let Some(dock_capacity) = depot_capacity {
+    if let Some((dock_capacity, depot_online)) = depot_capacity {
         let linked = sim
             .substrate
             .entities
             .get(id)
             .is_some_and(|unit| unit.radio_contacts.contains(dock_building_id));
-        if linked && repair_is_complete(hp, strength) {
+        // 0x0043C7FB: an offline depot (its `+0x660` latch, which a Temporal
+        // warp clears) answers 10 before any other test.
+        if !depot_online || linked && repair_is_complete(hp, strength) {
             // 0x0043C824..C842: linked sender whose 0x22 answers 10 (ratio >=
             // 1.0) gets 10 back; Mission_Enter 0x004D92D0 then BREAKs and
             // calls Enter_Idle_Mode(0, 1) at 0x004D92E2 (Guard for a plain
@@ -578,13 +583,10 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
 
         // Verify depot still exists and is alive/friendly.
         //
-        // DRIFT (VERA-internal, gamemd equivalent UNCHECKED beyond the gate):
         // `BuildingClass::Receive_Radio(0x0E)` @ 0x0043C2D0 answers 10 to a
         // probe while the building is offline (`+0x660 == 0`, test at
-        // 0x0043C7FB), so a linked waiter BREAKs and idles during low power.
-        // VERA has no per-building online latch on entities, so a depot keeps
-        // admitting during low power. Trigger: player low-power while units
-        // queue at a depot; effect: repairs continue where gamemd pauses them.
+        // 0x0043C7FB): the toggle/warp latch, not house power. The probe runs
+        // in `mission_enter_dispatch`; this adapter only reads its result.
         let depot_info = sim
             .substrate
             .entities
@@ -615,6 +617,22 @@ pub fn tick_building_docks(sim: &mut Simulation, rules: &RuleSet, path_grid: Opt
             mutations.push(m);
             continue;
         };
+
+        // A warped object runs none of its AI (`GameEntity::ai_frozen`): the
+        // approach is the waiter's own mission, the service step and the
+        // release the depot's (`MissionRepairAndProduce`). Its timer holds.
+        let actor = match snap.phase {
+            DockPhase::Servicing | DockPhase::ExitDock => snap.dock_building_id,
+            DockPhase::Approach | DockPhase::WaitForDock | DockPhase::EnterDock => snap.id,
+        };
+        if sim
+            .substrate
+            .entities
+            .get(actor)
+            .is_some_and(crate::sim::game_entity::GameEntity::ai_frozen)
+        {
+            continue;
+        }
 
         let (dock_rx, dock_ry) = depot_dock_cell(depot_rx, depot_ry, &foundation);
         let dist = cell_distance(snap.rx, snap.ry, dock_rx, dock_ry);
@@ -1477,6 +1495,45 @@ mod tests {
                 .unwrap()
                 .radio_contacts
                 .is_empty()
+        );
+    }
+
+    /// A depot whose online latch a Temporal warp cleared answers the probe
+    /// with 10 before any other test (`0x0043C7FB`): a damaged linked waiter
+    /// BREAKs and goes idle on its next probe.
+    #[test]
+    fn a_warped_depot_turns_its_waiters_away() {
+        let (mut sim, rules, grid) = setup(1);
+        assert!(order_repair(&mut sim, &rules, &grid, 1));
+        tick(&mut sim, &rules, &grid);
+        assert!(linked(&sim, 1));
+        sim.substrate.entities.get_mut(DEPOT).unwrap().temporal =
+            crate::sim::temporal::TemporalState::warped_by_for_test(999);
+        let due = {
+            let ds = sim
+                .substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .dock_state
+                .clone()
+                .unwrap();
+            ds.enter_retry.start_frame + ds.enter_retry.duration
+        };
+        while sim.session.binary_frame < due {
+            tick(&mut sim, &rules, &grid);
+        }
+        assert!(!linked(&sim, 1));
+        assert!(phase(&sim, 1).is_none());
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .mission
+                .queued()
+                .known(),
+            Some(MissionType::Guard)
         );
     }
 

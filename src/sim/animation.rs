@@ -230,10 +230,8 @@ pub(crate) fn tick_shp_vehicle_body_frame_counter(
     };
     if locomotor.piggyback.is_some()
         || entity.deploy_state.is_some()
-        || entity
-            .teleport_state
-            .as_ref()
-            .is_some_and(|state| state.warp_out_active() || state.warp_in_active())
+        || entity.is_warped_out()
+        || entity.is_warping_in()
     {
         return;
     }
@@ -352,6 +350,11 @@ fn tick_animations_impl(
             continue;
         };
         if entity.dying && !tick_dying {
+            continue;
+        }
+        // The stage steps in TechnoClass::AI_Update (`0x006FAC4D`), which a
+        // warped object never reaches (`GameEntity::ai_frozen`): its pose holds.
+        if !entity.dying && entity.ai_frozen() {
             continue;
         }
         let type_ref = entity.type_ref();

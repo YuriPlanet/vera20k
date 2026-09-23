@@ -2603,7 +2603,9 @@ impl Simulation {
                     entity.owner(),
                     entity.category,
                     entity.owned_count_released,
-                    entity.health.current == 0,
+                    // A Temporal erase leaves at full health with its kill
+                    // already recorded (`combat::record_kill_credit`).
+                    entity.health.current == 0 || entity.killed_by.is_some(),
                     entity.killed_by,
                     entity.kill_award_points,
                     entity.dont_score,
@@ -3522,6 +3524,9 @@ impl Simulation {
                 {
                     manager.pointer_expired(expired_id);
                 }
+                // The TemporalClass forward (`0x00707B34` -> `0x0071AB60`)
+                // follows, outside the control test like the SpawnManager's.
+                self.temporal_pointer_expired(listener_id, expired_id, context.rules());
                 // FootClass::PointerExpired 0x004D998C..0x004D99CD follows the
                 // Techno body: the parasite link and its forward.
                 self.foot_parasite_pointer_expired(listener_id, expired_id, context.rules());

@@ -22,6 +22,8 @@
 
 // --- Core types: entity storage, components, commands, RNG, interning ---
 pub mod anim_class;
+#[cfg(test)]
+pub(crate) mod arena_fixture;
 pub(crate) mod building_art;
 pub(crate) mod base_plan;
 pub(crate) mod base_plan_generation;
@@ -51,6 +53,7 @@ pub(crate) mod scenario_post_map;
 pub mod scenario_session; // app->sim launch descriptor (per-match seed pipeline)
 pub(crate) mod score;
 pub mod sensor_lifecycle;
+pub mod temporal;
 pub mod timer; // signed frame-anchored countdown primitive
 pub mod type_handle_table; // InternedId -> TypeHandle, one-hop entity->type resolution
 

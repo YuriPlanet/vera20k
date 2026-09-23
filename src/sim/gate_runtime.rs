@@ -179,9 +179,11 @@ pub fn tick_gate_runtimes(
     interner: &StringInterner,
     binary_frame: u32,
 ) {
+    // A warped gate's mission 0x18 does not run (`GameEntity::ai_frozen`): it
+    // neither opens nor closes.
     let gate_ids: Vec<u64> = entities
         .values()
-        .filter(|entity| entity.building_gate.is_some())
+        .filter(|entity| entity.building_gate.is_some() && !entity.ai_frozen())
         .map(|entity| entity.stable_id())
         .collect();
 

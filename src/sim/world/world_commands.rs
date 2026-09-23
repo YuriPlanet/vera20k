@@ -852,6 +852,19 @@ impl Simulation {
                         .get(*entity_id)
                         .is_some_and(|e| crate::sim::mcv_deploy::is_mcv(self, e, rules))
                 });
+                // Mission_Attack's next dispatch finds the TarCom this event
+                // clears and takes its idle exit (FootClass Enter_Idle_Mode
+                // -> `0x00709A54` LetGo). VERA's Stop replaces the mission, so
+                // a Foot still on Attack lets go with the event instead.
+                // RESIDUAL: native lets go on that dispatch, up to one Attack
+                // cadence later; any other mission keeps the beam, as natively.
+                let releases_beam = self.substrate.entities.get(*entity_id).is_some_and(|e| {
+                    matches!(
+                        e.category,
+                        crate::map::entities::EntityCategory::Unit
+                            | crate::map::entities::EntityCategory::Infantry
+                    ) && e.mission.current().known() == Some(MissionType::Attack)
+                });
                 // Event6 retains an ordinary MCV's mission and runtime +0x68C.
                 // Its null-destination operation still runs below.
                 if mcv {
@@ -870,6 +883,9 @@ impl Simulation {
                     e.order_intent = None;
                     e.dock_state = None;
                     e.c4_plant = None;
+                }
+                if releases_beam {
+                    self.temporal_release_if_warping(*entity_id);
                 }
                 if !self.stop_jumpjet_infantry_destination(*entity_id, rules, overlay_registry) {
                     return false;
@@ -2643,10 +2659,7 @@ impl Simulation {
         if !entity.lifecycle.object_alive
             || entity.lifecycle.in_limbo
             || entity.selected
-            || entity
-                .teleport_state
-                .as_ref()
-                .is_some_and(|teleport| teleport.warp_out_active())
+            || entity.is_warped_out()
         {
             return false;
         }

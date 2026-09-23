@@ -2162,6 +2162,15 @@ impl Simulation {
                 0x2c0_u32.hash(hasher);
                 entity.mind_control.hash(hasher);
             }
+            // TemporalImUsing (+274) and TemporalTargetingMe (+278). Objects
+            // with neither fold nothing, so worlds without a Temporal firer
+            // keep their hashes.
+            if schema.includes(HashFeature::Temporal)
+                && entity.temporal != crate::sim::temporal::TemporalState::default()
+            {
+                0x274_u32.hash(hasher);
+                entity.temporal.hash(hasher);
+            }
             // Homing missile flight state. `HomingState` has a manual `Hash`
             // impl that excludes the render-only `pitch: f32` field — see
             // sim::movement::homing_movement.

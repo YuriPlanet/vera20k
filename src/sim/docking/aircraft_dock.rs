@@ -500,6 +500,11 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
             if e.dying {
                 return None;
             }
+            // A warped aircraft's AI (reload, return) does not run
+            // (`GameEntity::ai_frozen`).
+            if e.ai_frozen() {
+                return None;
+            }
             let ammo = e.aircraft_ammo.as_ref()?;
             // A signed counter also exists on unlimited-ammo aircraft; its
             // presence alone no longer admits the finite-ammo docking FSM.

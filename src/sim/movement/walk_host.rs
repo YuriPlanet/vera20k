@@ -384,6 +384,8 @@ impl Simulation {
             crate::sim::world::techno_ai_cloak::uncloak_on_sensor_neighbour_after_cell_entry(
                 self, id, rules,
             );
+            // `0x006F5090`'s head lets a held Temporal target go.
+            self.temporal_release_if_warping(id);
             self.promote_entity_playfield_membership_after_move(id);
             self.finish_walk_pursuit_at_per_cell(id, rules, registry);
         }

@@ -40,14 +40,16 @@ Terror Drones) as #446 (`24ff63b7`), the Techno death broadcast and Stun as #447
 the SpawnManager slot guard as #448 (`35149218`), the Scenario-stream death draws as #449
 (`280a9243`), crew survival (building SpawnSurvivors, vehicle crew) as #450 (`bf55a511`), the
 death anims (building DestructionEffects, Unit Death_Explosion with the ship-sinking gate, the
-Aircraft arm) as #451 (`1aa3041b`). Mind control (CaptureManagerClass) is on
-`feature/combat-mind-control`. A production sortie showed the Carrier wing never attacks: every
-manager pass re-issues each Hornet's attack from sub-state 0 (`assign_child_attack`), so the
-aircraft attack run never completes and the wing never lands. Next, by player visibility: the
-remaining special warhead bodies (Temporal, IvanBomb, Magnetron and the rest), the ship sink, that
-wing cycle together with the aircraft attack loop (Mission_Attack 5..9, GetFireError), the Foot
-Enter_Idle_Mode leaves (Infantry `51CBA0`, Unit `738970`, with the Mission_AreaGuard post and leash
-`4D6AA0` they need), and constructing each death object at its native call.
+Aircraft arm) as #451 (`1aa3041b`), mind control (CaptureManagerClass) as #457 (`32fc312b`).
+The Chrono Legionnaire's erase (TemporalClass) is on `feature/combat-temporal`. A production
+sortie showed the Carrier wing never attacks: every manager pass re-issues each Hornet's attack
+from sub-state 0 (`assign_child_attack`), so the aircraft attack run never completes and the wing
+never lands. Next, by player visibility: the house defeat blow-up (below), the remaining special
+warhead bodies (IvanBomb, Magnetron and the rest), the ship sink, that wing cycle together with the
+aircraft attack loop (Mission_Attack 5..9, GetFireError), the Foot Enter_Idle_Mode leaves (Infantry
+`51CBA0`, Unit `738970`, with the Mission_AreaGuard post and leash `4D6AA0` they need), open-topped
+passenger fire (a Chrono Legionnaire or Yuri in a Battle Fortress), and constructing each death
+object at its native call.
 
 ## Landed mechanisms
 
@@ -337,7 +339,7 @@ Death anims (`feature/combat-destruction-anims`, snapshot 195), owner
   effect-catalog, FIRE3, debris and address docs. Deferred with a residual: constructing each
   death object at its native call.
 
-Mind control (`feature/combat-mind-control`, snapshot 196, hash feature 196), owner
+Mind control, PR #457 (merge `32fc312b`; snapshot 196, hash feature 196), owner
 `capture_manager.rs`:
 - Capture: the MindControl arm of `BulletClass::DetonateAtCoord` (`46920B`) claims the impact
   (no area damage) and calls CaptureUnit `471D40` on the bullet's own target. Stock
@@ -401,16 +403,102 @@ Mind control (`feature/combat-mind-control`, snapshot 196, hash feature 196), ow
   defeat blow-up below.
 - Residuals (module doc): the Psychic Dominator and `+2C4`; DecideUnitFate's Team, Grinder and
   Bio Reactor arms (hunt instead); link lines and the overload flash (presentation); the overload
-  lean (no rocking producer); the Temporal warp release; the crushed controller's release timing;
+  lean (no rocking producer); the crushed controller's release timing;
   object tag events 6/0x2C; the Iron Curtain gate absent from the frame-free weapon ladder; Inviso
   special warheads other than MindControl (the squid grapple) still take area damage on the
   immediate path.
 
-House defeat (found while tracing GetOriginalOwner, not yet a mechanism): `0x004FC6D0` (Ghidra
-called it ScatterAllUnits; now `HouseClass__Blowup_All`) kills every Techno whose original owner is
-the house with full-health C4 damage, called from HouseClass::Update on the `+1F6`/`+298` timer
-(`4F87FA`) and when a house object count sum reaches zero (`4F8F7B`). VERA's `check_defeat` says
-gamemd keeps a defeated house's units, citing the old label. Needs its own trace before any change.
+Temporal (`feature/combat-temporal`, snapshot 197, hash feature 197), owner `temporal.rs`:
+- Before: all three stock Chrono weapons (`[NeutronRifle]` 8, `[NeutronRifleE]` 16, the IFV's
+  `[CRNeutronRifle]` 5) are Inviso, and the immediate delivery ran ordinary area damage for them,
+  so a Chrono Legionnaire plinked for 8 instead of erasing. Now the Temporal arm of
+  `DetonateAtCoord` (`469423`) runs on both deliveries.
+- State: the firer's TemporalClass (`+274`: target, chain Prev/Next, WarpRemaining), created at
+  construction when rookie weapon 0 is `Temporal=` (`6F4154`); the target's chain head (`+278`),
+  whose presence is the temporal half of `+270`. Only `temporal.rs` writes either.
+- InitiateWarp `71AF20`: kills the target's spawns, frees its captives, drops the firer's previous
+  victim, CanWarpTarget `71AE50` (`Warpable=`, Iron Curtain / Force Shield, a unit still in its war
+  factory), refuses a warped firer, heads the chain with `Strength*10` or inserts after the head, the
+  harvester / building under-attack notice, the victim's own release, Deselect. A Unit in a Tank
+  Bunker hands the firer its bunker.
+- The target owns the tick: each class's AI runs its head's Update `71A760` first (Unit `736204`,
+  Infantry `51BB6E` after its sparkle, Aircraft `414BDB`, Building `43FCF9` after damage fire),
+  then sparkles every 24th frame (a building per MuzzleFlash port) and freezes: TarCom and a Foot's
+  NavCom and path drop, and the leaf returns before FootClass::AI (`73647B`, `51BC9F`, `414DA3`) or
+  TechnoClass::AI_Update (`43FE56`). VERA's out-of-shell phases consult `GameEntity::ai_frozen`:
+  idle actions (Scenario draws), fear, deploy, repair and the AI low-credit sale (`450630` is
+  called only past the frozen jump), depot service, spawn managers, boarding and unloading,
+  construction, unit facing and turrets, the sprite stage (`6FAC4D`), the legacy order intents,
+  engineer, bridge-repair and C4 orders, gates, aircraft docks, bunker installs; the locomotor does
+  not run. Update: the corrupt-head release,
+  the open-topped distance release (`Sqrt_Approx` + ftol vs `OpenToppedWarpDistance*256`),
+  `WarpRemaining -= own Damage + SumChainDamage` (depth 0x32), and at `<= 0` the erase: WarpAway,
+  VeterancyStruct::Add for a Trainable firer, the bunker release, Death_Announcement,
+  Record_The_Kill (kill, loss and score for a full-health victim through
+  `combat::record_kill_credit`), UnInit (no death, no survivors), idle.
+- Releases (LetGo `71ABC0`, progress handed to the next attacker, nothing healed): retarget, a
+  counter-warp, cell entry (`6F5090`, including a teleport relocation), idle entry (`709A54` at
+  every represented Enter_Idle_Mode: the Attack and deployed-reacquire idle exits, Move arrival,
+  `queue_foot_enter_idle_mode`, the Drive idle; Stop on an Attack-mission Foot, whose native release
+  is the Attack idle exit on its next dispatch), DecideUnitFate (`4723F3`), the attacker's own
+  expiry and its target's (`71AB60`, outside the removal gate), the IFV gunner seat
+  (ReceiveGunner `746420` / RemoveGunner `7464E0` move the TemporalClass).
+- One `+270` owner: `GameEntity::is_warped_out` (temporal head or teleport warp-out) and
+  `is_warping_in` replace eleven direct teleport reads (damage immunity, selection, pick, radar
+  SpySat scan, locomotor warp gate, cloak, animation, draw state, infantry and unit cell entry).
+- Gates: GetFireError's firer-warped (`6FC109`), linked-target REARM (`6FC14F`), warped target
+  with a non-Temporal warhead (`6FC5D5`, the target drops), the IFV MOVING arm (`741206`);
+  CanAcquireTarget's first test (`7091D6`); Evaluate_Candidate's GetFireError probe (`6F7CE8`, its
+  `6FC5D5` arm keeps a warped candidate out of every passive scan and retarget); CanDock (`457D3E`);
+  CanEnter on a warped Unit transport (`7375BA`) or absorber (`43C422`); an engineer turned away from
+  a warped building (`519EF2`). The warped building's online latch (`+660`, `4521C0`/`452210`):
+  Is_Operational, power output and drain (`44E7C7`/`44E885`), radar, the refinery and absorber
+  CanEnter (`43C422`), the depot probe (`43C7FB`).
+- Native execution: `temporal_update.py` runs the original Update with SumChainDamage, LetGo,
+  ClearLinkedList, Sqrt_Approx and ftol over 29 cases (steps, elite, untrainable, chains, the
+  depth cap, the corrupt head, a building, a head that lost its Target, the open-topped boundary:
+  1793 holds because `Sqrt_Approx(1793^2)` truncates to 1792, 1794 releases, diagonal, cube and
+  vertical cases, a chained hand-off). `temporal_initiate_warp.py` runs the original InitiateWarp
+  with CanWarpTarget, LetGo and Contact_With_Whom over 30 cases (`Strength*10` including its wrap,
+  0x0CCCCCCD -> -2147483646; the insert after the head; the refusals, radio slot 0 only and the war
+  factory in the unit's own cell; the warped attacker; the previous victim released even when the
+  new warp is refused or has no Techno; the victim's own release; the notices; the building going
+  offline; Deselect only with a player). Pinned in `temporal::tests::native_update_corpus` (links,
+  WarpRemaining, `+270`, the erase's callees: WarpAway coordinate and flags, `Add(1500, 900)`, the
+  Enter_Idle_Mode calls in order), `native_initiate_warp_corpus` and
+  `native_open_topped_boundary_is_distance_3d`. Parity demonstrated within those inputs.
+  Reading only: the per-class prologues and the sparkle cadence, the pointer-expiry forward (the
+  corpus test adds its idle per chained link), the release sites, the gunner hand-over.
+- Tests `temporal::tests` (20): the three native corpora, Init_Managers, retarget and counter-warp
+  release, LetGo's three arms, pointer expiry, the IFV hand-over, a warped building offline and
+  back, the frozen object (sparkle cadence and position, TarCom, damage immunity and
+  ignoreDefenses), the out-of-shell phases (no idle draw, no repair or bill), a warped enemy passed
+  over by a GI's scan but not a legionnaire's, non-Temporal fire at a warped target, Stop freeing
+  the victim, a mover warped and released not resuming its order, a warped building's capture
+  refused, warped transports admitting no one, a production erase (a Rhino gone exactly 500 of
+  its AI turns after the shot, no damage, WarpAway, kill and loss, `Add(1500, 900)` twice, no
+  survivors), release on a move order, snapshot and hash round trip. Everything outside the native
+  corpora is Rust regression only.
+- Residuals (module doc): the teleport writer's sparkle, frozen AI and phase gates; `+27C`;
+  gattling spin-down; Mark and building anim pause (presentation); house `+1FC`; the online-latch
+  readers not wired (FindFactory `5F7900`'s online argument, so production is not suspended; the
+  upgrade-prerequisite scan; AI_ManageProduction; CheckDockArrayOccupancy; PowerCheck_Upgrade;
+  vt+0x4E0 `4456D0`); the building erase's occupant kill order; slave release; ReceiveGunner's
+  ROF-timer hand-over; the layer test (IsHighFlying stands in); VERA's fire phase stepping a new
+  warp one AI turn later than native can; Stop releasing with the event; the engineer's scatter;
+  WANT_RIDE (dormant); `71AD40` (house defeat); voxel and harvest-overlay frames; the cursor
+  readers.
+
+House defeat (the next mechanism): `0x004FC6D0` (`HouseClass__Blowup_All`, was ScatterAllUnits)
+kills every Techno whose original owner is the house, limbo objects included, with full-health C4
+damage and no killer, from HouseClass::Update's defeat gate (`4F8E86..4F8F82`: short game when the
+building count skipping Insignificant/DontScore and the MCV count are zero; otherwise every
+counted object), then `MPlayer_Defeated`; the `+1F6`/`+298` path (`4FC980`, Flag_To_Die) is
+reached only from DESTRUCT, REMOVEPLAYER or an EXIT with no other human. Mind-controlled units of
+other houses survive with their release house rewritten to the civilian side. VERA's `check_defeat`
+keeps the objects alive, counts Insignificant/DontScore types and YAREFN as buildings, and walks
+houses in map-key order; two world tests lock that in. Evidence so far is static reads of the
+landing-era binary; the mechanism's own trace and oracles come first.
 
 ## Native evidence inventory
 
@@ -447,6 +535,9 @@ Sidecars record binary identity; landing-era SHA-256 `1cdd1180e49024fbda8ad568ca
 | locomotor_moving / unit_entry_motion / unit_entry | Drive/Ship/Walk; entry | 84/56/150 | — |
 | unit_entry_boundary / unit_entry_traversal / track_destination | `4DA1D0`; `4D9C60`; MoveTo | 100/328/126 | — |
 | unit_scatter_state / unit_source_scatter | Scatter prefix; selector | 69 / 56 | — |
+| capture_decide_fate / capture_overload_update / capture_ring_height | `4723B0`; ctor + `471A50`; `471610` | 156 / 22 / 1 | ReceiveDamage, PlayAt, spawn systems stubbed |
+| temporal_update | `71A760` with `71AB10`, `71ABC0`, `71ADE0`, Sqrt_Approx, ftol | 29 | UnInit, anim ctor, veterancy Add, idle, occupant kill stubbed |
+| temporal_initiate_warp | `71AF20` with `71AE50`, `71ABC0`, `65AD30` | 30 | virtuals, spawn kill, FreeAll, cell lookups, notices, gattling, offline/online stubbed |
 
 Also `tools/infantry_scatter_oracle`, `tools/mcv_deploy_oracle`. Pre-branch main harnesses (review): techno_target_scan 171,
 vhp_scan 498, distributed_fire 151, foot_attack_move 638, estimated_damage 1066, object_health 718, cell_entry_crush_tail 68.
@@ -504,6 +595,20 @@ All saved and read back; no byte or prototype edits. One boundary repair (below,
   UnitClass__Crushed_vt170 (was Receive_Message_Hook; Unit vt+170: Death_Explosion then
   FreeAllMindControlCaptures) with a plate; comments on the NowDead gates `737DA7`, `737DE2`,
   `737E78`, the crush call `7418E5` and the crash call `7461D1`.
+- Temporal (plates): `71AF20` InitiateWarp, `71AE50` CanWarpTarget, `71A760` Update, `71AB10`
+  SumChainDamage, `71ABC0` TemporalClass__LetGo (was DetachFromTarget), `71ADE0` ClearLinkedList,
+  `71AB60` __PointerExpiredForward, `71AD40` __ReleaseChainNoIdle (were FUN_), `4521C0`
+  BuildingClass__TemporalGoOffline and `452210` __TemporalGoOnline (were StartCloaking /
+  StopCloaking), `44D760` BuildingClass__Death_Announcement, `660B80` RecentEventCellRing__Push,
+  `6F5090` TechnoClass__PerCellTail, `709A40` TechnoClass__Enter_Idle_Mode (were FUN_), and the
+  created `746420` UnitClass__ReceiveGunner, `7464E0` __RemoveGunner. After review: `5F7900`
+  TechnoTypeClass__FindFactory (was FUN_, plate), plate `456750` (sensor-range circle); comments on
+  the frozen branches `7362FB`, `51BBD1`, `43FD14`, AI_Update's stage step `6FAC4D`, Update's
+  no-target erase `71A895`, ClearLinkedList `71AE02`/`71AE12`, Evaluate_Candidate's probe `6F7CE8`,
+  GetFireError `6FC57D`/`6FC5D5`, UnitClass::Receive_Radio's switch `73743F` (index = message - 3:
+  0x0F CanEnter, 0x24 WANT_RIDE) and warp answers `737460`/`7375BA`, PerCellProcess's capture
+  refusals `519EB2`/`519EF2`, the IDLE event arm `4C74CB`, Building Receive_Radio `43C422`, and
+  `4456D0` (BuildingClass vt+0x4E0, no function).
 - Comments, other: `4143EB`, `65E6BE`, `692766`, `41CD6E`, `4CDBE1`, `4CDC37`, `4CDCFB`, `566332`,
   `6EA089`, `6EC300`, `6E53A0`, `726C9C`, `71F4E0`, `55AFB0`, `481670`, `518C56`, `51D200`,
   `51D212`, Teleport `718080`, Foot `4DDC60` (EOL; no function), Foot `4DB800`
@@ -619,8 +724,16 @@ Explosion=/DestroyAnim= picks now draw on the Scenario stream (`7022C8`, `70232B
 `73881D`, `41663C`), with only the death sounds on the main stream (`feature/combat-death-rng-stream`).
 
 Whole-combat gaps (plan list plus review coverage top 10):
-- Special warheads: 9 bodies no-op (`projectile.rs:856`); Parasite ported (squid residual), mind
-  control ported (Psychic Dominator residual).
+- Special warheads: 8 bodies no-op (`projectile.rs:856`); Parasite ported (squid residual), mind
+  control ported (Psychic Dominator residual), Temporal ported (teleport-writer freeze residual).
+- Found by the Temporal review, not Temporal defects: VERA's Stop assigns a Stop mission the native
+  IDLE event never assigns (`4C74CB`), which every Attack idle exit after Stop depends on;
+  Evaluate_Candidate lacks the rest of its GetFireError probe (`6F7CE8`); the null-destination
+  helper never clears the NavQueue (`741970` mode 1); production ignores FindFactory's online
+  argument (`5F7900`), which the power toggle and triggers (GoOffline `452360`) also clear.
+- Open-topped passenger fire: VERA fires a passenger's weapon from the transport, so a Chrono
+  Legionnaire or Yuri in a Battle Fortress has no TemporalClass or CaptureManager behind the shot;
+  the Temporal Update's OpenToppedWarpDistance release is ported but has no producer yet.
 - Destruction: construct each death object at its native call (voxel debris, debris anims,
   death anims, InfDeath anims and the death weapon's impact anim inline in the receiver, the
   outer impact anim after its receivers; the fatal prelude after the Techno death arm; verify the

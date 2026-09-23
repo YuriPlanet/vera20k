@@ -570,7 +570,10 @@ use crate::sim::world::Simulation;
 // 195 -> 196: mind control: the CaptureManager keeps each node's original
 // house and the overload countdown and voice latch; the victim keeps its
 // controller and ring anim. A 195 save cannot tell whom a captive returns to.
-const SNAPSHOT_VERSION: u32 = 196;
+// 196 -> 197: TemporalClass: a Temporal firer keeps its link (target, chain
+// neighbours, WarpRemaining) and a warped object its chain head. A 196 save
+// cannot tell a warped object from a free one.
+const SNAPSHOT_VERSION: u32 = 197;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1401,6 +1404,16 @@ fn restore_object_references(
                 "mind_control.controller",
                 "EntityStore",
                 controller_id,
+            )?;
+        }
+        for target_id in entity.temporal.references() {
+            require_resolved_reference(
+                entity_ids.contains(&target_id),
+                "EntityStore",
+                entity_id,
+                "temporal",
+                "EntityStore",
+                target_id,
             )?;
         }
         if let Some(plant) = entity.c4_plant.as_ref() {
@@ -3497,7 +3510,8 @@ mod tests {
         // 193 -> 194: Building+6E3 HasBeenCaptured.
         // 194 -> 195: death anims take the death producers' arguments.
         // 195 -> 196: mind-control nodes, overload state and victim links.
-        assert_eq!(super::SNAPSHOT_VERSION, 196);
+        // 196 -> 197: TemporalClass links and the warped object's chain head.
+        assert_eq!(super::SNAPSHOT_VERSION, 197);
     }
 
     #[test]

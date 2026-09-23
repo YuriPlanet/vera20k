@@ -25,7 +25,11 @@ impl Simulation {
             return None;
         }
         let object = rules.object(self.interner.resolve(entity.type_ref()))?;
+        // `0x004555DA`: an offline building (the warp's latch) is not
+        // operational. RESIDUAL: native keeps one with two or more Tesla
+        // chargers (`+0x67C >= 2`) operational; VERA has no charger vector.
         let operational = entity.health.current != 0
+            && entity.building_online()
             && (!object.needs_engineer || entity.building_has_engineer)
             //Actual Rust placement currently retains Construction in the
             //BuildingUp owner, without publishing that native Mission yet.

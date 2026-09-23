@@ -226,6 +226,10 @@ pub fn tick_fear_for_entities(
         let Some(entity) = entities.get_mut(id) else {
             continue;
         };
+        // InfantryClass::AI returns before its fear work while warped.
+        if entity.ai_frozen() {
+            continue;
+        }
         let Some(obj) = rules.object(interner.resolve(entity.type_ref())) else {
             continue;
         };
@@ -343,6 +347,10 @@ fn idle_action_ready(entity: &GameEntity, frame: u32) -> bool {
     // The `Stand` test at the bottom of this function reaches the same answer,
     // so this is a second lock on the same door, not a behaviour change.
     if entity.lifecycle.in_limbo || !entity.is_active() {
+        return false;
+    }
+    // A man being warped never reaches his mission handler.
+    if entity.ai_frozen() {
         return false;
     }
     if entity.deploy_state.is_some() || entity.attack_target.is_some() {

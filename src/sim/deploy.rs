@@ -80,6 +80,10 @@ pub fn tick_deploy_state(entities: &mut EntityStore) {
         let Some(entity) = entities.get_mut(id) else {
             continue;
         };
+        // A deploy pauses while its object is warped (the frozen AI).
+        if entity.ai_frozen() {
+            continue;
+        }
         match entity.deploy_state {
             Some(DeployPhase::Deploying { ticks_remaining }) => {
                 if ticks_remaining > 1 {

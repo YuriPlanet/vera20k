@@ -98,7 +98,11 @@ impl Simulation {
                 continue;
             }
             if let Some(entity) = self.substrate.entities.get(id) {
-                if entity.order_intent.is_some() && entity.attack_target.is_none() {
+                // A warped object's missions do not run (`ai_frozen`).
+                if entity.order_intent.is_some()
+                    && entity.attack_target.is_none()
+                    && !entity.ai_frozen()
+                {
                     attacker_ids.push(id);
                 }
             }
@@ -183,7 +187,10 @@ impl Simulation {
                     Some(ref i) => *i,
                     None => continue,
                 };
-                if entity.attack_target.is_some() || entity.movement_target.is_some() {
+                if entity.attack_target.is_some()
+                    || entity.movement_target.is_some()
+                    || entity.ai_frozen()
+                {
                     continue;
                 }
                 match intent {
@@ -298,7 +305,11 @@ impl Simulation {
             .entities
             .values()
             .filter(|e| {
-                e.capture_target.is_some() && !e.dying && !turn_suppressed.contains(&e.stable_id())
+                e.capture_target.is_some()
+                    && !e.dying
+                    // A warped engineer never reaches PerCellProcess.
+                    && !e.ai_frozen()
+                    && !turn_suppressed.contains(&e.stable_id())
             })
             .map(|e| (e.stable_id(), e.capture_target.unwrap(), e.owner()))
             .collect();
@@ -348,7 +359,14 @@ impl Simulation {
             let dx = (eng_rx as i32 - bld_rx as i32).abs();
             let dy = (eng_ry as i32 - bld_ry as i32).abs();
 
-            if dx <= 1 && dy <= 1 {
+            // InfantryClass::PerCellProcess turns the engineer away from a
+            // building being warped (`0x00519EF2`): no capture.
+            let target_warped = self
+                .substrate
+                .entities
+                .get(building_id)
+                .is_some_and(crate::sim::game_entity::GameEntity::is_warped_out);
+            if dx <= 1 && dy <= 1 && !target_warped {
                 self.announce_engineer_capture(building_id, engineer_owner, rules);
                 // CAPTURE: the ownership chokepoint moves HouseState counts,
                 // the by-owner index, and the entity owner exactly once.
@@ -447,7 +465,8 @@ impl Simulation {
                 continue;
             }
             let Some((target, cell)) = self.substrate.entities.get(id).and_then(|e| {
-                (!e.dying).then_some((e.capture_target?, (e.position.rx, e.position.ry)))
+                (!e.dying && !e.ai_frozen())
+                    .then_some((e.capture_target?, (e.position.rx, e.position.ry)))
             }) else {
                 continue;
             };
@@ -591,7 +610,8 @@ impl Simulation {
             }
             if let Some(e) = self.substrate.entities.get(sid) {
                 if let Some(plant) = e.c4_plant {
-                    if !e.dying {
+                    // A warped planter's mission does not run (`ai_frozen`).
+                    if !e.dying && !e.ai_frozen() {
                         walkup.push((sid, plant.target_building_id));
                     }
                 }

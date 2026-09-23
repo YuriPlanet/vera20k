@@ -2237,12 +2237,10 @@ fn find_docking_bay(
 ///   = 0 (callers: `EventClass::Execute` 0x004C6D9A power toggle,
 ///   `TriggerAction::Execute` 0x006DDFB9, `ReadFromINI` 0x0044FD23), plus
 ///   0x004521C0 = 0 / 0x00452210 = 1 called only from `TemporalClass`
-///   InitiateWarp / DetachFromTarget / ClearWarpingOutOnTarget (their
-///   "Start/StopCloaking" labels are unverified). So it is the player/
-///   trigger TogglePower latch plus a temporal-warp clear, not house low
-///   power. VERA carries neither state and stock refineries are not
-///   toggleable: gate EXCLUDED (residual: a refinery being chrono-erased is
-///   still selectable here);
+///   InitiateWarp and LetGo (now labelled TemporalGoOffline/Online). So it
+///   is the player/trigger TogglePower latch plus a temporal-warp clear, not
+///   house low power. VERA represents the warp's half
+///   ([`crate::sim::game_entity::GameEntity::building_online`]); stock refineries are not toggleable;
 /// - 0x0043C43B..0x0043C453: unless the type is `UnitAbsorb=`/`InfantryAbsorb=`
 ///   (+0x16AE/+0x16AF) the `JZ 0x0043C4F8` at 0x0043C453 jumps straight past
 ///   the absorber-only block, so for a refinery NEITHER the `CaptureManager`
@@ -2291,6 +2289,9 @@ fn refinery_accepts_can_load(
         return false;
     }
     if harvester.balloon_hover {
+        return false;
+    }
+    if !refinery.building_online() {
         return false;
     }
     refinery_type.refinery && harvester.harvester

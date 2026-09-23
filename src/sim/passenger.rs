@@ -277,13 +277,22 @@ pub fn can_enter_transport(
         if passenger.owner() != transport.owner() {
             return false;
         }
+        // CanEnter (0x0F) is refused while the transport is warped: a Unit
+        // tests `+0x270` (`0x007375BA..0x007375CD`), an absorbing building
+        // its online latch before the absorber block (`0x0043C422`, answer
+        // 10).
+        use crate::map::entities::EntityCategory;
+        match transport.category {
+            EntityCategory::Unit if transport.is_warped_out() => return false,
+            EntityCategory::Structure if !transport.building_online() => return false,
+            _ => {}
+        }
         // UnitClass::Receive_Radio 0x0F 0x007375F3..0x0073761D: a controlled
         // Foot, one a parasite is eating, or one controlling a captive may not
         // load. An absorbing building's Receive_Radio (`0x0043C4A0`) refuses
         // only the controller; a captive boarding it is released first.
         // AircraftClass's radio tests neither (no stock aircraft carries
         // passengers).
-        use crate::map::entities::EntityCategory;
         if transport.category == EntityCategory::Unit && passenger.mind_control.is_mind_controlled()
         {
             return false;
@@ -325,6 +334,11 @@ pub fn can_dock_occupier_garrison(
         if building.position.rx >= grid.width() || building.position.ry >= grid.height() {
             return false;
         }
+    }
+    // `BuildingClass::CanDock @ 0x00457D3E`: a building being warped out
+    // admits nobody.
+    if building.is_warped_out() {
+        return false;
     }
     if !passenger_obj.occupier {
         return false;
@@ -461,16 +475,24 @@ fn tick_boarding_and_garrison_reconciliation_in_order(
             continue;
         }
 
-        if sim
+        // Boarding is the passenger's own mission and unloading the
+        // building's; a warped object runs neither (`GameEntity::ai_frozen`).
+        let frozen = sim
             .substrate
             .entities
             .get(entity_id)
-            .is_some_and(|e| matches!(e.passenger_role, PassengerRole::Boarding { .. }))
+            .is_some_and(GameEntity::ai_frozen);
+        if !frozen
+            && sim
+                .substrate
+                .entities
+                .get(entity_id)
+                .is_some_and(|e| matches!(e.passenger_role, PassengerRole::Boarding { .. }))
         {
             process_boarding_passenger(sim, rules, entity_id);
         }
 
-        if is_can_be_occupied_unloading_transport(sim, rules, entity_id) {
+        if !frozen && is_can_be_occupied_unloading_transport(sim, rules, entity_id) {
             process_unloading_transport(sim, rules, entity_id);
         }
 
@@ -638,6 +660,11 @@ fn process_boarding_passenger(sim: &mut Simulation, rules: &RuleSet, pax_id: u64
             if let Some(t) = sim.substrate.entities.get_mut(transport_id) {
                 t.weapon_override = new_override;
             }
+        }
+        if transport_gunner {
+            // UnitClass +0x4D4 (`0x00746420`): the gunner's TemporalClass
+            // moves to the IFV.
+            sim.temporal_receive_gunner(transport_id, pax_id);
         }
     } else if let Some(pax) = sim.substrate.entities.get_mut(pax_id) {
         pax.passenger_role = PassengerRole::None;

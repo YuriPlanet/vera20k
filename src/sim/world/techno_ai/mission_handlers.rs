@@ -174,6 +174,10 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
                 // the match, re-dispatched every single frame instead of
                 // settling onto Guard's cadence — and never eligible for the
                 // Guard-only arm of the passive-acquire gate.
+                // The arrival hook is the class Enter_Idle_Mode, whose Foot
+                // and Techno bases let a Temporal link go first (0x004D82D9
+                // -> 0x00709A54).
+                sim.temporal_release_if_warping(id);
                 // Unit EnterIdle 0x738AB4 retains pending Deploy intent;
                 // arrival must not invent Guard after a replacement Move.
                 if sim
@@ -346,9 +350,12 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
             // targets permanently. Both branches draw the cadence jitter, so
             // this adds no RNG draw; the half-cadence band needs a live target
             // and is already skipped here.
-            let idle_queue = (!input.has_attack_target)
-                .then(|| foot_enter_idle_mode_queue(rules, input))
-                .flatten();
+            let idle_queue = if input.has_attack_target {
+                None
+            } else {
+                sim.temporal_release_if_warping(id);
+                foot_enter_idle_mode_queue(rules, input)
+            };
             MissionHandlerEvaluation {
                 delay,
                 // Stale entity IDs are an authoritative target-loss input, and
@@ -908,6 +915,9 @@ pub(super) fn foot_enter_idle_mode_queue(
 /// applied as a deferred Queue_Mission. Used by release paths outside the
 /// mission dispatcher (a parasite owner leaving its victim, `0x0062A7A3`).
 pub(crate) fn queue_foot_enter_idle_mode(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    // `FootClass::Enter_Idle_Mode @ 0x004D82D9` -> `TechnoClass::
+    // Enter_Idle_Mode @ 0x00709A54`: a held Temporal target goes first.
+    sim.temporal_release_if_warping(id);
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
@@ -1990,6 +2000,7 @@ fn infantry_deployed_attack_reacquire(
     if input.mission == Some(MissionType::Guard) {
         return None;
     }
+    sim.temporal_release_if_warping(id);
     foot_enter_idle_mode_queue(rules, input)
 }
 

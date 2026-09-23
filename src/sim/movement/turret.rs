@@ -427,6 +427,11 @@ pub fn tick_turret_rotation(
         {
             continue;
         }
+        // A warped object's AI sets no facing; its barrel finishes the turn it
+        // was given (`GameEntity::ai_frozen`).
+        if entity.ai_frozen() {
+            continue;
+        }
         // Skip non-turreted entities; otherwise take the per-entity desired facing
         // from the shared helper (single source for sweep + per-object host).
         let Some(desired_facing) =

@@ -35,13 +35,9 @@ fn stock_cloak_tick_facts(
     let moving =
         crate::sim::movement::drive_locomotor_is_moving(entity) || entity.movement_target.is_some();
     let holds_target = entity.attack_target.is_some();
-    // vt+0x1D4 / vt+0x1D8 = `IsWarpingIn` / `IsWarpingOut` (`0x0070C5B0` /
-    // `0x0070C5C0`, reading `TechnoClass+0x270`/`+0x271`). VERA's producers for
-    // the same pair are the teleport phase predicates.
-    let chrono_active = entity
-        .teleport_state
-        .as_ref()
-        .is_some_and(|teleport| teleport.warp_in_active() || teleport.warp_out_active());
+    // vt+0x1D4 / vt+0x1D8 (`0x0070C5B0` / `0x0070C5C0`, reading
+    // `TechnoClass+0x270`/`+0x271`): a Chrono teleport or a Temporal warp.
+    let chrono_active = entity.is_warped_out() || entity.is_warping_in();
     // `FootClass::IsCloakable @ 0x004DBDA0` (vtable +0x288) =
     // `HasStealthAbility() && !(CloakStop(+0xC93) && locomotor->IsMoving())`.
     let is_cloakable = object.cloakable && (!object.cloak_stop || !moving);

@@ -2396,11 +2396,9 @@ fn resolve_receive_damage(
         invulnerable: !receiver_flags.ignore_defenses
             && receiver_input >= 0
             && active_invulnerability.is_some(),
-        warping_out: !receiver_flags.ignore_defenses
-            && target
-                .teleport_state
-                .as_ref()
-                .is_some_and(|state| state.warp_out_active()),
+        // `+0x270` (vtable `+0x1D4`, `0x00701AB1`): a Chrono teleport's
+        // warp-out or a Temporal warp.
+        warping_out: !receiver_flags.ignore_defenses && target.is_warped_out(),
         bunker_blocked,
         radiation_immune: warhead.radiation
             && target_type.is_some_and(|object| object.immune_to_radiation),
@@ -3208,6 +3206,24 @@ pub(crate) fn capture_kill_credit(
     rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
 ) {
+    if victim.health.current != 0 {
+        return;
+    }
+    record_kill_credit(victim, killer_owner, rules, interner);
+}
+
+/// `Record_The_Kill`'s kill and score half for a victim that may still have
+/// health: a Chrono Legionnaire's erase calls vtable `+0xE0` on a target it
+/// removes at full health (`TemporalClass::Update @ 0x0071AAC4`, then UnInit).
+/// The owned-count release books the loss for a victim credited here, as for
+/// one at zero health. [`capture_kill_credit`] adds the zero-health gate the
+/// damage paths need.
+pub(crate) fn record_kill_credit(
+    victim: &mut crate::sim::game_entity::GameEntity,
+    killer_owner: Option<InternedId>,
+    rules: &crate::rules::ruleset::RuleSet,
+    interner: &crate::sim::intern::StringInterner,
+) {
     // `DontScore=` victims are invisible to the score screen entirely. gamemd
     // returns on this byte before any of its bookkeeping, so the kill and the
     // points are both suppressed here and the loss is suppressed at the
@@ -3215,7 +3231,7 @@ pub(crate) fn capture_kill_credit(
     if victim.dont_score {
         return;
     }
-    if victim.health.current != 0 || victim.killed_by.is_some() {
+    if victim.killed_by.is_some() {
         return;
     }
     let Some(killer_owner) = killer_owner else {
