@@ -43,9 +43,11 @@
 //! (string at `0x008182F8`, NOT the neighbouring `RING1` at `0x008182F0`) and
 //! `[CombatDamage] FlameDamage2` otherwise; a `TerrainClass` owner
 //! (`What_Am_I` -> `0x24`) multiplies the per-frame value by 5.
-//! - Trigger: the `FIRE3` anims `BuildingClass::DestructionEffects` starts in
-//!   the cardinal neighbours of an `Explodes=` building whose overlay has
-//!   `Explodes=yes` (`0x00441A2B..0x00441B2E`, name loaded at `0x00441AEC`).
+//! - Trigger: the `FIRE3` anims `BuildingClass::DestructionEffects` starts,
+//!   for an `Explodes=` building, in each cardinal neighbour cell whose own
+//!   overlay has `Explodes=yes` (`0x00441A2B..0x00441B2E`; the neighbour's
+//!   `+0x44` overlay tested at `0x00441A90..0x00441AC2`, name loaded at
+//!   `0x00441AEC`).
 //!   No stock overlay has `Explodes=yes`, the `BURN-S/M/L` family is commented
 //!   out of `[Animations]` and `INVISO` has no stock producer, so stock play
 //!   never reaches it.

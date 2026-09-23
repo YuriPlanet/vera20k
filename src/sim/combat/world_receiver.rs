@@ -1325,13 +1325,14 @@ fn finish_concrete_death(
         concrete_smudge_plans.push(ConcreteDeathSmudgePlan::Building);
     }
 
-    // `UnitClass::Death_Explosion @ 0x00738680` and the Aircraft death arm
-    // (`0x0041661F`), after the killing warhead's own `AnimList=` anim.
-    // Infantry play none: every `Explosion=` reader is a Unit, Aircraft or
-    // Building body (`get_xrefs_to 0x00738680`; the `type+0x73C` operand
-    // scan), and infantry death anims come from `InfDeath`/`DeathAnims`.
+    // `UnitClass::Death_Explosion @ 0x00738680` unless the unit sinks
+    // (`0x00737DE2`), and the Aircraft death arm (`0x0041661F`); the killing
+    // detonation's own impact anim follows its receivers. Infantry play none:
+    // every `Explosion=` reader is a Unit, Aircraft or Building body
+    // (`get_xrefs_to 0x00738680`; the `type+0x73C` operand scan), and
+    // infantry death anims come from `InfDeath`/`DeathAnims`.
     match category {
-        EntityCategory::Unit => {
+        EntityCategory::Unit if !world.unit_sinks_on_death(rules, dead_id) => {
             world.unit_death_explosion(rules, dead_id, &mut effects.explosion_effects)
         }
         EntityCategory::Aircraft => {

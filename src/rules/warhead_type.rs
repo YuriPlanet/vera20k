@@ -291,7 +291,8 @@ pub struct WarheadType {
     ///
     /// The TechnoType side is ported: `throw_debris_for_death` launches a dying
     /// object's `DebrisTypes=` into the `VoxelAnimClass` store
-    /// (`sim::voxel_anim`) and its `DebrisAnims=` as anims. These four warhead
+    /// (`sim::voxel_anim`) and records its `DebrisAnims=` rows, which stay
+    /// unbound on stock (the GSI-05.14 residual there). These four warhead
     /// keys still have no reader.
     /// - Trigger: a mod authoring warhead debris keys; none in stock.
     /// - Player effect: none in stock; the native reader of these warhead

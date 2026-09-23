@@ -39,9 +39,10 @@ Checkpoint (2026-09-23): the landing PR merged as #444 (`9bab8fba`), Parasite (a
 Terror Drones) as #446 (`24ff63b7`), the Techno death broadcast and Stun as #447 (`ab80dd3f`),
 the SpawnManager slot guard as #448 (`35149218`), the Scenario-stream death draws as #449
 (`280a9243`), crew survival (building SpawnSurvivors, vehicle crew) as #450 (`bf55a511`). The
-death anims (building DestructionEffects, Unit Death_Explosion, the Aircraft arm) are on
-`feature/combat-destruction-anims`. A production sortie showed the Carrier wing never attacks: every manager pass re-issues each Hornet's attack
-from sub-state 0 (`assign_child_attack`), so the aircraft attack run never completes and the wing
+death anims (building DestructionEffects, Unit Death_Explosion with the ship-sinking gate, the
+Aircraft arm) are on `feature/combat-destruction-anims`; the next destruction item is constructing
+each death object at its native call. A production sortie showed the Carrier wing never attacks:
+every manager pass re-issues each Hornet's attack from sub-state 0 (`assign_child_attack`), so the aircraft attack run never completes and the wing
 never lands. Next, by player visibility: that wing cycle together with the aircraft attack loop
 (Mission_Attack 5..9, GetFireError), the Foot Enter_Idle_Mode leaves (Infantry `51CBA0`, Unit
 `738970`, with the Mission_AreaGuard post and leash `4D6AA0` they need), the remaining special
@@ -287,7 +288,7 @@ Crew survival (`feature/combat-survivors`, snapshot 194), owner `sim/crew_surviv
   failure) and the `+D15` misreading (it is `Explodes=`, not walls). Noted: parasite releases next
   to a building now succeed (0x80 is not read), matching `481180`.
 
-Death anims (`feature/combat-destruction-anims`, no schema change), owner
+Death anims (`feature/combat-destruction-anims`, snapshot 195), owner
 `combat/destruction_effects.rs`:
 - DestructionEffects `4415F0` steps 1, 7, 8 and 13 at the building's death, before SpawnSurvivors:
   the damage fires go out; the centre mark; per foundation cell (list order) a `49F420` jitter
@@ -301,21 +302,40 @@ Death anims (`feature/combat-destruction-anims`, no schema change), owner
   current ammo): the Apocalypse and the Demolition Truck always die with `S_TUMU60`. The Aircraft
   arm (`41663C`) picks `Explosion=` only; VERA had also drawn `DestroyAnim=` (no stock aircraft
   has one).
+- The Unit NowDead block gates `Death_Explosion` (`737DA7..737F6F`): a surface ship
+  (`Naval=`, not `Underwater=`/`Organic=`) at least `ShipSinkingWeight=` (Rules `+630`, default
+  3.0) heavy, on a water cell and not being warped, sinks instead (`737DE2..737E5E`): no pick, no
+  anim. Every DEST, AEGIS, CARRIER, DRED (and campaign VLAD, CRUISE, CDEST) death on water used to
+  draw an extra Scenario Next. The sink itself is a residual: VERA removes the hull at once.
 - All death producers construct `AnimClass(type, coord, delay, 1, 0x600, 0, 0)`; VERA had used the
   warhead impact's `(0, 1, 0x2600, -15)` at a level-rounded coordinate. The draws stay in the
   receiver; the constructions stay on the transaction's ordered anim list
-  (`ExplosionEffect::death`), so anims keep their native relative order with the debris and the
-  warhead impact anim (the damage-consequence ID-order pins hold).
+  (`ExplosionEffect::death`), constructed at the consequence boundary in push order (the
+  damage-consequence ID-order pins hold). Snapshot 194 -> 195: stored death anims change their
+  arguments and building deaths add AnimStore members.
 - Tests: exact draw ledgers for the building, unit override, aircraft and empty/single lists; the
-  former `gsi_08_11` fixture test plus a production-receiver kill; an ignored retail Dustbowl run
-  (GAPOWR: two constructed anims, two art-less `gtpowexp` picks; MCV: its own explosion). Rust
-  regression only.
-- Residuals (module doc): all transaction anims construct at the consequence boundary (a stock
-  no-op for the stream; survivors take identities ahead of their death's anims); AnimClass::Middle
-  `424F00` (the scorch/crater a multi-frame explosion leaves at its middle frame); art-less
-  `gtpowexp`/`tstlexp`; DestroyAnim palette; steps 2-6, 9-12, 14 (dead or absent on stock, listed
-  with triggers); a vehicle's spent ammo. Corrected: the FIRE3 trigger text (needs an
-  `Explodes=yes` overlay; none in stock) and the stale warhead-debris residual.
+  former `gsi_08_11` fixture test plus production-receiver kills (the anims' draws precede
+  SpawnSurvivors' on the same cells; the ship-sinking gate on and off water, below the weight and
+  underwater); an ignored retail Dustbowl run pinned to its seed (GAPOWR: `S_CLSN58`, `S_TUMU60`
+  and two art-less `gtpowexp` picks; MCV: its own `S_CLSN58`). Rust regression only.
+- Residuals (module doc): construction order (the transaction's anims and voxel debris construct
+  at the consequence boundary while crew, survivors and damaged-art anims construct inline, so
+  natively the first crewman follows its death's anims in the live order and here precedes them;
+  the frame the last-constructed anim expires skips a different object; routine for crewed
+  deaths); the ship sink, the DeathFrames deferral and the water splash; the other
+  `Death_Explosion` callers (a crushed vehicle `7418E5` -> `746D60`, a `Crashable=` crash
+  `7461D1`, the DeathFrames completion); AnimClass::Middle `424F00` (the scorch/crater a
+  multi-frame explosion leaves at its middle frame); art-less `gtpowexp`/`tstlexp`; DestroyAnim
+  palette; `RevealToAll=` (step 5, stock, shroud only); steps 2-4, 9-12, 14 (dead or absent on
+  stock); a vehicle's spent ammo. Corrected: the FIRE3 trigger text (a neighbour cell's
+  `Explodes=yes` overlay; none in stock), the stale warhead-debris residual, and the crush doc
+  (`bump_crush`: a crushed vehicle does run `Death_Explosion`). The fatal prelude's order against
+  the Techno death arm is recorded at `BeforeDeathEffects`.
+- Critic (one pass): gated the ship sink; recorded the other callers and corrected the crush doc;
+  rewrote the construction-order residual (the live-order skip, not only identities); added the
+  integrated order test and the retail pin; bumped the snapshot; fixed the `ExplosionEffect`,
+  effect-catalog, FIRE3, debris and address docs. Deferred with a residual: constructing each
+  death object at its native call.
 
 ## Native evidence inventory
 
@@ -405,7 +425,10 @@ All saved and read back; no byte or prototype edits. One boundary repair (below,
   and `442D90` SpawnSurvivors; `481180` PlaceInfantryInCell plate corrected (the 0x40 exception is
   a passable Gate, not a garrison building). Comments `441F0B`, `7381BC`.
 - Death anims: plates `4415F0` BuildingClass__DestructionEffects (all 17 steps) and `738680`
-  UnitClass__Death_Explosion (override, dead ore sum); comment `41663C` (Aircraft arm).
+  UnitClass__Death_Explosion (override, dead ore sum); comment `41663C` (Aircraft arm). `746D60`
+  UnitClass__Crushed_vt170 (was Receive_Message_Hook; Unit vt+170: Death_Explosion then
+  FreeAllMindControlCaptures) with a plate; comments on the NowDead gates `737DA7`, `737DE2`,
+  `737E78`, the crush call `7418E5` and the crash call `7461D1`.
 - Comments, other: `4143EB`, `65E6BE`, `692766`, `41CD6E`, `4CDBE1`, `4CDC37`, `4CDCFB`, `566332`,
   `6EA089`, `6EC300`, `6E53A0`, `726C9C`, `71F4E0`, `55AFB0`, `481670`, `518C56`, `51D200`,
   `51D212`, Teleport `718080`, Foot `4DDC60` (EOL; no function), Foot `4DB800`
@@ -522,8 +545,13 @@ Explosion=/DestroyAnim= picks now draw on the Scenario stream (`7022C8`, `70232B
 
 Whole-combat gaps (plan list plus review coverage top 10):
 - Special warheads: 10 bodies no-op (`projectile.rs:856`); Parasite ported (squid residual).
-- Destruction: the building NowDead contact loop (`442511`, radio 0x17 and the C4 kill of
-  contacts), AnimClass::Middle for every explosion anim, the deferred death of `Explodes=`/Selling
+- Destruction: construct each death object at its native call (voxel debris, debris anims,
+  death anims, InfDeath anims and the death weapon's impact anim inline in the receiver, the
+  outer impact anim after its receivers; the fatal prelude after the Techno death arm; verify the
+  InfDeath anim's native constructor arguments); the ship sink (`+3CD`, `vt+3A0`, the
+  `UnitClass::AI` sinking); a crushed vehicle's `Death_Explosion` (`746D60`); the `Crashable=`
+  crash; the building NowDead contact loop (`442511`, radio 0x17 and the C4 kill of contacts),
+  AnimClass::Middle for every explosion anim, the deferred death of `Explodes=`/Selling
   buildings, death specials, the sale crew, passenger escape from dying transports.
 - Homing launch/steering non-native; host cos/sin/atan/hypot in Flak, cluster, shrapnel and homing tables.
 - Gattling stage pinned 0 (`combat_weapon.rs:1070`); Prism forwarding absent; Tesla overpower.
@@ -557,3 +585,7 @@ Crew-survival candidate (after critic fixes): `cargo test -p vera20k --lib` 9233
 crewmen scatter through FNPC off their spawn cells); Clippy pass, 1020 warnings. No replay pin
 moved (no pinned fixture kills a crewed building or vehicle). Release `parity-digest` Dustbowl,
 seed `0x00C0FFEE`, 30 ticks: identical to the pre-change digest (load path only).
+Death-anims candidate (after critic fixes): `cargo test -p vera20k --lib` 9241 passed, 0 failed,
+137 ignored (8 new, one of them the ignored retail Dustbowl run pinned to its seed); Clippy pass,
+1020 warnings, none new. Release `parity-digest` Dustbowl, seed `0x00C0FFEE`, 30 ticks: two runs
+identical to each other and to the crew-survival digest (load path only; no death in the window).

@@ -9,21 +9,40 @@ use crate::sim::house_state::HouseState;
 use crate::sim::rng::SimRng;
 
 const RULES: &str = "\
+[General]
+AlliedCrew=E1
+Engineer=ENGINEER
+AlliedSurvivorDivisor=500
+RefundPercent=50%
 [InfantryTypes]
+0=E1
+1=ENGINEER
 [VehicleTypes]
 0=PLAIN
 1=APOC
 2=VETBOOM
 3=AMMOBOOM
 4=EMPTYBOOM
+5=SHIP
+6=SKIFF
+7=SUB
 [AircraftTypes]
 0=JET
 [BuildingTypes]
 0=PLANT
 1=HALL
 2=SHED
+3=DEPOT
 [Warheads]
 0=KILLWH
+[E1]
+Strength=125
+Speed=4
+Locomotor={4A582744-9839-11D1-B709-00A024DDAFD1}
+[ENGINEER]
+Strength=75
+Speed=4
+Locomotor={4A582744-9839-11D1-B709-00A024DDAFD1}
 [PLAIN]
 Strength=100
 Explosion=EXPA,EXPB,EXPC
@@ -46,6 +65,34 @@ Strength=100
 Explodes=yes
 Ammo=0
 Explosion=EXPA,EXPB,EXPC
+[SHIP]
+Strength=100
+Naval=yes
+Speed=6
+SpeedType=Float
+MovementZone=Water
+Locomotor={2BEA74E1-7CCA-11d3-BE14-00104B62A16C}
+Weight=4
+Explosion=EXPA,EXPB,EXPC
+[SKIFF]
+Strength=100
+Naval=yes
+Speed=6
+SpeedType=Float
+MovementZone=Water
+Locomotor={2BEA74E1-7CCA-11d3-BE14-00104B62A16C}
+Weight=1
+Explosion=EXPA,EXPB,EXPC
+[SUB]
+Strength=100
+Naval=yes
+Speed=6
+SpeedType=Float
+MovementZone=Water
+Locomotor={2BEA74E1-7CCA-11d3-BE14-00104B62A16C}
+Underwater=yes
+Weight=4
+Explosion=EXPA,EXPB,EXPC
 [JET]
 Strength=100
 Explosion=EXPA,EXPB
@@ -62,6 +109,13 @@ DestroyAnim=DESTA
 [SHED]
 Strength=100
 Foundation=1x1
+[DEPOT]
+Strength=100
+Cost=800
+Crewed=yes
+Foundation=2x2
+Explosion=EXPA,EXPB
+DestroyAnim=DESTA
 [KILLWH]
 Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 ";
@@ -189,7 +243,7 @@ fn a_destroyed_building_explodes_per_foundation_cell_then_plays_its_destroy_anim
     }
 }
 
-/// A one-entry DestroyAnim list still spends its pick (`0x0073881D` draws
+/// A one-entry DestroyAnim list still spends its pick (`0x00441CCA` draws
 /// before the modulo); a building with neither list draws nothing.
 #[test]
 fn a_single_destroy_anim_still_draws_and_no_lists_draw_nothing() {
@@ -354,6 +408,156 @@ fn gsi_08_11_killing_hits_play_the_types_death_anims() {
     );
 }
 
+/// Through the production receiver: DestructionEffects draws each foundation
+/// cell's jitter, delay and pick and then the DestroyAnim pick before
+/// SpawnSurvivors rolls the same cells (`0x00442665` precedes `0x00441F1B`).
+/// The mapless fixture has no smudge candidates, so neither the centre mark
+/// nor the per-cell marks draw, and the survivor's Scatter stops after its
+/// first draw.
+#[test]
+fn a_killed_building_draws_its_death_anims_before_its_survivors() {
+    let rules = rules();
+    let mut survivors = 0;
+    for seed in 1..=6 {
+        let mut sim = sim(seed);
+        let depot = spawn(&mut sim, &rules, "DEPOT", 10, 20);
+        let location = position_world_coord(&sim.substrate.entities.get(depot).unwrap().position);
+        let before = sim.substrate.entities.keys_sorted();
+        let mut replay = sim.scenario_rng.clone();
+        kill(&mut sim, &rules, depot);
+
+        let cells = crate::sim::crew_survival::foundation_cells(10, 20, "2x2");
+        let mut expected = Vec::new();
+        for &(rx, ry) in &cells {
+            let (x, y) = super::super::inviso_scatter::random_direction_coord(
+                &mut replay,
+                i32::from(rx) * 256 + 0x80,
+                i32::from(ry) * 256 + 0x80,
+                0x40,
+            );
+            let delay = replay.next_range_u32_inclusive(0, 3) as u16;
+            let anim = pick(&mut replay, &["EXPA", "EXPB"]);
+            let coord = AnimWorldCoord {
+                x,
+                y,
+                z: location.z,
+            };
+            expected.push((anim, coord, delay, 0x600, 0));
+        }
+        let corner = AnimWorldCoord {
+            x: location.x - 0x80,
+            y: location.y - 0x80,
+            z: location.z,
+        };
+        expected.push((pick(&mut replay, &["DESTA"]), corner, 0, 0x600, 0));
+        // SpawnSurvivors Phase B for the one owed survivor: per cell the
+        // `RandomRanged(0, 2)` roll; a hit spends the Engineer roll (a depot
+        // is no yard), the constructor word, the centre-row placement, the
+        // health roll and Scatter's first draw.
+        let mut owed = 1;
+        let mut healths = Vec::new();
+        for _ in &cells {
+            if owed > 0 && replay.next_range_u32_inclusive(0, 2) == 1 {
+                let _engineer = replay.next_range_u32_inclusive(0, 99);
+                let _constructor = replay.next_u32();
+                let _row = replay.next_range_u32(4);
+                healths.push(replay.next_range_i32_inclusive(5, 125));
+                let _scatter = replay.next_range_u32_inclusive(0, 4);
+                owed -= 1;
+            }
+        }
+
+        assert_eq!(anims(&sim), expected, "seed {seed}");
+        assert_eq!(sim.scenario_rng.state(), replay.state(), "seed {seed}");
+        let crew: Vec<_> = sim
+            .substrate
+            .entities
+            .keys_sorted()
+            .into_iter()
+            .filter(|id| !before.contains(id))
+            .map(|id| sim.substrate.entities.get(id).unwrap().health.current)
+            .collect();
+        assert_eq!(crew, healths, "seed {seed}");
+        survivors += crew.len();
+    }
+    assert!(survivors > 0, "the seeds exercise a survivor");
+}
+
+/// `0x00737DE2..0x00737E5E`: a surface naval unit at least
+/// `ShipSinkingWeight=` heavy (default 3.0) dying on a water cell sinks and
+/// never reaches `Death_Explosion`: no pick, no anim. On a cell whose LandType
+/// is not water, below the weight or `Underwater=`, it explodes.
+#[test]
+fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
+    use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
+    use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
+    let rules = rules();
+    let open = SpeedCostProfile {
+        foot: Some(100),
+        track: Some(100),
+        wheel: Some(100),
+        float: Some(100),
+        amphibious: Some(100),
+        float_beach: Some(100),
+        hover: Some(100),
+    };
+    for (kind, water, sinks) in [
+        ("SHIP", true, true),
+        ("SHIP", false, false),
+        ("SKIFF", true, false),
+        ("SUB", true, false),
+    ] {
+        let mut sim = sim(9);
+        let cells = (0..20_u16)
+            .flat_map(|y| (0..20_u16).map(move |x| (x, y)))
+            .map(|(x, y)| {
+                let mut cell = test_flat_cell(x, y);
+                cell.speed_costs = open;
+                cell.base_speed_costs = open;
+                if (x, y) == (12, 12) {
+                    cell.land_type = LandType::Water.as_index();
+                    cell.yr_cell_land_type = LandType::Water.as_index();
+                    cell.is_water = true;
+                }
+                cell
+            })
+            .collect();
+        sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(20, 20, cells));
+        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+            base: 20,
+            off_fc: -128,
+            off_100: -128,
+            off_104: 256,
+            off_108: 256,
+        });
+        sim.playfield_size_height = Some(20);
+        assert!(sim.rebuild_dynamic_navigation(&rules));
+        let ship = spawn(&mut sim, &rules, kind, 12, 12);
+        if !water {
+            // Only the gate's `+0xEC` read changes; the ship stays placed.
+            let cell = sim.resolved_terrain.as_mut().unwrap().cell_mut(12, 12);
+            cell.unwrap().yr_cell_land_type = LandType::Clear.as_index();
+        }
+        let mut replay = sim.scenario_rng.clone();
+        kill(&mut sim, &rules, ship);
+        let played: Vec<_> = anims(&sim).into_iter().map(|anim| anim.0).collect();
+        if sinks {
+            assert!(played.is_empty(), "{kind}: {played:?}");
+        } else {
+            assert_eq!(
+                played,
+                vec![pick(&mut replay, &["EXPA", "EXPB", "EXPC"])],
+                "{kind} water {water}"
+            );
+        }
+        assert_eq!(
+            sim.scenario_rng.state(),
+            replay.state(),
+            "{kind} water {water}"
+        );
+    }
+}
+
 /// Retail Dustbowl runtime: a power plant killed through the production
 /// receiver with retail art bound plays one `Explosion=` anim per foundation
 /// cell (an art-less `gtpowexp` pick constructs nothing) with delays in 0..=3,
@@ -467,14 +671,14 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
     };
     let plant_anims = &per_kill[0];
     assert!(
-        plant_anims.len() <= 4,
-        "one per foundation cell, less art-less picks: {plant_anims:?}"
-    );
-    assert!(
         plant_anims
             .iter()
             .all(|(name, delay, z)| in_list("GAPOWR", name) && *delay <= 3 && *z == 0)
     );
+    // This seed's four picks: two art-less `gtpowexp` (nothing constructed)
+    // and these two.
+    let names: Vec<_> = plant_anims.iter().map(|anim| anim.0.as_str()).collect();
+    assert_eq!(names, ["S_CLSN58", "S_TUMU60"], "{plant_anims:?}");
     let mcv_anims = &per_kill[1];
     assert_eq!(mcv_anims.len(), 1, "{mcv_anims:?}");
     assert!(in_list("AMCV", &mcv_anims[0].0) && mcv_anims[0].1 == 0);

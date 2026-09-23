@@ -1388,8 +1388,12 @@ pub struct ExplosionEffect {
     pub z: u8,
     /// A death producer's own constructor call (`Death_Explosion`, the
     /// Aircraft death arm, `DestructionEffects`): `AnimClass(type, coord,
-    /// delay, 1, 0x600, 0, 0)` at an exact coordinate. `None` is the warhead
-    /// impact anim, `BulletClass::DetonateAtCoord`'s `(0, 1, 0x2600, -15)`.
+    /// delay, 1, 0x600, 0, 0)` at an exact coordinate. `None` rows construct
+    /// with the warhead impact's `(0, 1, 0x2600, -15)` at a level-rounded
+    /// coordinate: the impact anim, the InfDeath anims and the TechnoClass
+    /// debris anims. Natively the debris anims take `(center + 0x14 Z, 0, 1,
+    /// 0x600, 0, 0)` (`0x007024AA`, `0x00702566`); on stock their rows are
+    /// dropped as unbound art (GSI-05.14).
     pub death: Option<destruction_effects::DeathAnimSpawn>,
 }
 

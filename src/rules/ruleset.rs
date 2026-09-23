@@ -887,6 +887,12 @@ pub struct GeneralRules {
     /// default 0.5 (`0x006675CE..0x006675D4`, ECX set at `0x00667190`). Same
     /// `%` rounding note as `crew_escape`.
     pub refund_percent: crate::util::native_x87::NativeF64Bits,
+    /// `ShipSinkingWeight=` (Rules `+0x630`, `ReadDouble` at `0x0066F174`;
+    /// constructor default 3.0 at `0x00665EE8`). A surface naval unit at
+    /// least this `Weight=` sinks on water instead of exploding
+    /// (`0x00737E00..0x00737E16`). Parsed like `Weight=` so the two compare
+    /// as native doubles do on stock values (3.0 against 1..5).
+    pub ship_sinking_weight: SimFixed,
 
     // -- Cliff/slope movement coefficients ([General]) --
     /// Tracked vehicle uphill coefficient (`TrackedUphill=`; vanilla 1.0 = no change).
@@ -1340,6 +1346,7 @@ impl Default for GeneralRules {
             refund_percent: crate::util::native_x87::NativeF64Bits::from_bits(
                 0x3fe0_0000_0000_0000,
             ),
+            ship_sinking_weight: SimFixed::lit("3.0"),
             // Vanilla rulesmd.ini [General]: 1.0 uphill (no change) / 1.2 downhill (faster),
             // same for tracked and wheeled. Mods can override via [General].
             tracked_uphill: SimFixed::lit("1.0"),
@@ -2324,6 +2331,10 @@ impl GeneralRules {
                     )
                     .to_bits(),
             ),
+            ship_sinking_weight: general
+                .get_f32("ShipSinkingWeight")
+                .map(sim_from_f32)
+                .unwrap_or(defaults.ship_sinking_weight),
             tracked_uphill: general
                 .get_f32("TrackedUphill")
                 .map(sim_from_f32)

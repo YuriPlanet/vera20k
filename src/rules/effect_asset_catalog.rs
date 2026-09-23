@@ -186,8 +186,10 @@ pub(crate) const CLIFF_COLLAPSE_ANIMS: [&str; 3] = ["XGRYMED1", "XGRYMED2", "XGR
 /// - the killing warhead's `AnimList=` pick
 ///   (`WarheadTypeClass::Detonate` -> `Warhead::SelectExplosionAnim @ 0x0048A4F0`),
 /// - the infantry death animation for the warhead's `InfDeath=`,
-/// - the dying object's own `Explosion=` / `DestroyAnim=` pick
-///   (`UnitClass::Death_Explosion @ 0x00738680`).
+/// - the dying object's own `Explosion=` / `DestroyAnim=` picks
+///   (`UnitClass::Death_Explosion @ 0x00738680`,
+///   `BuildingClass::DestructionEffects @ 0x004415F0`, and the Aircraft death
+///   arm at `0x0041661F`, which picks `Explosion=` only).
 ///
 /// The other roots (muzzle flashes, warps, superweapon and bridge animations,
 /// ore twinkle, cliff collapse) are named at their inserts below.

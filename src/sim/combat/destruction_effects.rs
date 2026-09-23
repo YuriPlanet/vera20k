@@ -1,7 +1,8 @@
 //! The dying object's own death anims and the building destruction effects.
 //!
 //! - `UnitClass::Death_Explosion @ 0x00738680`, reached from the Unit death
-//!   arm at `0x00737F6F`;
+//!   arm at `0x00737F6F` once its NowDead gates pass
+//!   ([`Simulation::unit_sinks_on_death`]);
 //! - the Aircraft death arm of `AircraftClass::ReceiveDamage`
 //!   (`0x0041661F..0x0041668A`);
 //! - `BuildingClass::DestructionEffects @ 0x004415F0` (slot `+0x4EC`, called
@@ -11,7 +12,7 @@
 //! Each draws its picks, jitter and delays inline, in native order, and
 //! records `AnimClass(type, coord, delay, 1, 0x600, 0, 0)` on the transaction's
 //! ordered anim list (`ExplosionEffect::death`), which the consequence
-//! boundary constructs in push order with the warhead impact and debris anims.
+//! boundary constructs in push order (see the construction-order residual).
 //!
 //! DestructionEffects steps ported here: 1 (`0x004415F9`, the eight damage
 //! fire anims are UnInit), 7 (`0x0044177E`, the centre scorch/crater mark),
@@ -19,14 +20,55 @@
 //! (`0x00441CAC`, one `DestroyAnim=` anim at the origin cell's corner).
 //!
 //! RESIDUALS:
-//! - Every anim of a damage transaction is constructed at the consequence
-//!   boundary rather than at its native call (this producer, the warhead
-//!   impact and the death debris alike), so an anim's constructor draws
-//!   (`RandomRate=`: none on any stock death anim) follow the receiver's later
-//!   draws, and survivors and crewmen constructed inside the receiver take
-//!   identities ahead of their death's anims. Relative order among the anims
-//!   is native. Trigger: every death. Risk: identity and logic order only on
-//!   stock data.
+//! - Construction order. The receiver constructs survivors, crewmen, building
+//!   damaged-art anims and damage-smoke systems at their native calls, but
+//!   defers the anims on the transaction's list (death, debris, InfDeath and
+//!   warhead impact anims) to the consequence boundary, and admits the whole
+//!   transaction's voxel debris there ahead of them. Native constructs each at
+//!   its call: debris, death anims, then the crewman or survivors, the
+//!   detonation's impact anim after its receivers. VERA's live order is
+//!   survivors/crew (and later receivers' inline objects), voxel debris, then
+//!   the anims. Effects: identities; logic order, because an object that
+//!   unregisters during its AI makes the live pass skip its successor
+//!   (`Simulation::try_for_each_live_object`), so the frame a death's
+//!   last-constructed anim expires natively skips the first crewman or
+//!   survivor and in VERA another object, shifting the crew's movement and
+//!   later draws by a frame; and once `AnimClass::Middle` runs, its draws
+//!   interleave differently with survivor AI. No stock death anim has a
+//!   constructor draw (`RandomRate=`).
+//!   Trigger: every crewed vehicle death whose crew escapes and every building
+//!   death with survivors; also a multi-record transaction whose later
+//!   receiver changes damaged art. Frequency: routine. The fix is to
+//!   construct each object at its call (the plan's next destruction item).
+//! - Unit NowDead gates ahead of `Death_Explosion` (`0x00737DA7..0x00737F6F`):
+//!   - The ship sink (`0x00737DE2..0x00737E5E`) is gated, so no pick is drawn,
+//!     but the sink is absent: native sets Health 1, IsAlive, the sinking
+//!     byte `+0x3CD`, calls `vt+0x3A0`, and the hull goes down in
+//!     `UnitClass::AI` before removal; VERA removes it at once with no anim.
+//!     Trigger: stock DEST, AEGIS, CARRIER, DRED, VLAD, CRUISE and CDEST
+//!     killed on water. Effect: the hull vanishes and its cell frees early.
+//!     Frequency: every such naval death.
+//!   - `DeathFrames=` (`+0xE20` > 0) defers the explosion to `UnitClass::AI`
+//!     (`0x00736381`) when the death frames end. No stock type sets it and
+//!     VERA does not parse it.
+//!   - The water splash (`0x00737E78..0x00737F6B`): a unit at height <= 10
+//!     whose `+0x8F` byte is set, over water, gets two splash anims (Rules
+//!     `+0x94` and the last Rules `+0xBC4` entry) instead. VERA has no
+//!     producer of the byte (`drop_in_bridge_member` snaps a falling unit
+//!     to the ground, recorded DRIFT there).
+//! - The other `Death_Explosion` callers are not wired:
+//!   - The crush of a Unit victim (`0x007418E5` -> `vt+0x170` =
+//!     `0x00746D60`: Death_Explosion, then the capture release `0x00710460`).
+//!     VERA's crush teardown (`movement_tick`) draws no pick and plays no
+//!     anim. Trigger: the Battle Fortress, stock's only `OmniCrusher=`,
+//!     crushing any vehicle but the five `OmniCrushResistant=` types.
+//!   - A `Crashable=` (`+0xD95`) unit's crash (`0x007461D1`, locomotor
+//!     message 0x117C through the Unit vtable at `0x007F5C4C`:
+//!     Death_Explosion then UnInit; `BalloonHover=` types fire their
+//!     DeathWeapon instead). VERA has no crash; stock SHAD, HIND, SCHP and
+//!     SCHD die through the ReceiveDamage arm. Whether FootClass defers
+//!     their in-air death to the crash is untraced.
+//!   - The `DeathFrames=` completion (`0x00736381`), dead on stock.
 //! - `AnimClass::Middle @ 0x00424F00` is not run for these anims, so the
 //!   scorch/crater a multi-frame explosion leaves at its middle frame (and its
 //!   Scenario coin flip and candidate pick in `AnimClass::AI`) is missing.
@@ -40,14 +82,19 @@
 //!   identities shift.
 //! - DestroyAnim's palette (TechnoType `+0xDF0`/`+0xDD0` -> anim
 //!   `+0xD4`/`+0xDC`) is presentation and not carried.
+//! - Step 5 (`RevealToAll=`, stock NAIRON, GACSPH, GADUMY, GAWEAT, NAMISL,
+//!   YAGNTC, YAPPET): a building the local player does not own reveals its
+//!   stored sight record to that player as it dies (`vt+0x48C` =
+//!   `0x0070B1D0`). VERA does not parse `RevealToAll=`. Effect: shroud only,
+//!   no draws. Frequency: every such building death.
 //! - Steps with no stock trigger or no VERA state: 2 (radar-spy bits `+0x210`),
-//!   3 and 4 (CloakGenerator, LaserFencePost), 5 (`RevealToAll=` for a
-//!   non-owner local player), 9 (FIRE3 next to an `Explodes=` overlay; no
-//!   stock overlay explodes), 10 (stored-ore spill; YR never fills building
-//!   storage), 11 (ShakeScreen, a bare `RET`), 14 (`DestroyParticleSystems=`
-//!   smoke; no stock user). Step 6 (BuildingDieSound) plays from the Techno
-//!   death sounds; step 12 (the zero death timer of `Explodes=`/Selling) is a
-//!   `crew_survival` residual.
+//!   3 and 4 (CloakGenerator, LaserFencePost), 9 (FIRE3 on each cardinal
+//!   neighbour of an `Explodes=` building whose cell holds an overlay with
+//!   `Explodes=yes`, `0x00441A90..0x00441AC2`; no stock overlay has it), 10
+//!   (stored-ore spill; YR never fills building storage), 11 (ShakeScreen, a
+//!   bare `RET`), 14 (`DestroyParticleSystems=` smoke; no stock user). Step 6
+//!   (BuildingDieSound) plays from the Techno death sounds; step 12 (the zero
+//!   death timer of `Explodes=`/Selling) is a `crew_survival` residual.
 //! - A vehicle's current ammo (Unit `+0x2FC`) is not tracked; the
 //!   `Death_Explosion` last-entry override reads a fresh unit's `Ammo=`. No
 //!   stock `Explodes=` vehicle has a finite `Ammo=`.
@@ -55,6 +102,7 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::Ability;
 use crate::rules::ruleset::RuleSet;
+use crate::rules::terrain_rules::LandType;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::AnimClassSpawnDescriptor;
 use crate::sim::intern::InternedId;
@@ -64,7 +112,7 @@ use crate::sim::world::Simulation;
 use super::{ExplosionEffect, SmudgeSpawnRequest};
 
 /// `AnimClass` constructor `drawFlags` every death producer pushes
-/// (`0x0073871E`, `0x00738854`, `0x00416660`, `0x00441A04`).
+/// (`0x0073871E`, `0x00738854`, `0x00416660`, `0x00441A04`, `0x00441D01`).
 const DEATH_ANIM_DRAW_FLAGS: u32 = 0x600;
 /// DestructionEffects' per-cell jitter radius (`PUSH 0x40`, `0x0044198E`).
 const CELL_EXPLOSION_SCATTER_LEPTONS: i32 = 0x40;
@@ -128,6 +176,35 @@ impl Simulation {
     fn pick_death_anim<'r>(&mut self, list: &'r [String]) -> &'r str {
         let index = (self.scenario_rng.next_u32() % list.len() as u32) as usize;
         &list[index]
+    }
+
+    /// The ship-sinking gate of the Unit NowDead block
+    /// (`UnitClass::ReceiveDamage @ 0x00737C90`, `0x00737DE2..0x00737E32`):
+    /// `Naval=` (`+0xCCE`), not `Underwater=` (`+0xD69`) or `Organic=`
+    /// (`+0xD97`), `Weight=` (`+0x370`) at least `ShipSinkingWeight=` (the
+    /// `FCOMP` skips on less or unordered), the unit's cell (`vt+0x1BC`) of
+    /// LandType water (`+0xEC == 2`), and not being warped (`+0x271`, set by
+    /// the Chronosphere at `0x0065F1F4` and the Teleport locomotor at
+    /// `0x00719579`/`0x007198DA`). Such a unit sinks and never reaches
+    /// `Death_Explosion`; the sink itself is a module residual. VERA has no
+    /// Chronosphere unit warp, so a teleport in flight stands in for the byte.
+    pub(crate) fn unit_sinks_on_death(&self, rules: &RuleSet, unit_id: u64) -> bool {
+        let Some(entity) = self.substrate.entities.get(unit_id) else {
+            return false;
+        };
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return false;
+        };
+        object.naval
+            && !object.underwater
+            && !object.organic
+            && object.weight >= rules.general.ship_sinking_weight
+            && self.resolved_terrain.as_ref().is_some_and(|terrain| {
+                terrain
+                    .cell(entity.position.rx, entity.position.ry)
+                    .is_some_and(|cell| cell.yr_cell_land_type == LandType::Water.as_index())
+            })
+            && entity.teleport_state.is_none()
     }
 
     /// `UnitClass::Death_Explosion @ 0x00738680`: one `Explosion=` anim and
