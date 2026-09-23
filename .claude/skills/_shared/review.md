@@ -4,7 +4,8 @@ A critic is read-only and did not build the change. Provide the requirement, evi
 diff and actual validation output, with access to original sources/Ghidra. The packet
 does not bound inquiry: challenge omitted scope, design, production reachability and
 tests. Trace suspected defects to consumers; distinguish evidence from speculation
-and architectural preference.
+and architectural preference. Flag numeric, RNG or timing claims that lack executable
+evidence.
 
 Report actionable findings with trigger, consequence and source, then coverage/gaps.
 A scoped pass certifies no wider system. Owners fix confirmed mechanism/prerequisite

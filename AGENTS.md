@@ -51,9 +51,11 @@ Distinguish and cite:
 Parity goldens come from native execution/emulation, capture or retail bytes,
 not hand calculations or prior Rust. Avoid unqualified “VERIFIED”/“complete”.
 
-[Unicorn](tools/native_oracle.md) can help with native comparisons; use when useful.
-
-Use native executable comparisons when they resolve a concrete uncertainty that matters to gameplay.
+Arithmetic, rounding, RNG draws (count, order, stream) and timer cadences derived from
+reading are uncertain until executed. Before merging a mechanism, compare them against
+native execution ([Unicorn](tools/native_oracle.md) or capture) and pin the results as
+golden values in its Rust tests. Control flow and ordering may rest on instruction-level
+reading. Each PR states the evidence level each claim reached.
 
 Preserve native comparisons as reproducible harnesses and results, recording binary
 identity and coverage limits. Link them to Rust tests where practical; parity claims
