@@ -41,7 +41,7 @@ game. Issues say whether they need it.
 **Linux and macOS.** The game itself is a Windows release. On Linux, one option
 is to install it through Steam with Steam Play (Proton) and point VERA20k at that
 install folder. On macOS, you can copy the game folder from a Windows install.
-Nobody has tested these routes yet, so please tell us how it goes. VERA20k's
+VERA20k has been played on both; if these steps don't work for you, tell us. VERA20k's
 asset loader finds files in the game folder without regard to upper or lower
 case.
 
@@ -86,8 +86,8 @@ This is the project's standard test suite. Always add `--lib`. Plain
 `cargo test` also builds every program in `tests/`, which takes longer and
 mostly needs the game.
 
-On a fresh clone without the game, the suite passes on Windows (other
-platforms are untested). Tests that need the original game's rules files (the
+On a fresh clone without the game, the suite passes on Windows and Linux; CI
+also runs it on macOS. Tests that need the original game's rules files (the
 `ini/` folder) print `SKIPPED` and pass without checking anything. To see those
 lines, add `-- --show-output`.
 

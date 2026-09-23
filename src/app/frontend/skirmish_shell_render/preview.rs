@@ -105,10 +105,10 @@ pub(super) fn selected_preview_texture_is_current(
 }
 
 pub(super) fn is_random_map_sentinel_file_name(file_name: &str) -> bool {
-    Path::new(file_name)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.eq_ignore_ascii_case(RANDMAP_SENTINEL_FILE_NAME))
+    // Map names can carry the game's own `\` separators, so split on both `\`
+    // and `/` on every host (`Path::file_name` only knows the host's).
+    let name = file_name.rsplit(['\\', '/']).next().unwrap_or(file_name);
+    name.eq_ignore_ascii_case(RANDMAP_SENTINEL_FILE_NAME)
 }
 
 pub(super) fn is_random_map_sentinel_entry(entry: &MapMenuEntry) -> bool {

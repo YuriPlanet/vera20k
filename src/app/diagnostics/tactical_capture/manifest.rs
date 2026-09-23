@@ -573,6 +573,10 @@ mod tests {
             STAGING_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&parent).expect("create test parent");
+        // macOS keeps the temp dir under `/var`, a symlink to `/private/var`,
+        // which the output guard rightly refuses; test the resolved path.
+        #[cfg(unix)]
+        let parent = fs::canonicalize(&parent).expect("canonical test parent");
         parent
     }
 
