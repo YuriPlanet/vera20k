@@ -355,16 +355,54 @@ pub fn allocate_sub_cell_with_reserved(
     })
 }
 
-/// Allocate sub-cell using quadrant-based directional preference tables.
+/// `CellClass::PlaceInfantryInCell @ 0x00481180` with priority 0: the infantry
+/// spot for a request at `(sub_x, sub_y)` inside cell `(rx, ry)` on `layer`,
+/// read from the cell's native occupation byte.
 ///
-/// Infantry approaching from a specific direction prefers the sub-cell on that
-/// side of the diamond. If occupied, a directional preference table biases the
-/// fallback. For center/NW entries, a random rotation picks which sub-cell to
-/// try first.
+/// The selected byte (deck on a bridge, else ground) refuses the whole cell on
+/// its vehicle bit, and the ground byte on its object bit unless the 0x40
+/// occupier is a passable Gate; VERA marks 0x40 only for landed aircraft and
+/// crates, never a Gate. The building bit (0x80) is not read, so a dying
+/// building's own cells admit its crew. Those refusals return before any draw.
+/// A request within 60 leptons of the centre then draws its
+/// `RandomRanged(0, 3)` row rotation on the Scenario stream before scanning,
+/// even when every spot is taken; an off-centre request prefers its own
+/// quadrant and draws nothing.
+pub(crate) fn place_infantry_in_cell(
+    raw: &crate::sim::occupancy::RawCellOccupationGrid,
+    rx: u16,
+    ry: u16,
+    layer: MovementLayer,
+    sub_x: SimFixed,
+    sub_y: SimFixed,
+    rng: &mut SimRng,
+) -> Option<u8> {
+    let deck = layer == MovementLayer::Bridge;
+    let mask = if deck {
+        raw.deck_bits(rx, ry)
+    } else {
+        raw.ground_bits(rx, ry)
+    };
+    if !cell_kernel::infantry_occupation_allows(mask, !deck, false) {
+        return None;
+    }
+    let quadrant: u8 = get_subcell_quadrant(sub_x, sub_y);
+    let random_row = (quadrant == 0).then(|| rng.next_range_u32(4) as u8);
+    cell_kernel::select_infantry_subcell(quadrant, mask, false, random_row)
+}
+
+/// The older cell-list approximation of [`place_infantry_in_cell`], still
+/// used by the walk FindSubCellDest pre-allocation (`movement_step`), the tube
+/// exit and the landed-aircraft unload.
 ///
-/// Use this when the infantry's lepton position (approach direction) and RNG
-/// are available. Falls back to `allocate_sub_cell_with_reserved` semantics
-/// at call sites without position data (spawning, terrain checks).
+/// RESIDUAL: unlike `CellClass::PlaceInfantryInCell @ 0x00481180` it refuses
+/// a building occupant (native ignores bit 0x80) and returns before the
+/// centre-row `RandomRanged(0, 3)` draw on a cell already holding three
+/// infantry (native draws first). Trigger: infantry walking or unloading into
+/// a crowded cell. Effect: one Scenario draw fewer per such placement.
+/// Moving these callers to the native byte read needs the movement pass's
+/// raw occupation to be current at the crossing, which the movement ledger
+/// owns.
 pub fn allocate_sub_cell_with_preference(
     occ: Option<&CellOccupancy>,
     layer: MovementLayer,
@@ -3668,157 +3706,136 @@ mod tests {
         assert_eq!(rng.state(), before, "priority placement draws nothing");
     }
 
-    /// The ordinary allocator refuses exactly the cases priority must accept —
-    /// a full cell and a cell holding a vehicle or structure.
+    fn raw_cells(bits: &[(u16, u16, u8)]) -> crate::sim::occupancy::RawCellOccupationGrid {
+        let mut raw = crate::sim::occupancy::RawCellOccupationGrid::new();
+        for &(rx, ry, mask) in bits {
+            raw.mark_ground(rx, ry, mask);
+        }
+        raw
+    }
+
+    const SPOTS_FULL: u8 = (1 << 2) | (1 << 3) | (1 << 4);
+
+    fn place(raw: &crate::sim::occupancy::RawCellOccupationGrid, x: i32, y: i32) -> Option<u8> {
+        let mut rng = SimRng::new(42);
+        place_infantry_in_cell(
+            raw,
+            5,
+            5,
+            MovementLayer::Ground,
+            SimFixed::from_num(x),
+            SimFixed::from_num(y),
+            &mut rng,
+        )
+    }
+
+    /// PlaceInfantryInCell with priority 0 refuses exactly the cases priority
+    /// placement must accept: a full cell and a cell holding a vehicle.
     #[test]
     fn gsi_06_14_priority_accepts_what_the_ordinary_allocator_refuses() {
-        let full = make_occ(&[
-            (5, 5, 1, MovementLayer::Ground, Some(2)),
-            (5, 5, 2, MovementLayer::Ground, Some(3)),
-            (5, 5, 3, MovementLayer::Ground, Some(4)),
-        ]);
-        let blocked = make_occ(&[(6, 6, 4, MovementLayer::Ground, None)]);
-        let mut rng = SimRng::new(1);
+        let full = raw_cells(&[(5, 5, SPOTS_FULL)]);
+        let vehicle = raw_cells(&[(5, 5, 0x20)]);
         let ne = (SimFixed::from_num(200), SimFixed::from_num(40));
 
+        assert_eq!(place(&full, 200, 40), None);
         assert_eq!(
-            allocate_sub_cell_with_preference(
-                full.get(5, 5),
-                MovementLayer::Ground,
-                None,
-                ne.0,
-                ne.1,
-                &mut rng,
-            ),
+            place(&vehicle, 200, 40),
             None,
-        );
-        assert_eq!(
-            allocate_sub_cell_with_preference(
-                blocked.get(6, 6),
-                MovementLayer::Ground,
-                None,
-                ne.0,
-                ne.1,
-                &mut rng,
-            ),
-            None,
-            "a structure or vehicle closes the cell to the ordinary path",
+            "a vehicle closes the cell to the ordinary path",
         );
         // Priority reads neither cell's occupancy.
         assert_eq!(priority_sub_cell(ne.0, ne.1), 2);
     }
 
-    // -- preference-aware allocation tests --
-
     #[test]
-    fn test_preference_ne_entry_fast_path() {
-        let mut rng = SimRng::new(42);
-        let result = allocate_sub_cell_with_preference(
-            None,
-            MovementLayer::Ground,
-            None,
-            SimFixed::from_num(200),
-            SimFixed::from_num(40),
-            &mut rng,
-        );
-        assert_eq!(result, Some(2));
-    }
-
-    #[test]
-    fn test_preference_ne_entry_occupied_fallback() {
-        let grid = make_occ(&[(5, 5, 1, MovementLayer::Ground, Some(2))]);
-        let occ = grid.get(5, 5).unwrap();
-        let mut rng = SimRng::new(42);
-        let result = allocate_sub_cell_with_preference(
-            Some(occ),
-            MovementLayer::Ground,
-            None,
-            SimFixed::from_num(200),
-            SimFixed::from_num(40),
-            &mut rng,
-        );
-        assert_eq!(result, Some(4));
-    }
-
-    #[test]
-    fn test_preference_sw_entry() {
-        let mut rng = SimRng::new(42);
-        let result = allocate_sub_cell_with_preference(
-            None,
-            MovementLayer::Ground,
-            None,
-            SimFixed::from_num(40),
-            SimFixed::from_num(200),
-            &mut rng,
-        );
-        assert_eq!(result, Some(3));
-    }
-
-    #[test]
-    fn test_preference_sw_entry_occupied_fallback() {
-        let grid = make_occ(&[(5, 5, 1, MovementLayer::Ground, Some(3))]);
-        let occ = grid.get(5, 5).unwrap();
-        let mut rng = SimRng::new(42);
-        let result = allocate_sub_cell_with_preference(
-            Some(occ),
-            MovementLayer::Ground,
-            None,
-            SimFixed::from_num(40),
-            SimFixed::from_num(200),
-            &mut rng,
-        );
-        assert_eq!(result, Some(4));
-    }
-
-    #[test]
-    fn test_preference_se_entry() {
-        let mut rng = SimRng::new(42);
-        let result = allocate_sub_cell_with_preference(
-            None,
-            MovementLayer::Ground,
-            None,
-            SimFixed::from_num(200),
-            SimFixed::from_num(200),
-            &mut rng,
-        );
-        assert_eq!(result, Some(4));
-    }
-
-    #[test]
-    fn test_preference_se_entry_occupied_fallback() {
-        let grid = make_occ(&[(5, 5, 1, MovementLayer::Ground, Some(4))]);
-        let occ = grid.get(5, 5).unwrap();
-        let mut rng = SimRng::new(42);
-        let result = allocate_sub_cell_with_preference(
-            Some(occ),
-            MovementLayer::Ground,
-            None,
-            SimFixed::from_num(200),
-            SimFixed::from_num(200),
-            &mut rng,
-        );
-        assert_eq!(result, Some(2));
+    fn test_preference_quadrants_take_their_own_spot_or_fall_back() {
+        let empty = raw_cells(&[]);
+        assert_eq!(place(&empty, 200, 40), Some(2), "NE");
+        assert_eq!(place(&empty, 40, 200), Some(3), "SW");
+        assert_eq!(place(&empty, 200, 200), Some(4), "SE");
+        assert_eq!(place(&raw_cells(&[(5, 5, 1 << 2)]), 200, 40), Some(4));
+        assert_eq!(place(&raw_cells(&[(5, 5, 1 << 3)]), 40, 200), Some(4));
+        assert_eq!(place(&raw_cells(&[(5, 5, 1 << 4)]), 200, 200), Some(2));
     }
 
     #[test]
     fn test_preference_center_entry_randomizes() {
+        let empty = raw_cells(&[]);
         let mut seen: BTreeSet<u8> = BTreeSet::new();
         for seed in 0..20u64 {
             let mut rng = SimRng::new(seed);
-            let result = allocate_sub_cell_with_preference(
-                None,
+            let result = place_infantry_in_cell(
+                &empty,
+                5,
+                5,
                 MovementLayer::Ground,
-                None,
                 SimFixed::from_num(128),
                 SimFixed::from_num(128),
                 &mut rng,
             );
-            assert!(result.is_some());
-            seen.insert(result.unwrap());
+            seen.insert(result.expect("an empty cell admits the centre request"));
         }
         assert!(seen.contains(&2), "expected sub-cell 2 from randomization");
         assert!(seen.contains(&3), "expected sub-cell 3 from randomization");
         assert!(seen.contains(&4), "expected sub-cell 4 from randomization");
+    }
+
+    /// `0x0048138A..0x0048139F` draws the centre row before the scan, so a
+    /// full cell still spends it; an off-centre request and a refused cell
+    /// draw nothing.
+    #[test]
+    fn a_centre_request_draws_its_row_even_on_a_full_cell() {
+        let full = raw_cells(&[(5, 5, SPOTS_FULL)]);
+        let centre = SimFixed::from_num(128);
+        let mut rng = SimRng::new(7);
+        let before = rng.state();
+        let result =
+            place_infantry_in_cell(&full, 5, 5, MovementLayer::Ground, centre, centre, &mut rng);
+        assert_eq!(result, None);
+        let mut one_draw = SimRng::new(7);
+        let _ = one_draw.next_range_u32(4);
+        assert_eq!(rng.state(), one_draw.state());
+
+        let mut rng = SimRng::new(7);
+        let refused = raw_cells(&[(5, 5, 0x20)]);
+        let result = place_infantry_in_cell(
+            &refused,
+            5,
+            5,
+            MovementLayer::Ground,
+            centre,
+            centre,
+            &mut rng,
+        );
+        assert_eq!(result, None);
+        assert_eq!(
+            rng.state(),
+            before,
+            "a vehicle refusal returns before the draw"
+        );
+    }
+
+    /// The building bit (0x80) is not read, so a dying building's own cells
+    /// admit its crew; the object bit (0x40) refuses the ground plane only.
+    #[test]
+    fn the_building_bit_does_not_block_and_the_object_bit_blocks_the_ground() {
+        assert_eq!(place(&raw_cells(&[(5, 5, 0x80)]), 200, 40), Some(2));
+        assert_eq!(place(&raw_cells(&[(5, 5, 0x40)]), 200, 40), None);
+        let mut deck = crate::sim::occupancy::RawCellOccupationGrid::new();
+        deck.mark_deck(5, 5, 0x40);
+        let mut rng = SimRng::new(42);
+        assert_eq!(
+            place_infantry_in_cell(
+                &deck,
+                5,
+                5,
+                MovementLayer::Bridge,
+                SimFixed::from_num(200),
+                SimFixed::from_num(40),
+                &mut rng,
+            ),
+            Some(2),
+        );
     }
 
     #[test]
@@ -3839,21 +3856,6 @@ mod tests {
             &mut rng,
         );
         assert_eq!(result, None);
-    }
-
-    #[test]
-    fn test_preference_respects_reserved() {
-        let reserved: Vec<u8> = vec![2];
-        let mut rng = SimRng::new(42);
-        let result = allocate_sub_cell_with_preference(
-            None,
-            MovementLayer::Ground,
-            Some(&reserved),
-            SimFixed::from_num(200),
-            SimFixed::from_num(40),
-            &mut rng,
-        );
-        assert_eq!(result, Some(4));
     }
 
     #[test]

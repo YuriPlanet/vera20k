@@ -36,9 +36,10 @@ deferred Drive/Ship path request is parked, not landed, on `wip/track-order-defe
 mechanisms by player-visible combat gaps; one PR and one critic pass per mechanism.
 
 Checkpoint (2026-09-23): the landing PR merged as #444 (`9bab8fba`), Parasite (attack dogs,
-Terror Drones) as #446 (`24ff63b7`), the Techno death broadcast and Stun as #447 (`ab80dd3f`).
-The SpawnManager slot guard (carrier docking) is on `feature/combat-carrier-dock`. A production
-sortie showed the Carrier wing never attacks: every manager pass re-issues each Hornet's attack
+Terror Drones) as #446 (`24ff63b7`), the Techno death broadcast and Stun as #447 (`ab80dd3f`),
+the SpawnManager slot guard as #448 (`35149218`), the Scenario-stream death draws as #449
+(`280a9243`). Crew survival (building SpawnSurvivors, vehicle crew) is on
+`feature/combat-survivors`. A production sortie showed the Carrier wing never attacks: every manager pass re-issues each Hornet's attack
 from sub-state 0 (`assign_child_attack`), so the aircraft attack run never completes and the wing
 never lands. Next, by player visibility: that wing cycle together with the aircraft attack loop
 (Mission_Attack 5..9, GetFireError), the Foot Enter_Idle_Mode leaves (Infantry `51CBA0`, Unit
@@ -239,6 +240,44 @@ SpawnManager slot guard (`feature/combat-carrier-dock`), owner `sim/spawn_manage
   sub-state 0; Kill_All_Spawns crashes airborne MissileSpawn=no children (`SpawnRetreat__Push` ->
   vt+3DC `AircraftClass::Crash` `4DEBB0`), where VERA lets them fly on; the Fly arrival landing.
 
+Crew survival (`feature/combat-survivors`, snapshot 194), owner `sim/crew_survival.rs`:
+- `BuildingClass::SpawnSurvivors` `442D90` from DestructionEffects `441F1B`, while the building is
+  still on the map: Phase A releases InfantryAbsorb/UnitAbsorb passengers (the Bio Reactor), each
+  advancing the foundation cursor; Phase B rolls `RandomRanged(0, chanceMax)` per remaining
+  foundation cell (1 or 2, +6 once captured) while survivors are owed, then commits that cell's
+  scorch/crater mark. No survivor owed (NoSurvivor, uncrewed, a house outside the three sides)
+  means no per-cell marks at all. NoSurvivor is the killing call's IgnoreDefenses (`441F0B`), so
+  a C4 expiry (`440345` pushes 1) spawns nobody; survivors of a building still carrying an enemy
+  C4 charge Attack the planter.
+- Count `451330` = GetRefund `711F60` (x87 chop, Soylent, RefundPercent for a human owner,
+  FactoryPlant factor) / side divisor (doubled once captured), clamped 1..5. Crew type `44EB10`
+  (25% Engineer roll on an uncaptured building, winnable only by a ConYard) over GetCrew `707D20`
+  (side crew, 15% Technician when armed). HasBeenCaptured (Building+6E3) is set by every
+  BuildingClass::ChangeOwner (`448723`), saved and hashed.
+- Vehicle crew `7381BC..73838A`: after the dying unit's Mark(UP) (`737F7A`), a Crewed=yes type
+  with no passenger capacity rolls `RandomRanged(0, 0x7FFFFFFE)` against CrewEscape in x87 order
+  (`r < 0x40000000` at 50%); arg6 skips it. Health `RandomRanged(5, Strength/2)`, Guard (human) or
+  Hunt. Aircraft have no crew path (Pilot= has no gameplay reader).
+- Placement is PlaceInfantryInCell `481180` over the raw occupation byte (vehicle 0x20 refuses;
+  0x40 refuses the ground plane unless a passable Gate, `+16B7`/`4525F0`; the building bit is not
+  read; the centre-row draw is spent before the scan). Its transport, paradrop and parasite callers
+  moved to it; exit is the shared forced Scatter arm (hut and crew).
+- Deleted: the invented one-E1 destruction survivor (`eject_destruction_survivors`,
+  `DestroyedCrewedBuilding`) that ran after the building's UnInit, and the per-cell marks every
+  building death drew. The fatal passenger purge now skips absorbing buildings.
+- Tests: exact Scenario draw ledgers replayed on a cloned stream (Phase A/B interleave, captured
+  yard, C4 odds and Attack, vehicle crew, arg6/capacity skips), receiver-level kills, a retail
+  `rulesmd.ini` binding check, and an ignored retail Dustbowl run (8 seeds: 6 plant and 4 MCV
+  crewmen scatter through FNPC off their spawn cells). Rust regression only; no native executable
+  comparison.
+- Residuals (module doc): the sale crew (`Mission_Selling` `44A2EE`) keeps the old adapter;
+  IsToDie; the survivor's Doing at Scatter; a crewman's non-ground-Z Unlimbo; HijackerType;
+  selection/tag transfer; Phase A kill credit/counters; Nominal; a Bio Reactor holding more
+  infantry than cells; FNPC failure's eight-neighbour Scatter fallback (the crewman stays put);
+  passenger escape from a dying transport (`737FD2`; VERA still kills the cargo). The walk
+  FindSubCellDest, tube-exit and landed-aircraft unload callers keep the cell-list allocator
+  (movement ledger).
+
 ## Native evidence inventory
 
 Run `python -m tools.spatial_oracle.<stem> --check` (`flat_art`: `tools/projectile_oracle`).
@@ -322,6 +361,10 @@ All saved and read back; no byte or prototype edits. One boundary repair (below,
   `5F5280` ObjectClass__Detach_All, `4D9720` FootClass__Detach_All, `44EBF0`
   BuildingClass__Detach_All (the three were `__Destroy`). Comments `5F57AF`, `702210`, `6B7CBC`,
   `5F4D61`.
+- Crew survival: `451330` BuildingClass__How_Many_Survivors, `44EB10` BuildingClass__Crew_Type,
+  `707D20` TechnoClass__GetCrew, `711F60` TechnoTypeClass__GetRefund (were FUN_), plates on those
+  and `442D90` SpawnSurvivors; `481180` PlaceInfantryInCell plate corrected (the 0x40 exception is
+  a passable Gate, not a garrison building). Comments `441F0B`, `7381BC`.
 - Comments, other: `4143EB`, `65E6BE`, `692766`, `41CD6E`, `4CDBE1`, `4CDC37`, `4CDCFB`, `566332`,
   `6EA089`, `6EC300`, `6E53A0`, `726C9C`, `71F4E0`, `55AFB0`, `481670`, `518C56`, `51D200`,
   `51D212`, Teleport `718080`, Foot `4DDC60` (EOL; no function), Foot `4DB800`
@@ -438,7 +481,8 @@ Explosion=/DestroyAnim= picks now draw on the Scenario stream (`7022C8`, `70232B
 
 Whole-combat gaps (plan list plus review coverage top 10):
 - Special warheads: 10 bodies no-op (`projectile.rs:856`); Parasite ported (squid residual).
-- Destruction: building `4415F0` effects, vehicle/building survivors, VoxelAnim debris, death specials.
+- Destruction: building `4415F0` effects (per-cell Explosion=, DestroyAnim, storage spill, the
+  NowDead contact loop), death specials, the sale crew, passenger escape from dying transports.
 - Homing launch/steering non-native; host cos/sin/atan/hypot in Flak, cluster, shrapnel and homing tables.
 - Gattling stage pinned 0 (`combat_weapon.rs:1070`); Prism forwarding absent; Tesla overpower.
 - Legacy `tick_retaliation` beside `7087C0`; 2-D in_range twin (-512); retarget skips sequence reset.

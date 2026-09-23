@@ -8,6 +8,15 @@ use std::hash::{Hash, Hasher};
 
 use crate::rng_continuation::MapGenRngContinuation;
 
+/// The `double` at `0x007E3570` that scales a `RandomRanged(0, 0x7ffffffe)`
+/// draw onto `[0, 1]` for a unit-interval probability gate (Spark spawns, the
+/// `CrewEscape=` roll). Raw bytes `00 00 40 00 00 00 00 3E`, i.e.
+/// `1.0 / 2147483646.0` — the reciprocal of the draw's own inclusive top, NOT
+/// `2^-31`. The two differ by `2^-30` relative, which is a real bias in a
+/// deterministic gate, so this is carried as bits and never recomputed.
+pub(crate) const RANDOM_RANGED_UNIT_SCALE: crate::util::native_x87::NativeF64Bits =
+    crate::util::native_x87::NativeF64Bits::from_bits(0x3e00_0000_0040_0000);
+
 const RNG_TABLE_LEN: usize = 250;
 const RNG_INDEX_B_SEED: i32 = 0x67;
 const INIT_TABLE_1: [u32; 4] = [0xBAA9_6887, 0x1E17_D32C, 0x03BC_DC3C, 0x0F33_D1B2];

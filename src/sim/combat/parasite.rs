@@ -693,15 +693,12 @@ impl Simulation {
         }
         // CellClass::PlaceInfantryInCell 0x00481180 from the adjacent cell's
         // centre, for every owner class; Unit owners then take the centre.
-        let occupancy = self
-            .substrate
-            .occupancy
-            .get(adjacent.0 as u16, adjacent.1 as u16);
         let centre = crate::util::fixed_math::SimFixed::from_num(128);
-        let spot = crate::sim::movement::bump_crush::allocate_sub_cell_with_preference(
-            occupancy,
+        let spot = crate::sim::movement::bump_crush::place_infantry_in_cell(
+            &self.substrate.raw_cell_occupation,
+            adjacent.0 as u16,
+            adjacent.1 as u16,
             crate::sim::movement::locomotor::MovementLayer::Ground,
-            None,
             centre,
             centre,
             &mut self.scenario_rng,
@@ -974,17 +971,15 @@ impl Simulation {
             let spot = if guarded {
                 crate::sim::movement::bump_crush::priority_sub_cell(sub_x, sub_y)
             } else {
-                let occupancy = self.substrate.occupancy.get(rx, ry);
-                let Some(spot) =
-                    crate::sim::movement::bump_crush::allocate_sub_cell_with_preference(
-                        occupancy,
-                        crate::sim::movement::locomotor::MovementLayer::Ground,
-                        None,
-                        sub_x,
-                        sub_y,
-                        &mut self.scenario_rng,
-                    )
-                else {
+                let Some(spot) = crate::sim::movement::bump_crush::place_infantry_in_cell(
+                    &self.substrate.raw_cell_occupation,
+                    rx,
+                    ry,
+                    crate::sim::movement::locomotor::MovementLayer::Ground,
+                    sub_x,
+                    sub_y,
+                    &mut self.scenario_rng,
+                ) else {
                     return false;
                 };
                 spot

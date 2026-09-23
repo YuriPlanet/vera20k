@@ -867,6 +867,22 @@ pub struct GeneralRules {
     /// Divisor to compute survivor count for Third-side (Yuri) buildings (ThirdSurvivorDivisor= in [General]).
     /// YR addition. Default 750.
     pub third_survivor_divisor: i32,
+    /// `AlliedCrew=`/`SovietCrew=`/`ThirdCrew=` (Rules `+0xF78/+0xF7C/+0xF80`),
+    /// `Technician=` (`+0xF6C`) and `Engineer=` (`+0xF70`): the InfantryTypes
+    /// `TechnoClass::GetCrew @ 0x00707D20` and the building crew pick
+    /// `0x0044EB10` return. Stock E1, E2, INIT, CTECH and ENGINEER.
+    pub allied_crew: Option<String>,
+    pub soviet_crew: Option<String>,
+    pub third_crew: Option<String>,
+    pub technician: Option<String>,
+    pub engineer_infantry: Option<String>,
+    /// `CrewEscape=` (Rules `+0x5C0`, `ReadDouble`), the chance a crewed
+    /// vehicle's crew escapes. Constructor default 0.5 (`0x00665E11..0x00665E17`).
+    pub crew_escape: crate::util::native_x87::NativeF64Bits,
+    /// `RefundPercent=` (Rules `+0x1738`, `ReadDouble`), the human-owner refund
+    /// share `TechnoTypeClass::GetRefund @ 0x00711F60` applies. Constructor
+    /// default 0.5 (`0x006675CE..0x006675D4`, ECX set at `0x00667190`).
+    pub refund_percent: crate::util::native_x87::NativeF64Bits,
 
     // -- Cliff/slope movement coefficients ([General]) --
     /// Tracked vehicle uphill coefficient (`TrackedUphill=`; vanilla 1.0 = no change).
@@ -1081,6 +1097,16 @@ const DEFAULT_ANIM_FRAME_DELAY: u16 = 1;
 /// RuleSet without an `[AudioVisual]` section. gamemd's own constructor default
 /// is UNCHECKED.
 const STOCK_IDLE_ACTION_FREQUENCY_X1000: i64 = 150;
+
+/// A `[General]` InfantryType reference (RulesClass binds these through
+/// `FindOrAllocate`); an absent or empty value leaves the pointer null.
+fn general_type_name(general: &crate::rules::ini_parser::IniSection, key: &str) -> Option<String> {
+    general
+        .get(key)
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+}
 
 /// Zip a parallel pair of paradrop INI keys (`Inf` + `Num`) into `(type, count)` pairs.
 /// `skip_count_assert` mirrors gamemd's Soviet branch which lacks the equality check.
@@ -1301,6 +1327,15 @@ impl Default for GeneralRules {
             allied_survivor_divisor: 500,
             soviet_survivor_divisor: 250,
             third_survivor_divisor: 750,
+            allied_crew: None,
+            soviet_crew: None,
+            third_crew: None,
+            technician: None,
+            engineer_infantry: None,
+            crew_escape: crate::util::native_x87::NativeF64Bits::from_bits(0x3fe0_0000_0000_0000),
+            refund_percent: crate::util::native_x87::NativeF64Bits::from_bits(
+                0x3fe0_0000_0000_0000,
+            ),
             // Vanilla rulesmd.ini [General]: 1.0 uphill (no change) / 1.2 downhill (faster),
             // same for tracked and wheeled. Mods can override via [General].
             tracked_uphill: SimFixed::lit("1.0"),
@@ -2267,6 +2302,24 @@ impl GeneralRules {
             allied_survivor_divisor: general.get_i32("AlliedSurvivorDivisor").unwrap_or(500),
             soviet_survivor_divisor: general.get_i32("SovietSurvivorDivisor").unwrap_or(250),
             third_survivor_divisor: general.get_i32("ThirdSurvivorDivisor").unwrap_or(750),
+            allied_crew: general_type_name(general, "AlliedCrew"),
+            soviet_crew: general_type_name(general, "SovietCrew"),
+            third_crew: general_type_name(general, "ThirdCrew"),
+            technician: general_type_name(general, "Technician"),
+            engineer_infantry: general_type_name(general, "Engineer"),
+            crew_escape: crate::util::native_x87::NativeF64Bits::from_bits(
+                general
+                    .read_double("CrewEscape", f64::from_bits(defaults.crew_escape.bits()))
+                    .to_bits(),
+            ),
+            refund_percent: crate::util::native_x87::NativeF64Bits::from_bits(
+                general
+                    .read_double(
+                        "RefundPercent",
+                        f64::from_bits(defaults.refund_percent.bits()),
+                    )
+                    .to_bits(),
+            ),
             tracked_uphill: general
                 .get_f32("TrackedUphill")
                 .map(sim_from_f32)

@@ -976,7 +976,6 @@ pub(crate) fn handle_death(
     )> = Vec::new();
     let mut despawned_ids: Vec<u64> = Vec::new();
     let mut immediate_uninit_ids: Vec<u64> = Vec::new();
-    let mut destroyed_crewed_buildings: Vec<DestroyedCrewedBuilding> = Vec::new();
     let mut explosion_effects: Vec<ExplosionEffect> = Vec::new();
     let mut voxel_debris: Vec<crate::sim::voxel_anim::VoxelDebrisSpawn> = Vec::new();
     let mut invulnerability_impact_effects: Vec<InvulnerabilityImpactEffect> = Vec::new();
@@ -1182,7 +1181,6 @@ pub(crate) fn handle_death(
             despawned_ids.append(&mut nested.despawned_ids);
             immediate_uninit_ids.append(&mut nested.immediate_uninit_ids);
             structure_destroyed |= nested.structure_destroyed;
-            destroyed_crewed_buildings.append(&mut nested.destroyed_crewed_buildings);
             explosion_effects.append(&mut nested.explosion_effects);
             voxel_debris.append(&mut nested.voxel_debris);
             invulnerability_impact_effects.append(&mut nested.invulnerability_impact_effects);
@@ -1228,7 +1226,6 @@ pub(crate) fn handle_death(
         despawned_ids,
         immediate_uninit_ids,
         structure_destroyed,
-        destroyed_crewed_buildings,
         explosion_effects,
         voxel_debris,
         invulnerability_impact_effects,
@@ -1302,18 +1299,6 @@ fn finish_concrete_death(
         if let Some(event) = death_announcement_event(obj, category, rx, ry, owner) {
             effects.unit_lost_events.push(event);
         }
-        // Crewed structures eject infantry survivors on destruction.
-        if obj.crewed && category == EntityCategory::Structure {
-            effects
-                .destroyed_crewed_buildings
-                .push(DestroyedCrewedBuilding {
-                    type_id: type_id,
-                    owner: owner,
-                    rx,
-                    ry,
-                    z,
-                });
-        }
     }
     // Look up the warhead that dealt the killing blow for InfDeath
     // selection below. The AnimList anim + smudge are emitted at
@@ -1326,6 +1311,13 @@ fn finish_concrete_death(
                 .warhead(world.interner.resolve(event.warhead_ref))
                 .map(|wh| (wh, event.damage))
         });
+    // The killing call's concrete receiver booleans: IgnoreDefenses (arg5)
+    // becomes the building's NoSurvivor, arg6 gates the vehicle crew.
+    let (no_survivor, prevent_crew_escape) = damage_events
+        .iter()
+        .rfind(|event| event.target_id == dead_id)
+        .and_then(|event| event.receiver_flags)
+        .map_or((false, false), |flags| (flags.ignore_defenses, flags.arg6));
 
     // BuildingClass runs DestructionEffects/SpawnSurvivors only after
     // TechnoClass's synchronous death weapon has returned. Capture the
@@ -1404,6 +1396,14 @@ fn finish_concrete_death(
             });
         }
     }
+    // `UnitClass::ReceiveDamage` then lifts the dying unit off its cell
+    // (`0x00737F7A`) before its passengers and crew leave. Passenger escape
+    // (`0x00737FD2`) is not ported: the fatal prelude already purged them,
+    // and a type with passenger capacity has no crew roll.
+    if category == EntityCategory::Unit && callbacks_enabled(world) {
+        world.mark_up_dying_unit(dead_id, crate::sim::world::UninitContext::with_rules(rules));
+        world.spawn_vehicle_crew(rules, overlay_registry, dead_id, prevent_crew_escape);
+    }
 
     let inf_death = killing_warhead.as_ref().map_or(1, |(wh, _)| wh.inf_death);
     if category == EntityCategory::Infantry {
@@ -1446,15 +1446,34 @@ fn finish_concrete_death(
                 z,
                 foundation,
             } => {
-                let mut requests = Vec::new();
-                append_building_smudge_requests(&mut requests, rx, ry, z, &foundation);
+                // DestructionEffects: the centre mark, then SpawnSurvivors
+                // (`0x00441F1B`) interleaves each foundation cell's survivor
+                // roll with that cell's own mark.
                 commit_smudges(
                     world,
                     rules,
                     overlay_registry,
-                    requests,
+                    vec![building_center_smudge_request(rx, ry, z, &foundation)],
                     &mut effects.smudge_spawn_requests,
                 );
+                if callbacks_enabled(world) {
+                    let deferred = &mut effects.smudge_spawn_requests;
+                    world.spawn_building_survivors(
+                        rules,
+                        overlay_registry,
+                        dead_id,
+                        no_survivor,
+                        |world, (cell_rx, cell_ry)| {
+                            commit_smudges(
+                                world,
+                                rules,
+                                overlay_registry,
+                                vec![SmudgeSpawnRequest::BuildingSurvivor { cell_rx, cell_ry }],
+                                deferred,
+                            );
+                        },
+                    );
+                }
             }
         }
     }

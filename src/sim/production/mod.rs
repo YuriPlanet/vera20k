@@ -45,13 +45,11 @@ pub use self::production_queue::{
 };
 pub(crate) use self::production_refinery::spawn_completed_refinery_free_units;
 pub(crate) use self::production_sell::{
-    eject_destruction_garrison_with_context, eject_red_hp_garrison,
+    building_type_refund, eject_destruction_garrison_with_context, eject_red_hp_garrison,
 };
 #[cfg(test)]
 pub(crate) use self::production_sell::eject_destruction_garrison;
-pub use self::production_sell::{
-    eject_destruction_survivors, sell_building, tick_repairs, toggle_repair,
-};
+pub use self::production_sell::{sell_building, tick_repairs, toggle_repair};
 pub use self::production_spawn::find_spawn_cell_for_owner;
 pub use self::production_tech::{
     building_base_foundation_cells, building_footprint_cells, building_movement_blocking_cells,

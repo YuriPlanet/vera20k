@@ -127,7 +127,7 @@ impl PassengerCargo {
 
     /// Remove and return the list HEAD (the most recently boarded passenger)
     /// and its recorded size — `CargoClass::RemoveFirstPassenger @ 0x00473430`.
-    fn unload_first(&mut self) -> Option<(u64, u32)> {
+    pub(crate) fn unload_first(&mut self) -> Option<(u64, u32)> {
         if self.passengers.is_empty() {
             None
         } else {

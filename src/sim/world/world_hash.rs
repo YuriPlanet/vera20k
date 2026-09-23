@@ -1567,6 +1567,11 @@ impl Simulation {
                     entity.paralysis_timer.hash(hasher);
                 }
             }
+            if schema.includes(HashFeature::CrewSurvival) && entity.has_been_captured {
+                // Building+6E3: doubles the survivor divisor, widens the
+                // survivor roll and skips the engineer roll at death.
+                0x6e3_u32.hash(hasher);
+            }
             if schema.includes(HashFeature::TechnoConstructor)
                 && (entity.techno_ctor_random_word != 0 || entity.structure_upgrade_link.is_some())
             {

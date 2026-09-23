@@ -249,6 +249,9 @@ pub struct ObjectType {
     pub ui_name: Option<String>,
     /// Credit cost to produce this object.
     pub cost: i32,
+    /// `Soylent=` (TechnoType `+0x614`): when nonzero, the refund
+    /// `TechnoTypeClass::GetRefund @ 0x00711F60` returns instead of the cost.
+    pub soylent: i32,
     /// BuildingType+16CD/16D0..16E0, read by House50BF60. The five
     /// cost bonuses are Infantry, Units, Aircraft, Buildings, Defenses.
     pub factory_plant: bool,
@@ -1715,6 +1718,7 @@ impl ObjectType {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
             cost: section.get_i32("Cost").unwrap_or(0),
+            soylent: section.get_i32("Soylent").unwrap_or(0),
             factory_plant: section.get_bool("FactoryPlant").unwrap_or(false),
             cost_bonuses: [
                 "InfantryCostBonus",

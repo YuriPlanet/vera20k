@@ -559,7 +559,9 @@ use crate::sim::world::Simulation;
 // save cannot recover an in-progress landing effect or approach pitch.
 // 192 -> 193: ParasiteClass (Foot+69C) and the victim's Foot+694 link,
 // Foot+698 launch lock and Foot+6A0 paralysis timer are saved and hashed.
-const SNAPSHOT_VERSION: u32 = 193;
+// 193 -> 194: Building+6E3 HasBeenCaptured is saved and hashed; a 193 save
+// cannot tell a captured building from one built by its owner.
+const SNAPSHOT_VERSION: u32 = 194;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3473,7 +3475,8 @@ mod tests {
         // 190 -> 191: Fly cruise mode survives save and locomotor suspension.
         // 191 -> 192: Fly moving/landing latch/AirportBound and flight attitude.
         // 192 -> 193: ParasiteClass and the victim's parasite/paralysis fields.
-        assert_eq!(super::SNAPSHOT_VERSION, 193);
+        // 193 -> 194: Building+6E3 HasBeenCaptured.
+        assert_eq!(super::SNAPSHOT_VERSION, 194);
     }
 
     #[test]

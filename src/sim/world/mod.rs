@@ -1658,6 +1658,19 @@ impl Simulation {
                         passenger_ids,
                     })
                 });
+                // An absorbing building's passengers leave through
+                // SpawnSurvivors' Phase A; its KillPassengers (`0x00441F27`)
+                // runs after that and finds the list empty.
+                let absorbs = category == EntityCategory::Structure
+                    && self
+                        .substrate
+                        .entities
+                        .get(stable_id)
+                        .is_some_and(|entity| {
+                            rules
+                                .object(self.interner.resolve(entity.type_ref()))
+                                .is_some_and(|object| object.infantry_absorb || object.unit_absorb)
+                        });
                 if let Some(event) = garrison {
                     production::eject_destruction_garrison_with_context(
                         self,
@@ -1665,7 +1678,7 @@ impl Simulation {
                         &event,
                         uninit_context,
                     );
-                } else {
+                } else if !absorbs {
                     self.purge_carried_passengers_for_fatal(stable_id, uninit_context);
                 }
                 if category == EntityCategory::Structure {
@@ -4325,6 +4338,13 @@ impl Simulation {
         // shooting at what is now its own structure.
         self.stop_all_targeting_on_detach(stable_id);
         self.substrate.entities.change_owner(stable_id, new_owner);
+        // `BuildingClass::ChangeOwner @ 0x00448723` marks every transferred
+        // building HasBeenCaptured (+0x6E3); survivors read it at death.
+        if category == EntityCategory::Structure
+            && let Some(entity) = self.substrate.entities.get_mut(stable_id)
+        {
+            entity.has_been_captured = true;
+        }
         // Techno701735..701751 writes the owner then recomputes only +41A.
         // A former current-house object's +41B history survives the transfer.
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
