@@ -26,6 +26,11 @@ jobs:
           # (and filed as issues) without failing the run.
           - os: ubuntu-latest
             experimental: true
+          # macOS runners are ARM64 (Apple Silicon): the only non-x86 job, so
+          # the pinned golden values here also check cross-architecture
+          # determinism. Informational until it has been green for a while.
+          - os: macos-latest
+            experimental: true
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.experimental }}
     steps:
