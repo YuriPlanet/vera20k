@@ -15,7 +15,7 @@ The top-level layout under `src/`, roughly bottom-up:
 
 - `assets/` — format parsers for `.mix`, `.shp`, `.vxl`, `.hva`, `.pal`, `.tmp`, `.csf`, `.aud`, `.pcx` and Bink video. Written from scratch in this repository, with no third-party C&C format libraries.
 - `util/` — low-level helpers: fixed-point math, the original game's trig table and x87 arithmetic, config loading, compression.
-- `rules/` — parses `rulesmd.ini` / `artmd.ini` and exposes the resolved game rules.
+- `rules/` — parses the retail YR INIs (`rulesmd.ini`, `artmd.ini`, `aimd.ini`, sound and EVA) with their language, game-mode and map layers, and exposes the resolved game rules. Its module header documents how gamemd reads them.
 - `map/` — `.mmx` / `.map` parsing, theaters, resolved terrain, map triggers and the random map generator (`map/rmg/`).
 - `sim/` — game state and deterministic behavior. Owns `Simulation`. Never depends on `render/`, `ui/`, `sidebar/`, `audio/` or `net/`. Major subsystems sit in their own subdirs: `combat/`, `movement/`, `pathfinding/`, `aircraft/`, `production/`, `miner/`, `superweapon/`, `vision/`, `docking/`, `world/`.
 - `render/` — the wgpu renderer: atlases, terrain, sprites, voxels, radar, shroud and sidebar chrome.
@@ -89,7 +89,7 @@ When you click on a unit, the app layer handles that. It figures out which entit
 
 Timing. `src/util/fixed_math.rs` defines two rates:
 
-- `RA2_LOGIC_FRAMES_PER_SECOND = 15` — the original game's logic-frame rate at normal speed. Every INI time value (rate of fire, reload, C4 delay, ore growth, trigger timers) is converted to frames through it.
+- `RA2_LOGIC_FRAMES_PER_SECOND = 15` — the original game's logic-frame rate at normal speed. INI time values come in different units (`ROF=` is already in frames; `C4Delay=`, `URepairRate=` and mission `Rate=` are minutes), and each key's conversion and rounding follow its native reader.
 - `SIM_TICK_HZ = 45` — VERA's own fixed step constant. The game passes its step length, `SIM_TICK_MS` = 22 ms, to every simulation frame. It is not the original's logic rate. Headless tools step at 66 ms instead; `src/headless_scenario.rs` records that difference.
 
 The simulation never reads wall-clock time. The app's frame pacer (`src/app/match_runtime/frame_pacer.rs`) decides when the next gameplay frame may run, using the original's GameSpeed timing, and the app advances the simulation one frame at a time.
