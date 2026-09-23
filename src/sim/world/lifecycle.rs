@@ -3456,6 +3456,12 @@ impl Simulation {
         control: PointerExpiryControl,
         context: UninitContext<'_>,
     ) {
+        // `DispatchPointerExpiredCleanup @ 0x007258D0` calls
+        // `BombListClass::PointerGotInvalid @ 0x00439150` after its listener
+        // loop (0x00725961) whatever the control, so a cloaking planter loses
+        // its bombs' credit as a removed one does. No listener reads a planter,
+        // so running it first changes nothing.
+        self.bomb_planter_expired(expired_id);
         let Some((
             expired_target_cell,
             expired_is_high_flying,
@@ -3688,6 +3694,9 @@ impl Simulation {
                 resolvable: self.substrate.entities.contains(stable_id),
             });
         }
+        // ObjectClass::UnInit's first statement (`0x005F65F3`) defuses a
+        // carried bomb silently: sold, crushed, erased.
+        self.bomb_defuse(stable_id);
         self.notify_pointer_expired(stable_id, context);
 
         let _ = self.techno_limbo_with_context(stable_id, context);
@@ -3757,6 +3766,8 @@ impl Simulation {
             stable_id,
             crate::sim::house_tracking::HouseTracking::remove_tracking,
         );
+        // The ObjectClass destructor's defensive Defuse (`0x005F3BA6`).
+        self.bomb_defuse(stable_id);
         self.release_house_base_tracking(stable_id);
         self.destroy_building_light(stable_id);
         self.clear_building_damage_fire_slots(stable_id, None);

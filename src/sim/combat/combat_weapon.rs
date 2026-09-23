@@ -223,6 +223,8 @@ pub(crate) enum TargetFacts<'a> {
         /// applies to a MindControl warhead (the Iron Curtain gate reads the
         /// frame and is applied at fire admission).
         capture: crate::sim::capture_manager::CaptureVictimFacts,
+        /// `ObjectClass+0x38`: it carries a Crazy Ivan bomb.
+        has_bomb: bool,
     },
 }
 
@@ -927,6 +929,7 @@ fn targeting_fire_error_blocks(
             cell_land_type,
             parasite,
             capture: capture_victim,
+            has_bomb,
             ..
         } => {
             // 0x006FCA81..0x006FCAC2: a Parasite warhead is ILLEGAL unless the
@@ -993,6 +996,11 @@ fn targeting_fire_error_blocks(
             }
             // 0x006FCB6A: `FLD Warhead.Verses[armor]`, `FCOMP 0.0` → 5.
             if verses_is_zero(Some(warhead), armor_index(&target_obj.armor)) {
+                return true;
+            }
+            // 0x006FCB8D..0x006FCBCD: a BombDisarm weapon needs a bombed
+            // target and an IvanBomb weapon an unbombed one (→ 5).
+            if (warhead.bomb_disarm && !has_bomb) || (warhead.ivan_bomb && has_bomb) {
                 return true;
             }
             false
@@ -1285,6 +1293,7 @@ pub(crate) fn techno_target_facts<'a>(
         is_ally,
         parasite: ParasiteVictimFacts::of(target, target_obj, terrain),
         capture: crate::sim::capture_manager::CaptureVictimFacts::of(target, target_obj, None),
+        has_bomb: target.bomb.is_some(),
     }
 }
 
@@ -2073,6 +2082,7 @@ IsLocomotor=yes
             is_ally: false,
             parasite: ParasiteVictimFacts::INFECTABLE_ON_LAND,
             capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
+            has_bomb: false,
         }
     }
 
@@ -2100,6 +2110,7 @@ IsLocomotor=yes
                     ..parasite
                 },
                 capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
+                has_bomb: false,
             },
             cell => cell,
         }
@@ -2126,6 +2137,7 @@ IsLocomotor=yes
                 is_ally,
                 parasite,
                 capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
+                has_bomb: false,
             },
             cell => cell,
         }
@@ -2152,6 +2164,7 @@ IsLocomotor=yes
                 is_ally: true,
                 parasite,
                 capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
+                has_bomb: false,
             },
             cell => cell,
         }
@@ -2304,6 +2317,7 @@ IsLocomotor=yes
                 ..ParasiteVictimFacts::INFECTABLE_ON_LAND
             },
             capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
+            has_bomb: false,
         };
         let sqd_t = techno(sqd, TechnoKind::Unit);
         let bsub_t = techno(bsub, TechnoKind::Unit);
@@ -2829,6 +2843,7 @@ IsLocomotor=yes
             is_ally,
             parasite,
             capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
+            has_bomb: false,
         };
         assert_eq!(slot(&rules, "DEST", &dest, Some(&bridged)), 0);
     }
@@ -2862,6 +2877,7 @@ IsLocomotor=yes
                 ..ParasiteVictimFacts::INFECTABLE_ON_LAND
             },
             capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
+            has_bomb: false,
         };
         assert_eq!(
             selected(&rules, "HTNK", &facts(TechnoKind::Unit), &submerged),
@@ -2890,6 +2906,7 @@ IsLocomotor=yes
             is_ally: false,
             parasite: ParasiteVictimFacts::INFECTABLE_ON_LAND,
             capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
+            has_bomb: false,
         };
         assert_eq!(
             selected(&rules, "AEGIS", &facts(TechnoKind::Unit), &beach),
@@ -3363,5 +3380,112 @@ Verses=100%,100%,100%,80%,60%,40%,100%,40%,20%,100%,100%
             select_garrison_weapon(&rules, "E1", 200, EntityCategory::Infantry, "none").unwrap();
         assert_eq!(sel.weapon_id, "PrimaryRifle");
         assert_eq!(sel.slot, WeaponSlot::Primary);
+    }
+
+    /// GetFireError's bomb gates (0x006FCB8D..0x006FCBCD) against the
+    /// `fire_error` rows of `tools/spatial_oracle/bomb_class.json`, produced by
+    /// running the original body under Unicorn: 5 is ILLEGAL, "continue"
+    /// passes on to the next gate. Weapons and warheads are retail's.
+    #[test]
+    fn bomb_fire_error_gates_match_native() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]
+0=ENGINEER
+1=IVAN
+[VehicleTypes]
+0=HTNK
+[Warheads]
+0=BombDisarm
+1=IvanBomb
+2=AP
+[ENGINEER]
+Primary=DefuseKit
+[IVAN]
+Primary=IvanBomber
+[HTNK]
+Strength=900
+Armor=heavy
+Primary=120mm
+[DefuseKit]
+Damage=1
+Range=1.5
+Projectile=InvisibleAll
+Warhead=BombDisarm
+[IvanBomber]
+Damage=400
+Range=1.5
+Projectile=Invisible
+Warhead=IvanBomb
+[120mm]
+Damage=90
+Range=5.75
+Projectile=Cannon
+Warhead=AP
+[InvisibleAll]
+Inviso=yes
+[Invisible]
+Inviso=yes
+[Cannon]
+AG=yes
+[BombDisarm]
+BombDisarm=yes
+[IvanBomb]
+IvanBomb=yes
+[AP]
+Verses=100%,100%,90%,75%,50%,50%,100%,50%,25%,100%,100%
+",
+        ))
+        .unwrap();
+        let cases: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/bomb_class.json"
+        ))
+        .unwrap();
+        let engineer = rules.object("ENGINEER").unwrap();
+        let tank = rules.object("HTNK").unwrap();
+        let mut compared = 0;
+        for case in cases
+            .iter()
+            .filter(|case| case["input"]["section"] == "fire_error")
+        {
+            let input = &case["input"];
+            let flag = |key: &str| input[key].as_bool() == Some(true);
+            let weapon = rules
+                .weapon(if flag("bomb_disarm") {
+                    "DefuseKit"
+                } else if flag("ivan_bomb") {
+                    "IvanBomber"
+                } else {
+                    "120mm"
+                })
+                .unwrap();
+            let target = TargetFacts::Techno {
+                obj: tank,
+                kind: TechnoKind::Unit,
+                is_high_flying: false,
+                on_bridge: false,
+                cell_land_type: LandType::Clear.as_index(),
+                submerged: false,
+                is_ally: false,
+                parasite: ParasiteVictimFacts::INFECTABLE_ON_LAND,
+                capture: crate::sim::capture_manager::CaptureVictimFacts::capturable_for_test(),
+                has_bomb: flag("bombed"),
+            };
+            let blocked = targeting_fire_error_blocks(
+                &rules,
+                engineer,
+                weapon,
+                warhead_of(&rules, weapon).unwrap(),
+                &target,
+                None,
+            );
+            let native = &case["result"];
+            assert!(
+                (blocked && native == 5) || (!blocked && native == "continue"),
+                "{}: {native}",
+                input["name"]
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 5);
     }
 }

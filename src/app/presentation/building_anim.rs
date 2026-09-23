@@ -160,6 +160,9 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
         .as_deref()
         .and_then(|name| sim.and_then(|sim| sim.interner.get(name)));
     let eva_side = local_eva_side(state);
+    let ticking_sound = state
+        .rules()
+        .and_then(|rules| rules.general.bomb_ticking_sound.clone());
     let (Some(sfx), Some(assets)) = (&mut state.audio.sfx_player, state.process_assets.manager())
     else {
         return;
@@ -448,6 +451,46 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
                 if let Some(gain) = gain_for(event.sound_id(), event.source()) {
                     sfx.play_sound_spatial(event.sound_id(), gain, registry, assets, audio_indices);
                 }
+            }
+        }
+    }
+
+    // `BombListClass::UpdateAll @ 0x00438BF0`'s ticking pass
+    // (0x00438C6C..0x00438CFE): a carrier out of limbo starts
+    // `BombTickingSound=` at its Location for every player (`VocClass::PlayAt`
+    // with the bomb's own handle, 0x00438CCA) and re-drives it after that
+    // (0x00438CF8); in limbo, spent or defused, the handle stops. Here the
+    // start is taken for any carrier with no live handle; the owner loop below
+    // re-drives and stops it through `bomb_ticking_coord`.
+    // `RulesClass::ReadAudioVisual` keeps only `VocClass::FindByName`'s index:
+    // an unregistered name is -1, which the ticking pass skips (0x00438C7F).
+    let ticking_sound = ticking_sound.filter(|sound_id| registry.get(sound_id).is_some());
+    if let (Some(sim), Some(sound_id)) = (sim, ticking_sound.as_deref()) {
+        for &carrier in sim.bomb_carriers() {
+            let owner = crate::sim::bomb::ticking_sound_owner(carrier);
+            if sfx.loop_handle_sound_id(owner).is_some() {
+                continue;
+            }
+            let Some(world) = sim.bomb_ticking_coord(carrier) else {
+                continue;
+            };
+            let (rx, ry, sub_x, sub_y, _) = world.to_cell_sub_z();
+            let (screen_x, screen_y) =
+                crate::util::lepton::lepton_to_screen_exact_z(rx, ry, sub_x, sub_y, world.z);
+            let facts = registry.get(sound_id).map_or_else(
+                || SpatialSource::from_registry_defaults(registry),
+                SpatialSource::from_entry,
+            );
+            if let Some(gain) = spatial_gain(facts, screen_x, screen_y, &listener, shrouded(rx, ry))
+            {
+                sfx.play_animation_sound_spatial(
+                    owner,
+                    sound_id,
+                    gain,
+                    registry,
+                    assets,
+                    audio_indices,
+                );
             }
         }
     }

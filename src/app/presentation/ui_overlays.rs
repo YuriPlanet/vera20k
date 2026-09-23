@@ -582,6 +582,97 @@ pub(crate) fn build_occupant_pip_instances(
     instances
 }
 
+/// The Crazy Ivan bomb clock, `TechnoClass::DrawExtras @ 0x006F5190`
+/// (0x006F519B..0x006F524E): over a carrier being drawn (DrawExtras is reached
+/// only from the tactical render loop, `0x006D9153`, so never in limbo or a
+/// transport) that is not sinking (`+0x3CD`, which VERA never sets), whose
+/// BombVisible (`+0x68`) holds for the local player and whose cell is not
+/// shrouded (`0x00487950`), BOMBCURS.SHP frame `BombClass::GetClockFrame`
+/// centered (flags `0xE00`) on the render point (`vt+0xAC`: a building's art
+/// anchor, `0x00459EF0`, else its coordinate; `CoordsToClient2 @ 0x006D2140`).
+/// Drawn before the veterancy chevrons (0x006F5382), as there.
+pub(crate) fn build_bomb_clock_instances(
+    state: &AppState,
+    sw: f32,
+    sh: f32,
+) -> Vec<SpriteInstance> {
+    let (Some(sim), Some(overlay), Some(rules)) = (
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        &state.match_state.match_presentation.selection_overlay,
+        state.rules(),
+    ) else {
+        return Vec::new();
+    };
+    let Some(clock) = overlay.bomb_clock() else {
+        return Vec::new();
+    };
+    let ignore_visibility = state.match_state.sandbox_full_visibility;
+    let local = preferred_local_owner_name(state).and_then(|name| sim.interner.get(&name));
+    // `GetClockFrame` reads the frame the draw sees: the next one to run.
+    let frame = sim.session.binary_frame as i32;
+    let mut instances = Vec::new();
+    for &carrier in sim.bomb_carriers() {
+        let Some(entity) = sim.entities().get(carrier) else {
+            continue;
+        };
+        let Some(bomb) = entity.bomb else {
+            continue;
+        };
+        if entity.lifecycle.in_limbo || entity.passenger_role.is_inside_transport() {
+            continue;
+        }
+        if !ignore_visibility {
+            let Some(local) = local else {
+                continue;
+            };
+            let (rx, ry) = (entity.position.rx, entity.position.ry);
+            if !sim.bomb_seen_by(carrier, local)
+                || !sim.fog.is_cell_revealed(local, rx, ry)
+                || sim.fog.is_cell_gap_covered(local, rx, ry)
+            {
+                continue;
+            }
+        }
+        let Some(index) = bomb
+            .clock_frame(
+                frame,
+                rules.combat_damage.ivan_timed_delay,
+                rules.combat_damage.ivan_icon_flicker_rate,
+            )
+            .and_then(|index| usize::try_from(index).ok())
+        else {
+            continue;
+        };
+        let point = crate::render::locomotor_visual::screen_position(entity);
+        let point = if entity.category == EntityCategory::Structure {
+            crate::render::locomotor_visual::building_art_anchor(point.0, point.1)
+        } else {
+            point
+        };
+        let Some(instance) = clock.instance(index, point, 0.0006) else {
+            continue;
+        };
+        if in_view(
+            instance.position[0],
+            instance.position[1],
+            instance.size[0],
+            instance.size[1],
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+            sw,
+            sh,
+            48.0,
+        ) {
+            instances.push(instance);
+        }
+    }
+    instances
+}
+
 /// Non-building health bar backgrounds: pipbrd.shp bracket sprites.
 /// Frame 0 = vehicle/aircraft (36×4), frame 1 = infantry (18×4).
 pub(crate) fn build_unit_status_bg_instances(

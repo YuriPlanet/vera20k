@@ -537,6 +537,7 @@ fn techno_ai_shell(
                 dispatch_supported_foot_mission_cadence(sim, id, rules, ctx);
             }
             passive_acquire_step(sim, id, rules, ctx);
+            bomb_fuse_slot(sim, id, rules, ctx.overlay_registry);
         }
         EntityCategory::Structure => {
             if let Some(rules) = rules {
@@ -577,6 +578,9 @@ fn techno_ai_shell(
             // promotion evaluates to not-ready (recorded residual).
             mission_common_step(sim, id, rules);
             passive_acquire_step(sim, id, rules, ctx);
+            if !bomb_fuse_slot(sim, id, rules, ctx.overlay_registry) {
+                return;
+            }
             // BuildingClass::Update consumes the shared C4/PostMortem latch at
             // its late tail. Keep the forced receiver inline in this object's
             // LogicVector visit so nested death effects precede the next slot.
@@ -623,6 +627,7 @@ fn techno_ai_shell(
                     sim.aircraft_fire_requests.insert(id);
                 }
             }
+            bomb_fuse_slot(sim, id, rules, ctx.overlay_registry);
         }
     }
 }
@@ -854,7 +859,19 @@ fn mission_common_step(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
 /// 0x006FA224`, directly after the rank-cache write at `0x006FA145`), the
 /// CaptureManager update (`0x006FA730`), then the IsAlive gate (`0x006FA735`)
 /// before the self-heal pulse. Returns false when the object died in them (an
-/// overloaded Mastermind), which ends its AI body.
+/// overloaded Mastermind), which ends its AI body. The bomb fuse, which
+/// natively sits between passive acquisition and the CaptureManager
+/// (`0x006FA6F5`), runs from each category's arm after its passive step
+/// ([`bomb_fuse_slot`]).
+///
+/// RESIDUAL: natively the CaptureManager follows the mission step, passive
+/// acquisition and the bomb fuse, which VERA runs after this block. Trigger: a
+/// Yuri or Mastermind whose capture update draws or kills in the frame it would
+/// also acquire, advance its mission or set off a bomb it carries. Effect: the
+/// Scenario draws of those steps come in a different order, and a controller
+/// the overload kills skips them. Frequency: rare; the bomb case needs a
+/// bombed controller at its fuse's end. Downstream: later Scenario draws in
+/// that frame shift.
 fn techno_common_steps(
     sim: &mut Simulation,
     id: u64,
@@ -869,6 +886,22 @@ fn techno_common_steps(
     }
     self_heal_step(sim, id, rules);
     true
+}
+
+/// The bomb fuse's slot in `TechnoClass::AI_Update` (`0x006FA6F5..
+/// 0x006FA717`): after the mission step and passive acquisition, before the
+/// SlaveManager and CaptureManager. A carrier its own blast kills runs no
+/// further AI this frame (the IsAlive gate at `0x006FA735`).
+fn bomb_fuse_slot(
+    sim: &mut Simulation,
+    id: u64,
+    rules: Option<&RuleSet>,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+) -> bool {
+    if let Some(rules) = rules {
+        sim.bomb_fuse_step(id, rules, overlay_registry);
+    }
+    sim.substrate.entities.get(id).is_some_and(|e| e.is_alive())
 }
 
 fn techno_common_pre(
@@ -1129,8 +1162,10 @@ fn unit_techno_bracket(
     // Passive / opportunity target acquisition sits between mission dispatch
     // and the second IsAlive guard, before the object's own locomotion.
     passive_acquire_step(sim, id, rules, ctx);
-    // Guard E (post-dispatch IsAlive): the dispatched handler may have
-    // destroyed the Unit; a dead Unit runs no post-mission block.
+    bomb_fuse_slot(sim, id, rules, ctx.overlay_registry);
+    // Guard E (post-dispatch IsAlive): the dispatched handler, or the bomb it
+    // carried, may have destroyed the Unit; a dead Unit runs no post-mission
+    // block.
     if !sim.substrate.entities.get(id).is_some_and(|e| e.is_alive()) {
         return BracketReach::Dispatched;
     }
@@ -1231,11 +1266,12 @@ fn passive_acquire_gate(mission: MissionType, can_acquire: bool, opportunity_fir
 /// (`0x00709230..0x00709268`, `0x004722A0`): a controller at its limit does
 /// not acquire.
 ///
-/// Not modelled (recorded): the first disabled/limbo-ish virtual, the second
-/// early-out field, and the player-control virtual whose slot role is
-/// UNCHECKED. Leaving the last one out makes VERA *more* permissive than the
-/// original for some player-controlled objects; inventing a predicate for it
-/// would be worse.
+/// The player-control term (`0x0070924D`) is the Engineer refusal below: its
+/// virtual, `vt+0x330`, reads InfantryType `Engineer=` for infantry and is
+/// false for every other class.
+///
+/// Not modelled (recorded): the first disabled/limbo-ish virtual and the
+/// second early-out field.
 ///
 /// NEWLY ADMITTED by the `Is_Armed` correction, and deliberate: an **occupied**
 /// building. `BuildingClass::Is_Armed @ 0x00458DB0` returns 1 unconditionally
@@ -1279,6 +1315,21 @@ fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
         .capture_manager
         .as_ref()
         .is_some_and(|manager| manager.is_full())
+    {
+        return false;
+    }
+    // `0x0070924D..0x00709264`: `vt+0x330` of a house that
+    // `HouseClass::IsControlledByHuman @ 0x0050B730` admits refuses. The slot
+    // is the InfantryType `Engineer=` flag for infantry (`0x005224D0`) and
+    // false for every other class (`0x0041BF30`): a player's Engineer never
+    // picks its own target, so it neither defuses on its own nor takes the
+    // scan's cadence draw.
+    if entity.category == EntityCategory::Infantry
+        && obj.engineer
+        && sim
+            .houses
+            .get(&entity.owner())
+            .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero))
     {
         return false;
     }

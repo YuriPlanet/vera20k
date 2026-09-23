@@ -315,6 +315,7 @@ fn upload_to_gpu(
         &ui.radius_ring,
     );
     pool.upload(&state.renderer.gpu, "status_building", &ui.building_status);
+    pool.upload(&state.renderer.gpu, "bomb_clocks", &ui.bomb_clock);
     pool.upload(&state.renderer.gpu, "occupant_pips", &ui.occupant_pip);
     pool.upload(&state.renderer.gpu, "status_unit_bg", &ui.unit_status_bg);
     pool.upload(

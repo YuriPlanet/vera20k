@@ -43,6 +43,19 @@ pub struct CombatDamageDefaults {
     /// Global `DeathWeapon=` used only when a dying type has neither an
     /// explicit death weapon nor a live current-weapon fallback.
     pub death_weapon: Option<String>,
+    /// `IvanWarhead=` (`RulesClass+0xFC8`, ReadINI `0x0066C52A`; constructor
+    /// null): the warhead of an Ivan bomb's blast (`BombClass::Detonate @
+    /// 0x00438720`). Stock `IvanWH`.
+    pub ivan_warhead: Option<String>,
+    /// `IvanDamage=` (`RulesClass+0xFCC`, ReadINI `0x0066C5C8`; constructor
+    /// 100 at `0x00666B88`): the blast's damage. Stock 450.
+    pub ivan_damage: i32,
+    /// `IvanTimedDelay=` in frames (`RulesClass+0xFD0`, ReadINI `0x0066C5EE`;
+    /// constructor 450 at `0x00666B92`): the fuse, added to the attach frame.
+    pub ivan_timed_delay: i32,
+    /// `IvanIconFlickerRate=` in frames (`RulesClass+0xFD8`, ReadINI
+    /// `0x0066C62B`; constructor 8 at `0x00666BA8`): the bomb clock's blink.
+    pub ivan_icon_flicker_rate: i32,
     /// Large grey smoke plume — buildings under heavy damage.
     pub default_large_grey_smoke_system: Option<String>,
     /// Small grey smoke plume.
@@ -72,6 +85,10 @@ impl CombatDamageDefaults {
             ballistic_scatter: section.read_range("BallisticScatter", 0x100),
             open_topped_warp_distance: section.get_i32("OpenToppedWarpDistance").unwrap_or(5),
             death_weapon: read_name(section, "DeathWeapon"),
+            ivan_warhead: read_name(section, "IvanWarhead"),
+            ivan_damage: section.get_i32("IvanDamage").unwrap_or(100),
+            ivan_timed_delay: section.get_i32("IvanTimedDelay").unwrap_or(450),
+            ivan_icon_flicker_rate: section.get_i32("IvanIconFlickerRate").unwrap_or(8),
             default_large_grey_smoke_system: read_name(section, "DefaultLargeGreySmokeSystem"),
             default_small_grey_smoke_system: read_name(section, "DefaultSmallGreySmokeSystem"),
             default_spark_system: read_name(section, "DefaultSparkSystem"),
@@ -93,6 +110,10 @@ impl Default for CombatDamageDefaults {
             ballistic_scatter: 0x100,
             open_topped_warp_distance: 5,
             death_weapon: None,
+            ivan_warhead: None,
+            ivan_damage: 100,
+            ivan_timed_delay: 450,
+            ivan_icon_flicker_rate: 8,
             default_large_grey_smoke_system: None,
             default_small_grey_smoke_system: None,
             default_spark_system: None,

@@ -827,6 +827,44 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 }
             }
         } else {
+            // An Engineer's DisarmBomb is its first action over a bombed object.
+            // Every selected object takes its own action
+            // (`Selection__DispatchMultiUnitOrder` 0x004AE844 re-derives it per
+            // object): the Engineers defuse, and over an enemy the rest go on to
+            // their own orders below. Over a friend the rest have nothing to do,
+            // and the dispatch happens only when the object that owns the cursor
+            // is one of the Engineers; otherwise the click selects.
+            if context_actions_enabled && let Some(target) = hover.as_ref() {
+                let friendly = matches!(
+                    target.kind,
+                    HoverTargetKind::FriendlyUnit | HoverTargetKind::FriendlyStructure
+                );
+                let engineers = disarm_bomb_engineers(
+                    sim,
+                    &resources.rules,
+                    &selected_units,
+                    target.stable_id,
+                    owner_id,
+                );
+                let dispatched = !engineers.is_empty()
+                    && (!friendly
+                        || cursor_owner(sim, &resources.rules, &selected_ids, target.stable_id)
+                            .is_some_and(|best| engineers.contains(&best)));
+                if dispatched {
+                    for &attacker_id in &engineers {
+                        queued.push(CommandEnvelope::new(
+                            owner_id,
+                            execute_tick,
+                            bomb_order(attacker_id, target.stable_id, friendly),
+                        ));
+                    }
+                    selected_units.retain(|id| !engineers.contains(id));
+                    if friendly || selected_units.is_empty() {
+                        return finish_order(state, queued, speaker_id);
+                    }
+                }
+            }
+
             // Garrison entry uses the shared CanDock-equivalent predicate before
             // issuing EnterTransport commands.
             // are classified as EnemyStructure but are still garrisonable —
@@ -1112,6 +1150,28 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                     }
                 }
             }
+            // A Crazy Ivan bombs a friend by a plain click, when the object that
+            // owns the cursor is one of the bombing Ivans.
+            if clicked_friendly
+                && context_actions_enabled
+                && !force_move
+                && let Some(target) = hover.as_ref()
+            {
+                let ivans =
+                    friendly_bomb_ivans(sim, &resources.rules, &selected_units, target.stable_id);
+                if cursor_owner(sim, &resources.rules, &selected_ids, target.stable_id)
+                    .is_some_and(|best| ivans.contains(&best))
+                {
+                    for attacker_id in ivans {
+                        queued.push(CommandEnvelope::new(
+                            owner_id,
+                            execute_tick,
+                            bomb_order(attacker_id, target.stable_id, true),
+                        ));
+                    }
+                    return finish_order(state, queued, speaker_id);
+                }
+            }
             if select_friendly_clicks && clicked_friendly && context_actions_enabled {
                 return false;
             }
@@ -1196,6 +1256,11 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             };
 
             for stable_id in selected_units {
+                if let Some(target_id) = attack_target
+                    && ivan_cannot_bomb(sim, &resources.rules, stable_id, target_id)
+                {
+                    continue;
+                }
                 let payload = if let Some(target_id) = attack_target {
                     // Retail promotes the *committed* mission and keeps the
                     // object as the destination, so the attack-move goal is the
@@ -1346,6 +1411,137 @@ pub(crate) fn try_queue_context_order_at_screen_point(
         );
     }
     finish_order(state, queued, speaker_id)
+}
+
+/// The selected Engineers whose click on `target` is DisarmBomb
+/// (`InfantryClass::What_Action_OnObject`, 0x0051E462): their first action
+/// over an object carrying a bomb their player sees, whoever owns it.
+/// `InfantryClass::ClickedAction_Object` (0x0051F190) sends it as Attack, so
+/// the DefuseKit shot defuses the bomb; it refuses the Engineer's own body.
+fn disarm_bomb_engineers(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    selected: &[u64],
+    target: u64,
+    player: InternedId,
+) -> Vec<u64> {
+    let bombed = sim
+        .entities()
+        .get(target)
+        .is_some_and(|entity| entity.bomb.is_some());
+    if !bombed || !sim.bomb_seen_by(target, player) {
+        return Vec::new();
+    }
+    selected
+        .iter()
+        .copied()
+        .filter(|&id| {
+            id != target
+                && sim.entities().get(id).is_some_and(|e| {
+                    e.category == EntityCategory::Infantry
+                        && rules
+                            .object(sim.interner.resolve(e.type_ref()))
+                            .is_some_and(|o| o.engineer)
+                })
+        })
+        .collect()
+}
+
+/// The object whose action owns the cursor over `target` for the selection
+/// (gamemd's DetermineAction, shared with the cursor): the click dispatches
+/// its orders only when that object's action is one.
+fn cursor_owner(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    selected: &[u64],
+    target: u64,
+) -> Option<u64> {
+    crate::app::input::cursor::select_best_for_action(
+        sim,
+        selected,
+        crate::app::input::cursor::ActionDistanceTarget::Object(target),
+        Some(rules),
+    )
+}
+
+/// The selected Crazy Ivans whose click on the own or allied `target` plants a
+/// bomb. AttackCursorOnFriendlies (stock: IVAN and CIVAN only) grants Attack
+/// on a friend without passengers (`TechnoClass::What_Action_OnObject`,
+/// 0x00700314..0x007003D6), the Ivan makes it IvanBomb on a Bombable target
+/// without a bomb (0x0051EB24), and `FootClass::ClickedAction_Object`
+/// (0x004D74E0) sends that as Attack. A bombed friend stays a selection click.
+/// A lone selected Ivan over himself has the self action (4) instead; in a
+/// larger selection nothing stops him bombing himself, as natively.
+fn friendly_bomb_ivans(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    selected: &[u64],
+    target: u64,
+) -> Vec<u64> {
+    let bombable = sim.entities().get(target).is_some_and(|entity| {
+        entity.bomb.is_none()
+            && rules
+                .object(sim.interner.resolve(entity.type_ref()))
+                .is_some_and(|o| o.bombable && o.passengers == 0)
+    });
+    if !bombable {
+        return Vec::new();
+    }
+    selected
+        .iter()
+        .copied()
+        .filter(|&id| {
+            (id != target || selected.len() > 1)
+                && sim.entities().get(id).is_some_and(|e| {
+                    rules
+                        .object(sim.interner.resolve(e.type_ref()))
+                        .is_some_and(|o| o.ivan && o.attack_cursor_on_friendlies)
+                })
+        })
+        .collect()
+}
+
+/// The Attack order an Engineer's DisarmBomb or a Crazy Ivan's IvanBomb click
+/// sends. Native's Attack event has no alliance test; VERA's plain `Attack`
+/// command refuses friends, so an own or allied target goes as `ForceAttack`,
+/// the same Attack mission without that gate.
+fn bomb_order(attacker_id: u64, target_id: u64, friendly: bool) -> Command {
+    if friendly {
+        Command::ForceAttack {
+            attacker_id,
+            target_id,
+        }
+    } else {
+        Command::Attack {
+            attacker_id,
+            target_id,
+        }
+    }
+}
+
+/// A Crazy Ivan's action over a target it cannot bomb is never Attack: a
+/// target that already carries a bomb fails its `GetFireError` (0x006FCBAD),
+/// so the action is Select, and a force-fire or a `Bombable=no` target makes
+/// it NoIvanBomb (`InfantryClass::What_Action_OnObject`, 0x0051EB24), which
+/// `FootClass::ClickedAction_Object` (0x004D74E0) ignores.
+fn ivan_cannot_bomb(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor_id: u64,
+    target_id: u64,
+) -> bool {
+    let is_ivan = sim
+        .entities()
+        .get(actor_id)
+        .and_then(|e| rules.object(sim.interner.resolve(e.type_ref())))
+        .is_some_and(|o| o.ivan);
+    is_ivan
+        && sim.entities().get(target_id).is_some_and(|target| {
+            target.bomb.is_some()
+                || !rules
+                    .object(sim.interner.resolve(target.type_ref()))
+                    .is_some_and(|o| o.bombable)
+        })
 }
 
 fn selected_rally_producer_ids(
@@ -1875,5 +2071,85 @@ mod tests {
                 target_id: Some(2),
             }
         );
+    }
+    /// The click side of the bomb actions: an Engineer's DisarmBomb and a
+    /// Crazy Ivan's IvanBomb on a friend are Attack orders (ForceAttack past
+    /// VERA's alliance gate), and an Ivan never attacks a bombed target.
+    #[test]
+    fn bomb_click_orders() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[InfantryTypes]\n0=IVAN\n1=ENGINEER\n[VehicleTypes]\n0=HTNK\n\
+                 [CombatDamage]\nIvanTimedDelay=450\n\
+                 [IVAN]\nStrength=125\nIvan=yes\nAttackCursorOnFriendlies=yes\n\
+                 [ENGINEER]\nStrength=75\nEngineer=yes\nBombSight=4\n\
+                 [HTNK]\nStrength=900\n",
+            ))
+            .unwrap();
+        let mut sim = Simulation::new();
+        sim.resolve_type_handles(&rules);
+        let height_map = std::collections::BTreeMap::new();
+        for house in ["Americans", "Soviets"] {
+            let id = sim.interner.intern(house);
+            sim.session.house_order.push(id);
+        }
+        let americans = sim.interner.get("Americans").unwrap();
+        let mut spawn = |kind: &str, owner: &str, rx: u16| {
+            sim.spawn_object(kind, owner, rx, 5, 0, &rules, &height_map)
+                .unwrap()
+        };
+        let ivan = spawn("IVAN", "Americans", 5);
+        let engineer = spawn("ENGINEER", "Americans", 7);
+        let own_tank = spawn("HTNK", "Americans", 9);
+        let spare_tank = spawn("HTNK", "Americans", 11);
+        let enemy_ivan = spawn("IVAN", "Soviets", 20);
+        let far_tank = spawn("HTNK", "Soviets", 22);
+        let selected = [ivan, engineer];
+
+        assert_eq!(
+            friendly_bomb_ivans(&sim, &rules, &selected, own_tank),
+            vec![ivan]
+        );
+        assert!(disarm_bomb_engineers(&sim, &rules, &selected, own_tank, americans).is_empty());
+        assert!(!ivan_cannot_bomb(&sim, &rules, ivan, own_tank));
+
+        sim.bomb_attach(ivan, Some(own_tank), &rules);
+        sim.bomb_attach(enemy_ivan, Some(far_tank), &rules);
+        sim.bomb_list_update(&rules);
+        sim.bomb_list_update(&rules);
+
+        assert_eq!(
+            disarm_bomb_engineers(&sim, &rules, &selected, own_tank, americans),
+            vec![engineer]
+        );
+        assert!(
+            disarm_bomb_engineers(&sim, &rules, &selected, far_tank, americans).is_empty(),
+            "an unseen bomb"
+        );
+        assert!(
+            friendly_bomb_ivans(&sim, &rules, &selected, own_tank).is_empty(),
+            "a bombed friend stays a selection click"
+        );
+        assert_eq!(
+            friendly_bomb_ivans(&sim, &rules, &selected, spare_tank),
+            vec![ivan]
+        );
+        assert!(ivan_cannot_bomb(&sim, &rules, ivan, own_tank));
+        assert!(!ivan_cannot_bomb(&sim, &rules, engineer, own_tank));
+
+        // The Engineer carrying a bomb itself is no target of its own click.
+        sim.bomb_attach(ivan, Some(engineer), &rules);
+        sim.bomb_list_update(&rules);
+        sim.bomb_list_update(&rules);
+        assert!(disarm_bomb_engineers(&sim, &rules, &[engineer], engineer, americans).is_empty());
+
+        assert!(matches!(
+            bomb_order(engineer, own_tank, true),
+            Command::ForceAttack { .. }
+        ));
+        assert!(matches!(
+            bomb_order(engineer, far_tank, false),
+            Command::Attack { .. }
+        ));
     }
 }

@@ -927,6 +927,15 @@ pub struct ObjectType {
     /// Legionnaire may start erasing it (`TemporalClass::CanWarpTarget @
     /// 0x0071AE50`). No stock section authors the key.
     pub warpable: bool,
+    /// `Bombable=` (`ObjectTypeClass+0x22E`, ReadINI `0x005F942C`;
+    /// constructor default 1 at `0x005F715C`). Its only reader is the Ivan's
+    /// cursor (`InfantryClass::What_Action_OnObject` `0x0051EB24`): neither
+    /// GetFireError, target acquisition nor the bomb's attach tests it.
+    pub bombable: bool,
+    /// `BombSight=` in cells (`TechnoTypeClass+0x5F8`, ReadINI `0x00714329`):
+    /// its owner sees Ivan bombs within that 3-D radius
+    /// (`BombListClass::UpdateAll @ 0x00438BF0`). Stock: the three Engineers, 4.
+    pub bomb_sight: i32,
     /// `MindControlRingOffset=` (`TechnoTypeClass+0x60C`, ReadINI
     /// `0x00714350`; constructor default 0x8C at `0x0071103A`): the capture
     /// ring's height above a captured non-building's coordinate.
@@ -962,6 +971,9 @@ pub struct ObjectType {
     /// Triggers `EngineerRepair` cursor on damaged friendly buildings and
     /// `Enter` cursor on capturable enemy buildings when this unit is selected.
     pub engineer: bool,
+    /// `Ivan=` (`InfantryTypeClass+0xEAE`, ReadINI `0x005244C3`, infantry
+    /// only): the bomb cursor (`0x0051EB24..0x0051EB7E`), its only reader.
+    pub ivan: bool,
 
     /// Whether this unit can self-deploy/undeploy via the Deploy command.
     /// Parsed from `Deployer=yes` in rules.ini. Triggers `Deploy`/`NoDeploy`
@@ -2103,6 +2115,8 @@ impl ObjectType {
                 .get_bool("ImmuneToPsionics")
                 .unwrap_or(category == ObjectCategory::Building),
             warpable: section.get_bool("Warpable").unwrap_or(true),
+            bombable: section.get_bool("Bombable").unwrap_or(true),
+            bomb_sight: section.get_i32("BombSight").unwrap_or(0),
             mind_control_ring_offset: section.get_i32("MindControlRingOffset").unwrap_or(0x8C),
             // "none" finds no sound (-1), which FreeUnit reads as unset.
             mind_cleared_sound: section
@@ -2136,6 +2150,7 @@ impl ObjectType {
 
             // Cursor / interaction capability flags
             engineer: section.get_bool("Engineer").unwrap_or(false),
+            ivan: category == ObjectCategory::Infantry && section.get_bool("Ivan").unwrap_or(false),
             deployer: section.get_bool("Deployer").unwrap_or(false),
             capturable: section.get_bool("Capturable").unwrap_or(false),
             needs_engineer: section.get_bool("NeedsEngineer").unwrap_or(false),

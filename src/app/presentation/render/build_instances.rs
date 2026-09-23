@@ -16,9 +16,10 @@ use crate::app::presentation::sidebar_render::{
     build_sidebar_instances as sidebar_inst_fn, build_sidebar_text_instances, current_sidebar_view,
 };
 use crate::app::presentation::ui_overlays::{
-    build_building_radius_ring_instances, build_building_status_instances,
-    build_cargo_pip_instances, build_occupant_pip_instances, build_software_cursor_instances,
-    build_unit_status_bg_instances, build_unit_status_fill_instances,
+    build_bomb_clock_instances, build_building_radius_ring_instances,
+    build_building_status_instances, build_cargo_pip_instances, build_occupant_pip_instances,
+    build_software_cursor_instances, build_unit_status_bg_instances,
+    build_unit_status_fill_instances,
 };
 use crate::map::terrain::TilePlacement;
 use crate::map::theater::TileKey;
@@ -80,6 +81,7 @@ pub(super) struct UiInstances {
     pub bracket_front: Vec<SpriteInstance>,
     pub radius_ring: Vec<SpriteInstance>,
     pub building_status: Vec<SpriteInstance>,
+    pub bomb_clock: Vec<SpriteInstance>,
     pub occupant_pip: Vec<SpriteInstance>,
     pub unit_status_bg: Vec<SpriteInstance>,
     pub unit_status_fill: Vec<SpriteInstance>,
@@ -655,6 +657,7 @@ pub(super) fn build_ui_instances(state: &AppState, sw: f32, sh: f32) -> UiInstan
     );
     let radius_ring: Vec<SpriteInstance> = build_building_radius_ring_instances(state, sw, sh);
     let building_status: Vec<SpriteInstance> = build_building_status_instances(state, sw, sh);
+    let bomb_clock = build_bomb_clock_instances(state, sw, sh);
     let occupant_pip = build_occupant_pip_instances(state, sw, sh);
     let unit_status_bg = build_unit_status_bg_instances(state, sw, sh);
     let unit_status_fill = build_unit_status_fill_instances(state, sw, sh);
@@ -701,6 +704,7 @@ pub(super) fn build_ui_instances(state: &AppState, sw: f32, sh: f32) -> UiInstan
         bracket_front: bracket.front,
         radius_ring,
         building_status,
+        bomb_clock,
         occupant_pip,
         unit_status_bg,
         unit_status_fill,

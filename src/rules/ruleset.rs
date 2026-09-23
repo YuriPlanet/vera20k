@@ -751,6 +751,13 @@ pub struct GeneralRules {
     /// ChronoOutSound=` (stock ships `ChronoMinerTeleport`). A genuinely-absent
     /// key yields `None` = no sound, not a fabricated fallback.
     pub chrono_out_sound: Option<String>,
+    /// `[AudioVisual] BombTickingSound=` (`RulesClass+0x20C`): the looping
+    /// tick at a bombed object (`BombListClass::UpdateAll @ 0x00438BF0`).
+    pub bomb_ticking_sound: Option<String>,
+    /// `[AudioVisual] BombAttachSound=` (`RulesClass+0x210`): played at the
+    /// bombed object for the planter's own player (`BombListClass::Attach @
+    /// 0x00438FD7`).
+    pub bomb_attach_sound: Option<String>,
     /// Interval in minutes between low-power degradation damage ticks on Powered=yes buildings.
     /// Parsed from DamageDelay= in [General]. Default 1.0 minute.
     pub damage_delay_minutes: f32,
@@ -1309,6 +1316,8 @@ impl Default for GeneralRules {
             fallback_coefficient: SimFixed::lit("0.1"),
             chrono_in_sound: Some("ChronoMinerTeleport".to_string()),
             chrono_out_sound: Some("ChronoMinerTeleport".to_string()),
+            bomb_ticking_sound: None,
+            bomb_attach_sound: None,
             damage_delay_minutes: 1.0,
             spy_power_blackout_frames: 1000,
             damage_fire_types: vec![],
@@ -1693,6 +1702,15 @@ impl GeneralRules {
         let condition_red_native = audio_visual
             .map(|s| s.read_double("ConditionRed", 0.25))
             .unwrap_or(0.25);
+        // The bomb sounds (Rules+0x20C/+0x210) come from the same pass.
+        let audio_visual_sound = |key: &str| {
+            audio_visual
+                .and_then(|s| s.get(key))
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty() && !s.eq_ignore_ascii_case("none"))
+        };
+        let bomb_ticking_sound = audio_visual_sound("BombTickingSound");
+        let bomb_attach_sound = audio_visual_sound("BombAttachSound");
         // Rules ReadAI6739E5..673A31 is independent of ReadGeneral.
         // Constructor66760E..66761E supplies PathDelay0.016 and blockage60.
         let ai = ini.section("AI");
@@ -1710,6 +1728,8 @@ impl GeneralRules {
                 condition_red: condition_red_native,
                 path_delay,
                 blockage_path_delay_ticks,
+                bomb_ticking_sound,
+                bomb_attach_sound,
                 ..defaults
             };
         };
@@ -2212,6 +2232,8 @@ impl GeneralRules {
                 .and_then(|s| s.get("ChronoOutSound"))
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
+            bomb_ticking_sound,
+            bomb_attach_sound,
             warp_in: AnimRef {
                 name: parse_anim_name("WarpIn", "WARPIN"),
                 frame_delay: defaults.warp_in.frame_delay,

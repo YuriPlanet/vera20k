@@ -101,6 +101,8 @@ pub(super) enum HashFeature {
     /// Replaces the two retired per-house counts with `house_tracking`;
     /// earlier schemas recompute the retired counts from the entity store.
     HouseDefeatTracking = 198,
+    /// A carried Crazy Ivan bomb (`ObjectClass+0x38` and its `BombClass`).
+    IvanBomb = 199,
 }
 
 impl HashSchema {
@@ -128,6 +130,7 @@ impl HashSchema {
                     | HashFeature::MindControl
                     | HashFeature::Temporal
                     | HashFeature::HouseDefeatTracking
+                    | HashFeature::IvanBomb
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

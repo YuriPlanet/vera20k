@@ -283,6 +283,10 @@ pub(crate) enum CursorFeedbackKind {
     /// C4 plant cursor — SEAL/Tanya/PTROOP hovering a CanC4 enemy structure
     /// (action 0x10 in gamemd, distinct mouse.shp frames from Enter).
     Demolish,
+    /// Crazy Ivan bomb cursor (action 0x35 `IvanBomb`, cursor row 38).
+    IvanBomb,
+    /// Engineer defuse cursor (action 0x39 `DisarmBomb`, cursor row 59).
+    DisarmBomb,
     /// Repair cursor mode active (sidebar wrench). `true` = an own building is
     /// under the cursor (wrench), `false` = no eligible target (no-repair).
     RepairMode(bool),

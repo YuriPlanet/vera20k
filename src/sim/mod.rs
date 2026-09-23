@@ -27,6 +27,7 @@ pub(crate) mod arena_fixture;
 pub(crate) mod building_art;
 pub(crate) mod base_plan;
 pub(crate) mod base_plan_generation;
+pub mod bomb;
 pub mod capture_manager;
 pub mod cloak_disguise;
 pub mod command;
