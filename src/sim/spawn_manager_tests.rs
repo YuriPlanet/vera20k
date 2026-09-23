@@ -3,11 +3,12 @@
 //! Coverage is scoped to the mechanism this slice landed: pool construction,
 //! the update-timer gate (negative half only), the `Spawner=yes` fire
 //! hand-off, the missile launch path (stationary gate, kamikaze window, flight
-//! speed), the impact damage, and both `Kill_All_Spawns` entry points.
+//! speed), the impact damage, both `Kill_All_Spawns` entry points, and the
+//! aircraft dock (`LandingAtDock` → `Reloading` → `ReadyDocked`).
 //!
 //! NOT covered here: the slot's `Regenerating` → `ReadyDocked` rebuild after
-//! `SpawnRegenRate`, the aircraft recall cycle (`ReturningToDock` →
-//! `LandingAtDock` → `Reloading`), and the update timer's positive edge.
+//! `SpawnRegenRate`, the `ReturningToDock` → `LandingAtDock` hand-off, and the
+//! update timer's positive edge.
 
 #![cfg(test)]
 
@@ -1366,6 +1367,136 @@ fn hornets_hold_over_the_carrier_until_the_whole_wing_is_up() {
         Some(SpawnManagerMode::Launching),
         "the manager stays in Launching until every slot is committed"
     );
+}
+
+/// A Hornet landing on its Carrier keeps its slot through the dock. The Limbo
+/// that docks it broadcasts its expiry (`ObjectClass::Limbo 0x005F4D61`), but
+/// the manager's slot arm frees a slot only for a dead child, one on the
+/// retreat tracker or a missile slot (`SpawnManagerClass::PointerExpired
+/// 0x006B7CDD..0x006B7CF2`). The docked Hornet reloads and is ready again.
+#[test]
+fn a_landing_hornet_keeps_its_slot_and_reloads() {
+    let rules = make_spawner_rules();
+    let mut sim = flat_sim();
+    let hm = empty_height_map();
+    let carrier = sim
+        .spawn_object("CARRIER", "Americans", 10, 10, 0, &rules, &hm)
+        .expect("spawn CARRIER");
+    let target = sim
+        .spawn_object("TARGET", "Yuri", 30, 10, 0, &rules, &hm)
+        .expect("spawn TARGET");
+    let tick = |sim: &mut Simulation| {
+        if let Some(manager) = sim
+            .substrate
+            .entities
+            .get_mut(carrier)
+            .and_then(|e| e.spawn_manager.as_mut())
+        {
+            manager.update_timer = SpawnTimer::ready();
+        }
+        tick_spawn_managers(sim, &rules, &[carrier], None);
+    };
+
+    // Launch the first Hornet (Idle -> Launching, then off the deck).
+    for _ in 0..2 {
+        if let Some(manager) = sim
+            .substrate
+            .entities
+            .get_mut(carrier)
+            .and_then(|e| e.spawn_manager.as_mut())
+        {
+            manager.set_target(Some(TargetKind::Entity(target)));
+        }
+        tick(&mut sim);
+    }
+    let (slot, hornet) = sim
+        .substrate
+        .entities
+        .get(carrier)
+        .and_then(|e| e.spawn_manager.as_ref())
+        .and_then(|m| {
+            m.slots
+                .iter()
+                .position(|s| s.state == SpawnSlotState::InFlight)
+                .map(|index| (index, m.slots[index].spawn.expect("launched child")))
+        })
+        .expect("a Hornet is off the deck");
+    assert!(
+        !sim.substrate
+            .entities
+            .get(hornet)
+            .unwrap()
+            .lifecycle
+            .in_limbo
+    );
+
+    // Bring it home: no wing target, over the deck, on the landing step.
+    let deck = sim
+        .substrate
+        .entities
+        .get(carrier)
+        .unwrap()
+        .position
+        .clone();
+    {
+        let manager = sim
+            .substrate
+            .entities
+            .get_mut(carrier)
+            .and_then(|e| e.spawn_manager.as_mut())
+            .unwrap();
+        manager.set_target(None);
+        manager.current_target = None;
+        manager.slots[slot].state = SpawnSlotState::LandingAtDock;
+    }
+    {
+        let child = sim.substrate.entities.get_mut(hornet).unwrap();
+        child.position = deck;
+        if let Some(locomotor) = child.locomotor.as_mut() {
+            locomotor.altitude = SimFixed::from_num(0);
+        }
+    }
+    tick(&mut sim);
+
+    let manager = sim
+        .substrate
+        .entities
+        .get(carrier)
+        .and_then(|e| e.spawn_manager.as_ref())
+        .unwrap();
+    assert_eq!(manager.slots[slot].state, SpawnSlotState::Reloading);
+    assert_eq!(
+        manager.slots[slot].spawn,
+        Some(hornet),
+        "the Limbo broadcast must not free a living child's slot"
+    );
+    assert!(
+        sim.substrate
+            .entities
+            .get(hornet)
+            .unwrap()
+            .lifecycle
+            .in_limbo
+    );
+
+    // Reload completes: the same Hornet is ready on the deck again.
+    if let Some(manager) = sim
+        .substrate
+        .entities
+        .get_mut(carrier)
+        .and_then(|e| e.spawn_manager.as_mut())
+    {
+        manager.slots[slot].timer = SpawnTimer::ready();
+    }
+    tick(&mut sim);
+    let manager = sim
+        .substrate
+        .entities
+        .get(carrier)
+        .and_then(|e| e.spawn_manager.as_ref())
+        .unwrap();
+    assert_eq!(manager.slots[slot].state, SpawnSlotState::ReadyDocked);
+    assert_eq!(manager.slots[slot].spawn, Some(hornet));
 }
 
 /// `SpawnManagerClass::PointerExpired`, target arm: the death of the wing's
