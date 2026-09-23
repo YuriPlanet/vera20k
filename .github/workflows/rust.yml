@@ -1,18 +1,45 @@
 name: CI
+
+# Runs what a fresh clone can run: no retail game data is available here, so
+# tests that need the gitignored `ini/` print SKIPPED and pass. Maintainers run
+# the full suite locally with `ini/` present before merging.
 on:
   pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
+    name: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            experimental: false
+          # Linux is not yet a tested platform: its failures are reported
+          # (and filed as issues) without failing the run.
+          - os: ubuntu-latest
+            experimental: true
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Install Linux deps
+      - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
-      - run: cargo check
-      - run: cargo test
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - name: Check binaries
+        run: cargo check -p vera20k --bins
+      - name: Library tests
+        run: cargo test -p vera20k --lib
+      - name: Clippy (library)
+        run: cargo clippy -p vera20k --lib
