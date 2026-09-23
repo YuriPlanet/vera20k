@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        So far VERA20k has only been played on Windows. Reports from Linux and macOS are especially welcome, and "it all worked" is a useful report too.
+        VERA20k has been played on Windows, Linux and macOS. Reports from any OS, GPU or setup are welcome, and "it all worked" is a useful report too.
 
         If you hit a specific bug, a separate **Bug report** for it helps as well.
 

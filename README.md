@@ -40,7 +40,7 @@ a placeholder AI.
 ## Quick start
 
 You need Rust 1.88 or newer, a GPU with Vulkan, DirectX 12 or Metal, and the game installed.
-Windows is the tested platform; Linux builds in CI.
+It has been played on Windows, Linux and macOS, and CI builds and tests all three.
 
 ```sh
 git clone https://github.com/YuriPlanet/vera20k.git
