@@ -7,96 +7,105 @@ title: VERA20k Engine
 
 Red Alert 2: Yuri's Revenge — rebuilt from scratch in Rust.
 
-The entire engine is built from two things: structs and functions. There are zero abstraction layers. Code is logically organized in files and folders. The codebase is therefore very machine and human friendly.
+This page is a short tour of the code. If it disagrees with the code, the code is right.
+
+The engine is built mostly from plain structs and functions, organized by concern in files and folders.
 
 The top-level layout under `src/`, roughly bottom-up:
 
-- `assets/` — format parsers for `.mix`, `.shp`, `.vxl`, `.pal`, `.tmp`, `.hva`, `.csf`, `.aud`. Written from scratch with `nom`, no third-party RA2 libs.
-- `util/` — low-level helpers: fixed-point math, bit utilities. Reusable everywhere.
+- `assets/` — format parsers for `.mix`, `.shp`, `.vxl`, `.hva`, `.pal`, `.tmp`, `.csf`, `.aud`, `.pcx` and Bink video. Written from scratch in this repository, with no third-party C&C format libraries.
+- `util/` — low-level helpers: fixed-point math, the original game's trig table and x87 arithmetic, config loading, compression.
 - `rules/` — parses `rulesmd.ini` / `artmd.ini` and exposes the resolved game rules.
-- `map/` — `.mmx` / `.map` parsing, theater handling (temperate / snow / urban), resolved terrain.
-- `sim/` — game state and deterministic behavior. Owns `Simulation`. Never depends on render / audio / ui / net. Major subsystems sit in their own subdirs: `combat/`, `movement/`, `pathfinding/`, `aircraft/`, `production/`, `miner/`, `superweapon/`, `vision/`, `docking/`, `world/`.
-- `render/` — wgpu sprite renderer, atlases, draw passes. Reads from sim, never writes back.
-- `sidebar/` — custom-drawn build / cameo sidebar.
-- `ui/` — egui overlays (debug panels, save/load, lobby).
-- `audio/` — sound playback through `rodio`; drains events produced by sim.
-- `net/` — multiplayer transport and lockstep.
-- `bin/` — auxiliary tools: mix browser, BIK video player, INI extractor.
-- `app_*.rs` files at the root of `src/` — the app layer that wires sim, render, ui, audio, and net together.
+- `map/` — `.mmx` / `.map` parsing, theaters, resolved terrain, map triggers and the random map generator (`map/rmg/`).
+- `sim/` — game state and deterministic behavior. Owns `Simulation`. Never depends on `render/`, `ui/`, `sidebar/`, `audio/` or `net/`. Major subsystems sit in their own subdirs: `combat/`, `movement/`, `pathfinding/`, `aircraft/`, `production/`, `miner/`, `superweapon/`, `vision/`, `docking/`, `world/`.
+- `render/` — the wgpu renderer: atlases, terrain, sprites, voxels, radar, shroud and sidebar chrome.
+- `sidebar/` — the in-game sidebar's layout and state (cameos, tabs, power bar). The drawing happens in `render/` and `app/presentation/`.
+- `ui/` — menus, dialogs and in-game screens: main menu, skirmish setup, pause menu, score screen, messages.
+- `audio/` — sound effects and music through `rodio`; plays the sound events the simulation produces.
+- `net/` — deterministic lockstep. There is no network transport yet.
+- `bin/` — extra programs: MIX browser, Bink video player, INI extractor and asset inspection tools.
+- `app/` — the app layer that wires sim, render, ui, audio and net together.
 
-When adding a new file, ask which of those concerns it belongs to. If it's gameplay logic, it goes in `sim/`. If it touches the GPU, it goes in `render/`. If it talks to both, it's app layer.
+A few files at the root of `src/` handle skirmish and match startup (`skirmish_*.rs`, `match_bootstrap.rs`) and headless retail-map loading for tools (`headless_scenario.rs`).
 
-To learn what a specific file does, read its `//!` header — every module starts with a short comment stating its purpose and what it depends on.
+When adding a new file, ask which of those concerns it belongs to. If it's gameplay logic, it goes in `sim/`. If it touches the GPU, it goes in `render/`. If it connects the two, it's app layer.
 
-All game state lives in one struct: `Simulation`.
+To learn what a specific file does, read its `//!` header. Most modules start with a short comment stating their purpose and what they may depend on.
 
-It contains:
+All mutable game state lives in one struct: `Simulation` (`src/sim/world/mod.rs`). Match data that never changes during a match (rules, map heights, trigger definitions) is bound beside it in `SimRuntime` (`src/sim/runtime.rs`).
 
-- `entities: EntityStore` — every unit/building/aircraft in the game
-- `production: ProductionState` — build queues, credits, rally points per player
-- `fog: FogState` — shroud/visibility per player
-- `power_states` — per-player power grid (output, drain, blackout)
-- `super_weapons` — per-player superweapon countdowns
-- `occupancy: OccupancyGrid` — which entity occupies which cell
-- `houses` — per-player state (alliances, defeat status)
+`Simulation` contains, among other fields:
+
+- `substrate: ObjectSubstrate` — the object stores and their order. Units, buildings and aircraft live in its `EntityStore`; animations, voxel debris and particle systems have their own stores. It also holds the active-object order and the cell occupancy grids. (Projectiles and waves are separate `Simulation` fields.)
+- `session: ScenarioSession` — scenario identity, seed, match options and the frame counters (`tick`, `binary_frame`)
+- `houses` — per-player state such as credits and defeat status (the original's `HouseClass`)
+- `house_alliances` — the alliance graph
+- `production: ProductionState` — production bookkeeping (finished items, active factories), plus ore growth and terrain objects
+- `fog: FogState` — shroud and visibility per player
+- `power_states` — per-player power (output, drain, low power, spy blackout timer)
+- `super_weapons` — per-player superweapon instances and their charge timers
+- `projectiles` — shots in flight
 - `terrain_costs` — pathfinding cost grids
 - `zone_grid` — zone connectivity for unreachability checks
-- `overlay_grid` — ore, gems, walls on the map
-- `bridge_state` — bridge health and connectivity
-- `rng: SimRng` — single deterministic random number generator
-- `tick: u64` — current game tick counter
-
-Each of those is a plain struct or a map of structs. No behavior attached to them.
+- `overlay_grid` — per-cell overlay state on the map (ore density, wall damage, bridge frames)
+- `bridge_state` — bridge runtime state (damage and destruction, used by combat and pathfinding)
+- `scenario_rng`, `main_rng`, `mapgen_rng` — the three deterministic random number streams (see Determinism below)
 
 Each `GameEntity` is one struct with optional fields.
 
-Every object in the game — tank, soldier, building, aircraft — is the same struct. Always-present fields: `stable_id`, `position`, `health`, `owner`, `facing`, `type_ref`, `category`. Optional fields are `Option<T>`: a tank has `locomotor` + `turret_facing` + `drive_track`, a building has `production`, a harvester has `miner`. No component has methods — they're all data.
+Every infantry unit, vehicle, ship, building and aircraft is the same struct. Always-present fields include `stable_id`, `position`, `health`, `owner`, `facing`, `type_ref` and `category`. Optional parts are `Option<T>`: a moving unit has a `locomotor`, a harvester has a `miner`.
 
-Behavior is plain functions.
+Behavior lives in functions and in methods on `Simulation`, grouped by mechanism.
 
-(Example functions below)
-- `tick_movement()` — reads entity positions and locomotor data, writes new positions
-- `tick_combat()` — reads attack targets and weapon stats, applies damage
-- `tick_production()` — advances build queues, spawns finished units
-- `tick_power_states()` — recalculates per-player power from buildings
-- `tick_superweapons()` — counts down timers, fires effects
+Some examples:
+- `advance_live_object_pass()` — every active object takes its turn (AI, movement, lifecycle effects), in the original's active-object order
+- `refresh_fog()` — updates shroud and visibility
+- `tick_power_states()` — recalculates each player's power
+- `tick_superweapon_instances()` — advances superweapon charge timers and handles power suspend and resume
+- `tick_repairs()` — heals repairing buildings and charges their owners
 - `tick_ore_growth_rungs()` — grows and spreads ore in the overlay grid
 
-These functions all read and write to the same `Simulation` struct. 45 times a second at 45 FPS(standard multiplayer FPS) There is no message buses, no event systems.
+The frame.
 
-The game loop is one function calling the others in order.
+One production entry point runs one frame: `SimRuntime::advance_frame()`, which calls `Simulation::advance_master_frame()` in `src/sim/world/mod.rs`. It follows the original game's frame order: commands due this frame → triggers → ore growth and active superweapon effects → team scripts → the live object pass → vision → power → superweapon timers → combat → crates → production, repairs and docks → houses, defeat checks and AI → frame commit → removal of dead objects → state hash. `Simulation::advance_tick()` is only a test adapter around the same frame.
 
-`Simulation::advance_tick()` calls: commands → movement → combat → vision → power → superweapons → production → AI → defeat check → state hash. Every tick, same order.
+Output for the rest of the program leaves through per-frame batches (`SimFrameOutput`: sound events, weapon-fire events, lifecycle outputs, overlay changes, lighting events) that the app drains each frame. Inside `sim/`, some mechanisms keep their own queues and message links, such as the radio contact bus between objects (`sim/radio/`), which uses the original's radio message codes.
 
-Current foundational scheduler TODO.
-
-The repo-local roadmap for native `LogicClass`-style timing and scheduler work is
-stored at `docs/plans/2026-05-28-foundational-scheduler-roadmap-todo.md`. It
-covers the contract stack for native frame timing, active object scheduling,
-ObjectClass/TechnoClass lifecycle, global tick spine order, factory/house tail
-order, and projectile/AnimClass same-tick behavior.
+Planning history. A May 2026 plan for moving the frame onto the original's scheduler is at `docs/plans/2026-05-28-foundational-scheduler-roadmap-todo.md`. Parts of it have landed since then (the active-object pass above), so read the code first.
 
 Rendering.
 
-A 2D sprite renderer using wgpu. At map load, all sprites (buildings, infantry, terrain tiles, overlays) are packed into atlas textures — big images containing many sprites side by side. Voxel models (vehicles, aircraft) are pre-rendered into 2D sprites and packed into atlases the same way.
+A 2D renderer using wgpu. At map load, terrain tiles and sprites (buildings, infantry, overlays) are packed into atlas textures — big images containing many images side by side. Voxel models (vehicles, aircraft) are rasterized to 2D images as well; see `unit_atlas.rs` and the `vxl_*.rs` files in `render/`.
 
-Each frame, the renderer walks through all entities in `Simulation`, reads their position, facing, health, and animation frame, looks up the matching sprite in the atlas, and tells the GPU where to draw it on screen. Isometric depth is handled by draw order and depth values — there's no 3D geometry.
+Each frame, the app's presentation code (`src/app/presentation/`) reads entity state from the simulation — position, facing, health, animation frame — and builds sprite instances, and `render/` draws them. Isometric depth is handled by draw order and depth values.
 
-The render code only reads from `Simulation`. It never writes back. You can change rendering without touching game logic, and vice versa.
+Rendering reads simulation state and never writes back. You can change rendering without touching game logic, and vice versa.
 
 App layer.
 
-The app layer wires everything together. It contains no game logic and no rendering logic — just the connections between them.
+The app layer wires everything together: the window and event loop, input, menus, loading, saving, and the hand-off between simulation, renderer and audio. Gameplay rules belong in `sim/`, not here.
 
 When you click on a unit, the app layer handles that. It figures out which entity you clicked, translates it into a command, and passes it to the simulation. The app layer is the translator between "what the player did" and "what the simulation understands."
 
-The simulation runs at a fixed 45 ticks per second, independent of frame rate. The app layer keeps track of elapsed time and runs the right number of sim ticks each frame — sometimes one, sometimes two if the frame was slow, never more than eight to prevent spiral-of-death lag.
+Timing. `src/util/fixed_math.rs` defines two rates:
 
-After each tick, the app layer hands the updated simulation state to the renderer, which draws the frame. It also drains sound events that the simulation produced (weapon fired, unit died, construction complete) and plays them through the audio system.
+- `RA2_LOGIC_FRAMES_PER_SECOND = 15` — the original game's logic-frame rate at normal speed. Every INI time value (rate of fire, reload, C4 delay, ore growth, trigger timers) is converted to frames through it.
+- `SIM_TICK_HZ = 45` — VERA's own fixed step constant. The game passes its step length, `SIM_TICK_MS` = 22 ms, to every simulation frame. It is not the original's logic rate. Headless tools step at 66 ms instead; `src/headless_scenario.rs` records that difference.
 
-Like everything else, it's split into files by concern — `app_input.rs`, `app_camera.rs`, `app_commands.rs`, `app_sidebar_build.rs` — but they're all just functions operating on one shared `AppState` struct. 
+The simulation never reads wall-clock time. The app's frame pacer (`src/app/match_runtime/frame_pacer.rs`) decides when the next gameplay frame may run, using the original's GameSpeed timing, and the app advances the simulation one frame at a time.
 
-Everything in `Simulation` is deterministic. All sim math uses `fixed`-point types — never `f32` / `f64`, since floats drift across CPUs. There is exactly one RNG (`SimRng`); any code that needs randomness pulls from it. `EntityStore` is a `BTreeMap<u64, GameEntity>` so iteration order is stable. At the end of every tick the simulation produces a state hash — two clients on the same inputs must agree on it. That's what makes lockstep multiplayer and replays work, and it's why nothing in `sim/` is allowed to call into `render/`, `audio/`, `ui/`, or `net/`.
+After each frame, the app layer hands the updated simulation state to the renderer, which draws the frame. It also drains the sound events that the simulation produced (weapon fired, unit died, construction complete) and plays them through the audio system.
+
+Like everything else, it's split into folders by concern — `app/input/`, `app/presentation/`, `app/match_runtime/`, `app/frontend/`, `app/loading/`, `app/persistence/` — around one shared `AppState` struct.
+
+Determinism.
+
+Everything in `Simulation` must be deterministic: the same state, inputs and random seed give the same result on every supported platform and CPU.
+
+- Math. Simulation math prefers `SimFixed`, a 16.16 fixed-point type (`src/util/fixed_math.rs`), because floats can differ across CPUs and compilers. Where the original game's floating-point behavior matters, some code reproduces it exactly with integer arithmetic (`src/util/native_x87.rs`). Some `sim/` code still uses `f32` / `f64` directly; the project rule is that each such use is documented and validated.
+- Randomness. There are three `SimRng` streams, matching the original's three generators: `scenario_rng` (in-game draws such as scatter, debris and ore growth), `main_rng` (the original's global generator; death sounds, for example) and `mapgen_rng` (map generation). Which stream a draw uses matters: a draw on the wrong stream changes every later draw.
+- Order. Entities in `EntityStore` are kept in a `BTreeMap` keyed by stable id, so storage iteration is sorted. The order in which objects take their turn is separate: the active-object vector in `ObjectSubstrate`, which follows the original.
+
+At the end of every frame the simulation produces a state hash. Two clients with the same inputs must agree on it. Lockstep multiplayer depends on this (the network transport does not exist yet), and the diagnostic command log records the hashes to help find desyncs. It's also why nothing in `sim/` is allowed to call into `render/`, `ui/`, `sidebar/`, `audio/` or `net/`.
 
 ---
-
