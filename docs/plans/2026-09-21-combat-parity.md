@@ -223,13 +223,21 @@ Techno death broadcast and Stun (`feature/combat-death-stun`, no schema change),
 
 SpawnManager slot guard (`feature/combat-carrier-dock`), owner `sim/spawn_manager.rs`:
 - `SpawnManagerClass::PointerExpired` `6B7C60` keeps a slot while its child has Health, is not on
-  the retreat tracker (+6CA, set only by `SpawnRetreat__Push` `54E47D` for MissileSpawn children)
-  and the slot is not a missile slot (`6B7CDD..6B7CF2`). VERA freed the slot on any expiry, and
-  `step_landing`'s Limbo broadcasts (`5F4D61`), so every docking Hornet freed its own slot: the
-  Hornet stayed in limbo for good and the slot fell through `reap_expired_spawns` into a full
-  `SpawnRegenRate` rebuild (600 frames) instead of the 150-frame reload.
-- Test: a Hornet lands, keeps its slot through the dock, reloads and is ready again (fails
-  without the guard). Rust regression only.
+  the retreat tracker (+6CA: cleared by the aircraft constructor, set only by
+  `SpawnRetreat__Push` `54E47D`, whose callers all free the slot straight after) and the slot is
+  not a missile slot (`6B7CDD..6B7CF2`). VERA freed the slot on any expiry, and `step_landing`'s
+  Limbo broadcasts (`5F4D61`), so a docking Hornet would free its own slot, stay in limbo for good
+  and leave the slot to a full `SpawnRegenRate` rebuild (600 frames) instead of the 150-frame
+  reload.
+- Latent in play: VERA does not land a recalled Hornet yet (the Fly arrival BeginLanding call
+  `4CF520` is unported; the recall Move ends in Idle, then Guard), so no production frame reaches
+  the dock today. The test stages the landing step by hand: the Hornet keeps its slot, reloads on
+  `SpawnReloadRate` and is ready again (fails without the guard). Rust regression only.
+- Critic (one pass): guard matches native; wording fixed (latency, +6CA writers). Follow-ups for
+  the Carrier wing mechanism: native state 3 re-issues Assign_Target and QueueMission(Attack) each
+  pass as no-ops when unchanged (`6B7718`, `6B772C`), where VERA restarts the attack run from
+  sub-state 0; Kill_All_Spawns crashes airborne MissileSpawn=no children (`SpawnRetreat__Push` ->
+  vt+3DC `AircraftClass::Crash` `4DEBB0`), where VERA lets them fly on; the Fly arrival landing.
 
 ## Native evidence inventory
 

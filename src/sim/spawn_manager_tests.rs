@@ -1373,7 +1373,10 @@ fn hornets_hold_over_the_carrier_until_the_whole_wing_is_up() {
 /// that docks it broadcasts its expiry (`ObjectClass::Limbo 0x005F4D61`), but
 /// the manager's slot arm frees a slot only for a dead child, one on the
 /// retreat tracker or a missile slot (`SpawnManagerClass::PointerExpired
-/// 0x006B7CDD..0x006B7CF2`). The docked Hornet reloads and is ready again.
+/// 0x006B7CDD..0x006B7CF2`). The docked Hornet reloads on `SpawnReloadRate`
+/// and is ready again. VERA does not land a recalled Hornet yet (the Fly
+/// arrival's BeginLanding call, `0x004CF520`, is unported and the recall Move
+/// ends in Idle), so the landing step is staged by hand here.
 #[test]
 fn a_landing_hornet_keeps_its_slot_and_reloads() {
     let rules = make_spawner_rules();
@@ -1469,6 +1472,10 @@ fn a_landing_hornet_keeps_its_slot_and_reloads() {
         manager.slots[slot].spawn,
         Some(hornet),
         "the Limbo broadcast must not free a living child's slot"
+    );
+    assert_eq!(
+        manager.slots[slot].timer.duration, 150,
+        "SpawnReloadRate, not the SpawnRegenRate rebuild"
     );
     assert!(
         sim.substrate

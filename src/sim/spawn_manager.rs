@@ -1319,10 +1319,13 @@ pub fn detonate_missiles(sim: &mut Simulation, detonated: &[u64]) {
 /// state 6 writing `childType+0xA0` (`Strength=`) into `+0x6C`/`+0x70`. The
 /// guard exists because `ObjectClass::Limbo` broadcasts (`0x005F4D61`), and a
 /// Hornet docking through `step_landing`'s Limbo would otherwise expire its own
-/// slot and strand itself in limbo. `+0x6CA` is written only by
-/// `SpawnRetreat__Push` (`0x0054E47D`), for a `MissileSpawn=` child; VERA's
-/// only slotted children of that kind sit in missile slots, which the
-/// `is_missile_spawn` test already frees.
+/// slot and strand itself in limbo. `+0x6CA` needs no VERA field: on an
+/// aircraft the constructor clears it (`0x00413D4E`) and only
+/// `SpawnRetreat__Push` sets it (`0x0054E47D`, a `MissileSpawn=` child), and
+/// every Push caller frees the slot right after — Kill_All_Spawns directly
+/// (`0x006B71C2`), the launch and ClearAllTargets through this routine
+/// (`0x006B7ACD`, `0x006B7C16`) — except a missile slot's launch, and a
+/// missile slot is freed on any expiry by the `is_missile_spawn` test.
 pub fn notify_pointer_expired(sim: &mut Simulation, listener_id: u64, expired_id: u64) {
     if listener_id == expired_id {
         // The owner arm; `Simulation::spawn_manager_owner_expired` already ran it.
