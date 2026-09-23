@@ -66,6 +66,24 @@ and source; sim-behavior commits cite their evidence.
 Consult the [Ghidra reference](docs/research/ghidra-workflow.md) for access,
 interpretation pitfalls and shared-database edits.
 
+## Retail data
+
+gamemd behavior is native code plus the INI keys it reads; port both. For each key,
+port the native read: file and layer, section, exact-case key, default, parser, clamps,
+read order and any post-read pass. Defaults come from the constructor or the reader's
+default argument, never from retail values. Take type names and tuning values from the
+keys gamemd reads; hard-code a name only where gamemd holds the literal. Parse with the
+native readers in `src/rules/ini_value.rs`, not `str::parse`.
+
+Read retail values in every applicable layer before choosing constants, priorities or
+fixtures. Each scenario re-reads rules from `RULESMD.INI`, `LANGRULE.INI` when present,
+the selected mode INI, then the map (campaigns and one mode add passes); the map also
+extends `AIMD.INI`. `ARTMD.INI` and the sound, EVA and theme INIs are not layered, and
+gamemd never reads the RA2 base INIs in `ini/`. A branch gated on a key the retail rules
+leave unset is dormant, not unreachable. Check retail data with a gamemd-exact parse,
+not grep. When INI values decide an outcome, test through the production reader on
+retail INIs. Details: [retail INI reference](src/rules/mod.rs).
+
 ## Architecture and delivery
 
 Use the simplest implementation that fully satisfies the required behavior. Avoid
@@ -164,10 +182,10 @@ Avoid tests that merely mirror the implementation or require maintaining a secon
 - Working Rust: `cargo check -p vera20k` as needed; focused
   `cargo test -p vera20k --lib <module_path>::`.
 - Rust PR readiness: one full `cargo test -p vera20k --lib` plus
-  `cargo clippy -p vera20k --lib` on the final candidate with retail `ini/`; no
-  baseline runs. Validate later fixes with focused tests; repeat both only when a
-  fix reaches beyond the tested modules or a `main` merge conflicts. CI runs both
-  on every PR, without retail INIs.
+  `cargo clippy -p vera20k --lib` on the final candidate with retail `ini/` and
+  `VERA20K_REQUIRE_RETAIL_INI=1`; no baseline runs. Validate later fixes with
+  focused tests; repeat both only when a fix reaches beyond the tested modules or
+  a `main` merge conflicts. CI runs both on every PR, without retail INIs.
 - Asset binding, loader or rules-closure changes: a release-build retail map load
   before merge; the lib suite never runs the app loader against retail assets.
 - Docs/skills: validate content, links/examples and tooling; no Cargo suite.
@@ -199,10 +217,8 @@ For Rust style beyond this contract, consult the
 APIs, hot loops, error handling or tests; this contract wins on conflict.
 
 Resolve `<main-checkout>` with `git worktree list`; its `ini/`, config and `LOCAL.md`
-are machine-local. Read retail data before selecting constants.
-YR loads standalone `RULESMD.INI`/`ARTMD.INI`/`AIMD.INI`, then applicable language,
-mode and map overrides—no underlying RA2 INI merge. Use `asset`/`asset-browser`;
-a successful parse or plausible render is not correctness proof.
+are machine-local. Use `asset`/`asset-browser`; a successful parse or plausible
+render is not correctness proof.
 
 Check compatibility before dependency changes; document non-obvious decisions near
 their owner. Edit skills in `.agents/skills/`; generate Claude copies with
