@@ -274,21 +274,29 @@ name = "   "
         assert_eq!(config.profile.player_name(), None);
     }
 
+    /// Host-native paths: `Path` only splits on the host's separators, so a
+    /// Windows literal has no parent on Linux or macOS.
+    fn host_path(windows: &str, unix: &str) -> PathBuf {
+        PathBuf::from(if cfg!(windows) { windows } else { unix })
+    }
+
     #[test]
     fn retail_asset_root_is_the_executable_directory() {
-        let executable = Path::new(r"C:\Westwood\RA2\gamemd.exe");
+        let directory = host_path(r"C:\Westwood\RA2", "/opt/westwood/ra2");
+        let executable = directory.join("gamemd.exe");
         assert_eq!(
-            retail_asset_root_from_executable(executable).expect("module directory"),
-            PathBuf::from(r"C:\Westwood\RA2")
+            retail_asset_root_from_executable(&executable).expect("module directory"),
+            directory
         );
     }
 
     #[test]
     fn retail_asset_root_preserves_a_volume_root_boundary() {
-        let executable = Path::new(r"C:\gamemd.exe");
+        let root = host_path(r"C:\", "/");
+        let executable = root.join("gamemd.exe");
         assert_eq!(
-            retail_asset_root_from_executable(executable).expect("volume root"),
-            PathBuf::from(r"C:\")
+            retail_asset_root_from_executable(&executable).expect("volume root"),
+            root
         );
     }
 
