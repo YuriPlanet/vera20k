@@ -1,0 +1,35 @@
+name: Test (reusable)
+
+# The library test job, shared by the per-platform workflows so each platform
+# gets its own live README badge. Runs what a fresh clone can run: no retail
+# game data is available here, so tests that need the gitignored `ini/` print
+# SKIPPED and pass. Maintainers run the full suite locally with `ini/` present
+# before merging.
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+
+env:
+  # rust-lld ships with rustup and links the large test binary much faster
+  # than link.exe (the maintainer's checkouts use it too). x86-64 Windows only.
+  CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: rust-lld
+
+jobs:
+  test:
+    name: test (${{ inputs.os }})
+    runs-on: ${{ inputs.os }}
+    # About twice the slowest normal run (a cold-cache Windows build takes
+    # ~21 min), so a hung test fails fast without false timeouts.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - name: Library tests
+        run: cargo test -p vera20k --lib

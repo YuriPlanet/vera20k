@@ -1,0 +1,18 @@
+name: macOS
+
+# macOS on Apple Silicon (ARM64): the pinned golden values here also check cross-architecture determinism.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: macos.yml-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+    with:
+      os: macos-latest

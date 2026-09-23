@@ -1,8 +1,14 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20k hero image" width="100%">
 
 [![VERA20k Discord](https://img.shields.io/badge/VERA20k%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/kmjRUn5m5F)
-[![CI](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/rust.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/YuriPlanet/vera20k/actions/workflows/rust.yml)
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-blue?style=for-the-badge)](LICENSE-GPL)
+
+[![Windows](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/windows.yml?branch=main&label=Windows&style=flat-square)](https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml)
+[![Linux](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/linux.yml?branch=main&label=Linux&style=flat-square)](https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml)
+[![macOS](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/macos.yml?branch=main&label=macOS&style=flat-square)](https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml)
+[![Linux ARM](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/linux-arm.yml?branch=main&label=Linux%20ARM&style=flat-square)](https://github.com/YuriPlanet/vera20k/actions/workflows/linux-arm.yml)
+[![Windows ARM](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/windows-arm.yml?branch=main&label=Windows%20ARM&style=flat-square)](https://github.com/YuriPlanet/vera20k/actions/workflows/windows-arm.yml)
+[![Clippy](https://img.shields.io/github/actions/workflow/status/YuriPlanet/vera20k/rust.yml?branch=main&label=Clippy&style=flat-square)](https://github.com/YuriPlanet/vera20k/actions/workflows/rust.yml)
 
 # VERA20k
 
