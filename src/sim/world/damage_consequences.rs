@@ -197,15 +197,20 @@ impl DamageConsequences {
         // plays the art type's `Report=`/`StartSound=`, and only the real
         // AnimType carries its `Translucent=` and `Rate=`.
         for fx in std::mem::take(&mut effects.explosion_effects) {
-            world.spawn_combat_explosion_anim(
-                rules,
-                fx.shp_name,
-                fx.rx,
-                fx.ry,
-                fx.sub_x,
-                fx.sub_y,
-                fx.z,
-            );
+            match fx.death {
+                Some(spawn) => world.admit_death_anim(rules, fx.shp_name, spawn),
+                None => {
+                    world.spawn_combat_explosion_anim(
+                        rules,
+                        fx.shp_name,
+                        fx.rx,
+                        fx.ry,
+                        fx.sub_x,
+                        fx.sub_y,
+                        fx.z,
+                    );
+                }
+            }
         }
         if let DamageDelivery::Ordinary { fire_events, .. } = &delivery {
             admit_electric_sparks(world, rules, fire_events);

@@ -289,24 +289,14 @@ pub struct WarheadType {
     /// @ `0x00721B4F`, sections `[Cruentus]`/`[Vinifera]`/`[Aboreus]`) naming
     /// AnimTypes CRYSTAL1-4, unrelated to either.
     ///
-    /// The consuming system is absent, not merely unwired. `VoxelAnimClass`
-    /// (constructor `0x007493B0`, AI `0x00749F30`, destructor `0x007499F0`,
-    /// draw `0x0046B0C0`; type class `0x0074AD80`) has no store, no type
-    /// registry and no `BounceClass` physics here — note that
-    /// `sim::components::VoxelAnimation` is an unrelated per-entity voxel frame
-    /// cursor, not this.
-    /// - Trigger: any vehicle or building death (through the TechnoType keys;
-    ///   the warhead keys need a mod to author them at all).
-    /// - Player effect: no debris is thrown. Wrecks vanish into their explosion
-    ///   instead of scattering tyres, hull pieces and gas tanks, and buildings
-    ///   drop none of their `MinDebris` chunks.
-    /// - Frequency: continuous — every unit death in every match, via the
-    ///   TechnoType side. Zero for these warhead fields in unmodded play.
-    /// - Downstream risk: the launch side belongs to the death path
-    ///   (`GSI-08.11`) and the falling-object physics to `BounceClass`, which
-    ///   `Bouncer=` SHP anims need too, so the two rows want one shared physics
-    ///   owner rather than two. Bridge collapse `MetallicDebris=` waits on the
-    ///   same owner.
+    /// The TechnoType side is ported: `throw_debris_for_death` launches a dying
+    /// object's `DebrisTypes=` into the `VoxelAnimClass` store
+    /// (`sim::voxel_anim`) and its `DebrisAnims=` as anims. These four warhead
+    /// keys still have no reader.
+    /// - Trigger: a mod authoring warhead debris keys; none in stock.
+    /// - Player effect: none in stock; the native reader of these warhead
+    ///   fields is not traced.
+    /// - Frequency: zero in unmodded play.
     pub debris_types: Vec<String>,
     /// Per-type debris count cap.
     ///
