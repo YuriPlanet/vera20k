@@ -4,7 +4,9 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::intern::InternedId;
-use crate::sim::mission::concrete_effects::represented_assign_target;
+use crate::sim::mission::concrete_effects::{
+    assign_target_commits, represented_assign_target_admitted,
+};
 use crate::sim::movement::locomotor::MovementLayer;
 
 use super::Simulation;
@@ -190,18 +192,14 @@ fn stock_cloak_tick_facts(
     // residuals on `can_auto_cloak` above — `object.cloakable` inside
     // `is_cloakable` is that byte's stock seed, and the crate-granted and
     // `CloakStop=`-while-moving halves are both unreachable in stock data.
-    let should_uncloak = if is_cloakable
-        && !emp_active
-        && !paralyzed
-        && !deploy_pending
-        && !chrono_active
-    {
-        false
-    } else if rank_cloak {
-        false
-    } else {
-        !cloaked_by_own_house
-    };
+    let should_uncloak =
+        if is_cloakable && !emp_active && !paralyzed && !deploy_pending && !chrono_active {
+            false
+        } else if rank_cloak {
+            false
+        } else {
+            !cloaked_by_own_house
+        };
     Some(crate::sim::cloak_disguise::CloakTickFacts {
         current_frame,
         state_zero_head_allows,
@@ -314,13 +312,14 @@ pub(crate) fn sensor_reevaluate_stock_cloak(
     if start.is_some_and(|start| start.play_sound) {
         emit_configured_cloak_sound(sim, id, rules);
     }
+    let commits = assign_target_commits(&sim.substrate.entities, Some(TargetKind::Entity(id)));
     for &targeter_id in &reassigned_targeters {
         let targeter = sim
             .substrate
             .entities
             .get_mut(targeter_id)
             .expect("saved Techno targeter remains registered during sensor callback");
-        represented_assign_target(targeter, Some(TargetKind::Entity(id)));
+        represented_assign_target_admitted(targeter, Some(TargetKind::Entity(id)), commits);
     }
     SensorCloakReevaluation {
         cloak_transitioned: start.is_some_and(|start| start.transitioned),
@@ -668,12 +667,13 @@ pub(super) fn tick_stock_cloak_producer(sim: &mut Simulation, id: u64, rules: &R
         // re-assign is a no-op for the pointer itself — `Assign_Target @
         // 0x006FCDB0` returns early on an unchanged target — but it still clears
         // each receiver's passive-acquire provenance byte `+0x50C` first, which
-        // `represented_assign_target` reproduces.
+        // `represented_assign_target_admitted` reproduces.
         let retained = sensor_targeters_in_native_dispatch_order(sim, id);
         detach_targeters_on_cloak(sim, id, rules);
+        let commits = assign_target_commits(&sim.substrate.entities, Some(TargetKind::Entity(id)));
         for targeter_id in retained {
             if let Some(targeter) = sim.substrate.entities.get_mut(targeter_id) {
-                represented_assign_target(targeter, Some(TargetKind::Entity(id)));
+                represented_assign_target_admitted(targeter, Some(TargetKind::Entity(id)), commits);
             }
         }
     }

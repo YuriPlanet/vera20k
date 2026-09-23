@@ -1257,24 +1257,32 @@ pub fn detonate_missiles(sim: &mut Simulation, detonated: &[u64]) {
 /// re-issue and its `HP = 1` marking are UNCHECKED.**
 ///
 /// This routine never touches `CurrentTarget`/`QueuedTarget`; the caller
-/// decides. `Simulation::uninit` pairs it with `ClearAllTargets`, matching the
-/// owner arm of `SpawnManagerClass::PointerExpired`, while
+/// decides. `Simulation::spawn_manager_owner_expired` pairs it with
+/// `ClearAllTargets`, matching the owner arm of
+/// `SpawnManagerClass::PointerExpired`, while
 /// `Simulation::change_owner` calls only this one. The *target* arm of the same
 /// native routine also clears targets and is a separate path entirely — see
 /// [`notify_pointer_expired`].
 ///
 /// Native callers of this routine, and which are wired here:
 /// - `SpawnManagerClass::PointerExpired(owner)` — WIRED, via
-///   `Simulation::uninit`, together with the `ClearAllTargets` it pairs with.
+///   `Simulation::spawn_manager_owner_expired` at the killing hit's Destroy
+///   broadcast and again at UnInit, together with the `ClearAllTargets` it
+///   pairs with. Conceal's Destroy(1) broadcast would reach it too; VERA's
+///   conceal does not run it (RESIDUAL, see `object_conceal_with_context`).
 /// - `TechnoClass::ChangeOwner` (`0x0070157E`) — WIRED, via
 ///   `Simulation::change_owner`; this is the mind-control path.
 /// - `TemporalClass::InitiateWarp` (`0x0071AF39`) — **not wired.** A
 ///   chrono-warped V3/Dreadnought keeps its pool across the warp. Fires only
 ///   when a Chrono Legionnaire targets one of the five spawner units.
-/// - `TechnoClass::PerformDeploy` (`0x00710021`) — **not wired.** No stock
-///   spawner unit sets `DeploysInto=`, so this arm is unreachable in stock YR.
-/// - `FootClass::StopFiring` → `FUN_006fcd40` — **not wired**, and gated on
-///   `owner+0x6AD` which was not traced. UNCHECKED.
+/// - `TechnoClass::ImbueLocomotor` (`0x00710021`), the Magnetron lift reached
+///   only from the IsLocomotor arm of `BulletClass::DetonateAtCoord`
+///   (`0x004696FB`) — **not wired**; VERA does not port that arm. A Magnetron
+///   lifting a V3 Launcher reaches it.
+/// - `TechnoClass::Stun` (`0x006FCD40`, entered from `FootClass::Stun @
+///   0x004D5660`) — WIRED for the death arm via `Simulation::techno_death_stun`.
+///   Its gate, Foot+0x6AD, is set only by `TechnoClass::ImbueLocomotor @
+///   0x00710000` (a Magnetron lift), which VERA does not port.
 /// - The destructor — covered by the `uninit` hook.
 /// `SpawnManagerClass::PointerExpired` (`decompile_function 0x006B7C60`) for
 /// one listening manager, minus the owner arm.
@@ -1300,8 +1308,8 @@ pub fn detonate_missiles(sim: &mut Simulation, detonated: &[u64]) {
 /// their ammo never reaches zero, so the recall condition never fires and they
 /// hover until the player issues a fresh order.
 ///
-/// The owner arm is handled at `Simulation::uninit`, which calls
-/// [`kill_all_spawns`] and [`clear_all_spawn_targets`] directly.
+/// The owner arm is handled by `Simulation::spawn_manager_owner_expired`, which
+/// calls [`kill_all_spawns`] and [`clear_all_spawn_targets`] directly.
 ///
 /// **Slot-arm difference.** Native guards the slot arm with an *alive-child*
 /// test — `child+0x6C > 0 && child+0x6CA == 0 && node+0x14 != 1`, i.e. health
@@ -1309,13 +1317,15 @@ pub fn detonate_missiles(sim: &mut Simulation, detonated: &[u64]) {
 /// `+0x6C` is Health, proven by state 6 writing `childType+0xA0` (`Strength=`)
 /// into `+0x6C`/`+0x70`. The guard exists because native delivers
 /// `PointerExpired` for *living* children too, on limbo — a Hornet docking
-/// would otherwise expire its own slot. Omitting it is safe here only because
-/// `Simulation::techno_limbo` does not run the expiry broadcast, so this
-/// function is never called for a child that is merely being limboed.
-/// Recorded, not implemented.
+/// would otherwise expire its own slot. DEFECT, not yet ported: VERA omits the
+/// guard although `Simulation::techno_limbo` does broadcast (through
+/// `object_conceal_with_context`), so a Hornet limboed by `step_landing` frees
+/// its own slot, `restore_docked_child` then finds no child, and the slot never
+/// leaves Reloading. Trigger: every carrier recall. Owner: the next
+/// SpawnManager mechanism, with a carrier recall test.
 pub fn notify_pointer_expired(sim: &mut Simulation, listener_id: u64, expired_id: u64) {
     if listener_id == expired_id {
-        // The owner arm; `Simulation::uninit` already ran it.
+        // The owner arm; `Simulation::spawn_manager_owner_expired` already ran it.
         return;
     }
     let Some((current, queued, slot_index, regen_rate)) = sim

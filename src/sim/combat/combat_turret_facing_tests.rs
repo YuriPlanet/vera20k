@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::{AttackTarget, TargetKind};
+use crate::sim::combat::AttackTarget;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::movement::FacingClass;
@@ -494,8 +494,10 @@ fn kill_tick_unit_facing_holds_target() {
     // THE S3 fidelity pin: a unit whose target dies from this tick's fire
     // keeps aiming at it this tick (gamemd: the munition is deferred and the
     // bullet's AI runs after the firing unit's pass, so Facing_Update reads a
-    // live TarCom on the kill tick). Lethal damage must not run the later
-    // Object UnInit pointer-expiry listener stage early.
+    // live TarCom on the kill tick). This receiver fixture disables the death
+    // callbacks, so it pins only the barrel; in production the killing hit's
+    // Destroy (0x005F57AF) expires the target, see
+    // `co_attacker_facing_matches_killer`.
     let mut sim = Simulation::new();
     spawn_turreted(&mut sim, 1, 5, 5, 100);
     spawn_target(&mut sim, 2, 5, 8);
@@ -536,16 +538,6 @@ fn kill_tick_unit_facing_holds_target() {
         unit_facing_of(&result, 1),
         Some(toward_target),
         "kill tick: barrel destination holds the dying target's facing"
-    );
-    assert!(
-        sim.substrate
-            .entities
-            .get(1)
-            .unwrap()
-            .attack_target
-            .as_ref()
-            .is_some_and(|target| matches!(target.target, TargetKind::Entity(2))),
-        "lethal damage must retain the target until the UnInit listener stage"
     );
 }
 
@@ -687,8 +679,8 @@ fn co_attacker_facing_matches_killer() {
     // Two attackers on one target; the killer's shot lands this tick. The
     // co-attacker's barrel destination this tick must ALSO hold the dying
     // target's facing because its facing read happens before lethal damage.
-    // The later same-frame UnInit pointer-expiry stage clears its target
-    // reference without rewriting that already-computed barrel destination.
+    // The killing hit's Destroy (0x005F57AF) then clears its target reference
+    // without rewriting that already-computed barrel destination.
     let mut sim = Simulation::new();
     spawn_turreted(&mut sim, 1, 5, 5, 100); // killer
     spawn_turreted(&mut sim, 3, 8, 8, 100); // co-attacker (out of its own ROF this tick)
@@ -737,7 +729,7 @@ fn co_attacker_facing_matches_killer() {
     let co = sim.substrate.entities.get(3).unwrap();
     assert!(
         co.attack_target.is_none(),
-        "same-frame UnInit clears the co-attacker's expired target"
+        "the killing hit's Destroy clears the co-attacker's expired target"
     );
     assert_eq!(
         co.barrel_facing.as_ref().unwrap().destination(),

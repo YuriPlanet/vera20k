@@ -3607,7 +3607,7 @@ fn gsi_04_07_damage_postmortem_exact_zero_callbacks_precede_restore() {
     assert!(target.in_logic_vector && target.lifecycle.cell_marked);
     assert!(
         !target.selected,
-        "ObjectClass::Destroy(1) deselects before detach"
+        "ObjectClass::Detach_All(1) deselects before detach"
     );
     assert!(sim.substrate.occupancy.contains_entity(8, 5, target_id));
     assert!(!sim.substrate.pending_delete.contains(&target_id));
@@ -3636,7 +3636,7 @@ fn gsi_04_07_damage_postmortem_exact_zero_callbacks_precede_restore() {
         .iter()
         .position(|event| {
             *event
-                == LifecycleTestEvent::PostMortemDestroyNotifyBoundary {
+                == LifecycleTestEvent::DestroyNotifyBoundary {
                     stable_id: target_id,
                 }
         })
@@ -3645,7 +3645,7 @@ fn gsi_04_07_damage_postmortem_exact_zero_callbacks_precede_restore() {
         .iter()
         .position(|event| {
             *event
-                == (LifecycleTestEvent::PostMortemRadioBreakCompleted {
+                == (LifecycleTestEvent::DestroyRadioBreakCompleted {
                     stable_id: target_id,
                 })
         })
@@ -3654,7 +3654,7 @@ fn gsi_04_07_damage_postmortem_exact_zero_callbacks_precede_restore() {
         .iter()
         .position(|event| {
             *event
-                == (LifecycleTestEvent::PostMortemDeselected {
+                == (LifecycleTestEvent::DestroyDeselected {
                     stable_id: target_id,
                 })
         })

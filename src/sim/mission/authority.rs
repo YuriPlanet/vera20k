@@ -29,8 +29,8 @@ use crate::sim::world::Simulation;
 use super::concrete_effects::UnavailableConcreteMissionEffects;
 use super::concrete_effects::{
     AuthorityUnavailable, ConcreteMissionEffects, ConcreteSetterRequest,
-    RepresentedConcreteMissionEffects, represented_assign_destination_mode_one,
-    represented_assign_target,
+    RepresentedConcreteMissionEffects, assign_target_commits,
+    represented_assign_destination_mode_one, represented_assign_target_admitted,
 };
 use super::readiness::{
     AircraftReadyView, BuildingReadyView, InfantryReadyView, ReadyLeptonPoint, ReadyResult,
@@ -51,9 +51,11 @@ mod ready_private {
 /// The write set matches native Restore: selector first, then archived Target,
 /// then mode-one destination. Callers must preserve the distinct expiry order
 /// (clear first, then conditionally Restore); live-object detach uses a separate
-/// wrapper and order.
+/// wrapper and order. `saved_target_commits` is `assign_target_commits` for the
+/// archived target, read before the receiver was borrowed.
 pub(crate) fn restore_entity_after_target_expiry(
     entity: &mut crate::sim::game_entity::GameEntity,
+    saved_target_commits: bool,
 ) -> bool {
     if entity.mission.suspended() == MissionId::NONE {
         return false;
@@ -64,7 +66,7 @@ pub(crate) fn restore_entity_after_target_expiry(
     let category = entity.category;
     let restored = verb::restore_base(&mut entity.mission);
     debug_assert!(restored);
-    represented_assign_target(entity, saved_target);
+    represented_assign_target_admitted(entity, saved_target, saved_target_commits);
     if category != EntityCategory::Structure {
         represented_assign_destination_mode_one(entity, saved_destination);
         if saved_destination.is_some() {
@@ -122,6 +124,7 @@ pub(crate) fn override_mission_on_blocked_step(
         return false;
     }
 
+    let blocker_commits = assign_target_commits(entities, Some(TargetKind::Entity(blocker)));
     let Some(entity) = entities.get_mut(mover) else {
         return false;
     };
@@ -129,6 +132,7 @@ pub(crate) fn override_mission_on_blocked_step(
     override_entity_to_attack(
         entity,
         TargetKind::Entity(blocker),
+        blocker_commits,
         archived_destination,
         false, // the calling locomotor owns its active-path stop
     )
@@ -163,6 +167,7 @@ pub(crate) fn override_mission_on_wall_cell(
     override_entity_to_attack(
         entity,
         TargetKind::Cell(cell.0, cell.1),
+        true,
         archived_destination,
         false, // the calling locomotor owns its active-path stop
     )
@@ -185,6 +190,9 @@ pub(crate) fn override_mission_on_damage_response(
     if entities.get(attacker).is_none() {
         return false;
     }
+    // A dying source (its DeathWeapon's blast) still overrides the mission,
+    // but Assign_Target refuses the Health-0 object and commits NULL.
+    let attacker_commits = assign_target_commits(entities, Some(TargetKind::Entity(attacker)));
     let Some(entity) = entities.get_mut(receiver) else {
         return false;
     };
@@ -192,6 +200,7 @@ pub(crate) fn override_mission_on_damage_response(
     override_entity_to_attack(
         entity,
         TargetKind::Entity(attacker),
+        attacker_commits,
         archived_destination,
         true,
     )
@@ -204,6 +213,7 @@ pub(crate) fn override_mission_on_damage_response(
 fn override_entity_to_attack(
     entity: &mut crate::sim::game_entity::GameEntity,
     target: TargetKind,
+    target_commits: bool,
     archived_destination: Option<NavTargetRef>,
     stop_active_path: bool,
 ) -> bool {
@@ -219,7 +229,7 @@ fn override_entity_to_attack(
     }
     entity.suspended_attack_target = entity.attack_target.as_ref().map(|target| target.target);
     verb::override_base(&mut entity.mission, MISSION_ATTACK);
-    represented_assign_target(entity, Some(target));
+    represented_assign_target_admitted(entity, Some(target), target_commits);
     if entity.category != EntityCategory::Structure {
         if stop_active_path {
             // Native has one NavCom. VERA's active path executor is a second

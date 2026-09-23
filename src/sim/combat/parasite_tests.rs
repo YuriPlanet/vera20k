@@ -299,10 +299,9 @@ fn dog_bite_kills_the_infantry_and_releases_the_dog_where_it_stood() {
         !dog_entity.is_paralyzed(arena.frame()),
         "PointerExpired release does not paralyze"
     );
-    // Native releases the dog inside the killing bite: the death branch's
-    // Stun (0x00702210) runs Detach_All(1). VERA broadcasts only when the
-    // corpse is removed; see the death-Stun residual in parasite.rs.
-    assert!(arena.frame() > death_frame);
+    // ObjectClass::ReceiveDamage's exact-zero Destroy (0x005F57AF) runs
+    // Detach_All(1) inside the killing bite, so the dog is out on that frame.
+    assert_eq!(arena.frame(), death_frame);
 }
 
 #[test]
@@ -700,7 +699,14 @@ fn a_load_keeps_the_infection_and_restarts_both_parasite_timers() {
     // drone; the loaded one has no suppression left and drops off alive. The
     // killing hit stays at the threshold (5 raw) so it arms nothing itself.
     for world in [&mut arena, &mut copy] {
-        world.sim.substrate.entities.get_mut(tank).unwrap().health.current = 5;
+        world
+            .sim
+            .substrate
+            .entities
+            .get_mut(tank)
+            .unwrap()
+            .health
+            .current = 5;
         world.hit(&rules, tank, Some(rhino), 5, "AP");
         world.until(&rules, 60, |sim| sim.substrate.entities.get(tank).is_none());
     }

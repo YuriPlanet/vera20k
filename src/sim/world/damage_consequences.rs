@@ -128,7 +128,6 @@ impl DamageConsequences {
             .collect();
 
         for &dead_id in &effects.immediate_uninit_ids {
-            world.undock_refinery_unit_on_death(rules, dead_id);
             if world
                 .substrate
                 .entities

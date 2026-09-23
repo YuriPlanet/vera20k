@@ -1068,7 +1068,7 @@ pub(crate) fn toggle_follow_target(state: &mut AppState) {
 /// easing and no dead zone, so the followed unit stays pinned to the centre and
 /// the player cannot scroll away while the latch is held.
 ///
-/// The pair is cleared from two lifecycle points — `ObjectClass__Destroy`
+/// The pair is cleared from two lifecycle points — `ObjectClass__Detach_All`
 /// 0x005F5306 and `ObjectClass__Deselect` 0x005F4513 — so the camera is handed
 /// back when the followed object dies or leaves the selection.
 pub(crate) fn update_follow_camera(state: &mut AppState) {
