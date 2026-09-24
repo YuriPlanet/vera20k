@@ -109,6 +109,37 @@ class CompareTests(unittest.TestCase):
             self.assertEqual(report["differing_bounds"], [0, 0, 1, 1])
             self.assertEqual(report["masks"], [{"label": "cursor", "rect": [1, 1, 1, 1]}])
 
+    def test_manifest_without_frame_hash_is_checked_by_length(self):
+        with tempfile.TemporaryDirectory() as temp:
+            temp = Path(temp)
+            write_bundle(temp, 1, 1, [(0, 0, 0)])
+            manifest = json.loads((temp / "capture.json").read_text(encoding="utf-8"))
+            del manifest["frame"]["sha256"]
+            manifest["frame"]["byte_length"] = 4
+            (temp / "capture.json").write_text(json.dumps(manifest), encoding="utf-8")
+            (temp / "native.png").write_bytes(png_bytes(1, 1, 8, 2, [(0, [0, 0, 0])]))
+            report_path = temp / "report.json"
+            status = diff.main(
+                [
+                    "--capture",
+                    str(temp),
+                    "--native",
+                    str(temp / "native.png"),
+                    "--output",
+                    str(report_path),
+                ]
+            )
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(status, 0)
+            self.assertEqual(
+                report["capture"]["frame_sha256"],
+                hashlib.sha256(b"\x00\x00\x00\xff").hexdigest(),
+            )
+            manifest["frame"]["byte_length"] = 8
+            (temp / "capture.json").write_text(json.dumps(manifest), encoding="utf-8")
+            status = diff.main(["--capture", str(temp), "--native", str(temp / "native.png")])
+            self.assertEqual(status, 2)
+
     def test_tampered_frame_is_invalid_input(self):
         with tempfile.TemporaryDirectory() as temp:
             temp = Path(temp)

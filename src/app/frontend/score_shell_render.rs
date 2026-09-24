@@ -15,6 +15,7 @@
 use anyhow::Result;
 
 use crate::app::AppState;
+use crate::app::frontend::shell_pass::{owner_draw_button_label_rect, resolve_csf};
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_paint::{
     self, ArtFit, ButtonPolicy, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
@@ -23,7 +24,6 @@ use crate::render::shell_paint::{
 use crate::render::shell_text::ShellAlign;
 use crate::render::shell_transition_pass::ShellRenderTarget;
 use crate::ui::score_shell::{ScoreScreenModel, ScoreShellLayout, compute_layout};
-use crate::ui::shell::geom::RectPx;
 
 /// The Continue button is an ordinary owner-draw cell: native art, no hover
 /// flash, no disabled state (it is the only control and always enabled). The
@@ -55,24 +55,7 @@ pub(crate) enum ScoreShellRenderResult {
     Fallback,
 }
 
-fn resolve_csf<'a>(state: &'a AppState, key: &str) -> std::borrow::Cow<'a, str> {
-    match state.process_assets.csf.as_ref() {
-        Some(csf) => csf.text(key),
-        None => std::borrow::Cow::Owned(key.to_string()),
-    }
-}
 
-/// Native owner-draw label clip, shared with the other shells: unpressed
-/// `(x, y+1, w-2, h-1)`, pressed `(x+2, y+5, w-4, h-5)`.
-fn owner_draw_button_label_rect(rect: RectPx, pressed: bool) -> RectPx {
-    let (dx, dy) = if pressed { (2, 5) } else { (0, 1) };
-    RectPx::new(
-        rect.x + dx,
-        rect.y + dy,
-        (rect.w - 2 - dx).max(0),
-        (rect.h - dy).max(0),
-    )
-}
 
 /// Format the elapsed match time through the retail time format string.
 ///
@@ -309,24 +292,6 @@ fn parent_background_instances(
     }]
 }
 
-fn cursor_instance(state: &AppState) -> Option<SpriteInstance> {
-    let cursor = state.match_state.match_presentation.software_cursor.as_ref()?;
-    let sequence = cursor.get(crate::app::types::CursorId::Default)?;
-    let frame = crate::app::input::cursor::current_software_cursor_frame(sequence)?;
-    Some(SpriteInstance {
-        position: [
-            state.match_state.input.cursor_x - sequence.hotspot[0],
-            state.match_state.input.cursor_y - sequence.hotspot[1],
-        ],
-        size: [frame.width, frame.height],
-        uv_origin: [0.0, 0.0],
-        uv_size: [1.0, 1.0],
-        depth: CURSOR_DEPTH,
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
-        ..Default::default()
-    })
-}
 
 /// Paint the score screen through the shell presentation boundary.
 pub(crate) fn render_score_shell(
@@ -424,7 +389,11 @@ fn render_score_shell_to_target(
                 .create_instance_buffer(&state.renderer.gpu, &draw.instances)
         })
         .collect();
-    let cursor_instances: Vec<SpriteInstance> = cursor_instance(state).into_iter().collect();
+    let cursor_instances: Vec<SpriteInstance> =
+        crate::app::frontend::shell_pass::software_cursor(state, CURSOR_DEPTH)
+            .map(|(_, instance)| instance)
+            .into_iter()
+            .collect();
     let cursor_buffer = state
         .renderer.batch_renderer
         .create_instance_buffer(&state.renderer.gpu, &cursor_instances);
@@ -502,6 +471,7 @@ fn render_score_shell_to_target(
 mod tests {
     use super::*;
     use crate::ui::score_shell::ScoreRow;
+    use crate::ui::shell::geom::RectPx;
 
     fn model(seconds: u32, game: u32) -> ScoreScreenModel {
         ScoreScreenModel {

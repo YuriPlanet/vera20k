@@ -406,7 +406,11 @@ pub(crate) fn render_launcher_options(
         .iter()
         .map(|d| batch.create_instance_buffer(gpu, &d.instances))
         .collect();
-    let cursor: Vec<_> = shell_cursor_instance(state).into_iter().collect();
+    let cursor: Vec<_> =
+        crate::app::frontend::shell_pass::software_cursor(state, SHELL_CURSOR_DEPTH)
+            .map(|(_, instance)| instance)
+            .into_iter()
+            .collect();
     let cursor_buffer = batch.create_instance_buffer(gpu, &cursor);
     let cursor_texture = state
         .match_state

@@ -16,21 +16,21 @@ pub const SINGLE_PLAYER_PAGE: MenuPageSpec = MenuPageSpec {
             dlu_top: 122,
             csf_key: "GUI:NewCampaign",
             tooltip_key: "STT:SingleButtonNewCampaign",
-            result: 8,
+            result: Some(8),
         },
         MenuPageButtonSpec {
             id: 0x0689,
             dlu_top: 149,
             csf_key: "GUI:LoadSavedGame",
             tooltip_key: "STT:SingleButtonLoadSavedGame",
-            result: 9,
+            result: Some(9),
         },
         MenuPageButtonSpec {
             id: 0x0579,
             dlu_top: 176,
             csf_key: "GUI:Skirmish",
             tooltip_key: "STT:SingleButtonSkirmish",
-            result: 0x0B,
+            result: Some(0x0B),
         },
     ],
     back: MenuPageButtonSpec {
@@ -38,7 +38,7 @@ pub const SINGLE_PLAYER_PAGE: MenuPageSpec = MenuPageSpec {
         dlu_top: 346,
         csf_key: "GUI:MainMenu",
         tooltip_key: "STT:SingleButtonBack",
-        result: 0x12,
+        result: Some(0x12),
     },
 };
 

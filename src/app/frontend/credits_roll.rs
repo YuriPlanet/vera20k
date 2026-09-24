@@ -226,7 +226,7 @@ impl CreditsRoll {
 
     /// Text sprites for the current frame (`0x004C3D00` placement).
     pub(crate) fn instances(&self, font: &BitFont, screen_w: i32) -> Vec<SpriteInstance> {
-        let box_x = (screen_w - CREDITS_BOX_WIDTH) / 2;
+        let box_x = credits_box_x(screen_w);
         let mut out = Vec::new();
         for line in &self.lines {
             let x = line_x(box_x, line.width, line.flags);
@@ -244,11 +244,21 @@ impl CreditsRoll {
     }
 }
 
+/// Left edge of the 520 px text box every line is drawn and clipped in
+/// (`0x004C3D46..0x004C3D6B`: rect `((W - 0x208) / 2, y, 0x208, ...)`).
+pub(crate) fn credits_box_x(screen_w: i32) -> i32 {
+    (screen_w - CREDITS_BOX_WIDTH) / 2
+}
+
 /// A running Show_Credits: the roll plus the ScoreVolume it saved at
 /// `0x004C42B3` and restores at `0x004C484A`.
 pub(crate) struct CreditsRollSession {
     pub(crate) roll: CreditsRoll,
     pub(crate) saved_score_volume: f32,
+    /// Text of the last frame drawn while the application was active. While
+    /// it is inactive nothing is drawn or copied to the screen
+    /// (`0x004C3D8A`, `0x004C46AA`), so that frame stays up.
+    pub(crate) last_drawn: Vec<SpriteInstance>,
 }
 
 /// Line x inside the 520 px box: left at the box, centered at
@@ -299,6 +309,23 @@ mod tests {
         // Absolute schedule: a late wake catches up frame by frame.
         assert!(roll.advance(108));
         assert_eq!(ys(&roll), [592]);
+    }
+
+    #[test]
+    fn scroll_rate_matches_the_timed_retail_capture() {
+        // Retail YR (cnc-ddraw, 800x600), 38 screenshot pairs timed by file
+        // modification time over 178 s of scrolling: 62.499 px/s, i.e. one
+        // 2 px step every 32.001 ms (docs/research/shell/
+        // 2026-09-24-movies-and-credits-evidence.md). Two 16 ms buckets per
+        // frame at 2 px per frame is 62.5 px/s.
+        let mut roll = CreditsRoll::new(vec![line("A", 20_000)], &font(), 0);
+        let start = ys(&roll)[0];
+        let buckets_per_second = 1000 / 16;
+        roll.advance(178 * buckets_per_second);
+        let travelled = start - ys(&roll)[0];
+        let seconds = f64::from(178 * buckets_per_second as i32) * 16.0 / 1000.0;
+        let rate = f64::from(travelled) / seconds;
+        assert!((rate - 62.499).abs() < 0.1, "{rate} px/s");
     }
 
     #[test]

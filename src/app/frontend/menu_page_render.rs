@@ -7,6 +7,10 @@ use anyhow::Result;
 
 use crate::app::AppState;
 use crate::app::frontend::main_menu_shell_render::Ra2tsDialogOwner;
+use crate::app::frontend::shell_pass::{
+    ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
+    software_cursor,
+};
 use crate::app::frontend::shell_transition::{ButtonGroup, ShellFrameWave};
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_paint::{
@@ -14,14 +18,12 @@ use crate::render::shell_paint::{
     SHELL_TEXT_RGB_DISABLED, SHELL_TEXT_RGB_ENABLED,
 };
 use crate::render::shell_text::ShellAlign;
-use crate::render::shell_transition_pass::ShellRenderTarget;
-use crate::ui::main_menu_shell::RectPx;
 use crate::ui::shell::menu_page::{MenuPageLayout, MenuPageSpec, compute_layout};
 
 /// Menu pages paint the native 156x42 SDBTNANM frame at the control origin.
 /// Mouse hover updates static 0x695 but does not select frame 3. Press selects
 /// frame 4 without moving the art; a runtime-disabled button remains dimmed.
-const MENU_PAGE_BUTTON_POLICY: ButtonPolicy = ButtonPolicy {
+pub(crate) const MENU_PAGE_BUTTON_POLICY: ButtonPolicy = ButtonPolicy {
     art_fit: ArtFit::Native,
     hover_flash: false,
     art_sink_y: 0.0,
@@ -63,15 +65,6 @@ fn page_input(state: &AppState, spec: &MenuPageSpec) -> PageInput {
     }
 }
 
-fn resolve_csf<'a>(state: &'a AppState, key: &'static str) -> std::borrow::Cow<'a, str> {
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .map(|csf| csf.text(key))
-        .unwrap_or(std::borrow::Cow::Borrowed(key))
-}
-
 /// Owner-draw button list for the paint pass. A disabled control can never
 /// paint pressed; during a first-paint slide every button rides Group A's ramp.
 fn paint_buttons(
@@ -96,18 +89,6 @@ fn paint_buttons(
             }
         })
         .collect()
-}
-
-/// Native owner-draw label clip: unpressed `(x, y+1, w-2, h-1)`, pressed
-/// `(x+2, y+5, w-4, h-5)`.
-fn owner_draw_button_label_rect(rect: RectPx, pressed: bool) -> RectPx {
-    let (dx, dy) = if pressed { (2, 5) } else { (0, 1) };
-    RectPx::new(
-        rect.x + dx,
-        rect.y + dy,
-        (rect.w - 2 - dx).max(0),
-        (rect.h - dy).max(0),
-    )
 }
 
 /// Status help for the hovered control. Hover is enable-unfiltered, so a
@@ -176,31 +157,6 @@ fn movie_instance(layout: &MenuPageLayout) -> SpriteInstance {
     }
 }
 
-/// Software-cursor sprite in screen space (camera at the origin): the raw
-/// pointer minus the default cursor hotspot. `None` without a software cursor.
-fn shell_cursor_instance(state: &AppState) -> Option<SpriteInstance> {
-    let cursor = state
-        .match_state
-        .match_presentation
-        .software_cursor
-        .as_ref()?;
-    let sequence = cursor.get(crate::app::types::CursorId::Default)?;
-    let frame = crate::app::input::cursor::current_software_cursor_frame(sequence)?;
-    Some(SpriteInstance {
-        position: [
-            state.match_state.input.cursor_x - sequence.hotspot[0],
-            state.match_state.input.cursor_y - sequence.hotspot[1],
-        ],
-        size: [frame.width, frame.height],
-        uv_origin: [0.0, 0.0],
-        uv_size: [1.0, 1.0],
-        depth: CURSOR_DEPTH,
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
-        ..Default::default()
-    })
-}
-
 /// Which menu page owns the `MainMenu` screen, if any.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ActiveMenuPage {
@@ -211,6 +167,10 @@ pub(crate) enum ActiveMenuPage {
 impl ActiveMenuPage {
     pub(crate) fn from_state(state: &AppState) -> Option<Self> {
         if state.frontend.screen != crate::ui::game_screen::GameScreen::MainMenu {
+            return None;
+        }
+        // Play_Movie and Show_Credits run after the page is destroyed.
+        if state.frontend.fullscreen_movie.is_some() || state.frontend.credits_roll.is_some() {
             return None;
         }
         let route = state.frontend.shell_route;
@@ -305,12 +265,6 @@ pub(crate) fn render_menu_page(
         }
     }
 
-    let color = state.renderer.shell_surface_presenter.source_render_view();
-    let depth = state.renderer.depth_view.clone();
-    let target = ShellRenderTarget {
-        color: &color,
-        depth: &depth,
-    };
     let layout = compute_layout(
         view.spec,
         state.renderer.gpu.config.width,
@@ -333,7 +287,6 @@ pub(crate) fn render_menu_page(
         .expect("movie loaded before render");
 
     // Menu pages have NO parent background; the movie is submitted first.
-    let movie_instances = vec![movie_instance(&layout)];
     let chrome_instances = shell_paint::paint_chrome(
         chrome,
         layout.right_panel,
@@ -349,96 +302,33 @@ pub(crate) fn render_menu_page(
         None,
     );
     let labels = paint_labels(state, &view, &layout, input);
-    let text_draws = shell_paint::paint_labels(&state.renderer.bit_font, &labels);
-
-    state.renderer.batch_renderer.update_camera(
-        &state.renderer.gpu,
-        state.renderer.gpu.config.width as f32,
-        state.renderer.gpu.config.height as f32,
-        0.0,
-        0.0,
-        1.0,
-        crate::render::batch::DepthAxis::NONE,
+    let text = shell_paint::paint_labels(&state.renderer.bit_font, &labels);
+    let draws = [
+        TexturedDraw {
+            texture: movie_texture,
+            instances: vec![movie_instance(&layout)],
+        },
+        TexturedDraw {
+            texture: &chrome.texture,
+            instances: chrome_instances,
+        },
+        TexturedDraw {
+            texture: &chrome.texture,
+            instances: button_instances,
+        },
+    ];
+    encode_shell_pass(
+        state,
+        encoder,
+        destination,
+        "Menu Page Shell",
+        ShellComposition {
+            draws: &draws,
+            text: &text,
+            cursor: software_cursor(state, CURSOR_DEPTH),
+            effects: None,
+        },
     );
-    let batch = &state.renderer.batch_renderer;
-    let gpu = &state.renderer.gpu;
-    let movie_buffer = batch.create_instance_buffer(gpu, &movie_instances);
-    let chrome_buffer = batch.create_instance_buffer(gpu, &chrome_instances);
-    let button_buffer = batch.create_instance_buffer(gpu, &button_instances);
-    let text_buffers: Vec<_> = text_draws
-        .iter()
-        .map(|draw| batch.create_instance_buffer(gpu, &draw.instances))
-        .collect();
-    let cursor_instances: Vec<SpriteInstance> = shell_cursor_instance(state).into_iter().collect();
-    let cursor_buffer = batch.create_instance_buffer(gpu, &cursor_instances);
-    // Default-cursor frame-0 texture, borrowed for the duration of the pass.
-    let cursor_texture = state
-        .match_state
-        .match_presentation
-        .software_cursor
-        .as_ref()
-        .and_then(|cursor| cursor.get(crate::app::types::CursorId::Default))
-        .and_then(|sequence| sequence.frames.first())
-        .map(|frame| &frame.texture);
-
-    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("Menu Page Shell"),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: target.color,
-            depth_slice: None,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(crate::app::types::CLEAR_COLOR),
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-            view: target.depth,
-            depth_ops: Some(wgpu::Operations {
-                load: wgpu::LoadOp::Clear(1.0),
-                store: wgpu::StoreOp::Store,
-            }),
-            stencil_ops: None,
-        }),
-        timestamp_writes: None,
-        occlusion_query_set: None,
-    });
-    if let Some((buffer, count)) = movie_buffer.as_ref() {
-        batch.draw_with_buffer_passthrough(&mut pass, movie_texture, buffer, *count);
-    }
-    if let Some((buffer, count)) = chrome_buffer.as_ref() {
-        batch.draw_with_buffer_passthrough(&mut pass, &chrome.texture, buffer, *count);
-    }
-    if let Some((buffer, count)) = button_buffer.as_ref() {
-        batch.draw_with_buffer_passthrough(&mut pass, &chrome.texture, buffer, *count);
-    }
-    for (draw, buffer) in text_draws.iter().zip(text_buffers.iter()) {
-        let Some((buffer, count)) = buffer.as_ref() else {
-            continue;
-        };
-        pass.set_scissor_rect(
-            draw.scissor.x,
-            draw.scissor.y,
-            draw.scissor.w,
-            draw.scissor.h,
-        );
-        batch.draw_with_buffer_passthrough(
-            &mut pass,
-            state.renderer.bit_font.atlas(),
-            buffer,
-            *count,
-        );
-    }
-    pass.set_scissor_rect(0, 0, gpu.config.width, gpu.config.height);
-    // Software cursor draws last, on top of all chrome/controls.
-    if let (Some((buffer, count)), Some(texture)) = (cursor_buffer.as_ref(), cursor_texture) {
-        batch.draw_with_buffer_passthrough(&mut pass, texture, buffer, *count);
-    }
-    drop(pass);
-    state
-        .renderer
-        .shell_surface_presenter
-        .encode_present(encoder, destination);
 
     Ok(MenuPageRenderResult::Rendered)
 }
@@ -454,19 +344,6 @@ mod tests {
         assert!(!MENU_PAGE_BUTTON_POLICY.hover_flash);
         assert_eq!(MENU_PAGE_BUTTON_POLICY.art_sink_y, 0.0);
         assert!(MENU_PAGE_BUTTON_POLICY.disabled_dim);
-    }
-
-    #[test]
-    fn owner_draw_label_clip_matches_native_up_and_pressed_rects() {
-        let button = RectPx::new(644, 199, 156, 42);
-        assert_eq!(
-            owner_draw_button_label_rect(button, false),
-            RectPx::new(644, 200, 154, 41)
-        );
-        assert_eq!(
-            owner_draw_button_label_rect(button, true),
-            RectPx::new(646, 204, 152, 37)
-        );
     }
 
     #[test]
@@ -507,32 +384,50 @@ mod tests {
         let renderer = &production[production
             .find("pub(crate) fn render_menu_page")
             .expect("production renderer")..];
-
         assert!(renderer.contains("destination: &wgpu::Texture"));
-        assert!(!renderer.contains("target: &wgpu::TextureView"));
-        let source_view = renderer
-            .find("shell_surface_presenter.source_render_view()")
-            .expect("RGB565 presenter source view");
         let fallback_returns: Vec<_> = renderer
             .match_indices("return Ok(MenuPageRenderResult::Fallback)")
             .map(|(index, _)| index)
             .collect();
-        let render_pass = renderer
+        let pass = renderer
+            .find("encode_shell_pass(")
+            .expect("shared RGB565 composition pass");
+        assert_eq!(fallback_returns.len(), 2);
+        assert!(fallback_returns.iter().all(|&index| index < pass));
+
+        // The shared pass composes everything, the cursor last, before the
+        // RGB565 presentation.
+        let shared = include_str!("shell_pass.rs");
+        let encoder = &shared[shared
+            .find("pub(crate) fn encode_shell_pass")
+            .expect("shared encoder")..];
+        let source_view = encoder
+            .find("shell_surface_presenter.source_render_view()")
+            .expect("RGB565 presenter source view");
+        let render_pass = encoder
             .find("encoder.begin_render_pass")
             .expect("complete shell render pass");
-        let cursor = renderer
-            .find("Software cursor draws last")
-            .expect("software cursor submission");
-        let pass_end = renderer.find("drop(pass);").expect("render pass end");
-        let present = renderer
-            .find(".encode_present(encoder, destination);")
-            .expect("RGB565 encode/present");
-
-        assert_eq!(fallback_returns.len(), 2);
-        assert!(fallback_returns.iter().all(|&index| index < source_view));
+        let cursor = encoder.find("if let (Some((texture, _))").expect("cursor");
+        let pass_end = encoder.find("drop(pass);").expect("render pass end");
+        let present = encoder.find("presenter.encode_present(").expect("present");
         assert!(source_view < render_pass);
         assert!(render_pass < cursor);
         assert!(cursor < pass_end);
         assert!(pass_end < present);
+
+        // Steady dispatch: the page is presented to the swapchain texture,
+        // then the egui overlay (save/load panel) draws on the view.
+        let app_source = include_str!("../frame.rs");
+        let dispatch = &app_source[app_source
+            .find("ActiveMenuPage::from_state(state)")
+            .expect("menu page steady dispatch")..];
+        let shell_call = dispatch
+            .find("render_active_menu_page")
+            .expect("menu page renderer call");
+        let overlay = dispatch
+            .find("state.renderer.egui.end_frame_and_render")
+            .expect("post-shell egui overlay");
+        assert!(dispatch[shell_call..overlay].contains("&output.texture"));
+        assert!(dispatch[overlay..].contains("&view"));
     }
 }

@@ -21,7 +21,7 @@ constant `0x1597B573`).
 |---|---|---|
 | 4 | `ShellDialog__RunUntilResult` (`0x0060D380`) with dialog `0x101`, proc `0x0052D790` | per command |
 | `0xD` | Play_Movie `0x005BED40`(`"RENEGADE.BIK"`, -1, 1, 1, 1, 0), then `0x0052FEC0(0,1)` | 4 |
-| `0xE` | dialog `0x129`, proc `0x0052D870`; a returned entry is CD-checked (`0x004790E0`) and played | `0xE` (list), -1/0 → 4 |
+| `0xE` | dialog `0x129`, proc `0x0052D870`; a returned entry is CD-checked (`0x004790E0`), played, then `0x0052FEC0(0,1)` (`0x0052DEBB..0x0052DEBF`) | `0xE` (list), -1/0 → 4 |
 | `0xF` | Show_Credits `0x004C3E30`, Queue_Song(INTRO), `0x0052FEC0(0,1)` | 4 |
 
 `0x0052D790` maps (index bytes `0x0052D85C`, targets `0x0052D848`): `0x68D`
@@ -36,7 +36,10 @@ that message itself (`0x0061A534..0x0061A5F5`) and always returns 0, so the
 selection. Play Movie `0x745` stores `LB_GETCURSEL` in `DAT_00825C80` (initial
 `0xFFFFFFFF`) and returns the row's item data; Back `0x686` returns -1. The
 `0x744` notification-code-0 branch has no sender (the subclass only sends codes
-1 and 2), so a double-click selects but does not play.
+1 and 2), so a double-click never plays. The ListBox class takes double-clicks:
+the second press arrives as `WM_LBUTTONDBLCLK`, which the subclass only posts
+to the parent as `LBN_DBLCLK` (`0x0061A904..0x0061A945`), so it neither
+selects nor clicks.
 
 ## Movie table and unlock progress
 
@@ -52,7 +55,10 @@ unit (a resulting 0 becomes `0xFFFF`), reads two `wcstok(L" ")` tokens with
 `wcstol` minus one, and resets values outside -1..7 to -1. `WriteToINI`
 `0x005FAF9E` writes `swprintf(L"%d %d", soviet+1, allied+1)` NOT'd through
 `INIClass__PutUTF16AsHexCSV`. The retail prefix's file holds
-`NetID=ffcf,ffdf,ffcf,` ("0 0"). Every Play_Movie name resolution
+`NetID=ffcf,ffdf,ffcf,` ("0 0"); with it set to `ffc7,ffdf,ffc7,` ("8 8") the
+retail list shows all 17 rows and the game writes the same value back on exit.
+The section CRC is `CRCEngine` @ `0x004A1DE0`: CRC-32 over the name padded
+the Westwood way (`Network\x03`), as the Unicorn run confirmed. Every Play_Movie name resolution
 (`0x005C0640`) calls `0x005FBF80`, which raises each side to the `_stricmp`
 (`0x007C8D20`) table index of the played stem.
 
@@ -80,15 +86,23 @@ are dropped; a trailing space before the terminator is trimmed and the
 terminator reread. Column 4..7 centers, >8 right-aligns, else left; `{LABEL}`
 resolves through the CSF (`{Missing Label}` / `{Bad Label}` keep the `}`).
 Initial y is screen height + 2. Each frame (two 16 ms buckets, absolute
-schedule) moves lines up 2 px and deletes at most the first line at y ≤ −21.
+schedule) scans the lines from last to first, moving each up 2 px; the first
+one found at y ≤ −21 is deleted and the scan stops, so the lines before it keep
+their position for that frame (`0x004C43C7..0x004C443C`).
 Lines are drawn in GAME.FNT RGB(255,255,128) in a 520 px box centered on the
 screen; rows 0..31 and H−32..H−1 are faded `floor(v·f/256)` per RGB565 channel
-with `f = 255 − min(256 − 8r, 255)`. A bare Escape press ends the roll; other
+with `f = 255 − min(256 − 8r, 255)`. Each line is drawn and clipped in the
+rect `((W − 520) / 2, y, 520, …)` (`0x004C3D46..0x004C3D6B`); nothing is drawn
+or copied while the application is inactive (`0x004C3D8A`, `0x004C46AA`). A
+bare Escape press ends the roll; other
 queued keys and mouse buttons end one frame wait early. Theme: Stop(0),
 ScoreVolume 0 lifted to 0.4 while CREDITS plays, restored at the end. The
-scheme-name global `0x00822724` is left at `"Blue"`; its consumers are in-game
-gadget boxes (`0x004A5A50`, `0x004E2690`), multiplayer chat (`0x0055E420`), WOL
-(`0x0078A470..`) and a debug overlay, none of which is a shell surface.
+scheme-name global `0x00822724` is left at `"Blue"`. Its getter `0x004E12D0`
+has 20 call sites, all outside the shell dialog and owner-draw code
+(`0x00600000..0x00626000`): in-game gadget boxes and gadget `Draw` methods
+(`0x004A5A50`, `0x004E2690`, `0x00557D20` via vtable `0x007ED1D4`),
+multiplayer chat (`0x0055E420`), WOL (`0x0078A470..`, `0x007A93xx..`) and a
+debug overlay; not every one was classified individually.
 
 ## Dialog composition
 
@@ -110,6 +124,22 @@ the top-right and bottom-left ring corners use `0xA29C87`. Rows are 19 px, the
 selected row is filled red, text is GAME.FNT yellow at row x+2. A press selects
 row `client_y / 19 + top` (no border correction) and plays GenericClick.
 
+## Movie list scrollbar
+
+With more than 15 rows the list draws its scrollbar child (paint
+`0x0061C690`). Retail captures with all 17 movies unlocked (`list17-*.png`)
+show: the bar in columns `x + w − 20 .. x + w − 1` (the shared list geometry
+over the window grown by one pixel, the paint surface); its left edge is a
+light line at `bar.x` and a dark line at `bar.x + 1` between the list's top and
+bottom rings, taking the corner color where a line crosses a ring of the other
+tone; inside, the parent background without the list's darkening; 18x22
+`UPARROWR`/`DNARROWR` at `bar.x + 2` against the rings; the grip `SBGRIPM`
+tiled every 30 rows from the thumb top with the 2-row `SBGRIPT`/`SBGRIPB` caps
+drawn over it; thumb height `thumb_height(305, 2) = 202`. One down-arrow press
+scrolls one row. Down-arrow keys after a row press change neither the
+selection nor the scroll position. The mouse wheel was not tested (the capture
+helper cannot send it).
+
 ## Native captures
 
 Retail YR under the Porting Kit Wine wrapper with cnc-ddraw 7.1 at 800×600,
@@ -130,6 +160,20 @@ prefixes of the PNGs (kept outside the repository):
 | `sneak-8s.png` | RENEGADE.BIK | `7179d6328e963274` |
 | `credits-10s.png` | credits roll | `1fdb66a4aae7cbd0` |
 | `credits-esc.png`, `credits-esc-3s.png` | 0x101 recreated after Escape | `24a83ac1b0a35e92`, `240733fad1215c3e` |
+| `list17-open.png` | 17 rows, top 0 (profile `8 8`) | `d124e4b99d008659` |
+| `list17-down2.png` | 17 rows after two down-arrow presses | `2cd63115251be955` |
+| `credits-timed/t1..t60.png` | credits every ~5 s, with file times | log `log.tsv` |
+
+Credits cadence, executed: 60 retail screenshots taken every ~5 s through the
+credits, timed by the screenshot files' modification times.
+`tools/shell_scroll_rate.py` aligns consecutive frames: 38 pairs align
+exactly, 11,124 px over 177.988 s, **62.499 px/s = one 2 px step per
+32.001 ms**, every pair within 1.8 px of 2 px/32 ms. The file's last line
+(y₀ = 12,778) sits at y ≈ 272 in the last scrolling shot, so the Rust schedule
+(6,400 scroll frames, then no hold because the hold counter is already past
+`0xBB`) ends the roll 204.7 s after the credits start; retail shows the
+faded/black end at 204.3 s and `0x101` again by 208.7 s, bounding any hold
+below 4 s.
 
 Observed: only the intro row is listed in a fresh profile; the first list entry
 shows no highlight until clicked, and after a movie the list reopens with the
@@ -141,7 +185,9 @@ sliding buttons before the RA2TS movie appears.
 
 Production frames come from `--shell-capture <checkpoint> --width 800 --height
 600 --cursor-x 400 --cursor-y 300` (release build of the change that adds this
-note), which drives the real input handlers through the route. They are
+note), which drives the production action handlers through the route; the
+`0x129` row and scrollbar presses go through the mouse handlers. The full-list
+checkpoints override the movie progress to `7 7` before opening the list. They are
 compared with the native PNGs above by `tools/shell_capture_diff.py` in RGB565
 units (both engines compose on a 16-bit surface; see the tool's docstring).
 Masks: `cursor` 398,298,40,40 (native captures have no cursor), `monitor`
@@ -156,6 +202,8 @@ Masks: `cursor` 398,298,40,40 (native captures have no cursor), `monitor`
 | `movies-0x101-steady` | `mc-0x101-settled.png` | cursor, ra2ts | 4,584 / 119,760, all inside x 669..761, y 6..100 (title `0x694`, monitor `0x71C`) | 63 |
 | `credits-roll-frame-434` | `credits-10s.png` | none | 0 / 480,000 | 0 |
 | `sneak-peek-frame-158` | `sneak-8s.png` | none | 100,931 / 480,000, all ±1 | 1 |
+| `movie-list-0x129-full` | `list17-open.png` | cursor, monitor, status | 0 / 444,200 | 0 |
+| `movie-list-0x129-full-down2` | `list17-down2.png` | cursor, monitor, status | 0 / 444,200 | 0 |
 
 Known open differences (next shell-statics change): the `0x71C` SDWRNANM monitor
 animation is not drawn on these pages; the title `0x694` is drawn at the menu
@@ -165,6 +213,9 @@ low and appears without its reveal. The Bink frame differs from binkw32's
 YUV→RGB565 conversion by one unit on about a fifth of the pixels.
 
 Coverage limits: one resolution (800×600), one steady frame per state, the
-intro row only (a fresh profile), and the first credits page (centered lines;
-the left/right-aligned cast section has no native capture). Entry and exit
-transitions were compared visually, not pixel-for-pixel.
+intro-only and all-17 lists, and the first credits page (centered lines; the
+left/right-aligned cast section has no pixel comparison). Entry and exit
+transitions were compared visually, not pixel-for-pixel. Not established: the
+mouse wheel on the list, an 800-wide movie on a 640×480 surface
+(`BinkCopyToBuffer@28` takes no destination width; Rust shows the top-left
+crop), and the credits catch-up after a long inactive period.

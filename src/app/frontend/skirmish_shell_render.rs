@@ -465,30 +465,6 @@ pub(crate) fn render_skirmish_shell(
     Ok(action)
 }
 
-/// Build the software-cursor sprite for the skirmish shell.
-///
-/// The shell renders in screen space with the camera at (0,0), so the cursor
-/// sits at the raw pointer position minus its hotspot — same convention as the
-/// main-menu shell. Returns None when no software cursor is loaded; the OS
-/// cursor is hidden process-wide, so without this the shell shows no pointer.
-fn shell_cursor_instance(state: &AppState) -> Option<SpriteInstance> {
-    let cursor = state.match_state.match_presentation.software_cursor.as_ref()?;
-    let sequence = cursor.get(crate::app::types::CursorId::Default)?;
-    let frame = crate::app::input::cursor::current_software_cursor_frame(sequence)?;
-    Some(SpriteInstance {
-        position: [
-            state.match_state.input.cursor_x - sequence.hotspot[0],
-            state.match_state.input.cursor_y - sequence.hotspot[1],
-        ],
-        size: [frame.width, frame.height],
-        uv_origin: [0.0, 0.0],
-        uv_size: [1.0, 1.0],
-        depth: SHELL_CURSOR_DEPTH,
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
-        ..Default::default()
-    })
-}
 
 pub(crate) fn render_skirmish_shell_to_target(
     state: &mut AppState,
@@ -704,7 +680,11 @@ fn render_skirmish_shell_with_atlas(
                 .create_instance_buffer(&state.renderer.gpu, &d.instances)
         })
         .collect();
-    let cursor_instances: Vec<SpriteInstance> = shell_cursor_instance(state).into_iter().collect();
+    let cursor_instances: Vec<SpriteInstance> =
+        crate::app::frontend::shell_pass::software_cursor(state, SHELL_CURSOR_DEPTH)
+            .map(|(_, instance)| instance)
+            .into_iter()
+            .collect();
     let cursor_buffer = state
         .renderer.batch_renderer
         .create_instance_buffer(&state.renderer.gpu, &cursor_instances);

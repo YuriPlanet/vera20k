@@ -60,8 +60,14 @@ const CRC32_TABLE: [u32; 256] = {
 /// (e.g., "SNOW.MIX" = 8 chars works, but "LOCAL.MIX" = 9 chars does not).
 pub fn mix_hash(name: &str) -> i32 {
     let upper: Vec<u8> = name.bytes().map(|b| b.to_ascii_uppercase()).collect();
-    let padded: Vec<u8> = westwood_pad(&upper);
-    crc32(&padded) as i32
+    crc_engine(&upper) as i32
+}
+
+/// `CRCEngine::operator()` @ `0x004A1DE0` over raw bytes: CRC-32 of the
+/// Westwood-padded data, no case folding. INI section lookups hash names
+/// with it; MIX IDs are this over the uppercased filename.
+pub fn crc_engine(data: &[u8]) -> u32 {
+    crc32(&westwood_pad(data))
 }
 
 /// Apply Westwood's filename padding scheme before CRC-32 computation.
@@ -150,6 +156,14 @@ mod tests {
     fn test_crc32_known_value() {
         // Well-known test vector: CRC-32 of "123456789" = 0xCBF43926.
         assert_eq!(crc32(b"123456789"), 0xCBF43926);
+    }
+
+    #[test]
+    fn crc_engine_matches_native_execution() {
+        // 0x004A1DE0 executed under the Unicorn runner (tools/native_oracle.py)
+        // for the two section names the options/RMG readers hash.
+        assert_eq!(crc_engine(b"Network"), 0x70CA_A741);
+        assert_eq!(crc_engine(b"RandomMap"), 0x1597_B573);
     }
 
     #[test]

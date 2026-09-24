@@ -976,10 +976,17 @@ impl ApplicationHandler for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let shell_scroll_wake = if let Some(state) = self.state.as_mut() {
             Self::update_saved_seed_browser_scroll(state, false);
-            [crate::app::input::keyboard::poll_scroll_repeat(state),
-             crate::app::input::sound::poll_scroll_repeat(state)]
-                .into_iter().flatten().min()
-        } else { None };
+            [
+                crate::app::input::keyboard::poll_scroll_repeat(state),
+                crate::app::input::sound::poll_scroll_repeat(state),
+                Self::poll_movie_list_scroll(state),
+            ]
+            .into_iter()
+            .flatten()
+            .min()
+        } else {
+            None
+        };
         if let (Some(state), Some(session)) = (self.state.as_mut(), self.tactical_capture.as_mut())
         {
             if let Err(err) = Self::render_frame(state, event_loop, None, Some(&mut *session)) {

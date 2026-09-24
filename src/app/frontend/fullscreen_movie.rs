@@ -37,8 +37,10 @@ pub(crate) fn movie_stem(name: &str) -> &str {
     name.split('.').next().unwrap_or(name)
 }
 
-/// Native Bink copy origin: `(client - movie) / 2` per axis, clamped at 0 by
-/// the surface clip, so an oversized movie is anchored top-left.
+/// Native Bink copy origin: `(client - movie) / 2` per axis, clamped at 0.
+/// An oversized movie is shown as its top-left crop; how retail's
+/// `BinkCopyToBuffer@28` (no destination width) renders an 800-wide movie on
+/// a 640-wide surface is not established.
 pub(crate) fn movie_origin(screen_w: i32, screen_h: i32, movie_w: i32, movie_h: i32) -> (i32, i32) {
     (
         ((screen_w - movie_w) / 2).max(0),
@@ -233,9 +235,9 @@ mod tests {
     }
 
     #[test]
-    fn origin_centers_and_clamps_like_the_native_copy() {
-        // 800x600 movies fill 800x600, center at 1024x768, and anchor
-        // top-left at 640x480 because the clip clamps a negative origin.
+    fn origin_centers_movies_and_clamps_negative_offsets() {
+        // 800x600 movies fill 800x600 and center at 1024x768; the negative
+        // 640x480 origin is clamped (the retail result there is unverified).
         assert_eq!(movie_origin(800, 600, 800, 600), (0, 0));
         assert_eq!(movie_origin(1024, 768, 800, 600), (112, 84));
         assert_eq!(movie_origin(640, 480, 800, 600), (0, 0));

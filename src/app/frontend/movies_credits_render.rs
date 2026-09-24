@@ -4,12 +4,16 @@
 use anyhow::Result;
 
 use crate::app::AppState;
+use crate::app::frontend::shell_pass::{
+    ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
+    software_cursor,
+};
 use crate::app::frontend::shell_transition::ButtonGroup;
-use crate::render::batch::{BatchTexture, SpriteInstance};
+use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::{MainMenuShellChromeAtlas, MainMenuShellChromeEntry};
 use crate::render::shell_paint::{
-    self, ArtFit, ButtonPolicy, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton,
-    PaintLabel, SHELL_TEXT_RGB_ENABLED,
+    self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
+    SHELL_TEXT_RGB_ENABLED,
 };
 use crate::render::shell_surface_present::SurfaceEffects;
 use crate::render::shell_text::{ShellAlign, ShellTextDraw};
@@ -18,16 +22,7 @@ use crate::ui::movies_credits_shell::{
     MOVIE_LIST_CONTROL, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT_KEY, MOVIE_LIST_TOOLTIP_KEY,
     MovieListLayout, compute_movie_list_layout,
 };
-use crate::ui::shell::list::ROW_HEIGHT;
-
-/// `0x129` right-panel buttons use the same native SDBTNANM policy as the
-/// menu pages: press art, no hover flash.
-const MOVIE_LIST_BUTTON_POLICY: ButtonPolicy = ButtonPolicy {
-    art_fit: ArtFit::Native,
-    hover_flash: false,
-    art_sink_y: 0.0,
-    disabled_dim: true,
-};
+use crate::ui::shell::list::ListScrollPart;
 
 /// Owner-draw ListBox frame colors (`0x00619230`), as RGB: light
 /// `0xC5BEA7`, dark `0x807A68`, and their average `0xA29C87` at the two
@@ -45,15 +40,6 @@ const LIST_FILL_DEPTH: f32 = CHROME_DEPTH - 0.00003;
 
 fn rgb(color: [u8; 3]) -> [f32; 3] {
     color.map(|channel| f32::from(channel) / 255.0)
-}
-
-fn resolve_csf<'a>(state: &'a AppState, key: &'static str) -> std::borrow::Cow<'a, str> {
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .map(|csf| csf.text(key))
-        .unwrap_or(std::borrow::Cow::Borrowed(key))
 }
 
 fn push_entry_crop(
@@ -178,168 +164,128 @@ fn push_list_frame(out: &mut Vec<SpriteInstance>, atlas: &MainMenuShellChromeAtl
 }
 
 /// List interior (`x+1, y+1, w-1, h-1`) and the rows it holds.
+/// One atlas entry at its native size.
+fn push_entry_native(
+    out: &mut Vec<SpriteInstance>,
+    entry: MainMenuShellChromeEntry,
+    x: i32,
+    y: i32,
+    depth: f32,
+) {
+    out.push(SpriteInstance {
+        position: [x as f32, y as f32],
+        size: entry.pixel_size,
+        uv_origin: entry.uv_origin,
+        uv_size: entry.uv_size,
+        depth,
+        tint: [1.0, 1.0, 1.0],
+        alpha: 1.0,
+        ..Default::default()
+    });
+}
+
+/// The list's darkened backing: everything inside the inner frame ring,
+/// including the scrollbar track (translucency 0 at `0x00619230`).
 fn list_interior(list: RectPx) -> RectPx {
     RectPx::new(list.x + 1, list.y + 1, list.w - 1, list.h - 1)
 }
 
-fn list_row(interior: RectPx, visible_row: usize) -> RectPx {
-    RectPx::new(
-        interior.x,
-        interior.y + visible_row as i32 * ROW_HEIGHT,
-        interior.w,
-        ROW_HEIGHT,
-    )
-}
-
-fn visible_rows(interior: RectPx) -> usize {
-    (interior.h / ROW_HEIGHT).max(0) as usize
-}
-
-struct TexturedDraw<'a> {
-    texture: &'a BatchTexture,
-    instances: Vec<SpriteInstance>,
-}
-
-/// One shell composition: textured sprite batches in order, then clipped
-/// text, then the optional cursor, presented through the RGB565 presenter
-/// with the optional 16-bit surface effects.
-#[derive(Default)]
-struct ShellComposition<'a> {
-    draws: &'a [TexturedDraw<'a>],
-    text: &'a [ShellTextDraw],
-    cursor: Option<(&'a BatchTexture, SpriteInstance)>,
-    effects: Option<SurfaceEffects>,
-}
-
-fn encode_shell_pass(
-    state: &AppState,
-    encoder: &mut wgpu::CommandEncoder,
-    destination: &wgpu::Texture,
-    label: &str,
-    composition: ShellComposition<'_>,
+/// Scrollbar child of list `0x744`, measured on the retail 17-row list
+/// (`list17-*.png`). Its left edge adds a light line at `bar.x` and a dark
+/// line at `bar.x + 1` between the list's top and bottom rings, taking the
+/// corner color where a line crosses a ring of the other tone. Inside, the
+/// parent background shows without the list's darkening; 18x22 arrows sit
+/// at `bar.x + 2` against the rings, and the grip middle is tiled from the
+/// thumb top with the 2-row caps drawn over it.
+fn push_list_scrollbar(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &MainMenuShellChromeAtlas,
+    backdrop: Option<(MainMenuShellChromeEntry, (i32, i32))>,
+    bar: RectPx,
+    thumb: RectPx,
+    pressed: Option<ListScrollPart>,
 ) {
-    let ShellComposition {
-        draws,
-        text,
-        cursor,
-        effects,
-    } = composition;
-    let gpu = &state.renderer.gpu;
-    let batch = &state.renderer.batch_renderer;
-    batch.update_camera(
-        gpu,
-        gpu.config.width as f32,
-        gpu.config.height as f32,
-        0.0,
-        0.0,
-        1.0,
-        crate::render::batch::DepthAxis::NONE,
+    let (top, bottom) = (bar.y, bar.y + bar.h - 1);
+    push_solid(
+        out,
+        atlas,
+        RectPx::new(bar.x, top, 1, bottom - top),
+        LIST_FRAME_LIGHT,
+        LIST_DEPTH,
     );
-    let buffers: Vec<_> = draws
-        .iter()
-        .map(|draw| batch.create_instance_buffer(gpu, &draw.instances))
-        .collect();
-    let text_buffers: Vec<_> = text
-        .iter()
-        .map(|draw| batch.create_instance_buffer(gpu, &draw.instances))
-        .collect();
-    let cursor_buffer = cursor.as_ref().and_then(|(_, instance)| {
-        batch.create_instance_buffer(gpu, std::slice::from_ref(instance))
-    });
-    let color = state.renderer.shell_surface_presenter.source_render_view();
-    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some(label),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: &color,
-            depth_slice: None,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(crate::app::types::CLEAR_COLOR),
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-            view: &state.renderer.depth_view,
-            depth_ops: Some(wgpu::Operations {
-                load: wgpu::LoadOp::Clear(1.0),
-                store: wgpu::StoreOp::Store,
-            }),
-            stencil_ops: None,
-        }),
-        timestamp_writes: None,
-        occlusion_query_set: None,
-    });
-    for (draw, buffer) in draws.iter().zip(&buffers) {
-        if let Some((buffer, count)) = buffer.as_ref() {
-            batch.draw_with_buffer_passthrough(&mut pass, draw.texture, buffer, *count);
-        }
+    push_solid(
+        out,
+        atlas,
+        RectPx::new(bar.x + 1, top - 1, 1, bottom - top + 1),
+        LIST_FRAME_DARK,
+        LIST_DEPTH,
+    );
+    for (x, y) in [(bar.x, top), (bar.x + 1, top - 1), (bar.x + 1, bottom)] {
+        push_solid(
+            out,
+            atlas,
+            RectPx::new(x, y, 1, 1),
+            LIST_FRAME_CORNER,
+            LIST_DEPTH - 0.000005,
+        );
     }
-    for (draw, buffer) in text.iter().zip(&text_buffers) {
-        let Some((buffer, count)) = buffer.as_ref() else {
-            continue;
+    let interior = RectPx::new(bar.x + 2, bar.y + 1, bar.w - 2, bar.h - 2);
+    if let Some((entry, origin)) = backdrop {
+        push_entry_crop(out, entry, origin, interior, LIST_FILL_DEPTH);
+    }
+    let art = &atlas.list_scroll;
+    let x = interior.x;
+    let arrow_h = art
+        .down_released
+        .map_or(22, |entry| entry.pixel_size[1].round() as i32);
+    for (released, pressed_art, part, y) in [
+        (
+            art.up_released,
+            art.up_pressed,
+            ListScrollPart::Up,
+            interior.y,
+        ),
+        (
+            art.down_released,
+            art.down_pressed,
+            ListScrollPart::Down,
+            interior.y + interior.h - arrow_h,
+        ),
+    ] {
+        let entry = if pressed == Some(part) {
+            pressed_art.or(released)
+        } else {
+            released
         };
-        pass.set_scissor_rect(
-            draw.scissor.x,
-            draw.scissor.y,
-            draw.scissor.w,
-            draw.scissor.h,
-        );
-        batch.draw_with_buffer_passthrough(
-            &mut pass,
-            state.renderer.bit_font.atlas(),
-            buffer,
-            *count,
-        );
-    }
-    pass.set_scissor_rect(0, 0, gpu.config.width, gpu.config.height);
-    if let (Some((texture, _)), Some((buffer, count))) = (cursor, cursor_buffer.as_ref()) {
-        batch.draw_with_buffer_passthrough(&mut pass, texture, buffer, *count);
-    }
-    drop(pass);
-    let presenter = &state.renderer.shell_surface_presenter;
-    match effects {
-        Some(effects) => {
-            presenter.encode_present_with_effects(&gpu.queue, encoder, destination, effects)
+        if let Some(entry) = entry {
+            push_entry_native(out, entry, x, y, LIST_DEPTH - 0.00001);
         }
-        None => presenter.encode_present(encoder, destination),
     }
-}
-
-fn shell_cursor(state: &AppState) -> Option<(&BatchTexture, SpriteInstance)> {
-    let cursor = state
-        .match_state
-        .match_presentation
-        .software_cursor
-        .as_ref()?;
-    let sequence = cursor.get(crate::app::types::CursorId::Default)?;
-    let frame = crate::app::input::cursor::current_software_cursor_frame(sequence)?;
-    let texture = &sequence.frames.first()?.texture;
-    Some((
-        texture,
-        SpriteInstance {
-            position: [
-                state.match_state.input.cursor_x - sequence.hotspot[0],
-                state.match_state.input.cursor_y - sequence.hotspot[1],
-            ],
-            size: [frame.width, frame.height],
-            uv_origin: [0.0, 0.0],
-            uv_size: [1.0, 1.0],
-            depth: CURSOR_DEPTH,
-            tint: [1.0, 1.0, 1.0],
-            alpha: 1.0,
-            ..Default::default()
-        },
-    ))
-}
-
-fn owner_draw_button_label_rect(rect: RectPx, pressed: bool) -> RectPx {
-    let (dx, dy) = if pressed { (2, 5) } else { (0, 1) };
-    RectPx::new(
-        rect.x + dx,
-        rect.y + dy,
-        (rect.w - 2 - dx).max(0),
-        (rect.h - dy).max(0),
-    )
+    if let Some(mid) = art.grip_mid {
+        let tile_h = mid.pixel_size[1].round() as i32;
+        let mut y = thumb.y;
+        while tile_h > 0 && y < thumb.y + thumb.h {
+            let h = tile_h.min(thumb.y + thumb.h - y);
+            out.push(SpriteInstance {
+                position: [x as f32, y as f32],
+                size: [mid.pixel_size[0], h as f32],
+                uv_origin: mid.uv_origin,
+                uv_size: [mid.uv_size[0], mid.uv_size[1] * h as f32 / tile_h as f32],
+                depth: LIST_DEPTH - 0.00001,
+                tint: [1.0, 1.0, 1.0],
+                alpha: 1.0,
+                ..Default::default()
+            });
+            y += tile_h;
+        }
+    }
+    if let Some(top) = art.grip_top {
+        push_entry_native(out, top, x, thumb.y, LIST_DEPTH - 0.00002);
+    }
+    if let Some(bottom) = art.grip_bottom {
+        let h = bottom.pixel_size[1].round() as i32;
+        push_entry_native(out, bottom, x, thumb.y + thumb.h - h, LIST_DEPTH - 0.00002);
+    }
 }
 
 /// Sprites and labels for dialog `0x129`.
@@ -401,11 +347,24 @@ fn movie_list_composition<'a>(
         );
     }
     push_list_frame(&mut sprites, atlas, layout.list);
-    let rows = visible_rows(interior);
     let mut labels = Vec::new();
     if let Some(list) = list {
-        for (visible, index) in (list.top..list.rows.len()).take(rows).enumerate() {
-            let row = list_row(interior, visible);
+        let geometry = list.geometry(layout.list);
+        if let (Some(bar), Some(thumb)) = (geometry.scrollbar, geometry.thumb) {
+            push_list_scrollbar(
+                &mut sprites,
+                atlas,
+                background.map(|entry| (entry, origin)),
+                bar,
+                thumb,
+                list.scroll.pressed_part(),
+            );
+        }
+        for (visible, index) in (list.top..list.rows.len())
+            .take(geometry.visible_rows)
+            .enumerate()
+        {
+            let row = geometry.row(visible);
             if list.selected == Some(index) {
                 push_solid(
                     &mut sprites,
@@ -451,7 +410,7 @@ fn movie_list_composition<'a>(
     let button_sprites = shell_paint::paint_buttons(
         atlas,
         &buttons,
-        MOVIE_LIST_BUTTON_POLICY,
+        crate::app::frontend::menu_page_render::MENU_PAGE_BUTTON_POLICY,
         std::time::Instant::now(),
         None,
     );
@@ -531,7 +490,7 @@ pub(crate) fn render_movie_list(
         ShellComposition {
             draws: &draws,
             text: &text,
-            cursor: shell_cursor(state),
+            cursor: software_cursor(state, CURSOR_DEPTH),
             effects: None,
         },
     );
@@ -590,20 +549,27 @@ pub(crate) fn render_credits_roll(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<()> {
-    let Some(session) = state.frontend.credits_roll.as_ref() else {
+    let screen_w = state.renderer.gpu.config.width;
+    let screen_h = state.renderer.gpu.config.height;
+    let active = state.platform.window_active;
+    let Some(session) = state.frontend.credits_roll.as_mut() else {
         return Ok(());
     };
-    let font = &state.renderer.bit_font;
-    let instances = session
-        .roll
-        .instances(font, state.renderer.gpu.config.width as i32);
+    if active || session.last_drawn.is_empty() {
+        session.last_drawn = session
+            .roll
+            .instances(&state.renderer.bit_font, screen_w as i32);
+    }
+    // Glyphs are clipped to the 520 px box (0x006211D0 sets the clip rect).
+    let box_x = crate::app::frontend::credits_roll::credits_box_x(screen_w as i32).max(0) as u32;
     let text = [ShellTextDraw {
-        instances,
+        instances: session.last_drawn.clone(),
         scissor: crate::render::shell_text::ScissorRect {
-            x: 0,
+            x: box_x,
             y: 0,
-            w: state.renderer.gpu.config.width,
-            h: state.renderer.gpu.config.height,
+            w: (crate::app::frontend::credits_roll::CREDITS_BOX_WIDTH as u32)
+                .min(screen_w.saturating_sub(box_x)),
+            h: screen_h,
         },
     }];
     encode_shell_pass(
@@ -629,10 +595,33 @@ mod tests {
     #[test]
     fn list_interior_and_rows_match_the_native_capture() {
         let list = RectPx::new(120, 128, 399, 304);
-        let interior = list_interior(list);
         // Selection fill measured at x 121..=518, y 129..=147.
-        assert_eq!(interior, RectPx::new(121, 129, 398, 303));
-        assert_eq!(list_row(interior, 0), RectPx::new(121, 129, 398, 19));
-        assert_eq!(visible_rows(interior), 15);
+        assert_eq!(list_interior(list), RectPx::new(121, 129, 398, 303));
+        let mut state = crate::ui::movies_credits_shell::MovieListState::open(
+            crate::ui::movies_credits_shell::MovieProgress::default(),
+            -1,
+        );
+        let short = state.geometry(list);
+        assert_eq!(short.row(0), RectPx::new(121, 129, 398, 19));
+        assert_eq!(short.visible_rows, 15);
+        assert!(short.scrollbar.is_none());
+        // Retail list with all 17 movies (`list17-*.png`): bar columns
+        // 499..=518, thumb rows 151..=352 at top 0 and 208..=409 at top 2.
+        state.rows = crate::ui::movies_credits_shell::active_movie_entries(
+            crate::ui::movies_credits_shell::MovieProgress {
+                soviet: 7,
+                allied: 7,
+            },
+        );
+        assert_eq!(state.rows.len(), 17);
+        let full = state.geometry(list);
+        assert_eq!(full.scrollbar, Some(RectPx::new(499, 128, 20, 305)));
+        assert_eq!(full.thumb, Some(RectPx::new(500, 151, 18, 202)));
+        assert_eq!(full.row(0), RectPx::new(121, 129, 378, 19));
+        state.top = 2;
+        assert_eq!(
+            state.geometry(list).thumb,
+            Some(RectPx::new(500, 208, 18, 202))
+        );
     }
 }

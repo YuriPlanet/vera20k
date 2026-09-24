@@ -8,6 +8,8 @@ use serde_json::{Value, json};
 
 /// Row-0 press point for the selected-list checkpoint (inside `0x744`).
 const LIST_ROW0_POINT: (f32, f32) = (150.0, 137.0);
+/// Down-arrow press point of the 17-row list's scrollbar.
+const LIST_DOWN_ARROW_POINT: (f32, f32) = (509.0, 420.0);
 /// Frames to present after the route settles, so reveals and pending state
 /// changes show before the readback.
 const SETTLE_FRAMES: u32 = 4;
@@ -17,8 +19,17 @@ pub(super) enum MoviesTarget {
     Page0x101,
     List0x129,
     List0x129Selected,
-    Credits { frame: u64 },
-    SneakPeek { frame: usize },
+    /// Every campaign movie unlocked (diagnostic profile override), after
+    /// `down_presses` down-arrow presses.
+    FullList {
+        down_presses: u8,
+    },
+    Credits {
+        frame: u64,
+    },
+    SneakPeek {
+        frame: usize,
+    },
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -95,6 +106,17 @@ impl MoviesCapture {
                             self.phase = Phase::List;
                             crate::ui::movies_credits_shell::MoviesCreditsAction::PlayMovies
                         }
+                        MoviesTarget::FullList { .. } => {
+                            state.persistence.options_profile.movie_progress =
+                                crate::ui::movies_credits_shell::MovieProgress {
+                                    soviet: 7,
+                                    allied: 7,
+                                };
+                            self.route.push(json!({"frame": frame,
+                                "action": "diagnostic movie progress override", "progress": [7, 7]}));
+                            self.phase = Phase::List;
+                            crate::ui::movies_credits_shell::MoviesCreditsAction::PlayMovies
+                        }
                         MoviesTarget::Credits { .. } => {
                             self.phase = Phase::Credits;
                             crate::ui::movies_credits_shell::MoviesCreditsAction::ViewCredits
@@ -112,6 +134,17 @@ impl MoviesCapture {
             }
             (Phase::List, PresentedShell::MovieList) => {
                 if Self::slide_settled(state, ShellSlideKind::MovieList) {
+                    if let MoviesTarget::FullList { down_presses } = self.target {
+                        state.match_state.input.cursor_x = LIST_DOWN_ARROW_POINT.0;
+                        state.match_state.input.cursor_y = LIST_DOWN_ARROW_POINT.1;
+                        for _ in 0..down_presses {
+                            App::handle_movie_list_mouse_down(state);
+                            App::handle_movie_list_mouse_up(state);
+                        }
+                        self.route.push(json!({"dialog": 0x129, "frame": frame,
+                            "action": "press down arrow", "count": down_presses,
+                            "point": [LIST_DOWN_ARROW_POINT.0, LIST_DOWN_ARROW_POINT.1]}));
+                    }
                     if self.target == MoviesTarget::List0x129Selected {
                         state.match_state.input.cursor_x = LIST_ROW0_POINT.0;
                         state.match_state.input.cursor_y = LIST_ROW0_POINT.1;
@@ -144,6 +177,8 @@ impl MoviesCapture {
                     session.roll.frame() == target,
                     "credits roll could not reach frame {target}"
                 );
+                // Redraw the held frame even if the capture window is inactive.
+                session.last_drawn.clear();
                 self.route.push(
                     json!({"presentation": "Show_Credits", "frame": frame, "roll_frame": target}),
                 );
@@ -182,7 +217,9 @@ impl MoviesCapture {
         }
         let expected = match self.target {
             MoviesTarget::Page0x101 => state.frontend.shell_route.movies_and_credits(),
-            MoviesTarget::List0x129 | MoviesTarget::List0x129Selected => {
+            MoviesTarget::List0x129
+            | MoviesTarget::List0x129Selected
+            | MoviesTarget::FullList { .. } => {
                 state.frontend.shell_route.movie_list() && state.frontend.movie_list.is_some()
             }
             MoviesTarget::Credits { .. } => state.frontend.credits_roll.is_some(),

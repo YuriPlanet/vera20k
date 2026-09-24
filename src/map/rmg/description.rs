@@ -69,6 +69,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn random_map_section_crc_is_the_crc_engine_of_its_name() {
+        assert_eq!(
+            crate::assets::mix_hash::crc_engine(b"RandomMap"),
+            RANDOM_MAP_SECTION_CRC
+        );
+    }
+
+    #[test]
     fn fresh_seed_descriptions_match_original_reader_vectors() {
         let vectors: serde_json::Value = serde_json::from_str(include_str!(
             "../../../tools/storage_oracle/sed_description.json"

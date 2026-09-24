@@ -109,6 +109,24 @@ impl App {
         let feed = Self::movie_list_feed(state);
         let (x, y) = Self::shell_cursor(state);
         state.frontend.shell_controller.on_pointer_move(x, y, &feed);
+        let layout = Self::movie_list_layout(state);
+        if let Some(list) = state.frontend.movie_list.as_mut() {
+            list.scroll_pointer_moved(layout.list, x, y);
+        }
+    }
+
+    /// Scrollbar arrow auto-repeat; returns the next wake deadline.
+    pub(super) fn poll_movie_list_scroll(state: &mut AppState) -> Option<Instant> {
+        if !Self::movie_list_active(state) {
+            return None;
+        }
+        let (x, y) = Self::shell_cursor(state);
+        let layout = Self::movie_list_layout(state);
+        let list = state.frontend.movie_list.as_mut()?;
+        if list.scroll_poll(layout.list, x, y, Instant::now()) {
+            state.platform.window.request_redraw();
+        }
+        list.scroll.repeat_at()
     }
 
     pub(super) fn handle_movie_list_mouse_down(state: &mut AppState) {
@@ -118,9 +136,20 @@ impl App {
         if let Some(list) = state.frontend.movie_list.as_mut()
             && layout.list.contains(x, y)
         {
-            // 0x0061A948: select the row under the press (presses below the
-            // last row are ignored) and play GenericClick.
-            if let Some(row) = list.row_at(layout.list, x, y) {
+            // The scrollbar child (0x0061C690) captures its own presses and
+            // plays no sound.
+            if list.scroll_press(layout.list, x, y, Instant::now()) {
+                return;
+            }
+            let double_click = list.is_double_click(
+                Instant::now(),
+                x,
+                y,
+                crate::ui::shell::saved_file_input::host_double_click_limits(),
+            );
+            // 0x0061A948: a single press selects the row under it (presses
+            // below the last row are ignored) and plays GenericClick.
+            if !double_click && let Some(row) = list.row_at(layout.list, x, y) {
                 list.selected = Some(row);
                 Self::play_generic_click_sound(state);
             }
@@ -140,6 +169,9 @@ impl App {
     }
 
     pub(super) fn handle_movie_list_mouse_up(state: &mut AppState) {
+        if let Some(list) = state.frontend.movie_list.as_mut() {
+            list.scroll.cancel();
+        }
         let feed: Vec<_> = Self::movie_list_feed(state)
             .into_iter()
             .filter(|control| control.id != crate::ui::movies_credits_shell::MOVIE_LIST_CONTROL)
@@ -371,6 +403,7 @@ impl App {
         state.frontend.credits_roll = Some(CreditsRollSession {
             roll,
             saved_score_volume,
+            last_drawn: Vec::new(),
         });
         state.platform.window.request_redraw();
     }

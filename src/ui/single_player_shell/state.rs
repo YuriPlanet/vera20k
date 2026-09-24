@@ -72,7 +72,7 @@ pub fn return_code_for_action(action: SinglePlayerShellAction) -> Option<i32> {
     };
     SINGLE_PLAYER_PAGE
         .button(id.resource_id())
-        .map(|button| button.result)
+        .and_then(|button| button.result)
 }
 
 #[cfg(test)]

@@ -10,8 +10,9 @@
 
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, dlu_rect};
-use crate::ui::shell::list::ROW_HEIGHT;
+use crate::ui::shell::list::{ListScrollInteraction, ROW_HEIGHT, ShellListGeometry};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use std::time::{Duration, Instant};
 
 pub const MOVIE_LIST_DIALOG: DialogId = DialogId(0x0129);
 
@@ -25,8 +26,8 @@ pub const MOVIE_LIST_TOOLTIP_KEY: &str = "GUI:SelectMovie";
 pub const MOVIE_LIST_PROMPT_KEY: &str = "GUI:SelectMovie";
 
 /// RT_DIALOG `0x129` right-panel buttons. Dialog proc `0x0052D870` writes
-/// the selected table entry for Play Movie and -1 for Back; the `result`
-/// fields only mirror that for Back.
+/// the selected row's item data (its movie table entry) for Play Movie and
+/// -1 for Back.
 pub const MOVIE_LIST_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: MOVIE_LIST_DIALOG,
     title_key: "GUI:Blank",
@@ -35,14 +36,14 @@ pub const MOVIE_LIST_PAGE: MenuPageSpec = MenuPageSpec {
         dlu_top: 122,
         csf_key: "GUI:PlayMovie",
         tooltip_key: "GUI:PlayMovie",
-        result: 0,
+        result: None,
     }],
     back: MenuPageButtonSpec {
         id: 0x0686,
         dlu_top: 346,
         csf_key: "GUI:Back",
         tooltip_key: "STT:MsnDltButtonBack",
-        result: -1,
+        result: Some(-1),
     },
 };
 
@@ -66,7 +67,7 @@ pub fn compute_movie_list_layout(screen_w: u32, screen_h: u32) -> MovieListLayou
 }
 
 /// One `0x129` instance: rows from `0x005FC000` and the subclass selection.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct MovieListState {
     pub rows: Vec<MovieEntry>,
     /// Subclass current selection (`-1` = none). Its LB_SETCURSEL handler
@@ -75,6 +76,10 @@ pub struct MovieListState {
     /// selected.
     pub selected: Option<usize>,
     pub top: usize,
+    /// Previous press for the ListBox class's `CS_DBLCLKS` detection.
+    pub last_press: Option<(Instant, i32, i32)>,
+    /// Scrollbar capture and arrow repeat (`0x0061C690`).
+    pub scroll: ListScrollInteraction,
 }
 
 impl MovieListState {
@@ -88,13 +93,81 @@ impl MovieListState {
             rows,
             selected,
             top: 0,
+            last_press: None,
+            scroll: ListScrollInteraction::default(),
         }
     }
 
+    /// List and scrollbar geometry. The shared geometry takes the paint
+    /// surface, one pixel wider and taller than the `0x744` window, which
+    /// reproduces the retail frames: a scrollbar only above 15 rows, at
+    /// `x + w - 20` and 20 wide, a 202 px thumb for 17 rows.
+    pub fn geometry(&self, list: RectPx) -> ShellListGeometry {
+        ShellListGeometry::new(
+            RectPx::new(list.x, list.y, list.w + 1, list.h + 1),
+            self.rows.len(),
+            self.top,
+        )
+    }
+
+    /// A press on the scrollbar child: capture it, step an arrow or jump the
+    /// track. Returns `false` when the press is not on the scrollbar.
+    pub fn scroll_press(&mut self, list: RectPx, x: i32, y: i32, now: Instant) -> bool {
+        let geometry = self.geometry(list);
+        let Some(part) = geometry.scroll_part_at(x, y) else {
+            return false;
+        };
+        self.scroll.press(part, geometry, &mut self.top, y, now);
+        true
+    }
+
+    /// Pointer motion while the scrollbar may hold capture (thumb drag).
+    pub fn scroll_pointer_moved(&mut self, list: RectPx, x: i32, y: i32) {
+        let geometry = self.geometry(list);
+        self.scroll.pointer_moved(geometry, &mut self.top, x, y);
+    }
+
+    /// Arrow auto-repeat; returns whether the list changed.
+    pub fn scroll_poll(&mut self, list: RectPx, x: i32, y: i32, now: Instant) -> bool {
+        if self.scroll.repeat_at().is_none() {
+            return false;
+        }
+        let geometry = self.geometry(list);
+        self.scroll.poll(geometry, &mut self.top, x, y, now)
+    }
+
+    /// Whether a press is the second click of a double-click: within the
+    /// host double-click time and rectangle of the previous press. Windows
+    /// then sends `WM_LBUTTONDBLCLK`, which the subclass only forwards as
+    /// `LBN_DBLCLK` (`0x0061A904..0x0061A945`): no selection, no sound. A
+    /// double-click ends the sequence, so the next press starts a new one.
+    pub fn is_double_click(
+        &mut self,
+        now: Instant,
+        x: i32,
+        y: i32,
+        (time, width, height): (Duration, i32, i32),
+    ) -> bool {
+        let double = self.last_press.is_some_and(|(last, px, py)| {
+            now.duration_since(last) <= time
+                && (x - px).abs() * 2 <= width
+                && (y - py).abs() * 2 <= height
+        });
+        self.last_press = if double { None } else { Some((now, x, y)) };
+        double
+    }
+
     /// Row under a pointer press (`0x0061A948`): `client_y / 19 + top`,
-    /// without a border correction, ignoring presses below the last row.
+    /// without a border correction, ignoring presses below the last row. The
+    /// scrollbar is its own child window, so presses on it never reach the
+    /// list.
     pub fn row_at(&self, list: RectPx, x: i32, y: i32) -> Option<usize> {
-        if !list.contains(x, y) {
+        if !list.contains(x, y)
+            || self
+                .geometry(list)
+                .scrollbar
+                .is_some_and(|bar| bar.contains(x, y))
+        {
             return None;
         }
         let row = ((y - list.y) / ROW_HEIGHT) as usize + self.top;
@@ -191,6 +264,20 @@ pub fn active_movie_entries(progress: MovieProgress) -> Vec<MovieEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn second_press_inside_the_double_click_window_is_not_a_selection_press() {
+        let limits = (Duration::from_millis(500), 4, 4);
+        let mut list = MovieListState::open(MovieProgress::default(), -1);
+        let t0 = Instant::now();
+        assert!(!list.is_double_click(t0, 150, 137, limits));
+        assert!(list.is_double_click(t0 + Duration::from_millis(300), 151, 138, limits));
+        // The double-click ended the sequence: a third press starts anew.
+        assert!(!list.is_double_click(t0 + Duration::from_millis(400), 151, 138, limits));
+        // Too slow or too far is a fresh press.
+        assert!(!list.is_double_click(t0 + Duration::from_millis(1000), 151, 138, limits));
+        assert!(!list.is_double_click(t0 + Duration::from_millis(1100), 160, 138, limits));
+    }
 
     #[test]
     fn list_and_prompt_keep_raw_dlu_rects_at_every_resolution() {

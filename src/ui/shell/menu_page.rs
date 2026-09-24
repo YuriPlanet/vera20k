@@ -38,8 +38,9 @@ pub struct MenuPageButtonSpec {
     pub csf_key: &'static str,
     /// Status-help CSF key written to static `0x695` on hover.
     pub tooltip_key: &'static str,
-    /// Value the dialog proc writes through `GetWindowLong(hwnd, 8)`.
-    pub result: i32,
+    /// Constant value the dialog proc writes through `GetWindowLong(hwnd, 8)`,
+    /// or `None` when it writes run-time data instead.
+    pub result: Option<i32>,
 }
 
 /// Static description of one right-panel menu page dialog.

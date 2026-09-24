@@ -14,21 +14,21 @@ pub const MOVIES_CREDITS_PAGE: MenuPageSpec = MenuPageSpec {
             dlu_top: 122,
             csf_key: "GUI:SneakPeeks",
             tooltip_key: "STT:OptionsButtonSneak",
-            result: 0x0D,
+            result: Some(0x0D),
         },
         MenuPageButtonSpec {
             id: 0x068E,
             dlu_top: 149,
             csf_key: "GUI:PlayMovies",
             tooltip_key: "STT:OptionsButtonMovies",
-            result: 0x0E,
+            result: Some(0x0E),
         },
         MenuPageButtonSpec {
             id: 0x068F,
             dlu_top: 176,
             csf_key: "GUI:ViewCredits",
             tooltip_key: "STT:OptionsButtonCredits",
-            result: 0x0F,
+            result: Some(0x0F),
         },
     ],
     back: MenuPageButtonSpec {
@@ -36,7 +36,7 @@ pub const MOVIES_CREDITS_PAGE: MenuPageSpec = MenuPageSpec {
         dlu_top: 346,
         csf_key: "GUI:MainMenu",
         tooltip_key: "STT:OptionsButtonBack",
-        result: 0x12,
+        result: Some(0x12),
     },
 };
 
@@ -54,7 +54,7 @@ pub enum MoviesCreditsAction {
 }
 
 pub fn action_for_control(id: u16) -> Option<MoviesCreditsAction> {
-    let result = MOVIES_CREDITS_PAGE.button(id)?.result;
+    let result = MOVIES_CREDITS_PAGE.button(id)?.result?;
     Some(match result {
         0x0D => MoviesCreditsAction::SneakPeeks,
         0x0E => MoviesCreditsAction::PlayMovies,

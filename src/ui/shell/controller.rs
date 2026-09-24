@@ -128,13 +128,6 @@ impl DialogController {
         self.stack.last().and_then(|i| i.hover_started_at)
     }
 
-    /// Whether `control` is runtime-disabled on the top dialog.
-    pub fn is_disabled(&self, control: u16) -> bool {
-        self.stack
-            .last()
-            .is_some_and(|inst| inst.disabled.contains(&control))
-    }
-
     /// The keyboard route in registration order (contract C3).
     pub fn kbd_route(&self) -> &[DialogId] {
         &self.kbd_route

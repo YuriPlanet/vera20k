@@ -11,6 +11,7 @@
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Palette;
+use crate::assets::pcx_file::PcxFile;
 use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::gpu::GpuContext;
@@ -61,6 +62,20 @@ pub struct MainMenuShellChromeAtlas {
     pub parent_background_large_mnscrnl_list: Option<MainMenuShellChromeEntry>,
     /// Opaque white texel block for solid fills (list frames, selection).
     pub white_pixel: Option<MainMenuShellChromeEntry>,
+    /// Owner-draw list scrollbar art (`0x0061C690`): 18x22 arrows, released
+    /// and pressed, and the 18-wide grip top, middle and bottom.
+    pub list_scroll: ListScrollArt,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ListScrollArt {
+    pub up_released: Option<MainMenuShellChromeEntry>,
+    pub up_pressed: Option<MainMenuShellChromeEntry>,
+    pub down_released: Option<MainMenuShellChromeEntry>,
+    pub down_pressed: Option<MainMenuShellChromeEntry>,
+    pub grip_top: Option<MainMenuShellChromeEntry>,
+    pub grip_mid: Option<MainMenuShellChromeEntry>,
+    pub grip_bottom: Option<MainMenuShellChromeEntry>,
 }
 
 /// Darken encoded RGBA8 texels by one RGB565 unit per channel, saturating at
@@ -144,6 +159,20 @@ pub fn build_main_menu_shell_chrome_atlas(
         log::warn!("Missing SHELL2.PAL; skipping main-menu right-panel tile SHP");
     }
 
+    for name in [
+        "UPARROWR.PCX",
+        "UPARROWP.PCX",
+        "DNARROWR.PCX",
+        "DNARROWP.PCX",
+        "SBGRIPT.PCX",
+        "SBGRIPM.PCX",
+        "SBGRIPB.PCX",
+    ] {
+        if let Some(entry) = render_pcx_entry(assets, name) {
+            rendered.push(entry);
+        }
+    }
+
     rendered.push(RenderedChromeEntry {
         label: "white".into(),
         width: 2,
@@ -180,6 +209,15 @@ pub fn build_main_menu_shell_chrome_atlas(
         parent_background_large_mnscrnl: by_label.get("mnscrnl.shp").copied(),
         parent_background_640_mnscrns_list: by_label.get("mnscrns.shp:list").copied(),
         parent_background_large_mnscrnl_list: by_label.get("mnscrnl.shp:list").copied(),
+        list_scroll: ListScrollArt {
+            up_released: by_label.get("uparrowr.pcx").copied(),
+            up_pressed: by_label.get("uparrowp.pcx").copied(),
+            down_released: by_label.get("dnarrowr.pcx").copied(),
+            down_pressed: by_label.get("dnarrowp.pcx").copied(),
+            grip_top: by_label.get("sbgript.pcx").copied(),
+            grip_mid: by_label.get("sbgripm.pcx").copied(),
+            grip_bottom: by_label.get("sbgripb.pcx").copied(),
+        },
         white_pixel: by_label.get("white").copied().map(|mut entry| {
             // Sample only the block's center so filtering never reaches padding.
             entry.uv_origin[0] += entry.uv_size[0] * 0.25;
@@ -263,6 +301,18 @@ fn render_shp_entry(
         width: canvas_w,
         height: canvas_h,
         rgba,
+    })
+}
+
+/// A PCX in its own palette, full canvas.
+fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<RenderedChromeEntry> {
+    let bytes = assets.get_ref(file_name)?;
+    let pcx = PcxFile::from_bytes(bytes).ok()?;
+    Some(RenderedChromeEntry {
+        label: file_name.to_ascii_lowercase(),
+        width: pcx.width as u32,
+        height: pcx.height as u32,
+        rgba: pcx.to_rgba(None),
     })
 }
 

@@ -33,6 +33,8 @@ const CHECKPOINT_SKIRMISH_0X102_STEADY: &str = "skirmish-0x102-steady";
 const CHECKPOINT_MOVIES_0X101_STEADY: &str = "movies-0x101-steady";
 const CHECKPOINT_MOVIE_LIST_0X129_STEADY: &str = "movie-list-0x129-steady";
 const CHECKPOINT_MOVIE_LIST_0X129_SELECTED: &str = "movie-list-0x129-selected";
+const CHECKPOINT_MOVIE_LIST_0X129_FULL: &str = "movie-list-0x129-full";
+const CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2: &str = "movie-list-0x129-full-down2";
 const CHECKPOINT_CREDITS_ROLL_FRAME_PREFIX: &str = "credits-roll-frame-";
 const CHECKPOINT_SNEAK_PEEK_FRAME_PREFIX: &str = "sneak-peek-frame-";
 const EXPECTED_WIDTH: u32 = 800;
@@ -65,6 +67,10 @@ pub enum ShellCaptureCheckpoint {
     MoviesPage0x101Steady,
     MovieList0x129Steady,
     MovieList0x129Selected,
+    /// All 17 movies unlocked (a scrollbar is shown), optionally after two
+    /// down-arrow presses.
+    MovieList0x129Full,
+    MovieList0x129FullDown2,
     /// Show_Credits pinned at one roll frame (`credits-roll-frame-<N>`).
     CreditsRollFrame(u64),
     /// Sneak Peeks Play_Movie pinned at one video frame (`sneak-peek-frame-<N>`).
@@ -93,6 +99,8 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_MOVIES_0X101_STEADY => Ok(Self::MoviesPage0x101Steady),
             CHECKPOINT_MOVIE_LIST_0X129_STEADY => Ok(Self::MovieList0x129Steady),
             CHECKPOINT_MOVIE_LIST_0X129_SELECTED => Ok(Self::MovieList0x129Selected),
+            CHECKPOINT_MOVIE_LIST_0X129_FULL => Ok(Self::MovieList0x129Full),
+            CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2 => Ok(Self::MovieList0x129FullDown2),
             _ => bail!("unsupported shell-capture checkpoint {value:?}"),
         }
     }
@@ -105,6 +113,8 @@ impl ShellCaptureCheckpoint {
             Self::MoviesPage0x101Steady => CHECKPOINT_MOVIES_0X101_STEADY,
             Self::MovieList0x129Steady => CHECKPOINT_MOVIE_LIST_0X129_STEADY,
             Self::MovieList0x129Selected => CHECKPOINT_MOVIE_LIST_0X129_SELECTED,
+            Self::MovieList0x129Full => CHECKPOINT_MOVIE_LIST_0X129_FULL,
+            Self::MovieList0x129FullDown2 => CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2,
             Self::CreditsRollFrame(_) => "credits-roll-frame",
             Self::SneakPeekFrame(_) => "sneak-peek-frame",
         }
@@ -115,6 +125,8 @@ impl ShellCaptureCheckpoint {
             Self::MoviesPage0x101Steady => movies::MoviesTarget::Page0x101,
             Self::MovieList0x129Steady => movies::MoviesTarget::List0x129,
             Self::MovieList0x129Selected => movies::MoviesTarget::List0x129Selected,
+            Self::MovieList0x129Full => movies::MoviesTarget::FullList { down_presses: 0 },
+            Self::MovieList0x129FullDown2 => movies::MoviesTarget::FullList { down_presses: 2 },
             Self::CreditsRollFrame(frame) => movies::MoviesTarget::Credits { frame },
             Self::SneakPeekFrame(frame) => movies::MoviesTarget::SneakPeek { frame },
             _ => return None,

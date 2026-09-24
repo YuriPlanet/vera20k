@@ -90,7 +90,8 @@ enum ShellEntryEffect {
 
 #[derive(Debug)]
 enum ShellWaveCompletion {
-    SinglePlayer,
+    /// Single Player `0x100`, Movies & Credits `0x101` or movie list `0x129`.
+    MenuPage,
     Skirmish,
 }
 
@@ -171,7 +172,7 @@ impl<'a> ShellLifecycleReducer<'a> {
             ShellSlideKind::MainMenu => return None,
             ShellSlideKind::SinglePlayer
             | ShellSlideKind::MoviesAndCredits
-            | ShellSlideKind::MovieList => ShellWaveCompletion::SinglePlayer,
+            | ShellSlideKind::MovieList => ShellWaveCompletion::MenuPage,
             ShellSlideKind::Skirmish => ShellWaveCompletion::Skirmish,
         })
     }
@@ -505,7 +506,7 @@ pub(crate) fn render_shell_first_paint_slide(
                 .frontend.skirmish_shell_state
                 .start_right_panel_static_reveals(&title, &game_type, &map_label, now);
         }
-        Some(ShellWaveCompletion::SinglePlayer) | None => {}
+        Some(ShellWaveCompletion::MenuPage) | None => {}
     }
 
     Ok(ShellFirstPaintRenderResult::Rendered {

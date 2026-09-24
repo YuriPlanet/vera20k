@@ -548,6 +548,14 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn network_section_crc_is_the_crc_engine_of_its_name() {
+        assert_eq!(
+            crate::assets::mix_hash::crc_engine(NETWORK_SECTION.as_bytes()),
+            NETWORK_SECTION_CRC
+        );
+    }
+
     fn load_snapshot(startup: &RetailStartupOptions, bytes: &[u8]) -> RetailOptionsLoad {
         RetailOptionsLoad::from_ra2md_with(Path::new("C:/retail"), startup, |_| Ok(bytes.to_vec()))
     }

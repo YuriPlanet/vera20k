@@ -10,7 +10,8 @@ exactly. Differences are therefore reported in RGB565 units, never in 8-bit
 display values.
 
 The capture side is a ``--shell-capture`` bundle (``capture.json`` plus the
-BGRA8 ``frame.bgra`` it names, hash-checked). The native side is a PNG
+BGRA8 ``frame.bgra`` it names, checked against the manifest's SHA-256 or, for
+older schemas without one, its byte length). The native side is a PNG
 screenshot of the same client area (8-bit RGB/RGBA or 1/2/4/8-bit palette,
 non-interlaced). Masked rectangles are excluded, for example a cursor the
 native screenshot lacks or a region the comparison does not cover.
@@ -150,8 +151,10 @@ def read_capture(directory):
         raise InputError("capture frame is not top-left BGRA8")
     width, height, stride = surface["width"], surface["height"], surface["row_stride"]
     raw = (directory / frame["path"]).read_bytes()
-    if hashlib.sha256(raw).hexdigest() != frame["sha256"]:
+    if "sha256" in frame and hashlib.sha256(raw).hexdigest() != frame["sha256"]:
         raise InputError("capture frame does not match its manifest SHA-256")
+    if "byte_length" in frame and len(raw) != frame["byte_length"]:
+        raise InputError("capture frame does not match its manifest byte length")
     if len(raw) != stride * height or stride < width * 4:
         raise InputError("capture frame has the wrong length")
     pixels = []
@@ -160,7 +163,7 @@ def read_capture(directory):
         for x in range(width):
             b, g, r = row[x * 4 : x * 4 + 3]
             pixels.append((r, g, b))
-    return manifest, width, height, pixels
+    return manifest, hashlib.sha256(raw).hexdigest(), width, height, pixels
 
 
 def rgb565_units(pixel):
@@ -242,7 +245,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         masks = [parse_mask(text) for text in args.mask]
-        manifest, width, height, rust = read_capture(args.capture)
+        manifest, frame_sha256, width, height, rust = read_capture(args.capture)
         native_bytes = Path(args.native).read_bytes()
         native_width, native_height, native = read_png_rgb(native_bytes)
         if (native_width, native_height) != (width, height):
@@ -259,7 +262,7 @@ def main(argv=None):
         "capture": {
             "checkpoint": manifest.get("checkpoint"),
             "capture_frame": manifest.get("capture_frame"),
-            "frame_sha256": manifest["frame"]["sha256"],
+            "frame_sha256": frame_sha256,
         },
         "native": {
             "file": Path(args.native).name,

@@ -11,6 +11,7 @@ pub(crate) mod menu_page_render;
 pub(crate) mod movies_credits_render;
 pub(crate) mod quit_cascade;
 pub(crate) mod score_shell_render;
+pub(crate) mod shell_pass;
 pub(crate) mod shell_transition;
 pub(crate) mod skirmish;
 pub(crate) mod skirmish_session;
