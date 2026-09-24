@@ -65,9 +65,6 @@ use crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
 /// Foot+64C after a found route (0x4B3285 / 0x6A28D5).
 const FOUND_ROUTE_RETRIES: u32 = 10;
 
-/// LandType Tunnel (10), the Cell+EC value the ally stop excludes.
-const LAND_TUNNEL: u8 = 10;
-
 /// A Unit on Drive or Ship, whose class setter is Unit 0x741970.
 fn track_unit(entity: &GameEntity) -> bool {
     entity.category == EntityCategory::Unit
@@ -518,53 +515,20 @@ impl Simulation {
             return Ok(false);
         }
         let destination = track_destination(actor).unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
+        //4B2C14..4B2C62: Distance3D (0x41C380) below CloseEnough, then no
+        //radio contact (0x65AE30) and the shared stop band.
         let close = native_coord_distance(
             location.x.wrapping_sub(destination.x),
             location.y.wrapping_sub(destination.y),
             location.z.wrapping_sub(destination.z),
         ) < rules.general.close_enough;
-        let standing_land = terrain
-            .cell(actor.position.rx, actor.position.ry)
-            .map(|c| c.yr_cell_land_type);
-        if close
-            && actor.radio_contacts.is_empty()
-            && destination.z.wrapping_sub(location.z).wrapping_abs()
-                < 2 * GROUND_LEVEL_HEIGHT_LEPTONS
-            && standing_land != Some(LAND_TUNNEL)
-        {
+        if close && actor.radio_contacts.is_empty() && self.track_stop_band(location, destination) {
             //4B2CDD..4B2D65: clear the head, then stop or take the waypoint.
             self.stop_or_take_next_waypoint(id, rules);
             return Ok(true);
         }
-        //4B2D68..4B2DC0: Scatter_Objects(Null, 1, 1, flag), flag = a deck
-        //cell whose level is more than two levels from the Foot.
-        let level = cells
-            .ground_fields(cells.lookup((cell.0 as i16, cell.1 as i16)))
-            .0 as i8;
-        let deck = cells.flags(cells.lookup((cell.0 as i16, cell.1 as i16))) & 0x100 != 0
-            && (location.z / GROUND_LEVEL_HEIGHT_LEPTONS - i32::from(level)).abs() > 2;
-        let grid = self.path_grid_snapshot();
-        super::bump_crush::scatter_cell_objects(
-            &mut self.substrate.entities,
-            &self.substrate.occupancy,
-            key,
-            if deck {
-                MovementLayer::Bridge
-            } else {
-                MovementLayer::Ground
-            },
-            true,
-            grid.as_deref(),
-            self.resolved_terrain.as_ref(),
-            &mut self.scenario_rng,
-            Some(rules),
-            &self.interner,
-            &self.houses,
-            super::DestinationTiming::new(
-                self.session.binary_frame,
-                rules.general.blockage_path_delay_ticks,
-            ),
-        );
+        //4B2D68..4B2DC0: the forced scatter of the refused cell.
+        self.scatter_blocked_track_cell(id, (cell.0 as i16, cell.1 as i16), rules, None);
         Ok(false)
     }
 

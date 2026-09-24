@@ -41,7 +41,7 @@ use crate::rules::tiberium_type::TiberiumTypeRegistry;
 use crate::rules::voxel_anim_type::{VoxelAnimType, VoxelAnimTypeId};
 use crate::rules::warhead_type::WarheadType;
 use crate::rules::weapon_type::WeaponType;
-use crate::util::fixed_math::{SimFixed, sim_from_f32};
+use crate::util::fixed_math::{SIM_ONE, SimFixed, sim_from_f32};
 
 /// Country-level fields needed by gameplay systems.
 #[derive(Debug, Clone)]
@@ -914,13 +914,17 @@ pub struct GeneralRules {
     pub ship_sinking_weight: SimFixed,
 
     // -- Cliff/slope movement coefficients ([General]) --
-    /// Tracked vehicle uphill coefficient (`TrackedUphill=`; vanilla 1.0 = no change).
+    // Rules +0x768/+0x770/+0x778/+0x780, each `ReadDouble` over its current
+    // value (0x66F213..0x66F2A9); the constructor stores 1.0 in all four
+    // (0x6660BE..0x6660ED). Read by the Drive/Ship fresh speed publish
+    // (0x4B3D4C..0x4B3DA6) and the per-cell speed chain.
+    /// Tracked vehicle uphill coefficient (`TrackedUphill=`).
     pub tracked_uphill: SimFixed,
-    /// Tracked vehicle downhill coefficient (`TrackedDownhill=`; vanilla 1.2 = faster).
+    /// Tracked vehicle downhill coefficient (`TrackedDownhill=`).
     pub tracked_downhill: SimFixed,
-    /// Non-tracked (wheeled and other) vehicle uphill coefficient (`WheeledUphill=`; vanilla 1.0).
+    /// Non-tracked (wheeled and other) vehicle uphill coefficient (`WheeledUphill=`).
     pub wheeled_uphill: SimFixed,
-    /// Non-tracked vehicle downhill coefficient (`WheeledDownhill=`; vanilla 1.2).
+    /// Non-tracked vehicle downhill coefficient (`WheeledDownhill=`).
     pub wheeled_downhill: SimFixed,
 
     // -- Per-object draw-light offsets --
@@ -1378,12 +1382,11 @@ impl Default for GeneralRules {
                 0x3fe0_0000_0000_0000,
             ),
             ship_sinking_weight: SimFixed::lit("3.0"),
-            // Vanilla rulesmd.ini [General]: 1.0 uphill (no change) / 1.2 downhill (faster),
-            // same for tracked and wheeled. Mods can override via [General].
-            tracked_uphill: SimFixed::lit("1.0"),
-            tracked_downhill: SimFixed::lit("1.2"),
-            wheeled_uphill: SimFixed::lit("1.0"),
-            wheeled_downhill: SimFixed::lit("1.2"),
+            // RulesClass constructor 0x6660BE..0x6660ED.
+            tracked_uphill: SIM_ONE,
+            tracked_downhill: SIM_ONE,
+            wheeled_uphill: SIM_ONE,
+            wheeled_downhill: SIM_ONE,
             extra_unit_light: 0,
             extra_infantry_light: 0,
             extra_aircraft_light: 0,
@@ -2383,22 +2386,22 @@ impl GeneralRules {
                 .get_f32("ShipSinkingWeight")
                 .map(sim_from_f32)
                 .unwrap_or(defaults.ship_sinking_weight),
-            tracked_uphill: general
-                .get_f32("TrackedUphill")
-                .map(sim_from_f32)
-                .unwrap_or(defaults.tracked_uphill),
-            tracked_downhill: general
-                .get_f32("TrackedDownhill")
-                .map(sim_from_f32)
-                .unwrap_or(defaults.tracked_downhill),
-            wheeled_uphill: general
-                .get_f32("WheeledUphill")
-                .map(sim_from_f32)
-                .unwrap_or(defaults.wheeled_uphill),
-            wheeled_downhill: general
-                .get_f32("WheeledDownhill")
-                .map(sim_from_f32)
-                .unwrap_or(defaults.wheeled_downhill),
+            tracked_uphill: SimFixed::from_num(general.read_double(
+                "TrackedUphill",
+                defaults.tracked_uphill.to_num::<f64>(),
+            )),
+            tracked_downhill: SimFixed::from_num(general.read_double(
+                "TrackedDownhill",
+                defaults.tracked_downhill.to_num::<f64>(),
+            )),
+            wheeled_uphill: SimFixed::from_num(general.read_double(
+                "WheeledUphill",
+                defaults.wheeled_uphill.to_num::<f64>(),
+            )),
+            wheeled_downhill: SimFixed::from_num(general.read_double(
+                "WheeledDownhill",
+                defaults.wheeled_downhill.to_num::<f64>(),
+            )),
             // RulesClass's AudioVisual pass stores these ReadDouble values as
             // signed milliunits after the active x87 chop-toward-zero conversion.
             extra_unit_light: (audio_visual

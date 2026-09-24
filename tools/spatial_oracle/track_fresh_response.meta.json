@@ -9,6 +9,7 @@
   ],
   "scope": "Original Unit Cell setter then Drive/Ship outer Process through Process_Movement(&out,1,0) and every recursion it makes, stopping where it returns to the outer Process: the facing gate, code-0 straight/turning/extension/straight-forcing acceptance with the finalize tail, second-candidate codes, the first-candidate code-2 latch/timer/urgency ladder, the code-3 tail, the retry recursions of codes 1/4/5/6/7 into the no-queue arm and the fresh arm again, the code-6 CloseEnough stop and scatter, and the wall Override.",
   "assumptions": [
+    "Rules TrackedUphill 0.875, TrackedDownhill 1.25, WheeledUphill 0.625, WheeledDownhill 1.375; Type SpeedType (+67C) 1 (Track) unless the row sets 2 (Wheel). Supplied Cell levels are flat (no slope type) over the 104-lepton level height 0x89E7C0; the Foot z follows its Cell level.",
     "Fixture from track_destination (real Unit/Drive/Ship vtables, 32x32 original Cell table, Rules at EXTRA+0x10000 with BlockagePathDelay 22) plus unit_entry owner prestate. Actor Cell 10,10 centre, MovementZone 0 zone table, no NavQueue, TarCom or radio contact.",
     "Rules ConditionYellow 0.5, CloseEnough 576 unless the row sets it, PathDelay 0.01 (9 frames). Land rows: Clear 1.0 and Road 0.75 for every SpeedType unless set. Supplied overlays are indices 5.. with only +22D Crushable and +2A8 Wall.",
     "Setter at frame 100; Process at frame 101. The route words are written after the setter and the body FacingClass rests on the first word octant (timer -1) unless the row sets a facing. Foot+640/+668/+6B7/+64C are supplied after the setter.",
@@ -30,5 +31,5 @@
     "drive_returned": "0x004B0A7E",
     "ship_returned": "0x006A0147"
   },
-  "payload_sha256": "1447b56c127fac1d1106b8e656063bb4f7ca8ef562b2a9f28c1843422546c6f5"
+  "payload_sha256": "47312342c90e1a9aa5fb0c1ed61739a4d54e50ea2dcfc85d663c27998dbf65d6"
 }

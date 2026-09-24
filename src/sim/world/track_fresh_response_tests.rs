@@ -11,6 +11,10 @@
 //!   timers).
 //! - Drive+64 (the straight byte) is not represented (track_fresh residual);
 //!   its rows still compare the selector it forces.
+//! - The speed rows set flat Cell levels, the Clear and Road rows, the four
+//!   `[General]` slope keys and the Foot's health, then compare the published
+//!   target (a double natively, 16 fraction bits here; every oracle value is
+//!   dyadic).
 //! - The far_zone rows are not replayed: splitting the zone of Cell 13,10
 //!   needs a terrain rebuild of this fixture. The refusal they reach
 //!   (0x4B3A3E, SetDestination(NULL)) is the one the code-1/7 rows take.
@@ -28,15 +32,23 @@ use crate::sim::world::Simulation;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
-/// The oracle's Unit type (MovementZone Normal, SpeedType Track) for both
-/// locomotors; O5 carries +22D Crushable and O6 +2A8 Wall, the two supplied
-/// overlay kinds.
-const UNITS: &str = "[VehicleTypes]\n0=DRV\n1=SHP\n\
+/// The oracle's Unit type (MovementZone Normal, SpeedType Track, or Wheel
+/// for its SpeedType-2 rows) for both locomotors; O5 carries +22D Crushable
+/// and O6 +2A8 Wall, the two supplied overlay kinds. The Road row (0.75) and
+/// the four slope coefficients are the oracle's.
+const UNITS: &str = "[VehicleTypes]\n0=DRV\n1=SHP\n2=DRW\n3=SHW\n\
     [DRV]\nStrength=300\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\n\
     Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
     [SHP]\nStrength=300\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\n\
     Locomotor={2BEA74E1-7CCA-11D3-BE14-00104B62A16C}\n\
-    [O5]\nCrushable=yes\n[O6]\nWall=yes\n";
+    [DRW]\nStrength=300\nSpeed=6\nSpeedType=Wheel\nMovementZone=Normal\n\
+    Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+    [SHW]\nStrength=300\nSpeed=6\nSpeedType=Wheel\nMovementZone=Normal\n\
+    Locomotor={2BEA74E1-7CCA-11D3-BE14-00104B62A16C}\n\
+    [O5]\nCrushable=yes\n[O6]\nWall=yes\n\
+    [Road]\nTrack=75%\nWheel=75%\n\
+    [General]\nTrackedUphill=0.875\nTrackedDownhill=1.25\n\
+    WheeledUphill=0.625\nWheeledDownhill=1.375\n";
 
 fn corpus() -> Vec<Value> {
     serde_json::from_str(include_str!(
@@ -58,8 +70,9 @@ fn words(v: &Value) -> Vec<u8> {
 }
 
 /// The oracle's prestates: House control, Rules PathDelay 0.01 (9 frames),
-/// BlockagePathDelay 22 and CloseEnough, a Move mission, and the reference
-/// cell 9,8 of `track_destination`'s fixture.
+/// BlockagePathDelay 22 and CloseEnough, a Move mission, the reference cell
+/// 9,8 of `track_destination`'s fixture, flat Cell levels, the Clear row for
+/// every Cell, and the Foot's health.
 fn unit(
     input: &Value,
 ) -> (
@@ -77,7 +90,24 @@ fn unit(
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 0);
     house.player_control = true;
     sim.houses.insert(owner, house);
+    // Map load wires the four [General] slope keys into the live config.
+    let general = &rules.general;
+    sim.terrain_speed_config =
+        crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::from_general(
+            general.tracked_uphill,
+            general.tracked_downhill,
+            general.wheeled_uphill,
+            general.wheeled_downhill,
+        );
     let terrain = sim.resolved_terrain.as_mut().unwrap();
+    let mut heights = BTreeMap::new();
+    for cell in input["cells"].as_array().into_iter().flatten() {
+        let (x, y) = pair(cell);
+        assert_eq!(cell[3].as_u64(), Some(0), "flat cells without flags");
+        let level = cell[2].as_u64().unwrap() as u8;
+        terrain.cell_mut(x as u16, y as u16).unwrap().level = level;
+        heights.insert((x as u16, y as u16), level);
+    }
     for overlay in input["overlays"].as_array().into_iter().flatten() {
         let (x, y) = pair(overlay);
         let id = match (overlay[2] == true, overlay[3] == true) {
@@ -103,17 +133,36 @@ fn unit(
         cell.yr_cell_land_type = 10;
         cell.base_yr_cell_land_type = 10;
     }
-    let kind = if input["family"] == "drive" {
-        "DRV"
-    } else {
-        "SHP"
+    let wheel = input["speed_type"] == 2;
+    let kind = match (input["family"] == "drive", wheel) {
+        (true, false) => "DRV",
+        (false, false) => "SHP",
+        (true, true) => "DRW",
+        (false, true) => "SHW",
     };
     sim.session.binary_frame = 100;
     let id = sim
-        .spawn_object(kind, "Americans", 10, 10, 0, &rules, &BTreeMap::new())
-        .unwrap();
+        .spawn_object(kind, "Americans", 10, 10, 0, &rules, &heights)
+        .unwrap_or_else(|| panic!("spawn {kind}: {input}"));
     sim.mission_assign_exact(id, MissionId::from_known(MissionType::Move), 100)
         .unwrap();
+    if let Some(clear) = input["clear_speed"].as_f64() {
+        // The oracle writes the Clear row of every SpeedType; after the spawn,
+        // which would refuse a zero row.
+        let percent = Some((clear * 100.0) as u8);
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        for y in 0..33 {
+            for x in 0..33 {
+                let costs = &mut terrain.cell_mut(x, y).unwrap().speed_costs;
+                costs.track = percent;
+                costs.wheel = percent;
+            }
+        }
+    }
+    let e = sim.substrate.entities.get_mut(id).unwrap();
+    e.health.current = input["health"].as_i64().unwrap_or(300) as i32;
+    let z = crate::sim::movement::ground_pose::position_world_coord(&e.position).z;
+    assert_eq!(z, input["z"].as_i64().unwrap_or(0) as i32, "Foot z");
     (sim, rules, registry, id)
 }
 
@@ -368,5 +417,5 @@ fn fresh_arm_rows_match_the_original_responses() {
         compare(&sim, id, &row, out);
         checked += 1;
     }
-    assert_eq!(checked, 58);
+    assert_eq!(checked, 80);
 }

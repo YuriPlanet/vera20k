@@ -108,24 +108,24 @@ fn uses_land_type_speed_chain(kind: LocomotorKind) -> bool {
 /// travel direction. Vanilla values are 1.0 uphill / 1.2 downhill for both.
 #[derive(Debug, Clone)]
 pub struct TerrainSpeedConfig {
-    /// Tracked vehicle moving uphill (`TrackedUphill=`; vanilla 1.0).
+    /// Tracked vehicle moving uphill (`TrackedUphill=`, Rules +0x768).
     pub tracked_uphill: SimFixed,
-    /// Tracked vehicle moving downhill (`TrackedDownhill=`; vanilla 1.2).
+    /// Tracked vehicle moving downhill (`TrackedDownhill=`, Rules +0x770).
     pub tracked_downhill: SimFixed,
-    /// Non-tracked (wheeled and other) vehicle moving uphill (`WheeledUphill=`; vanilla 1.0).
+    /// Non-tracked (wheeled and other) vehicle moving uphill (`WheeledUphill=`, Rules +0x778).
     pub wheeled_uphill: SimFixed,
-    /// Non-tracked vehicle moving downhill (`WheeledDownhill=`; vanilla 1.2).
+    /// Non-tracked vehicle moving downhill (`WheeledDownhill=`, Rules +0x780).
     pub wheeled_downhill: SimFixed,
 }
 
 impl Default for TerrainSpeedConfig {
+    /// The RulesClass constructor's 1.0 for all four (0x6660BE..0x6660ED).
     fn default() -> Self {
-        // Vanilla rulesmd.ini [General]: 1.0 uphill / 1.2 downhill for both pairs.
         Self {
             tracked_uphill: SIM_ONE,
-            tracked_downhill: SimFixed::lit("1.2"),
+            tracked_downhill: SIM_ONE,
             wheeled_uphill: SIM_ONE,
-            wheeled_downhill: SimFixed::lit("1.2"),
+            wheeled_downhill: SIM_ONE,
         }
     }
 }
@@ -427,7 +427,12 @@ mod tests {
             }
         }
         let terrain = ResolvedTerrainGrid::from_cells(SIZE, SIZE, cells);
-        let config = TerrainSpeedConfig::default();
+        // Stock rulesmd.ini [General]: TrackedDownhill=1.2.
+        let config = TerrainSpeedConfig {
+            tracked_downhill: SimFixed::lit("1.2"),
+            wheeled_downhill: SimFixed::lit("1.2"),
+            ..TerrainSpeedConfig::default()
+        };
 
         // Both cells carry level 3, so a level-byte comparison calls this flat.
         assert_eq!(
@@ -596,29 +601,47 @@ mod tests {
     }
 
     #[test]
-    fn default_config_values() {
+    fn default_config_values_are_the_rules_constructor() {
         let config = TerrainSpeedConfig::default();
         assert_eq!(config.tracked_uphill, SIM_ONE);
-        assert_eq!(config.tracked_downhill, SimFixed::lit("1.2"));
+        assert_eq!(config.tracked_downhill, SIM_ONE);
         assert_eq!(config.wheeled_uphill, SIM_ONE);
-        assert_eq!(config.wheeled_downhill, SimFixed::lit("1.2"));
+        assert_eq!(config.wheeled_downhill, SIM_ONE);
     }
 
+    /// `[General]` ReadDouble over the constructor's 1.0: a present value, a
+    /// `%` value scaled by 0.01, and an absent key that keeps 1.0.
     #[test]
-    fn slope_uphill_no_change_downhill_boost() {
-        let config = TerrainSpeedConfig::default();
-        // Uphill (next higher) → 1.0; downhill → 1.2; flat → 1.0. Track and Wheel
-        // share vanilla values but exercise both selection arms.
+    fn general_slope_keys_use_the_native_reader_and_defaults() {
+        let ini = crate::rules::ini_parser::IniFile::from_str(
+            "[General]\nTrackedDownhill=1.2\nWheeledUphill=80%\nWheeledDownhill=1.3\n",
+        );
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
+        let general = &rules.general;
+        let config = TerrainSpeedConfig::from_general(
+            general.tracked_uphill,
+            general.tracked_downhill,
+            general.wheeled_uphill,
+            general.wheeled_downhill,
+        );
+        assert_eq!(config.tracked_uphill, SIM_ONE);
+        assert_eq!(config.tracked_downhill, SimFixed::from_num(1.2f32 as f64));
+        assert_eq!(
+            config.wheeled_uphill,
+            SimFixed::from_num(80.0f32 as f64 * 0.01)
+        );
+        assert_eq!(config.wheeled_downhill, SimFixed::from_num(1.3f32 as f64));
         for st in [SpeedType::Track, SpeedType::Wheel] {
-            assert_eq!(
-                slope_factor_for(st, 0, 1, &config),
-                SIM_ONE,
-                "uphill {st:?}"
-            );
-            let down = slope_factor_for(st, 1, 0, &config);
-            assert_eq!(down, SimFixed::lit("1.2"), "downhill {st:?}");
             assert_eq!(slope_factor_for(st, 2, 2, &config), SIM_ONE, "flat {st:?}");
         }
+        assert_eq!(
+            slope_factor_for(SpeedType::Track, 1, 0, &config),
+            config.tracked_downhill
+        );
+        assert_eq!(
+            slope_factor_for(SpeedType::Wheel, 0, 1, &config),
+            config.wheeled_uphill
+        );
     }
 
     #[test]

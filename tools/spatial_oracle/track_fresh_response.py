@@ -36,6 +36,7 @@ RULES = EXTRA + 0x10000
 ZONE_RECORDS, ZONE_TABLE = EXTRA + 0x2C000, EXTRA + 0x2D000
 CELL_VTABLE = 0x7E4EEC
 PROCESS_FRAME = 101
+SLOPES = (0.875, 1.25, 0.625, 1.375)
 
 
 def cell(x, y):
@@ -45,7 +46,8 @@ def cell(x, y):
 def query(case):
     family = case['family']
     u, call, read32 = make_destination_fixture(dict(family=family, head=[0, 0, 0],
-                                                    mission=case.get('mission', 2)))
+                                                    mission=case.get('mission', 2),
+                                                    cells=case.get('cells', [])))
     # The original startup fills the lepton direction table (0x89F6D8).
     call(0x49F3A0, 0, [])
     # Health (Object+6C) over Strength (Type+A0) for GetHealthRatio 0x5F5C60.
@@ -60,6 +62,11 @@ def query(case):
     u.mem_write(RULES + 0x1700, struct.pack('<d', 0.5))
     u.mem_write(RULES + 0x1718, dwords(case.get('close_enough', 576)))
     u.mem_write(RULES + 0x1760, struct.pack('<d', 0.01))
+    # TrackedUphill/Downhill, WheeledUphill/Downhill (Rules+0x768..+0x780).
+    u.mem_write(RULES + 0x768, struct.pack('<4d', *SLOPES))
+    u.mem_write(TYPE + 0x67C, dwords(case.get('speed_type', 1)))
+    # The ground-Z evaluator 0x47B3A0 lazily caches this level height.
+    u.mem_write(0x89E7C0, dwords(104))
     # MovementZone 0 zone lookup (Map+18) over per-cell records (Map+68/+6C).
     stride = read32(MAP + 0xF8) + 1 + read32(MAP + 0xF4)
     count = stride * 33
@@ -234,6 +241,20 @@ def generate():
         # Code 5 against a wall overlay: Override(Attack, cell).
         rows.append(dict(base, route=east, codes=[5, 0, 5], find_path=[east],
                          overlays=[[11, 10, False, True]]))
+        # The accepted target speed: slopes by SpeedType (Track 1, Wheel 2),
+        # the Road row two levels off, the zero row, the clamp and the damage
+        # factor at and below ConditionYellow.
+        up, down = dict(cells=[[11, 10, 1, 0]]), dict(cells=[[10, 10, 1, 0]], z=104)
+        for speed_type in (1, 2):
+            rows.append(dict(base, route=east, codes=[0], speed_type=speed_type, **up))
+            rows.append(dict(base, route=east, codes=[0], speed_type=speed_type, **down))
+        rows.append(dict(base, route=east, codes=[0], cells=[[11, 10, 2, 0]]))
+        rows.append(dict(base, route=east, codes=[0], clear_speed=0.0))
+        rows.append(dict(base, route=east, codes=[0], clear_speed=0.0, **down))
+        rows.append(dict(base, route=east, codes=[0], clear_speed=1.25, **down))
+        rows.append(dict(base, route=east, codes=[0], health=100))
+        rows.append(dict(base, route=east, codes=[0], health=150))
+        rows.append(dict(base, route=east, codes=[0], clear_speed=0.0, health=100, **down))
     return [query(row) for row in rows]
 
 
@@ -244,6 +265,7 @@ if __name__ == '__main__':
                       'scatter_objects': SCATTER, 'override_mission': OVERRIDE, **PROCESS,
                       'drive_returned': RETURNED['drive'], 'ship_returned': RETURNED['ship']},
         assumptions=[
+            'Rules TrackedUphill 0.875, TrackedDownhill 1.25, WheeledUphill 0.625, WheeledDownhill 1.375; Type SpeedType (+67C) 1 (Track) unless the row sets 2 (Wheel). Supplied Cell levels are flat (no slope type) over the 104-lepton level height 0x89E7C0; the Foot z follows its Cell level.',
             'Fixture from track_destination (real Unit/Drive/Ship vtables, 32x32 original Cell table, Rules at EXTRA+0x10000 with BlockagePathDelay 22) plus unit_entry owner prestate. Actor Cell 10,10 centre, MovementZone 0 zone table, no NavQueue, TarCom or radio contact.',
             'Rules ConditionYellow 0.5, CloseEnough 576 unless the row sets it, PathDelay 0.01 (9 frames). Land rows: Clear 1.0 and Road 0.75 for every SpeedType unless set. Supplied overlays are indices 5.. with only +22D Crushable and +2A8 Wall.',
             'Setter at frame 100; Process at frame 101. The route words are written after the setter and the body FacingClass rests on the first word octant (timer -1) unless the row sets a facing. Foot+640/+668/+6B7/+64C are supplied after the setter.',

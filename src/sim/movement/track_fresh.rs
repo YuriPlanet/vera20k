@@ -456,7 +456,7 @@ impl Simulation {
                     }
                 } else {
                     //4B38B3..4B393A: Scatter_Objects(Null, 1, 1, deck).
-                    self.track_scatter_cell(call, cell, true);
+                    self.scatter_blocked_track_cell(id, cell, rules, call.fallback);
                 }
                 self.track_first_rejected_tail(id);
                 Ok(false)
@@ -721,7 +721,7 @@ impl Simulation {
                     }
                 } else {
                     //4B43D0..4B4437: Scatter_Objects on the second cell.
-                    self.track_scatter_cell(call, second_cell, true);
+                    self.scatter_blocked_track_cell(id, second_cell, rules, call.fallback);
                 }
                 self.track_second_refused(call)
             }
@@ -1041,9 +1041,9 @@ impl Simulation {
         }
     }
 
-    /// The CloseEnough stop tests of the code-6 arms (0x4B3742..0x4B3829,
-    /// 0x4B4273..0x4B4346): |Foot - destination| below CloseEnough, the
-    /// destination within two levels, and the Foot's Cell not a Tunnel.
+    /// The CloseEnough stop tests of the fresh arm's code-6 responses
+    /// (0x4B3742..0x4B3829, 0x4B4273..0x4B4346): |Foot - destination| summed
+    /// dz*dz + dy*dy + dx*dx below CloseEnough, then the stop band.
     fn track_close_enough_stop(&self, id: u64, rules: &RuleSet) -> Result<bool, String> {
         let actor = self
             .substrate
@@ -1057,17 +1057,21 @@ impl Simulation {
             location.y.wrapping_sub(destination.y),
             location.z.wrapping_sub(destination.z),
         );
-        if distance >= rules.general.close_enough {
-            return Ok(false);
-        }
+        Ok(distance < rules.general.close_enough && self.track_stop_band(location, destination))
+    }
+
+    /// The stop band both code-6 arms test after CloseEnough (fresh
+    /// 0x4B37CA..0x4B3829, continuation ally arm 0x4B2C9C..0x4B2CD7): the
+    /// destination within two levels of the Foot, and the Foot's Cell
+    /// (Unit+9C through 0x565730) not a Tunnel.
+    pub(super) fn track_stop_band(&self, location: DriveCoord, destination: DriveCoord) -> bool {
         if destination.z.wrapping_sub(location.z).wrapping_abs() >= 2 * GROUND_LEVEL_HEIGHT_LEPTONS
         {
-            return Ok(false);
+            return false;
         }
-        let terrain = self
-            .resolved_terrain
-            .as_ref()
-            .ok_or("Drive/Ship code-6 arm requires map cells")?;
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return false;
+        };
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
         let land = match cells.lookup_world(location.x, location.y) {
             crate::map::cell_index::NativeCellIdentity::Real(index) => {
@@ -1075,17 +1079,24 @@ impl Simulation {
             }
             crate::map::cell_index::NativeCellIdentity::Dummy => 0,
         };
-        Ok(land != LAND_TUNNEL)
+        land != LAND_TUNNEL
     }
 
-    /// Scatter_Objects(Null, 1, force, deck) on `cell` (0x4B38B3..0x4B393A,
-    /// 0x4B43D0..0x4B4437): the deck list when the Cell is structural and the
-    /// Foot is more than two levels from it.
-    fn track_scatter_cell(&mut self, call: &FreshCall<'_>, cell: (i16, i16), forced: bool) {
+    /// Scatter_Objects(Null, 1, 1, deck) on a refused `cell` (fresh
+    /// 0x4B38B3..0x4B393A and 0x4B43D0..0x4B4437, the continuation's ally
+    /// arm 0x4B2D68..0x4B2DC0): the deck list when the Cell is structural and
+    /// the Foot (Unit+9C) is more than two levels from the Cell's level.
+    pub(super) fn scatter_blocked_track_cell(
+        &mut self,
+        id: u64,
+        cell: (i16, i16),
+        rules: &RuleSet,
+        fallback: Option<&PathGrid>,
+    ) {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return;
         };
-        let Some(actor) = self.substrate.entities.get(call.id) else {
+        let Some(actor) = self.substrate.entities.get(id) else {
             return;
         };
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
@@ -1094,15 +1105,16 @@ impl Simulation {
         let location = ground_pose::position_world_coord(&actor.position);
         let deck = cells.flags(native) & 0x100 != 0
             && (location.z / GROUND_LEVEL_HEIGHT_LEPTONS - level).abs() > 2;
-        self.scatter_track_cell(call, cell, deck, forced);
+        self.scatter_track_cell(cell, deck, true, rules, fallback);
     }
 
     fn scatter_track_cell(
         &mut self,
-        call: &FreshCall<'_>,
         cell: (i16, i16),
         deck: bool,
         forced: bool,
+        rules: &RuleSet,
+        fallback: Option<&PathGrid>,
     ) {
         #[cfg(test)]
         if super::fresh_oracle_seam::substitute(
@@ -1124,15 +1136,15 @@ impl Simulation {
                 MovementLayer::Ground
             },
             forced,
-            grid.as_deref().or(call.fallback),
+            grid.as_deref().or(fallback),
             self.resolved_terrain.as_ref(),
             &mut self.scenario_rng,
-            Some(call.rules),
+            Some(rules),
             &self.interner,
             &self.houses,
             super::DestinationTiming::new(
                 self.session.binary_frame,
-                call.rules.general.blockage_path_delay_ticks,
+                rules.general.blockage_path_delay_ticks,
             ),
         );
     }
@@ -1177,7 +1189,7 @@ impl Simulation {
         ) & 0x1F
             != 0;
         if infantry {
-            self.scatter_track_cell(call, cell, deck, false);
+            self.scatter_track_cell(cell, deck, false, call.rules, call.fallback);
         }
     }
 
