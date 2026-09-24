@@ -34,8 +34,9 @@
 //! Ordinary and Vertical flight retain one binary64 velocity authority.
 //! `launch` owns the native scalar FireAt math; combat resolves its receivers.
 //! RESIDUAL (GSI-08.06/07): FLH/pivot slope translation, directed Building
-//! heading, scatter, homing launch/steering, shrapnel launch and active
-//! NukeMaker child production remain open. Those producers can still change the inputs delivered to this exact
+//! heading, homing launch/steering, the flight of `Inviso=` shrapnel children
+//! (native places them at their target, `BulletClass::Fire @ 0x00468670`) and
+//! active NukeMaker child production remain open. Those producers can still change the inputs delivered to this exact
 //! motion/collision consumer; the complete projectile row remains open.
 
 pub(crate) mod launch;
@@ -678,25 +679,27 @@ pub fn projectile_burst_plan(airburst: bool, cluster: i32) -> ProjectileBurstPla
     }
 }
 
-/// Produce the next cluster coordinate of
-/// `BulletClass::ResolveImpactCoordAndDetonate @ 0x00468D80`: after each
-/// cluster detonation it draws `RandomRanged(0x100, 0x200)` (`0x00469057`) and
-/// moves the coordinate that far in a random direction (`0x0049F420` with no
-/// cell snap, at `0x00469067`: one raw Scenario draw, the table direction of
-/// its low byte, truncated, the whole coordinate kept when either axis leaves
-/// the 512-cell map). The next cluster starts from the moved coordinate.
+/// The next cluster coordinate of
+/// `BulletClass::ResolveImpactCoordAndDetonate @ 0x00468D80`. The impact is
+/// copied once before the loop (`0x00469008..0x0046901C`); after each cluster
+/// detonation the loop draws `RandomRanged(0x100, 0x200)` (`0x00469057`) and
+/// moves that copy that far in a random direction (`0x0049F420`, no cell
+/// snap, `in` = the copy at `0x0046905F`: one raw Scenario draw, the table
+/// direction of its low byte, truncated; the impact itself when either axis
+/// leaves the 512-cell map). So every cluster after the first lands around
+/// the impact, never around the previous cluster.
 pub fn projectile_next_cluster_coord(
-    prior: ProjectileCoord,
+    impact: ProjectileCoord,
     scenario_rng: &mut SimRng,
 ) -> ProjectileCoord {
     let distance = scenario_rng.next_range_i32_inclusive(0x100, 0x200);
     let (x, y) = crate::sim::combat::inviso_scatter::random_direction_coord(
         scenario_rng,
-        prior.x,
-        prior.y,
+        impact.x,
+        impact.y,
         distance,
     );
-    ProjectileCoord::new(x, y, prior.z)
+    ProjectileCoord::new(x, y, impact.z)
 }
 
 /// Native two-draw random-cell fallback used after hostile shrapnel targets.
@@ -2871,6 +2874,52 @@ mod tests {
                 ),
                 SpecialDetonationAction::Airstrike
             );
+        }
+    }
+
+    /// `tools/projectile_oracle/launch_scatter.json`'s cluster-loop rows: the
+    /// original loop (`0x00469008..0x00469091`) hands the first detonation the
+    /// impact and every later one `0x0049F420(impact, distance, draw)`.
+    #[test]
+    fn native_cluster_loop_scatters_around_the_impact() {
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tools/projectile_oracle/launch_scatter.json"
+        ))
+        .unwrap();
+        let rows = corpus["cluster_loop"].as_array().unwrap();
+        assert_eq!(rows.len(), 6);
+        let coord = |value: &serde_json::Value| {
+            let axis = |index: usize| value[index].as_i64().unwrap() as i32;
+            ProjectileCoord::new(axis(0), axis(1), axis(2))
+        };
+        for (index, row) in rows.iter().enumerate() {
+            let input = &row["input"];
+            let impact = coord(&input["impact"]);
+            let draws = input["distances"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .zip(input["raws"].as_array().unwrap());
+            let expected: Vec<ProjectileCoord> = std::iter::once(impact)
+                .chain(draws.map(|(distance, raw)| {
+                    let (x, y) =
+                        crate::sim::combat::inviso_scatter::random_direction_coord_for_byte(
+                            (raw.as_u64().unwrap() & 0xff) as u8,
+                            impact.x,
+                            impact.y,
+                            distance.as_i64().unwrap() as i32,
+                        );
+                    ProjectileCoord::new(x, y, impact.z)
+                }))
+                .take(input["cluster"].as_u64().unwrap() as usize)
+                .collect();
+            let native: Vec<ProjectileCoord> = row["detonations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(coord)
+                .collect();
+            assert_eq!(expected, native, "row {index}");
         }
     }
 

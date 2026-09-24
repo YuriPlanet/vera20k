@@ -677,7 +677,8 @@ mod tests {
     }
 
     /// The same corpus's SpawnShrapnel rows: both branches' child velocity,
-    /// bit for bit, over headings, heights, the zero delta and zero speed.
+    /// bit for bit, over headings, the zero delta and zero speed (the kernel
+    /// reads only the target's X and Y).
     #[test]
     #[ignore = "requires RA2_DIR with verified gamemd.exe math tables"]
     fn original_shrapnel_launch_velocity_both_branches() {

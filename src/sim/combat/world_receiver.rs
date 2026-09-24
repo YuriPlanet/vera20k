@@ -1736,12 +1736,14 @@ pub(super) fn emit_projectile_detonations(
             continue;
         }
 
+        // Every cluster after the first lands around the impact (the copy at
+        // `0x00469008`), not around the previous cluster.
         let mut coordinate = detonation.impact;
         for _ in 0..cluster.max(0) {
             let mut clustered = *detonation;
             clustered.impact = coordinate;
             emit_one_projectile_detonation(world, rules, overlay_registry, &clustered, out);
-            coordinate = projectile_next_cluster_coord(coordinate, &mut world.scenario_rng);
+            coordinate = projectile_next_cluster_coord(detonation.impact, &mut world.scenario_rng);
         }
     }
 }
@@ -3162,19 +3164,25 @@ fn emit_admitted_fire(
             Some(flak) => {
                 // vt+0x168 (`TechnoClass::GetWeaponRange @ 0x007012C0`) for
                 // the fired weapon: an open-topped firer's passengers cap it.
-                let range = world.substrate.entities.get(snap.stable_id).map_or(
-                    weapon.range_leptons,
-                    |firer| {
-                        combat_weapon::weapon_range(
-                            firer,
-                            obj,
-                            selected.index,
-                            &world.substrate.entities,
-                            rules,
-                            &world.interner,
-                        )
-                    },
-                );
+                // A building's weapon lookup (`0x004526F0`) returns the firing
+                // occupant's weapon, which a garrison shot already selected.
+                let range = if is_garrison {
+                    weapon.range_leptons
+                } else {
+                    world.substrate.entities.get(snap.stable_id).map_or(
+                        weapon.range_leptons,
+                        |firer| {
+                            combat_weapon::weapon_range(
+                                firer,
+                                obj,
+                                selected.index,
+                                &world.substrate.entities,
+                                rules,
+                                &world.interner,
+                            )
+                        },
+                    )
+                };
                 crate::sim::projectile::launch::fireat_launch_scatter(
                     delta,
                     rules.combat_damage.ballistic_scatter,

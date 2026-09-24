@@ -2869,9 +2869,12 @@ fn emit_projectile_shrapnel(
                     let Some(entity) = entities.get(id) else {
                         continue;
                     };
+                    // `0x0046A614`: the object's GetCoords (vt+0x48), a
+                    // building's foundation center (`0x00447AC0`).
+                    let (rx, ry, sub_x, sub_y) = target_coords(entity, Some(rules), interner);
                     ProjectileCoord::new(
-                        i32::from(entity.position.rx) * 256 + entity.position.sub_x.to_num::<i32>(),
-                        i32::from(entity.position.ry) * 256 + entity.position.sub_y.to_num::<i32>(),
+                        i32::from(rx) * 256 + sub_x.to_num::<i32>(),
+                        i32::from(ry) * 256 + sub_y.to_num::<i32>(),
                         i32::from(entity.position.z)
                             * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
                     )

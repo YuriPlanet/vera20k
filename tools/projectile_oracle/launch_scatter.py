@@ -12,13 +12,19 @@ Executes, case by case:
 - The random-direction coordinate helper 0x0049F420 (no cell snap), as
   BulletClass::ResolveImpactCoordAndDetonate calls it for each cluster at
   0x00469067, at the cluster distances 0x100..0x200.
+- That cluster loop itself, 0x00469008..0x00469091: which coordinate each
+  cluster's BulletClass::DetonateAtCoord (0x004690B0) receives.
 
 Supplied at entry and returned without running: Random__RandomRanged
 0x0065C7E0 (the case's draw results, arguments recorded), Random 0x0065C780
 (the case's raw word), TechnoClass::GetWeaponRange (vt+0x168; the case's
 range, argument recorded), the target's and the cell's GetCoords (vt+0x48;
 the case's coordinate). Execution stops on the child bullet's launch call
-(vt+0x1F0), whose velocity argument is the observed result.
+(vt+0x1F0), whose velocity argument is the observed result. The cell branch
+starts after its own prologue zeroed the velocity (0x0046AA31..0x0046AA59); the
+freshly mapped stack is zero, which stands in for that. In the cluster loop,
+DetonateAtCoord is recorded (its coordinate argument) and returns at once,
+leaving the bullet's +0x90 flag set.
 
 Rust consumers: src/sim/projectile/launch.rs (fireat_launch_scatter,
 shrapnel_launch_velocity) and src/sim/combat/inviso_scatter.rs
@@ -165,6 +171,55 @@ def direction(case):
     return dict(input=case, result=list(struct.unpack("<iii", uc.mem_read(result, 12))))
 
 
+def cluster_loop(case):
+    """0x00469008..0x00469091: the impact at [ESP+0xC], Cluster= from the type."""
+    uc = machine()
+    bullet, bullet_type = SCRATCH + 0xC000, SCRATCH + 0xC400
+    uc.mem_write(bullet + 0xAC, u32(bullet_type))
+    uc.mem_write(bullet + 0x90, bytes([1]))
+    uc.mem_write(bullet_type + 0x2AC, u32(case["cluster"]))
+    uc.mem_write(SP + 0xC, struct.pack("<iii", *case["impact"]))
+    for register, value in ((UC_X86_REG_ESP, SP), (UC_X86_REG_ESI, bullet),
+                            (UC_X86_REG_EAX, bullet_type)):
+        uc.reg_write(register, value)
+    distances, raws = list(case["distances"]), list(case["raws"])
+    detonations = []
+
+    def hook(_uc, address, _size, _data):
+        sp = uc.reg_read(UC_X86_REG_ESP)
+        if address == 0x4690B0:
+            coord = read32(uc, sp + 4) & 0xFFFFFFFF
+            detonations.append(list(struct.unpack("<iii", uc.mem_read(coord, 12))))
+            returns(uc, 0, 4)
+        elif address == RANDOM_RANGED:
+            assert (read32(uc, sp + 4), read32(uc, sp + 8)) == (0x100, 0x200)
+            returns(uc, distances.pop(0), 8)
+        elif address == RANDOM:
+            returns(uc, raws.pop(0), 0)
+
+    uc.hook_add(UC_HOOK_CODE, hook)
+    run_checked(uc, 0x469008, (0x469091, 0x4690A6), count=100_000,
+                required_addresses=[0x49F420])
+    assert not distances and not raws, "one distance and one raw draw per cluster"
+    return dict(input=case, detonations=detonations)
+
+
+def cluster_cases():
+    rows = []
+    impact = [40 * 256 + 64, 50 * 256 + 200, 104]
+    for count in (1, 2, 3, 5):
+        rows.append(dict(impact=impact, cluster=count,
+                         distances=[0x100 + 0x40 * i for i in range(count)],
+                         raws=[0x40 * (i + 1) + 7 for i in range(count)]))
+    # The critic's case: equal draws put clusters 2 and 3 on one point.
+    rows.append(dict(impact=[10304, 13000, 104], cluster=3,
+                     distances=[0x200] * 3, raws=[0x40] * 3))
+    # Beside the map's edge: a step off the map falls back to the impact.
+    rows.append(dict(impact=[100, 100, 0], cluster=4,
+                     distances=[0x200] * 4, raws=[0x80, 0xC0, 0x00, 0x40]))
+    return rows
+
+
 def scatter_cases():
     rows = []
     deltas = [(1280, 0, 0), (1024, 0, 77), (-900, 600, -300), (37, -2211, 512),
@@ -217,20 +272,27 @@ def direction_cases():
 def generate():
     return dict(scatter=[scatter(row) for row in scatter_cases()],
                 shrapnel=[shrapnel(row) for row in shrapnel_cases()],
-                direction=[direction(row) for row in direction_cases()])
+                direction=[direction(row) for row in direction_cases()],
+                cluster_loop=[cluster_loop(row) for row in cluster_cases()])
 
 
 if __name__ == "__main__":
     finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=lambda: provenance(
         scope="FireAt launch scatter 0x006FE663..0x006FE8EE (both arms), SpawnShrapnel child "
-              "velocity (object branch 0x0046A5B2..0x0046A875, cell branch 0x0046AA66..0x0046AD29) "
-              "and the random-direction helper 0x0049F420 at cluster distances",
+              "velocity (object branch 0x0046A5B2..0x0046A875, cell branch 0x0046AA66..0x0046AD29), "
+              "the random-direction helper 0x0049F420 at cluster distances, and the cluster loop "
+              "0x00469008..0x00469091",
         assumptions=["x87 control word 0x0E7F (53-bit, chop) as WinMain sets it",
-                     "the retail sine, atan and Sqrt_Approx tables are the image's initialised data"],
+                     "the retail sine, atan and Sqrt_Approx tables are the image's initialised data",
+                     "the shrapnel cell branch starts after its prologue zeroed the velocity; the "
+                     "fresh stack is zero"],
         substitutions=["Random__RandomRanged 0x0065C7E0 and Random 0x0065C780 return the case's "
                        "values; their arguments are recorded",
                        "GetWeaponRange (vt+0x168) returns the case's range",
                        "the target's/cell's GetCoords (vt+0x48) returns the case's coordinate",
-                       "the child's launch call (vt+0x1F0) is observed, not run"],
+                       "the child's launch call (vt+0x1F0) is observed, not run",
+                       "in the cluster loop, DetonateAtCoord 0x004690B0 records its coordinate "
+                       "argument and returns"],
         entry_points=dict(scatter=0x6FE663, shrapnel_object=0x46A5B2,
-                          shrapnel_cell=0x46AA66, direction=0x49F420)))
+                          shrapnel_cell=0x46AA66, direction=0x49F420,
+                          cluster_loop=0x469008)))

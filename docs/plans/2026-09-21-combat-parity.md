@@ -657,28 +657,48 @@ Launch scatter trig (`feature/combat-scatter-trig`, no schema change), owner
 - Before: FireAt's launch scatter (Flak Track, Flak Trooper and Sea Scorpion ground shots) used
   host `cos`/`sin`, an exact `sqrt` for the flak distance and two wrong constants (1/(2^31-1) for
   1/0x7FFFFFFE, a WORD_SCALE one ulp off); shrapnel children (elite Tesla Tank and Trooper,
-  comets) launched with host `hypot`/`cos`/`sin` rounded to integers; cluster children used host
-  trig rounded to nearest. Host libm can differ across platforms, and none of it was native.
+  comets) launched with host `hypot`/`cos`/`sin` rounded to integers, aimed at a building's
+  north-west cell; cluster children used host trig rounded to nearest and chained each cluster
+  from the previous one. Host libm can differ across platforms, and none of it was native.
 - Now: the scatter (`6FE663..6FE8E7`) draws `RandomRanged(0, BallisticScatter)` (flak) or
   `(BallisticScatter/2, BallisticScatter)` (plain; signed bounds, native swap), scales the flak
   roll by `ftol(Sqrt_Approx(f32 delta))` over the fired weapon's GetWeaponRange (vt+0x168,
-  `7012C0`, so an open-topped Flak Track's passengers cap it), maps the raw draw through the
-  image's constants to a DirStruct word, and offsets the delta by the retail table's cos/sin,
-  truncated. SpawnShrapnel's two branches differ: a child aimed at a hostile object
-  (`46A5B2..46A875`) scales to `Speed=` after the fixed pitch `0x3FE921648732995C`, a child aimed at
-  a random cell (`46AA66..46AD29`) before it. Clusters use `Coord__RandomDirectionNear`
-  (`49F420`) after `RandomRanged(0x100, 0x200)`.
+  `7012C0`: an open-topped firer's passengers cap it, dormant for stock flak since only BFRT is
+  open-topped; a garrison shot takes its occupant weapon's range, as `4526F0` returns it), maps
+  the raw draw through the image's constants to a DirStruct word, and offsets the delta by the
+  retail table's cos/sin, truncated. SpawnShrapnel's two branches differ: a child aimed at a
+  hostile object (`46A5B2..46A875`) scales to `Speed=` after the fixed pitch
+  `0x3FE921648732995C`, a child aimed at a random cell (`46AA66..46AD29`) before it; the object
+  branch aims at the object's GetCoords (`46A614`: a building's foundation center, `447AC0`).
+  Every cluster after the first lands around the impact: the loop copies it once
+  (`469008..46901C`) and hands that copy to `Coord__RandomDirectionNear` (`49F420`, at `46905F`)
+  after `RandomRanged(0x100, 0x200)`. The stock shrapnel children are `Inviso=`, which native
+  places at their target (FU1 below), so for stock data the exact velocity feeds VERA's flight.
 - Native execution: `tools/projectile_oracle/launch_scatter.py` runs the scatter block, both
-  shrapnel branches and `49F420` (87 + 54 + 792 rows); `launch::tests::original_launch_scatter_both_arms`
-  (draw bounds in order, the range query, the delta) and
-  `original_shrapnel_launch_velocity_both_branches` (velocity bits) compare with RA2_DIR's
-  tables; `inviso_scatter::tests::cluster_distances_match_the_native_helper` runs in CI. The
-  replaced code missed 24 of the 87 scatter rows and 577 of the 792 direction rows; its shrapnel
+  shrapnel branches, `49F420` and the cluster loop (87 + 54 + 792 + 6 rows);
+  `launch::tests::original_launch_scatter_both_arms` (draw bounds in order, the range query, the
+  delta) and `original_shrapnel_launch_velocity_both_branches` (velocity bits) compare with
+  RA2_DIR's tables; `inviso_scatter::tests::cluster_distances_match_the_native_helper` and
+  `projectile::tests::native_cluster_loop_scatters_around_the_impact` run in CI. The replaced
+  code missed 24 of the 87 scatter rows and 577 of the 792 direction rows; its shrapnel
   velocities were integers. Parity demonstrated within those inputs. Reading only: the call
-  sites and which children take which shrapnel branch.
+  sites, which children take which shrapnel branch, and the object branch's target point (the
+  oracle supplies GetCoords). Production regressions: `clusters_scatter_around_the_impact`
+  (fails on the old chaining), `projectile_shrapnel_aims_at_a_building_foundation_center`.
+- Critic (one pass): the kernels were exact; two should-fix fixed (the cluster base, confirmed by
+  native execution and added to the oracle; the building target point), a minor garrison range
+  fix and wording. Not done: sharing the pitch sequence between FireAt and shrapnel, and moving
+  `49F420`'s owner out of the module named `inviso_scatter` (naming only).
 - Residuals: the projectile SHP frame (`468000`, render-only) still uses host `atan2`; MagBeam
   wave edges (`762070`) and homing tables and steering (`5B20F0`, the sidewinder sine
-  `466BC2`) remain host or VERA math, with their mechanisms.
+  `466BC2`) remain host or VERA math, with their mechanisms. Follow-ups from the review: FU1
+  `Inviso=` shrapnel children fly in VERA, while native `BulletClass::Fire` (`468670`, arm
+  `4688AF`) places them at their target; FU2 an `Inaccurate` `Arcing` `Inviso` shot skips the
+  plain scatter arm in VERA's instant delivery; FU3 the AA flak scatter blocker (GSI-08.07) may
+  be solvable (`Bullet+0x130` looks like the firing weapon type, a lead); FU4 the cluster loop's
+  `bullet+0x90` exit is not modelled; FU5 a negative ShrapnelCount measures its distance with an
+  exact root where native uses Sqrt_Approx, and its target point is the raw position (dormant in
+  stock); FU6 the atan table has two owners (compiled in, and loaded from the executable).
 
 ## Native evidence inventory
 
@@ -722,7 +742,7 @@ Sidecars record binary identity; landing-era SHA-256 `1cdd1180e49024fbda8ad568ca
 | house_defeat_gate | `4F8E86..4F8F82` with the CounterClass readers | 21 | Blowup_All, MPlayer_Defeated stubbed |
 | house_blowup_all | `4FC6D0` with `70F820`, `4722F0`, `472330` | 10 | ReceiveDamage, `71AD40`, side lookup stubbed |
 | bomb_class | `438E70`, `438A70`, `438A00`, `438720`, `4389B0`, `438BF0` (with `50B6F0`, Sqrt_Approx, ftol); `6FA6F5`; arms `469343`/`4699C4`; `6FCB8D` | 97 | sounds, anim, damage, bridge calls, virtuals recorded |
-| launch_scatter (`tools/projectile_oracle`) | `6FE663..6FE8EE`; `46A5B2..46A875`, `46AA66..46AD29`; `49F420` (with Sqrt_Approx, sin/cos/atan2, ftol) | 87 + 54 + 792 | draws, GetWeaponRange, GetCoords supplied; child launch observed |
+| launch_scatter (`tools/projectile_oracle`) | `6FE663..6FE8EE`; `46A5B2..46A875`, `46AA66..46AD29`; `49F420`; the cluster loop `469008..469091` (with Sqrt_Approx, sin/cos/atan2, ftol) | 87 + 54 + 792 + 6 | draws, GetWeaponRange, GetCoords supplied; child launch and DetonateAtCoord observed |
 
 Also `tools/infantry_scatter_oracle`, `tools/mcv_deploy_oracle`. Pre-branch main harnesses (review): techno_target_scan 171,
 vhp_scan 498, distributed_fire 151, foot_attack_move 638, estimated_damage 1066, object_health 718, cell_entry_crush_tail 68.
