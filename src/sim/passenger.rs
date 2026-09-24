@@ -680,6 +680,26 @@ fn process_boarding_passenger(sim: &mut Simulation, rules: &RuleSet, pax_id: u64
     }
 }
 
+/// `TechnoClass+0x82` InOpenTransport with its `+0x11C` Transporter: the
+/// `OpenTopped=` transport `entity` rides in, if any. `PerCellProcess`
+/// (`0x0051A463`/`0x0073A768`) writes `+0x11C` for every transport and, for an
+/// open-topped one, `SetInOpenTransport @ 0x00710470` sets `+0x82`. Read by
+/// FireAt's damage build, kill credit, GetFireError, navigation and the
+/// Temporal warp-distance check.
+pub(crate) fn open_topped_transport(
+    entities: &crate::sim::entity_store::EntityStore,
+    rules: &RuleSet,
+    interner: &StringInterner,
+    entity: &GameEntity,
+) -> Option<u64> {
+    let transport_id = entity.passenger_role.inside_transport_id()?;
+    let transport = entities.get(transport_id)?;
+    rules
+        .object(interner.resolve(transport.type_ref()))?
+        .open_topped
+        .then_some(transport_id)
+}
+
 fn is_civilian_garrison_owner(interner: &StringInterner, owner: InternedId) -> bool {
     let owner = interner.resolve(owner);
     owner.eq_ignore_ascii_case("neutral") || owner.eq_ignore_ascii_case("special")

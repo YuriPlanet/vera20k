@@ -666,13 +666,15 @@ impl Simulation {
 
     /// `TechnoClass+0x82` InOpenTransport: inside an `OpenTopped=` transport.
     fn in_open_transport(&self, attacker: u64, rules: &RuleSet) -> bool {
-        self.substrate
-            .entities
-            .get(attacker)
-            .and_then(|entity| entity.passenger_role.inside_transport_id())
-            .and_then(|transport| self.substrate.entities.get(transport))
-            .and_then(|transport| self.object_type(transport.type_ref(), rules))
-            .is_some_and(|object| object.open_topped)
+        self.substrate.entities.get(attacker).is_some_and(|entity| {
+            crate::sim::passenger::open_topped_transport(
+                &self.substrate.entities,
+                rules,
+                &self.interner,
+                entity,
+            )
+            .is_some()
+        })
     }
 
     /// The erase (`0x0071A895..0x0071AB02`).

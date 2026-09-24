@@ -55,11 +55,14 @@ pub struct CountryRules {
     /// commented out in stock rulesmd). Applied at ore/gem deposit time to BOTH the base
     /// credits and the OrePurifier-bonus credits.
     pub income_ppm: i64,
-    /// `Armor=` global country armor multiplier. Native stores this as a
-    /// double and folds it into the house armor value when difficulty is set.
-    pub armor: f64,
-    /// Per-target category armor multipliers. Native stores these as f32 and
-    /// reads the selected slot live for every receiver call.
+    /// Per-target category armor multipliers (HouseType `+0x100..+0x110`).
+    /// Native stores these as f32 and `HouseClass::GetArmorMultForType @
+    /// 0x0050BD30` reads the selected slot live for every receiver call.
+    ///
+    /// The country's `Armor=` (HouseType `+0xE0`) is not represented: native
+    /// folds it with the difficulty `Armor=` into `House+0x1A0`
+    /// (`HouseClass::SetDifficulty 0x004F6F54`), whose only reader is the
+    /// house CRC (`0x00502DD2`); no damage path reads it.
     pub armor_infantry_mult: f32,
     pub armor_units_mult: f32,
     pub armor_aircraft_mult: f32,
@@ -86,7 +89,6 @@ impl Default for CountryRules {
             multiplay_passive: false,
             wall_owner: true,
             income_ppm: INCOME_PPM_SCALE,
-            armor: 1.0,
             armor_infantry_mult: 1.0,
             armor_units_mult: 1.0,
             armor_aircraft_mult: 1.0,
@@ -109,7 +111,6 @@ impl CountryRules {
                 .get_f32("IncomeMult")
                 .map(|v| (v as f64 * INCOME_PPM_SCALE as f64).round() as i64)
                 .unwrap_or(INCOME_PPM_SCALE),
-            armor: section.get_f64("Armor").unwrap_or(1.0),
             armor_infantry_mult: section.get_f32("ArmorInfantryMult").unwrap_or(1.0),
             armor_units_mult: section.get_f32("ArmorUnitsMult").unwrap_or(1.0),
             armor_aircraft_mult: section.get_f32("ArmorAircraftMult").unwrap_or(1.0),
@@ -289,8 +290,6 @@ pub struct GeneralRules {
     /// read at `0x0066EF94`. Stock `2`, which is exactly the elite threshold,
     /// so elite is terminal.
     pub veteran_cap: f64,
-    /// Difficulty armor doubles in native Hard/Normal/Easy table order.
-    pub difficulty_armor: [f64; 3],
     /// `[General] ComputerBaseDefenseResponse=`. The active House responder
     /// forms its signed/wrapping budget as `attacker Cost * this value`.
     pub computer_base_defense_response: i32,
@@ -1188,7 +1187,6 @@ impl Default for GeneralRules {
             repair_rate_minutes: 0.016,
             veteran_ratio: VETERAN_RATIO_DEFAULT,
             veteran_cap: VETERAN_CAP_DEFAULT,
-            difficulty_armor: [1.0; 3],
             computer_base_defense_response: 3,
             // Native Rules+0xE48 constructor default; active retail overrides to 3.
             maximum_building_placement_failures: 5,
@@ -1438,8 +1436,9 @@ impl Default for GeneralRules {
 /// These global multipliers govern how garrisoned infantry fire from buildings.
 #[derive(Debug, Clone)]
 pub struct GarrisonRules {
-    /// Damage multiplier applied to garrison fire.
-    pub occupy_damage_multiplier: SimFixed,
+    /// Damage multiplier applied to garrison fire: the f32 at `Rules+0xF40`
+    /// that FireAt multiplies on the x87 (`0x006FE3F1`).
+    pub occupy_damage_multiplier: f32,
     /// ROF divisor for garrison fire -- higher = faster.
     pub occupy_rof_multiplier: SimFixed,
     /// Fixed weapon range in cells for garrisoned fire, replaces weapon's own range.
@@ -1459,7 +1458,7 @@ pub struct GarrisonRules {
 impl Default for GarrisonRules {
     fn default() -> Self {
         Self {
-            occupy_damage_multiplier: SimFixed::ONE,
+            occupy_damage_multiplier: 1.0,
             occupy_rof_multiplier: SimFixed::ONE,
             occupy_weapon_range: 5,
             bunker_damage_multiplier: 1.0,
@@ -1481,7 +1480,7 @@ impl GarrisonRules {
             section.and_then(|s| s.get_i32(key)).unwrap_or(default)
         };
         Self {
-            occupy_damage_multiplier: sim_from_f32(get_f32("OccupyDamageMultiplier", 1.0)),
+            occupy_damage_multiplier: get_f32("OccupyDamageMultiplier", 1.0),
             occupy_rof_multiplier: sim_from_f32(get_f32("OccupyROFMultiplier", 1.0)),
             occupy_weapon_range: get_i32("OccupyWeaponRange", 5),
             bunker_damage_multiplier: get_f32("BunkerDamageMultiplier", 1.0),
@@ -1792,11 +1791,6 @@ impl GeneralRules {
         let condition_yellow_spark_prob: f64 = general
             .get_f64("ConditionYellowSparkingProbability")
             .unwrap_or(0.01);
-        let difficulty_armor = ["Difficult", "Normal", "Easy"].map(|section_name| {
-            ini.section(section_name)
-                .and_then(|section| section.get_f64("Armor"))
-                .unwrap_or(1.0)
-        });
         // These are ReadDouble values (single-precision parse widened to f64)
         // and the consumer's ftol boundary chops toward zero.
         let ambient_change_rate = general.read_double("AmbientChangeRate", 0.2);
@@ -1887,7 +1881,6 @@ impl GeneralRules {
                 .get_f64("VeteranRatio")
                 .unwrap_or(VETERAN_RATIO_DEFAULT),
             veteran_cap: general.get_f64("VeteranCap").unwrap_or(VETERAN_CAP_DEFAULT),
-            difficulty_armor,
             computer_base_defense_response: general
                 .get_i32("ComputerBaseDefenseResponse")
                 .unwrap_or(defaults.computer_base_defense_response),
@@ -3950,15 +3943,14 @@ impl RuleSet {
             .map_or(INCOME_PPM_SCALE, |country| country.income_ppm)
     }
 
-    /// Source factors for native `HouseClass::GetArmorMultForType`. They stay
-    /// separate so the caller can first store the house-level
-    /// `difficulty * country Armor` result, then multiply the selected live
-    /// category float in the receiver's native grouping.
-    pub(crate) fn country_armor_factors(&self, id: &str, object: &ObjectType) -> (f64, f64) {
+    /// `HouseClass::GetArmorMultForType @ 0x0050BD30` for a house of country
+    /// `id`: its per-category float for `object` (a `BuildCat=Combat`
+    /// building takes `ArmorDefensesMult=`), 1.0 for an unknown country.
+    pub(crate) fn country_armor_mult_for_type(&self, id: &str, object: &ObjectType) -> f32 {
         let Some(country) = self.country_rules(id) else {
-            return (1.0, 1.0);
+            return 1.0;
         };
-        let category = match object.category {
+        match object.category {
             ObjectCategory::Infantry => country.armor_infantry_mult,
             ObjectCategory::Vehicle => country.armor_units_mult,
             ObjectCategory::Aircraft => country.armor_aircraft_mult,
@@ -3966,8 +3958,7 @@ impl RuleSet {
                 country.armor_defenses_mult
             }
             ObjectCategory::Building => country.armor_buildings_mult,
-        };
-        (country.armor, f64::from(category))
+        }
     }
 
     /// Resolve a country name to its stable `[Countries]` registration index.

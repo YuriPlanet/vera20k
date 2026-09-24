@@ -542,15 +542,13 @@ impl crate::sim::world::Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
-        let open_transport = match entity.passenger_role {
-            crate::sim::passenger::PassengerRole::Inside { transport_id } => self
-                .substrate
-                .entities
-                .get(transport_id)
-                .and_then(|e| rules.object(self.interner.resolve(e.type_ref())))
-                .is_some_and(|o| o.open_topped),
-            _ => false,
-        };
+        let open_transport = crate::sim::passenger::open_topped_transport(
+            &self.substrate.entities,
+            rules,
+            &self.interner,
+            entity,
+        )
+        .is_some();
         let refused = nonnull
             && (entity.foot_locomotor_swap_active
                 || open_transport

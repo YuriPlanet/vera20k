@@ -2398,33 +2398,35 @@ fn resolve_receive_damage(
         psionics_immune: target_type.is_some_and(|object| object.immune_to_psionics),
         target_is_building,
     };
-    let defender_country_armor = houses.get(&target.owner()).map_or(1.0, |house| {
-        let difficulty_armor = rules.general.difficulty_armor[house.difficulty.table_index()];
+    // `HouseClass::GetArmorMultForType @ 0x0050BD30` on the target's owner:
+    // its HouseType's per-category float. The difficulty and country
+    // `Armor=` product (`House+0x1A0`) is never read here.
+    let house_type_armor = houses.get(&target.owner()).map_or(1.0, |house| {
         let country_name = house
             .country
             .map(|country| interner.resolve(country))
             .unwrap_or_else(|| interner.resolve(target.owner()));
-        let (country_armor, category_armor) = target_type
-            .map(|object| rules.country_armor_factors(country_name, object))
-            .unwrap_or((1.0, 1.0));
-        let house_armor = difficulty_armor * country_armor;
-        house_armor * category_armor
-    });
-    let defender_vet_armor = target_type
-        .is_some_and(|object| {
-            if target.veterancy >= ELITE_VETERANCY {
-                object.veteran_stronger || object.elite_stronger
-            } else {
-                target.veterancy >= VETERAN_VETERANCY && object.veteran_stronger
-            }
+        target_type.map_or(1.0, |object| {
+            rules.country_armor_mult_for_type(country_name, object)
         })
-        .then_some(rules.general.veteran_armor)
-        .unwrap_or(1.0);
-    let combat_mods = damage::CombatMods {
-        defender_country_armor,
-        defender_unit_armor: f64::from_bits(target.armor_multiplier.bits()),
-        defender_vet_armor,
-        ..damage::CombatMods::default()
+    });
+    let rank_armor = target_type
+        .is_some_and(|object| {
+            self::veterancy::has_weapon_ability(
+                self::veterancy::rank_from_u16(target.veterancy),
+                object,
+                crate::rules::object_type::Ability::Stronger,
+            )
+        })
+        .then(|| {
+            crate::util::native_x87::NativeF64Bits::from_bits(rules.general.veteran_armor.to_bits())
+        });
+    let divisors = damage::DefenceDivisors {
+        house_type_armor: crate::util::native_x87::NativeF32Bits::from_bits(
+            house_type_armor.to_bits(),
+        ),
+        unit_armor: target.armor_multiplier,
+        rank_armor,
     };
     // `arg6` stays on the ordered call: its Unit-class consumer is the crew
     // block, which the concrete death reads from the killing event.
@@ -2434,7 +2436,7 @@ fn resolve_receive_damage(
         warhead.percent_at_max_f64,
         &warhead.verses_f64,
         &target_view,
-        &combat_mods,
+        &divisors,
         &gates,
         distance_leptons,
         scenario_no_damage,
@@ -3099,16 +3101,9 @@ pub(crate) fn award_kill_experience(
         object.trainable.then_some((id, object.cost))
     };
     // Branch 1: a passenger firing from an OpenTopped transport pays its
-    // transporter. `passenger_role.Inside` plus the transport's `OpenTopped=`
-    // is the `+0x82`/`+0x11C` pair.
-    let open_transporter = match killer.passenger_role {
-        crate::sim::passenger::PassengerRole::Inside { transport_id } => entities
-            .get(transport_id)
-            .and_then(|transport| rules.object(interner.resolve(transport.type_ref())))
-            .is_some_and(|transport_type| transport_type.open_topped)
-            .then_some(transport_id),
-        _ => None,
-    };
+    // transporter (the `+0x82`/`+0x11C` pair).
+    let open_transporter =
+        crate::sim::passenger::open_topped_transport(entities, rules, interner, killer);
     let recipient = if let Some(transporter) = open_transporter.and_then(trainable_cost) {
         Some(transporter)
     } else if killer_type.trainable {

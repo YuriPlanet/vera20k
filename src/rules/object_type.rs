@@ -609,10 +609,6 @@ pub struct ObjectType {
     /// `EXPLODES` in `EliteAbilities=`. Elite objects inherit the veteran
     /// ability and additionally consult this list.
     pub elite_explodes: bool,
-    /// `STRONGER` in the rank-selected ability list gates the receiver's
-    /// separate `VeteranArmor` divide.
-    pub veteran_stronger: bool,
-    pub elite_stronger: bool,
     /// `SCATTER` in the rank-selected ability list lets player-owned Infantry
     /// accept an unforced direct Scatter call even when PlayerScatter is off.
     pub veteran_scatter: bool,
@@ -1972,8 +1968,6 @@ impl ObjectType {
             self_healing: section.get_bool("SelfHealing").unwrap_or(false),
             veteran_explodes: veteran_abilities.has(Ability::Explodes),
             elite_explodes: elite_abilities.has(Ability::Explodes),
-            veteran_stronger: veteran_abilities.has(Ability::Stronger),
-            elite_stronger: elite_abilities.has(Ability::Stronger),
             veteran_scatter: veteran_abilities.has(Ability::Scatter),
             elite_scatter: elite_abilities.has(Ability::Scatter),
             veteran_cloak: veteran_abilities.has(Ability::Cloak),
