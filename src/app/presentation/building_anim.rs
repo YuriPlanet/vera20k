@@ -247,8 +247,8 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
                 anim_id,
                 sound_id,
                 source,
-            } => {
-                if let Some(gain) = gain_for(sound_id, *source) {
+            } => match gain_for(sound_id, *source) {
+                Some(gain) => {
                     sfx.play_animation_sound_spatial(
                         *anim_id,
                         sound_id,
@@ -258,7 +258,8 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
                         audio_indices,
                     );
                 }
-            }
+                None => sfx.bind_inaudible_animation_sound(*anim_id, sound_id, registry),
+            },
             GameSoundEvent::AnimationReleased { anim_id } => {
                 sfx.release_animation_sound(*anim_id);
             }
@@ -502,13 +503,14 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
     // Native's owner calls it on every one of its own updates with its
     // current coordinate: a positive volume re-drives `SoundEvent::SetVolume`
     // and `SetPan` and re-points the handle, and a volume that has fallen to
-    // zero calls `SoundEvent::Stop` and clears the handle — which is what
-    // ends a sustained cue whose object has driven out of earshot.
-    // `SoundEvent::UpdateState @ 0x004057DC` then reaps the event on its next
+    // zero calls `SoundEvent::Stop` while the handle keeps its sound — which
+    // silences a sustained cue whose object has driven out of earshot and
+    // starts it again when the object comes back (or after a `Limit=` kill).
+    // `SoundEvent::UpdateState @ 0x004057DC` reaps a stopped event on its next
     // pass because the owner no longer names it.
     for owner in sfx.looping_owners() {
         let Some(sim) = sim else {
-            sfx.update_looping_sound(owner, None);
+            sfx.stop_animation_sound(owner);
             continue;
         };
         let Some(world) = sim.looping_sound_owner_coord(owner) else {
@@ -516,7 +518,7 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
             // releases the handle before the pointer can dangle
             // (`release_move_sound` / `destroy_anim` push the stop event), so
             // this is the belt-and-braces arm.
-            sfx.update_looping_sound(owner, None);
+            sfx.stop_animation_sound(owner);
             continue;
         };
         let (rx, ry, sub_x, sub_y, _) = world.to_cell_sub_z();
@@ -525,7 +527,7 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
         let facts = registry_facts_for_owner(registry, sfx, owner);
         let gain = facts
             .and_then(|facts| spatial_gain(facts, screen_x, screen_y, &listener, shrouded(rx, ry)));
-        sfx.update_looping_sound(owner, gain);
+        sfx.update_looping_sound(owner, gain, registry, assets, audio_indices);
     }
 
     // `TechnoClass::AI_Update @ 0x006F9EBB` drains the per-object voice latch
@@ -542,7 +544,7 @@ fn registry_facts_for_owner(
     sfx: &crate::audio::sfx::SfxPlayer,
     owner: u64,
 ) -> Option<crate::audio::sfx::SpatialSource> {
-    let key = sfx.loop_handle_sound_id(owner)?;
+    let key = sfx.handle_sound_id(owner)?;
     Some(registry.get(&key).map_or_else(
         || crate::audio::sfx::SpatialSource::from_registry_defaults(registry),
         crate::audio::sfx::SpatialSource::from_entry,

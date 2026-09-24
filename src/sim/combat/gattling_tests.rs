@@ -137,10 +137,28 @@ fn original_stage_histories() {
         );
         let mut elite = elite_of(&start("veterancy"));
         let mut rng = SimRng::new(int(&input["seed"]) as u64);
+        // The `+0x4A4` handle ("a") as the original's own audio log leaves it:
+        // `play` binds a loop, `stop a` and `release a` end it. Unknown until
+        // the log first touches it when the history starts with the latch set.
+        let mut handle_live = (int(&start("latch")) == 0).then_some(false);
         for (index, call) in history["calls"].as_array().unwrap().iter().enumerate() {
             let at = format!("{name} call {index}");
             let op = call["op"].as_str().unwrap();
             let path = call["path"].as_str().unwrap_or("");
+            let audio: Vec<&str> = call["audio"]
+                .as_str()
+                .unwrap_or("")
+                .split(", ")
+                .filter(|token| !token.is_empty())
+                .collect();
+            let handle_before = handle_live;
+            for token in &audio {
+                match *token {
+                    "play" => handle_live = Some(true),
+                    "stop a" | "release a" => handle_live = Some(false),
+                    _ => {}
+                }
+            }
             let mut draws = Vec::new();
             let mut sounds = Vec::new();
             match op {
@@ -162,6 +180,17 @@ fn original_stage_histories() {
                         },
                     );
                     assert_eq!(effects.stage_up, path.contains("up"), "{at}: stage-up");
+                    // The original's handle calls: the stage-up's hard stop,
+                    // and the report's play, which clears the handle first.
+                    let stops = audio.iter().filter(|token| **token == "stop a").count();
+                    assert_eq!(
+                        (audio.contains(&"play"), stops),
+                        (
+                            effects.report.is_some(),
+                            usize::from(effects.stage_up) + usize::from(effects.report.is_some())
+                        ),
+                        "{at}: handle calls {audio:?}"
+                    );
                     if let Some(report) = effects.report {
                         assert!(!before_latch || effects.stage_up, "{at}");
                         sounds.push(
@@ -178,8 +207,13 @@ fn original_stage_histories() {
                         path.contains("down"),
                         "{at}: stage-down"
                     );
-                    // The release always runs; it has a loop to release
-                    // exactly while the latch was set.
+                    // The release always runs (`release a` on every call);
+                    // VERA releases exactly when the original's handle held
+                    // a loop, which is while the latch was set.
+                    assert!(audio.contains(&"release a"), "{at}: {audio:?}");
+                    if let Some(live) = handle_before {
+                        assert_eq!(released, live, "{at}: a live loop released");
+                    }
                     assert_eq!(released, before_latch, "{at}");
                 }
                 "set_stage" => state.set_stage(i32_of(&call["arg"])),

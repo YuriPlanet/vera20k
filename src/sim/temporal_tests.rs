@@ -1418,8 +1418,10 @@ struct NativeWarpCase {
 /// own release, the harvester and building notices and the building going
 /// offline. VERA emits the harvester notice for every house and the app keeps
 /// the local owner's; VERA always has a player, so Deselect is compared only
-/// where the case has one. The spawn kill and FreeAll (read: both run before
-/// CanWarpTarget), the gattling spin-down and Mark are not compared.
+/// where the case has one; the gattling case's UpdateGattlingStage(1) on the
+/// victim is compared through its effect (one RateDown step and the loop's
+/// release). The spawn kill and FreeAll (read: both run before
+/// CanWarpTarget) and Mark are not compared.
 #[test]
 fn native_initiate_warp_corpus() {
     let cases: Vec<NativeWarpCase> = serde_json::from_str(include_str!(
@@ -1459,6 +1461,9 @@ fn native_initiate_warp_corpus() {
         }
         if flag("precheck") {
             keys.push_str("UndeploysInto=HTNK\nFoundation=1x1\n");
+        }
+        if flag("gattling") {
+            keys.push_str("IsGattling=yes\nRateDown=50\n");
         }
         let mut text = RULES.to_string();
         let at = text.find(section).unwrap() + section.len();
@@ -1545,6 +1550,11 @@ fn native_initiate_warp_corpus() {
             chain(&mut sim, other, &[target], 555);
         }
         sim.substrate.entities.get_mut(target).unwrap().selected = true;
+        if flag("gattling") {
+            // Spun up with its loop playing, so one decay tick shows.
+            sim.substrate.entities.get_mut(target).unwrap().gattling =
+                crate::sim::combat::gattling::GattlingState::from_fields(0, 100, true);
+        }
         let notices_before = sim.sound_events.len();
 
         let shot = (input["null_target"].as_bool() != Some(true)).then_some(target);
@@ -1590,6 +1600,26 @@ fn native_initiate_warp_corpus() {
             );
         }
         let native = |kind: &str| case.events.iter().any(|event| event[0] == kind);
+        // `0x0071B10B`: UpdateGattlingStage(1) on the victim, the original's
+        // only tick count here: RateDown 50 takes the spin from 100 to 50 and
+        // releases the loop.
+        let gattling = entity(&sim, target).gattling;
+        let released = sim.sound_events[notices_before..].iter().any(|event| {
+            matches!(event, SimSoundEvent::GattlingLoopRelease { owner }
+                if *owner == crate::sim::combat::gattling::gattling_sound_owner(target))
+        });
+        assert_eq!(
+            (gattling.value() == 50, released),
+            (native("gattling"), native("gattling")),
+            "{name}: UpdateGattlingStage(1)"
+        );
+        assert!(
+            case.events
+                .iter()
+                .filter(|event| event[0] == "gattling")
+                .all(|event| event[1] == "target" && event[2] == 1),
+            "{name}: the original decays the victim by one tick"
+        );
         if input["player"].as_bool() != Some(false) {
             assert_eq!(
                 !entity(&sim, target).selected,

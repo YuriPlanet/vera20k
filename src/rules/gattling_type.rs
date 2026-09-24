@@ -25,10 +25,18 @@
 //! fields. Frequency: never on retail data (YTNK and YAGGUN author 3).
 //!
 //! Layers: the reader runs once per INI layer, each read defaulting to the
-//! field's current value. VERA reads the layered section once; the two agree
-//! except when a later layer lowers `WeaponStages=` below an index an earlier
-//! layer wrote AND that index is later read, which only the overlap cases
-//! above can do.
+//! field's current value, and the stage loop's gate (`0x0071407E..
+//! 0x00714099`) is evaluated per layer. VERA reads the layered section once.
+//! RESIDUAL: the two disagree when (a) a later layer lowers `WeaponStages=`
+//! below an index an earlier layer wrote and that index is later read (only
+//! the overlap cases above can do that); (b) a later layer turns
+//! `IsGattling=` on or raises `WeaponStages=` past 1 while the `Stage%d=`
+//! keys sit only in an earlier layer, whose loop never ran (native reads the
+//! later file and finds none; VERA reads the merged keys); (c) with
+//! `WeaponStages=` 7 or more, overlapping keys from different layers apply
+//! layer by layer natively and per merged key here. Frequency: never on
+//! retail data (YTNK and YAGGUN author every key in rulesmd; the mode INIs
+//! leave them alone; map layers not surveyed).
 
 use crate::rules::ini_parser::IniSection;
 

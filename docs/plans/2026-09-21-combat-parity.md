@@ -497,7 +497,7 @@ Temporal, PR #474 (merge `80f4494a`; snapshot 197, hash feature 197), owner `tem
   survivors), release on a move order, snapshot and hash round trip. Everything outside the native
   corpora is Rust regression only.
 - Residuals (module doc): the teleport writer's sparkle, frozen AI and phase gates; `+27C`;
-  gattling spin-down; Mark and building anim pause (presentation); house `+1FC`; the online-latch
+  Mark and building anim pause (presentation); house `+1FC`; the online-latch
   readers not wired (FindFactory `5F7900`'s online argument, so production is not suspended; the
   upgrade-prerequisite scan; AI_ManageProduction; CheckDockArrayOccupancy; PowerCheck_Upgrade;
   vt+0x4E0 `4456D0`); the building erase's occupant kill order; slave release; ReceiveGunner's

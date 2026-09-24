@@ -53,8 +53,10 @@
 //! (`0x0043FEE9..0x0043FF67`); VERA has none of those building mission
 //! handlers (see `world::techno_ai`'s note on the building Guard->Attack flip).
 //! Trigger: every Gattling Cannon. Effect: it keeps its stage-0 pair
-//! (AGGattling/AAGattCann) and plays a per-shot report. Frequency: every Yuri
-//! base. The building attack mission is the next mechanism.
+//! (AGGattling/AAGattCann) and, in place of the stage loop, a per-shot report
+//! (the no-report gate is held back for buildings in `emit_admitted_fire`, or
+//! the cannon would fire silently). Frequency: every Yuri base. The building
+//! attack mission is the next mechanism.
 //!
 //! RESIDUAL: the unit update's vt+0x4E4 return (`0x00736D50`: codes 0 and 2
 //! queue Unload and return before the tail) is not ported. It answers true
@@ -63,7 +65,9 @@
 //!
 //! Evidence: `tools/spatial_oracle/gattling_stage.py` runs the original
 //! bodies and accessors (68 histories, 3,586 calls); `gattling_unit_fire.py`
-//! the whole unit update. `gattling_tests` replays both.
+//! the unit's firing update `0x00736DF0` with its leaf calls stubbed (not
+//! `UnitClass::AI`). `gattling_tests` replays both (54 of the 64 update rows;
+//! the rest are unrepresentable codes and the vt+0x4E4 return).
 
 use crate::rules::gattling_type::GattlingStages;
 use crate::sim::combat::fire_error::FireError;
