@@ -105,6 +105,8 @@ struct ShellLifecycleReducer<'a> {
     first_paint_slide: &'a mut Option<ShellFrameWave>,
     slide_generation: &'a mut u64,
     title_reveal: &'a mut crate::ui::shell::static_reveal::Kind1StaticReveal,
+    monitor: &'a mut crate::ui::shell::warning_monitor::WarningMonitor,
+    page_title: &'a mut crate::ui::shell::static_reveal::PresentedKind1Static,
 }
 
 impl<'a> ShellLifecycleReducer<'a> {
@@ -114,6 +116,8 @@ impl<'a> ShellLifecycleReducer<'a> {
             first_paint_slide: &mut state.frontend.shell_first_paint_slide,
             slide_generation: &mut state.frontend.shell_slide_generation,
             title_reveal: &mut state.frontend.main_menu_shell_state.title_reveal,
+            monitor: &mut state.frontend.shell_monitor,
+            page_title: &mut state.frontend.shell_page_title,
         }
     }
 
@@ -135,6 +139,10 @@ impl<'a> ShellLifecycleReducer<'a> {
         *self.active_shell = target;
         match target {
             Some(kind) => {
+                // A new dialog instance creates new statics: 0x71C at frame 0
+                // with its timer unarmed (0x0060A982) and a hidden 0x694.
+                *self.monitor = Default::default();
+                *self.page_title = Default::default();
                 *self.first_paint_slide = Some(if kind == ShellSlideKind::MainMenu {
                     *self.slide_generation = self.slide_generation.wrapping_add(1);
                     if *self.slide_generation == 0 {
@@ -506,7 +514,16 @@ pub(crate) fn render_shell_first_paint_slide(
                 .frontend.skirmish_shell_state
                 .start_right_panel_static_reveals(&title, &game_type, &map_label, now);
         }
-        Some(ShellWaveCompletion::MenuPage) | None => {}
+        // Menu pages start their heading reveal on the same edge (0xE2 starts
+        // its own in the presented-entry completion transaction).
+        Some(ShellWaveCompletion::MenuPage) => {
+            let title = crate::app::frontend::menu_page_render::active_page_title_text(state, kind);
+            state
+                .frontend
+                .shell_page_title
+                .start(&title, Instant::now());
+        }
+        None => {}
     }
 
     Ok(ShellFirstPaintRenderResult::Rendered {
@@ -562,6 +579,8 @@ mod tests {
     fn collapsed_e2_to_100_back_before_paint_rearms_title_and_entry_wave() {
         let start = Instant::now();
         let mut title_reveal = Kind1StaticReveal::default();
+        let mut monitor = crate::ui::shell::warning_monitor::WarningMonitor::default();
+        let mut page_title = crate::ui::shell::static_reveal::PresentedKind1Static::default();
         assert!(title_reveal.start("Main Menu", start));
         for count in 1..=17 {
             let Kind1PaintWindow::Due { window, receipt } = title_reveal.paint_window() else {
@@ -588,6 +607,8 @@ mod tests {
             first_paint_slide: &mut first_paint_slide,
             slide_generation: &mut slide_generation,
             title_reveal: &mut title_reveal,
+            monitor: &mut monitor,
+            page_title: &mut page_title,
         }
         .invalidate_main_menu_dialog_instance();
         assert_eq!(title_reveal.paint_window(), Kind1PaintWindow::Hidden);
@@ -601,6 +622,8 @@ mod tests {
             first_paint_slide: &mut first_paint_slide,
             slide_generation: &mut slide_generation,
             title_reveal: &mut title_reveal,
+            monitor: &mut monitor,
+            page_title: &mut page_title,
         }
         .invalidate_main_menu_dialog_instance();
         assert!(first_paint_slide.is_none());
@@ -613,6 +636,8 @@ mod tests {
             first_paint_slide: &mut first_paint_slide,
             slide_generation: &mut slide_generation,
             title_reveal: &mut title_reveal,
+            monitor: &mut monitor,
+            page_title: &mut page_title,
         }
         .observe_target(Some(ShellSlideKind::MainMenu), start);
         assert_eq!(effect, ShellEntryEffect::Started(ShellSlideKind::MainMenu));
@@ -670,6 +695,8 @@ mod tests {
                 first_paint_slide: &mut first_paint_slide,
                 slide_generation: &mut slide_generation,
                 title_reveal: &mut title_reveal,
+                monitor: &mut monitor,
+                page_title: &mut page_title,
             }
             .complete_presented_main_menu(42, "Main Menu", completion_at)
         );
@@ -694,6 +721,8 @@ mod tests {
         let mut first_paint_slide = Some(ShellFrameWave::new_presented_main_menu(52));
         let mut slide_generation = 52;
         let mut title_reveal = Kind1StaticReveal::default();
+        let mut monitor = crate::ui::shell::warning_monitor::WarningMonitor::default();
+        let mut page_title = crate::ui::shell::static_reveal::PresentedKind1Static::default();
 
         let wave = first_paint_slide.as_mut().expect("presented wave");
         assert!(wave.activate_after_acquire());
@@ -719,6 +748,8 @@ mod tests {
                 first_paint_slide: &mut first_paint_slide,
                 slide_generation: &mut slide_generation,
                 title_reveal: &mut title_reveal,
+                monitor: &mut monitor,
+                page_title: &mut page_title,
             }
             .complete_presented_main_menu(51, "Main Menu", accepted_at)
         );

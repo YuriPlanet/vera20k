@@ -54,6 +54,15 @@ pub(crate) struct FrontendState {
     pub(crate) shell_slide_active_shell: Option<crate::app::frontend::shell_transition::ShellSlideKind>,
     /// Monotonic identity for each newly armed exact Main Menu `0xE2` instance.
     pub(crate) shell_slide_generation: u64,
+    /// Static `0x71C` of the showing main-menu family dialog (`0xE2`, `0x100`,
+    /// `0x101`, `0x129`). Reset for every new dialog instance by the shell
+    /// lifecycle reducer; drawn by the family renderers and committed after
+    /// present.
+    pub(crate) shell_monitor: crate::ui::shell::warning_monitor::WarningMonitor,
+    /// Heading static `0x694` of the showing menu page (`0x100`, `0x101`,
+    /// `0x129`): hidden until the page's first-paint slide completes, then a
+    /// kind-1 reveal. Main menu `0xE2` keeps its own presented-entry reveal.
+    pub(crate) shell_page_title: crate::ui::shell::static_reveal::PresentedKind1Static,
     /// Active graceful quit cascade (music fade → trailing-voice wait → hard stop
     /// → exit). Some only between Exit-confirm OK and window close; freezes shell
     /// input while it runs.

@@ -10,56 +10,17 @@ use crate::ui::main_menu_dialogs::options::shell::{LauncherLabelAlign, LauncherO
 use crate::ui::main_menu_dialogs::options::{LauncherTrackbarId, OptionsDialogState};
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::static_reveal::{Kind1PaintWindow, Kind1RevealReceipt, Kind1StaticReveal};
-use std::time::{Duration, Instant};
+use crate::ui::shell::warning_monitor::WarningMonitor;
+use std::time::Instant;
 
 #[derive(Default)]
 pub(crate) struct LauncherOptionsPresentation {
     pub(crate) title: Kind1StaticReveal,
-    warning: WarningAnimation,
-}
-
-/// Static71C has a one-millisecond startup gate, then a timer interval equal
-/// to the SHP frame count (91), not a continuously advancing 1ms animation.
-/// 60A9C8..60AA0B initializes;6153E0 WM_TIMER invalidates and WM_PAINT advances.
-#[derive(Default)]
-struct WarningAnimation {
-    started: Option<Instant>,
-    next_timer: Option<Instant>,
-    displayed: Option<usize>,
-    next_frame: usize,
-    dirty: bool,
-}
-
-impl WarningAnimation {
-    fn prepare(&mut self, now: Instant, frames: usize) -> (Option<usize>, bool) {
-        if frames == 0 {
-            return (None, false);
-        }
-        let started = *self.started.get_or_insert(now);
-        if now.saturating_duration_since(started) <= Duration::from_millis(1) {
-            return (None, false);
-        }
-        if self.next_timer.is_none_or(|deadline| now >= deadline) {
-            self.next_timer = Some(now + Duration::from_millis(frames as u64));
-            self.dirty = true;
-        }
-        if self.dirty {
-            (Some(self.next_frame % frames), true)
-        } else {
-            (self.displayed, false)
-        }
-    }
-
-    fn presented(&mut self, frame: usize) {
-        self.displayed = Some(frame);
-        self.next_frame = frame + 1;
-        self.dirty = false;
-    }
+    warning: WarningMonitor,
 }
 
 pub(crate) struct LauncherPaintReceipt {
     title: Option<Kind1RevealReceipt>,
-    warning: Option<usize>,
 }
 
 impl LauncherOptionsPresentation {
@@ -70,9 +31,7 @@ impl LauncherOptionsPresentation {
         {
             return false;
         }
-        if let Some(frame) = receipt.warning {
-            self.warning.presented(frame);
-        }
+        self.warning.commit_presented();
         true
     }
 }
@@ -310,14 +269,14 @@ pub(crate) fn render_launcher_options(
         .skirmish_shell_chrome
         .as_ref()
         .expect("launcher atlas");
-    let (warning, warning_dirty) = presentation
+    let warning = presentation
         .warning
-        .prepare(now, atlas.launcher_warning_frames.len());
+        .paint(now, atlas.launcher_warning_frames.len(), true);
     let layout =
         LauncherOptionsLayout::new(state.render_width() as i32, state.render_height() as i32);
     let mut instances =
         launcher_background_instances(atlas, state.render_width(), state.render_height());
-    if let Some(frame) = warning.and_then(|i| atlas.launcher_warning_frames.get(i)) {
+    if let Some(frame) = warning.and_then(|frame| atlas.launcher_warning_frames.get(frame)) {
         push_flag_entry_native_clipped_centered(
             &mut instances,
             *frame,
@@ -497,6 +456,5 @@ pub(crate) fn render_launcher_options(
     state.platform.window.request_redraw();
     Ok(LauncherPaintReceipt {
         title: title_receipt,
-        warning: warning.filter(|_| warning_dirty),
     })
 }

@@ -61,7 +61,10 @@ mod tests {
         let layout = compute_layout(800, 600);
         assert_eq!(layout.movie_base, MainMenuMovieBase::Ra2tsL);
         assert_eq!(layout.movie, RectPx::new(0, 0, 632, 570));
-        assert_eq!(layout.title, RectPx::new(635, 3, 162, 16));
+        // Same heading rect as 0xE2: +1 window, then +7y/+1h (0x60BD17).
+        assert_eq!(layout.title, RectPx::new(635, 9, 163, 18));
+        // 0x71C window; the 92x53 SDWRNANM frame centers at (670, 48).
+        assert_eq!(layout.warning_monitor, RectPx::new(670, 47, 93, 55));
         assert_eq!(rect(&layout, 0x0688), RectPx::new(644, 199, 156, 42));
         assert_eq!(rect(&layout, 0x0689), RectPx::new(644, 241, 156, 42));
         assert_eq!(rect(&layout, 0x0579), RectPx::new(644, 283, 156, 42));
@@ -77,6 +80,8 @@ mod tests {
         assert_eq!(rect(&layout, 0x0579), RectPx::new(756, 367, 156, 42));
         assert_eq!(rect(&layout, 0x0686), RectPx::new(756, 619, 156, 42));
         assert_eq!(layout.status_help, RectPx::new(122, 662, 456, 21));
+        assert_eq!(layout.title, RectPx::new(747, 93, 163, 18));
+        assert_eq!(layout.warning_monitor, RectPx::new(782, 131, 93, 55));
     }
 
     #[test]

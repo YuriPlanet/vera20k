@@ -1,0 +1,194 @@
+{
+  "cases": [
+    {
+      "control_id": 1684,
+      "dialog_id": 226,
+      "interval_ms": 30,
+      "kind1": 1,
+      "kind4_startup_ms": 0,
+      "range": 8,
+      "step": 1
+    },
+    {
+      "control_id": 1685,
+      "dialog_id": 226,
+      "interval_ms": 15,
+      "kind1": 1,
+      "kind4_startup_ms": 0,
+      "range": 16,
+      "step": 3
+    },
+    {
+      "control_id": 1820,
+      "dialog_id": 226,
+      "interval_ms": 15,
+      "kind1": 0,
+      "kind4_startup_ms": 1,
+      "range": 8,
+      "step": 1
+    },
+    {
+      "control_id": 1684,
+      "dialog_id": 256,
+      "interval_ms": 30,
+      "kind1": 1,
+      "kind4_startup_ms": 0,
+      "range": 8,
+      "step": 1
+    },
+    {
+      "control_id": 1685,
+      "dialog_id": 256,
+      "interval_ms": 15,
+      "kind1": 1,
+      "kind4_startup_ms": 0,
+      "range": 16,
+      "step": 3
+    },
+    {
+      "control_id": 1820,
+      "dialog_id": 256,
+      "interval_ms": 15,
+      "kind1": 0,
+      "kind4_startup_ms": 1,
+      "range": 8,
+      "step": 1
+    },
+    {
+      "control_id": 1684,
+      "dialog_id": 257,
+      "interval_ms": 30,
+      "kind1": 1,
+      "kind4_startup_ms": 0,
+      "range": 8,
+      "step": 1
+    },
+    {
+      "control_id": 1685,
+      "dialog_id": 257,
+      "interval_ms": 15,
+      "kind1": 1,
+      "kind4_startup_ms": 0,
+      "range": 16,
+      "step": 3
+    },
+    {
+      "control_id": 1820,
+      "dialog_id": 257,
+      "interval_ms": 15,
+      "kind1": 0,
+      "kind4_startup_ms": 1,
+      "range": 8,
+      "step": 1
+    },
+    {
+      "control_id": 1684,
+      "dialog_id": 297,
+      "interval_ms": 30,
+      "kind1": 1,
+      "kind4_startup_ms": 0,
+      "range": 8,
+      "step": 1
+    },
+    {
+      "control_id": 1685,
+      "dialog_id": 297,
+      "interval_ms": 15,
+      "kind1": 1,
+      "kind4_startup_ms": 0,
+      "range": 16,
+      "step": 3
+    },
+    {
+      "control_id": 1820,
+      "dialog_id": 297,
+      "interval_ms": 15,
+      "kind1": 0,
+      "kind4_startup_ms": 1,
+      "range": 8,
+      "step": 1
+    },
+    {
+      "control_id": 1684,
+      "dialog_id": 213,
+      "interval_ms": 30,
+      "kind1": 1,
+      "kind4_startup_ms": 0,
+      "range": 8,
+      "step": 1
+    },
+    {
+      "control_id": 1685,
+      "dialog_id": 213,
+      "interval_ms": 15,
+      "kind1": 1,
+      "kind4_startup_ms": 0,
+      "range": 16,
+      "step": 3
+    },
+    {
+      "control_id": 1820,
+      "dialog_id": 213,
+      "interval_ms": 15,
+      "kind1": 0,
+      "kind4_startup_ms": 1,
+      "range": 8,
+      "step": 1
+    },
+    {
+      "control_id": 1684,
+      "dialog_id": 258,
+      "interval_ms": 30,
+      "kind1": 1,
+      "kind4_startup_ms": 0,
+      "range": 8,
+      "step": 1
+    },
+    {
+      "control_id": 1685,
+      "dialog_id": 258,
+      "interval_ms": 15,
+      "kind1": 1,
+      "kind4_startup_ms": 0,
+      "range": 16,
+      "step": 3
+    },
+    {
+      "control_id": 1820,
+      "dialog_id": 258,
+      "interval_ms": 15,
+      "kind1": 0,
+      "kind4_startup_ms": 0,
+      "range": 8,
+      "step": 1
+    },
+    {
+      "control_id": 1684,
+      "dialog_id": 183,
+      "interval_ms": 30,
+      "kind1": 1,
+      "kind4_startup_ms": 0,
+      "range": 8,
+      "step": 1
+    },
+    {
+      "control_id": 1685,
+      "dialog_id": 183,
+      "interval_ms": 15,
+      "kind1": 1,
+      "kind4_startup_ms": 0,
+      "range": 16,
+      "step": 3
+    },
+    {
+      "control_id": 1820,
+      "dialog_id": 183,
+      "interval_ms": 15,
+      "kind1": 0,
+      "kind4_startup_ms": 0,
+      "range": 8,
+      "step": 1
+    }
+  ],
+  "source": "unicorn/gamemd.exe"
+}

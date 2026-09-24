@@ -39,20 +39,6 @@ pub fn encoded_unit_rgb(unit_position: u32, reveal: PathAReveal) -> Option<[u8; 
     }))
 }
 
-/// Convert one encoded sRGB byte to the linear tint expected by an sRGB target.
-pub fn encoded_srgb_byte_to_linear(value: u8) -> f32 {
-    let encoded = f32::from(value) / 255.0;
-    if encoded <= 0.04045 {
-        encoded / 12.92
-    } else {
-        ((encoded + 0.055) / 1.055).powf(2.4)
-    }
-}
-
-pub fn encoded_srgb_to_linear(rgb: [u8; 3]) -> [f32; 3] {
-    rgb.map(encoded_srgb_byte_to_linear)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,13 +92,5 @@ mod tests {
             ..YELLOW_TO_WHITE
         };
         assert_eq!(encoded_unit_rgb(1, no_gradient), Some([255, 255, 0]));
-    }
-
-    #[test]
-    fn srgb_conversion_preserves_endpoints_and_linearizes_blue_30() {
-        assert_eq!(encoded_srgb_byte_to_linear(0), 0.0);
-        assert_eq!(encoded_srgb_byte_to_linear(255), 1.0);
-        let blue = encoded_srgb_byte_to_linear(30);
-        assert!(blue > 0.012 && blue < 0.014, "linear blue={blue}");
     }
 }

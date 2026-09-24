@@ -7,10 +7,10 @@
 //! plain resource ids, so it honors the ui/ layering rule (no render/assets/sim).
 //!
 //! The two migrated shells (main menu 0xE2, single player 0x100) feed only their
-//! owner-draw BUTTON rects in. Statics (title/website) are never fed, so they are
+//! owner-draw BUTTON rects in. Statics (title/monitor) are never fed, so they are
 //! never hit-tested or hover-tracked — matching the current per-shell hit-tests
 //! that scan only the button array, and keeping `pressed` button-only so the
-//! main-menu mouse-down sound never trips on the website static. Two hit-tests are
+//! main-menu mouse-down sound never trips on a static. Two hit-tests are
 //! kept: the press path skips runtime-disabled controls (single-player Load Saved
 //! Game when no saves exist); the hover path does NOT, so a disabled button still
 //! drives its tooltip/timer exactly as before.

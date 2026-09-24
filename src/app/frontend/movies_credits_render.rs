@@ -23,6 +23,7 @@ use crate::ui::movies_credits_shell::{
     MovieListLayout, compute_movie_list_layout,
 };
 use crate::ui::shell::list::ListScrollPart;
+use crate::ui::shell::static_reveal::Kind1RevealWindow;
 
 /// Owner-draw ListBox frame colors (`0x00619230`), as RGB: light
 /// `0xC5BEA7`, dark `0x807A68`, and their average `0xA29C87` at the two
@@ -293,6 +294,8 @@ fn movie_list_composition<'a>(
     state: &'a AppState,
     atlas: &MainMenuShellChromeAtlas,
     layout: &MovieListLayout,
+    monitor_frame: Option<usize>,
+    title_window: Option<Kind1RevealWindow>,
 ) -> (
     Vec<SpriteInstance>,
     Vec<SpriteInstance>,
@@ -334,6 +337,9 @@ fn movie_list_composition<'a>(
         Some(layout.page.lower_strip),
         screen_w,
     ));
+    sprites.extend(monitor_frame.and_then(|frame| {
+        shell_paint::paint_warning_monitor(atlas, layout.page.warning_monitor, frame)
+    }));
 
     let list = state.frontend.movie_list.as_ref();
     let interior = list_interior(layout.list);
@@ -426,13 +432,17 @@ fn movie_list_composition<'a>(
             path_a_reveal: None,
         });
     }
-    labels.push(PaintLabel {
-        text: resolve_csf(state, MOVIE_LIST_PAGE.title_key),
-        rect: layout.page.title,
-        align: ShellAlign::H_CENTER,
-        rgb: SHELL_TEXT_RGB_ENABLED,
-        path_a_reveal: None,
-    });
+    if let Some(window) = title_window {
+        labels.push(PaintLabel {
+            text: resolve_csf(state, MOVIE_LIST_PAGE.title_key),
+            rect: layout.page.title,
+            align: ShellAlign::H_CENTER,
+            rgb: SHELL_TEXT_RGB_ENABLED,
+            path_a_reveal: Some(
+                crate::app::frontend::main_menu_shell_render::main_menu_title_path_a(window),
+            ),
+        });
+    }
     labels.push(PaintLabel {
         text: resolve_csf(state, MOVIE_LIST_PROMPT_KEY),
         rect: layout.prompt,
@@ -463,6 +473,14 @@ pub(crate) fn render_movie_list(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<bool> {
+    if state.frontend.main_menu_shell_chrome.is_none() {
+        return Ok(false);
+    }
+    let monitor_frame = crate::app::frontend::menu_page_render::paint_shell_monitor(state);
+    let title_window = state
+        .frontend
+        .shell_page_title
+        .paint(std::time::Instant::now());
     let Some(atlas) = state.frontend.main_menu_shell_chrome.as_ref() else {
         return Ok(false);
     };
@@ -470,7 +488,8 @@ pub(crate) fn render_movie_list(
         state.renderer.gpu.config.width,
         state.renderer.gpu.config.height,
     );
-    let (sprites, button_sprites, labels) = movie_list_composition(state, atlas, &layout);
+    let (sprites, button_sprites, labels) =
+        movie_list_composition(state, atlas, &layout, monitor_frame, title_window);
     let text = shell_paint::paint_labels(&state.renderer.bit_font, &labels);
     let draws = [
         TexturedDraw {
