@@ -4368,13 +4368,13 @@ mod tests {
             890,
             "nested raw-100 null-source C4 completes before the later parent receiver"
         );
-        assert_eq!(
+        assert!(
             sim.substrate
                 .entities
                 .get(victim_id)
                 .unwrap()
-                .last_attacker_id,
-            None,
+                .attack_target
+                .is_none(),
             "nested and parent null-source events do not fabricate an attacker"
         );
         let destroyed = &sim.production.terrain_objects[&terrain_id];

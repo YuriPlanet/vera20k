@@ -318,6 +318,27 @@ fn elite_weapon_at(obj: &ObjectType, index: usize) -> Option<&str> {
         .and_then(|slot| slot.as_deref())
 }
 
+/// `TechnoClass::GetWeaponDamageValue(-1) @ 0x006F3970`: `Damage=` plus
+/// `AmbientDamage=` of the current weapon for a `TurretCount` type that is not
+/// Gattling, otherwise the truncated average over the non-empty slots 0 and 1
+/// (the rank-selected weapons). Callers test its sign: `ShouldRetaliate`
+/// (`0x007088A7`) and the bridge-repair occupant probe.
+pub(crate) fn weapon_damage_value(entity: &GameEntity, obj: &ObjectType, rules: &RuleSet) -> i32 {
+    let value = |slot: i32| {
+        weapon_for_index(obj, entity.veterancy, slot)
+            .and_then(|(name, _)| rules.weapon(name))
+            .map(|weapon| weapon.damage.wrapping_add(weapon.ambient_damage))
+    };
+    if obj.turret_count > 0 && !obj.is_gattling {
+        return value(attacker_facts(entity, obj).current_weapon_number).unwrap_or(0);
+    }
+    let values: Vec<i32> = [0, 1].into_iter().filter_map(value).collect();
+    match values.len() {
+        0 => 0,
+        count => values.iter().fold(0i32, |sum, v| sum.wrapping_add(*v)) / count as i32,
+    }
+}
+
 /// `TechnoClass::GetWeapon @ 0x0070E140`: `-1` → no weapon; elite objects use
 /// `EliteWeapon[idx]` when that slot names a weapon, else `Weapon[idx]`.
 /// Veteran tier does not swap. Indices outside the 18-slot array are treated

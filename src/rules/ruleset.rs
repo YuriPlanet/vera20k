@@ -969,6 +969,11 @@ pub struct GeneralRules {
     /// the byte, so ordinarily only elite occupants and AI-owned occupants
     /// respond to an unforced scatter.
     pub player_scatter: bool,
+    /// `PlayerReturnFire=` from `[CombatDamage]` (`Rules+0x17EC`, read at
+    /// `0x0066CEBD`). When set, a human's objects retaliate on every mission;
+    /// unset (the constructor's value and stock `rulesmd.ini:899`), they do so
+    /// only on Guard, Area Guard or Patrol (`ShouldRetaliate 0x007089F7`).
+    pub player_return_fire: bool,
     /// `Scatter=` from `[IQ]` — the house IQ level at or above which an
     /// occupant answers an *unforced* cell scatter. Stock `rulesmd.ini:3164`
     /// says `2`; the RulesClass constructor default is `3`.
@@ -1389,6 +1394,7 @@ impl Default for GeneralRules {
             // RulesClass constructor clears PlayerScatter and stores 3 into
             // [IQ] Scatter; stock rulesmd overrides the latter with 2.
             player_scatter: false,
+            player_return_fire: false,
             iq_scatter: 3,
             max_iq_levels: 5,
             iq_production: 5,
@@ -2447,6 +2453,9 @@ impl GeneralRules {
             player_scatter: combat_damage
                 .and_then(|s| s.get_bool("PlayerScatter"))
                 .unwrap_or(defaults.player_scatter),
+            player_return_fire: combat_damage
+                .and_then(|s| s.get_bool("PlayerReturnFire"))
+                .unwrap_or(defaults.player_return_fire),
             iq_scatter: iq
                 .and_then(|s| s.get_i32("Scatter"))
                 .unwrap_or(defaults.iq_scatter),

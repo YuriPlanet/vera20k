@@ -835,12 +835,6 @@ pub(crate) fn commit_entities(
                     });
                 }
             }
-            // Legacy precomputed callers have not yet entered the authoritative
-            // receiver ABI, so retain their Phase-6 handoff. Ordered area/direct
-            // receiver hits make their retaliation decision synchronously below.
-            if attacker_id != RAD_NO_ATTACKER && event.distance_leptons.is_none() {
-                target.last_attacker_id = Some(attacker_id);
-            }
         }
 
         // Native order: the TechnoClass arm runs inside
@@ -869,16 +863,9 @@ pub(crate) fn commit_entities(
             death
                 .receiver_stage_trace
                 .push(ReceiverStageTrace::ShouldRetaliate { target_id });
-            if combat_targeting::should_retaliate_from_damage(
-                &mut world.substrate.entities,
-                target_id,
-                attacker_id,
-                rules,
-                &mut world.interner,
-                &mut world.houses,
-                &world.house_alliances,
-                world.resolved_terrain.as_ref(),
-            ) {
+            if combat_targeting::should_retaliate(world, rules, target_id, attacker_id)
+                && retaliation_reaches(world, rules, target_id, attacker_id)
+            {
                 world.override_mission_on_damage_response(target_id, attacker_id, rules);
             }
         }
@@ -2818,6 +2805,86 @@ fn object_get_coords(world: &Simulation, rules: &RuleSet, id: u64) -> Option<Pro
         i32::from(ry) * 256 + sub_y.to_num::<i32>(),
         object_world_z_leptons(entity, world.resolved_terrain.as_ref()),
     ))
+}
+
+/// `TechnoClass::ReceiveDamage @ 0x00702A58..0x00702B2F`, after
+/// `ShouldRetaliate` agreed: the retaliation is issued only when the source is
+/// in range of the weapon selected against it (vt+0x3A8, `0x00702A69`), or
+/// the owner is a computer (`0x00702A7D`), or the source stands within the
+/// victim's sight: `ftol(Sqrt_Approx(dx² + dy² + dz²))` between the two
+/// GetCoords at most `(Sight + 0.5) * 256` (`0x00702A8A..0x00702B2C`). A
+/// player's unit therefore does not charge an out-of-sight V3 or Grand Cannon.
+fn retaliation_reaches(
+    world: &Simulation,
+    rules: &RuleSet,
+    victim_id: u64,
+    source_id: u64,
+) -> bool {
+    let entities = &world.substrate.entities;
+    let (Some(victim), Some(source)) = (entities.get(victim_id), entities.get(source_id)) else {
+        return false;
+    };
+    let (Some(victim_type), Some(source_type)) = (
+        rules.object(world.interner.resolve(victim.type_ref())),
+        rules.object(world.interner.resolve(source.type_ref())),
+    ) else {
+        return false;
+    };
+    let source_as_target = combat_weapon::techno_target_facts(
+        source,
+        source_type,
+        world.resolved_terrain.as_ref(),
+        combat_weapon::is_ally_by_object(
+            Some(&world.house_alliances),
+            &world.interner,
+            victim.owner(),
+            source.owner(),
+        ),
+    );
+    let Some(selected) = combat_weapon::select_weapon_for_target(
+        rules,
+        victim_type,
+        &combat_weapon::attacker_facts(victim, victim_type),
+        &source_as_target,
+    ) else {
+        return false;
+    };
+    let target = TargetKind::Entity(source_id);
+    let in_range = super::fire_error_world::FireSubject {
+        world,
+        rules,
+        overlay_registry: None,
+        fog: Some(&world.fog),
+        firer: victim,
+        obj: victim_type,
+        target: Some(target),
+        weapon_index: selected.index,
+        garrison: super::fire_error_world::garrison_weapon(
+            world,
+            rules,
+            victim,
+            victim_type,
+            target,
+        ),
+    }
+    .in_range();
+    let human = world
+        .houses
+        .get(&victim.owner())
+        .is_some_and(|house| house.is_controlled_by_human(world.session.game_mode_nonzero));
+    if in_range || !human {
+        return true;
+    }
+    let (Some(from), Some(to)) = (
+        object_get_coords(world, rules, victim_id),
+        object_get_coords(world, rules, source_id),
+    ) else {
+        return false;
+    };
+    let distance =
+        crate::util::native_x87::distance_3d_leptons([to.x, to.y, to.z], [from.x, from.y, from.z]);
+    // (Sight + 0.5) * 256 >= distance, exactly: 2 * distance <= (2 * Sight + 1) * 256.
+    2 * i64::from(distance) <= (2 * i64::from(victim_type.sight) + 1) * 256
 }
 
 /// Where `TechnoClass::FireAt @ 0x006FDD50` launches from: `[ESP+0x44]`, which

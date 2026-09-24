@@ -1715,15 +1715,8 @@ fn restore_object_references(
         }
     }
 
-    // These are deliberate weak identities. Native expiry can leave the last
-    // attacker dangling, and C4 kill credit may outlive its attacker.
+    // A deliberate weak identity: C4 kill credit may outlive its attacker.
     for entity in sim.substrate.entities.values_mut() {
-        if entity
-            .last_attacker_id
-            .is_some_and(|id| !entity_ids.contains(&id))
-        {
-            entity.last_attacker_id = None;
-        }
         if let Some(pending) = entity.pending_c4_detonation.as_mut()
             && pending
                 .source_entity_id
@@ -4400,6 +4393,7 @@ mod tests {
                 task_force_id,
                 priority: 0,
                 is_base_defense: true,
+                suicide: false,
                 combined_movement_zone: crate::rules::locomotor_type::MovementZone::Amphibious,
                 base_zone_relation_enforced: false,
                 transport_crossing_required: true,
@@ -6375,7 +6369,6 @@ mod tests {
         let mut entity = GameEntity::test_default(entity_id, "MTNK", "AMERICANS", 5, 6);
         entity.owner = owner;
         entity.type_ref = type_ref;
-        entity.last_attacker_id = Some(999);
         sim.substrate.entities.insert(entity);
         sim.add_entity_occupancy(entity_id);
 
@@ -6434,15 +6427,6 @@ mod tests {
                 .occupancy
                 .contains_entity(5, 6, entity_id)
         );
-        assert_eq!(
-            restored
-                .substrate
-                .entities
-                .get(entity_id)
-                .expect("entity")
-                .last_attacker_id,
-            None
-        );
         let system = restored
             .substrate
             .particle_systems
@@ -6463,7 +6447,11 @@ mod tests {
         let mut sim = Simulation::new();
         let entity_id = sim.allocate_stable_id();
         let mut entity = GameEntity::test_default(entity_id, "MTNK", "AMERICANS", 5, 6);
-        entity.last_attacker_id = Some(999);
+        entity.pending_c4_detonation = Some(crate::sim::components::PendingC4Detonation {
+            start_frame: -1,
+            duration_frames: 0,
+            source_entity_id: Some(999),
+        });
         sim.substrate.entities.insert(entity);
 
         let particle_id = sim.allocate_stable_id();
@@ -6501,7 +6489,8 @@ mod tests {
                 .entities
                 .get(entity_id)
                 .expect("entity")
-                .last_attacker_id,
+                .pending_c4_detonation
+                .and_then(|pending| pending.source_entity_id),
             Some(999),
             "failed restoration must not clean a later weak reference"
         );
@@ -6574,7 +6563,11 @@ mod tests {
         let target = sim.allocate_stable_id();
 
         let mut parent_entity = GameEntity::test_default(parent, "CARRIER", "AMERICANS", 1, 1);
-        parent_entity.last_attacker_id = Some(9_999);
+        parent_entity.pending_c4_detonation = Some(crate::sim::components::PendingC4Detonation {
+            start_frame: -1,
+            duration_frames: 0,
+            source_entity_id: Some(9_999),
+        });
         parent_entity.spawn_manager = Some(SpawnManagerState {
             spawn_type: sim.interner.intern("HORNET"),
             missile_family: None,
@@ -6724,7 +6717,8 @@ mod tests {
                     .entities
                     .get(ids.parent)
                     .unwrap()
-                    .last_attacker_id,
+                    .pending_c4_detonation
+                    .and_then(|pending| pending.source_entity_id),
                 Some(9_999),
                 "{role:?} rejection must precede later weak-reference cleanup"
             );

@@ -486,15 +486,9 @@ pub struct GameEntity {
     #[serde(default = "default_armor_multiplier")]
     pub armor_multiplier: NativeF64Bits,
     /// House credited with destroying this object, captured at the instant its
-    /// health reached zero.
-    ///
-    /// Separate from `last_attacker_id` on purpose. That field is retaliation
-    /// bookkeeping and the retaliation pass clears it unconditionally in the same
-    /// tick, which for infantry runs *before* the object is uninitialised (they
-    /// linger in the logic vector through a death animation), so reading it later
-    /// loses the killer. gamemd has no equivalent problem — its kill-record step
-    /// receives the actual killer at the moment of destruction — so this field is
-    /// that moment, recorded once.
+    /// health reached zero. gamemd's kill-record step receives the actual killer
+    /// at the moment of destruction; infantry linger in the logic vector through
+    /// a death animation, so this field is that moment, recorded once.
     #[serde(skip)]
     pub killed_by: Option<InternedId>,
     /// Score value this object's destruction is worth to `killed_by`, resolved at
@@ -652,8 +646,6 @@ pub struct GameEntity {
     /// Owner-level `HouseState.rally_point` remains the production fallback.
     #[serde(default)]
     pub rally_target: Option<(u16, u16)>,
-    /// Stable ID of the last entity that dealt damage (for retaliation).
-    pub last_attacker_id: Option<u64>,
     /// Persistent TechnoClass hostile-hit latch (`WasAttackedByEnemy`, native
     /// byte +0x3D1). It is independent of retaliation's transient attacker
     /// pointer and is consumed by the building AI low-credit sell decision.
@@ -1421,7 +1413,6 @@ impl GameEntity {
             radio_contacts: Contacts::default(),
             dock_entered_with: None,
             rally_target: None,
-            last_attacker_id: None,
             was_attacked_by_enemy: false,
             barrel_facing: None,
             turret_rotation_latch: false,
@@ -1775,7 +1766,6 @@ mod tests {
         assert!(e.attack_target.is_none());
         assert!(e.radio_contacts.is_empty());
         assert_eq!(e.rally_target, None);
-        assert!(e.last_attacker_id.is_none());
         assert!(!e.was_attacked_by_enemy);
         assert!(e.barrel_facing.is_none());
         assert!(e.miner.is_none());

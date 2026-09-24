@@ -30,20 +30,15 @@
 //! - Part of sim/ — depends on rules/ (RuleSet) and sim/components.
 //! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
 
-use std::collections::BTreeMap;
-
 use super::combat_weapon::{
-    VersesGate, attacker_facts, is_ally_by_object, select_weapon_for_target, techno_target_facts,
-    verses_gate,
+    attacker_facts, is_ally_by_object, select_weapon_for_target, techno_target_facts,
 };
 use super::threat_range::ScanMission;
 use crate::map::entities::EntityCategory;
-use crate::map::houses::{HouseAllianceMap, is_allied_with};
+use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::entity_store::EntityStore;
-use crate::sim::game_entity::GameEntity;
-use crate::sim::house_state::HouseState;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::vision::FogState;
 use crate::util::fixed_math::SimFixed;
@@ -274,38 +269,6 @@ pub(crate) fn acquire_best_target(
     )
 }
 
-/// Check if an entity can retaliate against an attacker (weapon + Verses gate).
-fn can_retaliate(
-    entity: &GameEntity,
-    attacker: &GameEntity,
-    rules: &RuleSet,
-    interner: &StringInterner,
-    terrain: Option<&ResolvedTerrainGrid>,
-    alliances: Option<&HouseAllianceMap>,
-) -> bool {
-    let obj = match rules.object(interner.resolve(entity.type_ref())) {
-        Some(o) => o,
-        None => return false,
-    };
-    let Some(attacker_obj) = rules.object(interner.resolve(attacker.type_ref())) else {
-        return false;
-    };
-    let target_facts = techno_target_facts(
-        attacker,
-        attacker_obj,
-        terrain,
-        is_ally_by_object(alliances, interner, entity.owner(), attacker.owner()),
-    );
-    let selected =
-        match select_weapon_for_target(rules, obj, &attacker_facts(entity, obj), &target_facts) {
-            Some(s) => s,
-            None => return false,
-        };
-    // 0% is already filtered by the GetFireError subset (returns None).
-    // 1% (Suppressed) also blocks retaliation.
-    verses_gate(selected.verses_pct) != VersesGate::Suppressed
-}
-
 /// `TechnoClass::Calculate_Threat_Score @ 0x0070CD10` as `ShouldRetaliate`
 /// consumes it, on the native `&NullCoord` branch — verified, not assumed:
 /// both `ShouldRetaliate` callsites push the sentinel literally
@@ -351,46 +314,24 @@ pub(crate) fn calculate_ai_threat_score(
     )
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(i32)]
-enum RetaliationPeekFireError {
-    Clear = 0,
-    Illegal = 5,
-}
-
-/// Represented structural part of the read-only `GetFireError` peek issued by
-/// `ShouldRetaliate`. The target is the still-represented damage source; a
-/// source in ObjectClass limbo returns native `FIRE_ILLEGAL` without consuming
-/// ammo, RNG, or weapon state.
-fn retaliation_peek_fire_error(target: &GameEntity) -> RetaliationPeekFireError {
-    if target.lifecycle.in_limbo {
-        RetaliationPeekFireError::Illegal
-    } else {
-        RetaliationPeekFireError::Clear
-    }
-}
-
-/// Evaluate the live, receiver-synchronous part of
-/// `TechnoClass::ShouldRetaliate @ 0x007087C0` using represented authority.
-///
-/// The native call consumes the still-represented source object, including a
-/// dying DeathWeapon producer, so source health is deliberately not an
-/// admission gate here. Represented gates are read afresh for every ordered
-/// receiver.
-pub(crate) fn should_retaliate_from_damage(
-    entities: &EntityStore,
-    victim_id: u64,
-    attacker_id: u64,
+/// `TechnoClass::ShouldRetaliate @ 0x007087C0`, whose only caller is
+/// `TechnoClass::ReceiveDamage @ 0x00702A43`: whether the damaged `victim`
+/// turns on `source`. Every gate is a pure read (no RNG), taken in native
+/// order.
+pub(crate) fn should_retaliate(
+    world: &crate::sim::world::Simulation,
     rules: &RuleSet,
-    interner: &StringInterner,
-    houses: &BTreeMap<InternedId, HouseState>,
-    alliances: &HouseAllianceMap,
-    terrain: Option<&ResolvedTerrainGrid>,
+    victim_id: u64,
+    source_id: u64,
 ) -> bool {
-    let (Some(victim), Some(attacker)) = (entities.get(victim_id), entities.get(attacker_id))
-    else {
+    use crate::rules::object_type::Ability;
+    let entities = &world.substrate.entities;
+    let interner = &world.interner;
+    let (Some(victim), Some(source)) = (entities.get(victim_id), entities.get(source_id)) else {
         return false;
     };
+    // The receiver asks only in its surviving arms; a victim the represented
+    // lifecycle already retired cannot be one.
     if !victim.is_alive()
         || victim.dying
         || !victim.lifecycle.object_alive
@@ -398,19 +339,19 @@ pub(crate) fn should_retaliate_from_damage(
     {
         return false;
     }
-
-    let Some(victim_type) = rules.object(interner.resolve(victim.type_ref())) else {
+    let (Some(victim_type), Some(source_type)) = (
+        rules.object(interner.resolve(victim.type_ref())),
+        rules.object(interner.resolve(source.type_ref())),
+    ) else {
         return false;
     };
+    let house = world.houses.get(&victim.owner());
+    let human =
+        house.is_some_and(|house| house.is_controlled_by_human(world.session.game_mode_nonzero));
+    // `0x007087DD` CanRetaliate; `0x007087EB` a slave (SlaveOwner `+0x2DC`);
+    // `0x007087F9` a slaver (SlaveManager `+0x2D8`).
     if !victim_type.can_retaliate
-        || victim.bunker_link.installed_in().is_some()
-        // `0x0070882F`: a full CaptureManager; being controlled is no gate
-        // (no `IsMindControlled` call in `0x007087C0..0x00708B17`).
-        || victim
-            .capture_manager
-            .as_ref()
-            .is_some_and(|manager| manager.is_full())
-        || victim.spawn_manager.is_some()
+        || victim.slave_harvester.is_some()
         || victim_type
             .enslaves
             .as_deref()
@@ -418,202 +359,181 @@ pub(crate) fn should_retaliate_from_damage(
     {
         return false;
     }
+    // `0x00708807..0x0070881F`: draining (`+0x1CC`) for a house that is not
+    // human (`House+0x1EC`).
+    if victim.drain_target.is_some() && !house.is_some_and(|house| house.is_human) {
+        return false;
+    }
+    // `0x0070882F` a full CaptureManager (being controlled is no gate);
+    // `0x0070883C` a SpawnManager; `0x0070884A` a human's object that already
+    // has a Target; `0x00708867` the mission's `Retaliate=`.
     if victim
-        .mission
-        .current()
-        .known()
-        .and_then(|mission| rules.mission_control.entry(mission))
-        .is_some_and(|entry| !entry.retaliate)
+        .capture_manager
+        .as_ref()
+        .is_some_and(|manager| manager.is_full())
+        || victim.spawn_manager.is_some()
+        || (human && victim.attack_target.is_some())
+        || victim
+            .mission
+            .current()
+            .known()
+            .and_then(|mission| rules.mission_control.entry(mission))
+            .is_some_and(|entry| !entry.retaliate)
     {
         return false;
     }
-
-    let victim_owner = interner.resolve(victim.owner());
-    let attacker_owner = interner.resolve(attacker.owner());
-    if is_allied_with(alliances, victim_owner, attacker_owner)
-        || is_allied_with(alliances, attacker_owner, victim_owner)
-    {
-        return false;
-    }
-    // The active human-control branch refuses to replace an existing TarCom.
-    // A computer-owned receiver compares raw float10 threat scores at its own
-    // coordinate and keeps its current target only when that score is strictly
-    // greater. Equal or lower permits the normal retaliation path.
-    let is_human = houses
-        .get(&victim.owner())
-        .is_some_and(|house| house.is_human);
-    if is_human && victim.attack_target.is_some() {
-        return false;
-    }
-    let Some(attacker_type) = rules.object(interner.resolve(attacker.type_ref())) else {
-        return false;
-    };
-    let attacker_as_target = techno_target_facts(
-        attacker,
-        attacker_type,
-        terrain,
-        is_ally_by_object(Some(alliances), interner, victim.owner(), attacker.owner()),
+    // `0x00708880`: the owner's one-way alliance with the source's house;
+    // `0x00708899`: the source is disguised to the owner (vt+0xC8).
+    let allied = is_ally_by_object(
+        Some(&world.house_alliances),
+        interner,
+        victim.owner(),
+        source.owner(),
     );
+    if allied
+        || crate::sim::cloak_disguise::object_disguised_to(
+            source,
+            victim.owner(),
+            Some(&world.fog),
+            Some(&world.house_alliances),
+            interner,
+        )
+    {
+        return false;
+    }
+    // `0x007088A7` GetWeaponDamageValue(-1) > 0 (a healer never retaliates);
+    // `0x007088BC` Is_Armed.
+    if super::combat_weapon::weapon_damage_value(victim, victim_type, rules) <= 0
+        || !super::combat_weapon::is_armed(victim, victim_type)
+    {
+        return false;
+    }
+    // `0x007088CA..0x007088FF`: SelectWeapon(source), then GetFireError
+    // without the range test (vt+0x3BC); Illegal or Cant refuses.
+    let source_as_target =
+        techno_target_facts(source, source_type, world.resolved_terrain.as_ref(), allied);
     let Some(selected) = select_weapon_for_target(
         rules,
         victim_type,
         &attacker_facts(victim, victim_type),
-        &attacker_as_target,
+        &source_as_target,
     ) else {
         return false;
     };
-    if retaliation_peek_fire_error(attacker) == RetaliationPeekFireError::Illegal {
+    let target = super::TargetKind::Entity(source_id);
+    let fire_error = super::fire_error_world::FireSubject {
+        world,
+        rules,
+        overlay_registry: None,
+        fog: Some(&world.fog),
+        firer: victim,
+        obj: victim_type,
+        target: Some(target),
+        weapon_index: selected.index,
+        garrison: super::fire_error_world::garrison_weapon(
+            world,
+            rules,
+            victim,
+            victim_type,
+            target,
+        ),
+    }
+    .fire_error(false);
+    if matches!(
+        fire_error,
+        super::fire_error::FireError::Illegal | super::fire_error::FireError::Cant
+    ) {
         return false;
     }
-
-    if !is_human
+    if human {
+        // `0x00708905..0x007089A5`: a human's C4 infantryman, or a rank that
+        // holds C4, leaves a building source alone.
+        if source.category == EntityCategory::Structure
+            && ((victim.category == EntityCategory::Infantry && victim_type.c4)
+                || super::veterancy::has_weapon_ability(
+                    super::veterancy::rank_from_u16(victim.veterancy),
+                    victim_type,
+                    Ability::C4,
+                ))
+        {
+            return false;
+        }
+        // `0x007089AF..0x007089E2`: a human's unit that deploys into an
+        // `Artillary=` building (none in retail).
+        if victim.category == EntityCategory::Unit
+            && victim_type
+                .deploys_into
+                .as_deref()
+                .and_then(|building| rules.object(building))
+                .is_some_and(|building| building.artillary)
+        {
+            return false;
+        }
+        // `0x007089E8..0x00708A26`: unless `PlayerReturnFire=`, a human's
+        // non-building object retaliates only on Guard, Area Guard or Patrol.
+        const GUARD: i32 = 5;
+        const AREA_GUARD: i32 = 0x0B;
+        const PATROL: i32 = 0x19;
+        if !rules.general.player_return_fire
+            && victim.category != EntityCategory::Structure
+            && !matches!(victim.mission.current().raw(), GUARD | AREA_GUARD | PATROL)
+        {
+            return false;
+        }
+    }
+    // `0x00708A2C..0x00708A54`: a member of a `Suicide=` team.
+    if victim.category != EntityCategory::Structure
+        && world
+            .team_script_vm
+            .member_team_type(victim_id)
+            .is_some_and(|team_type| team_type.suicide)
+    {
+        return false;
+    }
+    // `0x00708A5A..0x00708AA8`: a computer house keeps a current Techno
+    // target whose raw float10 threat score is strictly greater.
+    if !human
         && let Some(super::TargetKind::Entity(current_id)) =
             victim.attack_target.as_ref().map(|target| target.target)
-        && let (Some(current_score), Some(attacker_score)) = (
+        && let (Some(current_score), Some(source_score)) = (
             calculate_ai_threat_score(
                 entities,
                 victim_id,
                 current_id,
                 rules,
                 interner,
-                terrain,
-                Some(alliances),
+                world.resolved_terrain.as_ref(),
+                Some(&world.house_alliances),
             ),
             calculate_ai_threat_score(
                 entities,
                 victim_id,
-                attacker_id,
+                source_id,
                 rules,
                 interner,
-                terrain,
-                Some(alliances),
+                world.resolved_terrain.as_ref(),
+                Some(&world.house_alliances),
             ),
         )
-        // ShouldRetaliate708A8E spills the current target's score to double;
-        // 708A9F..A8 compares the new score and rejects on C0 (Less or Unordered).
-        && retaliation_score_refuses(current_score, attacker_score)
+        && retaliation_score_refuses(current_score, source_score)
     {
         return false;
     }
-    // 0x00708AAA..0x00708AC3: a Foot never retaliates against the parasite
-    // eating it (reachable for owners that stay visible while attached).
-    if victim.parasite_eating_me == Some(attacker_id) {
+    // `0x00708AAA..0x00708AC3`: a Foot never turns on the parasite eating it.
+    if victim.parasite_eating_me == Some(source_id) {
         return false;
     }
-
-    selected.weapon.range > SimFixed::ZERO && verses_gate(selected.verses_pct) == VersesGate::Normal
-}
-
-/// Retaliation system: idle units that were recently hit auto-attack their attacker.
-///
-/// Called after `tick_combat_with_fog()` in the game loop. Iterates entities
-/// that have a `last_attacker_id` but no `attack_target` and no `order_intent`.
-/// Skips retaliation if the weapon has 0% or 1% Verses against the attacker's armor.
-pub fn tick_retaliation(
-    entities: &mut EntityStore,
-    rules: &RuleSet,
-    interner: &StringInterner,
-    live_order: &[u64],
-    terrain: Option<&ResolvedTerrainGrid>,
-    alliances: Option<&HouseAllianceMap>,
-) {
-    // Collect retaliation candidates: (retaliator_id, attacker_id).
-    let mut retaliators: Vec<(u64, u64)> = Vec::new();
-    // Native retaliation is resolved during the same live-object (reveal/insertion
-    // order) AI walk as the rest of combat, so scan victims in live order rather
-    // than stable-id order.
-    for &id in live_order {
-        let entity = match entities.get(id) {
-            Some(e) => e,
-            None => continue,
-        };
-        // Must have last_attacker, no current attack target, no order intent.
-        let attacker_sid = match entity.last_attacker_id {
-            Some(sid) => sid,
-            None => continue,
-        };
-        // The `order_intent.is_some()` suppression is the conceptual mission-busy
-        // gate (`mission::verb::get_current_mission`), kept LITERAL on purpose: an
-        // `is_busy`-only gate would let a Guarding unit (order_intent = Guard,
-        // mission idle) begin retaliating — a proven DRIFT. Retiring the
-        // `order_intent` predicate in favour of a mission goal field is a later
-        // slice; the runtime check stays byte-identical here.
-        if entity.attack_target.is_some() || entity.order_intent.is_some() {
-            continue;
-        }
-        // Verify attacker is still alive. A sold/captured attacker keeps health
-        // but is `dying` (a corpse awaiting the end-of-tick drain) — exclude it
-        // so the victim doesn't retaliate against a dead object.
-        let attacker_alive = entities
-            .get(attacker_sid)
-            .is_some_and(|a| a.health.current > 0 && !a.dying);
-        if !attacker_alive {
-            continue;
-        }
-        retaliators.push((id, attacker_sid));
-    }
-
-    // Process retaliation — issue attack commands.
-    for (entity_id, attacker_sid) in retaliators {
-        let retaliate = {
-            let entity = match entities.get(entity_id) {
-                Some(e) => e,
-                None => continue,
-            };
-            let attacker = match entities.get(attacker_sid) {
-                Some(a) => a,
-                None => {
-                    // Attacker gone — clear last_attacker.
-                    if let Some(e) = entities.get_mut(entity_id) {
-                        e.last_attacker_id = None;
-                    }
-                    continue;
-                }
-            };
-            can_retaliate(entity, attacker, rules, interner, terrain, alliances)
-        };
-
-        if retaliate {
-            // Read attacker rx/ry (only needed for body-only retaliators).
-            let attacker_pos = match entities.get(attacker_sid) {
-                Some(a) => (a.position.rx, a.position.ry),
-                None => continue,
-            };
-            if let Some(entity) = entities.get_mut(entity_id) {
-                if entity.barrel_facing.is_none()
-                    && !matches!(
-                        entity.category,
-                        EntityCategory::Unit | EntityCategory::Infantry
-                    )
-                {
-                    // Body-only retaliator — instantly face the attacker.
-                    // Turreted retaliators get their turret driven by
-                    // `Facing_Update`, and a TURRETLESS VEHICLE turns its hull
-                    // through `UnitClass::Fire_At_Target @ 0x00736DF0` case 2
-                    // once the fire gate refuses it for facing — assignment
-                    // itself writes no facing in gamemd. Infantry snap when
-                    // their fire action starts in resolve_attacker_fire.
-                    let dx: i32 = attacker_pos.0 as i32 - entity.position.rx as i32;
-                    let dy: i32 = attacker_pos.1 as i32 - entity.position.ry as i32;
-                    entity.facing = crate::sim::movement::facing_from_delta(dx, dy);
-                }
-                entity.movement_target = None;
-                entity.attack_target = Some(crate::sim::combat::AttackTarget::new(attacker_sid));
-                // Retaliation is a damage-driven target, not a scanner pick.
-                entity.passively_acquired_target = false;
-            }
-        }
-        // Clear last_attacker regardless (prevent repeated attempts).
-        if let Some(entity) = entities.get_mut(entity_id) {
-            entity.last_attacker_id = None;
-        }
-    }
+    // `0x00708AF7..0x00708B09`: the weapon's Verses against the source's
+    // armour must exceed the single 0.01 (`0x007F4E34`), so a 1% warhead does
+    // retaliate and 0% (or NaN) does not.
+    selected.warhead.verses_f64[super::armor_index(&source_type.armor)] > f64::from(0.01_f32)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
+    use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::test_interner;
 
     /// Stock key shape for the two `TurretCount>0` types that carry NO live

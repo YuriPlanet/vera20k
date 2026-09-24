@@ -1248,6 +1248,10 @@ pub struct ObjectType {
 
     /// `IsGattling=` (`TechnoTypeClass+0xCD5`, ReadINI `0x0071402A`).
     pub is_gattling: bool,
+    /// BuildingType `Artillary=` (`+0x16CA`, read at `0x00460F56`). A human's
+    /// unit whose `DeploysInto=` building sets it never retaliates
+    /// (`ShouldRetaliate 0x007089C5..0x007089E2`). No retail type sets it.
+    pub artillary: bool,
     /// `WeaponStages=`, `Stage%d=`, `EliteStage%d=`, `RateUp=`, `RateDown=`
     /// (`TechnoTypeClass+0xCD8..+0xD10`, ReadINI `0x00714030..0x0071410F`).
     pub gattling_stages: crate::rules::gattling_type::GattlingStages,
@@ -2266,6 +2270,8 @@ impl ObjectType {
                 && section.get_bool("JumpJetTurn").unwrap_or(false),
             emp_pulse_cannon: category == ObjectCategory::Building
                 && section.get_bool("EMPulseCannon").unwrap_or(false),
+            artillary: category == ObjectCategory::Building
+                && section.get_bool("Artillary").unwrap_or(false),
             is_gattling,
             gattling_stages: crate::rules::gattling_type::GattlingStages::read(
                 section,

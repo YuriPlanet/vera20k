@@ -1355,27 +1355,13 @@ fn evaluate_candidate(ctx: &ScanContext<'_>, candidate: &GameEntity) -> Option<i
     //   wiring it costs one scenario draw per evaluated disguised candidate and
     //   shifts RNG order for every later consumer in the tick.
     const BLINK_TIMER_NOT_MODELLED: i32 = 0;
-    let attacker_owner_str = ctx.interner.resolve(ctx.attacker.owner);
-    let candidate_disguised_to_attacker = candidate.disguise.as_ref().is_some_and(|disguise| {
-        crate::sim::cloak_disguise::is_disguised_to(
-            disguise.disguised,
-            false,
-            ctx.fog.is_some_and(|fog_state| {
-                fog_state.detects_disguise_for_house(
-                    ctx.attacker.owner,
-                    candidate.position.rx,
-                    candidate.position.ry,
-                )
-            }),
-            disguise.disguised_as_house.is_some_and(|fake| {
-                fake == ctx.attacker.owner
-                    || ctx.fog.is_some_and(|fog_state| {
-                        fog_state.is_friendly(attacker_owner_str, ctx.interner.resolve(fake))
-                    })
-            }),
-            disguise.disguised_as_house.is_some(),
-        )
-    });
+    let candidate_disguised_to_attacker = crate::sim::cloak_disguise::object_disguised_to(
+        candidate,
+        ctx.attacker.owner,
+        ctx.fog,
+        ctx.alliances(),
+        ctx.interner,
+    );
     if !matches!(
         crate::sim::cloak_disguise::disguise_rejects_candidate(
             candidate_disguised_to_attacker,

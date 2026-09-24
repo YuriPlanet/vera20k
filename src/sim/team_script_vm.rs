@@ -76,6 +76,11 @@ pub struct TeamTypeDefinition {
     pub priority: i32,
     /// TeamType `IsBaseDefense=` byte used by responder admission/assignment.
     pub is_base_defense: bool,
+    /// TeamType `Suicide=` (`+0xAF`, read at `0x006F1271`, constructor 0):
+    /// a member of such a team never retaliates (`ShouldRetaliate
+    /// 0x00708A2C..0x00708A54`).
+    #[serde(default)]
+    pub suicide: bool,
     /// `TeamTypeClass+0xEC`: post-load fold of resolved TaskForce movement rows.
     pub combined_movement_zone: MovementZone,
     /// `TeamTypeClass+0xF0`: whether AI eligibility compares House base zones.
@@ -487,6 +492,14 @@ impl TeamScriptVm {
                 (team.id, is_base_defense)
             })
         })
+    }
+
+    /// The TeamType of the team `entity_id` belongs to (Foot `+0x5D4` then
+    /// TeamClass `+0x24`), if any.
+    pub(crate) fn member_team_type(&self, entity_id: u64) -> Option<&TeamTypeDefinition> {
+        let (team_id, _) = self.team_for_member(entity_id)?;
+        self.team_types
+            .get(&self.teams.get(&team_id)?.team_type_id?)
     }
 
     /// Native `FUN_006EC250`: visit TeamClass instances in creation order,
@@ -1030,6 +1043,7 @@ mod tests {
             task_force_id: task_force,
             priority: 0,
             is_base_defense: false,
+            suicide: false,
             combined_movement_zone: MovementZone::Fly,
             base_zone_relation_enforced: true,
             transport_crossing_required: false,
@@ -1097,6 +1111,7 @@ mod tests {
             task_force_id: task_force,
             priority: 0,
             is_base_defense: false,
+            suicide: false,
             combined_movement_zone: MovementZone::Fly,
             base_zone_relation_enforced: true,
             transport_crossing_required: false,
@@ -1166,6 +1181,7 @@ mod tests {
                 task_force_id: task_force,
                 priority,
                 is_base_defense,
+                suicide: false,
                 combined_movement_zone: MovementZone::Fly,
                 base_zone_relation_enforced: !is_base_defense,
                 transport_crossing_required: false,
@@ -1268,6 +1284,7 @@ mod tests {
             task_force_id: task_force,
             priority: 0,
             is_base_defense: false,
+            suicide: false,
             combined_movement_zone: MovementZone::Fly,
             base_zone_relation_enforced: true,
             transport_crossing_required: false,
@@ -1334,6 +1351,7 @@ mod tests {
             task_force_id: task_force,
             priority: 0,
             is_base_defense: false,
+            suicide: false,
             combined_movement_zone: MovementZone::Fly,
             base_zone_relation_enforced: true,
             transport_crossing_required: false,

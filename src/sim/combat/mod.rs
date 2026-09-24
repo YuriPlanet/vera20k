@@ -3363,7 +3363,6 @@ fn veteran_rof_frames(
 }
 
 pub(crate) use self::combat_targeting::acquire_best_target_for_entity;
-pub use self::combat_targeting::tick_retaliation;
 /// The threat mask an acquisition callsite pushes into
 /// `TechnoClass::Greatest_Threat @ 0x006F8DF0`, plus the passive block's own
 /// derivation of it. Re-exported because the mask is chosen by the mission

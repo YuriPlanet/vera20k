@@ -2915,7 +2915,6 @@ fn pointer_expiry_clears_live_refs_and_preserves_retaliation_attacker() {
     listener.c4_plant = Some(C4PlantState {
         target_building_id: 2,
     });
-    listener.last_attacker_id = Some(2);
 
     sim.uninit(2);
 
@@ -2931,7 +2930,6 @@ fn pointer_expiry_clears_live_refs_and_preserves_retaliation_attacker() {
     );
     assert!(listener.capture_target.is_none());
     assert!(listener.c4_plant.is_none());
-    assert_eq!(listener.last_attacker_id, Some(2));
 }
 
 #[test]
@@ -3796,7 +3794,6 @@ fn score_stats_survive_the_retaliation_pass_clearing_last_attacker() {
     victim.killed_by = Some(killer_owner);
     // A stock GI (E1) is Cost=200.
     victim.kill_award_points = 200;
-    victim.last_attacker_id = None;
 
     sim.uninit(1);
 

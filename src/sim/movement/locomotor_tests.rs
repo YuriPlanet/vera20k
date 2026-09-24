@@ -419,6 +419,7 @@ fn make_obj(locomotor: LocomotorKind, category: ObjectCategory) -> ObjectType {
         jumpjet_turn: false,
         emp_pulse_cannon: false,
         is_gattling: false,
+        artillary: false,
         gattling_stages: Default::default(),
         turret_count: 0,
         drainable: false,

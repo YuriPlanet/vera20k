@@ -2029,6 +2029,240 @@ fn gsi_04_07_damage_prior_projectile_fatal_death_weapon_is_inline() {
     );
 }
 
+/// One hit from `source` (an unarmed tank `source_cells` west of the victim)
+/// on a VICTIM tank, through the production receiver. Returns whether the
+/// victim turned on the source (`ShouldRetaliate 0x007087C0`, then
+/// `ReceiveDamage`'s reach gate `0x00702A58..0x00702B2F`).
+struct RetaliationCase {
+    human: bool,
+    mission: MissionType,
+    source_cells: u16,
+    range_cells: &'static str,
+    sight: i32,
+    damage: i32,
+    verses: &'static str,
+    player_return_fire: bool,
+}
+
+impl Default for RetaliationCase {
+    fn default() -> Self {
+        Self {
+            human: true,
+            mission: MissionType::Guard,
+            source_cells: 2,
+            range_cells: "8",
+            sight: 8,
+            damage: 1,
+            verses: "100%",
+            player_return_fire: false,
+        }
+    }
+}
+
+fn retaliates(case: RetaliationCase) -> bool {
+    let ini = IniFile::from_str(&format!(
+        "[InfantryTypes]\n\
+         [VehicleTypes]\n0=SOURCE\n1=VICTIM\n\
+         [AircraftTypes]\n\
+         [BuildingTypes]\n\
+         [Warheads]\n0=IncomingWH\n1=ReturnWH\n\
+         [General]\nFixtureOnly=1\n\
+         [CombatDamage]\nPlayerReturnFire={}\n\
+         [SOURCE]\nStrength=200\nArmor=heavy\n\
+         [VICTIM]\nStrength=100\nArmor=heavy\nSpeed=6\nSight={}\nPrimary=ReturnGun\nCanRetaliate=yes\n\
+         [ReturnGun]\nDamage={}\nROF=50\nRange={}\nWarhead=ReturnWH\n\
+         [IncomingWH]\nCellSpread=0\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [ReturnWH]\nCellSpread=0\nVerses={v},{v},{v},{v},{v},{v},{v},{v},{v},{v},{v}\n",
+        if case.player_return_fire { "yes" } else { "no" },
+        case.sight,
+        case.damage,
+        case.range_cells,
+        v = case.verses,
+    ));
+    let rules = RuleSet::from_ini(&ini).expect("retaliation gate fixture");
+    let mut interner = test_interner();
+    let source_owner = interner.intern("SourceHouse");
+    let victim_owner = interner.intern("VictimHouse");
+    let incoming_wh = interner.intern("IncomingWH");
+    let incoming_weapon = interner.intern("IncomingGun");
+    let (source_rx, victim_rx) = (20 - case.source_cells, 20);
+
+    let mut entities = EntityStore::new();
+    let mut source = make_entity(1, "SOURCE", source_rx, 5, 200);
+    source.owner = source_owner;
+    source.type_ref = interner.intern("SOURCE");
+    source.lifecycle.cell_marked = true;
+    entities.insert(source);
+    let mut victim = make_entity(2, "VICTIM", victim_rx, 5, 100);
+    victim.owner = victim_owner;
+    victim.type_ref = interner.intern("VICTIM");
+    victim.lifecycle.cell_marked = true;
+    victim.mission.apply_test_fixture(MissionTestFixture {
+        current: MissionId::from_known(case.mission),
+        suspended: MissionId::NONE,
+        queued: MissionId::NONE,
+        movement_bypass_latch: 0,
+        handler_state: 0,
+        mission_start_frame: 0,
+        ai_counter: 0,
+        dispatch_timer: MissionDispatchTimer::at_frame(0),
+    });
+    victim.facing = 192;
+    entities.insert(victim);
+
+    let mut occupancy = OccupancyGrid::new();
+    for (id, rx) in [(1, source_rx), (2, victim_rx)] {
+        occupancy.add(
+            rx,
+            5,
+            id,
+            crate::sim::movement::locomotor::MovementLayer::Ground,
+            None,
+            crate::sim::occupancy::CellListInsertion::PrependNonBuilding,
+        );
+    }
+    let detonation = ProjectileDetonation {
+        projectile_id: 77,
+        source_id: 1,
+        target: ProjectileTarget::Entity(2),
+        impact: ProjectileCoord::new(i32::from(victim_rx) * 256 + 128, 5 * 256 + 128, 0),
+        payload: ProjectilePayload {
+            base_damage: 10,
+            warhead: incoming_wh,
+            weapon: incoming_weapon,
+            owner: source_owner,
+        },
+        reason: ProjectileDetonationReason::ReachedTarget,
+    };
+    let mut houses = BTreeMap::new();
+    houses.insert(
+        victim_owner,
+        HouseState::new(victim_owner, 0, None, case.human, 0, 10),
+    );
+    houses.insert(
+        source_owner,
+        HouseState::new(source_owner, 1, None, false, 0, 10),
+    );
+    let handles =
+        crate::sim::type_handle_table::ResolvedRuleHandles::resolve(&rules, &mut interner);
+    tick_combat_with_fog_and_main_rng(
+        &mut entities,
+        &mut occupancy,
+        &rules,
+        &mut interner,
+        Some(handles),
+        None,
+        &BTreeMap::new(),
+        &mut houses,
+        &[],
+        &HouseAllianceMap::new(),
+        None,
+        None,
+        None,
+        None,
+        0,
+        100,
+        0,
+        &[2],
+        &[detonation],
+        &[],
+        None,
+        &[],
+        &mut SimRng::new(11),
+        &mut SimRng::new(13),
+        None,
+    );
+    entities
+        .get(2)
+        .and_then(|victim| victim.attack_target.as_ref())
+        .is_some_and(|attack| attack.target == TargetKind::Entity(1))
+}
+
+/// `ShouldRetaliate 0x007089E8..0x00708A26`: unless `PlayerReturnFire=`, a
+/// human's unit retaliates only on Guard, Area Guard or Patrol. A computer's
+/// unit, or any unit under `PlayerReturnFire=yes`, retaliates on the move.
+#[test]
+fn gsi_04_07_a_human_unit_on_the_move_does_not_retaliate() {
+    for mission in [
+        MissionType::Guard,
+        MissionType::AreaGuard,
+        MissionType::Patrol,
+    ] {
+        assert!(
+            retaliates(RetaliationCase {
+                mission,
+                ..Default::default()
+            }),
+            "{mission:?}"
+        );
+    }
+    for mission in [MissionType::Move, MissionType::Attack, MissionType::Sticky] {
+        assert!(
+            !retaliates(RetaliationCase {
+                mission,
+                ..Default::default()
+            }),
+            "{mission:?}"
+        );
+    }
+    assert!(retaliates(RetaliationCase {
+        mission: MissionType::Move,
+        human: false,
+        ..Default::default()
+    }));
+    assert!(retaliates(RetaliationCase {
+        mission: MissionType::Move,
+        player_return_fire: true,
+        ..Default::default()
+    }));
+}
+
+/// `ReceiveDamage 0x00702A58..0x00702B2F`: a human's unit turns on a source
+/// beyond its weapon's range only if the source is within `(Sight + 0.5) *
+/// 256` leptons; a computer's always does. So a player's tank on Guard does
+/// not charge an artillery piece it cannot see.
+#[test]
+fn gsi_04_07_a_human_unit_does_not_charge_an_unseen_shooter() {
+    let far = |human, source_cells| RetaliationCase {
+        human,
+        source_cells,
+        range_cells: "1",
+        sight: 3,
+        ..Default::default()
+    };
+    // Sight 3: 896 leptons; two cells (512) is seen, four (1024) is not.
+    assert!(retaliates(far(true, 2)));
+    assert!(!retaliates(far(true, 4)));
+    assert!(retaliates(far(false, 4)));
+    // In range needs no sight.
+    assert!(retaliates(RetaliationCase {
+        source_cells: 4,
+        range_cells: "5",
+        sight: 1,
+        ..Default::default()
+    }));
+}
+
+/// `ShouldRetaliate 0x00708AF7..0x00708B09` refuses only Verses at or below
+/// the single `0.01`: a 1% warhead still retaliates, 0% does not. And a
+/// weapon whose `Damage + AmbientDamage` is not positive never does
+/// (`0x007088A7`, a healer).
+#[test]
+fn gsi_04_07_retaliation_verses_and_healer_gates() {
+    assert!(retaliates(RetaliationCase {
+        verses: "1%",
+        ..Default::default()
+    }));
+    assert!(!retaliates(RetaliationCase {
+        verses: "0%",
+        ..Default::default()
+    }));
+    assert!(!retaliates(RetaliationCase {
+        damage: -5,
+        ..Default::default()
+    }));
+}
+
 #[test]
 fn gsi_04_07_damage_retaliation_is_receiver_synchronous_and_uses_mission_override() {
     #[derive(Debug)]
@@ -2040,7 +2274,6 @@ fn gsi_04_07_damage_retaliation_is_receiver_synchronous_and_uses_mission_overrid
         nav_com: Option<crate::sim::components::NavTargetRef>,
         suspended_nav_com: Option<crate::sim::components::NavTargetRef>,
         has_movement: bool,
-        last_attacker: Option<u64>,
         fired: Vec<(u64, TargetKind)>,
         immediate_uninit: Vec<u64>,
     }
@@ -2190,7 +2423,6 @@ fn gsi_04_07_damage_retaliation_is_receiver_synchronous_and_uses_mission_overrid
             nav_com: victim.navigation.nav_com,
             suspended_nav_com: victim.navigation.suspended_nav_com,
             has_movement: victim.movement_target.is_some(),
-            last_attacker: victim.last_attacker_id,
             fired: result
                 .consequences
                 .fire_events()
@@ -2215,7 +2447,6 @@ fn gsi_04_07_damage_retaliation_is_receiver_synchronous_and_uses_mission_overrid
         !live.has_movement,
         "NULL destination stops the represented path"
     );
-    assert_eq!(live.last_attacker, None, "receiver hit bypasses Phase 6");
     assert_eq!(
         live.fired,
         vec![(2, TargetKind::Entity(1))],
@@ -2239,7 +2470,6 @@ fn gsi_04_07_damage_retaliation_is_receiver_synchronous_and_uses_mission_overrid
         assert!(blocked.fired.is_empty());
         assert!(blocked.nav_com.is_some());
         assert!(blocked.has_movement);
-        assert!(blocked.last_attacker.is_none());
     }
     let fatal = run(MissionType::Guard, true, false, 10);
     assert_eq!(fatal.health, 0);
@@ -7390,103 +7620,6 @@ fn combat_resolves_in_live_object_order_not_stable_id() {
     }
 }
 
-/// Slice 6 parity: a resolvable-but-`Dying` `last_attacker_id` (attacker present
-/// with health 0) yields the same retaliation outcome as a freed/absent attacker —
-/// both leave the victim with no `attack_target`. The deferred-delete window makes a
-/// dead attacker resolvable by id where it used to be `None`; the retaliation gate
-/// (`health > 0`) must treat the two identically. A live-attacker control branch
-/// proves the test is non-vacuous (retaliation DOES fire when the attacker lives).
-#[test]
-fn dying_attacker_retaliation_matches_absent_attacker() {
-    fn retal_rules() -> RuleSet {
-        let ini_str: &str = "\
-[VehicleTypes]\n0=MTNK\n1=TARGV\n\n\
-[InfantryTypes]\n\n\
-[AircraftTypes]\n\n\
-[BuildingTypes]\n\n\
-[MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=105mm\n\n\
-[TARGV]\nStrength=200\nArmor=none\nSpeed=5\n\n\
-[105mm]\nDamage=65\nROF=20\nRange=6\nWarhead=AP\n\n\
-[AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
-        let ini = IniFile::from_str(ini_str);
-        RuleSet::from_ini(&ini).expect("retal rules parse")
-    }
-
-    // Victim: armed MTNK last hit by attacker id 2; idle (no attack_target / order).
-    fn victim() -> GameEntity {
-        let mut v = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
-        v.health = Health { current: 300 };
-        v.last_attacker_id = Some(2);
-        v
-    }
-
-    let rules = retal_rules();
-    // Force the type/owner strings into the thread-local test interner BEFORE
-    // snapshotting it, so resolve() of the test_default ids never indexes OOB.
-    let _ = (
-        test_intern("MTNK"),
-        test_intern("Americans"),
-        test_intern("TARGV"),
-        test_intern("Russia"),
-    );
-    let interner = test_interner();
-    let live_order = [1u64];
-
-    // Branch A: attacker absent (already freed) — get(2) == None.
-    let mut store_absent = EntityStore::new();
-    store_absent.insert(victim());
-    tick_retaliation(
-        &mut store_absent,
-        &rules,
-        &interner,
-        &live_order,
-        None,
-        None,
-    );
-
-    // Branch B: attacker present but Dying (health 0) — the deferred-delete window.
-    let mut store_dying = EntityStore::new();
-    store_dying.insert(victim());
-    let mut dead = GameEntity::test_default(2, "TARGV", "Russia", 6, 5);
-    dead.health = Health { current: 0 };
-    dead.dying = true;
-    store_dying.insert(dead);
-    tick_retaliation(&mut store_dying, &rules, &interner, &live_order, None, None);
-
-    // Parity: identical victim outcome — no retaliation issued in either case.
-    let va = store_absent.get(1).unwrap();
-    let vb = store_dying.get(1).unwrap();
-    assert!(
-        va.attack_target.is_none(),
-        "absent-attacker: no retaliation"
-    );
-    assert!(vb.attack_target.is_none(), "dying-attacker: no retaliation");
-    assert_eq!(
-        va.last_attacker_id, vb.last_attacker_id,
-        "dying attacker must leave the same last_attacker_id as an absent one",
-    );
-
-    // Control: a LIVE attacker DOES draw retaliation — proves the test isn't vacuous.
-    let mut store_live = EntityStore::new();
-    store_live.insert(victim());
-    let mut live = GameEntity::test_default(2, "TARGV", "Russia", 6, 5);
-    live.health = Health { current: 200 };
-    store_live.insert(live);
-    tick_retaliation(&mut store_live, &rules, &interner, &live_order, None, None);
-    let vc = store_live.get(1).unwrap();
-    assert!(
-        matches!(
-            vc.attack_target.as_ref().map(|t| t.target),
-            Some(TargetKind::Entity(2))
-        ),
-        "live attacker must draw retaliation (non-vacuous control)",
-    );
-    assert_eq!(
-        vc.last_attacker_id, None,
-        "retaliation against a live attacker clears last_attacker_id",
-    );
-}
-
 // ---------------------------------------------------------------------------
 // Radiation field (substrate Slice 7): periodic foot-unit damage through the
 // [Radiation] RadSiteWarhead, building exemption, and the deployed
@@ -7589,9 +7722,13 @@ fn rad_damage_fires_on_application_delay_boundary_only() {
     assert_eq!(inf_hp, 200, "100 rad damage vs armor none");
     assert_eq!(tank_hp, 294, "6 rad damage vs heavy armor (10% Verses)");
     // Sourceless damage must not arm retaliation.
-    assert_eq!(
-        sim.substrate.entities.get(inf).unwrap().last_attacker_id,
-        None
+    assert!(
+        sim.substrate
+            .entities
+            .get(inf)
+            .unwrap()
+            .attack_target
+            .is_none()
     );
 
     // Frame 17: off-boundary again.
@@ -7626,7 +7763,6 @@ fn gsi_04_07_damage_periodic_radiation_enters_direct_receiver_once() {
         target.health.current, 294,
         "raw 100 / VeteranArmor 1.5 = 66; ftol(66 x heavy 10%) = 6 once"
     );
-    assert_eq!(target.last_attacker_id, None, "null attacker is retained");
     assert!(
         target.attack_target.is_none(),
         "periodic radiation cannot arm retaliation"
