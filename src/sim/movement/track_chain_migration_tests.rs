@@ -204,6 +204,8 @@ fn chain_fixture(passive: bool) -> (Simulation, RuleSet, PathGrid, TrackInvocati
             entity_id: MOVER,
             family: TrackFamily::Drive,
             apply_fresh_occupation: false,
+            active_gate: false,
+            retry: false,
         },
     )
 }

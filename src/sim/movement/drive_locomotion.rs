@@ -8,10 +8,7 @@ use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::{LocomotorKind, SpeedType};
 #[cfg(test)]
 use crate::sim::components::DriveCoord;
-use crate::sim::components::{
-    DriveLocomotionRuntime, FootSpeedState, NavTargetRef, ShipLocomotionRuntime,
-};
-use crate::sim::entity_store::EntityStore;
+use crate::sim::components::{DriveLocomotionRuntime, FootSpeedState, ShipLocomotionRuntime};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::pathfinding::terrain_speed::{self, TerrainSpeedConfig};
 use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
@@ -31,37 +28,6 @@ const DRIVE_DESTINATION_BRAKE_FLOOR: SimFixed = SimFixed::lit("0.3");
 /// unit with a destination but zero speed is `Is_Moving`, not `Is_Moving_Now`.
 pub(crate) fn drive_locomotor_is_moving(entity: &GameEntity) -> bool {
     super::track_head::motion_state(entity, super::track_process::TrackFamily::Drive).0
-}
-
-/// Unit -> Infantry NavCom refreshes among `candidates`, visited in ascending
-/// stable-id order. Callers pass the objects of the current pass rather than
-/// the whole store; the answer for any object does not depend on the others.
-pub(super) fn drive_entity_nav_targets(
-    entities: &EntityStore,
-    candidates: &[u64],
-) -> Vec<(u64, NavTargetRef)> {
-    let mut ids: Vec<u64> = candidates.to_vec();
-    ids.sort_unstable();
-    ids.dedup();
-    ids.into_iter()
-        .filter_map(|id| {
-            let entity = entities.get(id)?;
-            let target = entity.navigation.nav_com?;
-            let NavTargetRef::Entity { id: target_id } = target else {
-                return None;
-            };
-            // Native4B05D0: only Unit -> Infantry, on the active Drive instance.
-            (entity.category == crate::map::entities::EntityCategory::Unit
-                && entity
-                    .locomotor
-                    .as_ref()
-                    .is_some_and(|l| l.kind == LocomotorKind::Drive)
-                && entities.get(target_id).is_some_and(|target| {
-                    target.category == crate::map::entities::EntityCategory::Infantry
-                }))
-            .then_some((id, target))
-        })
-        .collect()
 }
 
 /// Compute the Drive-local target speed fraction from currently modeled runtime

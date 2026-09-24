@@ -52,6 +52,49 @@ pub(super) struct GroundLocomotorOutcome {
     track_owned: bool,
 }
 
+/// Re-enter the pending movement pass for the same mover of this Process (see
+/// `MoverReentry`), with the Simulation's current grids and state.
+fn reenter_pending_pass(
+    sim: &mut Simulation,
+    pending: &mut movement::movement_tick::PendingMovementPass,
+    reentry: movement::movement_tick::MoverReentry,
+    rules: Option<&RuleSet>,
+    path_grid: Option<&PathGrid>,
+    overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    timing: movement::MovementConfig,
+) {
+    let current_grid = sim.path_grid_snapshot();
+    pending.reenter_mover(
+        reentry,
+        &mut sim.substrate.entities,
+        current_grid.as_deref().or(path_grid),
+        sim.zone_grid.as_ref(),
+        sim.resolved_terrain.as_ref(),
+        &sim.terrain_costs,
+        &sim.house_alliances,
+        &mut sim.substrate.occupancy,
+        &mut sim.substrate.cell_occupation,
+        &mut sim.substrate.raw_cell_occupation,
+        &mut sim.substrate.next_occupancy_enter_order,
+        &mut sim.scenario_rng,
+        sim.session.tick,
+        sim.session.binary_frame,
+        sim.overlay_grid.as_ref(),
+        overlay_registry,
+        sim.playfield_bounds,
+        &sim.terrain_speed_config,
+        sim.close_enough,
+        timing.path_delay_ticks,
+        timing.blockage_path_delay_ticks,
+        &mut sim.interner,
+        rules,
+        Some(&sim.type_handles),
+        Some(&sim.production.slave_bindings),
+        &mut sim.movement_pass_cache,
+        &sim.houses,
+    );
+}
+
 #[derive(Default)]
 struct ObjectTurnOutcome {
     movement: movement::MovementTickStats,
@@ -200,80 +243,88 @@ impl Simulation {
                 cause,
             })?
         };
-        if let Some(request) = pending_movement.take_foot_path_request() {
-            let lent = pending_movement.lent_block_set(request.owner());
-            let outcome = sim
-                .run_foot_path_request(&request, lent, rules, path_grid, overlay_registry)
-                .map_err(|cause| super::FrameAdvanceError {
-                    tick: sim.session.tick,
-                    binary_frame: sim.session.binary_frame,
-                    entity_id: stable_id,
-                    cause,
-                })?;
-            if outcome == movement::FootPathOutcome::Returned
-                && let movement::movement_tick::FootPathCaller::Track(family) = request.caller
-            {
-                // Drive4B0AAA / Ship6A0173: Process_Track follows every
-                // returned Process_Movement of a live Foot.
-                pending_movement.record_native_track(movement::track_process::TrackInvocation {
-                    entity_id: request.entity_id,
-                    family,
-                    apply_fresh_occupation: false,
-                });
+        // Process_Movement's no-queue request and the Process_Track after it.
+        // When the active-track Process_Track(0) ends its track, the same
+        // Process continues into Process_Movement and Process_Track(1)
+        // (Drive 0x4B0583..0x4B0667 / Ship 0x69FC93..0x69FD0E;
+        // `movement::track_continuation`).
+        let frame_error = |sim: &Simulation, cause| super::FrameAdvanceError {
+            tick: sim.session.tick,
+            binary_frame: sim.session.binary_frame,
+            entity_id: stable_id,
+            cause,
+        };
+        let mut retry = false;
+        loop {
+            if let Some(request) = pending_movement.take_foot_path_request() {
+                let lent = pending_movement.lent_block_set(request.owner());
+                let outcome = sim
+                    .run_foot_path_request(&request, lent, rules, path_grid, overlay_registry)
+                    .map_err(|cause| frame_error(sim, cause))?;
+                if outcome == movement::FootPathOutcome::Returned
+                    && let movement::movement_tick::FootPathCaller::Track(family) = request.caller
+                {
+                    // Drive4B0AAA / Ship6A0173: Process_Track follows every
+                    // returned Process_Movement of a live Foot.
+                    pending_movement.record_native_track(
+                        movement::track_process::TrackInvocation::after_process_movement(
+                            request.entity_id,
+                            family,
+                        ),
+                    );
+                }
+                if outcome == movement::FootPathOutcome::Resume {
+                    reenter_pending_pass(
+                        sim,
+                        &mut pending_movement,
+                        movement::movement_tick::MoverReentry::FootPath(Box::new(request)),
+                        rules,
+                        path_grid,
+                        overlay_registry,
+                        timing,
+                    );
+                }
             }
-            if outcome == movement::FootPathOutcome::Resume {
-                let current_grid = sim.path_grid_snapshot();
-                pending_movement.resume_foot_path_request(
-                    request,
-                    &mut sim.substrate.entities,
-                    current_grid.as_deref().or(path_grid),
-                    sim.zone_grid.as_ref(),
-                    sim.resolved_terrain.as_ref(),
-                    &sim.terrain_costs,
-                    &sim.house_alliances,
-                    &mut sim.substrate.occupancy,
-                    &mut sim.substrate.cell_occupation,
-                    &mut sim.substrate.raw_cell_occupation,
-                    &mut sim.substrate.next_occupancy_enter_order,
-                    &mut sim.scenario_rng,
-                    sim.session.tick,
-                    sim.session.binary_frame,
-                    sim.overlay_grid.as_ref(),
-                    overlay_registry,
-                    sim.playfield_bounds,
-                    &sim.terrain_speed_config,
-                    sim.close_enough,
-                    timing.path_delay_ticks,
-                    timing.blockage_path_delay_ticks,
-                    &mut sim.interner,
-                    rules,
-                    Some(&sim.type_handles),
-                    Some(&sim.production.slave_bindings),
-                    &mut sim.movement_pass_cache,
-                    &sim.houses,
-                );
-            }
-        }
-        if let Some(invocation) = pending_movement
-            .take_native_track()
-            // Ordinary Process reloads Object+90 after the fresh receiver.
-            .filter(|invocation| {
-                sim.substrate
-                    .entities
-                    .get(invocation.entity_id)
-                    .is_some_and(|entity| entity.lifecycle.object_alive)
-            })
-        {
-            let moved = sim
+            let Some(invocation) = pending_movement
+                .take_native_track()
+                // Ordinary Process reloads Object+90 after the fresh receiver.
+                .filter(|invocation| {
+                    sim.substrate
+                        .entities
+                        .get(invocation.entity_id)
+                        .is_some_and(|entity| entity.lifecycle.object_alive)
+                })
+            else {
+                break;
+            };
+            let invocation = movement::track_process::TrackInvocation {
+                retry,
+                ..invocation
+            };
+            let pass = sim
                 .run_track_process(invocation, rules, path_grid, overlay_registry)
-                .map_err(|cause| super::FrameAdvanceError {
-                    tick: sim.session.tick,
-                    binary_frame: sim.session.binary_frame,
-                    entity_id: stable_id,
-                    cause,
-                })?;
-            pending_movement.record_track_movement(moved);
+                .map_err(|cause| frame_error(sim, cause))?;
+            pending_movement.record_track_movement(pass.moved);
             outcome.track_owned = true;
+            if retry || !invocation.active_gate || pass.aborted {
+                break;
+            }
+            if !sim
+                .begin_track_end_continuation(invocation.entity_id, invocation.family, rules)
+                .map_err(|cause| frame_error(sim, cause))?
+            {
+                break;
+            }
+            reenter_pending_pass(
+                sim,
+                &mut pending_movement,
+                movement::movement_tick::MoverReentry::AfterTrackEnd(invocation.entity_id),
+                rules,
+                path_grid,
+                overlay_registry,
+                timing,
+            );
+            retry = true;
         }
         if let Some((id, head)) = pending_movement.take_walk_per_cell() {
             outcome.bridge_state_changed |=

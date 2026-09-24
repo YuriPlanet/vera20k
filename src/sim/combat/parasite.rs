@@ -302,18 +302,19 @@ impl Simulation {
 
     /// Release tail shared by AttachTo refusal, ExitUnit and PointerExpired:
     /// VERA has no planning path (Foot vtable +0x4AC is false), so the owner
-    /// clears its target and destination, then Enter_Idle_Mode(0,1). Only
-    /// ExitUnit (`0x0062A771`) and PointerExpired (`0x0062A3D4`) also clear the
-    /// archive target; the AttachTo refusal (`0x0062AA96..0x0062AAC9`) keeps it.
+    /// clears its target and destination (`vt+0x480(0, 1)` at `0x0062A78A`,
+    /// `0x0062A3ED`, `0x0062AAB9`), then Enter_Idle_Mode(0,1). Only ExitUnit
+    /// (`0x0062A771`) and PointerExpired (`0x0062A3D4`) also clear the archive
+    /// target; the AttachTo refusal (`0x0062AA96..0x0062AAC9`) keeps it.
     fn parasite_released_owner_orders(&mut self, owner: u64, clear_archive: bool, rules: &RuleSet) {
         if let Some(entity) = self.substrate.entities.get_mut(owner) {
             if clear_archive {
                 entity.base_defense_response.set_archive_target(None);
             }
             crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
-            crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
-                entity, None,
-            );
+        }
+        self.assign_null_destination(owner, Some(rules));
+        if let Some(entity) = self.substrate.entities.get_mut(owner) {
             entity.movement_target = None;
         }
         crate::sim::world::queue_foot_enter_idle_mode(self, owner, rules);

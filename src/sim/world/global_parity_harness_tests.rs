@@ -659,7 +659,7 @@ const GLOBAL_PRE_SUSTAINED_SIGHT_V142_HASH: u64 = 0x4E6E_0CFE_23A8_03A7;
 
 // Schema171: fresh-turn admission/residual clearing and retained-owner hashes.
 // See TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md, PR415 causal attribution.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 6253505454643889889;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 2969748113275805488;
 // Schema174 removes folds instead of adding them: OreGrowthState's node-era
 // scanner cursor, candidate lists and sample counters, and ProductionState's
 // fallback ore overlay id. The pre-174 projection folds the values those fields
@@ -668,10 +668,10 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 625350545
 // id. It is not a general reconstruction; a scenario finalized by the map
 // loader held Some(first TIB* id). The projection must still equal the previous
 // current pin, asserted below. Rust hash-composition ratchet, not a native golden.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 7337253733368053792;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 12588711074673950861;
 // v181 adds the default Foot+580 factor to every entity's hash. The pre-181
 // assertion below retains the previous entire fixture state/RNG ratchet.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0x39B8_4BB8_13FA_9540;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xDAF7_FF08_E159_54F7;
 // Snapshot182 adds ordered display vectors. The pre-182 projection below
 // must reproduce the previous whole-fixture hash, including all RNG/state.
 // Schema186 removes the always-None release-tail byte from each entity. This
@@ -689,8 +689,14 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0x39B8_4BB8_13FA_
 // the legacy inline lane, not the Find_Path owner. The pins move with that
 // state; the RNG stream pins, per-tick replay equality and route tripwires in
 // this file are unchanged. The old values are in the commit that moved them.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0xC260_4CB7_38C8_1163;
-const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 17624005817075191540;
+// 2026-09-23 Drive/Ship same-call track-end continuation (behavior): first
+// divergence from main is tick 30, tank 4's first track end, now continuing
+// into its next track in that Process (residual-only Process_Track(1)). The
+// scenario and main RNG streams match main over all 600 ticks. The
+// retained-destination check expects a live track instead of the removed
+// next-frame deferral. Old values: the commit that moved them.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x591D_D8AB_05AD_B66C;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 5260791561060714057;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -1019,17 +1025,17 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     let final_hash = *replayed.last().expect("at least one tick recorded");
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
-        0xCDF9_3696_B30C_8B40,
+        0x065F_2FBB_F9DB_A8F8,
         "v190 changes only the Foot neighbor-history hash composition in this fixture"
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
-        0x745D_8FBD_3DE8_6044,
+        0xF060_AF6C_B39D_7725,
         "v189 adds only the retained Techno+3D4 hash fold"
     );
     let before_burst_hash = rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(187));
     assert_eq!(
-        before_burst_hash, 0xD750_5749_C7A2_A94F,
+        before_burst_hash, 0x6255_BA80_BED5_E219,
         "schema187 only replaces zero remaining-shot fields with the retained index in this fixture"
     );
     let before_release_hash =
@@ -1087,7 +1093,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     // 2026-09-23: moved by the Drive/Ship order and first-Process behavior
     // change (see GLOBAL_HARNESS_FINAL_HASH), not by a hash owner.
     assert_eq!(
-        before_power_hash, 5633002731626426831,
+        before_power_hash, 6770460542547855998,
         "full08 projection moved: investigate behavior or another hash owner; do not rebaseline"
     );
 
@@ -1151,18 +1157,17 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
             entity.foot_speed,
         );
     }
-    // The 600-frame boundary lands on an intermediate track retirement.
-    // A retained destination must resume on the next Process visits, even
-    // though the completed path adapter and track head have been cleared.
-    // This is a production continuation regression, not a native scenario golden.
+    // The retasked tank is still driving west to its retained destination at
+    // the 600-frame boundary. Each of its track ends continues into
+    // Process_Movement in the same Process (`movement::track_continuation`),
+    // so the following visits keep a live track and advance it. This is a
+    // production continuation regression, not a native scenario golden.
     let continuation_start = {
         let tank = rep
             .substrate
             .entities
             .get(4)
             .expect("retasked tank survives");
-        assert!(tank.navigation.pending_arrival_clear);
-        assert!(tank.movement_target.is_none());
         assert_eq!(
             tank.navigation.nav_com,
             Some(crate::sim::components::NavTargetRef::Cell { rx: 8, ry: 8 }),
@@ -1197,11 +1202,11 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     );
     assert!(
         continuation_admitted,
-        "pending arrival must produce another live track"
+        "the retained destination must keep a live track"
     );
     assert!(
         continuation_end[0] < continuation_start[0],
-        "retained westbound destination must advance after intermediate retirement",
+        "retained westbound destination must advance",
     );
 
     assert_eq!(
@@ -1378,7 +1383,10 @@ fn dense_converging_setup() -> (
 // before admission evenROT0. Independent review accepted this Rust regression
 // re-pin; it is not a native whole-scenario golden. Same-frame facing repair
 // changed no XY. See TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md for scope/evidence.
-const POSITION_FINGERPRINT: u64 = 0xF66D_01F2_23C5_B07F;
+// 2026-09-23: same-call track-end continuation. First divergence from main is
+// tick 30, where the column's first track ends continue into their next
+// tracks in that Process; both RNG streams match main over the 300 ticks.
+const POSITION_FINGERPRINT: u64 = 0x828D_9C15_C129_26CE;
 
 #[test]
 fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {

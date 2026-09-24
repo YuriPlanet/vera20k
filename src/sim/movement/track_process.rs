@@ -32,6 +32,34 @@ pub(crate) struct TrackInvocation {
     /// Fresh ProcessMovement acceptance owes Apply1 before the paid loop.
     /// This synchronous handoff never crosses a frame or snapshot boundary.
     pub apply_fresh_occupation: bool,
+    /// Called from the outer active-track gate (Drive 0x4B0576 / Ship
+    /// 0x69FC86), whose false return may continue into Process_Movement in
+    /// the same Process (`track_continuation`).
+    pub active_gate: bool,
+    /// Process_Track's byte argument, 1 after that same-call Process_Movement
+    /// (Drive 0x4B0665 / Ship 0x69FD0C): the budget is the residual alone.
+    pub retry: bool,
+}
+
+/// Drive4B127A / Ship6A0942: the byte argument masks only the already
+/// evaluated speed getter; the residual is always paid. Evidence:
+/// tools/spatial_oracle/track_speed_native (retry rows).
+pub(crate) fn invocation_budget(current_speed: i32, residual: i32, retry: bool) -> i32 {
+    residual.wrapping_add(if retry { 0 } else { current_speed })
+}
+
+impl TrackInvocation {
+    /// The Process_Track that follows a Process_Movement return (Drive
+    /// 0x4B0AAA / Ship 0x6A0173); the host sets `retry` after a track end.
+    pub(crate) fn after_process_movement(entity_id: u64, family: TrackFamily) -> Self {
+        Self {
+            entity_id,
+            family,
+            apply_fresh_occupation: false,
+            active_gate: false,
+            retry: false,
+        }
+    }
 }
 
 impl TrackFamily {
@@ -340,8 +368,15 @@ impl TrackProcess {
             terminal: false,
         })
     }
-    pub fn begin(family: TrackFamily, progress: &TrackProgress, fresh_budget: i32) -> Self {
-        let budget = progress.residual.wrapping_add(fresh_budget);
+    /// Drive4B127A / Ship6A0942: the paid budget is the retained residual
+    /// plus this call's speed, which the byte argument (`retry`) masks.
+    pub fn begin(
+        family: TrackFamily,
+        progress: &TrackProgress,
+        fresh_budget: i32,
+        retry: bool,
+    ) -> Self {
+        let budget = invocation_budget(fresh_budget, progress.residual, retry);
         Self {
             family,
             budget,

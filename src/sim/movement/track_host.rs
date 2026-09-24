@@ -32,6 +32,33 @@ pub(super) enum TrackWorldEvent {
     Arrival,
 }
 
+/// One Process_Track call: its paid placements and the native AL. AL is
+/// true only from the terminal tail (Drive 0x4B2283 / 0x4B22A1): after the
+/// terminal PerCell a null, dead, limbo or falling owner (0x4B2218), a true
+/// Enter_Idle_Mode (0x4B2273) or a true vt+504 (0x4B2291). The outer Process
+/// then returns at once (0x4B057D / 0x69FC8D).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct TrackPass {
+    pub moved: u32,
+    pub aborted: bool,
+}
+
+impl TrackPass {
+    fn paid(moved: u32) -> Self {
+        Self {
+            moved,
+            aborted: false,
+        }
+    }
+
+    fn aborted(moved: u32) -> Self {
+        Self {
+            moved,
+            aborted: true,
+        }
+    }
+}
+
 fn progress(entity: &GameEntity, family: TrackFamily) -> Option<&TrackProgress> {
     match family {
         TrackFamily::Drive => entity.drive_locomotion.as_ref().map(|state| &state.track),
@@ -207,7 +234,7 @@ impl Simulation {
         rules: Option<&RuleSet>,
         fallback_grid: Option<&PathGrid>,
         registry: Option<&OverlayTypeRegistry>,
-    ) -> Result<u32, String> {
+    ) -> Result<TrackPass, String> {
         if invocation.apply_fresh_occupation {
             self.track_apply_occupation(
                 invocation.entity_id,
@@ -222,13 +249,14 @@ impl Simulation {
             .get(invocation.entity_id)
             .and_then(|e| rules?.object(self.interner.resolve(e.type_ref())));
         let Some(entity) = self.substrate.entities.get_mut(invocation.entity_id) else {
-            return Ok(0);
+            return Ok(TrackPass::default());
         };
         if !super::track_turn::admit_track_entry(entity, object.is_some_and(|o| o.has_turret)) {
-            return Ok(0);
+            return Ok(TrackPass::default());
         }
         // One native entry owns admission, scalar prefix and paid loop, in that
         // order. No scalar speed update crosses the world receiver handoff.
+        // The prefix also runs for `retry`, whose budget masks its speed.
         let current_grid = self.path_grid.as_deref().or(fallback_grid);
         let fresh_budget = super::track_speed::advance(entity, object, rules, current_grid);
         self.try_run_track_points_observed(
@@ -312,6 +340,7 @@ impl Simulation {
             observe,
         )
         .expect("track fixture must provide every coordinate receiver")
+        .moved
     }
 
     fn try_run_track_points_observed(
@@ -322,16 +351,17 @@ impl Simulation {
         fallback_grid: Option<&PathGrid>,
         registry: Option<&OverlayTypeRegistry>,
         observe: &mut impl FnMut(&mut Simulation, u64, TrackWorldEvent),
-    ) -> Result<u32, String> {
+    ) -> Result<TrackPass, String> {
         let TrackInvocation {
             entity_id: id,
             family,
+            retry,
             ..
         } = invocation;
         let Some((state, _, _)) = self.track_state(id, family) else {
-            return Ok(0);
+            return Ok(TrackPass::default());
         };
-        let mut call = TrackProcess::begin(family, &state, fresh_budget);
+        let mut call = TrackProcess::begin(family, &state, fresh_budget, retry);
         let mut moved = 0u32;
         let candidate_direction = self.substrate.entities.get(id).and_then(|entity| {
             entity
@@ -348,10 +378,10 @@ impl Simulation {
             });
         loop {
             let Some((state, stored_head, current)) = self.track_state(id, family) else {
-                return Ok(moved);
+                return Ok(TrackPass::paid(moved));
             };
             let Some(payment) = call.pay_current(&state) else {
-                return Ok(moved);
+                return Ok(TrackPass::paid(moved));
             };
             let TrackPayment::Sample(sample) = payment else {
                 break;
@@ -416,15 +446,14 @@ impl Simulation {
                 // a callback may install a new path that must survive this tail.
                 self.track_consume_reached_node(id);
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
-                    if reached
-                        || entity
-                            .movement_target
-                            .as_ref()
-                            .is_some_and(|target| target.next_index >= target.path.len())
-                    {
+                    if reached {
                         entity.movement_target = None;
-                        entity.navigation.pending_arrival_clear =
-                            !reached && entity.navigation.nav_com.is_some();
+                    } else if entity
+                        .movement_target
+                        .as_ref()
+                        .is_some_and(|target| target.next_index >= target.path.len())
+                    {
+                        super::movement_commands::spend_track_route(entity);
                     }
                 }
                 self.unit_track_per_cell(
@@ -435,7 +464,7 @@ impl Simulation {
                 );
                 observe(self, id, TrackWorldEvent::PerCell);
                 if !self.track_survives(id) {
-                    return Ok(moved);
+                    return Ok(TrackPass::aborted(moved));
                 }
                 if reached {
                     let entity = self.substrate.entities.get_mut(id).unwrap();
@@ -446,7 +475,7 @@ impl Simulation {
                         let returns = self.track_enter_idle_mode(id, rules);
                         observe(self, id, TrackWorldEvent::Arrival);
                         if returns {
-                            return Ok(moved);
+                            return Ok(TrackPass::aborted(moved));
                         }
                     }
                 }
@@ -459,7 +488,7 @@ impl Simulation {
                     }
                 }
                 if self.track_navigation_gate(id, rules) {
-                    return Ok(moved);
+                    return Ok(TrackPass::aborted(moved));
                 }
                 if !self
                     .substrate
@@ -467,7 +496,7 @@ impl Simulation {
                     .get(id)
                     .is_some_and(|e| e.lifecycle.object_alive)
                 {
-                    return Ok(moved);
+                    return Ok(TrackPass::paid(moved));
                 }
                 // +504 false/alive admits the residual tail directly. It must
                 // never restart the paid loop with a newly selected curve.
@@ -482,7 +511,7 @@ impl Simulation {
                 }
             }
             let Some((live, live_head, actual)) = self.track_state(id, family) else {
-                return Ok(moved);
+                return Ok(TrackPass::paid(moved));
             };
             let previous = if live.cursor == 0 {
                 cell(actual)
@@ -501,7 +530,7 @@ impl Simulation {
             // The point XY was paid earlier; facing independently reloads the
             // live cursor BEFORE placement, then survives Mark callbacks.
             let Some((xy, _)) = sample.transform(family, &live, live_head) else {
-                return Ok(moved);
+                return Ok(TrackPass::paid(moved));
             };
             let paid_facing = call
                 .live_facing_sample(live.cursor)
@@ -533,7 +562,7 @@ impl Simulation {
                 .get(id)
                 .is_some_and(|entity| entity.lifecycle.object_alive)
             {
-                return Ok(moved);
+                return Ok(TrackPass::paid(moved));
             }
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 let marked = entity.lifecycle.cell_marked;
@@ -556,13 +585,13 @@ impl Simulation {
                 }
             }
             let Some((live, _, _)) = self.track_state(id, family) else {
-                return Ok(moved);
+                return Ok(TrackPass::paid(moved));
             };
             if call.is_at_occupation_handoff(&live) {
                 self.track_raw_mark(id, false, fallback_grid);
             }
             let Some((live, _, _)) = self.track_state(id, family) else {
-                return Ok(moved);
+                return Ok(TrackPass::paid(moved));
             };
             if chain_allowed && call.is_at_chain_cursor(&live) {
                 if self.track_try_chain(
@@ -577,28 +606,28 @@ impl Simulation {
                 ) {
                     chain_allowed = false;
                     if !self.track_survives(id) {
-                        return Ok(moved);
+                        return Ok(TrackPass::paid(moved));
                     }
                 }
             }
             let Some(entity) = self.substrate.entities.get_mut(id) else {
-                return Ok(moved);
+                return Ok(TrackPass::paid(moved));
             };
             let Some(state) = progress_mut(entity, family) else {
-                return Ok(moved);
+                return Ok(TrackPass::paid(moved));
             };
             call.finish_surviving_point(state);
             self.track_consume_reached_node(id);
         }
         let Some(entity) = self.substrate.entities.get_mut(id) else {
-            return Ok(moved);
+            return Ok(TrackPass::paid(moved));
         };
         let Some(state) = progress_mut(entity, family) else {
-            return Ok(moved);
+            return Ok(TrackPass::paid(moved));
         };
         call.store_residual(state);
         let Some((live, stored_head, current)) = self.track_state(id, family) else {
-            return Ok(moved);
+            return Ok(TrackPass::paid(moved));
         };
         if let Some(step) = live.residual_step(family, current, stored_head) {
             let identity = |coord: DriveCoord| {
@@ -629,7 +658,7 @@ impl Simulation {
                 observe,
             );
         }
-        Ok(moved)
+        Ok(TrackPass::paid(moved))
     }
 
     fn track_consume_reached_node(&mut self, id: u64) {

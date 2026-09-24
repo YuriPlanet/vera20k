@@ -54,6 +54,8 @@ fn fixture(family: TrackFamily, budget: i32) -> (Simulation, TrackInvocation, i3
             entity_id: 1,
             family,
             apply_fresh_occupation: false,
+            active_gate: false,
+            retry: false,
         },
         budget,
     )
