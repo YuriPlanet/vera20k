@@ -124,13 +124,12 @@ impl ParasiteState {
 /// RESIDUAL (Squid grapple): the grapple state machine, its SQDG anim, wakes,
 /// splashes, Culling and per-tick victim paralysis are not ported. Until they
 /// are, such owners neither LimboLaunch nor attach (both gates below). Trigger:
-/// a Giant Squid (SQD) firing SquidGrab/SquidGrabE. Effect: SQDJUMP is Inviso,
-/// so VERA's instant-hit path deals ordinary ParasitePlus damage once per
-/// weapon ROF (99) with the squid visible and the ship free, where native
-/// grapples, paralyzes, rocks and damages the ship every 40 frames and culls it
-/// when weak. Frequency: Yuri's Revenge naval games. Risk: naval balance.
-/// (The instant-hit path also skips every special detonation arm; that gap is
-/// shared with other Inviso special warheads and tracked separately.)
+/// a Giant Squid (SQD) firing SquidGrab/SquidGrabE. Effect: SQDJUMP is Inviso;
+/// VERA's instant-hit path runs the Parasite arm, whose attach this gate
+/// refuses, so the shot does nothing (no damage, the squid visible and the
+/// ship free), where native grapples, paralyzes, rocks and damages the ship
+/// every 40 frames and culls it when weak. Frequency: Yuri's Revenge naval
+/// games. Risk: naval balance.
 pub(crate) fn owner_uses_grapple(object: &ObjectType) -> bool {
     object.naval && object.organic
 }

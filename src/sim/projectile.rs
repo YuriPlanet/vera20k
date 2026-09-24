@@ -773,30 +773,32 @@ pub fn projectile_shrapnel_count(
 /// `0x00469c13`) into a 2/4/8 bit mask and passes it with the impact coord and
 /// `bullet+0x6c`; the exact visual `0x0048a620` produces is UNCHECKED here.
 ///
-/// RESIDUAL — **eight special effect bodies are not implemented in VERA.**
-/// MindControl (`capture_manager`), Parasite (`combat/parasite.rs`, visible
-/// projectiles) and Temporal (`temporal`) run their bodies. Every other
-/// variant except `OrdinaryDamage` claims the detonation, suppresses damage
-/// and shrapnel exactly as native does, and then runs the shared tail without
-/// performing its effect. Per-variant native callees are named below; the
-/// unimplemented families are port M15d.
-/// - Trigger: any impact whose warhead carries one of the eight unported
-///   flags. The stock census across all eleven flags was 14 warhead
-///   sections, named by 24 weapon sections through an exact-case `Warhead=`,
-///   of which 22 are mounted (`TankMakeupKit` and `CRMakeupKit` are named by
-///   no mount key; gamemd's INI lookup is case-sensitive); its carriers other
-///   than the mind controllers, Terror Drones and Chrono weapons are attack
-///   dogs, Giant Squids (Inviso, so their Parasite arm is not dispatched
-///   either), Crazy Ivan, Engineers, Spies, Magnetrons, Tesla Troopers, Boris
-///   and the Weed Guy.
+/// Both deliveries dispatch the chain through one owner,
+/// `combat::world_receiver::run_special_detonation_arm`: a visible bullet at
+/// its detonation, and VERA's immediate `Inviso=` shot, which natively is the
+/// same bullet detonating (every stock special weapon but the dog's and the
+/// Terror Drone's jump is Inviso).
+///
+/// RESIDUAL — **six special effect bodies are not implemented in VERA.**
+/// MindControl (`capture_manager`), IvanBomb and BombDisarm (`bomb`), Parasite
+/// (`combat/parasite.rs`; the Giant Squid's grapple is its own residual there)
+/// and Temporal (`temporal`) run their bodies. ElectricAssault, Locomotor,
+/// Airstrike, DirectRocker, MakesDisguise and NukeMaker claim the detonation,
+/// suppress damage and shrapnel exactly as native does, and then run the
+/// shared tail without performing their effect.
+/// - Trigger: a stock weapon whose warhead carries one of those flags: the
+///   Tesla Trooper's `[AssaultBolt]` at its own coil, the Magnetron's
+///   `[MagneticBeam]`/`[MagneticBeamE]`, Boris's `[Flare]`, the Spy's
+///   `[MakeupKit]` and the nuclear missile's `[NukeCarrier]`
+///   (`[TankMakeupKit]`/`[CRMakeupKit]` are mounted by nothing; DirectRocker
+///   has no live stock line).
 /// - Player effect: the shot lands, plays its animation and leaves its crater,
-///   but nobody is attached to, bombed, defused, disguised or lifted, and the
-///   target takes no damage from that shot.
-/// - Frequency: continuous in ordinary skirmish — an attack dog appears in
-///   almost every game.
-/// - Downstream risk: the ports add snapshotted, hashed entity state
-///   (`TemporalClass`, `BombClass`), so each carries its own
-///   `SNAPSHOT_VERSION` bump.
+///   but no coil is charged, no vehicle lifted, no airstrike called and no Spy
+///   disguised, and the target takes no damage from that shot.
+/// - Frequency: every game with Magnetrons (Yuri), Boris or Spies.
+/// - Downstream risk: each port adds snapshotted, hashed state (the charger
+///   vector, the piggyback lift links, the AirstrikeClass manager, the
+///   disguise) with its own `SNAPSHOT_VERSION` bump.
 ///
 /// RESIDUAL — **the `[ESP+0xf]` ordinary-arm visual bypass is not modelled.**
 /// `0x004690c9` zeroes `[ESP+0xf]` on entry and `0x00469a9f` is its only
@@ -831,24 +833,26 @@ pub enum SpecialDetonationAction {
     /// `capture_manager` (the Inviso delivery dispatches it too).
     MindControl,
     /// `IvanBomb=` (`+0x157`), test `0x00469343` ->
-    /// `BombClass::Attach @ 0x00438e70`. UNIMPLEMENTED (M15d).
+    /// `BombListClass::Attach @ 0x00438e70`, ported in `bomb`.
     IvanBomb,
-    /// `ElectricAssault=` (`+0x158`), test `0x0046937a` -> the Tesla-Coil
-    /// charger-vector append at `0x00452820`. UNIMPLEMENTED (M15d).
+    /// `ElectricAssault=` (`+0x158`), test `0x0046937a`: a Building target
+    /// hit by an Infantry owner -> the Tesla-Coil charger-vector move-to-back
+    /// at `0x00452820`. UNIMPLEMENTED.
     ElectricAssault,
     /// `Parasite=` (`+0x159`), test `0x004693d3` ->
     /// `ParasiteClass::AttachTo @ 0x0062a980`, ported in `combat/parasite.rs`
-    /// for visible projectiles (Inviso deliveries skip this dispatch).
+    /// (the Giant Squid's grapple is that module's residual).
     Parasite,
     /// `Temporal=` (`+0x15a`), test `0x00469423` ->
     /// `TemporalClass::InitiateWarp @ 0x0071af20`, ported in `temporal` (the
     /// Inviso delivery dispatches it too).
     Temporal,
-    /// `IsLocomotor=` (`+0x15b`), test `0x004694cb` -> the Magnetron
-    /// deploy / chrono-warp arm. UNIMPLEMENTED (M15d).
+    /// `IsLocomotor=` (`+0x15b`), test `0x004694cb` -> the Magnetron's lift,
+    /// `TechnoClass::ImbueLocomotor @ 0x00710000` with the warhead's
+    /// `Locomotor=` CLSID. UNIMPLEMENTED.
     Locomotor,
     /// `Airstrike=` (`+0x16c`), test `0x00469705` ->
-    /// `AirstrikeClass::SetTarget @ 0x0041d830`. UNIMPLEMENTED (M15d).
+    /// `AirstrikeClass::SetTarget @ 0x0041d830`. UNIMPLEMENTED.
     ///
     /// The decompile shows this arm as conditional; the disassembly does not.
     /// `0x0046970d JZ 0x0046978e` is its only fall-through and fires on the
@@ -874,14 +878,15 @@ pub enum SpecialDetonationAction {
     /// deliberately NOT implemented.
     DirectRocker,
     /// `BombDisarm=` (`+0x16e`), test `0x004699ca` ->
-    /// `BombClass::Defuse @ 0x004389b0`. UNIMPLEMENTED (M15d).
+    /// `BombClass::Defuse @ 0x004389b0`, ported in `bomb`.
     BombDisarm,
     /// `MakesDisguise=` (`+0x175`), test `0x00469a03` -> the firer disguises as
     /// the target through owner vtable `+0x46c` at `0x00469a24`.
-    /// UNIMPLEMENTED (M15d).
+    /// UNIMPLEMENTED.
     MakesDisguise,
     /// `NukeMaker=` (`+0x176`), test `0x00469a2c` ->
-    /// `BulletClass::SpawnDownwardNuke @ 0x0046b310`. UNIMPLEMENTED (M15d).
+    /// `BulletClass::SpawnDownwardNuke @ 0x0046b310`. UNIMPLEMENTED (its only
+    /// stock weapon, `[NukeCarrier]`, is the superweapon's launch).
     NukeMaker,
     /// The final else at `0x00469a3f`: shrapnel plus `Apply_area_damage`.
     OrdinaryDamage,
