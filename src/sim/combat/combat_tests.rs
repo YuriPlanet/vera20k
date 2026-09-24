@@ -6904,6 +6904,200 @@ fn two_inviso_attackers_consume_consecutive_draws_in_live_order() {
     );
 }
 
+/// `inviso_weapon_rules(true, true)` with one special warhead key added.
+fn inviso_special_rules(special_key: &str) -> RuleSet {
+    RuleSet::from_ini(&IniFile::from_str(&format!(
+        "\
+[InfantryTypes]\n\n\
+[VehicleTypes]\n0=SHOOTER\n1=TARGET\n\n\
+[AircraftTypes]\n\n\
+[BuildingTypes]\n\n\
+[SHOOTER]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=GUN\n\n\
+[TARGET]\nStrength=500\nArmor=heavy\nSpeed=6\n\n\
+[GUN]\nDamage=10\nROF=20\nRange=10\nProjectile=TESTPROJ\nWarhead=TESTWH\n\n\
+[TESTPROJ]\nInviso=yes\n\n\
+[TESTWH]\nAnimList=PIFF\n{special_key}\n\
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+    )))
+    .expect("special Inviso test rules should parse")
+}
+
+/// `BulletClass::DetonateAtCoord @ 0x004690B0`: every special arm, its own
+/// refusals included, leaves by `JMP 0x00469AA4`, and `Apply_area_damage`
+/// (`0x00469A83`) is reachable only from the final else at `0x00469A3F`. An
+/// Inviso shot is that same detonation, so a warhead selecting an arm whose
+/// body VERA has not ported deals no damage and still runs the shared tail:
+/// the Inviso re-scatter draw (`0x00469AD7`) and the `AnimList=` anim. Before,
+/// the immediate path took ordinary area damage for these arms: the
+/// Magnetron's `[MagneticBeam]` dealt 5000 to the vehicle it should lift.
+#[test]
+fn inviso_special_arms_claim_the_impact_and_keep_the_shared_tail() {
+    // DirectRocker is the chain's one conditional arm; TARGET is a UnitClass.
+    for special_key in [
+        "ElectricAssault=yes",
+        "IsLocomotor=yes",
+        "Airstrike=yes",
+        "DirectRocker=yes",
+        "MakesDisguise=yes",
+        "NukeMaker=yes",
+    ] {
+        let rules = inviso_special_rules(special_key);
+        let mut store = EntityStore::new();
+        store.insert(make_entity(1, "SHOOTER", 5, 5, 300));
+        store.insert(make_entity(2, "TARGET", 8, 5, 500));
+        let mut interner = test_interner();
+        issue_attack_command(&mut store, 1, 2, None, &interner);
+        let target = store.get(2).unwrap();
+        let target_coord = (
+            target.position.rx,
+            target.position.ry,
+            target.position.sub_x,
+            target.position.sub_y,
+        );
+        let mut scenario_rng = SimRng::new(1);
+        let mut expected_rng = scenario_rng.clone();
+        let expected_effect = inviso_scatter::scatter_inviso_effect_coord(
+            &mut expected_rng,
+            target_coord.0,
+            target_coord.1,
+            target_coord.2,
+            target_coord.3,
+        );
+        expected_rng.next_range_u32_inclusive(0, 2);
+        align_attackers_to_targets(&mut store, &rules, &interner);
+        let result = tick_combat(
+            &mut store,
+            &mut OccupancyGrid::new(),
+            &rules,
+            &mut interner,
+            0,
+            100,
+            0,
+            &mut scenario_rng,
+        );
+
+        assert_eq!(
+            store.get(2).unwrap().health.current,
+            500,
+            "{special_key}: the arm claims the impact, so no area damage"
+        );
+        assert_eq!(
+            result.consequences.fire_events().len(),
+            1,
+            "{special_key}: the shot itself is fired"
+        );
+        assert_eq!(
+            scenario_rng.logical_state(),
+            expected_rng.logical_state(),
+            "{special_key}: the tail's Inviso draw and the reload jitter, nothing else"
+        );
+        let effects = result.consequences.effects();
+        assert_eq!(effects.explosion_effects.len(), 1, "{special_key}");
+        assert_eq!(
+            explosion_coord(&effects.explosion_effects[0]),
+            expected_effect,
+            "{special_key}: the shared tail places the AnimList anim"
+        );
+    }
+}
+
+/// The Giant Squid's `[SquidGrab]` is an Inviso Parasite shot. Its arm
+/// (`0x004693D3`) claims the impact; the grapple itself is `parasite`'s
+/// recorded residual, so the attach is refused and the ship takes nothing.
+#[test]
+fn inviso_parasite_grapple_claims_the_impact() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=SQUID\n1=SHIP\n\
+         [SQUID]\nStrength=300\nArmor=heavy\nSpeed=6\nNaval=yes\nOrganic=yes\nPrimary=GRAB\n\
+         [SHIP]\nStrength=500\nArmor=heavy\nSpeed=6\nNaval=yes\n\
+         [GRAB]\nDamage=40\nROF=99\nRange=2\nProjectile=TESTPROJ\nWarhead=TESTWH\n\
+         [TESTPROJ]\nInviso=yes\n\
+         [TESTWH]\nParasite=yes\n\
+         Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .unwrap();
+    let mut store = EntityStore::new();
+    store.insert(make_entity(1, "SQUID", 5, 5, 300));
+    store.insert(make_entity(2, "SHIP", 6, 5, 500));
+    let mut interner = test_interner();
+    issue_attack_command(&mut store, 1, 2, None, &interner);
+    align_attackers_to_targets(&mut store, &rules, &interner);
+    let result = tick_combat(
+        &mut store,
+        &mut OccupancyGrid::new(),
+        &rules,
+        &mut interner,
+        0,
+        100,
+        0,
+        &mut SimRng::new(1),
+    );
+
+    assert_eq!(result.consequences.fire_events().len(), 1);
+    assert_eq!(store.get(2).unwrap().health.current, 500);
+}
+
+/// The conditional DirectRocker arm (`0x00469796..0x004697B2`) claims the
+/// impact only for a UnitClass target; at a cell it falls through to the
+/// ordinary arm, so the ground shot still damages what stands there.
+#[test]
+fn inviso_direct_rocker_at_a_cell_keeps_ordinary_damage() {
+    let rules = inviso_special_rules("DirectRocker=yes\nCellSpread=1");
+    let mut store = EntityStore::new();
+    store.insert(make_entity(1, "SHOOTER", 5, 5, 300));
+    store.insert(make_entity(2, "TARGET", 8, 5, 500));
+    let mut interner = test_interner();
+    issue_attack_command(&mut store, 1, 2, None, &interner);
+    store.get_mut(1).unwrap().attack_target = Some(AttackTarget::for_cell(8, 5));
+    align_attackers_to_targets(&mut store, &rules, &interner);
+    tick_combat(
+        &mut store,
+        &mut OccupancyGrid::new(),
+        &rules,
+        &mut interner,
+        0,
+        100,
+        0,
+        &mut SimRng::new(1),
+    );
+
+    assert!(
+        store.get(2).unwrap().health.current < 500,
+        "a cell target is never a UnitClass, so the ordinary arm runs"
+    );
+}
+
+/// Retail data: every stock weapon whose warhead selects an unported special
+/// arm is an Inviso shot, so all of them reach this path.
+#[test]
+fn retail_special_inviso_weapons_claim_their_impact() {
+    let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+        return;
+    };
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    for (weapon_id, expected) in [
+        ("AssaultBolt", SpecialDetonationAction::ElectricAssault),
+        ("MagneticBeam", SpecialDetonationAction::Locomotor),
+        ("MagneticBeamE", SpecialDetonationAction::Locomotor),
+        ("Flare", SpecialDetonationAction::Airstrike),
+        ("MakeupKit", SpecialDetonationAction::MakesDisguise),
+    ] {
+        let weapon = rules.weapon(weapon_id).unwrap();
+        let warhead = rules.warhead(weapon.warhead.as_deref().unwrap()).unwrap();
+        let action = projectile_special_detonation_action(
+            SpecialDetonationFlags::of(warhead),
+            SpecialDetonationTarget { is_unit: true },
+        );
+        assert_eq!(action, expected, "{weapon_id}");
+        assert!(action.suppresses_ordinary_damage(), "{weapon_id}");
+        assert_eq!(
+            classify_projectile_delivery(weapon, &rules),
+            ProjectileDelivery::Immediate(ImmediateProjectileReason::Invisible),
+            "{weapon_id} is an Inviso shot"
+        );
+    }
+}
+
 // --- emit_warhead_detonation_effects helper tests ---------------------------
 
 fn emit_helper_test_warhead(animlist: &[&str]) -> crate::rules::warhead_type::WarheadType {

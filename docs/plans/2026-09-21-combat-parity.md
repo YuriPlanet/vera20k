@@ -1165,8 +1165,11 @@ Explosion=/DestroyAnim= picks now draw on the Scenario stream (`7022C8`, `70232B
 `73881D`, `41663C`), with only the death sounds on the main stream (`feature/combat-death-rng-stream`).
 
 Whole-combat gaps (plan list plus review coverage top 10):
-- Special warheads: 8 bodies no-op (`projectile.rs:856`); Parasite ported (squid residual), mind
-  control ported (Psychic Dominator residual), Temporal ported (teleport-writer freeze residual).
+- Special warheads: both deliveries now run the whole chain through
+  `run_special_detonation_arm` (`feature/combat-inviso-special-chain`); six bodies claim-only
+  (ElectricAssault, IsLocomotor, Airstrike, DirectRocker, MakesDisguise, NukeMaker). Parasite
+  ported (squid residual), mind control ported (Psychic Dominator residual), Temporal ported
+  (teleport-writer freeze residual), Ivan bomb and defuse ported.
 - Found by the Temporal review, not Temporal defects: VERA's Stop assigns a Stop mission the native
   IDLE event never assigns (`4C74CB`), which every Attack idle exit after Stop depends on; the
   null-destination helper never clears the NavQueue (`741970` mode 1); production ignores
