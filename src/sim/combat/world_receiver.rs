@@ -2777,6 +2777,171 @@ struct AdmittedFire<'a> {
     is_garrison: bool,
 }
 
+/// The object coordinate `vt+0x48` (GetCoords) returns: a building's
+/// foundation centre (`0x00447AC0`), every other object's Location
+/// (`0x005F65A0`), at the object's world height.
+fn object_get_coords(world: &Simulation, rules: &RuleSet, id: u64) -> Option<ProjectileCoord> {
+    let entity = world.substrate.entities.get(id)?;
+    let (rx, ry, sub_x, sub_y) = target_coords(entity, Some(rules), &world.interner);
+    Some(ProjectileCoord::new(
+        i32::from(rx) * 256 + sub_x.to_num::<i32>(),
+        i32::from(ry) * 256 + sub_y.to_num::<i32>(),
+        object_world_z_leptons(entity, world.resolved_terrain.as_ref()),
+    ))
+}
+
+/// Where `TechnoClass::FireAt @ 0x006FDD50` launches from: `[ESP+0x44]`, which
+/// the bullet launch (`BulletClass::Fire`, vt+0x1F0 at `0x006FF014`), the
+/// report (`0x006FF38F`) and the muzzle anim (`0x006FF3C2`) all read.
+struct FireAtLaunchSource {
+    /// The fire coordinate (`GetFLH`, vt+0xB0, `0x006FE268`), replaced for a
+    /// `Dropping=` projectile (BulletType `+0x29C`) by the firer's GetCoords
+    /// (vt+0x48, `0x006FE2D8..0x006FE2FE`; `0x006FE960` re-reads the same
+    /// value). Such a shot starts, flashes and sounds at the firer's centre.
+    /// `Arcing=` is `+0x29B` and does not move the source: a cannon shell
+    /// leaves its barrel. The only retail `Dropping=` projectile,
+    /// `[V3AirburstP]`, belongs to no weapon in use.
+    coord: ProjectileCoord,
+    /// `coord.y` minus the Y of the object coordinate (vt+0xAC) the fire
+    /// coordinate's offset was added to: a building's muzzle-anim `ZAdjust`
+    /// input (`0x006FF3E2..0x006FF40B`), taken from the launch source.
+    offset_y: i32,
+}
+
+fn fireat_launch_source(
+    world: &Simulation,
+    rules: &RuleSet,
+    snap: &AttackerSnapshot,
+    fire: &super::fire_coord::FireCoordinate,
+    weapon: &crate::rules::weapon_type::WeaponType,
+) -> FireAtLaunchSource {
+    let dropping = weapon
+        .projectile
+        .as_deref()
+        .and_then(|id| rules.projectile(id))
+        .is_some_and(|projectile| projectile.dropping);
+    match object_get_coords(world, rules, snap.stable_id).filter(|_| dropping) {
+        Some(coord) => FireAtLaunchSource {
+            coord,
+            offset_y: fire.offset_y + (coord.y - fire.coord.y),
+        },
+        None => FireAtLaunchSource {
+            coord: fire.coord,
+            offset_y: fire.offset_y,
+        },
+    }
+}
+
+/// What a shot's delta aims at and how fast it launches.
+struct FireAtLaunchAim {
+    /// The delta's endpoint (`0x006FE62F` -> `0x0070BCB0`): the current
+    /// target's vt+0x58 coordinate, led along its facing when it is a moving
+    /// UnitClass (`launch::lead_aim`).
+    aim: ProjectileCoord,
+    /// `WeaponTypeClass::GetSpeed` (`0x006FE53A`) at FireAt's distance from
+    /// the launch source to the target coordinate (`0x006FE4F6..0x006FE537`).
+    speed: i32,
+}
+
+/// `TechnoClass::FireAt`'s aim and launch speed for the shot `snap` fires
+/// with `weapon` from `source` at `target_coord` (the target's unled
+/// vt+0x58/vt+0xA4 coordinate). Native execution of the numeric leaves:
+/// `tools/projectile_oracle/fireat_speed.py`. The aim (`0x0070BCB0`) reads
+/// the firer's `Target` (`+0x2B4`), not FireAt's argument; `snap.target` is
+/// the firer's attack target on every VERA fire path.
+///
+/// RESIDUAL: a building target's vt+0xA4 adds its type's
+/// `TargetCoordOffset=` (`0x004500A0`, BuildingType `+0xEBC`), unparsed; the
+/// launch distance uses its centre. Trigger: shots at the three shipyards,
+/// the only stock types with an offset. Effect: a launch speed a few leptons
+/// per frame off.
+///
+/// RESIDUAL (lead inputs): `Is_Moving` has no VERA answer for a Hover or
+/// Teleport target (`motion_query::is_moving`), and a Jumpjet vehicle's
+/// current speed reads 0 because the production Jumpjet host does not apply
+/// `SetSpeedFraction` (`jumpjet_cruise.rs`; native vt+0x544 at `0x0054B9A4`,
+/// `0x0054C814`, `0x0054D1AE`). Trigger: shots at a moving Kirov, Floating
+/// Disc, Siege Chopper or hover unit. Effect: the shot is not led. A garrison
+/// shot's GetCurrentWeapon would be the occupant's (`BuildingClass::GetWeapon
+/// 0x004526F0`), not the building type's slot; every retail occupant weapon
+/// is Inviso, which never reaches the lead, so it is dormant.
+fn fireat_launch_aim(
+    world: &Simulation,
+    rules: &RuleSet,
+    snap: &AttackerSnapshot,
+    weapon: &crate::rules::weapon_type::WeaponType,
+    source: ProjectileCoord,
+    target_coord: ProjectileCoord,
+) -> FireAtLaunchAim {
+    use crate::sim::projectile::launch::{
+        LaunchSpeedProjectile, fireat_launch_distance, lead_aim, weapon_launch_speed,
+    };
+    let speed_projectile = |weapon: &crate::rules::weapon_type::WeaponType| {
+        weapon
+            .projectile
+            .as_deref()
+            .and_then(|id| rules.projectile(id))
+            .map(|projectile| LaunchSpeedProjectile {
+                rot: projectile.rot,
+                floater: projectile.floater,
+            })
+    };
+    let firer_coords = object_get_coords(world, rules, snap.stable_id);
+    let speed = weapon_launch_speed(
+        weapon.speed,
+        speed_projectile(weapon),
+        rules.general.gravity,
+        fireat_launch_distance(source, target_coord),
+    );
+    let lead = match snap.target {
+        TargetKind::Entity(target_id) => world
+            .substrate
+            .entities
+            .get(target_id)
+            .filter(|target| target.category == EntityCategory::Unit)
+            .filter(|target| crate::sim::movement::motion_query::is_moving(target) == Some(true))
+            .zip(firer_coords)
+            .and_then(|(target, firer_coords)| {
+                let firer = world.substrate.entities.get(snap.stable_id)?;
+                let firer_type = rules.object(world.interner.resolve(firer.type_ref()))?;
+                let current = combat_weapon::current_weapon(firer, firer_type)
+                    .and_then(|id| rules.weapon(id))?;
+                let target_type = rules.object(world.interner.resolve(target.type_ref()));
+                let target_coords = object_get_coords(world, rules, target_id)?;
+                // `ObjectClass::Distance_AdjForFoundation @ 0x005F6360`: 3-D,
+                // no foundation term for a UnitClass target.
+                let distance = crate::util::native_x87::distance_3d_leptons(
+                    [firer_coords.x, firer_coords.y, firer_coords.z],
+                    [target_coords.x, target_coords.y, target_coords.z],
+                );
+                Some(lead_aim(
+                    target_coord,
+                    crate::sim::movement::turret::hull_facing_16(
+                        target,
+                        world.session.binary_frame,
+                    ),
+                    distance,
+                    weapon_launch_speed(
+                        current.speed,
+                        speed_projectile(current),
+                        rules.general.gravity,
+                        distance,
+                    ),
+                    crate::sim::movement::owner_current_speed(
+                        target,
+                        target_type,
+                        rules.general.veteran_speed,
+                    ),
+                ))
+            }),
+        TargetKind::Cell(..) => None,
+    };
+    FireAtLaunchAim {
+        aim: lead.unwrap_or(target_coord),
+        speed,
+    }
+}
+
 /// Existing FireAt delivery and bookkeeping, shared by the world receiver.
 /// The caller still owns legality, fire-action timing and inline damage commit.
 fn emit_admitted_fire(
@@ -2870,6 +3035,7 @@ fn emit_admitted_fire(
         selected.slot,
         burst_index,
     );
+    let launch_source = fireat_launch_source(world, rules, snap, &fire, weapon);
     let warhead = selected.warhead;
     // `TechnoClass::Fire_At @ 0x006FDD50`, damage chain: the firepower fold
     // (`0x006FE33D..0x006FE34D`, country x per-unit x `Damage=`, not
@@ -2927,10 +3093,13 @@ fn emit_admitted_fire(
             TargetKind::Entity(id) => ProjectileTarget::Entity(id),
             TargetKind::Cell(rx, ry) => ProjectileTarget::Cell { rx, ry },
         };
-        // `TechnoClass::Fire_At` launches the bullet FROM the fire coordinate
-        // and derives the launch velocity as `target - FLH`, so the barrel
-        // offset sets both where the shot starts and which way it leaves.
-        let mut origin = fire.coord;
+        // The bullet leaves from the launch source (the fire coordinate, or for
+        // a `Dropping=` projectile the firer's GetCoords, `0x006FE2E2`); the
+        // delta aims at the target, led when it is a moving vehicle
+        // (`0x0070BCB0`). See `fireat_launch_source`/`fireat_launch_aim`.
+        let launch_geometry =
+            fireat_launch_aim(world, rules, snap, weapon, launch_source.coord, impact);
+        let origin = launch_source.coord;
         let aim_facing16 = fire.aim_facing16;
         let body_facing16 = crate::sim::movement::turret::body_facing_to_turret(snap.facing);
         let projectile_type = weapon
@@ -2941,13 +3110,11 @@ fn emit_admitted_fire(
         // resolve the target delta, scatter it, recompute the facing from the
         // scattered delta, clamp the launch speed to half the straight-line
         // distance, and only then force a homing or vertical shot to one
-        // lepton per frame.
+        // lepton per frame. `BulletClass::Fire` keeps the target's own
+        // unled coordinate as the bullet's (`0x00468700..0x0046872B`).
         let frozen_target_position = impact;
-        let delta = ProjectileCoord::new(
-            impact.x - origin.x,
-            impact.y - origin.y,
-            impact.z - origin.z,
-        );
+        let aim = launch_geometry.aim;
+        let delta = ProjectileCoord::new(aim.x - origin.x, aim.y - origin.y, aim.z - origin.z);
         let delta = match launch_scatter_is_flak {
             Some(flak) => {
                 // vt+0x168 (`TechnoClass::GetWeaponRange @ 0x007012C0`) for
@@ -2981,8 +3148,6 @@ fn emit_admitted_fire(
             }
             None => delta,
         };
-        let impact =
-            ProjectileCoord::new(origin.x + delta.x, origin.y + delta.y, origin.z + delta.z);
         use crate::sim::projectile::launch::{
             FireAtLaunch, FireAtLaunchResult, fireat_launch, high_arc_root,
         };
@@ -3001,14 +3166,7 @@ fn emit_admitted_fire(
             .map(|attack| attack.target);
         let target_location = |target: TargetKind| -> Option<ProjectileCoord> {
             match target {
-                TargetKind::Entity(id) => world.substrate.entities.get(id).map(|entity| {
-                    let (rx, ry, sx, sy) = target_coords(entity, Some(rules), &world.interner);
-                    ProjectileCoord::new(
-                        i32::from(rx) * 256 + sx.to_num::<i32>(),
-                        i32::from(ry) * 256 + sy.to_num::<i32>(),
-                        object_world_z_leptons(entity, world.resolved_terrain.as_ref()),
-                    )
-                }),
+                TargetKind::Entity(id) => object_get_coords(world, rules, id),
                 TargetKind::Cell(rx, ry) => {
                     use crate::sim::cell_rect::{CellRef, get_cellclass_fallback};
                     let cell = get_cellclass_fallback(
@@ -3044,10 +3202,10 @@ fn emit_admitted_fire(
                 }
             }
         };
-        let flh_origin_z = origin.z;
-        // 6FE947..6FE98A: directed launches read virtual+308, then
-        // Dropping replaces only the launch origin via source+48. The delta
-        // was already computed from FLH and must not be recomputed here.
+        let flh_origin_z = fire.coord.z;
+        // 6FE947..6FE98A: directed launches read virtual+308. Dropping's
+        // second GetCoords read (0x006FE960) stores the value the launch
+        // source already holds (`fireat_launch_source`).
         let directed_heading = projectile_type
             .filter(|projectile| projectile.dropping || projectile.rot != 0)
             .map(|_| {
@@ -3070,10 +3228,6 @@ fn emit_admitted_fire(
                     EntityCategory::Structure => aim_facing16,
                 }
             });
-        if projectile_type.is_some_and(|projectile| projectile.dropping) {
-            origin = target_location(TargetKind::Entity(snap.stable_id))
-                .expect("live native dropping source");
-        }
         let current_target_coord = (ballistic && !weapon.lobber)
             .then(|| current_target.and_then(target_location))
             .flatten();
@@ -3107,7 +3261,10 @@ fn emit_admitted_fire(
             // output is widened into the same authoritative binary64 state.
             let heading_bam = aim_facing16.wrapping_sub(0x4000);
             guidance.heading_bam = heading_bam;
-            guidance.fuse_reference = impact;
+            // `ProximityDetector::Setup` (`0x004E1130`, from
+            // `BulletClass::Fire` at `0x00468A93`) copies the target's own
+            // coordinate (`0x00468700..0x00468724`): unled and unscattered.
+            guidance.fuse_reference = frozen_target_position;
             Some(FireAtLaunchResult {
                 velocity: ProjectileVelocity::new(
                     crate::sim::movement::homing_movement::cos_bam(heading_bam).to_num::<i32>(),
@@ -3119,7 +3276,7 @@ fn emit_admitted_fire(
         } else {
             fireat_launch(FireAtLaunch {
                 delta,
-                speed: weapon.speed,
+                speed: launch_geometry.speed,
                 vertical: vertical.is_some(),
                 heading: directed_heading,
                 arcing: ballistic,
@@ -3365,8 +3522,10 @@ fn emit_admitted_fire(
         },
         target: snap.target,
         report_sound_id,
-        fire_coord: fire.coord,
-        fire_offset_y: fire.offset_y,
+        // The report and the muzzle anim read the launch source (`[ESP+0x44]`,
+        // `0x006FF38F`, `0x006FF3C2`), not the fire coordinate itself.
+        fire_coord: launch_source.coord,
+        fire_offset_y: launch_source.offset_y,
         muzzle_anim: super::fire_coord::muzzle_anim_name(
             weapon,
             fire.aim_facing16,

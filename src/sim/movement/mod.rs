@@ -131,6 +131,7 @@ pub mod turret;
 
 pub use facing_class::FacingClass;
 
+pub(crate) use foot_speed::owner_current_speed;
 #[cfg(test)]
 pub(crate) use foot_speed::owner_current_speed_from_fraction;
 // NOT test-gated: `techno_common_pre`'s DisguiseWhenStill check

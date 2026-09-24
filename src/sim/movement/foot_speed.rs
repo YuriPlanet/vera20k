@@ -40,3 +40,17 @@ pub(crate) fn owner_current_speed_from_fraction(
     let adjusted_type_speed = (adjusted_speed_per_second / SimFixed::from_num(15)).to_num::<i32>();
     (SimFixed::from_num(adjusted_type_speed) * current_speed_fraction).to_num::<i32>()
 }
+
+/// Foot4DB1A0 for the live owner outside a locomotor's own step: its adjusted
+/// type speed and its applied fraction (Foot+578), through the same shared
+/// projection the movers use. FireAt's lead reads it (`0x0070BD4C`).
+pub(crate) fn owner_current_speed(
+    entity: &GameEntity,
+    object: Option<&ObjectType>,
+    veteran_speed: f64,
+) -> i32 {
+    owner_current_speed_from_fraction(
+        adjusted_speed(entity, object, veteran_speed),
+        entity.foot_speed.applied_fraction,
+    )
+}

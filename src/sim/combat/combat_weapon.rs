@@ -507,6 +507,13 @@ fn current_weapon_index(obj: &ObjectType, facts: AttackerFacts) -> i32 {
     }
 }
 
+/// `TechnoClass::GetCurrentWeapon @ 0x0070E1A0` (vt+0x3F4): the weapon in the
+/// gunner slot of a `TurretCount>0` type, slot 0 otherwise, at the live tier.
+pub(crate) fn current_weapon<'o>(entity: &GameEntity, obj: &'o ObjectType) -> Option<&'o str> {
+    let facts = attacker_facts(entity, obj);
+    weapon_for_index(obj, facts.veterancy, current_weapon_index(obj, facts)).map(|(id, _)| id)
+}
+
 fn is_armed_from_facts(obj: &ObjectType, facts: AttackerFacts) -> bool {
     // `BuildingClass::Is_Armed 0x00458DB0`: `IsOccupied() → 1`.
     if facts.is_occupied_building {

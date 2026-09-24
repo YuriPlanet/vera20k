@@ -8975,6 +8975,55 @@ fn gsi_08_04_projectile_spawns_at_the_muzzle_not_the_hull_centre() {
     );
 }
 
+/// A `Dropping=` shell (BulletType `+0x29C`) is the exception: FireAt swaps
+/// its launch source for the firer's GetCoords (`0x006FE2D8..0x006FE2FE`)
+/// before the launch distance and the delta, so it leaves the hull centre.
+/// Same fixture as `gsi_08_04`, whose `Arcing=` shell keeps the muzzle.
+#[test]
+fn gsi_08_04_a_dropping_shell_leaves_the_hull_centre() {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=MTNK\n1=HTNK\n[MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nCost=700\nPrimary=105mm\nTurret=yes\n[HTNK]\nStrength=2000\nArmor=heavy\nSpeed=4\nCost=900\nPrimary=105mm\n[105mm]\nDamage=65\nROF=50\nRange=6\nSpeed=40\nProjectile=Bomb\nWarhead=AP\n[Bomb]\nDropping=yes\n[AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .expect("dropping fixture parses");
+    rules.merge_art_data(&crate::rules::art_data::ArtRegistry::from_ini(
+        &IniFile::from_str("[MTNK]\nPrimaryFireFLH=190,25,120\n"),
+    ));
+
+    let mut store = EntityStore::new();
+    let mut shooter = make_entity_owned(1, "MTNK", 5, 5, 300, "Soviet");
+    shooter.facing = 0;
+    shooter.barrel_facing = Some(crate::sim::movement::facing_class::FacingClass::new(
+        0x4000, 0,
+    ));
+    store.insert(shooter);
+    let _ = test_intern("HTNK");
+    store.insert(make_entity_owned(2, "HTNK", 8, 5, 2000, "Americans"));
+    let mut interner = test_interner();
+    issue_attack_command(&mut store, 1, 2, None, &interner);
+
+    let result = tick_combat(
+        &mut store,
+        &mut OccupancyGrid::new(),
+        &rules,
+        &mut interner,
+        0,
+        100,
+        0,
+        &mut SimRng::new(3),
+    );
+
+    let spawn = result
+        .projectile_spawns
+        .first()
+        .expect("the shot creates a tracked projectile");
+    let shooter = store.get(1).unwrap();
+    let hull = (
+        i32::from(shooter.position.rx) * 256 + shooter.position.sub_x.to_num::<i32>(),
+        i32::from(shooter.position.ry) * 256 + shooter.position.sub_y.to_num::<i32>(),
+    );
+    assert_eq!((spawn.origin.x, spawn.origin.y), hull);
+}
+
 /// `TechnoClass::FireAt 0x006FEA36`..`0x006FEA4C`: a `ROT > 0` shot leaves the
 /// tube at ONE lepton per frame and the weapon's `Speed=` is stored as
 /// `Bullet+0x110` instead, which `BulletTypeClass::Acceleration` (`+0x2D0`)
@@ -9039,14 +9088,20 @@ fn gsi_08_06_homing_launch_uses_one_lepton_and_stores_speed_as_the_ceiling() {
 
 /// `TechnoClass::FireAt 0x006FE9FE`: EVERY launch speed is clamped to half the
 /// straight-line distance to the target before the homing/vertical override.
+/// For a `ROT=0` shell the speed clamped is `WeaponTypeClass::GetSpeed`'s
+/// (`ftol(Sqrt_Approx(d * Gravity * 1.2))`, `0x00773070`), not `Speed=`;
+/// under `[AudioVisual] Gravity=200` one cell out that is 247, above the
+/// clamp's 128. The shell is straight (not `Arcing=`), so no arc solution is
+/// needed at that gravity.
 #[test]
 fn gsi_08_06_point_blank_shot_clamps_the_launch_speed_to_half_the_distance() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[VehicleTypes]\n0=ARTY\n1=HTNK\n\
+        "[General]\nFixtureOnly=1\n[AudioVisual]\nGravity=200\n\
+         [VehicleTypes]\n0=ARTY\n1=HTNK\n\
          [ARTY]\nStrength=300\nArmor=heavy\nSpeed=6\nCost=700\nPrimary=Shell\n\
          [HTNK]\nStrength=2000\nArmor=heavy\nSpeed=4\nCost=900\nPrimary=Shell\n\
          [Shell]\nDamage=65\nROF=50\nRange=6\nSpeed=200\nProjectile=Lob\nWarhead=AP\n\
-         [Lob]\nArcing=true\n\
+         [Lob]\nArcing=no\n\
          [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     ))
     .expect("clamp fixture parses");
@@ -9081,9 +9136,21 @@ fn gsi_08_06_point_blank_shot_clamps_the_launch_speed_to_half_the_distance() {
     let dy = spawn.initial_target_position.y - spawn.origin.y;
     let dz = spawn.initial_target_position.z - spawn.origin.z;
     let distance = (f64::from(dx * dx + dy * dy + dz * dz)).sqrt().trunc() as i32;
+    let get_speed = crate::sim::projectile::launch::weapon_launch_speed(
+        200,
+        Some(crate::sim::projectile::launch::LaunchSpeedProjectile {
+            rot: 0,
+            floater: false,
+        }),
+        200,
+        crate::sim::projectile::launch::fireat_launch_distance(
+            spawn.origin,
+            spawn.initial_target_position,
+        ),
+    );
     assert!(
-        distance / 2 < 200,
-        "the fixture must be closer than twice the weapon speed"
+        distance / 2 < get_speed,
+        "the fixture must be closer than twice GetSpeed's launch speed ({get_speed})"
     );
     assert_eq!(
         i32::from(spawn.speed_leptons_per_frame),
