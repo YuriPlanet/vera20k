@@ -128,44 +128,6 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
 }
 
 #[test]
-fn gsi_08_05_rof_is_a_native_frame_count_plus_a_zero_to_two_jitter() {
-    // `TechnoClass::GetROF @ 0x006FCFA0` returns
-    // `ftol(ROF * difficulty + RandomRanged(0, 2))`. The jitter is ADDED, so a
-    // 20-frame weapon reloads in 20, 21 or 22 frames — never 40, and never a
-    // flat 20.
-    let mut rng = crate::sim::rng::SimRng::new(0xC0FFEE_1234);
-    let mut seen = std::collections::BTreeSet::new();
-    for _ in 0..256 {
-        seen.insert(rof_to_cooldown_frames(20, &mut rng));
-    }
-    assert_eq!(
-        seen.into_iter().collect::<Vec<_>>(),
-        vec![20, 21, 22],
-        "the jitter spans exactly RandomRanged(0, 2)"
-    );
-    // The floor and the saturating ceiling still hold with the jitter applied.
-    assert!((1..=3).contains(&rof_to_cooldown_frames(-1, &mut rng)));
-    assert!((1..=2).contains(&rof_to_cooldown_frames(0, &mut rng)));
-    assert_eq!(
-        rof_to_cooldown_frames(i32::from(u16::MAX) + 1, &mut rng),
-        u16::MAX
-    );
-}
-
-#[test]
-fn gsi_08_05_rof_jitter_is_deterministic_for_a_seed() {
-    let mut a = crate::sim::rng::SimRng::new(7);
-    let mut b = crate::sim::rng::SimRng::new(7);
-    let left: Vec<u16> = (0..32)
-        .map(|_| rof_to_cooldown_frames(26, &mut a))
-        .collect();
-    let right: Vec<u16> = (0..32)
-        .map(|_| rof_to_cooldown_frames(26, &mut b))
-        .collect();
-    assert_eq!(left, right);
-}
-
-#[test]
 fn gsi_04_11_tiberium_prelude_gates_and_signed_large_quotient() {
     let ini = IniFile::from_str(
         "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\

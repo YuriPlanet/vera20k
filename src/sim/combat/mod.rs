@@ -48,6 +48,7 @@ pub(crate) mod line_of_fire;
 pub(crate) mod parasite;
 pub mod smudge_dispatch;
 pub(crate) mod threat_range;
+pub(crate) mod rof;
 pub(crate) mod veterancy;
 pub(crate) mod world_receiver;
 
@@ -130,7 +131,7 @@ use crate::sim::terrain_object::TerrainAreaState;
 use crate::sim::vision::FogState;
 use crate::sim::wave::WaveDamageEvent;
 use crate::sim::world::{FireOriginSnapshot, SimFireEvent, SimSoundEvent};
-use crate::util::fixed_math::{SIM_ZERO, SimFixed, sim_to_i32};
+use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 use crate::util::lepton::{LEPTONS_PER_LEVEL, ground_height_leptons};
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53};
 
@@ -744,12 +745,6 @@ pub struct AttackTarget {
     pub pending_infantry_fire: Option<PendingInfantryFire>,
 }
 
-/// The inclusive bounds of the mid-burst delay draw.
-///
-/// gamemd-derived: `TechnoClass::GetROF @ 0x006FCFA0` — the mid-burst branch
-/// (`burst index < Burst=`) returns `Random::RandomRanged(3, 5)`.
-const BURST_INTER_SHOT_DELAY_MIN: i32 = 3;
-const BURST_INTER_SHOT_DELAY_MAX: i32 = 5;
 
 fn infantry_fire_sequence(
     obj: &ObjectType,
@@ -3298,79 +3293,6 @@ pub(crate) fn is_within_range_leptons(dist_sq_leptons: i64, range_cells: SimFixe
     let range_leptons: i64 = (i64::from(range_cells.to_bits()) * 256) >> 16;
     let range_sq: i64 = range_leptons * range_leptons;
     dist_sq_leptons <= range_sq
-}
-
-/// The end-of-burst reload, from `TechnoClass::GetROF @ 0x006FCFA0`.
-///
-/// gamemd-derived: the full-ROF branch computes
-/// `ftol(ROF * house difficulty ROF + Random::RandomRanged(0, 2))`. `ROF=` is
-/// already a native frame count, and the jitter is an ADDED integer, not a
-/// scale — a shot's reload is `ROF`, `ROF + 1` or `ROF + 2`. The draw is
-/// unconditional on this branch, so it must stay in the same slice as the
-/// mid-burst draw or the scenario stream shifts twice.
-///
-/// The `VeteranROF=` arm follows in `veteran_rof_frames`.
-///
-/// RESIDUAL (GSI-08.05) — arms of the native function still absent:
-/// - Returns with no draw (`0x006FCFA9..0x006FD036`, `0x006FD1FA`): an empty
-///   weapon slot returns 1; a building with more than one Ammo returns 1
-///   (dormant); `IsSonic=`, and a weapon whose spark, fire or railgun particle
-///   system is live on the firer (`+0x308/+0x304/+0x314`, which FireAt creates
-///   before it calls GetROF), return the raw `ROF=` with no draw, no house
-///   multiplier, no `VeteranROF=` and no garrison divide. Triggers: every
-///   Dolphin (`SonicZap`), IFV repair (`RepairBullet`), `FireballLauncher` and
-///   `LtRail` shot. Effect: VERA draws one extra Scenario value per shot and
-///   can apply `VeteranROF=`.
-/// - The per-house difficulty multiplier, `ftol(ROF * House+0x1A8 + r)` with
-///   the draw taken first (`0x006FD09E..0x006FD0CF`; the house value comes
-///   from `HouseClass::SetDifficulty @ 0x004F6EC0`). VERA plumbs no per-house
-///   difficulty to this site, and AI houses now carry one, so every AI shot
-///   is affected.
-/// - The tank-bunker divide (`BunkerROFMultiplier=`, `Rules+0xF50`,
-///   `0x006FD1B1..0x006FD1EF`) for a non-building inside a bunker (`+0x2E4`):
-///   parsed, never applied, so a bunkered unit reloads slower than native.
-/// - The garrison `OccupyROFMultiplier=` divide is fixed-point here, not the
-///   native single (`0x006FD19C`).
-/// - `RadialFireSegments=` (`TechnoTypeClass+0x6A4`) is not parsed. One stock
-///   author, `[AEGIS]`, which is buildable in an ordinary skirmish: native
-///   replaces the launch direction with
-///   `body facing + (PI * counter / segments - PI / 2)`, cycling a counter at
-///   `TechnoClass+0x43C`. Player effect: the Aegis Cruiser fires straight at
-///   one target instead of sweeping its flak arc. Frequency: every Aegis
-///   engagement in an Allied naval match.
-/// - Downstream risk: each changes firing cadence, draws or direction, so each
-///   moves combat-timing fixtures and the pinned replay hashes.
-fn rof_to_cooldown_frames(rof_frames: i32, scenario_rng: &mut SimRng) -> u16 {
-    let jitter = scenario_rng.next_range_u32_inclusive(0, 2) as i32;
-    rof_frames.saturating_add(jitter).clamp(1, u16::MAX as i32) as u16
-}
-
-/// The `VeteranROF=` arm of `TechnoClass::GetROF @ 0x006FCFA0`.
-///
-/// gamemd-derived: `0x006FD0E2..0x006FD14C` — the inline `HasWeaponAbility(4)`
-/// (veteran byte `+0x2A0`, elite byte `+0x2B2`) selects
-/// `ftol(rof * Rules.VeteranROF)` (`FILD; FMUL [Rules+0x690]; ftol`) on the
-/// already-jittered integer. Applied ONCE — there is no `EliteROF` key in the
-/// binary. Stock `0.6` turns the elite Grizzly's 50..=52 into 30, 30, 31.
-///
-/// The `.max(1)` is VERA-internal: native stores whatever `ftol` yields, and
-/// a zero reload is only reachable with `ROF=1`/`ROF=0` weapons, which no
-/// stock type authors; it keeps the existing floor `rof_to_cooldown_frames`
-/// applies (gamemd equivalent UNCHECKED).
-fn veteran_rof_frames(
-    rof_ticks: u16,
-    rank: self::veterancy::VeterancyRank,
-    object: &ObjectType,
-    veteran_rof: f64,
-) -> u16 {
-    self::veterancy::scale_if_ability(
-        i32::from(rof_ticks),
-        rank,
-        object,
-        crate::rules::object_type::Ability::Rof,
-        veteran_rof,
-    )
-    .clamp(1, i32::from(u16::MAX)) as u16
 }
 
 pub(crate) use self::combat_targeting::acquire_best_target_for_entity;

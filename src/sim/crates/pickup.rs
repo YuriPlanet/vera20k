@@ -77,18 +77,6 @@ mod tests {
 
     /// Entire Scenario RNG state, not merely the chosen result: rejection draws
     /// change subsequent production RNG even when two selections agree.
-    fn native_rng_bytes(rng: &SimRng) -> String {
-        let state = rng.logical_state();
-        let mut bytes = Vec::with_capacity(0x3f4);
-        bytes.extend_from_slice(&u32::from(state.disabled).to_le_bytes());
-        bytes.extend_from_slice(&state.index_a.to_le_bytes());
-        bytes.extend_from_slice(&state.index_b.to_le_bytes());
-        for word in state.words {
-            bytes.extend_from_slice(&word.to_le_bytes());
-        }
-        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-    }
-
     #[test]
     fn selection_and_rng_match_original_pickup_prefix() {
         let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
@@ -128,7 +116,7 @@ mod tests {
             let registry = crate_registry();
             let mut rng = SimRng::new(input["seed"].as_u64().unwrap_or(31));
             assert_eq!(
-                native_rng_bytes(&rng),
+                rng.native_state_hex(),
                 row["rng_before"].as_str().unwrap(),
                 "{name}"
             );
@@ -146,7 +134,7 @@ mod tests {
                 "{name}"
             );
             assert_eq!(
-                native_rng_bytes(&rng),
+                rng.native_state_hex(),
                 row["rng_after"].as_str().unwrap(),
                 "{name}"
             );

@@ -1,0 +1,1010 @@
+[
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 0,
+      "mode": 5,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3fe99999a0000000"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 0,
+      "mode": 5,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "3fe6666660000000"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 0,
+      "mode": 5,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "0000000000000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 1,
+      "mode": 5,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3ff0000000000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 1,
+      "mode": 5,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "3ff4ccccc0000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 1,
+      "mode": 5,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "bfe0000000000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 2,
+      "mode": 5,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3ff3333340000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 2,
+      "mode": 5,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "0000000000000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 2,
+      "mode": 5,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "3fefffffffffffff"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 0,
+      "mode": 5,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3fec28f5d3d70a40"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 0,
+      "mode": 5,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "3fe8a3d70c28f5c0"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 0,
+      "mode": 5,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "0000000000000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 1,
+      "mode": 5,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3ff19999a0000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 1,
+      "mode": 5,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "3ff6e147a851eb80"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 1,
+      "mode": 5,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "bfe19999a0000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 2,
+      "mode": 5,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3ff51eb867ae1480"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 2,
+      "mode": 5,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "0000000000000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 2,
+      "mode": 5,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "3ff199999fffffff"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 0,
+      "mode": 5,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3fe999999fffffff"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 0,
+      "mode": 5,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "3fe666665fffffff"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 0,
+      "mode": 5,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "0000000000000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 1,
+      "mode": 5,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3fefffffffffffff"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 1,
+      "mode": 5,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "3ff4ccccbfffffff"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 1,
+      "mode": 5,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "bfdfffffffffffff"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 2,
+      "mode": 5,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3ff333333fffffff"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 2,
+      "mode": 5,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "0000000000000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 2,
+      "mode": 5,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "3feffffffffffffe"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 0,
+      "mode": 5,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3fe70a3d6c28f5c0"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 0,
+      "mode": 5,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "3fe428f5b3d70a40"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 0,
+      "mode": 5,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "0000000000000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 1,
+      "mode": 5,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3fecccccc0000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 1,
+      "mode": 5,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "3ff2b851d7ae1480"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 1,
+      "mode": 5,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "bfdcccccc0000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 2,
+      "mode": 5,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3ff147ae1851eb80"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 2,
+      "mode": 5,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "0000000000000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 2,
+      "mode": 5,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "3fecccccbfffffff"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 0,
+      "mode": 0,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3fe99999a0000000"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 0,
+      "mode": 0,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "3fe6666660000000"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 0,
+      "mode": 0,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "0000000000000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 1,
+      "mode": 0,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3ff0000000000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 1,
+      "mode": 0,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "3ff4ccccc0000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 1,
+      "mode": 0,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "bfe0000000000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 2,
+      "mode": 0,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3ff3333340000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 2,
+      "mode": 0,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "0000000000000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3ff0000000000000",
+      "difficulty": 2,
+      "mode": 0,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "3fefffffffffffff"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 0,
+      "mode": 0,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3fe99999a0000000"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 0,
+      "mode": 0,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "3fe6666660000000"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 0,
+      "mode": 0,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "0000000000000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 1,
+      "mode": 0,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3ff0000000000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 1,
+      "mode": 0,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "3ff4ccccc0000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 1,
+      "mode": 0,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "bfe0000000000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 2,
+      "mode": 0,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3ff3333340000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 2,
+      "mode": 0,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "0000000000000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3ff19999a0000000",
+      "difficulty": 2,
+      "mode": 0,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "3fefffffffffffff"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 0,
+      "mode": 0,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3fe99999a0000000"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 0,
+      "mode": 0,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "3fe6666660000000"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 0,
+      "mode": 0,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "0000000000000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 1,
+      "mode": 0,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3ff0000000000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 1,
+      "mode": 0,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "3ff4ccccc0000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 1,
+      "mode": 0,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "bfe0000000000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 2,
+      "mode": 0,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3ff3333340000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 2,
+      "mode": 0,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "0000000000000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3fefffffffffffff",
+      "difficulty": 2,
+      "mode": 0,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "3fefffffffffffff"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 0,
+      "mode": 0,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3fe99999a0000000"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 0,
+      "mode": 0,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "3fe6666660000000"
+  },
+  {
+    "difficulty": 0,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 0,
+      "mode": 0,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "0000000000000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 1,
+      "mode": 0,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3ff0000000000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 1,
+      "mode": 0,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "3ff4ccccc0000000"
+  },
+  {
+    "difficulty": 1,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 1,
+      "mode": 0,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "bfe0000000000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 2,
+      "mode": 0,
+      "row_rof": [
+        "3fe99999a0000000",
+        "3ff0000000000000",
+        "3ff3333340000000"
+      ]
+    },
+    "rof_bias": "3ff3333340000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 2,
+      "mode": 0,
+      "row_rof": [
+        "3fe6666660000000",
+        "3ff4ccccc0000000",
+        "0000000000000000"
+      ]
+    },
+    "rof_bias": "0000000000000000"
+  },
+  {
+    "difficulty": 2,
+    "input": {
+      "country_rof": "3fecccccc0000000",
+      "difficulty": 2,
+      "mode": 0,
+      "row_rof": [
+        "0000000000000000",
+        "bfe0000000000000",
+        "3fefffffffffffff"
+      ]
+    },
+    "rof_bias": "3fefffffffffffff"
+  }
+]

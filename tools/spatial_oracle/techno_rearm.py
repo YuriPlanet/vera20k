@@ -80,7 +80,7 @@ class Fixture:
         u.mem_write(WEAPON+0x9C,dwords(row.get('burst',1)))
         u.mem_write(WEAPON+0xB0,dwords(row.get('rof',50)))
         u.mem_write(WEAPON+0x130,bytes([row.get('direct',0)]))
-        for flag,ownerfield,name in ((0x12A,0x308,'temporal'),(0x129,0x304,'parasite'),(0x12D,0x314,'magnet')):
+        for flag,ownerfield,name in ((0x12A,0x308,'spark'),(0x129,0x304,'fire'),(0x12D,0x314,'railgun')):
             enabled,active=row.get(name,[0,0])
             u.mem_write(WEAPON+flag,bytes([enabled]))
             u.mem_write(OWNER+ownerfield,dwords(active))
@@ -114,7 +114,26 @@ def inputs():
              for i in (-1,0,1,2,4,5) for c in (1,15,28)
              for delays in ([-1]*4,[0,-2,65536,2147483647])]
     rows += [dict(rof=-77,direct=1),dict(no_weapon=True),dict(**{'class':6},building_ammo=2)]
-    rows += [{name:[a,b], 'rof':-77} for name in ('temporal','parasite','magnet') for a in (0,1) for b in (0,1)]
+    rows += [{name:[a,b], 'rof':-77} for name in ('spark','fire','railgun') for a in (0,1) for b in (0,1)]
+    # Retail shapes: the difficulty biases SetDifficulty stores (Hard AI 0.8f,
+    # Normal and humans 1.0, Easy AI 1.2f, each a widened single), the GI and
+    # Conscript ROFs and their neighbours, several seeds so RandomRanged's
+    # redraw on 3 occurs, VeteranROF 0.6f, and the retail single divisors
+    # OccupyROFMultiplier 1.2f and BunkerROFMultiplier 1.3f.
+    retail_house = ('3fe99999a0000000','3ff0000000000000','3ff3333340000000')
+    rows += [dict(rof=r,house_bits=h,seed=s,burst=1,burst_index=1)
+             for h in retail_house for r in (0,1,5,10,12,15,20,25,30,50,100,120,200)
+             for s in (1,2,3,31)]
+    rows += [dict(rof=r,house_bits=h,veterancy=v,veteran_ability=1,burst=1,burst_index=1)
+             for h in retail_house for r in (20,25,50) for v in (1,2)]
+    rows += [dict(**{'class':6},garrison=1,occupants=n,occupy_bits='3f99999a',rof=r,
+                  house_bits=h,burst=1,burst_index=1)
+             for n in (1,2,3,4,5) for r in (15,20,25,50) for h in retail_house]
+    rows += [dict(**{'class':c},bunker=1,bunker_bits=m,rof=r,burst=1,burst_index=1)
+             for c in (1,2,15,6) for m in ('3fa66666','00000000','bfa66666','7fc00001')
+             for r in (20,50)]
+    # The C4 plant and PerCellProcess shape: slot Burst 1, burst index 0.
+    rows += [dict(burst=1,burst_index=0,rof=100,seed=s) for s in (1,31)]
     return rows
 
 

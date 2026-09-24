@@ -281,6 +281,12 @@ pub struct ObjectType {
     /// sets `Trainable=yes` on one building (`[YAREFN]`) and `no` on 82 other
     /// sections.
     pub trainable: bool,
+    /// A Unit's `BurstDelay0..3=` (UnitType `+0xE48 + i*4`; constructor -1 at
+    /// `0x0074726D..0x0074727F`, ReadInteger with the current value as default
+    /// at `0x00747B03..0x00747B47`). GetROF returns `BurstDelay{i-1}` without a
+    /// draw for burst index `i` in 1..=4 when it is not -1. `[-1; 4]` for other
+    /// classes; no retail section authors them.
+    pub burst_delays: [i32; 4],
     /// Hit points (health). 0 = invincible or not applicable.
     pub strength: i32,
     /// `DontScore=` — this object's destruction is invisible to the end-of-match
@@ -1810,6 +1816,13 @@ impl ObjectType {
             trainable: section
                 .get_bool("Trainable")
                 .unwrap_or(category != ObjectCategory::Building),
+            burst_delays: std::array::from_fn(|index| {
+                if category == ObjectCategory::Vehicle {
+                    section.read_int(&format!("BurstDelay{index}"), -1)
+                } else {
+                    -1
+                }
+            }),
             strength: section.get_i32("Strength").unwrap_or(0),
             dont_score: section.get_bool("DontScore").unwrap_or(false),
             special_threat_value: section.get_f64("SpecialThreatValue").unwrap_or(0.0),

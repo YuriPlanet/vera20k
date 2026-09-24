@@ -140,6 +140,7 @@ fn make_obj(locomotor: LocomotorKind, category: ObjectCategory) -> ObjectType {
         factory_plant: false,
         cost_bonuses: [crate::util::native_x87::NativeF32Bits::ONE; 5],
         trainable: true,
+        burst_delays: [-1; 4],
         explosion_anims: Vec::new(),
         destroy_anims: Vec::new(),
         strength: 100,

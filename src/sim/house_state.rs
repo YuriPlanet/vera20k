@@ -13,7 +13,7 @@ use crate::map::playfield::local_to_packed_cell;
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::economy::Economy;
 use crate::sim::intern::InternedId;
-use crate::util::native_x87::{X87Chop53, sqrt_approx_f32};
+use crate::util::native_x87::{NativeF64Bits, X87Chop53, sqrt_approx_f32};
 
 /// Native per-house AI difficulty index stored by `HouseClass`.
 ///
@@ -50,6 +50,17 @@ impl HouseDifficulty {
     /// Exact index into native hardest-first difficulty-control tables.
     pub const fn table_index(self) -> usize {
         self as usize
+    }
+}
+
+/// `HouseClass+0x1A8`, the house's ROF multiplier (a double); the
+/// constructor stores 1.0 (`0x004F567E`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct HouseRofBias(NativeF64Bits);
+
+impl Default for HouseRofBias {
+    fn default() -> Self {
+        Self(NativeF64Bits::ONE)
     }
 }
 
@@ -305,6 +316,12 @@ pub struct HouseState {
     /// game-mode initializer explicitly assigns another native value.
     #[serde(default)]
     pub difficulty: HouseDifficulty,
+    /// The house's ROF multiplier, `HouseClass+0x1A8` (a double; the
+    /// constructor stores 1.0 at `0x004F567E`). Only
+    /// [`HouseState::set_difficulty`] writes it after construction; GetROF
+    /// scales every full reload by it (`0x006FD0C5`).
+    #[serde(default)]
+    rof_bias: HouseRofBias,
     /// `MultiplayPassive=` from this house's country/house-type rules.
     ///
     /// gamemd keeps this on the house type and reads it back out of the house
@@ -475,6 +492,36 @@ pub struct HouseState {
 }
 
 impl HouseState {
+    /// `HouseClass::SetDifficulty @ 0x004F6EC0`, for the fields VERA keeps:
+    /// the difficulty index (`+0x184`) and the ROF bias (`+0x1A8`). Outside a
+    /// campaign the bias is the difficulty row's `ROF=` times the country's
+    /// (`FLD; FMUL; FSTP qword`, `0x004F6F6C..0x004F6F79`); in a campaign it
+    /// is the row's value alone (`0x004F7072..0x004F707B`).
+    pub(crate) fn set_difficulty(
+        &mut self,
+        difficulty: HouseDifficulty,
+        difficulty_rof: &[f64; 3],
+        country_rof: f64,
+        game_mode_nonzero: bool,
+    ) {
+        use crate::util::native_x87::MaskedX87Chop53 as X;
+        self.difficulty = difficulty;
+        let row = NativeF64Bits::from_bits(difficulty_rof[difficulty.table_index()].to_bits());
+        self.rof_bias = HouseRofBias(if game_mode_nonzero {
+            X::store_f64_masked_chop(X::mul(
+                X::load_f64(row),
+                X::load_f64(NativeF64Bits::from_bits(country_rof.to_bits())),
+            ))
+        } else {
+            row
+        });
+    }
+
+    /// The house's ROF multiplier (`HouseClass+0x1A8`).
+    pub(crate) const fn rof_bias(&self) -> NativeF64Bits {
+        self.rof_bias.0
+    }
+
     /// Active offline EventClass house-scan eligibility.
     #[cfg(test)]
     pub const fn event_dispatch_eligible(&self) -> bool {
@@ -584,6 +631,7 @@ impl HouseState {
             is_human,
             player_control: is_human,
             difficulty: HouseDifficulty::Normal,
+            rof_bias: HouseRofBias::default(),
             multiplay_passive: false,
             rally_point: None,
             is_defeated: false,
@@ -1068,6 +1116,46 @@ mod difficulty_tests {
         let house = HouseState::new(Default::default(), 0, None, false, 0, 10);
         assert_eq!(house.difficulty, HouseDifficulty::Normal);
         assert_eq!(house.current_iq, 0);
+        assert_eq!(house.rof_bias(), super::NativeF64Bits::ONE);
+    }
+
+    /// `tools/spatial_oracle/house_difficulty.py` runs the original
+    /// `HouseClass::SetDifficulty @ 0x004F6EC0` over difficulty, GameMode,
+    /// country `ROF=` and row `ROF=` values; every row replays through
+    /// [`HouseState::set_difficulty`].
+    #[test]
+    fn set_difficulty_matches_the_original() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../tools/spatial_oracle/house_difficulty.json"
+        ))
+        .unwrap();
+        assert_eq!(rows.len(), 72);
+        let bits = |value: &serde_json::Value| {
+            f64::from_bits(u64::from_str_radix(value.as_str().unwrap(), 16).unwrap())
+        };
+        for row in &rows {
+            let input = &row["input"];
+            let row_rof: [f64; 3] = std::array::from_fn(|index| bits(&input["row_rof"][index]));
+            let difficulty =
+                HouseDifficulty::from_native(input["difficulty"].as_i64().unwrap() as i32).unwrap();
+            let mut house = HouseState::new(Default::default(), 0, None, false, 0, 10);
+            house.set_difficulty(
+                difficulty,
+                &row_rof,
+                bits(&input["country_rof"]),
+                input["mode"].as_i64().unwrap() != 0,
+            );
+            assert_eq!(
+                i64::from(house.difficulty as i32),
+                row["difficulty"].as_i64().unwrap(),
+                "{input}"
+            );
+            assert_eq!(
+                format!("{:016x}", house.rof_bias().bits()),
+                row["rof_bias"].as_str().unwrap(),
+                "{input}"
+            );
+        }
     }
 }
 

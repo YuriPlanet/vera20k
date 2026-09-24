@@ -3342,6 +3342,13 @@ fn emit_admitted_fire(
         // 6FE947..6FE98A: directed launches read virtual+308. Dropping's
         // second GetCoords read (0x006FE960) stores the value the launch
         // source already holds (`fireat_launch_source`).
+        // RESIDUAL: `RadialFireSegments=` (`TechnoTypeClass+0x6A4`) is not
+        // parsed. One stock author, `[AEGIS]`: native replaces the launch
+        // direction with `body facing + (PI * counter / segments - PI / 2)`,
+        // cycling a counter at `TechnoClass+0x43C`, and forces the ROT>0
+        // launch speed to 1 only when it is zero (`0x006FEA18..0x006FEA3A`).
+        // Player effect: the Aegis Cruiser fires straight at one target
+        // instead of sweeping its flak arc, in every Allied naval engagement.
         let directed_heading = projectile_type
             .filter(|projectile| projectile.dropping || projectile.rot != 0)
             .map(|_| {
@@ -3728,47 +3735,54 @@ fn emit_admitted_fire(
 
     let next_index = burst.next_index();
     let mid_burst = next_index < rof_weapon.burst;
-    // `TechnoClass::GetROF @ 0x006FCFA0` (`CALL [EDX+0x318]` at `0x006FF289`).
-    let rof = if mid_burst {
-        // Mid-burst, the gap between shots is drawn, not fixed.
-        //
-        // RESIDUAL (GSI-08.05) — the Unit override ahead of the draw is not
-        // modelled. Native checks UnitType's per-burst delays
-        // (`+0xE44 + idx*4`, sentinel `-1`) first for a Unit firer and
-        // returns the authored value without drawing. No stock section authors
-        // any `BurstDelay%d=`, so every stock burst reaches the draw and the
-        // draw count is unchanged; a mod that authors one would diverge, and
-        // would also consume an RNG draw native does not.
-        let burst_delay = world.scenario_rng.next_range_u32_inclusive(
-            BURST_INTER_SHOT_DELAY_MIN as u32,
-            BURST_INTER_SHOT_DELAY_MAX as u32,
-        );
-        burst_delay as i32
-    } else {
-        let mut rof_ticks = rof_to_cooldown_frames(rof_weapon.rof, &mut world.scenario_rng);
-        // `GetROF @ 0x006FCFA0`, `0x006FD0E2..0x006FD14C`: a ROF-ability
-        // holder then stores `ftol(rof * Rules.VeteranROF)` — applied ONCE,
-        // after the jitter and before the garrison divides. The firer's rank
-        // and type decide it (a garrison shot reads the building's).
-        rof_ticks = veteran_rof_frames(
-            rof_ticks,
-            self::veterancy::rank_from_u16(snap.veterancy),
-            obj,
-            rules.general.veteran_rof,
-        );
-        // Garrison ROF: divide by occupant count, then by multiplier.
-        // More occupants = proportionally faster fire (gamemd GetROF 0x006FCFA0).
-        if let Some(ref gs) = snap.garrison {
-            let count = (gs.occupant_count as u16).max(1);
-            rof_ticks /= count;
-            if rules.garrison_rules.occupy_rof_multiplier > SIM_ZERO {
-                rof_ticks = sim_to_i32(
-                    SimFixed::from_num(rof_ticks) / rules.garrison_rules.occupy_rof_multiplier,
-                ) as u16;
-            }
-            rof_ticks = rof_ticks.max(1);
-        }
-        i32::from(rof_ticks)
+    // `CALL [EDX+0x318]` at `0x006FF289`: GetROF of the weapon GetWeapon
+    // answers (a garrison's next occupant's), at the stepped burst index. The
+    // rank and class are the firer's (a garrison shot reads the building's).
+    // FireAt created the fired weapon's particle systems just before
+    // (`0x006FF15B..0x006FF26E`), so its flags are the live systems GetROF
+    // tests; a system left from an earlier shot matters only when GetWeapon
+    // answers a different weapon, which no retail garrison does.
+    let rof = {
+        let firer = world.substrate.entities.get(snap.stable_id);
+        super::rof::get_rof(
+            &super::rof::RofQuery {
+                // RESIDUAL: a building's own Ammo (`+0x2FC`) is not kept;
+                // no retail building sets `Ammo=`.
+                building_ammo: None,
+                weapon: Some(rof_weapon),
+                live: super::rof::LiveParticles {
+                    spark: weapon.use_spark_particles,
+                    fire: weapon.use_fire_particles,
+                    railgun: weapon.is_railgun,
+                },
+                burst_index: next_index,
+                unit_burst_delays: (snap.category == EntityCategory::Unit)
+                    .then_some(obj.burst_delays),
+                house_rof: world
+                    .houses
+                    .get(&snap.owner)
+                    .map_or(crate::util::native_x87::NativeF64Bits::ONE, |house| {
+                        house.rof_bias()
+                    }),
+                rof_ability: self::veterancy::has_weapon_ability(
+                    self::veterancy::rank_from_u16(snap.veterancy),
+                    obj,
+                    crate::rules::object_type::Ability::Rof,
+                ),
+                veteran_rof: rules.general.veteran_rof,
+                occupants: snap.garrison.as_ref().map(|gs| gs.occupant_count as i32),
+                bunkered: snap.category != EntityCategory::Structure
+                    && firer.is_some_and(|firer| {
+                        matches!(
+                            firer.bunker_link,
+                            crate::sim::game_entity::BunkerLink::Installed(_)
+                        )
+                    }),
+                occupy_rof_multiplier: rules.garrison_rules.occupy_rof_multiplier,
+                bunker_rof_multiplier: rules.garrison_rules.bunker_rof_multiplier,
+            },
+            &mut world.scenario_rng,
+        )
     };
 
     // `0x006FF274..0x006FF2CB`, all on the firer: the burst step around GetROF,
