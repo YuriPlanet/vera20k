@@ -55,6 +55,7 @@ pub(crate) mod process_assets;
 pub(crate) mod renderer_state;
 pub(crate) mod scenario_catalog;
 mod shell_main_menu;
+mod shell_movies_credits;
 mod shell_random_map;
 mod shell_saved_seeds;
 mod shell_saved_games;

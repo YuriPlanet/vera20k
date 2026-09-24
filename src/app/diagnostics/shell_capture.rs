@@ -22,6 +22,7 @@ use crate::ui::game_screen::GameScreen;
 use crate::ui::main_menu_shell::MainMenuMovieBase;
 use crate::ui::shell::static_reveal::Kind1PaintWindow;
 
+mod movies;
 mod skirmish;
 pub(crate) use skirmish::PresentedShell;
 
@@ -29,6 +30,11 @@ pub(crate) const CAPTURE_FLAG: &str = "--shell-capture";
 const CHECKPOINT_MAIN_MENU_0XE2_STEADY: &str = "main-menu-0xe2-steady";
 const CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE: &str = "main-menu-0xe2-entry-sequence";
 const CHECKPOINT_SKIRMISH_0X102_STEADY: &str = "skirmish-0x102-steady";
+const CHECKPOINT_MOVIES_0X101_STEADY: &str = "movies-0x101-steady";
+const CHECKPOINT_MOVIE_LIST_0X129_STEADY: &str = "movie-list-0x129-steady";
+const CHECKPOINT_MOVIE_LIST_0X129_SELECTED: &str = "movie-list-0x129-selected";
+const CHECKPOINT_CREDITS_ROLL_FRAME_PREFIX: &str = "credits-roll-frame-";
+const CHECKPOINT_SNEAK_PEEK_FRAME_PREFIX: &str = "sneak-peek-frame-";
 const EXPECTED_WIDTH: u32 = 800;
 const EXPECTED_HEIGHT: u32 = 600;
 const EXPECTED_CURSOR_X: u32 = 400;
@@ -56,14 +62,37 @@ pub enum ShellCaptureCheckpoint {
     MainMenu0xE2Steady,
     MainMenu0xE2EntrySequence,
     Skirmish0x102Steady,
+    MoviesPage0x101Steady,
+    MovieList0x129Steady,
+    MovieList0x129Selected,
+    /// Show_Credits pinned at one roll frame (`credits-roll-frame-<N>`).
+    CreditsRollFrame(u64),
+    /// Sneak Peeks Play_Movie pinned at one video frame (`sneak-peek-frame-<N>`).
+    SneakPeekFrame(usize),
 }
 
 impl ShellCaptureCheckpoint {
     fn parse(value: &str) -> Result<Self> {
+        if let Some(frame) = value.strip_prefix(CHECKPOINT_CREDITS_ROLL_FRAME_PREFIX) {
+            let frame: u64 = frame
+                .parse()
+                .with_context(|| format!("credits roll frame is not an integer: {frame:?}"))?;
+            ensure!(frame > 0, "credits roll frames start at 1");
+            return Ok(Self::CreditsRollFrame(frame));
+        }
+        if let Some(frame) = value.strip_prefix(CHECKPOINT_SNEAK_PEEK_FRAME_PREFIX) {
+            let frame: usize = frame
+                .parse()
+                .with_context(|| format!("movie frame is not an integer: {frame:?}"))?;
+            return Ok(Self::SneakPeekFrame(frame));
+        }
         match value {
             CHECKPOINT_MAIN_MENU_0XE2_STEADY => Ok(Self::MainMenu0xE2Steady),
             CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE => Ok(Self::MainMenu0xE2EntrySequence),
             CHECKPOINT_SKIRMISH_0X102_STEADY => Ok(Self::Skirmish0x102Steady),
+            CHECKPOINT_MOVIES_0X101_STEADY => Ok(Self::MoviesPage0x101Steady),
+            CHECKPOINT_MOVIE_LIST_0X129_STEADY => Ok(Self::MovieList0x129Steady),
+            CHECKPOINT_MOVIE_LIST_0X129_SELECTED => Ok(Self::MovieList0x129Selected),
             _ => bail!("unsupported shell-capture checkpoint {value:?}"),
         }
     }
@@ -73,7 +102,23 @@ impl ShellCaptureCheckpoint {
             Self::MainMenu0xE2Steady => CHECKPOINT_MAIN_MENU_0XE2_STEADY,
             Self::MainMenu0xE2EntrySequence => CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE,
             Self::Skirmish0x102Steady => CHECKPOINT_SKIRMISH_0X102_STEADY,
+            Self::MoviesPage0x101Steady => CHECKPOINT_MOVIES_0X101_STEADY,
+            Self::MovieList0x129Steady => CHECKPOINT_MOVIE_LIST_0X129_STEADY,
+            Self::MovieList0x129Selected => CHECKPOINT_MOVIE_LIST_0X129_SELECTED,
+            Self::CreditsRollFrame(_) => "credits-roll-frame",
+            Self::SneakPeekFrame(_) => "sneak-peek-frame",
         }
+    }
+
+    fn movies_target(self) -> Option<movies::MoviesTarget> {
+        Some(match self {
+            Self::MoviesPage0x101Steady => movies::MoviesTarget::Page0x101,
+            Self::MovieList0x129Steady => movies::MoviesTarget::List0x129,
+            Self::MovieList0x129Selected => movies::MoviesTarget::List0x129Selected,
+            Self::CreditsRollFrame(frame) => movies::MoviesTarget::Credits { frame },
+            Self::SneakPeekFrame(frame) => movies::MoviesTarget::SneakPeek { frame },
+            _ => return None,
+        })
     }
 }
 
@@ -465,6 +510,7 @@ pub(crate) struct ShellCaptureSession {
     readback_started: bool,
     entry_sequence: Option<EntrySequenceState>,
     skirmish: Option<skirmish::SkirmishCapture>,
+    movies: Option<movies::MoviesCapture>,
     outcome: Option<std::result::Result<(), String>>,
 }
 
@@ -475,6 +521,10 @@ impl ShellCaptureSession {
             .then(EntrySequenceState::default);
         let skirmish = (request.checkpoint == ShellCaptureCheckpoint::Skirmish0x102Steady)
             .then(skirmish::SkirmishCapture::default);
+        let movies = request
+            .checkpoint
+            .movies_target()
+            .map(movies::MoviesCapture::new);
         Self {
             request,
             started_at: None,
@@ -482,6 +532,7 @@ impl ShellCaptureSession {
             readback_started: false,
             entry_sequence,
             skirmish,
+            movies,
             outcome: None,
         }
     }
@@ -509,7 +560,7 @@ impl ShellCaptureSession {
     }
 
     fn timeout(&self) -> Duration {
-        if self.skirmish.is_some() {
+        if self.skirmish.is_some() || self.movies.is_some() {
             Duration::from_secs(60)
         } else {
             CAPTURE_TIMEOUT
@@ -517,6 +568,9 @@ impl ShellCaptureSession {
     }
 
     fn steady_ready(&self, state: &AppState) -> Result<bool> {
+        if let Some(capture) = &self.movies {
+            return capture.ready(state);
+        }
         match &self.skirmish {
             Some(capture) => capture.ready(state),
             None => steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state)),
@@ -529,6 +583,9 @@ impl ShellCaptureSession {
         rendered: PresentedShell,
     ) -> Result<()> {
         if let Some(capture) = &mut self.skirmish {
+            capture.after_present(state, rendered, self.frames_seen)?;
+        }
+        if let Some(capture) = &mut self.movies {
             capture.after_present(state, rendered, self.frames_seen)?;
         }
         Ok(())
@@ -723,14 +780,20 @@ impl ShellCaptureSession {
         let frame_path = self.request.output_dir().join(FRAME_FILE_NAME);
         write_new_file(&frame_path, pixels)?;
 
-        let mut manifest_bytes = match &self.skirmish {
-            Some(capture) => serde_json::to_vec_pretty(&capture.manifest(
+        let mut manifest_bytes = match (&self.skirmish, &self.movies) {
+            (Some(capture), _) => serde_json::to_vec_pretty(&capture.manifest(
                 &self.request,
                 surface_format,
                 pixels,
                 self.frames_seen,
             )),
-            None => serde_json::to_vec_pretty(&capture_manifest(
+            (None, Some(capture)) => serde_json::to_vec_pretty(&capture.manifest(
+                &self.request,
+                surface_format,
+                pixels,
+                self.frames_seen,
+            )),
+            (None, None) => serde_json::to_vec_pretty(&capture_manifest(
                 &self.request,
                 surface_format,
                 pixels.len() as u64,

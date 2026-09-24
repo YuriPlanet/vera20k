@@ -98,13 +98,12 @@ impl AppState {
         self.renderer.egui.capture_observation(&self.platform.window)
     }
 
-    /// Whether any main-menu modal dialog (exit confirm, options, movies,
+    /// Whether any main-menu modal dialog (exit confirm, options, keyboard,
     /// campaign select) is currently open.
     pub(crate) fn main_menu_dialog_open(&self) -> bool {
         self.frontend.exit_confirm_modal.is_some()
             || self.frontend.options_dialog.is_some()
             || self.frontend.keyboard_dialog.is_some()
-            || self.frontend.movies_credits_dialog.is_some()
             || self.frontend.campaign_select.is_some()
     }
 

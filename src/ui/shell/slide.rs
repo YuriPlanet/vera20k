@@ -114,8 +114,10 @@ pub(crate) struct ShellSlideSpec {
 
 /// Front-end shell dialogs we render today, with their animated slot counts.
 /// `0xE2` main menu: five regular schedule entries; Exit shares Options' fifth
-/// entry. `0x100` single player: 4 owner-draw buttons. `0x102` skirmish setup:
-/// Start Game / Choose Map / Back (3 right-panel buttons).
+/// entry. `0x100` single player and `0x101` Movies & Credits: 4 owner-draw
+/// buttons each. `0x102` skirmish setup: Start Game / Choose Map / Back (3
+/// right-panel buttons). `0x129` movie list: Play Movie / Back (both dialogs
+/// are in the full-screen allow-list at `0x0060C63A` / `0x0060C645`).
 pub(crate) const RENDERED_SHELL_SLIDES: &[ShellSlideSpec] = &[
     ShellSlideSpec {
         dialog_id: 0x00E2,
@@ -126,22 +128,31 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[ShellSlideSpec] = &[
         slot_count: 4,
     },
     ShellSlideSpec {
+        dialog_id: 0x0101,
+        slot_count: 4,
+    },
+    ShellSlideSpec {
+        dialog_id: 0x0129,
+        slot_count: 2,
+    },
+    ShellSlideSpec {
         dialog_id: 0x0102,
         slot_count: 3,
     },
 ];
 
 /// Front-end shell dialog ids that slide on first paint (the eligibility
-/// allow-list, scoped to the front-end shells). The three rendered shells
+/// allow-list, scoped to the front-end shells). The rendered shells
 /// (`RENDERED_SHELL_SLIDES`) plus the front-end dialogs documented as
-/// allow-listed but not yet rendered here (`0x94`/`0x6B`/`0x101` per
+/// allow-listed but not yet rendered here (`0x94`/`0x6B` per
 /// `docs/research/skirmish-ui/SHELL_FIRST_PAINT_SLIDE_GENERIC_TRIGGER_GHIDRA_REPORT.md`
 /// §3); those slide automatically once a renderer maps to them and gains a
 /// `RENDERED_SHELL_SLIDES` slot count. The original's full allow-list is wider
 /// (~58 ids, mostly network/WOL setup dialogs that are out of scope here).
 /// Excluded: modal dialogs (`0x120` confirm, `0xCE` body-ok) and the in-game
 /// Options dialog (`0xBBB`), all of which carry `slide_eligible = false`.
-pub(crate) const SHELL_SLIDE_ALLOW_LIST: &[u16] = &[0x00E2, 0x0094, 0x006B, 0x0100, 0x0101, 0x0102];
+pub(crate) const SHELL_SLIDE_ALLOW_LIST: &[u16] =
+    &[0x00E2, 0x0094, 0x006B, 0x0100, 0x0101, 0x0102, 0x0129];
 
 /// Whether a dialog plays the first-paint controls-reveal slide.
 pub(crate) fn is_slide_eligible(id: DialogId) -> bool {
@@ -778,9 +789,9 @@ mod tests {
 
     #[test]
     fn allow_listed_but_unrendered_dialogs_have_no_slot_count() {
-        // 0x94/0x6B/0x101 are eligible per research but have no renderer yet, so
+        // 0x94/0x6B are eligible per research but have no renderer yet, so
         // the app layer never drives them; slot count is therefore unknown.
-        for id in [0x0094u16, 0x006B, 0x0101] {
+        for id in [0x0094u16, 0x006B] {
             assert!(is_slide_eligible(DialogId(id)));
             assert_eq!(slot_count_for(DialogId(id)), None);
         }

@@ -1,11 +1,10 @@
-//! Dialog 0x100 Single Player shell control identity and CSF/result lookups.
+//! Dialog 0x100 Single Player control identity and dialog-proc results.
 //!
-//! Hit-testing and the press-must-match-release gesture (including the Load Saved
-//! Game disabled guard) moved to the shared `ui::shell::controller::DialogController`
-//! (substrate Slice 2); this module keeps the control identity, the CSF keys, and
-//! the action/result-code tables the controller's activated-control id maps through.
+//! Hit-testing, press/hover and the Load Saved Game disabled guard live in the
+//! shared `ui::shell::controller::DialogController`; labels, status help and
+//! results come from the page table in `layout`.
 
-use std::time::Instant;
+use super::layout::SINGLE_PLAYER_PAGE;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SinglePlayerControlId {
@@ -16,8 +15,7 @@ pub enum SinglePlayerControlId {
 }
 
 impl SinglePlayerControlId {
-    /// The Win32 control resource id this identity stands for. The controller
-    /// works in raw resource ids; the app maps back via [`Self::from_resource_id`].
+    /// The Win32 control resource id this identity stands for.
     pub fn resource_id(self) -> u16 {
         match self {
             Self::NewCampaign0x688 => 0x0688,
@@ -37,16 +35,6 @@ impl SinglePlayerControlId {
             _ => return None,
         })
     }
-
-    /// Status-help CSF key written to static 0x695 immediately on hover.
-    pub fn tooltip_csf_key(self) -> &'static str {
-        match self {
-            Self::NewCampaign0x688 => "STT:SingleButtonNewCampaign",
-            Self::LoadSavedGame0x689 => "STT:SingleButtonLoadSavedGame",
-            Self::Skirmish0x579 => "STT:SingleButtonSkirmish",
-            Self::MainMenu0x686 => "STT:SingleButtonBack",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,11 +46,10 @@ pub enum SinglePlayerShellAction {
     MainMenu,
 }
 
+/// Runtime state the page table cannot carry. Press/hover live in the shared
+/// controller; this is only the `0x497` Load Saved Game enable refresh.
 #[derive(Debug, Clone, Default)]
 pub struct SinglePlayerShellState {
-    pub pressed_owner_draw_button: Option<SinglePlayerControlId>,
-    pub hovered_owner_draw_button: Option<SinglePlayerControlId>,
-    pub hover_started_at: Option<Instant>,
     pub load_saved_game_enabled: bool,
 }
 
@@ -76,22 +63,16 @@ pub fn action_for_control(id: SinglePlayerControlId) -> SinglePlayerShellAction 
 }
 
 pub fn return_code_for_action(action: SinglePlayerShellAction) -> Option<i32> {
-    match action {
-        SinglePlayerShellAction::None => None,
-        SinglePlayerShellAction::NewCampaign => Some(8),
-        SinglePlayerShellAction::LoadSavedGame => Some(9),
-        SinglePlayerShellAction::Skirmish => Some(0x0B),
-        SinglePlayerShellAction::MainMenu => Some(0x12),
-    }
-}
-
-pub fn csf_key_for_control(id: SinglePlayerControlId) -> &'static str {
-    match id {
-        SinglePlayerControlId::NewCampaign0x688 => "GUI:NewCampaign",
-        SinglePlayerControlId::LoadSavedGame0x689 => "GUI:LoadSavedGame",
-        SinglePlayerControlId::Skirmish0x579 => "GUI:Skirmish",
-        SinglePlayerControlId::MainMenu0x686 => "GUI:MainMenu",
-    }
+    let id = match action {
+        SinglePlayerShellAction::None => return None,
+        SinglePlayerShellAction::NewCampaign => SinglePlayerControlId::NewCampaign0x688,
+        SinglePlayerShellAction::LoadSavedGame => SinglePlayerControlId::LoadSavedGame0x689,
+        SinglePlayerShellAction::Skirmish => SinglePlayerControlId::Skirmish0x579,
+        SinglePlayerShellAction::MainMenu => SinglePlayerControlId::MainMenu0x686,
+    };
+    SINGLE_PLAYER_PAGE
+        .button(id.resource_id())
+        .map(|button| button.result)
 }
 
 #[cfg(test)]
@@ -102,15 +83,12 @@ mod tests {
     use crate::ui::shell::layout::LaidOutControl;
     use crate::ui::single_player_shell::compute_layout;
 
-    /// Adapt the laid-out single-player buttons into the controller's button feed.
-    fn button_feed(
-        layout: &crate::ui::single_player_shell::SinglePlayerShellLayout,
-    ) -> Vec<LaidOutControl> {
+    fn button_feed(layout: &crate::ui::shell::menu_page::MenuPageLayout) -> Vec<LaidOutControl> {
         layout
             .buttons
             .iter()
             .map(|b| LaidOutControl {
-                id: b.id.resource_id(),
+                id: b.id,
                 rect: b.rect,
             })
             .collect()
@@ -139,22 +117,35 @@ mod tests {
     }
 
     #[test]
+    fn every_page_button_maps_to_a_typed_control() {
+        for button in SINGLE_PLAYER_PAGE.buttons() {
+            let id = SinglePlayerControlId::from_resource_id(button.id).expect("typed control");
+            assert_eq!(id.resource_id(), button.id);
+        }
+    }
+
+    #[test]
     fn status_help_keys_match_dialog_0x100_control_mapping() {
+        let key = |id: SinglePlayerControlId| {
+            SINGLE_PLAYER_PAGE
+                .button(id.resource_id())
+                .map(|button| button.tooltip_key)
+        };
         assert_eq!(
-            SinglePlayerControlId::NewCampaign0x688.tooltip_csf_key(),
-            "STT:SingleButtonNewCampaign"
+            key(SinglePlayerControlId::NewCampaign0x688),
+            Some("STT:SingleButtonNewCampaign")
         );
         assert_eq!(
-            SinglePlayerControlId::LoadSavedGame0x689.tooltip_csf_key(),
-            "STT:SingleButtonLoadSavedGame"
+            key(SinglePlayerControlId::LoadSavedGame0x689),
+            Some("STT:SingleButtonLoadSavedGame")
         );
         assert_eq!(
-            SinglePlayerControlId::Skirmish0x579.tooltip_csf_key(),
-            "STT:SingleButtonSkirmish"
+            key(SinglePlayerControlId::Skirmish0x579),
+            Some("STT:SingleButtonSkirmish")
         );
         assert_eq!(
-            SinglePlayerControlId::MainMenu0x686.tooltip_csf_key(),
-            "STT:SingleButtonBack"
+            key(SinglePlayerControlId::MainMenu0x686),
+            Some("STT:SingleButtonBack")
         );
     }
 
@@ -200,9 +191,6 @@ mod tests {
         // ...but the disabled button still hover-tracks at its native boundary.
         c.on_pointer_move(644, 248, &feed);
         assert_eq!(c.hovered(), Some(load));
-        // The controller still records hover timing even though dialog 0x100
-        // must not turn mouse hover into SDBTNANM frame 3.
-        assert!(c.hover_started_at().is_some());
         // Enabled: press-and-release fires Load Saved Game.
         c.set_disabled(load, false);
         c.on_pointer_down(644, 248, &feed);

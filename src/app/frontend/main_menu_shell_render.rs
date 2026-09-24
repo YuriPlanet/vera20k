@@ -68,6 +68,7 @@ pub(crate) enum MainMenuEntryRenderResult {
 pub(crate) enum Ra2tsDialogOwner {
     MainMenu0xE2,
     SinglePlayer0x100,
+    MoviesAndCredits0x101,
 }
 
 /// Identity of the one RA2TS session installed for a movie-bearing dialog.
@@ -242,13 +243,18 @@ fn main_menu_paint_labels<'a>(
 /// is centered, offsetting by ((w-800)/2, (h-600)/2). The parent background is
 /// painted at this origin at its native SHP canvas size.
 fn shell_origin(layout: &MainMenuShellLayout) -> (i32, i32) {
-    let x = if layout.screen.w > SHELL_LETTERBOX_W_THRESHOLD {
-        (layout.screen.w - SHELL_BASE_W) / 2
+    shell_background_origin(layout.screen.w, layout.screen.h)
+}
+
+/// Parent-background origin shared by every full-screen shell dialog.
+pub(crate) fn shell_background_origin(screen_w: i32, screen_h: i32) -> (i32, i32) {
+    let x = if screen_w > SHELL_LETTERBOX_W_THRESHOLD {
+        (screen_w - SHELL_BASE_W) / 2
     } else {
         0
     };
-    let y = if layout.screen.h > SHELL_LETTERBOX_H_THRESHOLD {
-        (layout.screen.h - SHELL_BASE_H) / 2
+    let y = if screen_h > SHELL_LETTERBOX_H_THRESHOLD {
+        (screen_h - SHELL_BASE_H) / 2
     } else {
         0
     };

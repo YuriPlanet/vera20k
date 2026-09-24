@@ -17,6 +17,25 @@ use super::{gpu::GpuContext, native_surface_format::ACTIVE_RETAIL_RGB565_PRESENT
 const SHADER_SOURCE: &str = include_str!("shell_surface_present.wgsl");
 const PROFILE_WORD_COUNT: usize = 96;
 const PROFILE_BUFFER_SIZE: u64 = (PROFILE_WORD_COUNT * std::mem::size_of::<u32>()) as u64;
+/// `u32 fade_rows, height` padded to a 16-byte uniform.
+const EFFECTS_WORD_COUNT: usize = 4;
+const EFFECTS_BUFFER_SIZE: u64 = (EFFECTS_WORD_COUNT * std::mem::size_of::<u32>()) as u64;
+
+/// Native 16-bit surface operations applied in the RGB565 unit domain, after
+/// quantization and before the presentation codebook.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct SurfaceEffects {
+    /// Rows at the top and bottom faded by Show_Credits `0x004C3E30`: row
+    /// `r` from the edge keeps `floor(v * f / 256)` per channel with
+    /// `f = 255 - min(256 - 8r, 255)`. Zero disables the fade.
+    pub(crate) fade_rows: u32,
+}
+
+impl SurfaceEffects {
+    fn words(self, height: u32) -> [u32; EFFECTS_WORD_COUNT] {
+        [self.fade_rows, height, 0, 0]
+    }
+}
 
 /// GPU resources for the active-retail shell presentation boundary.
 pub(crate) struct ShellSurfacePresenter {
@@ -26,8 +45,13 @@ pub(crate) struct ShellSurfacePresenter {
     presented_texture: wgpu::Texture,
     presented_view: wgpu::TextureView,
     _profile_buffer: wgpu::Buffer,
+    /// Always-zero effects: ordinary presentation can never inherit effects.
+    no_effects_buffer: wgpu::Buffer,
+    /// Rewritten by each [`Self::encode_present_with_effects`] call.
+    effects_buffer: wgpu::Buffer,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
+    effects_bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
     surface_format: wgpu::TextureFormat,
     encoded_format: wgpu::TextureFormat,
@@ -57,11 +81,25 @@ impl ShellSurfacePresenter {
                 contents: bytemuck::cast_slice(&profile_words),
                 usage: wgpu::BufferUsages::STORAGE,
             });
+        let effects_usage = wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST;
+        let no_effects_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Shell presentation: no surface effects"),
+            size: EFFECTS_BUFFER_SIZE,
+            usage: effects_usage,
+            mapped_at_creation: false,
+        });
+        let effects_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Shell presentation: surface effects"),
+            size: EFFECTS_BUFFER_SIZE,
+            usage: effects_usage,
+            mapped_at_creation: false,
+        });
         let pipeline = create_pipeline(&gpu.device, &bind_group_layout, encoded_format);
         let targets = create_targets(
             &gpu.device,
             &bind_group_layout,
             &profile_buffer,
+            [&no_effects_buffer, &effects_buffer],
             surface_format,
             encoded_format,
             gpu.config.width,
@@ -75,8 +113,11 @@ impl ShellSurfacePresenter {
             presented_texture: targets.presented_texture,
             presented_view: targets.presented_view,
             _profile_buffer: profile_buffer,
+            no_effects_buffer,
+            effects_buffer,
             bind_group_layout,
             bind_group: targets.bind_group,
+            effects_bind_group: targets.effects_bind_group,
             pipeline,
             surface_format,
             encoded_format,
@@ -102,6 +143,7 @@ impl ShellSurfacePresenter {
             &gpu.device,
             &self.bind_group_layout,
             &self._profile_buffer,
+            [&self.no_effects_buffer, &self.effects_buffer],
             self.surface_format,
             self.encoded_format,
             gpu.config.width,
@@ -113,6 +155,7 @@ impl ShellSurfacePresenter {
         self.presented_texture = targets.presented_texture;
         self.presented_view = targets.presented_view;
         self.bind_group = targets.bind_group;
+        self.effects_bind_group = targets.effects_bind_group;
         self.width = gpu.config.width;
         self.height = gpu.config.height;
     }
@@ -122,6 +165,33 @@ impl ShellSurfacePresenter {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         destination: &wgpu::Texture,
+    ) {
+        self.encode_present_with_group(encoder, destination, &self.bind_group);
+    }
+
+    /// Present with native 16-bit surface effects. The effects buffer is
+    /// written through the queue, so it applies to the next submission; only
+    /// one effects presentation may be encoded per submitted frame.
+    pub(crate) fn encode_present_with_effects(
+        &self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Texture,
+        effects: SurfaceEffects,
+    ) {
+        queue.write_buffer(
+            &self.effects_buffer,
+            0,
+            bytemuck::cast_slice(&effects.words(self.height)),
+        );
+        self.encode_present_with_group(encoder, destination, &self.effects_bind_group);
+    }
+
+    fn encode_present_with_group(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Texture,
+        bind_group: &wgpu::BindGroup,
     ) {
         debug_assert_eq!(destination.width(), self.width);
         debug_assert_eq!(destination.height(), self.height);
@@ -148,7 +218,7 @@ impl ShellSurfacePresenter {
                 occlusion_query_set: None,
             });
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_bind_group(0, bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
 
@@ -181,6 +251,7 @@ struct PresentationTargets {
     presented_texture: wgpu::Texture,
     presented_view: wgpu::TextureView,
     bind_group: wgpu::BindGroup,
+    effects_bind_group: wgpu::BindGroup,
 }
 
 fn encoded_surface_format(surface_format: wgpu::TextureFormat) -> Result<wgpu::TextureFormat> {
@@ -195,10 +266,12 @@ fn encoded_surface_format(surface_format: wgpu::TextureFormat) -> Result<wgpu::T
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_targets(
     device: &wgpu::Device,
     bind_group_layout: &wgpu::BindGroupLayout,
     profile_buffer: &wgpu::Buffer,
+    [no_effects_buffer, effects_buffer]: [&wgpu::Buffer; 2],
     surface_format: wgpu::TextureFormat,
     encoded_format: wgpu::TextureFormat,
     width: u32,
@@ -247,20 +320,31 @@ fn create_targets(
         usage: Some(wgpu::TextureUsages::RENDER_ATTACHMENT),
         ..Default::default()
     });
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("Stock shell RGB565 presentation bind group"),
-        layout: bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&source_encoded_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: profile_buffer.as_entire_binding(),
-            },
-        ],
-    });
+    let group = |effects: &wgpu::Buffer, label| {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(label),
+            layout: bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&source_encoded_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: profile_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: effects.as_entire_binding(),
+                },
+            ],
+        })
+    };
+    let bind_group = group(
+        no_effects_buffer,
+        "Stock shell RGB565 presentation bind group",
+    );
+    let effects_bind_group = group(effects_buffer, "Stock shell RGB565 effects bind group");
 
     PresentationTargets {
         source_texture,
@@ -269,6 +353,7 @@ fn create_targets(
         presented_texture,
         presented_view,
         bind_group,
+        effects_bind_group,
     }
 }
 
@@ -293,6 +378,16 @@ fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
                     ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
                     min_binding_size: NonZeroU64::new(PROFILE_BUFFER_SIZE),
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(EFFECTS_BUFFER_SIZE),
                 },
                 count: None,
             },
@@ -361,6 +456,13 @@ mod tests {
         );
         assert!(encoded_surface_format(wgpu::TextureFormat::Bgra8Unorm).is_err());
         assert!(encoded_surface_format(wgpu::TextureFormat::Rgba16Float).is_err());
+    }
+
+    #[test]
+    fn surface_effect_words_match_the_shader_uniform() {
+        assert_eq!(EFFECTS_BUFFER_SIZE, 16);
+        assert_eq!(SurfaceEffects { fade_rows: 32 }.words(600), [32, 600, 0, 0]);
+        assert_eq!(SurfaceEffects::default().words(480), [0, 480, 0, 0]);
     }
 
     #[test]

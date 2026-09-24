@@ -69,9 +69,15 @@ pub(crate) struct FrontendState {
     /// Shared A3 child, reached from launcher Options or paused Game Controls.
     pub(crate) keyboard_dialog: Option<crate::ui::shell::keyboard::KeyboardState>,
     pub(crate) launcher_options_presentation: super::skirmish_shell_render::LauncherOptionsPresentation,
-    /// Movies & Credits sub-panel (open-level shell; playback not implemented).
-    pub(crate) movies_credits_dialog:
-        Option<crate::ui::main_menu_dialogs::MoviesCreditsDialogState>,
+    /// Movie list `0x129` instance while `ShellRoute::MovieList` is shown.
+    pub(crate) movie_list: Option<crate::ui::movies_credits_shell::MovieListState>,
+    /// `DAT_00825C80`: the list row last played, retained for the process
+    /// (initially -1) and reapplied when `0x129` is recreated.
+    pub(crate) movie_list_selection: i32,
+    /// Full-screen Play_Movie session (Sneak Peeks or a movie-list entry).
+    pub(crate) fullscreen_movie: Option<crate::app::frontend::fullscreen_movie::FullscreenMovie>,
+    /// Show_Credits session.
+    pub(crate) credits_roll: Option<crate::app::frontend::credits_roll::CreditsRollSession>,
     /// Campaign selector dialog (Single Player -> New Campaign; launch mapping
     /// not decoded).
     pub(crate) campaign_select: Option<crate::ui::main_menu_dialogs::CampaignSelectState>,

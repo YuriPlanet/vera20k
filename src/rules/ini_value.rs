@@ -206,6 +206,114 @@ fn parse_read_int(default: i32, raw: &str) -> i32 {
     parse_read_int_value(raw).unwrap_or(default)
 }
 
+/// Source bytes `INIClass__ReadCommaHexUTF16` copies before trimming: the
+/// `strncpy(0x5000)` at `0x00529097` is terminated at `0x4FFF`.
+const COMMA_HEX_ENCODED_BYTES: usize = 0x4fff;
+
+/// `INIClass__ReadCommaHexUTF16` @ `0x00528F00`: decode a comma-separated
+/// list of hexadecimal UTF-16 code units.
+///
+/// The raw value is `strtrim`med (bytes <= 0x20) and comma-tokenized with
+/// `strtok`, so empty tokens are skipped. Each token is read with
+/// `sscanf("%x")` into one scratch dword whose result is ignored: a failed
+/// conversion repeats the previous unit. On the fresh-file section-pointer
+/// cache miss that scratch starts as the section-name CRC, so a failed first
+/// conversion emits its low 16 bits. At most `max_units` units are written;
+/// the visible result ends at the first zero unit. A missing or trimmed-empty
+/// value yields `default` (itself capped at `max_units`).
+pub(crate) fn read_comma_hex_utf16(
+    raw: Option<&str>,
+    default: &[u16],
+    max_units: usize,
+    section_crc: u32,
+) -> Vec<u16> {
+    let bytes = raw.unwrap_or_default().as_bytes();
+    let bytes = &bytes[..bytes.len().min(COMMA_HEX_ENCODED_BYTES)];
+    let bytes = &bytes[..bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len())];
+    // strtrim at 0x0052909F removes bytes <= 0x20, unlike sscanf whitespace.
+    let start = bytes
+        .iter()
+        .position(|b| *b > STRTRIM_MAX)
+        .unwrap_or(bytes.len());
+    let end = bytes
+        .iter()
+        .rposition(|b| *b > STRTRIM_MAX)
+        .map_or(start, |i| i + 1);
+    let bytes = &bytes[start..end];
+    if bytes.is_empty() {
+        return default
+            .iter()
+            .copied()
+            .take(max_units)
+            .take_while(|u| *u != 0)
+            .collect();
+    }
+    let mut scratch = section_crc;
+    let mut units = Vec::new();
+    // strtok skips empty comma-delimited tokens. A whitespace-only token is
+    // still a token and a failed conversion repeats the preceding value.
+    for token in bytes
+        .split(|b| *b == b',')
+        .filter(|token| !token.is_empty())
+        .take(max_units)
+    {
+        if let Some(value) = scan_hex_u32(token) {
+            scratch = value;
+        }
+        units.push(scratch as u16);
+    }
+    // The original scans up to its token count, appends NUL, then returns
+    // wcslen: keep its visible result.
+    units.truncate(units.iter().position(|u| *u == 0).unwrap_or(units.len()));
+    units
+}
+
+/// CRT `sscanf("%x")` for one comma token: optional whitespace and sign, an
+/// optional `0x` prefix only when digits follow, then hex digits.
+fn scan_hex_u32(token: &[u8]) -> Option<u32> {
+    let start = token
+        .iter()
+        .position(|b| !matches!(*b, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c))?;
+    let mut bytes = &token[start..];
+    let negative = bytes.first() == Some(&b'-');
+    if matches!(bytes.first(), Some(b'+' | b'-')) {
+        bytes = &bytes[1..];
+    }
+    // CRT sscanf rejects a bare/invalid 0x prefix; parsing just its leading
+    // zero would incorrectly replace the prior conversion with zero.
+    if bytes.starts_with(b"0x") || bytes.starts_with(b"0X") {
+        bytes = &bytes[2..];
+    }
+    let mut any = false;
+    let mut value = 0u32;
+    for byte in bytes {
+        let digit = match byte {
+            b'0'..=b'9' => byte - b'0',
+            b'a'..=b'f' => byte - b'a' + 10,
+            b'A'..=b'F' => byte - b'A' + 10,
+            _ => break,
+        };
+        any = true;
+        value = value.wrapping_mul(16).wrapping_add(u32::from(digit));
+    }
+    any.then_some(if negative {
+        value.wrapping_neg()
+    } else {
+        value
+    })
+}
+
+/// `INIClass__PutUTF16AsHexCSV` @ `0x00528E00`: each code unit as unpadded
+/// lowercase hex followed by a comma, including after the last unit.
+pub(crate) fn encode_comma_hex_utf16(units: &[u16]) -> String {
+    let mut out = String::with_capacity(units.len() * 5);
+    for unit in units.iter().take_while(|unit| **unit != 0) {
+        out.push_str(&format!("{unit:x}"));
+        out.push(',');
+    }
+    out
+}
+
 pub(crate) fn parse_read_int_value(raw: &str) -> Option<i32> {
     let value = strtrim_ascii(raw);
     if let Some(rest) = value.strip_prefix('$') {
