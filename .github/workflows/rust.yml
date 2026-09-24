@@ -3,19 +3,10 @@ name: Clippy
 # Lints the library and binaries on the three main platforms (clippy also
 # checks that the binaries compile, so there is no separate `cargo check`).
 # Tests run in the per-platform workflows (windows.yml, linux.yml, ...).
+# Manual only: run it from the Actions tab or with
+# `gh workflow run rust.yml --ref <branch>`.
 on:
-  pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
-
-concurrency:
-  # Pull requests: one group per branch, superseded runs are cancelled.
-  # main: one group per commit, so no run is ever cancelled or replaced
-  # (GitHub keeps only one pending run per group) and the README status
-  # badges always come from a finished run.
-  group: clippy-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: rust-lld
