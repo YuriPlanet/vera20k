@@ -18,6 +18,10 @@ pub(crate) enum ShellRoute {
     MainMenu,
     /// The single-player shell page.
     SinglePlayer,
+    /// Movies & Credits page `0x101`.
+    MoviesAndCredits,
+    /// Movie list `0x129`, reached from Movies & Credits.
+    MovieList,
     /// The native skirmish shell. `return_to_single_player` is the return
     /// arrow: entered from the single-player shell, Back returns there
     /// instead of the main menu.
@@ -27,6 +31,16 @@ pub(crate) enum ShellRoute {
 impl ShellRoute {
     pub(crate) fn single_player(self) -> bool {
         matches!(self, Self::SinglePlayer)
+    }
+
+    /// Movies & Credits `0x101`.
+    pub(crate) fn movies_and_credits(self) -> bool {
+        matches!(self, Self::MoviesAndCredits)
+    }
+
+    /// Movie list `0x129`.
+    pub(crate) fn movie_list(self) -> bool {
+        matches!(self, Self::MovieList)
     }
 
     pub(crate) fn skirmish(self) -> bool {
@@ -55,6 +69,8 @@ mod tests {
         for route in [
             ShellRoute::MainMenu,
             ShellRoute::SinglePlayer,
+            ShellRoute::MoviesAndCredits,
+            ShellRoute::MovieList,
             ShellRoute::Skirmish {
                 return_to_single_player: false,
             },
@@ -63,7 +79,13 @@ mod tests {
             },
         ] {
             // At most one surface active — the predicates cannot both hold.
-            assert!(!(route.single_player() && route.skirmish()));
+            let active = [
+                route.single_player(),
+                route.movies_and_credits(),
+                route.movie_list(),
+                route.skirmish(),
+            ];
+            assert!(active.iter().filter(|&&on| on).count() <= 1);
         }
         assert!(
             ShellRoute::Skirmish {

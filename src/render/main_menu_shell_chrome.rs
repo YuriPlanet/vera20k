@@ -11,6 +11,7 @@
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Palette;
+use crate::assets::pcx_file::PcxFile;
 use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::gpu::GpuContext;
@@ -53,6 +54,44 @@ pub struct MainMenuShellChromeAtlas {
     /// MNSCRNL.SHP frame 0 — parent background for all non-640 widths.
     /// Painted through SHELL.PAL.
     pub parent_background_large_mnscrnl: Option<MainMenuShellChromeEntry>,
+    /// MNSCRNS / MNSCRNL with every RGB565 channel one unit darker
+    /// (saturating): what an owner-draw ListBox with translucency 0 paints
+    /// under its rows (`0x00619230`), derived here so the list interior can be
+    /// composited exactly before the rows are drawn over it.
+    pub parent_background_640_mnscrns_list: Option<MainMenuShellChromeEntry>,
+    pub parent_background_large_mnscrnl_list: Option<MainMenuShellChromeEntry>,
+    /// Opaque white texel block for solid fills (list frames, selection).
+    pub white_pixel: Option<MainMenuShellChromeEntry>,
+    /// Owner-draw list scrollbar art (`0x0061C690`): 18x22 arrows, released
+    /// and pressed, and the 18-wide grip top, middle and bottom.
+    pub list_scroll: ListScrollArt,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ListScrollArt {
+    pub up_released: Option<MainMenuShellChromeEntry>,
+    pub up_pressed: Option<MainMenuShellChromeEntry>,
+    pub down_released: Option<MainMenuShellChromeEntry>,
+    pub down_pressed: Option<MainMenuShellChromeEntry>,
+    pub grip_top: Option<MainMenuShellChromeEntry>,
+    pub grip_mid: Option<MainMenuShellChromeEntry>,
+    pub grip_bottom: Option<MainMenuShellChromeEntry>,
+}
+
+/// Darken encoded RGBA8 texels by one RGB565 unit per channel, saturating at
+/// zero. The shell presenter quantizes encoded bytes with `>> 3` / `>> 2`, so
+/// storing the darkened unit in the high bits reproduces the 16-bit result.
+fn darken_one_rgb565_unit(rgba: &[u8]) -> Vec<u8> {
+    rgba.as_chunks::<4>()
+        .0
+        .iter()
+        .flat_map(|texel| {
+            let r = (texel[0] >> 3).saturating_sub(1) << 3;
+            let g = (texel[1] >> 2).saturating_sub(1) << 2;
+            let b = (texel[2] >> 3).saturating_sub(1) << 3;
+            [r, g, b, texel[3]]
+        })
+        .collect()
 }
 
 struct RenderedChromeEntry {
@@ -100,6 +139,17 @@ pub fn build_main_menu_shell_chrome_atlas(
         // Native SHP canvas size is read at parse time (not hardcoded).
         push_optional_shp(&mut rendered, assets, "MNSCRNS.SHP", pal, 0);
         push_optional_shp(&mut rendered, assets, "MNSCRNL.SHP", pal, 0);
+        let darkened: Vec<RenderedChromeEntry> = rendered
+            .iter()
+            .filter(|entry| entry.label == "mnscrns.shp" || entry.label == "mnscrnl.shp")
+            .map(|entry| RenderedChromeEntry {
+                label: format!("{}:list", entry.label),
+                width: entry.width,
+                height: entry.height,
+                rgba: darken_one_rgb565_unit(&entry.rgba),
+            })
+            .collect();
+        rendered.extend(darkened);
     } else {
         log::warn!("Missing SHELL.PAL; skipping main-menu right-panel chrome SHPs");
     }
@@ -108,6 +158,27 @@ pub fn build_main_menu_shell_chrome_atlas(
     } else {
         log::warn!("Missing SHELL2.PAL; skipping main-menu right-panel tile SHP");
     }
+
+    for name in [
+        "UPARROWR.PCX",
+        "UPARROWP.PCX",
+        "DNARROWR.PCX",
+        "DNARROWP.PCX",
+        "SBGRIPT.PCX",
+        "SBGRIPM.PCX",
+        "SBGRIPB.PCX",
+    ] {
+        if let Some(entry) = render_pcx_entry(assets, name) {
+            rendered.push(entry);
+        }
+    }
+
+    rendered.push(RenderedChromeEntry {
+        label: "white".into(),
+        width: 2,
+        height: 2,
+        rgba: vec![0xFF; 2 * 2 * 4],
+    });
 
     let (texture, packed) = pack_entries(gpu, batch, &rendered)?;
     let mut by_label: std::collections::HashMap<String, MainMenuShellChromeEntry> =
@@ -136,6 +207,24 @@ pub fn build_main_menu_shell_chrome_atlas(
         lower_side_large_lwscrnl: by_label.get("lwscrnl.shp").copied(),
         parent_background_640_mnscrns: by_label.get("mnscrns.shp").copied(),
         parent_background_large_mnscrnl: by_label.get("mnscrnl.shp").copied(),
+        parent_background_640_mnscrns_list: by_label.get("mnscrns.shp:list").copied(),
+        parent_background_large_mnscrnl_list: by_label.get("mnscrnl.shp:list").copied(),
+        list_scroll: ListScrollArt {
+            up_released: by_label.get("uparrowr.pcx").copied(),
+            up_pressed: by_label.get("uparrowp.pcx").copied(),
+            down_released: by_label.get("dnarrowr.pcx").copied(),
+            down_pressed: by_label.get("dnarrowp.pcx").copied(),
+            grip_top: by_label.get("sbgript.pcx").copied(),
+            grip_mid: by_label.get("sbgripm.pcx").copied(),
+            grip_bottom: by_label.get("sbgripb.pcx").copied(),
+        },
+        white_pixel: by_label.get("white").copied().map(|mut entry| {
+            // Sample only the block's center so filtering never reaches padding.
+            entry.uv_origin[0] += entry.uv_size[0] * 0.25;
+            entry.uv_origin[1] += entry.uv_size[1] * 0.25;
+            entry.uv_size = [entry.uv_size[0] * 0.5, entry.uv_size[1] * 0.5];
+            entry
+        }),
     })
 }
 
@@ -215,6 +304,18 @@ fn render_shp_entry(
     })
 }
 
+/// A PCX in its own palette, full canvas.
+fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<RenderedChromeEntry> {
+    let bytes = assets.get_ref(file_name)?;
+    let pcx = PcxFile::from_bytes(bytes).ok()?;
+    Some(RenderedChromeEntry {
+        label: file_name.to_ascii_lowercase(),
+        width: pcx.width as u32,
+        height: pcx.height as u32,
+        rgba: pcx.to_rgba(None),
+    })
+}
+
 fn pack_entries(
     gpu: &GpuContext,
     batch: &BatchRenderer,
@@ -285,4 +386,30 @@ fn pack_entries(
         })
         .collect();
     Some((texture, atlas_entries))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn list_darkening_removes_one_rgb565_unit_and_saturates() {
+        let texels = [
+            8, 4, 8, 255, // one unit each
+            0, 0, 0, 255, // already black
+            255, 255, 255, 7, // full intensity keeps alpha
+            15, 7, 23, 255, // low bits below one unit are dropped
+        ];
+        let dark = darken_one_rgb565_unit(&texels);
+        assert_eq!(&dark[0..4], &[0, 0, 0, 255]);
+        assert_eq!(&dark[4..8], &[0, 0, 0, 255]);
+        assert_eq!(&dark[8..12], &[240, 248, 240, 7]);
+        assert_eq!(&dark[12..16], &[0, 0, 8, 255]);
+        // Presenter view: every non-zero 565 unit drops by exactly one.
+        for (before, after) in texels.chunks_exact(4).zip(dark.chunks_exact(4)) {
+            assert_eq!(after[0] >> 3, (before[0] >> 3).saturating_sub(1));
+            assert_eq!(after[1] >> 2, (before[1] >> 2).saturating_sub(1));
+            assert_eq!(after[2] >> 3, (before[2] >> 3).saturating_sub(1));
+        }
+    }
 }

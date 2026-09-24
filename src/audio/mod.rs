@@ -10,6 +10,7 @@
 
 pub mod arbiter;
 pub mod events;
+pub mod movie_stream;
 pub mod music;
 pub mod sfx;
 pub(crate) mod theme;

@@ -569,6 +569,30 @@ impl ApplicationHandler for App {
                         return;
                     }
 
+                    if state.frontend.screen == GameScreen::MainMenu
+                        && state.frontend.fullscreen_movie.is_some()
+                    {
+                        Self::fullscreen_movie_key(state, code, event.state.is_pressed());
+                        return;
+                    }
+                    if state.frontend.screen == GameScreen::MainMenu
+                        && state.frontend.credits_roll.is_some()
+                    {
+                        let modifiers = state.platform.live_modifiers;
+                        let bare = !(modifiers.shift_key()
+                            || modifiers.control_key()
+                            || modifiers.alt_key());
+                        // Keyboard::Get() == 0x1B: a bare Escape press. Releases
+                        // (0x800) and every other key are queued and ignored.
+                        let input = if code == KeyCode::Escape && event.state.is_pressed() && bare {
+                            crate::app::frontend::credits_roll::CreditsInput::Escape
+                        } else {
+                            crate::app::frontend::credits_roll::CreditsInput::Other
+                        };
+                        Self::credits_roll_input(state, input);
+                        return;
+                    }
+
                     // A main-menu modal dialog (exit confirm, options, movies,
                     // campaign select) takes ESC first: close it and stay,
                     // never propagating to the shell-close handlers below.
@@ -625,9 +649,12 @@ impl ApplicationHandler for App {
                         return;
                     }
 
-                    if Self::single_player_shell_active(state) && is_escape {
-                        Self::close_single_player_shell(state);
-                        state.platform.window.request_redraw();
+                    if (Self::menu_page_active(state) || Self::movie_list_active(state))
+                        && is_escape
+                    {
+                        // IsDialogMessageA turns Escape into IDCANCEL (id 2),
+                        // which the 0x100/0x101/0x129 procs and the common
+                        // handler 0x00622B50 ignore: the dialog stays open.
                         return;
                     }
 
@@ -771,8 +798,11 @@ impl ApplicationHandler for App {
                 if !egui_consumed && Self::native_skirmish_shell_active(state) {
                     Self::handle_skirmish_shell_mouse_move(state);
                 }
-                if !egui_consumed && Self::single_player_shell_active(state) {
-                    Self::handle_single_player_shell_mouse_move(state);
+                if !egui_consumed && Self::menu_page_active(state) {
+                    Self::handle_menu_page_mouse_move(state);
+                }
+                if !egui_consumed && Self::movie_list_active(state) {
+                    Self::handle_movie_list_mouse_move(state);
                 }
                 if Self::score_shell_active(state) {
                     Self::handle_score_shell_mouse_move(state);
@@ -780,7 +810,10 @@ impl ApplicationHandler for App {
                 if !egui_consumed
                     && state.frontend.screen == GameScreen::MainMenu
                     && !state.frontend.main_menu_shell_failed
-                    && !Self::single_player_shell_active(state)
+                    && !Self::menu_page_active(state)
+                    && !Self::movie_list_active(state)
+                    && state.frontend.fullscreen_movie.is_none()
+                    && state.frontend.credits_roll.is_none()
                     && !Self::native_skirmish_shell_active(state)
                     // While the SHP quit-confirm modal owns the controller, the menu
                     // move handler must not re-activate 0xE2 and reset the gesture.
@@ -805,6 +838,30 @@ impl ApplicationHandler for App {
                 crate::app::input::tooltips::on_button_event(state);
                 if crate::app::frontend::shell_transition::blocks_shell_input(state) {
                     return;
+                }
+                if state.frontend.screen == GameScreen::MainMenu {
+                    // Play_Movie reads and ignores mouse buttons; Show_Credits
+                    // queues them as ordinary Keyboard entries.
+                    if state.frontend.fullscreen_movie.is_some() {
+                        return;
+                    }
+                    if state.frontend.credits_roll.is_some() {
+                        Self::credits_roll_input(
+                            state,
+                            crate::app::frontend::credits_roll::CreditsInput::Other,
+                        );
+                        return;
+                    }
+                    if Self::movie_list_active(state) {
+                        if button == MouseButton::Left {
+                            if btn_state.is_pressed() {
+                                Self::handle_movie_list_mouse_down(state);
+                            } else {
+                                Self::handle_movie_list_mouse_up(state);
+                            }
+                        }
+                        return;
+                    }
                 }
                 // While a main-menu modal dialog is open, route the click to the
                 // SHP quit-confirm modal's OK/Cancel hit-test on the normal shell
@@ -848,12 +905,12 @@ impl ApplicationHandler for App {
                             Self::handle_skirmish_shell_mouse_up(state, event_loop);
                         }
                     }
-                } else if Self::single_player_shell_active(state) {
+                } else if Self::menu_page_active(state) {
                     if button == MouseButton::Left {
                         if btn_state.is_pressed() {
-                            Self::handle_single_player_shell_mouse_down(state);
+                            Self::handle_menu_page_mouse_down(state);
                         } else {
-                            Self::handle_single_player_shell_mouse_up(state);
+                            Self::handle_menu_page_mouse_up(state);
                         }
                     }
                 } else if state.frontend.screen == GameScreen::MainMenu
@@ -919,10 +976,17 @@ impl ApplicationHandler for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let shell_scroll_wake = if let Some(state) = self.state.as_mut() {
             Self::update_saved_seed_browser_scroll(state, false);
-            [crate::app::input::keyboard::poll_scroll_repeat(state),
-             crate::app::input::sound::poll_scroll_repeat(state)]
-                .into_iter().flatten().min()
-        } else { None };
+            [
+                crate::app::input::keyboard::poll_scroll_repeat(state),
+                crate::app::input::sound::poll_scroll_repeat(state),
+                Self::poll_movie_list_scroll(state),
+            ]
+            .into_iter()
+            .flatten()
+            .min()
+        } else {
+            None
+        };
         if let (Some(state), Some(session)) = (self.state.as_mut(), self.tactical_capture.as_mut())
         {
             if let Err(err) = Self::render_frame(state, event_loop, None, Some(&mut *session)) {

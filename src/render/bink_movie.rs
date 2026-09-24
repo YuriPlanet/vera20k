@@ -77,6 +77,16 @@ impl BinkMovieSurface {
         &self.source_archive
     }
 
+    /// Index of the next frame `step` will decode (frame 0 is decoded on
+    /// construction).
+    pub fn next_frame(&self) -> usize {
+        self.current_frame
+    }
+
+    pub fn file(&self) -> &BinkFile {
+        &self.file
+    }
+
     pub fn step(
         &mut self,
         gpu: &GpuContext,

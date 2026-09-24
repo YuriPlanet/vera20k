@@ -230,8 +230,10 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
 }
 
 impl App {
-    pub(super) fn single_player_shell_active(state: &AppState) -> bool {
-        state.frontend.screen == GameScreen::MainMenu && state.frontend.shell_route.single_player()
+    /// A right-panel menu page (Single Player `0x100` or Movies & Credits
+    /// `0x101`) owns the `MainMenu` screen.
+    pub(super) fn menu_page_active(state: &AppState) -> bool {
+        crate::app::frontend::menu_page_render::ActiveMenuPage::from_state(state).is_some()
     }
 
     /// The end-of-match score screen owns input whenever it has both a resolved
@@ -302,15 +304,6 @@ impl App {
         state.match_state.input.zoom_target = 1.0;
     }
 
-    fn single_player_shell_layout(
-        state: &AppState,
-    ) -> crate::ui::single_player_shell::SinglePlayerShellLayout {
-        crate::ui::single_player_shell::compute_layout(
-            state.renderer.gpu.config.width,
-            state.renderer.gpu.config.height,
-        )
-    }
-
     fn refresh_single_player_load_state(state: &mut AppState) {
         state.persistence.refresh_save_list_if_dirty();
         state
@@ -328,15 +321,11 @@ impl App {
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::SinglePlayer;
-        state
-            .frontend
-            .single_player_shell_state
-            .pressed_owner_draw_button = None;
-        state
-            .frontend
-            .single_player_shell_state
-            .hovered_owner_draw_button = None;
-        state.frontend.single_player_shell_state.hover_started_at = None;
+        // A new 0x100 instance starts with no press or hover.
+        state.frontend.shell_controller.reset_to(
+            crate::ui::single_player_shell::SINGLE_PLAYER_PAGE.dialog,
+            false,
+        );
         Self::refresh_single_player_load_state(state);
     }
 
@@ -347,15 +336,6 @@ impl App {
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
-        state
-            .frontend
-            .single_player_shell_state
-            .pressed_owner_draw_button = None;
-        state
-            .frontend
-            .single_player_shell_state
-            .hovered_owner_draw_button = None;
-        state.frontend.single_player_shell_state.hover_started_at = None;
     }
 
     fn enter_native_skirmish_from_single_player(state: &mut AppState) {
@@ -635,14 +615,15 @@ impl App {
             .collect()
     }
 
-    fn single_player_shell_button_feed(
-        layout: &crate::ui::single_player_shell::SinglePlayerShellLayout,
+    /// Owner-draw button feed for a right-panel menu page (0x100 / 0x101).
+    pub(super) fn menu_page_button_feed(
+        layout: &crate::ui::shell::menu_page::MenuPageLayout,
     ) -> Vec<crate::ui::shell::layout::LaidOutControl> {
         layout
             .buttons
             .iter()
             .map(|b| crate::ui::shell::layout::LaidOutControl {
-                id: b.id.resource_id(),
+                id: b.id,
                 rect: b.rect,
             })
             .collect()
@@ -668,27 +649,6 @@ impl App {
             .shell_controller
             .hovered()
             .and_then(crate::ui::main_menu_shell::MainMenuControlId::from_resource_id);
-    }
-
-    fn mirror_shell_controller_to_single_player(state: &mut AppState) {
-        state
-            .frontend
-            .single_player_shell_state
-            .pressed_owner_draw_button = state
-            .frontend
-            .shell_controller
-            .pressed()
-            .and_then(crate::ui::single_player_shell::SinglePlayerControlId::from_resource_id);
-        state
-            .frontend
-            .single_player_shell_state
-            .hovered_owner_draw_button = state
-            .frontend
-            .shell_controller
-            .hovered()
-            .and_then(crate::ui::single_player_shell::SinglePlayerControlId::from_resource_id);
-        state.frontend.single_player_shell_state.hover_started_at =
-            state.frontend.shell_controller.hover_started_at();
     }
 
     pub(super) fn handle_main_menu_shell_mouse_down(state: &mut AppState) {
@@ -817,73 +777,93 @@ impl App {
         }
     }
 
-    pub(super) fn handle_single_player_shell_mouse_down(state: &mut AppState) {
-        let layout = Self::single_player_shell_layout(state);
-        let feed = Self::single_player_shell_button_feed(&layout);
-        let x = state.match_state.input.cursor_x.round() as i32;
-        let y = state.match_state.input.cursor_y.round() as i32;
-        let load_enabled = state
-            .frontend
-            .single_player_shell_state
-            .load_saved_game_enabled;
+    /// Bind the shared controller to the active menu page for one pointer
+    /// event and refresh its runtime-disabled controls. `ensure_active` only
+    /// resets on a dialog change, so a gesture's press survives to its release.
+    fn prepare_menu_page_input(
+        state: &mut AppState,
+        page: crate::app::frontend::menu_page_render::ActiveMenuPage,
+    ) -> Vec<crate::ui::shell::layout::LaidOutControl> {
+        use crate::app::frontend::menu_page_render::ActiveMenuPage;
+        let spec = page.spec();
+        let layout = crate::ui::shell::menu_page::compute_layout(
+            spec,
+            state.renderer.gpu.config.width,
+            state.renderer.gpu.config.height,
+        );
         state
             .frontend
             .shell_controller
-            .ensure_active(crate::ui::shell::descriptor::DialogId(0x0100), false);
-        // Refresh the Load Saved Game disabled guard before the gesture; the
-        // override persists through the matching release (ensure_active only resets
-        // on a dialog change, never mid-gesture).
-        state.frontend.shell_controller.set_disabled(
-            crate::ui::single_player_shell::SinglePlayerControlId::LoadSavedGame0x689.resource_id(),
-            !load_enabled,
-        );
+            .ensure_active(spec.dialog, false);
+        if page == ActiveMenuPage::SinglePlayer {
+            let load_enabled = state
+                .frontend
+                .single_player_shell_state
+                .load_saved_game_enabled;
+            state.frontend.shell_controller.set_disabled(
+                crate::ui::single_player_shell::SinglePlayerControlId::LoadSavedGame0x689
+                    .resource_id(),
+                !load_enabled,
+            );
+        }
+        Self::menu_page_button_feed(&layout)
+    }
+
+    pub(super) fn handle_menu_page_mouse_down(state: &mut AppState) {
+        let Some(page) = crate::app::frontend::menu_page_render::ActiveMenuPage::from_state(state)
+        else {
+            return;
+        };
+        let feed = Self::prepare_menu_page_input(state, page);
+        let x = state.match_state.input.cursor_x.round() as i32;
+        let y = state.match_state.input.cursor_y.round() as i32;
         state.frontend.shell_controller.on_pointer_down(x, y, &feed);
-        let pressed = state.frontend.shell_controller.pressed().is_some();
-        Self::mirror_shell_controller_to_single_player(state);
-        if pressed {
+        // The owner-draw press cue plays on mouse-down over an enabled button.
+        if state.frontend.shell_controller.pressed().is_some() {
             Self::play_main_menu_button_sound(state);
         }
     }
 
-    pub(super) fn handle_single_player_shell_mouse_move(state: &mut AppState) {
-        let layout = Self::single_player_shell_layout(state);
-        let feed = Self::single_player_shell_button_feed(&layout);
+    pub(super) fn handle_menu_page_mouse_move(state: &mut AppState) {
+        let Some(page) = crate::app::frontend::menu_page_render::ActiveMenuPage::from_state(state)
+        else {
+            return;
+        };
+        let feed = Self::prepare_menu_page_input(state, page);
         let x = state.match_state.input.cursor_x.round() as i32;
         let y = state.match_state.input.cursor_y.round() as i32;
-        state
-            .frontend
-            .shell_controller
-            .ensure_active(crate::ui::shell::descriptor::DialogId(0x0100), false);
-        // Hover path is enable-UNfiltered: a disabled Load Saved Game still
-        // hover-tracks and arms its tooltip timer, exactly as before.
+        // Hover is enable-unfiltered: a disabled button still drives 0x695.
         state.frontend.shell_controller.on_pointer_move(x, y, &feed);
-        Self::mirror_shell_controller_to_single_player(state);
     }
 
-    pub(super) fn handle_single_player_shell_mouse_up(state: &mut AppState) {
-        let layout = Self::single_player_shell_layout(state);
-        let feed = Self::single_player_shell_button_feed(&layout);
+    pub(super) fn handle_menu_page_mouse_up(state: &mut AppState) {
+        use crate::app::frontend::menu_page_render::ActiveMenuPage;
+        let Some(page) = ActiveMenuPage::from_state(state) else {
+            return;
+        };
+        let feed = Self::prepare_menu_page_input(state, page);
         let x = state.match_state.input.cursor_x.round() as i32;
         let y = state.match_state.input.cursor_y.round() as i32;
-        let load_enabled = state
-            .frontend
-            .single_player_shell_state
-            .load_saved_game_enabled;
-        state
-            .frontend
-            .shell_controller
-            .ensure_active(crate::ui::shell::descriptor::DialogId(0x0100), false);
-        state.frontend.shell_controller.set_disabled(
-            crate::ui::single_player_shell::SinglePlayerControlId::LoadSavedGame0x689.resource_id(),
-            !load_enabled,
-        );
-        let activated = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
-        Self::mirror_shell_controller_to_single_player(state);
-        if let Some(action) = activated
-            .and_then(crate::ui::single_player_shell::SinglePlayerControlId::from_resource_id)
-            .map(crate::ui::single_player_shell::action_for_control)
-        {
-            Self::handle_single_player_shell_action(state, action);
+        let Some(activated) = state.frontend.shell_controller.on_pointer_up(x, y, &feed) else {
+            return;
+        };
+        match page {
+            ActiveMenuPage::SinglePlayer => {
+                if let Some(action) =
+                    crate::ui::single_player_shell::SinglePlayerControlId::from_resource_id(
+                        activated,
+                    )
+                    .map(crate::ui::single_player_shell::action_for_control)
+                {
+                    Self::handle_single_player_shell_action(state, action);
+                }
+            }
+            ActiveMenuPage::MoviesAndCredits => {
+                if let Some(action) = crate::ui::movies_credits_shell::action_for_control(activated)
+                {
+                    Self::handle_movies_credits_action(state, action);
+                }
+            }
         }
     }
 
@@ -915,8 +895,20 @@ impl App {
         if state.frontend.screen != GameScreen::MainMenu || state.frontend.quit_cascade.is_some() {
             return;
         }
+        // Play_Movie runs no audio pump; the paused theme resumes afterwards.
+        if state.frontend.fullscreen_movie.is_some() {
+            return;
+        }
         let now_ms =
             crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
+        // Show_Credits' Call_Back pumps Theme AI (starting the queued CREDITS
+        // song) without the menu loop's Play_Song(INTRO).
+        if state.frontend.credits_roll.is_some() {
+            if let Some(assets) = state.process_assets.manager() {
+                state.audio.update_theme(assets, now_ms);
+            }
+            return;
+        }
         if let Some(assets) = state.process_assets.manager() {
             state.audio.maintain_main_menu_theme(assets, now_ms);
         }
@@ -991,8 +983,7 @@ impl App {
                 Self::open_launcher_options_dialog(state);
             }
             MainMenuShellAction::MoviesAndCredits => {
-                state.frontend.movies_credits_dialog =
-                    Some(crate::ui::main_menu_dialogs::MoviesCreditsDialogState::default());
+                Self::open_movies_credits_page(state);
             }
             MainMenuShellAction::WwOnline
             | MainMenuShellAction::Network
@@ -1033,13 +1024,12 @@ impl App {
         state.main_menu_dialog_open()
     }
 
-    /// Close the egui-only main-menu dialogs (options/movies/campaign — never on
+    /// Close the egui-only main-menu dialogs (options/campaign — never on
     /// the controller stack). The exit-confirm modal closes through
     /// close_exit_confirm_modal_from_controller (D-B3).
     pub(crate) fn close_main_menu_dialogs(state: &mut AppState) {
         state.frontend.exit_confirm_modal = None;
         state.frontend.options_dialog = None;
-        state.frontend.movies_credits_dialog = None;
         state.frontend.campaign_select = None;
     }
 
@@ -1113,21 +1103,6 @@ impl App {
                 &mut dialog,
             );
             Self::dispatch_launcher_options_output(state, dialog, output);
-            return false;
-        }
-
-        if state.frontend.movies_credits_dialog.is_some() {
-            let csf = |key: &str, fallback: &str| Self::csf_label(state, key, fallback);
-            match dialogs::draw_movies_credits_dialog(&state.renderer.egui.ctx, &csf) {
-                dialogs::MoviesCreditsAction::Back => state.frontend.movies_credits_dialog = None,
-                // Sneak Preview / Movies / Credits playback is not implemented;
-                // the picker would derive entries only from artmd.ini [Movies],
-                // which is not parsed yet. No-op for now.
-                dialogs::MoviesCreditsAction::SneakPreview
-                | dialogs::MoviesCreditsAction::Movies
-                | dialogs::MoviesCreditsAction::Credits
-                | dialogs::MoviesCreditsAction::None => {}
-            }
             return false;
         }
 

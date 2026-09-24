@@ -205,6 +205,15 @@ impl AppAudioRuntime {
         self.apply_theme_action(action);
     }
 
+    /// `Queue_Song(From_Name(track))` @ `0x00720B20`; Theme AI starts it.
+    pub(crate) fn queue_theme(&mut self, track: &str, wall_ms: u64) {
+        let index = self.theme.from_name(track);
+        let gates = self.theme_gates();
+        let physical = self.music_output_state();
+        let action = self.theme.queue_song(index, gates, physical, wall_ms);
+        self.apply_theme_action(action);
+    }
+
     /// `ThemeClass::Stop(fade=0)`.
     pub(crate) fn stop_theme(&mut self) {
         let gates = self.theme_gates();
