@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "FireAt launch scatter 0x006FE663..0x006FE8EE (both arms), SpawnShrapnel child velocity (object branch 0x0046A5B2..0x0046A875, cell branch 0x0046AA66..0x0046AD29), the random-direction helper 0x0049F420 at cluster distances, and the cluster loop 0x00469008..0x00469091",
+  "assumptions": [
+    "x87 control word 0x0E7F (53-bit, chop) as WinMain sets it",
+    "the retail sine, atan and Sqrt_Approx tables are the image's initialised data",
+    "the shrapnel cell branch starts after its prologue zeroed the velocity; the fresh stack is zero"
+  ],
+  "substitutions": [
+    "Random__RandomRanged 0x0065C7E0 and Random 0x0065C780 return the case's values; their arguments are recorded",
+    "GetWeaponRange (vt+0x168) returns the case's range",
+    "the target's/cell's GetCoords (vt+0x48) returns the case's coordinate",
+    "the child's launch call (vt+0x1F0) is observed, not run",
+    "in the cluster loop, DetonateAtCoord 0x004690B0 records its coordinate argument and returns"
+  ],
+  "entry_points": {
+    "scatter": "0x006FE663",
+    "shrapnel_object": "0x0046A5B2",
+    "shrapnel_cell": "0x0046AA66",
+    "direction": "0x0049F420",
+    "cluster_loop": "0x00469008"
+  },
+  "payload_sha256": "769d6aa1aea0c142c0c6c03359799e6905a52eccd2b319e1f9bd9c36d63b80cb"
+}

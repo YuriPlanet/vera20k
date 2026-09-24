@@ -34,8 +34,9 @@
 //! Ordinary and Vertical flight retain one binary64 velocity authority.
 //! `launch` owns the native scalar FireAt math; combat resolves its receivers.
 //! RESIDUAL (GSI-08.06/07): FLH/pivot slope translation, directed Building
-//! heading, scatter, homing launch/steering, shrapnel launch and active
-//! NukeMaker child production remain open. Those producers can still change the inputs delivered to this exact
+//! heading, homing launch/steering, the flight of `Inviso=` shrapnel children
+//! (native places them at their target, `BulletClass::Fire @ 0x00468670`) and
+//! active NukeMaker child production remain open. Those producers can still change the inputs delivered to this exact
 //! motion/collision consumer; the complete projectile row remains open.
 
 pub(crate) mod launch;
@@ -678,108 +679,27 @@ pub fn projectile_burst_plan(airburst: bool, cluster: i32) -> ProjectileBurstPla
     }
 }
 
-/// One uniform BAM angle drawn the way `TechnoClass::FireAt` and
-/// `BulletClass::Fire` draw theirs: a raw `Random__RandomRanged(0, 0x7FFFFFFE)`
-/// mapped to `[0, 2π)`, pushed through the 16-bit facing quantisation, and
-/// converted back to radians.
-///
-/// Named locations: `0x006FE83D`..`0x006FE872` (plain arm),
-/// `0x006FE75B`..`0x006FE790` (flak arm), `0x00468807`..`0x00468840`
-/// (`BulletClass::Fire`). Constants read from the image:
-/// `[0x007E3570] = 1/(2^31 - 1)`, `[0x007E3CC0] = 2π`,
-/// `[0x007E2820] = π/2`, `[0x007E2818] = -10430.06004058427`,
-/// `[0x007E2810] = -9.587672516830327e-05`.
-fn scatter_angle_radians(scenario_rng: &mut SimRng) -> f64 {
-    const INVERSE_RANDOM_SPAN: f64 = 4.656_612_875_245_797e-10;
-    const FACING_SCALE: f64 = -10430.060_040_584_27;
-    const BAM_TO_RADIANS: f64 = -9.587_672_516_830_327e-05;
-    let raw = scenario_rng.next_range_u32_inclusive(0, 0x7fff_fffe);
-    let uniform = f64::from(raw as i32) * INVERSE_RANDOM_SPAN * std::f64::consts::TAU;
-    let bam = ((uniform - std::f64::consts::FRAC_PI_2) * FACING_SCALE).trunc() as i32 as i16;
-    f64::from(i32::from(bam) - 0x3fff) * BAM_TO_RADIANS
-}
-
-/// `TechnoClass::FireAt` launch-time scatter, gated by `Inaccurate && Arcing`
-/// at `0x006FE67D`/`0x006FE68B`. Both arms consume exactly two Scenario RNG
-/// draws — magnitude first, then angle — and both OFFSET the target delta
-/// rather than replacing it (`FIADD` on X at `0x006FE7E5`, `FSUBR` on Y at
-/// `0x006FE7C0`). Z is carried through untouched.
-///
-/// `flak` selects the range-scaled arm taken when
-/// `FlakScatter && !Inviso` (`0x006FE699`/`0x006FE6A7`); stock `[FlakTProj]`
-/// is its only user.
-///
-/// **The axis binding below is deliberate and is NOT the one the mapping ledger
-/// records.** The ledger's §3a has sine and cosine swapped (`dX' = sin`,
-/// `dY' = cos`). Walked in assembly: the `Math__CosFromTable @ 0x004CAD00`
-/// result is the term that reaches the X `FIADD` at `0x006FE7E5`, and the
-/// `Math__SinFromTable @ 0x004CACB0` result is the term that reaches the Y
-/// `FSUBR` at `0x006FE7C0` — so `dX += cos(theta) * mag` and
-/// `dY -= sin(theta) * mag`, as written. Do not "correct" this back to the
-/// ledger.
-pub fn projectile_launch_scatter(
-    delta: (i32, i32, i32),
-    ballistic_scatter: i32,
-    weapon_range_leptons: i32,
-    flak: bool,
-    scenario_rng: &mut SimRng,
-) -> (i32, i32, i32) {
-    let magnitude = if flak {
-        // `0x006FE6AD`..`0x006FE6F1` builds the distance from f32 components.
-        let fx = delta.0 as f32;
-        let fy = delta.1 as f32;
-        let fz = delta.2 as f32;
-        let distance = ((f64::from(fx) * f64::from(fx)
-            + f64::from(fy) * f64::from(fy)
-            + f64::from(fz) * f64::from(fz))
-        .sqrt()) as f32;
-        let roll = scenario_rng.next_range_u32_inclusive(0, ballistic_scatter.max(0) as u32) as i32;
-        let scaled = i64::from(roll) * i64::from(distance.trunc() as i32);
-        if weapon_range_leptons == 0 {
-            0
-        } else {
-            (scaled / i64::from(weapon_range_leptons)) as i32
-        }
-    } else {
-        // `0x006FE815`..`0x006FE81C`: `RandomRanged(BallisticScatter / 2,
-        // BallisticScatter)`, the halving being an arithmetic `SAR` by one.
-        let high = ballistic_scatter.max(0);
-        scenario_rng.next_range_u32_inclusive((high / 2) as u32, high as u32) as i32
-    };
-    let theta = scatter_angle_radians(scenario_rng);
-    let magnitude = f64::from(magnitude);
-    (
-        (theta.cos() * magnitude + f64::from(delta.0)).trunc() as i32,
-        (f64::from(delta.1) - theta.sin() * magnitude).trunc() as i32,
-        delta.2,
-    )
-}
-
-/// Produce the next `BulletClass::Explode` cluster coordinate.
-///
-/// Named locations: `BulletClass::Explode @ 0x00468d80` draws the inclusive
-/// radius first, then `MapClass::GetRandomCoordsNear @ 0x00566dc0` consumes one
-/// raw Scenario RNG word and uses its low byte as the angle byte. The generated
-/// coordinate is relative to the prior coordinate and is reverted when it
-/// leaves the native 512-by-512 cell map.
+/// The next cluster coordinate of
+/// `BulletClass::ResolveImpactCoordAndDetonate @ 0x00468D80`. The impact is
+/// copied once before the loop (`0x00469008..0x0046901C`); after each cluster
+/// detonation the loop draws `RandomRanged(0x100, 0x200)` (`0x00469057`) and
+/// moves that copy that far in a random direction (`0x0049F420`, no cell
+/// snap, `in` = the copy at `0x0046905F`: one raw Scenario draw, the table
+/// direction of its low byte, truncated; the impact itself when either axis
+/// leaves the 512-cell map). So every cluster after the first lands around
+/// the impact, never around the previous cluster.
 pub fn projectile_next_cluster_coord(
-    prior: ProjectileCoord,
+    impact: ProjectileCoord,
     scenario_rng: &mut SimRng,
 ) -> ProjectileCoord {
-    let distance = scenario_rng.next_range_u32_inclusive(256, 512) as f64;
-    let angle_byte = (scenario_rng.next_u32() & 0xff) as i32;
-    let angle_word = angle_byte << 8;
-    let angle = f64::from(angle_word - 0x3fff) * -0.00009587672516830327;
-    let candidate = ProjectileCoord::new(
-        (f64::from(prior.x) + angle.cos() * distance).round_ties_even() as i32,
-        (f64::from(prior.y) - angle.sin() * distance).round_ties_even() as i32,
-        prior.z,
+    let distance = scenario_rng.next_range_i32_inclusive(0x100, 0x200);
+    let (x, y) = crate::sim::combat::inviso_scatter::random_direction_coord(
+        scenario_rng,
+        impact.x,
+        impact.y,
+        distance,
     );
-    let inside_map = (candidate.x / 256) >= 0
-        && (candidate.x / 256) < 0x200
-        && (candidate.y / 256) >= 0
-        && (candidate.y / 256) < 0x200;
-    if inside_map { candidate } else { prior }
+    ProjectileCoord::new(x, y, impact.z)
 }
 
 /// Native two-draw random-cell fallback used after hostile shrapnel targets.
@@ -2957,6 +2877,52 @@ mod tests {
         }
     }
 
+    /// `tools/projectile_oracle/launch_scatter.json`'s cluster-loop rows: the
+    /// original loop (`0x00469008..0x00469091`) hands the first detonation the
+    /// impact and every later one `0x0049F420(impact, distance, draw)`.
+    #[test]
+    fn native_cluster_loop_scatters_around_the_impact() {
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tools/projectile_oracle/launch_scatter.json"
+        ))
+        .unwrap();
+        let rows = corpus["cluster_loop"].as_array().unwrap();
+        assert_eq!(rows.len(), 6);
+        let coord = |value: &serde_json::Value| {
+            let axis = |index: usize| value[index].as_i64().unwrap() as i32;
+            ProjectileCoord::new(axis(0), axis(1), axis(2))
+        };
+        for (index, row) in rows.iter().enumerate() {
+            let input = &row["input"];
+            let impact = coord(&input["impact"]);
+            let draws = input["distances"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .zip(input["raws"].as_array().unwrap());
+            let expected: Vec<ProjectileCoord> = std::iter::once(impact)
+                .chain(draws.map(|(distance, raw)| {
+                    let (x, y) =
+                        crate::sim::combat::inviso_scatter::random_direction_coord_for_byte(
+                            (raw.as_u64().unwrap() & 0xff) as u8,
+                            impact.x,
+                            impact.y,
+                            distance.as_i64().unwrap() as i32,
+                        );
+                    ProjectileCoord::new(x, y, impact.z)
+                }))
+                .take(input["cluster"].as_u64().unwrap() as usize)
+                .collect();
+            let native: Vec<ProjectileCoord> = row["detonations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(coord)
+                .collect();
+            assert_eq!(expected, native, "row {index}");
+        }
+    }
+
     #[test]
     fn cluster_and_random_shrapnel_consume_native_draw_counts() {
         let mut cluster_rng = SimRng::new(0x46_8d80);
@@ -3192,11 +3158,17 @@ mod tests {
         let _ = reference.next_range_u32_inclusive(128, 256);
         let _ = reference.next_range_u32_inclusive(0, 0x7fff_fffe);
 
-        let scattered = projectile_launch_scatter((1024, 0, 77), 256, 1280, false, &mut rng);
+        let scattered = launch::fireat_launch_scatter(
+            ProjectileCoord::new(1024, 0, 77),
+            256,
+            1280,
+            false,
+            &mut rng,
+        );
         assert_eq!(rng.logical_state(), reference.logical_state());
-        assert_eq!(scattered.2, 77, "z is carried through unchanged");
-        let offset_x = scattered.0 - 1024;
-        let offset_y = scattered.1;
+        assert_eq!(scattered.z, 77, "z is carried through unchanged");
+        let offset_x = scattered.x - 1024;
+        let offset_y = scattered.y;
         let magnitude = ((offset_x * offset_x + offset_y * offset_y) as f64).sqrt();
         assert!(
             (128.0..=257.0).contains(&magnitude),
@@ -3209,9 +3181,15 @@ mod tests {
         let mut flak_reference = flak_rng.clone();
         let _ = flak_reference.next_range_u32_inclusive(0, 256);
         let _ = flak_reference.next_range_u32_inclusive(0, 0x7fff_fffe);
-        let flak = projectile_launch_scatter((1280, 0, 0), 256, 1280, true, &mut flak_rng);
+        let flak = launch::fireat_launch_scatter(
+            ProjectileCoord::new(1280, 0, 0),
+            256,
+            1280,
+            true,
+            &mut flak_rng,
+        );
         assert_eq!(flak_rng.logical_state(), flak_reference.logical_state());
-        let flak_magnitude = (((flak.0 - 1280) * (flak.0 - 1280) + flak.1 * flak.1) as f64).sqrt();
+        let flak_magnitude = (((flak.x - 1280) * (flak.x - 1280) + flak.y * flak.y) as f64).sqrt();
         assert!(
             flak_magnitude <= 257.0,
             "at exactly one weapon range the flak arm cannot exceed BallisticScatter, got {flak_magnitude}"

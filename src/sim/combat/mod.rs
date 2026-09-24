@@ -30,7 +30,7 @@ pub(crate) mod fire_coord;
 pub(crate) mod fire_decision;
 pub(crate) mod greatest_threat;
 pub(crate) mod in_range;
-mod inviso_scatter;
+pub(crate) mod inviso_scatter;
 mod object_health;
 #[cfg(test)]
 pub(crate) mod receiver_fixture;
@@ -2687,31 +2687,6 @@ fn projectile_impact_cell(impact: ProjectileCoord) -> (u16, u16, SimFixed, SimFi
     )
 }
 
-// RESIDUAL (GSI-08.08): this existing child producer still rounds host-math
-// components to integers. The shared binary64 state migration does not certify
-// its angle, target coordinate getter, or native launch arithmetic.
-fn shrapnel_launch_velocity(
-    origin: ProjectileCoord,
-    target: ProjectileCoord,
-    speed: i32,
-) -> ProjectileVelocity {
-    let dx = f64::from(target.x - origin.x);
-    let dy = f64::from(target.y - origin.y);
-    let length = dx.hypot(dy);
-    let angle = 0.7853262558535721_f64;
-    let horizontal = f64::from(speed) * angle.cos();
-    let (unit_x, unit_y) = if length == 0.0 {
-        (1.0, 0.0)
-    } else {
-        (dx / length, dy / length)
-    };
-    ProjectileVelocity::new(
-        (unit_x * horizontal).round_ties_even() as i32,
-        (unit_y * horizontal).round_ties_even() as i32,
-        (f64::from(speed) * angle.sin()).round_ties_even() as i32,
-    )
-}
-
 fn emit_projectile_shrapnel(
     detonation: &ProjectileDetonation,
     entities: &EntityStore,
@@ -2884,6 +2859,8 @@ fn emit_projectile_shrapnel(
     }
 
     for (target, captured_target_coord) in targets {
+        // The random-cell children (captured) launch through the second branch.
+        let random_cell = captured_target_coord.is_some();
         let target_coord = if let Some(captured) = captured_target_coord {
             captured
         } else {
@@ -2892,9 +2869,12 @@ fn emit_projectile_shrapnel(
                     let Some(entity) = entities.get(id) else {
                         continue;
                     };
+                    // `0x0046A614`: the object's GetCoords (vt+0x48), a
+                    // building's foundation center (`0x00447AC0`).
+                    let (rx, ry, sub_x, sub_y) = target_coords(entity, Some(rules), interner);
                     ProjectileCoord::new(
-                        i32::from(entity.position.rx) * 256 + entity.position.sub_x.to_num::<i32>(),
-                        i32::from(entity.position.ry) * 256 + entity.position.sub_y.to_num::<i32>(),
+                        i32::from(rx) * 256 + sub_x.to_num::<i32>(),
+                        i32::from(ry) * 256 + sub_y.to_num::<i32>(),
                         i32::from(entity.position.z)
                             * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
                     )
@@ -2923,10 +2903,13 @@ fn emit_projectile_shrapnel(
                 owner: detonation.payload.owner,
             },
             speed_leptons_per_frame: child_weapon.speed.clamp(1, i32::from(u16::MAX)) as u16,
-            velocity: shrapnel_launch_velocity(detonation.impact, target_coord, child_weapon.speed),
+            velocity: crate::sim::projectile::launch::shrapnel_launch_velocity(
+                detonation.impact,
+                target_coord,
+                child_weapon.speed,
+                random_cell,
+            ),
             // Child launch owner: BulletClass::Shrapnel @ 0x0046A310.
-            // The upstream vector producer remains open; flight now uses the
-            // same persistent binary64 state and live gravity consumer.
             trajectory: ProjectileTrajectory::Ballistic,
             guidance: None,
             visual: ProjectileVisualState::new(

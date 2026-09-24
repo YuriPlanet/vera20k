@@ -1736,12 +1736,14 @@ pub(super) fn emit_projectile_detonations(
             continue;
         }
 
+        // Every cluster after the first lands around the impact (the copy at
+        // `0x00469008`), not around the previous cluster.
         let mut coordinate = detonation.impact;
         for _ in 0..cluster.max(0) {
             let mut clustered = *detonation;
             clustered.impact = coordinate;
             emit_one_projectile_detonation(world, rules, overlay_registry, &clustered, out);
-            coordinate = projectile_next_cluster_coord(coordinate, &mut world.scenario_rng);
+            coordinate = projectile_next_cluster_coord(detonation.impact, &mut world.scenario_rng);
         }
     }
 }
@@ -3153,24 +3155,46 @@ fn emit_admitted_fire(
         // distance, and only then force a homing or vertical shot to one
         // lepton per frame.
         let frozen_target_position = impact;
-        let delta = (
+        let delta = ProjectileCoord::new(
             impact.x - origin.x,
             impact.y - origin.y,
             impact.z - origin.z,
         );
         let delta = match launch_scatter_is_flak {
-            Some(flak) => crate::sim::projectile::projectile_launch_scatter(
-                delta,
-                rules.combat_damage.ballistic_scatter,
-                (weapon.range * SimFixed::from_num(crate::util::lepton::LEPTONS_PER_CELL_I32))
-                    .to_num::<i32>(),
-                flak,
-                &mut world.scenario_rng,
-            ),
+            Some(flak) => {
+                // vt+0x168 (`TechnoClass::GetWeaponRange @ 0x007012C0`) for
+                // the fired weapon: an open-topped firer's passengers cap it.
+                // A building's weapon lookup (`0x004526F0`) returns the firing
+                // occupant's weapon, which a garrison shot already selected.
+                let range = if is_garrison {
+                    weapon.range_leptons
+                } else {
+                    world.substrate.entities.get(snap.stable_id).map_or(
+                        weapon.range_leptons,
+                        |firer| {
+                            combat_weapon::weapon_range(
+                                firer,
+                                obj,
+                                selected.index,
+                                &world.substrate.entities,
+                                rules,
+                                &world.interner,
+                            )
+                        },
+                    )
+                };
+                crate::sim::projectile::launch::fireat_launch_scatter(
+                    delta,
+                    rules.combat_damage.ballistic_scatter,
+                    range,
+                    flak,
+                    &mut world.scenario_rng,
+                )
+            }
             None => delta,
         };
         let impact =
-            ProjectileCoord::new(origin.x + delta.0, origin.y + delta.1, origin.z + delta.2);
+            ProjectileCoord::new(origin.x + delta.x, origin.y + delta.y, origin.z + delta.z);
         use crate::sim::projectile::launch::{
             FireAtLaunch, FireAtLaunchResult, fireat_launch, high_arc_root,
         };
@@ -3275,8 +3299,8 @@ fn emit_admitted_fire(
             raw_source.z
         };
         let voxel = projectile_type.is_some_and(|projectile| projectile.voxel);
-        let building_pitch_height = (!ballistic && !voxel && delta.2.wrapping_abs() > 200)
-            .then(|| current_target)
+        let building_pitch_height = (!ballistic && !voxel && delta.z.wrapping_abs() > 200)
+            .then_some(current_target)
             .flatten()
             .and_then(|target| match target {
                 TargetKind::Entity(id) => world.substrate.entities.get(id),
@@ -3306,7 +3330,7 @@ fn emit_admitted_fire(
             })
         } else {
             fireat_launch(FireAtLaunch {
-                delta: ProjectileCoord::new(delta.0, delta.1, delta.2),
+                delta,
                 speed: weapon.speed,
                 vertical: vertical.is_some(),
                 heading: directed_heading,
