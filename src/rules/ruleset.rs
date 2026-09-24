@@ -689,6 +689,10 @@ pub struct GeneralRules {
     /// GUIMoveInSound (stock `MenuSlideIn`). Played once at the start of each
     /// allow-listed shell dialog's slide. None = no sound configured.
     pub gui_move_in_sound: Option<String>,
+    /// Shell teardown slide-out cue from [AudioVisual] GUIMoveOutSound (stock
+    /// `MenuSlideOut`, `RulesClass+0x19C` read at `0x006694C7`), played by
+    /// `0x00608070` before a shown shell dialog's buttons slide out.
+    pub gui_move_out_sound: Option<String>,
     /// Generic shell click sound from [AudioVisual] GenericClick.
     pub generic_click_sound: Option<String>,
     /// Launcher Options Sound/Voice preview cue from [AudioVisual] GenericBeep.
@@ -1312,6 +1316,7 @@ impl Default for GeneralRules {
             chute_sound: None,
             gui_main_button_sound: None,
             gui_move_in_sound: None,
+            gui_move_out_sound: None,
             generic_click_sound: None,
             generic_beep_sound: None,
             gui_checkbox_sound: None,
@@ -2173,6 +2178,11 @@ impl GeneralRules {
                 .map(str::to_string),
             gui_move_in_sound: audio_visual
                 .and_then(|s| s.get("GUIMoveInSound"))
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
+            gui_move_out_sound: audio_visual
+                .and_then(|s| s.get("GUIMoveOutSound"))
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(str::to_string),
@@ -4836,6 +4846,18 @@ SpawnCount=3
     }
     use super::*;
     use crate::rules::native_processing::RulesLayerKind;
+
+    #[test]
+    fn retail_shell_slide_cues_come_from_audio_visual() {
+        // RulesClass+0x19C GUIMoveOutSound (0x006694C7) and +0x1A0
+        // GUIMoveInSound (0x00669509), read from [AudioVisual].
+        let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let general = GeneralRules::from_ini(&ini);
+        assert_eq!(general.gui_move_out_sound.as_deref(), Some("MenuSlideOut"));
+        assert_eq!(general.gui_move_in_sound.as_deref(), Some("MenuSlideIn"));
+    }
 
     #[test]
     fn cloak_global_defaults_and_native_minute_conversion_parse() {

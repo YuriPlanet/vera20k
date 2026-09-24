@@ -100,17 +100,18 @@ fn status_csf_key(spec: &MenuPageSpec, hovered: Option<u16>) -> Option<&'static 
         .map(|button| button.tooltip_key)
 }
 
-/// Button captions and the heading; the status line comes from
-/// [`paint_shell_status_line`].
+/// Button captions (none while a slide draws the frames) and the heading;
+/// the status line comes from [`paint_shell_status_line`].
 fn paint_labels<'a>(
     state: &'a AppState,
     view: &MenuPageView<'_>,
     layout: &MenuPageLayout,
     input: PageInput,
     title_window: Option<Kind1RevealWindow>,
+    captions: bool,
 ) -> Vec<PaintLabel<'a>> {
     let mut out = Vec::with_capacity(layout.buttons.len() + 2);
-    for button in &layout.buttons {
+    for button in layout.buttons.iter().filter(|_| captions) {
         let Some(spec_button) = view.spec.button(button.id) else {
             continue;
         };
@@ -162,7 +163,7 @@ pub(crate) fn paint_shell_monitor(state: &mut AppState) -> Option<usize> {
         .main_menu_shell_chrome
         .as_ref()
         .map_or(0, |chrome| chrome.warning_monitor_frames.len());
-    let timers = state.frontend.shell_first_paint_slide.is_none();
+    let timers = !crate::app::frontend::shell_transition::shell_slide_running(state);
     state
         .frontend
         .shell_monitor
@@ -189,6 +190,16 @@ pub(crate) fn paint_shell_status_line(
         rgb: SHELL_TEXT_RGB_ENABLED,
         path_a_reveal: Some(shell_reveal_path_a(reveal)),
     })
+}
+
+/// The slide kind of a menu page.
+fn page_slide_kind(spec: &MenuPageSpec) -> crate::app::frontend::shell_transition::ShellSlideKind {
+    use crate::app::frontend::shell_transition::ShellSlideKind;
+    if spec.dialog == crate::ui::single_player_shell::SINGLE_PLAYER_PAGE.dialog {
+        ShellSlideKind::SinglePlayer
+    } else {
+        ShellSlideKind::MoviesAndCredits
+    }
 }
 
 /// Heading text of the menu page a first-paint slide belongs to.
@@ -302,7 +313,21 @@ pub(crate) fn render_menu_page(
         return Ok(MenuPageRenderResult::Fallback);
     }
 
-    if let Some(movie) = state.frontend.main_menu_movie.as_mut() {
+    // The page's slide, if one runs: its teardown slide-out or its entry
+    // slide. Either way the buttons animate through their SDBTNANM ramp
+    // frames; off-slide they paint steady-state.
+    let exit_wave =
+        crate::app::frontend::shell_transition::shell_exit_wave(state, page_slide_kind(view.spec))
+            .cloned();
+    let leaving = exit_wave.is_some();
+    let wave = exit_wave.or_else(|| state.frontend.shell_first_paint_slide.clone());
+    // While either slide runs the RA2TS static shows no movie and gets no
+    // timer (`0x006071E0`; the teardown also stops it with 0x4E2), so the
+    // shell background shows and the movie clock starts after the slide.
+    let sliding = wave.is_some();
+    if sliding {
+        state.frontend.main_menu_movie_last_step = Instant::now();
+    } else if let Some(movie) = state.frontend.main_menu_movie.as_mut() {
         let now = Instant::now();
         let elapsed = now
             .duration_since(state.frontend.main_menu_movie_last_step)
@@ -324,15 +349,24 @@ pub(crate) fn render_menu_page(
         state.renderer.gpu.config.height,
     );
     let input = page_input(state, view.spec);
-    // While a first-paint slide is live the buttons animate through their
-    // SDBTNANM ramp frames; off-slide this is None and they paint steady-state.
-    let wave = state.frontend.shell_first_paint_slide.clone();
-    let monitor_frame = paint_shell_monitor(state);
-    let title_window = state.frontend.shell_page_title.paint(Instant::now());
-    let status_text = status_csf_key(view.spec, input.hovered)
-        .map(|key| resolve_csf(state, key).into_owned())
-        .unwrap_or_default();
-    let status_label = paint_shell_status_line(state, status_text, layout.status_help);
+    // The teardown slide starts with a full dialog repaint (`0x00622C4F`)
+    // and pumps no messages until it ends: the statics stay blank and the
+    // monitor window shows the right panel's own art.
+    let monitor_frame = if leaving {
+        None
+    } else {
+        paint_shell_monitor(state)
+    };
+    let (title_window, status_label) = if leaving {
+        (None, None)
+    } else {
+        let title_window = state.frontend.shell_page_title.paint(Instant::now());
+        let status_text = status_csf_key(view.spec, input.hovered)
+            .map(|key| resolve_csf(state, key).into_owned())
+            .unwrap_or_default();
+        let status_label = paint_shell_status_line(state, status_text, layout.status_help);
+        (title_window, status_label)
+    };
     let chrome = state
         .frontend
         .main_menu_shell_chrome
@@ -345,7 +379,17 @@ pub(crate) fn render_menu_page(
         .map(|movie| movie.batch_texture())
         .expect("movie loaded before render");
 
-    // Menu pages have NO parent background; the movie is submitted first.
+    // Menu pages have no parent background under the movie; while a slide
+    // runs the RA2TS area shows the shell background instead.
+    let backdrop = if sliding {
+        crate::app::frontend::main_menu_shell_render::shell_parent_background_instances(
+            chrome,
+            layout.screen.w,
+            layout.screen.h,
+        )
+    } else {
+        Vec::new()
+    };
     let mut chrome_instances = shell_paint::paint_chrome(
         chrome,
         layout.right_panel,
@@ -363,13 +407,21 @@ pub(crate) fn render_menu_page(
         Instant::now(),
         None,
     );
-    let mut labels = paint_labels(state, &view, &layout, input, title_window);
+    let mut labels = paint_labels(state, &view, &layout, input, title_window, !sliding);
     labels.extend(status_label);
     let text = shell_paint::paint_labels(&state.renderer.bit_font, &labels);
     let draws = [
         TexturedDraw {
             texture: movie_texture,
-            instances: vec![movie_instance(&layout)],
+            instances: if sliding {
+                Vec::new()
+            } else {
+                vec![movie_instance(&layout)]
+            },
+        },
+        TexturedDraw {
+            texture: &chrome.texture,
+            instances: backdrop,
         },
         TexturedDraw {
             texture: &chrome.texture,

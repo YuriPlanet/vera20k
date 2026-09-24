@@ -67,6 +67,9 @@ pub(crate) struct FrontendState {
     /// `0x100`, `0x101`, `0x129`): hover help, hidden until the dialog's SHOW
     /// completion, then a kind-1 reveal that restarts on every text change.
     pub(crate) shell_status_line: crate::ui::shell::static_reveal::PresentedKind1Static,
+    /// The showing family dialog's teardown slide-out while it runs; its
+    /// continuation commits the route change when the slide ends.
+    pub(crate) shell_exit: Option<crate::app::frontend::shell_transition::ShellExit>,
     /// Active graceful quit cascade (music fade → trailing-voice wait → hard stop
     /// → exit). Some only between Exit-confirm OK and window close; freezes shell
     /// input while it runs.

@@ -659,6 +659,7 @@ impl App {
                 shell_status_line: crate::ui::shell::static_reveal::PresentedKind1Static::new(
                     crate::ui::shell::static_reveal::STATUS_LINE_KIND1,
                 ),
+                shell_exit: None,
                 quit_cascade: None,
                 startup_splash,
                 exit_confirm_modal: None,

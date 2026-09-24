@@ -89,13 +89,14 @@ fn tooltip_line_rect(screen_w: i32, screen_h: i32) -> RectPx {
 /// Bottom-right version-line rect anchored to the SDBTM lower-cap bottom edge.
 ///
 /// The retail layout pass uses a sidebar inset of `(168 - ctrl_w) / 2` on the
-/// X axis (3 px at the standard 162 px control width), shifted left by
-/// `max(0, (screen_w - 800) / 2)` on widescreens. Y anchors the control's
-/// bottom edge to the bottom edge of the right-panel lower cap.
+/// X axis, shifted left by `max(0, (screen_w - 800) / 2)` on widescreens. Y
+/// anchors the control's bottom edge to the bottom edge of the right-panel
+/// lower cap. The runtime window is one pixel wider and taller than the DLU
+/// conversion, as for the heading, the monitor and the status line.
 fn version_line_rect(screen_w: i32, right_panel: RightPanelRects) -> RectPx {
     let base = dlu_rect(425, 357, 108, 10);
-    let ctrl_w = base.w;
-    let ctrl_h = base.h;
+    let ctrl_w = base.w + 1;
+    let ctrl_h = base.h + 1;
     let inset = (RIGHT_PANEL_WIDTH - ctrl_w) / 2;
     let delta_x = if screen_w > SHELL_BASE_W {
         (screen_w - SHELL_BASE_W) / 2
@@ -366,12 +367,12 @@ mod tests {
 
     #[test]
     fn version_line_uses_sidebar_inset_and_bottom_cap_anchor() {
-        // DLU (425, 357, 108, 10) at 800x600 → pixel (638, 580, 162, 16) raw.
-        // Sidebar inset = (168 - 162) / 2 = 3 → final X = 800 - 3 - 162 = 635.
-        // Bottom-cap anchor: right_panel.bottom = (632, 577, 168, 23);
-        // bottom_edge = 600. Y = 600 - 16 = 584.
+        // DLU (425, 357, 108, 10) at 800x600 → pixel (638, 580, 162, 16) raw,
+        // one pixel larger at runtime (163x17). Sidebar inset = (168 - 163) / 2
+        // = 2 → X = 800 - 2 - 163 = 635. Bottom-cap anchor: right_panel.bottom
+        // = (632, 577, 168, 23); bottom_edge = 600. Y = 600 - 17 = 583.
         let layout = compute_layout(800, 600);
-        assert_eq!(layout.version_line, RectPx::new(635, 584, 162, 16));
+        assert_eq!(layout.version_line, RectPx::new(635, 583, 163, 17));
     }
 
     #[test]

@@ -253,10 +253,11 @@ pub const MESSAGE_BOX_W: i32 = 450;
 pub const MESSAGE_BOX_H: i32 = 325;
 
 /// Screen-relative pixel rects for the quit-confirm (0x120) modal: the centered
-/// PUDLGBGN panel plus its body static and the two POPULATED buttons. Rects mirror
-/// the native template controls — body static `0x5B0` (40,40,220,50), OK `0x5AE`
-/// (207,135,83,15), Cancel control 2 (207,175,83,15). The unpopulated `0x5AF`
-/// (207,155) is not part of the visible quit dialog and is intentionally absent.
+/// PUDLGBGN panel plus its body static and its two buttons. Rects mirror the
+/// RT_DIALOG `0x120` template (`0x00C00A68`): body static `0x5B0`
+/// (40,40,220,50), OK `0x5AE` (207,155,83,15) directly above Cancel control 2
+/// (207,175,83,15). (OK at y 135 belongs to the three-button `0x121`, whose
+/// third button `0x5AF` takes y 155.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QuitConfirmLayout {
     pub dialog: RectPx,
@@ -273,7 +274,7 @@ pub fn quit_confirm_layout(screen_w: i32, screen_h: i32) -> QuitConfirmLayout {
     QuitConfirmLayout {
         dialog,
         body: modal_child(dialog, geom::dlu_rect(40, 40, 220, 50)),
-        ok: modal_child(dialog, geom::dlu_rect(207, 135, 83, 15)),
+        ok: modal_child(dialog, geom::dlu_rect(207, 155, 83, 15)),
         cancel: modal_child(dialog, geom::dlu_rect(207, 175, 83, 15)),
     }
 }
@@ -457,9 +458,10 @@ mod tests {
             RectPx::new(l.dialog.x + local.x, l.dialog.y + local.y, local.w, local.h)
         };
         assert_eq!(l.body, child(40, 40, 220, 50));
-        assert_eq!(l.ok, child(207, 135, 83, 15));
+        assert_eq!(l.ok, child(207, 155, 83, 15));
         assert_eq!(l.cancel, child(207, 175, 83, 15));
-        // OK sits above Cancel (DLU y=135 vs 175), both right-aligned at DLU x=207.
+        // OK sits directly above Cancel (DLU y=155 vs 175), both right-aligned at
+        // DLU x=207, as in the 0x120 template and the retail capture.
         assert!(l.ok.y < l.cancel.y);
         assert_eq!(l.ok.x, l.cancel.x);
     }

@@ -31,12 +31,16 @@ const CHECKPOINT_MAIN_MENU_0XE2_STEADY: &str = "main-menu-0xe2-steady";
 const CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE: &str = "main-menu-0xe2-entry-sequence";
 const CHECKPOINT_SKIRMISH_0X102_STEADY: &str = "skirmish-0x102-steady";
 const CHECKPOINT_MOVIES_0X101_STEADY: &str = "movies-0x101-steady";
+const CHECKPOINT_MAIN_MENU_0XE2_EXIT_CONFIRM: &str = "main-menu-0xe2-exit-confirm";
 const CHECKPOINT_MOVIE_LIST_0X129_STEADY: &str = "movie-list-0x129-steady";
 const CHECKPOINT_MOVIE_LIST_0X129_SELECTED: &str = "movie-list-0x129-selected";
 const CHECKPOINT_MOVIE_LIST_0X129_FULL: &str = "movie-list-0x129-full";
 const CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2: &str = "movie-list-0x129-full-down2";
+const CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME: &str = "movie-list-0x129-back-first-frame";
 const CHECKPOINT_CREDITS_ROLL_FRAME_PREFIX: &str = "credits-roll-frame-";
 const CHECKPOINT_SNEAK_PEEK_FRAME_PREFIX: &str = "sneak-peek-frame-";
+const CHECKPOINT_MAIN_MENU_0XE2_SLIDE_OUT_PREFIX: &str = "main-menu-0xe2-slide-out-tick-";
+const CHECKPOINT_MOVIE_LIST_0X129_SLIDE_OUT_PREFIX: &str = "movie-list-0x129-slide-out-tick-";
 const EXPECTED_WIDTH: u32 = 800;
 const EXPECTED_HEIGHT: u32 = 600;
 const EXPECTED_CURSOR_X: u32 = 400;
@@ -65,16 +69,28 @@ pub enum ShellCaptureCheckpoint {
     MainMenu0xE2EntrySequence,
     Skirmish0x102Steady,
     MoviesPage0x101Steady,
+    /// Exit Game on `0xE2`: after the teardown slide, the confirmation over
+    /// the empty shell backdrop (state 6).
+    MainMenu0xE2ExitConfirm,
     MovieList0x129Steady,
     MovieList0x129Selected,
     /// All 17 movies unlocked (a scrollbar is shown), optionally after two
     /// down-arrow presses.
     MovieList0x129Full,
     MovieList0x129FullDown2,
+    /// Back on the movie list: the first frame after its teardown slide,
+    /// which must already be the recreated `0x101`'s entry slide at tick 0.
+    MovieList0x129BackFirstFrame,
     /// Show_Credits pinned at one roll frame (`credits-roll-frame-<N>`).
     CreditsRollFrame(u64),
     /// Sneak Peeks Play_Movie pinned at one video frame (`sneak-peek-frame-<N>`).
     SneakPeekFrame(usize),
+    /// Exit Game on `0xE2`, its teardown slide held at one tick
+    /// (`main-menu-0xe2-slide-out-tick-<N>`).
+    MainMenu0xE2SlideOut(u32),
+    /// Back on the movie list, its teardown slide held at one tick
+    /// (`movie-list-0x129-slide-out-tick-<N>`).
+    MovieList0x129SlideOut(u32),
 }
 
 impl ShellCaptureCheckpoint {
@@ -92,15 +108,46 @@ impl ShellCaptureCheckpoint {
                 .with_context(|| format!("movie frame is not an integer: {frame:?}"))?;
             return Ok(Self::SneakPeekFrame(frame));
         }
+        for (prefix, kind) in [
+            (
+                CHECKPOINT_MAIN_MENU_0XE2_SLIDE_OUT_PREFIX,
+                ShellSlideKind::MainMenu,
+            ),
+            (
+                CHECKPOINT_MOVIE_LIST_0X129_SLIDE_OUT_PREFIX,
+                ShellSlideKind::MovieList,
+            ),
+        ] {
+            let Some(tick) = value.strip_prefix(prefix) else {
+                continue;
+            };
+            let tick: u32 = tick
+                .parse()
+                .with_context(|| format!("slide tick is not an integer: {tick:?}"))?;
+            // The slide shows ticks 0 up to its loop bound N + 9, exclusive.
+            let slots = crate::ui::shell::slide::slot_count_for(kind.dialog_id())
+                .context("slide-out capture dialog has no slide slots")?;
+            let last = slots + 8;
+            ensure!(
+                tick <= last,
+                "{value}: the slide-out shows ticks 0..={last}"
+            );
+            return Ok(match kind {
+                ShellSlideKind::MainMenu => Self::MainMenu0xE2SlideOut(tick),
+                _ => Self::MovieList0x129SlideOut(tick),
+            });
+        }
         match value {
             CHECKPOINT_MAIN_MENU_0XE2_STEADY => Ok(Self::MainMenu0xE2Steady),
             CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE => Ok(Self::MainMenu0xE2EntrySequence),
             CHECKPOINT_SKIRMISH_0X102_STEADY => Ok(Self::Skirmish0x102Steady),
             CHECKPOINT_MOVIES_0X101_STEADY => Ok(Self::MoviesPage0x101Steady),
+            CHECKPOINT_MAIN_MENU_0XE2_EXIT_CONFIRM => Ok(Self::MainMenu0xE2ExitConfirm),
             CHECKPOINT_MOVIE_LIST_0X129_STEADY => Ok(Self::MovieList0x129Steady),
             CHECKPOINT_MOVIE_LIST_0X129_SELECTED => Ok(Self::MovieList0x129Selected),
             CHECKPOINT_MOVIE_LIST_0X129_FULL => Ok(Self::MovieList0x129Full),
             CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2 => Ok(Self::MovieList0x129FullDown2),
+            CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME => Ok(Self::MovieList0x129BackFirstFrame),
             _ => bail!("unsupported shell-capture checkpoint {value:?}"),
         }
     }
@@ -111,24 +158,38 @@ impl ShellCaptureCheckpoint {
             Self::MainMenu0xE2EntrySequence => CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE,
             Self::Skirmish0x102Steady => CHECKPOINT_SKIRMISH_0X102_STEADY,
             Self::MoviesPage0x101Steady => CHECKPOINT_MOVIES_0X101_STEADY,
+            Self::MainMenu0xE2ExitConfirm => CHECKPOINT_MAIN_MENU_0XE2_EXIT_CONFIRM,
             Self::MovieList0x129Steady => CHECKPOINT_MOVIE_LIST_0X129_STEADY,
             Self::MovieList0x129Selected => CHECKPOINT_MOVIE_LIST_0X129_SELECTED,
             Self::MovieList0x129Full => CHECKPOINT_MOVIE_LIST_0X129_FULL,
             Self::MovieList0x129FullDown2 => CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2,
+            Self::MovieList0x129BackFirstFrame => CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME,
             Self::CreditsRollFrame(_) => "credits-roll-frame",
             Self::SneakPeekFrame(_) => "sneak-peek-frame",
+            Self::MainMenu0xE2SlideOut(_) => "main-menu-0xe2-slide-out",
+            Self::MovieList0x129SlideOut(_) => "movie-list-0x129-slide-out",
         }
     }
 
     fn movies_target(self) -> Option<movies::MoviesTarget> {
         Some(match self {
             Self::MoviesPage0x101Steady => movies::MoviesTarget::Page0x101,
+            Self::MainMenu0xE2ExitConfirm => movies::MoviesTarget::ExitConfirm,
             Self::MovieList0x129Steady => movies::MoviesTarget::List0x129,
             Self::MovieList0x129Selected => movies::MoviesTarget::List0x129Selected,
             Self::MovieList0x129Full => movies::MoviesTarget::FullList { down_presses: 0 },
             Self::MovieList0x129FullDown2 => movies::MoviesTarget::FullList { down_presses: 2 },
+            Self::MovieList0x129BackFirstFrame => movies::MoviesTarget::ListBackFirstFrame,
             Self::CreditsRollFrame(frame) => movies::MoviesTarget::Credits { frame },
             Self::SneakPeekFrame(frame) => movies::MoviesTarget::SneakPeek { frame },
+            Self::MainMenu0xE2SlideOut(tick) => movies::MoviesTarget::SlideOut {
+                kind: ShellSlideKind::MainMenu,
+                tick,
+            },
+            Self::MovieList0x129SlideOut(tick) => movies::MoviesTarget::SlideOut {
+                kind: ShellSlideKind::MovieList,
+                tick,
+            },
             _ => return None,
         })
     }
@@ -1196,6 +1257,21 @@ mod tests {
             request.checkpoint().as_str(),
             "main-menu-0xe2-entry-sequence"
         );
+    }
+
+    #[test]
+    fn slide_out_checkpoints_accept_only_shown_ticks() {
+        // The slide shows ticks 0..N + 9: 0xE2 (N = 5) and 0x129 (N = 2).
+        assert_eq!(
+            ShellCaptureCheckpoint::parse("main-menu-0xe2-slide-out-tick-13").expect("last tick"),
+            ShellCaptureCheckpoint::MainMenu0xE2SlideOut(13)
+        );
+        assert!(ShellCaptureCheckpoint::parse("main-menu-0xe2-slide-out-tick-14").is_err());
+        assert_eq!(
+            ShellCaptureCheckpoint::parse("movie-list-0x129-slide-out-tick-10").expect("last tick"),
+            ShellCaptureCheckpoint::MovieList0x129SlideOut(10)
+        );
+        assert!(ShellCaptureCheckpoint::parse("movie-list-0x129-slide-out-tick-11").is_err());
     }
 
     #[test]
