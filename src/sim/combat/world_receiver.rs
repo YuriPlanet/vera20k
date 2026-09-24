@@ -1873,7 +1873,6 @@ pub(crate) fn commit_projectiles(
 
     debug_assert!(emit.remove_attack.is_empty());
     debug_assert!(emit.fire_events.is_empty());
-    debug_assert!(emit.reveal_events.is_empty());
     debug_assert!(emit.ammo_deduct.is_empty());
     debug_assert!(emit.pending_infantry_updates.is_empty());
     debug_assert!(emit.animation_switches.is_empty());
@@ -2988,6 +2987,88 @@ fn fireat_damage(
     )
 }
 
+/// FireAt's RevealOnFire (`0x006FF66C..0x006FF743`, reached only by a
+/// launched shot). The target's owner, when it is the local player
+/// (`0x0050B6F0`), has radius 3 around the firer revealed on its own map
+/// (`MapClass::RevealShroud @ 0x005673A0`). When that player owns the firer
+/// (`+0x41A`) or has discovered it (`+0x41B`, set for every placed object in a
+/// multiplayer game), the firer's own coordinate must still be shrouded for it
+/// (`MapClass::IsShrouded @ 0x00586360`), and an aircraft it owns never
+/// reveals. A cell target reveals nothing.
+///
+/// VERA keeps a map per house, so every human house takes the reveal its own
+/// client would take; computer houses keep no shroud.
+fn reveal_on_fire(world: &mut Simulation, rules: &RuleSet, firer_id: u64, target: TargetKind) {
+    let TargetKind::Entity(target_id) = target else {
+        return;
+    };
+    let Some(house) = world
+        .substrate
+        .entities
+        .get(target_id)
+        .map(|target| target.owner())
+    else {
+        return;
+    };
+    if !world
+        .houses
+        .get(&house)
+        .is_some_and(|state| state.is_controlled_by_human(world.session.game_mode_nonzero))
+    {
+        return;
+    }
+    let Some(firer) = world.substrate.entities.get(firer_id) else {
+        return;
+    };
+    let coord = crate::sim::movement::ground_pose::position_world_coord(&firer.position);
+    let owned = firer.owner() == house;
+    let discovered = world.session.game_mode_nonzero
+        || (world.session.current_house == Some(house)
+            && firer.discovery.discovered_by_current_house);
+    if owned || discovered {
+        if owned && firer.category == EntityCategory::Aircraft {
+            return;
+        }
+        let shrouded = match world.resolved_terrain.as_ref() {
+            Some(terrain) => {
+                let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+                crate::sim::vision::coordinate_is_shrouded(&cells, coord, &|cell| {
+                    Ok(match cell {
+                        crate::map::cell_index::NativeCellIdentity::Real(index) => {
+                            let cell = &terrain.cells()[index];
+                            world.fog.is_cell_revealed(house, cell.rx, cell.ry)
+                        }
+                        crate::map::cell_index::NativeCellIdentity::Dummy => false,
+                    })
+                })
+                .unwrap_or(false)
+            }
+            None => !world
+                .fog
+                .is_cell_revealed(house, firer.position.rx, firer.position.ry),
+        };
+        if !shrouded {
+            return;
+        }
+    }
+    let reveal_by_height = rules.general.reveal_by_height;
+    let height_grid = reveal_by_height
+        .then(|| {
+            world
+                .path_grid
+                .as_ref()
+                .map(|grid| grid.ground_height_grid())
+        })
+        .flatten();
+    crate::sim::vision::reveal_shroud_on_fire(
+        &mut world.fog,
+        house,
+        coord,
+        reveal_by_height,
+        height_grid.as_deref(),
+    );
+}
+
 /// Existing FireAt delivery and bookkeeping, shared by the world receiver.
 /// The caller still owns legality, fire-action timing and inline damage commit.
 fn emit_admitted_fire(
@@ -3580,12 +3661,7 @@ fn emit_admitted_fire(
         firer_category: snap.category,
     });
     if weapon.reveal_on_fire {
-        out.reveal_events.push(RevealEvent {
-            owner: snap.owner,
-            rx: snap.pos_rx,
-            ry: snap.pos_ry,
-            radius: REVEAL_ON_FIRE_RADIUS,
-        });
+        reveal_on_fire(world, rules, snap.stable_id, snap.target);
     }
 
     // `TechnoClass::FireAt @ 0x006FF031..0x006FF085`, right after
@@ -3900,7 +3976,6 @@ pub(crate) fn tick_combat(
             unit_facing: Vec::new(),
             consequences: crate::sim::world::damage_consequences::DamageConsequences::ordinary(
                 DeathEffects::default(),
-                Vec::new(),
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),
@@ -4542,7 +4617,6 @@ pub(crate) fn tick_combat(
         mut damage_events,
         mut remove_attack,
         fire_events,
-        reveal_events,
         ammo_deduct,
         pending_infantry_updates,
         animation_switches,
@@ -4721,7 +4795,6 @@ pub(crate) fn tick_combat(
             effects,
             under_attack_events,
             run.navigation_changed_cells.clone(),
-            reveal_events,
             fire_events,
         ),
     }
@@ -4768,5 +4841,76 @@ fn append_fixture_tiberium(_world: &mut Simulation, _out: &mut Vec<TiberiumReduc
     #[cfg(test)]
     if let Some(fixture) = _world.receiver_fixture.as_mut() {
         _out.append(&mut fixture.deferred_tiberium);
+    }
+}
+
+#[cfg(test)]
+mod reveal_on_fire_tests {
+    use super::*;
+    use crate::sim::game_entity::GameEntity;
+    use crate::sim::house_state::HouseState;
+
+    /// A computer Soviet tank at (10, 10) shooting a human American tank at
+    /// (12, 10), in a multiplayer game.
+    fn world() -> (Simulation, RuleSet) {
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        sim.fog.width = 32;
+        sim.fog.height = 32;
+        sim.session.game_mode_nonzero = true;
+        for (name, human) in [("Americans", true), ("Soviet", false)] {
+            let id = sim.interner.intern(name);
+            sim.houses
+                .insert(id, HouseState::new(id, 0, None, human, 0, 10));
+        }
+        for (id, owner, rx) in [(1, "Soviet", 10), (2, "Americans", 12)] {
+            let mut entity = GameEntity::test_default(id, "MTNK", owner, rx, 10);
+            entity.owner = sim.interner.intern(owner);
+            entity.type_ref = sim.interner.intern("MTNK");
+            sim.substrate.entities.insert(entity);
+        }
+        (sim, rules)
+    }
+
+    fn revealed(sim: &Simulation, house: &str, rx: u16, ry: u16) -> bool {
+        sim.fog
+            .is_cell_revealed(sim.interner.get(house).unwrap(), rx, ry)
+    }
+
+    #[test]
+    fn a_shot_from_shroud_reveals_the_firer_to_its_human_victim() {
+        let (mut sim, rules) = world();
+        reveal_on_fire(&mut sim, &rules, 1, TargetKind::Entity(2));
+        assert!(revealed(&sim, "Americans", 10, 10));
+        assert!(revealed(&sim, "Americans", 10, 13), "radius 3");
+        assert!(!revealed(&sim, "Americans", 10, 14));
+        assert!(
+            !revealed(&sim, "Soviet", 10, 10),
+            "the firer's map is untouched"
+        );
+    }
+
+    #[test]
+    fn no_reveal_for_a_computer_victim_or_a_mapped_firer_cell() {
+        let (mut sim, rules) = world();
+        reveal_on_fire(&mut sim, &rules, 2, TargetKind::Entity(1));
+        assert!(!revealed(&sim, "Soviet", 12, 10), "a computer victim");
+
+        let (mut sim, rules) = world();
+        let americans = sim.interner.get("Americans").unwrap();
+        crate::sim::vision::reveal_radius(&mut sim.fog, americans, 10, 10, 1);
+        assert!(!revealed(&sim, "Americans", 10, 12));
+        reveal_on_fire(&mut sim, &rules, 1, TargetKind::Entity(2));
+        assert!(
+            !revealed(&sim, "Americans", 10, 12),
+            "the firer's own cell is already mapped: IsShrouded is false"
+        );
+
+        let (mut sim, rules) = world();
+        reveal_on_fire(&mut sim, &rules, 1, TargetKind::Cell(12, 10));
+        assert!(!revealed(&sim, "Americans", 10, 10), "a cell target");
     }
 }

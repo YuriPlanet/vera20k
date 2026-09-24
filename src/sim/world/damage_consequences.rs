@@ -8,17 +8,14 @@ use super::{SimFireEvent, SimSoundEvent, Simulation};
 use crate::map::entities::EntityCategory;
 use crate::map::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::{DeathEffects, RevealEvent, UnderAttackEvent};
+use crate::sim::combat::{DeathEffects, UnderAttackEvent};
 use crate::sim::intern::InternedId;
 use crate::sim::pathfinding::PathGrid;
 use std::sync::Arc;
 
 enum DamageDelivery {
     Immediate,
-    Ordinary {
-        reveal_events: Vec<RevealEvent>,
-        fire_events: Vec<SimFireEvent>,
-    },
+    Ordinary { fire_events: Vec<SimFireEvent> },
 }
 
 /// Pending work has one owner and is consumed once by its world commit.
@@ -71,7 +68,6 @@ impl DamageConsequences {
         mut effects: DeathEffects,
         under_attack_events: Vec<UnderAttackEvent>,
         terrain_navigation_changed_cells: Vec<(u16, u16)>,
-        reveal_events: Vec<RevealEvent>,
         fire_events: Vec<SimFireEvent>,
     ) -> Self {
         // Ordinary radiation and death sounds already crossed their earlier
@@ -83,10 +79,7 @@ impl DamageConsequences {
         Self {
             effects,
             terrain_navigation_changed_cells,
-            delivery: DamageDelivery::Ordinary {
-                reveal_events,
-                fire_events,
-            },
+            delivery: DamageDelivery::Ordinary { fire_events },
         }
     }
 
@@ -168,18 +161,6 @@ impl DamageConsequences {
             fallback_path_grid,
             &terrain_navigation_changed_cells,
         );
-        if let DamageDelivery::Ordinary { reveal_events, .. } = &delivery {
-            for event in reveal_events {
-                crate::sim::vision::reveal_radius(
-                    &mut world.fog,
-                    event.owner,
-                    event.rx,
-                    event.ry,
-                    event.radius,
-                );
-            }
-        }
-
         if world.session.game_options.super_weapons && effects.structure_destroyed {
             let mut refreshed = Vec::new();
             for &(owner, category) in &dead_infos {
@@ -550,7 +531,7 @@ mod muzzle_anim_tests {
             immediate_uninit_ids: vec![tank],
             ..DeathEffects::default()
         };
-        DamageConsequences::ordinary(effects, Vec::new(), Vec::new(), Vec::new(), vec![event])
+        DamageConsequences::ordinary(effects, Vec::new(), Vec::new(), vec![event])
             .commit(&mut sim, &rules, None, None);
 
         let (_, anim) = sim.substrate.anims.iter().next().expect("muzzle anim");

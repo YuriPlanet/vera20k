@@ -42,7 +42,6 @@ pub(crate) use receiver_fixture::{
     BaseDefenseResponseTraceEntry, FixtureTrace, commit_area_damage_receivers,
     commit_damage_events, emit_projectile_detonations, handle_entity_deaths, resolve_attacker_fire,
     tick_combat, tick_combat_with_fog, tick_combat_with_fog_and_main_rng,
-    tick_combat_with_fog_and_main_rng_with_terrain_area,
 };
 pub(crate) mod line_of_fire;
 pub(crate) mod parasite;
@@ -140,9 +139,6 @@ use super::game_entity::{GameEntity, PendingBuildingFire};
 use super::occupancy::OccupancyGrid;
 use super::production::foundation_dimensions;
 
-/// RA2 runs at 15 logical frames per second. ROF values are in frames.
-/// Radius in cells that RevealOnFire clears shroud around the fire location.
-const REVEAL_ON_FIRE_RADIUS: u16 = 3;
 /// Step size for selecting explosion anim from a warhead's AnimList: idx = damage / 25.
 const ANIM_LIST_DAMAGE_STEP: u16 = 25;
 
@@ -498,14 +494,6 @@ mod projectile_delivery_tests {
             }
         ));
     }
-}
-
-/// A cell area to reveal due to a RevealOnFire weapon firing.
-pub struct RevealEvent {
-    pub owner: InternedId,
-    pub rx: u16,
-    pub ry: u16,
-    pub radius: u16,
 }
 
 /// Armor type name → Verses index mapping.
@@ -2653,7 +2641,6 @@ pub(crate) struct CombatEmit {
     pub(crate) damage_events: Vec<combat_aoe::AreaDamageReceiver>,
     pub(crate) remove_attack: Vec<u64>,
     pub(crate) fire_events: Vec<SimFireEvent>,
-    pub(crate) reveal_events: Vec<RevealEvent>,
     /// aircraft that fired this tick
     pub(crate) ammo_deduct: Vec<u64>,
     pub(crate) pending_infantry_updates: Vec<(u64, Option<PendingInfantryFire>)>,

@@ -555,7 +555,6 @@ pub(crate) fn resolve_attacker_fire(
     terrain_objects: Option<combat_aoe::TerrainCollectionView<'_>>,
     terrain_area_state: Option<&TerrainAreaState>,
     scenario_no_damage: bool,
-    require_playfield_membership: bool,
     binary_frame: u32,
     _tick_ms: u32,
     has_active_wave: bool,

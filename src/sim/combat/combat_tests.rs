@@ -106,7 +106,6 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
         None,
         None,
         false,
-        false,
         17,
         67,
         true,
