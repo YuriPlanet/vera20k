@@ -1486,6 +1486,101 @@ fn finish_concrete_death(
     }
 }
 
+/// What a special arm of `BulletClass::DetonateAtCoord` reads as its target:
+/// the bullet's `+0x10C`, which is an object, a cell (a real one or the dummy
+/// cell) or nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpecialArmTarget {
+    Object(u64),
+    Cell,
+    None,
+}
+
+/// The special arm of `BulletClass::DetonateAtCoord @ 0x004690B0`
+/// (`0x0046920B..0x00469A3D`) the warhead's flags selected, for both
+/// deliveries: a visible bullet's detonation, and VERA's immediate `Inviso=`
+/// shot, which natively is the same bullet detonating through the same chain.
+///
+/// Whatever the arm does, it claims the impact: every arm, its internal
+/// refusals included, leaves by `JMP 0x00469AA4`, and `Apply_area_damage`
+/// (`0x00469A83`) and `SpawnShrapnel` are reachable only from the final else
+/// at `0x00469A3F`. So the caller runs neither, and runs the shared tail below
+/// `LAB_00469AA4` after this returns. `owner` is the bullet's `+0xB0`.
+///
+/// RESIDUAL: the ElectricAssault (`0x0046937A`), IsLocomotor (`0x004694CB`),
+/// Airstrike (`0x00469705`), DirectRocker (`0x0046978E`), MakesDisguise
+/// (`0x00469A03`) and NukeMaker (`0x00469A2C`) bodies are not ported; those
+/// arms claim the impact and do nothing else (see `SpecialDetonationAction`).
+fn run_special_detonation_arm(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    action: SpecialDetonationAction,
+    owner: u64,
+    target: SpecialArmTarget,
+) {
+    let object = match target {
+        SpecialArmTarget::Object(id) => Some(id),
+        SpecialArmTarget::Cell | SpecialArmTarget::None => None,
+    };
+    match action {
+        SpecialDetonationAction::OrdinaryDamage => {
+            debug_assert!(false, "the ordinary arm is its caller's");
+        }
+        SpecialDetonationAction::Parasite => {
+            // 0x004693DD..0x0046941E: no bullet Owner (+0xB0) -> nothing;
+            // otherwise Owner->ParasiteImUsing->AttachTo(Target if FootClass).
+            // The impact point is not consulted.
+            if world.substrate.entities.contains(owner) {
+                let victim = object.filter(|&id| {
+                    world.substrate.entities.get(id).is_some_and(|target| {
+                        matches!(
+                            target.category,
+                            EntityCategory::Unit
+                                | EntityCategory::Infantry
+                                | EntityCategory::Aircraft
+                        )
+                    })
+                });
+                world.parasite_attach(owner, victim, rules);
+            }
+        }
+        SpecialDetonationAction::MindControl => {
+            world.mind_control_detonation(owner, object, rules);
+        }
+        SpecialDetonationAction::Temporal => {
+            let target = match target {
+                SpecialArmTarget::Object(id) => {
+                    crate::sim::temporal::TemporalShotTarget::Object(id)
+                }
+                SpecialArmTarget::Cell => crate::sim::temporal::TemporalShotTarget::Cell,
+                SpecialArmTarget::None => crate::sim::temporal::TemporalShotTarget::None,
+            };
+            world.temporal_detonation(owner, target, rules);
+        }
+        SpecialDetonationAction::IvanBomb => {
+            // 0x00469343..0x00469375: the bullet's owner plants on a Techno.
+            world.bomb_attach(owner, object, rules);
+        }
+        SpecialDetonationAction::BombDisarm => {
+            // 0x004699C4..0x004699FE: a bombed Object target is defused.
+            if let Some(id) = object {
+                world.bomb_defuse(id);
+            }
+        }
+        SpecialDetonationAction::ElectricAssault
+        | SpecialDetonationAction::Locomotor
+        | SpecialDetonationAction::Airstrike
+        | SpecialDetonationAction::DirectRocker
+        | SpecialDetonationAction::MakesDisguise
+        | SpecialDetonationAction::NukeMaker => {
+            log::debug!(
+                "special detonation {action:?} from {owner} claimed with its body unported; \
+                 shrapnel and area damage suppressed, the shared tail still runs"
+            );
+        }
+    }
+}
+
 fn emit_one_projectile_detonation(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -1622,73 +1717,15 @@ fn emit_one_projectile_detonation(
                 }
             }
         }
-        SpecialDetonationAction::Parasite => {
-            // 0x004693DD..0x0046941E: no bullet Owner (+0xB0) -> nothing;
-            // otherwise Owner->ParasiteImUsing->AttachTo(Target if FootClass).
-            // The impact point is not consulted.
-            if world.substrate.entities.contains(detonation.source_id) {
-                let victim = match detonation.target {
-                    ProjectileTarget::Entity(id)
-                        if world.substrate.entities.get(id).is_some_and(|target| {
-                            matches!(
-                                target.category,
-                                EntityCategory::Unit
-                                    | EntityCategory::Infantry
-                                    | EntityCategory::Aircraft
-                            )
-                        }) =>
-                    {
-                        Some(id)
-                    }
-                    _ => None,
-                };
-                world.parasite_attach(detonation.source_id, victim, rules);
-            }
-        }
-        SpecialDetonationAction::MindControl => {
-            let target = match detonation.target {
-                ProjectileTarget::Entity(id) => Some(id),
-                ProjectileTarget::Cell { .. }
-                | ProjectileTarget::None
-                | ProjectileTarget::DummyCell => None,
-            };
-            world.mind_control_detonation(detonation.source_id, target, rules);
-        }
-        SpecialDetonationAction::Temporal => {
-            let target = match detonation.target {
-                ProjectileTarget::Entity(id) => {
-                    crate::sim::temporal::TemporalShotTarget::Object(id)
-                }
-                ProjectileTarget::Cell { .. } | ProjectileTarget::DummyCell => {
-                    crate::sim::temporal::TemporalShotTarget::Cell
-                }
-                ProjectileTarget::None => crate::sim::temporal::TemporalShotTarget::None,
-            };
-            world.temporal_detonation(detonation.source_id, target, rules);
-        }
-        SpecialDetonationAction::IvanBomb => {
-            // 0x00469343..0x00469375: the bullet's owner plants on a Techno.
-            let target = match detonation.target {
-                ProjectileTarget::Entity(id) => Some(id),
-                ProjectileTarget::Cell { .. }
-                | ProjectileTarget::None
-                | ProjectileTarget::DummyCell => None,
-            };
-            world.bomb_attach(detonation.source_id, target, rules);
-        }
-        SpecialDetonationAction::BombDisarm => {
-            // 0x004699C4..0x004699FE: a bombed Object target is defused.
-            if let ProjectileTarget::Entity(id) = detonation.target {
-                world.bomb_defuse(id);
-            }
-        }
         claimed => {
-            log::debug!(
-                "Projectile {} claimed by unimplemented special detonation {:?}; \
-                 shrapnel and area damage suppressed, shared tail still runs",
-                detonation.projectile_id,
-                claimed
-            );
+            let target = match detonation.target {
+                ProjectileTarget::Entity(id) => SpecialArmTarget::Object(id),
+                ProjectileTarget::Cell { .. } | ProjectileTarget::DummyCell => {
+                    SpecialArmTarget::Cell
+                }
+                ProjectileTarget::None => SpecialArmTarget::None,
+            };
+            run_special_detonation_arm(world, rules, claimed, detonation.source_id, target);
         }
     }
 
@@ -3178,12 +3215,9 @@ fn emit_admitted_fire(
             world.resolved_terrain.as_ref(),
         );
         // An Inviso shot detonates here, so it runs `BulletClass::
-        // DetonateAtCoord`'s special chain as well. Its MindControl
-        // (`0x0046920B`), IvanBomb (`0x00469343`), Temporal (`0x00469423`) and
-        // BombDisarm (`0x004699C4`) arms claim the impact, so no area damage.
-        // RESIDUAL: the chain's other arms are not dispatched on this path; an
-        // Inviso special warhead of another kind (the Giant Squid's Parasite
-        // grapple) still takes ordinary area damage here.
+        // DetonateAtCoord`'s whole special chain: the arm the warhead selects
+        // claims the impact (no shrapnel, no area damage) whether or not VERA
+        // has ported its body, exactly as a visible bullet's detonation does.
         let special_action = projectile_special_detonation_action(
             SpecialDetonationFlags::of(warhead),
             SpecialDetonationTarget {
@@ -3193,28 +3227,12 @@ fn emit_admitted_fire(
                 })),
             },
         );
-        if special_action == SpecialDetonationAction::MindControl {
+        if special_action.suppresses_ordinary_damage() {
             let target = match snap.target {
-                TargetKind::Entity(id) => Some(id),
-                TargetKind::Cell(..) => None,
+                TargetKind::Entity(id) => SpecialArmTarget::Object(id),
+                TargetKind::Cell(..) => SpecialArmTarget::Cell,
             };
-            world.mind_control_detonation(snap.stable_id, target, rules);
-        } else if special_action == SpecialDetonationAction::Temporal {
-            let target = match snap.target {
-                TargetKind::Entity(id) => crate::sim::temporal::TemporalShotTarget::Object(id),
-                TargetKind::Cell(..) => crate::sim::temporal::TemporalShotTarget::Cell,
-            };
-            world.temporal_detonation(snap.stable_id, target, rules);
-        } else if special_action == SpecialDetonationAction::IvanBomb {
-            let target = match snap.target {
-                TargetKind::Entity(id) => Some(id),
-                TargetKind::Cell(..) => None,
-            };
-            world.bomb_attach(snap.stable_id, target, rules);
-        } else if special_action == SpecialDetonationAction::BombDisarm {
-            if let TargetKind::Entity(id) = snap.target {
-                world.bomb_defuse(id);
-            }
+            run_special_detonation_arm(world, rules, special_action, snap.stable_id, target);
         } else {
             let routed_wall = wall_overlay_flags_at(
                 world.overlay_grid.as_ref(),
