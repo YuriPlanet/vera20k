@@ -223,6 +223,9 @@ mod event_flags {
     /// `0x20` — no-replay: suppresses the body and loop branches of
     /// `SoundEvent::AdvancePlaylist @ 0x004047B0`.
     pub const NO_REPLAY: u32 = 0x20;
+    /// `0x40` — set beside NO_REPLAY by `SoundEvent::Release @ 0x00406060`.
+    /// VERA reads nothing from it.
+    pub const RELEASED: u32 = 0x40;
 }
 
 /// `SoundEvent+0x1C`, the switch at `0x004059D0`.
@@ -686,6 +689,27 @@ impl SoundArbiter {
             }
         }
         live
+    }
+
+    /// `SoundEvent::Release @ 0x00406060`'s event half: a live looping event
+    /// whose entry has no `Loop=` count and is not already released stops
+    /// repeating (`flags |= 0x60`) and plays out its current pass.
+    pub fn release(&mut self, id: EventId) {
+        let Some(event) = self.event(id) else {
+            return;
+        };
+        if event.is_dead() || event.flags & event_flags::NO_REPLAY != 0 {
+            return;
+        }
+        let Some(facts) = self.entries[event.entry as usize].facts else {
+            return;
+        };
+        if facts.control & control::LOOP == 0 || facts.loop_count != 0 {
+            return;
+        }
+        if let Some(event) = self.event_mut(id) {
+            event.flags |= event_flags::NO_REPLAY | event_flags::RELEASED;
+        }
     }
 
     /// `SoundEvent::MarkStarted @ 0x004052E0` — `flags |= 8`. The only native

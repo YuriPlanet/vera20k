@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "UnitClass 0x00736DF0 (the per-frame firing update) end to end with the real IncreaseGattlingStage/UpdateGattlingStage: which gattling call runs (sites 0x0073708A, 0x007370A9, 0x00737116) with its ticks, value/stage/latch, +0x148, +0x68D, facings and the ordered substituted-call log, over fire-error codes -1, 0..12 and 0x7FFFFFFF, no target, a NULL slot-0 weapon, gattling and non-gattling types, vt+0x4E4 true/false and the arm 2/5/6/9 variants. Not UnitClass::AI placement, fire legality or the stubbed leaves.",
+  "assumptions": [
+    "One emulator; per row the scratch region and stack are rewritten, general registers zeroed, FPCW 0x0E7F with an empty x87 stack; g_MainRng reseeded by 0x0065C6D0(0x2A61).",
+    "Original Unit vtable 0x007F5C70 cloned; only vt+0x2E4, +0x3C0, +0x4E4, +0x1E8, +0x3CC, +0x3C8, +0x45C replaced. Type pointer +0x6C4; retail YTNK stage tables and rates; weapon slot n has Report [n+1], elite slot n [101+n].",
+    "Unit: Location (0x1480, 0x1280, 0x68); flags +0x14 = 7; both FacingClass blocks desired/previous 0x4000, ROT 0; audio controllers zeroed; locomotor +0x674 a scratch COM object. Target flags +0x14 = 7 with the original Unit or Infantry vtable.",
+    "Rules+0x16F8 = 1.0 and Frame 1000 are supplied; [0x008464AC] = 0 (PlayAt early exit); [0x0087E2A0] = 0 asserted.",
+    "Each row's `expect` names the only gattling site it may reach; it is a required address and the observed site must match.",
+    "Write hook: stack, unit +0x140/+0x144/+0x148/+0x4B8/+0x4D4/+0x68D, controller +8 stores of 0, the two facings, g_MainRng inside Next; anything else fails."
+  ],
+  "substitutions": [
+    "Cloned-vtable stubs: weapon_index vt+0x2E4, fire_error vt+0x3C0, deploy_fire vt+0x4E4 return the row's verdicts; queue_mission vt+0x1E8, fire vt+0x3CC, set_target vt+0x3C8 and start_uncloaking vt+0x45C are recorded and return 0.",
+    "Direct calls: 0x006F3970 damage and 0x006F77B0 can_fire_at return the row's values; 0x005F3DB0 writes the row's direction word; 0x006B7BB0 is recorded; ILocomotion +0x10 returns locomotor_moving. All logged.",
+    "[0x008464AC] = 0 (fixture global)."
+  ],
+  "entry_points": {
+    "unit_fire_update": "0x00736DF0",
+    "increase_gattling_stage": "0x0070DE70",
+    "update_gattling_stage": "0x0070E000",
+    "get_value": "0x0070DDF0",
+    "get_weapon": "0x0070E140",
+    "set_desired": "0x004C9220",
+    "health_ratio": "0x005F5C60",
+    "rng_seed": "0x0065C6D0"
+  },
+  "payload_sha256": "3141740d9c6da2fb59e8d6c63c295e73eba254b2ca413a43316fdf1c3a80ef28"
+}

@@ -800,6 +800,7 @@ mod tests {
             jumpjet_turn: false,
             emp_pulse_cannon: false,
             is_gattling: false,
+            gattling_stages: Default::default(),
             turret_count: 0,
             drainable: false,
             produce_cash_startup: 0,

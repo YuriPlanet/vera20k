@@ -2610,6 +2610,9 @@ impl Simulation {
         // still reaches ObjectClass::Conceal for a stored dead object; the
         // latter's InLimbo branch alone decides whether Conceal is a no-op.
         self.clear_building_base_reservation_and_repair(stable_id, context);
+        // TechnoClass::Limbo releases the gattling loop and clears the report
+        // latch (`0x006F6C6B`, `0x006F6C76`) ahead of its radio pass.
+        self.gattling_limbo(stable_id);
         crate::sim::radio::broadcast_break(self, stable_id);
         self.object_conceal_with_context(stable_id, context)
     }

@@ -1902,6 +1902,8 @@ fn emit_missile_detonations(
     }
 }
 
+/// Returns the GetFireError code the class acted on, when the fire routine
+/// reached GetFireError at all.
 pub(super) fn resolve_attacker_fire(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -1913,7 +1915,8 @@ pub(super) fn resolve_attacker_fire(
     _tick_ms: u32,
     has_active_wave: bool,
     out: &mut CombatEmit,
-) {
+) -> Option<fire_error::FireError> {
+    let mut fire_error = None;
     if let Some(shot) = admit_attacker_fire(
         world,
         rules,
@@ -1924,10 +1927,12 @@ pub(super) fn resolve_attacker_fire(
         binary_frame,
         _tick_ms,
         has_active_wave,
+        &mut fire_error,
         out,
     ) {
         emit_admitted_fire(world, rules, overlay_registry, shot, binary_frame, out);
     }
+    fire_error
 }
 
 fn admit_attacker_fire<'r>(
@@ -1940,6 +1945,7 @@ fn admit_attacker_fire<'r>(
     binary_frame: u32,
     _tick_ms: u32,
     has_active_wave: bool,
+    fire_error_out: &mut Option<fire_error::FireError>,
     out: &mut CombatEmit,
 ) -> Option<AdmittedFire<'r>> {
     let sound_enabled = sound_enabled(world);
@@ -2489,6 +2495,7 @@ fn admit_attacker_fire<'r>(
             }
         }
     }
+    *fire_error_out = Some(code);
     if code != fire_error::FireError::Ok {
         return None;
     }
@@ -2593,6 +2600,60 @@ fn admit_attacker_fire<'r>(
         target_type_ref,
         is_garrison,
     })
+}
+
+/// A unit whose turn still reaches the firing update: alive, and not warped
+/// (a warped unit's AI returns first, `0x007362FB..0x0073635A`).
+fn unit_reaches_fire_update(world: &Simulation, id: u64) -> bool {
+    world
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| entity.is_alive() && !entity.dying && !entity.ai_frozen())
+}
+
+/// The gattling units whose AI reaches the firing update this frame without
+/// an attack snapshot, keyed by their place in the live walk (`live_order`,
+/// or stable id when a fixture passes none). A unit in a transport or in
+/// Limbo is not in the walk; a warped one (`0x007362FB`) and one in a tube
+/// (`0x007363A4`) return before the update; a dead one does not reach it.
+/// Only a gattling type does anything there with no target.
+fn idle_unit_fire_updates(
+    world: &Simulation,
+    rules: &RuleSet,
+    snapshots: &[AttackerSnapshot],
+    live_order: &[u64],
+    keys: &[u64],
+    fire_suppressed: &BTreeSet<u64>,
+) -> Vec<((usize, u64), u64)> {
+    let with_snapshot: BTreeSet<u64> = snapshots.iter().map(|snap| snap.stable_id).collect();
+    let order: Vec<((usize, u64), u64)> = if live_order.is_empty() {
+        keys.iter().map(|&id| ((usize::MAX, id), id)).collect()
+    } else {
+        live_order
+            .iter()
+            .enumerate()
+            .map(|(index, &id)| ((index, id), id))
+            .collect()
+    };
+    order
+        .into_iter()
+        .filter(|&(_, id)| {
+            !with_snapshot.contains(&id)
+                && !fire_suppressed.contains(&id)
+                && world.substrate.entities.get(id).is_some_and(|entity| {
+                    entity.category == EntityCategory::Unit
+                        && entity.is_alive()
+                        && !entity.dying
+                        && !entity.lifecycle.in_limbo
+                        && !entity.passenger_role.is_inside_transport()
+                        && !entity.ai_frozen()
+                        && world
+                            .object_type(entity.type_ref(), rules)
+                            .is_some_and(|object| object.is_gattling)
+                })
+        })
+        .collect()
 }
 
 /// `Fire_At_Target`'s ILLEGAL arm (Unit `0x00736E7E`, Infantry `0x00520721`):
@@ -3247,9 +3308,13 @@ fn emit_admitted_fire(
         );
     }
 
+    // `TechnoClass::Fire` plays the per-shot `Report=` only for a type that is
+    // not `IsGattling=` (`0x006FF349..0x006FF38F`); a gattling's report is
+    // its stage loop (`combat::gattling`).
     let report_sound_id = weapon
         .report
         .as_ref()
+        .filter(|_| !obj.is_gattling)
         .map(|report_id| world.interner.intern(report_id));
     out.fire_events.push(SimFireEvent {
         attacker_id: snap.stable_id,
@@ -4029,7 +4094,29 @@ pub(crate) fn tick_combat(
     // FACING destinations use the preseeded native read window above, with
     // own-retarget/remove replacement below, then are applied post-batch by
     // `unit_post::apply_unit_facing`.
+    //
+    // The firing update's tail (`UnitClass::AI @ 0x007365E1`, the Gattling
+    // charge or decay and `+0x148`) runs for every unit whose AI reaches it,
+    // in live order: after its fire for a unit with a snapshot, with no target
+    // for the rest.
+    let mut idle_fire_updates =
+        idle_unit_fire_updates(world, rules, &snapshots, live_order, &keys, fire_suppressed)
+            .into_iter()
+            .peekable();
     for snap in &snapshots {
+        let order = (
+            live_index
+                .get(&snap.stable_id)
+                .copied()
+                .unwrap_or(usize::MAX),
+            snap.stable_id,
+        );
+        while let Some(&(idle_order, id)) = idle_fire_updates.peek()
+            && idle_order < order
+        {
+            idle_fire_updates.next();
+            world.unit_fire_update_tail(id, gattling::UnitFireOutcome::NoTarget, rules);
+        }
         let Some(live_attack) = world
             .substrate
             .entities
@@ -4047,6 +4134,15 @@ pub(crate) fn tick_combat(
                 })
             })
         else {
+            // A unit whose target went away earlier this frame reaches its
+            // firing update with none.
+            if unit_reaches_fire_update(world, snap.stable_id) {
+                world.unit_fire_update_tail(
+                    snap.stable_id,
+                    gattling::UnitFireOutcome::NoTarget,
+                    rules,
+                );
+            }
             continue;
         };
         let mut live_snap = snap.clone();
@@ -4072,7 +4168,7 @@ pub(crate) fn tick_combat(
                 &mut under_attack_events,
             );
         } else {
-            resolve_attacker_fire(
+            let fire_error = resolve_attacker_fire(
                 world,
                 rules,
                 overlay_registry,
@@ -4092,6 +4188,21 @@ pub(crate) fn tick_combat(
                 &mut emit,
                 &mut under_attack_events,
             );
+            // The shot precedes the tail in the same update. A code VERA's
+            // own retarget paths never asked for (a dead, friendly or unseen
+            // target) takes the no-target arm, as a dead target natively does.
+            if snap.category == EntityCategory::Unit
+                && unit_reaches_fire_update(world, snap.stable_id)
+            {
+                world.unit_fire_update_tail(
+                    snap.stable_id,
+                    fire_error.map_or(
+                        gattling::UnitFireOutcome::NoTarget,
+                        gattling::UnitFireOutcome::Code,
+                    ),
+                    rules,
+                );
+            }
         }
         // S3: only this Unit's explicit retarget/remove may replace its seeded
         // destination. Synchronous target expiry from VERA's immediate-delivery
@@ -4146,6 +4257,9 @@ pub(crate) fn tick_combat(
             update.turret_destination = Some(replacement);
             update.turret_destination_is_idle_return = replacement_is_idle_return;
         }
+    }
+    for (_, id) in idle_fire_updates {
+        world.unit_fire_update_tail(id, gattling::UnitFireOutcome::NoTarget, rules);
     }
     // S3 residual: every Unit not in the attacker snapshot set (target-less,
     // or in-transport holders excluded at the snapshot build). This runs after

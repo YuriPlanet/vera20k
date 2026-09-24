@@ -580,7 +580,10 @@ use crate::sim::world::Simulation;
 // 198 -> 199: a Crazy Ivan bomb: the carrier keeps its bomb (planter, house,
 // fuse, who sees it); the carrier index is rebuilt on load. A 198 save has
 // no bombs.
-const SNAPSHOT_VERSION: u32 = 199;
+// 199 -> 200: Gattling: an entity keeps its stage and value (`+0x140`,
+// `+0x144`) and the turret animation counter `+0x148`; the report latch is not
+// saved (`TechnoClass::Load` clears it, `0x0070C20E`). A 199 save has none.
+const SNAPSHOT_VERSION: u32 = 200;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;

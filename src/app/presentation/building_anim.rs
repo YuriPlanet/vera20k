@@ -259,6 +259,9 @@ pub(crate) fn drain_sound_events(state: &mut AppState) {
                     );
                 }
             }
+            GameSoundEvent::AnimationReleased { anim_id } => {
+                sfx.release_animation_sound(*anim_id);
+            }
             GameSoundEvent::AnimationStopped {
                 anim_id,
                 stop_sound_id,

@@ -201,6 +201,34 @@ pub struct WeaponType {
 }
 
 impl WeaponType {
+    /// `Report=` as `CCINIClass::ReadSoundList @ 0x00525430` reads it: the
+    /// value split on `,` (the `strtok` delimiter string at `0x00817F70`),
+    /// empty tokens dropped; the vector's count is `WeaponTypeClass+0xCC`.
+    ///
+    /// RESIDUAL: native keeps only the tokens `VocClass::FindPtrByName`
+    /// resolves and reads at most 127 bytes (`ReadString`, buffer `0x80`);
+    /// VERA keeps every token. Trigger: a `Report=` naming a sound
+    /// `soundmd.ini` lacks, or longer than 127 bytes. Effect: a longer list,
+    /// so the Gattling report's draw can pick a different item. Frequency:
+    /// never on retail data (every `Report=` names one sound).
+    fn report_items(&self) -> impl Iterator<Item = &str> {
+        self.report
+            .as_deref()
+            .unwrap_or("")
+            .split(',')
+            .filter(|token| !token.is_empty())
+    }
+
+    /// `Report.Count` (`WeaponTypeClass+0xCC`).
+    pub fn report_count(&self) -> i32 {
+        self.report_items().count() as i32
+    }
+
+    /// `Report.Items[index]`.
+    pub fn report_item(&self, index: usize) -> Option<&str> {
+        self.report_items().nth(index)
+    }
+
     /// Parse a WeaponType from a rules.ini section.
     pub fn from_ini_section(id: &str, section: &IniSection) -> Self {
         Self {

@@ -405,6 +405,20 @@ pub(crate) fn build_unit_instances(
         };
 
         let anim_frame: u32 = entity.voxel_animation.map(|a| a.frame).unwrap_or(0);
+        // `UnitClass::DrawVoxelBody @ 0x0073B4DA..0x0073B50E`: the turret
+        // takes the body's HVA frame, or while that is 0, `+0x148` modulo
+        // the turret HVA's frame count (the Gattling's spinning barrels).
+        let turret_frame = if anim_frame != 0 || entity.turret_anim_frame == 0 {
+            anim_frame
+        } else {
+            atlas
+                .frame_counts
+                .get(&(type_str.to_string(), VxlLayer::Turret))
+                .filter(|&&frames| frames > 1)
+                .map_or(0, |&frames| {
+                    entity.turret_anim_frame.rem_euclid(frames as i32) as u32
+                })
+        };
 
         // Chrono teleport doesn't tint the unit — the visual effect is the
         // WarpOut animation overlay; the unit itself stays fully opaque.
@@ -443,6 +457,7 @@ pub(crate) fn build_unit_instances(
                 alpha,
                 draw_state,
                 anim_frame,
+                turret_frame,
                 dock_depth_y_offset,
                 slope_state,
                 transition_instances,
@@ -989,6 +1004,7 @@ fn emit_turret_unit_sprites(
     alpha: f32,
     draw_state: DrawState,
     anim_frame: u32,
+    turret_frame: u32,
     dock_depth_y_offset: f32,
     slope_state: UnitRenderSlopeState,
     transition_instances: &mut Vec<Vec<SpriteInstance>>,
@@ -1009,7 +1025,7 @@ fn emit_turret_unit_sprites(
         type_id: type_id.to_string(),
         facing: canonical_turret_facing(turret_facing),
         layer: VxlLayer::Turret,
-        frame: anim_frame,
+        frame: turret_frame,
         slope_type,
     };
     let barrel_key = UnitSpriteKey {

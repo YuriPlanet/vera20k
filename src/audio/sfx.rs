@@ -1185,6 +1185,16 @@ impl SfxPlayer {
         }
     }
 
+    /// `SoundEvent::Release @ 0x00406060` on one owner's handle: a looping
+    /// cue stops repeating and plays out, and the handle is cleared.
+    /// Idempotent.
+    pub fn release_animation_sound(&mut self, anim_id: u64) {
+        if let Some(event) = self.arbiter.validate_loop_handle(anim_id) {
+            self.arbiter.release(event);
+        }
+        self.arbiter.clear_loop_handle(anim_id);
+    }
+
     /// Release only the handle owned by `anim_id`. Idempotent.
     pub fn stop_animation_sound(&mut self, anim_id: u64) {
         if let Some(event) = self.arbiter.validate_loop_handle(anim_id) {

@@ -80,8 +80,6 @@
 //!   unnamed Foot sites `0x004DF9EA`/`0x005231C1`), is set; VERA has no
 //!   `+0x27C` and never processes a temporal victim's locomotor. Trigger: a
 //!   Chronosphere launch on an object being erased. Effect: none observed.
-//! - The target's gattling spin-down at warp start (`0x0070E000(1)`, gated on
-//!   `IsGattling=`): VERA has no gattling stages.
 //! - `Mark(2)` at warp start and release (vtable `+0x124`) and the building's
 //!   paused animation slots (`0x004521C0`/`0x00452210` pause and resume the 21
 //!   slots) are presentation; the online latch they share is
@@ -491,6 +489,16 @@ impl Simulation {
         }
         // 0x0071B0EA sets `+0x270`, which the head above stands for; a
         // building's online latch follows it (`0x004521C0`).
+        // 0x0071B0FC..0x0071B10B: a gattling victim winds down one tick.
+        if self
+            .substrate
+            .entities
+            .get(target)
+            .and_then(|entity| self.object_type(entity.type_ref(), rules))
+            .is_some_and(|object| object.is_gattling)
+        {
+            self.gattling_update(target, rules, 1);
+        }
         // 0x0071B14E..0x0071B162: a victim that was itself warping lets go.
         self.temporal_release_if_warping(target);
         // 0x0071B16D: ObjectClass::Deselect.

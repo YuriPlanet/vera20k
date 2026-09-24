@@ -29,6 +29,7 @@ pub(crate) mod destruction_effects;
 pub(crate) mod fire_coord;
 pub(crate) mod fire_error;
 pub(crate) mod fire_error_world;
+pub(crate) mod gattling;
 pub(crate) mod greatest_threat;
 pub(crate) mod in_range;
 pub(crate) mod inviso_scatter;
