@@ -2638,8 +2638,6 @@ pub(crate) struct CombatEmit {
     pub(crate) burst_updates: Vec<(u64, u8, u16)>,
     /// aircraft that fired this tick
     pub(crate) ammo_deduct: Vec<u64>,
-    /// building IDs to advance fire index
-    pub(crate) garrison_advance: Vec<u64>,
     pub(crate) pending_infantry_updates: Vec<(u64, Option<PendingInfantryFire>)>,
     pub(crate) animation_switches: Vec<(u64, SequenceKind)>,
     /// Native `CurrentWeaponNumber` writes emitted by live weapon selection.
@@ -3041,10 +3039,13 @@ pub(crate) fn score_award_for_victim(victim: Option<&ObjectType>, veterancy: u16
 ///    (`0x00702F31..0x00702F96`); stock `V3ROCKET`/`DMISL`/`CMISL` are
 ///    `Trainable=no, MissileSpawn=yes`, which is how a V3 promotes.
 /// 4. else an occupied Building (`vtable+0x400`, RTTI 6) → the occupant at
-///    the building's fire index (`+0x688[+0x69C]`, `0x00702F98..0x00702FEA`).
-///    NOT MODELLED: it needs a `Trainable=no` occupiable type, and every stock
-///    `CanBeOccupied=yes` section leaves `Trainable=` at its default of yes,
-///    so branch 2 pays the BUILDING in stock and the occupant never promotes.
+///    the building's fire index (`+0x688[+0x69C]`, `0x00702F98..0x00702FEA`),
+///    with no `Trainable=` test on it. A BuildingType is untrainable by
+///    default (constructor `0x0045E42E`) and no retail occupiable type sets
+///    the key, so every garrison kill lands here: its occupants promote, the
+///    building never does. FireAt has already advanced the index past the
+///    shooter (`0x006FF031..0x006FF085`) when its bullet kills, so with
+///    several occupants the NEXT one in line is paid.
 /// 5. else nobody.
 ///
 /// RESIDUAL — the costs on both sides are `TechnoTypeClass::GetActualCost`
@@ -3117,8 +3118,24 @@ pub(crate) fn award_kill_experience(
         // Branch 3: a spawned missile pays its launcher.
         killer.spawn_owner_id.and_then(trainable_cost)
     } else {
-        // Branch 4 (garrison occupant) is stock-unreachable — see above.
-        None
+        // Branch 4: an occupied building pays the occupant at its fire index.
+        killer
+            .passenger_role
+            .cargo()
+            .filter(|cargo| {
+                killer.category == EntityCategory::Structure
+                    && killer_type.can_be_occupied
+                    && killer_type.can_occupy_fire
+                    && !cargo.is_empty()
+            })
+            .map(|cargo| {
+                cargo.passengers[usize::from(cargo.garrison_fire_index) % cargo.passengers.len()]
+            })
+            .and_then(|occupant| {
+                let occupant_type =
+                    rules.object(interner.resolve(entities.get(occupant)?.type_ref()))?;
+                Some((occupant, occupant_type.cost))
+            })
     };
     // `0x00702E64` loads the KILLER's house and calls `HouseClass::IsAlly @
     // 0x004F9A90`, which reads only the asker's own ally bitfield — a one-way

@@ -269,11 +269,17 @@ pub struct ObjectType {
     /// takes `Random__Next() % count` from it, exactly as it does for
     /// `Explosion=` — one draw each, explosion first.
     pub destroy_anims: Vec<String>,
-    /// `Trainable=` — whether this object can gain veterancy from its kills.
+    /// `Trainable=` (TechnoType `+0xC8E`) — whether this object can gain
+    /// veterancy from its kills.
     ///
-    /// gamemd-derived: `TechnoClass::Record_The_Kill @ 0x00702D40` skips the
-    /// experience award entirely for an untrainable killer. 82 stock sections
-    /// set `Trainable=no`. Default true.
+    /// gamemd-derived: `TechnoClass::Record_The_Kill @ 0x00702D40` pays an
+    /// untrainable killer nothing (a garrisoned building's kill goes to its
+    /// firing occupant instead). `TechnoTypeClass::ReadINI` reads the key with
+    /// the constructor's value as its default (`0x00714A15..0x00714A29`): true
+    /// from `TechnoTypeClass`'s constructor (`0x0071138E`), false from
+    /// `BuildingTypeClass`'s (`0x0045E42E`, EBX zeroed at `0x0045DD9A`). Retail
+    /// sets `Trainable=yes` on one building (`[YAREFN]`) and `no` on 82 other
+    /// sections.
     pub trainable: bool,
     /// Hit points (health). 0 = invincible or not applicable.
     pub strength: i32,
@@ -1801,7 +1807,9 @@ impl ObjectType {
                 .filter(|entry| !entry.is_empty())
                 .map(|entry| entry.to_string())
                 .collect(),
-            trainable: section.get_bool("Trainable").unwrap_or(true),
+            trainable: section
+                .get_bool("Trainable")
+                .unwrap_or(category != ObjectCategory::Building),
             strength: section.get_i32("Strength").unwrap_or(0),
             dont_score: section.get_bool("DontScore").unwrap_or(false),
             special_threat_value: section.get_f64("SpecialThreatValue").unwrap_or(0.0),

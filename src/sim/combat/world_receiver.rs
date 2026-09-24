@@ -1880,7 +1880,6 @@ pub(crate) fn commit_projectiles(
     debug_assert!(emit.reveal_events.is_empty());
     debug_assert!(emit.burst_updates.is_empty());
     debug_assert!(emit.ammo_deduct.is_empty());
-    debug_assert!(emit.garrison_advance.is_empty());
     debug_assert!(emit.pending_infantry_updates.is_empty());
     debug_assert!(emit.animation_switches.is_empty());
     debug_assert!(emit.current_weapon_updates.is_empty());
@@ -3634,9 +3633,22 @@ fn emit_admitted_fire(
         out.ammo_deduct.push(snap.stable_id);
     }
 
-    // Track garrison buildings that fired for round-robin advancement.
-    if is_garrison {
-        out.garrison_advance.push(snap.stable_id);
+    // `TechnoClass::FireAt @ 0x006FF031..0x006FF085`, right after
+    // `BulletClass::Fire`: an occupied building advances its firing occupant,
+    // `(+0x69C + 1) % occupants`. The shot's own detonation comes later (its
+    // Inviso bullet's AI; VERA's inline commit after this emission), so its
+    // kill credit, and every later reader of the index, see the next occupant.
+    if is_garrison
+        && let Some(cargo) = world
+            .substrate
+            .entities
+            .get_mut(snap.stable_id)
+            .and_then(|building| building.passenger_role.cargo_mut())
+    {
+        let count = cargo.count() as u8;
+        if count > 0 {
+            cargo.garrison_fire_index = (cargo.garrison_fire_index + 1) % count;
+        }
     }
 
     // `TechnoClass::Fire @ 0x006FF749..0x006FF872` runs after the bullet
@@ -4556,7 +4568,6 @@ pub(crate) fn tick_combat(
         reveal_events,
         burst_updates: _,
         ammo_deduct,
-        garrison_advance,
         pending_infantry_updates,
         animation_switches,
         current_weapon_updates: _,
@@ -4601,18 +4612,6 @@ pub(crate) fn tick_combat(
         }
     }
 
-    // Phase 3c: advance garrison fire index for buildings that fired this tick.
-    // Round-robin: (idx + 1) % count — matches gamemd Fire_At 0x006FDD50.
-    for &building_id in &garrison_advance {
-        if let Some(entity) = world.substrate.entities.get_mut(building_id) {
-            if let Some(cargo) = entity.passenger_role.cargo_mut() {
-                let count = cargo.count() as u8;
-                if count > 0 {
-                    cargo.garrison_fire_index = (cargo.garrison_fire_index + 1) % count;
-                }
-            }
-        }
-    }
 
     // Phase 3.5: fold radiation-emitting detonations into the field, then
     // collect the periodic radiation damage. The original applies this damage
