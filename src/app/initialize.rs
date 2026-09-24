@@ -133,13 +133,25 @@ impl App {
         let shell_client_size = PhysicalSize::new(window_width, window_height);
         let startup_audio =
             StartupAudioDisposition::for_audio_enabled(startup_options.audio_enabled);
-        let window_attrs: WindowAttributes = WindowAttributes::default()
+        let mut window_attrs: WindowAttributes = WindowAttributes::default()
             .with_title("RA2 Engine")
             .with_inner_size(PhysicalSize::new(window_width, window_height))
             .with_resizable(false)
             .with_visible(window_visible)
             .with_active(window_visible);
+        // Capture windows stay hidden, so only a visible session shows the icon.
+        let retail_icon = game_config
+            .as_ref()
+            .filter(|_| window_visible)
+            .and_then(|config| super::window_icon::RetailIcon::load(&config.paths.ra2_dir));
+        if let Some(icon) = &retail_icon {
+            window_attrs = icon.apply(window_attrs);
+        }
         let window: Arc<Window> = Arc::new(event_loop.create_window(window_attrs)?);
+        #[cfg(target_os = "macos")]
+        if let Some(icon) = &retail_icon {
+            icon.set_dock_icon();
+        }
         let gpu: GpuContext = GpuContext::new(window.clone())?;
         let egui: EguiIntegration = EguiIntegration::new(&gpu, &window);
         let batch_renderer: BatchRenderer = BatchRenderer::new(&gpu);

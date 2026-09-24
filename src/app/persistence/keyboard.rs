@@ -6,18 +6,7 @@ use std::path::{Path, PathBuf};
 
 fn path(root: &Path) -> PathBuf {
     // Windows case-insensitivity also retained on development/test hosts.
-    std::fs::read_dir(root)
-        .ok()
-        .into_iter()
-        .flatten()
-        .filter_map(Result::ok)
-        .find(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .eq_ignore_ascii_case("KEYBOARDMD.INI")
-        })
-        .map(|entry| entry.path())
+    crate::util::case_insensitive_path::find(root, "KEYBOARDMD.INI")
         .unwrap_or_else(|| root.join("KeyboardMD.ini"))
 }
 pub(crate) fn reload(root: &Path, archive: Option<&[u8]>) -> HotkeyBindings {
