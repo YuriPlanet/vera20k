@@ -555,6 +555,10 @@ pub struct GeneralRules {
     /// target scans for every mission except Area Guard. The per-object scan
     /// timer is re-armed to this value plus a 0..=2 scenario-RNG jitter.
     pub normal_targeting_delay: u32,
+    /// `[General] DeadBodies=` (`Rules+0x124`): the corpse anims an
+    /// infantryman's Die1..Die5 completion picks from when its type names none
+    /// (`0x00520C42..0x00520C91`). Retail: `DEATH_A`..`DEATH_F`.
+    pub dead_bodies: Vec<String>,
     /// `GuardAreaTargetingDelay=` ([General], stock 36) — the same cadence for
     /// an Area Guard object, which scans twice as far and so scans less often.
     pub guard_area_targeting_delay: u32,
@@ -1312,6 +1316,7 @@ impl Default for GeneralRules {
             target_distance_coefficient_default: -10.0,
             threat_per_occupant: 5,
             normal_targeting_delay: 27,
+            dead_bodies: Vec::new(),
             guard_area_targeting_delay: 36,
             building_garrisoned_sound: None,
             sell_sound: None,
@@ -1875,6 +1880,13 @@ impl GeneralRules {
             // Passive-scan cadence, in frames. Both keys are present in stock
             // rulesmd.ini with exactly the constructor defaults (27 / 36); read
             // them rather than hardcoding so a mod's values take effect.
+            dead_bodies: general
+                .get_list("DeadBodies")
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect(),
             normal_targeting_delay: general
                 .get_i32("NormalTargetingDelay")
                 .map(|v| v.max(0) as u32)
@@ -7728,6 +7740,30 @@ Projectile=Invisible
         );
         for country in ["Americans", "Russians", "YuriCountry"] {
             assert_eq!(rules.country_rof(country), 1.0, "{country}");
+        }
+    }
+
+    /// Retail corpse anims through the production reader: `[General]
+    /// DeadBodies=` lists six, and the GI and Conscript name none of their own
+    /// and are not `NotHuman=`, so their deaths pick from the six.
+    #[test]
+    fn retail_dead_bodies() {
+        let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let rules = RuleSet::from_ini(&ini).expect("retail rules parse");
+        assert_eq!(
+            rules.general.dead_bodies,
+            [
+                "DEATH_A", "DEATH_B", "DEATH_C", "DEATH_D", "DEATH_E", "DEATH_F"
+            ]
+        );
+        for infantry in ["E1", "E2"] {
+            let object = rules.object(infantry).unwrap();
+            assert!(
+                object.dead_bodies.is_empty() && !object.not_human,
+                "{infantry}"
+            );
         }
     }
 }

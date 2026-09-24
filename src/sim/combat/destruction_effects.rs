@@ -173,7 +173,7 @@ impl Simulation {
     }
 
     /// One Scenario `Next() % count` pick from a non-empty anim list.
-    fn pick_death_anim<'r>(&mut self, list: &'r [String]) -> &'r str {
+    pub(crate) fn pick_death_anim<'r>(&mut self, list: &'r [String]) -> &'r str {
         let index = (self.scenario_rng.next_u32() % list.len() as u32) as usize;
         &list[index]
     }

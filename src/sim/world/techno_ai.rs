@@ -391,7 +391,7 @@ impl Simulation {
             return false;
         };
         if entity.infantry_terminal.is_some() {
-            return self.visit_infantry_terminal(id, rules);
+            return self.visit_infantry_terminal(id, rules, ctx);
         }
         if entity.dying {
             let Some(rules) = rules else {
@@ -1021,6 +1021,33 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
     }
+}
+
+/// The Techno AI a Die1/Die2 corpse still runs. `InfantryClass::AI` keeps
+/// calling `FootClass::AI` (`0x0051BC9F`) until the sequence completes, and
+/// `TechnoClass::AI_Update` has no health gate on these steps: the estimate
+/// recovery (`0x006F9F6E`), the allied and illegal target drops
+/// (`0x006FA30C`, `0x006FA472`) and the passive block (`0x006FA65A`), whose
+/// scan draws and can acquire. Mission dispatch alone skips a Health-0
+/// object (`0x005B30A7`). The corpse's own fire routine is refused CANT for
+/// its death Doing (`0x0051C8B8`).
+///
+/// RESIDUAL: the rest of the subset (veterancy, drains, CaptureManager,
+/// self-heal, cloak, bomb) does nothing for a GI corpse and is not run.
+pub(super) fn dying_infantry_techno_ai(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    ctx: ObjectAiCtx<'_>,
+) {
+    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+        entity
+            .estimated_health
+            .recover(i32::from(entity.health.current), sim.session.binary_frame);
+    }
+    allied_target_drop_step(sim, id, rules);
+    illegal_target_drop_step(sim, id, rules);
+    passive_acquire_step(sim, id, Some(rules), ctx);
 }
 
 /// The bomb fuse's slot in `TechnoClass::AI_Update` (`0x006FA6F5..
@@ -2814,6 +2841,32 @@ mod tests {
             MissionId::from_known(MissionType::Guard)
         );
         assert_eq!(entity.mission.queued(), MissionId::NONE);
+    }
+
+    /// A Die1 corpse keeps running `TechnoClass::AI_Update` through
+    /// `FootClass::AI` (`0x0051BC9F`): its passive block scans (one Scenario
+    /// `RandomRanged(0, 2)`) on the visit that removes it.
+    #[test]
+    fn a_dying_infantryman_still_takes_its_passive_scan() {
+        let rules = passive_rules();
+        let mut sim = Simulation::new();
+        insert_scannable(&mut sim, 1, "Americans", "GI", EntityCategory::Infantry);
+        sim.substrate.entities.get_mut(1).unwrap().mission_leaf =
+            crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+                EntityCategory::Infantry,
+            );
+        sim.begin_infantry_death_sequence(
+            1,
+            super::super::infantry_terminal::InfantryDeathSequence::Die1,
+        );
+        let mut expected = sim.clone_scenario_rng();
+        let _ = expected.next_range_u32_inclusive(0, 2);
+        sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+        assert_eq!(
+            sim.scenario_rng.logical_state(),
+            expected.logical_state(),
+            "the corpse's scan drew once"
+        );
     }
 
     #[test]

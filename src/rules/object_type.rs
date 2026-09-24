@@ -287,6 +287,14 @@ pub struct ObjectType {
     /// draw for burst index `i` in 1..=4 when it is not -1. `[-1; 4]` for other
     /// classes; no retail section authors them.
     pub burst_delays: [i32; 4],
+    /// An InfantryType's `DeadBodies=` (`+0xE50`, TypeList read at
+    /// `0x005241FB`): the corpse anims its Die1..Die5 completion picks from
+    /// (`0x00520BC6`). Empty for other classes; no retail infantry sets it.
+    pub dead_bodies: Vec<String>,
+    /// An InfantryType's `NotHuman=` (`+0xEAD`, read at `0x005243D2`,
+    /// constructor 0 at `0x0052375A`): a death completion with no own
+    /// `DeadBodies=` leaves no `[General] DeadBodies=` corpse (`0x00520C42`).
+    pub not_human: bool,
     /// Hit points (health). 0 = invincible or not applicable.
     pub strength: i32,
     /// `DontScore=` — this object's destruction is invisible to the end-of-match
@@ -1827,6 +1835,13 @@ impl ObjectType {
                     -1
                 }
             }),
+            dead_bodies: if category == ObjectCategory::Infantry {
+                parse_csv_string_list(section.get("DeadBodies"))
+            } else {
+                Vec::new()
+            },
+            not_human: category == ObjectCategory::Infantry
+                && section.get_bool("NotHuman").unwrap_or(false),
             strength: section.get_i32("Strength").unwrap_or(0),
             dont_score: section.get_bool("DontScore").unwrap_or(false),
             special_threat_value: section.get_f64("SpecialThreatValue").unwrap_or(0.0),

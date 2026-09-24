@@ -105,6 +105,17 @@ impl Simulation {
         inf_death: u8,
         immediate_uninit_ids: &mut Vec<u64>,
     ) -> InfantryDeathPostlude {
+        // `InfantryClass::ReceiveDamage 0x0051810E..0x0051812E`, before the
+        // death ladder: Queue_Mission(-1) (refused), Queue_Mission(Guard),
+        // Commence. The corpse sits on Guard until it is removed.
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            crate::sim::mission::authority::queue_entity_mission_deferred(
+                entity,
+                crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard),
+            );
+        }
+        let now = self.session.binary_frame;
+        let _ = self.mission_commence_exact(id, now);
         let entity = self
             .substrate
             .entities
@@ -203,6 +214,16 @@ impl Simulation {
         if entity.lifecycle.object_alive {
             entity.infantry_terminal = Some(InfantryTerminal::Sequence(sequence));
         }
+        // Do_Action's `+0x6C4` write (`0x0051D6F0`): the death Doing that
+        // Infantry GetFireError answers CANT for (`0x0051C8B8`).
+        if entity.mission_leaf.as_infantry().is_some() {
+            entity
+                .mission_leaf
+                .set_infantry_doing_verified(i32::from(crate::rules::infantry_sequence::action_id(
+                    sequence.animation(),
+                )))
+                .expect("a death Doing is in the verified table");
+        }
         if entity
             .animation
             .as_ref()
@@ -214,7 +235,16 @@ impl Simulation {
 
     /// Consume this object's terminal Logic visit, including eventual UnInit.
     /// Returns false only when the object is outside this lifetime mechanism.
-    pub(super) fn visit_infantry_terminal(&mut self, id: u64, rules: Option<&RuleSet>) -> bool {
+    ///
+    /// A Die1/Die2 corpse still runs its Techno AI subset each visit (see
+    /// `techno_ai::dying_infantry_techno_ai`); when its sequence completes,
+    /// `InfantryClass 0x00520BC6` leaves a corpse anim, then UnInit.
+    pub(super) fn visit_infantry_terminal(
+        &mut self,
+        id: u64,
+        rules: Option<&RuleSet>,
+        ctx: super::techno_ai::ObjectAiCtx<'_>,
+    ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
@@ -227,6 +257,10 @@ impl Simulation {
             InfantryTerminal::AwaitingConsequences => return true,
             InfantryTerminal::Sequence(sequence) => {
                 let Some(rules) = rules else {
+                    return true;
+                };
+                super::techno_ai::dying_infantry_techno_ai(self, id, rules, ctx);
+                let Some(entity) = self.substrate.entities.get(id) else {
                     return true;
                 };
                 let def = rules
@@ -262,6 +296,9 @@ impl Simulation {
             }
         };
         if finished {
+            if let (InfantryTerminal::Sequence(_), Some(rules)) = (terminal, rules) {
+                self.leave_dead_body(id, rules);
+            }
             self.release_move_sound(id);
             if let Some(rules) = rules {
                 self.uninit_with_rules(id, rules);
@@ -270,5 +307,132 @@ impl Simulation {
             }
         }
         true
+    }
+
+    /// `InfantryClass 0x00520BC6..0x00520CA4`, a Die1..Die5 sequence's
+    /// completion: the type's `DeadBodies=`, else `[General] DeadBodies=`
+    /// unless the type is `NotHuman=`, one Scenario `Random() % count`
+    /// (`0x00520C11`/`0x00520C6B`), and `AnimClass(body, GetCoords, 0, 1,
+    /// 0x600, 0, 0)` (`0x00520CA4`), before the UnInit. Returns the corpse
+    /// anim it built.
+    ///
+    /// Native execution: `tools/spatial_oracle/infantry_death_completion.py`
+    /// ([`dead_body_tests`]).
+    fn leave_dead_body(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+    ) -> Option<crate::sim::intern::InternedId> {
+        let entity = self.substrate.entities.get(id)?;
+        let object = self.object_type(entity.type_ref(), rules)?;
+        let bodies = if !object.dead_bodies.is_empty() {
+            &object.dead_bodies
+        } else if !object.not_human {
+            &rules.general.dead_bodies
+        } else {
+            return None;
+        };
+        if bodies.is_empty() {
+            return None;
+        }
+        let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+        let body = self.pick_death_anim(bodies).to_string();
+        let body = self.interner.intern(&body);
+        self.admit_death_anim(
+            rules,
+            body,
+            crate::sim::combat::destruction_effects::DeathAnimSpawn {
+                coord: crate::sim::anim_class::AnimWorldCoord {
+                    x: location.x,
+                    y: location.y,
+                    z: location.z,
+                },
+                delay: 0,
+            },
+        );
+        Some(body)
+    }
+}
+
+#[cfg(test)]
+mod dead_body_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+    use serde_json::Value;
+
+    /// Every `infantry_death_completion.json` Die1..Die5 row that completes
+    /// (stage at or past a nonzero count) replays through
+    /// `Simulation::leave_dead_body` from the same Scenario seed: the corpse it
+    /// picks (the type's list, else Rules', none for NotHuman) and the RNG
+    /// state after.
+    #[test]
+    fn leave_dead_body_matches_the_original() {
+        let rows: Vec<Value> = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/infantry_death_completion.json"
+        ))
+        .unwrap();
+        assert_eq!(rows.len(), 68);
+        let mut compared = 0;
+        for row in &rows {
+            let input = &row["input"];
+            let int = |key: &str| input[key].as_i64().unwrap();
+            if !(0xB..=0xF).contains(&int("doing"))
+                || int("count") <= 0
+                || int("stage") < int("count")
+                || int("alloc") == 0
+            {
+                continue;
+            }
+            let type_bodies: Vec<String> = (0..int("type_bodies"))
+                .map(|n| format!("TBODY{n}"))
+                .collect();
+            let ini = format!(
+                "[General]\nDeadBodies=RBODY0,RBODY1,RBODY2,RBODY3,RBODY4,RBODY5\n\
+                 [InfantryTypes]\n0=DOOMED\n[DOOMED]\nStrength=100\nNotHuman={}\n{}",
+                if int("not_human") != 0 { "yes" } else { "no" },
+                if type_bodies.is_empty() {
+                    String::new()
+                } else {
+                    format!("DeadBodies={}\n", type_bodies.join(","))
+                },
+            );
+            let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
+            let mut sim = Simulation::with_seed(int("seed") as u64);
+            let mut entity =
+                crate::sim::game_entity::GameEntity::test_default(1, "DOOMED", "Americans", 5, 5);
+            entity.type_ref = sim.interner.intern("DOOMED");
+            entity.category = EntityCategory::Infantry;
+            sim.substrate.entities.insert(entity);
+            assert_eq!(
+                sim.scenario_rng.native_state_hex(),
+                row["rng_before"].as_str().unwrap()
+            );
+
+            let picked = sim
+                .leave_dead_body(1, &rules)
+                .map(|body| sim.interner.resolve(body).to_string());
+            let native = row["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|event| event["call"] == "anim")
+                .map(|event| {
+                    let anim = event["anim"].as_i64().unwrap();
+                    assert_eq!(event["rest"], serde_json::json!([0, 1, 0x600, 0, 0]));
+                    if anim >= 0x2F00 {
+                        format!("TBODY{}", anim - 0x2F00)
+                    } else {
+                        format!("RBODY{}", anim - 0x2E00)
+                    }
+                });
+            assert_eq!(picked, native, "{input}");
+            assert_eq!(
+                sim.scenario_rng.native_state_hex(),
+                row["rng_after"].as_str().unwrap(),
+                "{input}"
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 61);
     }
 }
