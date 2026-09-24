@@ -790,12 +790,15 @@ Aircraft attack loop (`feature/combat-aircraft-attack`, no schema change), owner
   IsClose (InRange with SelectWeapon's slot), the facings, state 4's burst, single FireAts,
   `Assign(T, 1)`, Uncloak and the Rate epilogue on the Scenario stream (`mission_epilogue`, also
   state 1's). `exit_visit` runs state 10: the target clear by house control and `+3D4`, the
-  own-edge `PickCellOnEdge` destination with its draws, and Enter_Idle_Mode in the same visit.
+  own-edge `PickCellOnEdge` destination with its draws, and Enter_Idle_Mode in the same visit,
+  whose return to an airfield replaces that destination with the dock (`4179B4`, `4179D7`).
+  Every state and the idle decision read one Target-present predicate (a dying object is
+  detached at the killing hit, `5F5765`).
   The manager's per-pass re-issue is the native no-op (Assign_Target's same-target return,
   Queue_Mission's skip), and its Queue_Mission calls (Attack, and the hold's and recall's Move) go
   through the child's mission owner; SetTarget's aircraft arm (`6FCE27`) empties a spawned aircraft
   that is retargeted mid-run. `[General] CurleyShuffle=` (Rules+17E1) ported; North's edge row fixed to 0
-  (paradrop spawn and exit cells move one row).
+  (the paradrop carrier's spawn cell moves one row; its exit still uses the legacy picker).
 - Native execution: `tools/spatial_oracle/aircraft_states.py` runs the whole `417FE0` per visit
   (368 stored rows standing for about 9,400 executed visits: every code, class, Ammo, Target,
   CurleyShuffle and IsClose for states 4..9, the state-9 delay, state 10's full product and 20
@@ -808,9 +811,12 @@ Aircraft attack loop (`feature/combat-aircraft-attack`, no schema change), owner
   `an_empty_fighter_lets_go_heads_for_its_edge_and_idles`,
   `a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue`, and a Carrier sortie through
   `advance_tick`, `a_carrier_hornet_flies_a_whole_strafe_pass` (five bombs a ROF apart, the ammo
-  paid, the recall).
-- Residuals: the source Scatter after every shot (`481670`, recipients' `vt+174`); VERA's idle
-  decision is its own tree (Enter_Idle_Mode `4176F0` unported); the Airstrike `+294` and its
+  paid; the recall is asserted by the re-issue test).
+- Residuals: the source Scatter after each release (`481670`, recipients' `vt+174`); VERA's idle
+  decision is its own tree (Enter_Idle_Mode `4176F0` unported beyond the dock destination: a
+  computer house takes Guard where native takes Area Guard, and the landed, dockless, team and
+  `+3D4` arms keep their destination and Target; recorded on `aircraft::enter_idle_mode`); the
+  Airstrike `+294` and its
   Retreat have no producer; `+6D5` unrepresented; the strike states run in the combat phase after
   the Logic pass (the draw-order residual every FireAt shares); state 9's divide fault falls back
   to 1 (no retail aircraft reaches it); the DropPayload carrier arm stays blocked. In that sortie

@@ -1,7 +1,8 @@
 //! Map-edge cell finders.
 //!
 //! The legacy ground helper picks a walkable rectangular edge cell biased
-//! toward a target. Paradrop carrier spawn and exit instead share active
+//! toward a target; the paradrop carrier's exit still uses it. The carrier's
+//! spawn cell and Aircraft Mission_Attack's state 10 take active
 //! `FUN_004AA440`'s sentinel/sentinel, criterion-4 MapClass path: randomized
 //! LocalSize scans select a cell just outside the isometric playfield without
 //! consulting ordinary ground passability.
@@ -10,7 +11,7 @@
 //! - Part of sim/ — depends only on sim/pathfinding.
 //! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
 
-use crate::map::playfield::{local_to_packed_cell, PlayfieldBounds};
+use crate::map::playfield::{PlayfieldBounds, local_to_packed_cell};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::sim::cell_rect::cell_is_in_playfield_height_aware;
 use crate::sim::pathfinding::PathGrid;
@@ -278,6 +279,9 @@ mod tests {
         }
     }
 
+    /// A regression over one square LocalSize: the cell is VERA's arithmetic.
+    /// The native evidence for North's row 0 is the oracle replay
+    /// (`aircraft::attack_mission::tests::original_state10_rows`).
     #[test]
     fn paradrop_north_spends_initial_draw_and_returns_first_outside_cell() {
         let grid = PathGrid::test_all_blocked(200, 200);

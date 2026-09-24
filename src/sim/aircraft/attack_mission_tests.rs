@@ -168,7 +168,7 @@ fn strike_rows(payload: &Value) -> impl Iterator<Item = &Value> {
 fn original_attack_state_rows() {
     let payload = oracle();
     let defaults = &payload["defaults"];
-    let mut replayed = 0;
+    let (mut replayed, mut skipped) = (0, 0);
     for row in strike_rows(&payload) {
         let combos = if row.get("covers").is_some() {
             combinations(row)
@@ -178,6 +178,7 @@ fn original_attack_state_rows() {
         for input in combos {
             let get = |key| field(&input, defaults, key);
             let Some(code) = code(get("code").as_i64().unwrap()) else {
+                skipped += 1;
                 continue;
             };
             let class = get("class").as_str().unwrap();
@@ -245,8 +246,9 @@ fn original_attack_state_rows() {
             replayed += 1;
         }
     }
-    // Every executed state 4..9 combination but code -1, plus the singles.
-    assert!(replayed > 5_000, "{replayed}");
+    // Every executed state 4..9 combination (5472), the extras (21), the
+    // epilogue (19) and state-9 (40) rows; code -1 alone is not representable.
+    assert_eq!((replayed, skipped), (5552, 456));
 }
 
 /// The state-10 host: the production edge picker over the oracle's map, the
@@ -397,7 +399,7 @@ fn original_state10_rows() {
             replayed += 1;
         }
     }
-    assert!(replayed >= 3_000, "{replayed}");
+    assert_eq!(replayed, 3092);
 }
 
 /// `0x00418B8A..0x00418BB4`, over the corpus's non-faulting inputs.
@@ -418,10 +420,16 @@ fn state9_delay_matches_the_original_division() {
     }
 }
 
-/// State 10 through the production dispatch: an empty Fighter of a human
-/// house lets go of its target (`0x00418C21`), takes a cell on its house's
-/// own edge as its destination (`PickCellOnEdge 0x004AA440`, one Scenario
-/// draw for North) and enters idle mode in the same visit (`vt+0x484`).
+/// State 10 through the production dispatch, airborne: an empty Fighter of
+/// a human house lets go of its target (`0x00418C21`), takes a cell on its
+/// house's own edge as its destination (`PickCellOnEdge 0x004AA440`, one
+/// Scenario draw for North) and enters idle mode in the same visit
+/// (`vt+0x484`). With no `Dock=` list, Enter_Idle_Mode leaves that
+/// destination (`0x0041796A..0x00417978` skips the dock arm), and a computer
+/// house keeps its target. A Harrier-like type with an airfield goes home at
+/// once instead: Enter_Idle_Mode replaces the edge cell with its dock
+/// (`Assign_Destination(NULL, 1)` at `0x004179B4`, then the dock at
+/// `0x004179D7`).
 #[test]
 fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
     use crate::map::entities::EntityCategory;
@@ -434,9 +442,12 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
     use crate::sim::world::Simulation;
 
     let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[AircraftTypes]\n0=ORCA\n\
+        "[AircraftTypes]\n0=ORCA\n1=HARR\n[BuildingTypes]\n0=AIRF\n\
          [ORCA]\nStrength=150\nSpeed=8\nAmmo=1\nFighter=yes\nLandable=yes\nPrimary=Gun\n\
          Locomotor={4A582746-9839-11d1-B709-00A024DDAFD1}\n\
+         [HARR]\nStrength=150\nSpeed=8\nAmmo=1\nFighter=yes\nLandable=yes\nPrimary=Gun\n\
+         AirportBound=yes\nDock=AIRF\nLocomotor={4A582746-9839-11d1-B709-00A024DDAFD1}\n\
+         [AIRF]\nStrength=500\nFoundation=2x2\nHelipad=yes\nUnitReload=yes\n\
          [Gun]\nDamage=10\nROF=20\nRange=6\nProjectile=Shell\nWarhead=WH\n\
          [Shell]\nROT=100\nAG=yes\n\
          [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
@@ -449,9 +460,15 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
         off_104: 62,
         off_108: 50,
     };
-    let exit = |human: bool| {
+    let exit = |plane_type: &str, human: bool, airfield: bool| {
         let mut sim = Simulation::with_seed(0x418C);
-        let mut plane = GameEntity::test_default(1, "ORCA", "Americans", 40, 40);
+        let mut plane = GameEntity::test_default(1, plane_type, "Americans", 40, 40);
+        if airfield {
+            let mut pad = GameEntity::test_default(2, "AIRF", "Americans", 20, 40);
+            pad.category = EntityCategory::Structure;
+            pad.lifecycle.in_limbo = false;
+            sim.substrate.entities.insert(pad);
+        }
         // After `test_default` interned the names.
         sim.interner = crate::sim::intern::test_interner();
         let owner = sim.interner.intern("Americans");
@@ -479,9 +496,12 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
         plane.aircraft_ammo.as_mut().unwrap().current = 0;
         plane.attack_target = Some(AttackTarget::for_cell(45, 40));
         plane.locomotor = Some(LocomotorState::from_object_type(
-            rules.object("ORCA").unwrap(),
+            rules.object(plane_type).unwrap(),
             0,
         ));
+        // In flight: a grounded plane takes Enter_Idle_Mode's landed arm.
+        plane.locomotor.as_mut().unwrap().altitude =
+            crate::util::fixed_math::SimFixed::from_num(1500);
         sim.substrate.entities.insert(plane);
         sim.set_logic_order_for_test(vec![1]);
         let mut expected_rng = sim.scenario_rng.clone();
@@ -500,7 +520,7 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
         (sim, edge)
     };
 
-    let (sim, edge) = exit(true);
+    let (sim, edge) = exit("ORCA", true, false);
     let plane = sim.substrate.entities.get(1).unwrap();
     assert!(plane.attack_target.is_none(), "a human house lets go");
     assert_eq!(
@@ -513,7 +533,7 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
     );
     assert_eq!(plane.mission_leaf.as_aircraft().unwrap().action_latch(), 0);
 
-    let (sim, _) = exit(false);
+    let (sim, _) = exit("ORCA", false, false);
     assert!(
         sim.substrate
             .entities
@@ -523,12 +543,29 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
             .is_some(),
         "a computer house keeps its target"
     );
+
+    let (sim, edge) = exit("HARR", true, true);
+    let plane = sim.substrate.entities.get(1).unwrap();
+    assert!(matches!(
+        plane.aircraft_mission,
+        Some(AircraftMission::ReturnToBase { airfield_id: 2 })
+    ));
+    assert_eq!(
+        plane.navigation.nav_com,
+        Some(NavTargetRef::Building { id: 2 }),
+        "home to the dock, not to the edge {edge:?}"
+    );
+    let target = plane.movement_target.as_ref().unwrap();
+    assert_eq!(target.final_goal, Some((21, 41)), "Fly heads for the pad");
 }
 
 /// The retail inputs the loop reads, through the production reader:
 /// `CurleyShuffle=yes`; the Hornet and the Osprey strafe (weapon 0's
 /// projectile has ROT 1 and no Inviso) and wait 76 and 59 frames after their
-/// last bomb; the Harrier and the Black Eagle are Fighters that do not.
+/// last bomb; the Harrier and the Black Eagle are Fighters that do not. The
+/// division is the original's (`state9_delay_matches_the_original_division`);
+/// the `Speed=` to `Type+0x678` conversion under 76 and 59 is VERA's reading
+/// of `TechnoTypeClass::ReadINI` (`0x0071465F`), not executed.
 #[test]
 fn retail_attack_loop_inputs() {
     let Some((rules_ini, _)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {

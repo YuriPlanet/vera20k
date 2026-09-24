@@ -155,9 +155,9 @@ pub fn tick_aircraft_missions(
 /// dispatch, before locomotor Process (`+0x40`). Mission_Attack's Scenario RNG
 /// draws (state1 Rate jitter, FindFireLocation) and NavCom reservations
 /// therefore interleave with the other objects' AI in Logic order, ahead of
-/// this aircraft's own Fly Process. Returns whether the combat receiver must
-/// admit a Mission_Attack state4 release for this aircraft this frame.
-/// RESIDUAL: that release still runs in VERA's combat phase after the live
+/// this aircraft's own Fly Process. Returns whether the combat phase must
+/// run a Mission_Attack strike visit (states 4..9) for this aircraft this
+/// frame. RESIDUAL: that visit runs in VERA's combat phase after the live
 /// pass, like every other attacker's FireAt, so its draws do not interleave.
 ///
 /// `path_grid`: Paradrop's Drop_Payload uses it for drop-cell passability.
@@ -200,6 +200,9 @@ struct MissionMutation {
     ammo_delta: i32,
     fire_at: Option<crate::sim::combat::TargetKind>,
     move_to: Option<(u16, u16)>,
+    /// `Assign_Destination(target, 1)` through the aircraft's destination
+    /// owner (NavCom and the Fly MoveTo), ahead of any `move_to`.
+    assign_destination: Option<crate::sim::components::NavTargetRef>,
     self_destruct: bool,
     set_speed_fraction: Option<SimFixed>,
     /// Fly BeginLanding4CFA70 through the world owner, after the mission write.
@@ -227,6 +230,7 @@ fn mission_step(
         ammo_delta: 0,
         fire_at: None,
         move_to: None,
+        assign_destination: None,
         self_destruct: false,
         set_speed_fraction: None,
         begin_landing: false,
@@ -577,9 +581,27 @@ fn mission_step(
     Some(m)
 }
 
-/// Apply one handler decision. Returns the Mission_Attack fire request.
 /// Enter_Idle_Mode's decision for an aircraft with nothing to do (the Idle
 /// mission, and Mission_Attack state 10's `vt+0x484(0, 1)`).
+///
+/// A return to an airfield also sends the aircraft there in the same call,
+/// replacing whatever destination it held (state 10's edge cell): the
+/// airborne arm of `AircraftClass::Enter_Idle_Mode @ 0x004176F0` clears it
+/// (`Assign_Destination(NULL, 1)` at `0x004179B4`) and assigns the dock that
+/// answers (`0x004179D7`).
+///
+/// RESIDUAL: the rest of 0x004176F0 is VERA's own tree (`idle_mode`): the
+/// Restore and the Retreat/Airstrike returns at its head, FootClass's
+/// Enter_Idle_Mode, Guard vs Area Guard for a computer house, the team and
+/// `+0x3D4` arms, the landed arm (clears the destination and the Target,
+/// `0x00417A89..0x00417A9D`), the airborne arm's clear when no dock answers
+/// (`Find_Nearest_Friendly_Airfield 0x0041A160` and Move), and the tail's
+/// dock and Target clear (`0x00417B1D`, `0x00417B29`). Trigger: an aircraft
+/// entering idle mode on the ground, without a dock, in a team, or computer
+/// owned. Effect: a computer-house aircraft keeps Guard where native takes
+/// Area Guard, a landed or dockless one keeps its destination and Target.
+/// Frequency: every computer-house sortie; the rest are rare. The full port
+/// is the Enter_Idle_Mode mechanism.
 fn enter_idle_mode(
     sim: &Simulation,
     rules: &RuleSet,
@@ -617,7 +639,10 @@ fn enter_idle_mode(
         ammo_current: ammo.map_or(-1, |a| a.current),
         ammo_max: ammo.map_or(-1, |a| a.max),
         has_weapon,
-        has_target: entity.attack_target.is_some(),
+        has_target: attack_mission::aircraft_target_present(
+            entity.attack_target.as_ref(),
+            &sim.substrate.entities,
+        ),
         airport_bound,
         is_airborne,
         nearest_airfield: nearest,
@@ -625,6 +650,10 @@ fn enter_idle_mode(
 
     match idle_mode::enter_idle_mode(&input) {
         idle_mode::IdleModeResult::Mission(new_m) => {
+            if let AircraftMission::ReturnToBase { airfield_id } = new_m {
+                m.assign_destination =
+                    Some(crate::sim::components::NavTargetRef::Building { id: airfield_id });
+            }
             m.new_mission = new_m;
         }
         idle_mode::IdleModeResult::SelfDestruct => {
@@ -634,6 +663,7 @@ fn enter_idle_mode(
     Some(())
 }
 
+/// Apply one handler decision. Returns the Mission_Attack fire request.
 fn apply_mission_mutation(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -685,6 +715,9 @@ fn apply_mission_mutation(
         sim.begin_fly_takeoff(m.id, Some(rules));
     }
 
+    if let Some(destination) = m.assign_destination {
+        sim.assign_aircraft_attack_destination(m.id, Some(destination), rules);
+    }
     if let Some((rx, ry)) = m.move_to {
         // No FASTER stage here: `FlyLocomotionClass` never calls the
         // `FootClass::GetCurrentSpeed` vtable slot (`+0x538`) — see

@@ -1,7 +1,9 @@
-//! World effects of Aircraft Mission_Attack417FE0. The remaining attack states
-//! are being migrated from aircraft::attack_mission; this owns states0/1/3's
-//! fire-location search, approach steering and destination transactions, in
-//! live actor order. State1 consumes Scenario RNG; state3 returns a one-tick delay.
+//! World effects of Aircraft Mission_Attack417FE0 that run in the aircraft's
+//! dispatch, in live actor order: states 0/1/3's fire-location search,
+//! approach steering and destination transactions, and state 10's exit
+//! (`aircraft::attack_mission::exit_visit`). State 1 consumes Scenario RNG;
+//! state 3 returns a one-tick delay. States 4..9 run in the combat phase
+//! (`combat::aircraft_release`).
 use super::Simulation;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::aircraft::{AircraftMission, attack_mission};
@@ -32,13 +34,15 @@ impl Simulation {
     ///418006..418030: raw Target presence chooses1/10, preserving pending ammo.
     /// The caller already cleared readiness. Search belongs to the next visit.
     pub(crate) fn aircraft_begin_attack(&mut self, id: u64) -> AircraftMission {
-        let present = self
-            .substrate
-            .entities
-            .get(id)
-            .expect("aircraft dispatch")
-            .attack_target
-            .is_some();
+        let present = attack_mission::aircraft_target_present(
+            self.substrate
+                .entities
+                .get(id)
+                .expect("aircraft dispatch")
+                .attack_target
+                .as_ref(),
+            &self.substrate.entities,
+        );
         self.aircraft_attack_visit(id, if present { 1 } else { 10 }, 1)
     }
 
@@ -51,6 +55,9 @@ impl Simulation {
         let target = entity
             .attack_target
             .as_ref()
+            .filter(|attack| {
+                attack_mission::aircraft_target_present(Some(attack), &self.substrate.entities)
+            })
             .map(|a| navigation_target(a.target));
         let ammo = entity.aircraft_ammo.as_ref().map_or(-1, |a| a.current);
         let state = if target.is_some() && ammo != 0 {
@@ -96,7 +103,14 @@ impl Simulation {
             .entities
             .get(id)
             .expect("aircraft approach owner");
-        let Some(target) = entity.attack_target.as_ref().map(|a| a.target) else {
+        let Some(target) = entity
+            .attack_target
+            .as_ref()
+            .filter(|attack| {
+                attack_mission::aircraft_target_present(Some(attack), &self.substrate.entities)
+            })
+            .map(|a| a.target)
+        else {
             return 10;
         };
         if entity
@@ -239,16 +253,13 @@ impl Simulation {
     /// which the dispatch applies in the same visit.
     pub(crate) fn aircraft_exit(&mut self, id: u64, rules: &RuleSet) -> (AircraftMission, bool) {
         let entity = self.substrate.entities.get(id).expect("aircraft dispatch");
-        let object = rules
-            .object(self.interner.resolve(entity.type_ref()))
-            .expect("aircraft type");
         let facts = attack_mission::ExitFacts {
             ammo: entity.aircraft_ammo.as_ref().map_or(-1, |a| a.current),
             target: attack_mission::aircraft_target_present(
                 entity.attack_target.as_ref(),
                 &self.substrate.entities,
             ),
-            leaves_map: leaves_map_after_unlimbo(object, entity.veterancy, rules),
+            leaves_map: entity.is_mission_only(),
             human: self
                 .houses
                 .get(&entity.owner())
@@ -277,23 +288,6 @@ impl Simulation {
             idle,
         )
     }
-}
-
-/// Techno `+0x3D4` as `AircraftClass::Unlimbo` writes it (`0x004143A8..
-/// 0x004143EB`): set for a type that is not `Selectable=`, not `Landable=`, or
-/// whose weapon 0 is a `Camera=`. The other writers are the paradrop,
-/// reinforcement and airstrike spawners (`0x0065D8E0`, `0x0065DD30`,
-/// `0x0065E660`, `0x0065E850`, `0x0065EAB0`), none of whose aircraft attack.
-fn leaves_map_after_unlimbo(
-    object: &crate::rules::object_type::ObjectType,
-    veterancy: u16,
-    rules: &RuleSet,
-) -> bool {
-    !object.selectable
-        || !object.landable
-        || combat_weapon::primary_for_tier(object, veterancy)
-            .and_then(|weapon| rules.weapon(weapon))
-            .is_some_and(|weapon| weapon.camera)
 }
 
 /// State 10's world: the target, the own-edge destination and the idle exit.

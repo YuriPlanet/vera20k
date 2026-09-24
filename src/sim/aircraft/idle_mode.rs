@@ -1,7 +1,8 @@
 //! Enter_Idle_Mode decision tree for aircraft.
 //!
-//! Determines what mission to assign when an aircraft has nothing to do.
-//! Matches gamemd.exe Enter_Idle_Mode.
+//! Determines what mission to assign when an aircraft has nothing to do. This
+//! is VERA's own tree, not a port of `AircraftClass::Enter_Idle_Mode @
+//! 0x004176F0`: its caller (`aircraft::enter_idle_mode`) records what differs.
 //!
 //! ## Key behaviors
 //! - AirportBound aircraft with no helipad → self-destruct (crash)

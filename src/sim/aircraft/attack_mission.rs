@@ -20,7 +20,8 @@
 //! `tests::original_attack_state_rows` replays every combination it covers.
 //!
 //! RESIDUAL: the Cell `Scatter_Objects` (`0x00481670`, source = the
-//! aircraft's coordinates, `1, 0, 0`) after every shot is asked at its native
+//! aircraft's coordinates, `1, 0, 0`), once after state 4's whole burst
+//! (`0x004184BD`) and after each shot of states 5..9, is asked at its native
 //! point and does nothing yet; its recipients' Scatter (`vt+0x174`) belongs
 //! to the source-scatter owner. Trigger: every aircraft shot. Effect: units
 //! in the bombed cell stay put instead of scattering. Frequency: every
@@ -39,8 +40,11 @@ mod approach_range_tests;
 mod tests;
 
 /// The native Target pointer (`+0x2B4`) is non-NULL: a cell, or an object
-/// not yet dead. A dying object is detached natively; VERA keeps its id until
-/// the drain.
+/// not yet dead. Every state of Mission_Attack and the idle decision read it
+/// through this. Natively the killing hit's Destroy = `Detach_All(1)`
+/// (`ObjectClass::ReceiveDamage 0x005F5765..0x005F57AF`) announces the expiry,
+/// so no Target names a dying object; VERA can keep a dying infantryman's id
+/// until its death sequence ends.
 pub(crate) fn aircraft_target_present(at: Option<&AttackTarget>, entities: &EntityStore) -> bool {
     match at.map(|attack| attack.target) {
         None => false,
@@ -149,7 +153,10 @@ fn strafe_poll(facts: &StrikeFacts) -> Visit {
 /// States 4..9 (`0x004182A3`, `0x0041858C`, `0x0041879D`, `0x004188AC`,
 /// `0x004189BB`, `0x00418ACA`). The GetFireError switches are
 /// `0x00418D98`/`0x00418DB8`/`0x00418DD0`/`0x00418DE8`/`0x00418E00`/
-/// `0x00418E14`; a code with no case (4, 7, 10, 11) takes the default arm.
+/// `0x00418E14`: states 4 and 5 act on codes 0, 2, 3 and 9 and take their
+/// default arm on 1, 4, 5, 6, 7, 8, 10 and 11; states 6..8 fire on 0, 2 and 9
+/// (8 first assigns the Target), state 9 on 0, 2, 8 and 9, and both poll on
+/// the rest.
 pub(crate) fn strike_visit(facts: &StrikeFacts, host: &mut impl StrikeHost) -> Visit {
     use FireError::{Cloaked, Facing, Ok, Range, Rearm};
     // `0x004182A3`: state 4 also leaves on Ammo 0; 5..9 test Target only.
@@ -296,9 +303,10 @@ pub(crate) fn state9_delay(range: i32, speed: i32) -> i32 {
 pub(crate) struct ExitFacts {
     pub ammo: i32,
     pub target: bool,
-    /// Techno `+0x3D4`, which `AircraftClass::Unlimbo` sets (`0x004143EB`)
-    /// for a type that is not Selectable, not Landable or whose weapon 0 is a
-    /// Camera.
+    /// Techno `+0x3D4` (`GameEntity::is_mission_only`): Aircraft Unlimbo
+    /// sets it (`0x004143EB`) for a type that is not Selectable, not Landable
+    /// or whose weapon 0 is a Camera, and so do the reinforcement and paradrop
+    /// spawners.
     pub leaves_map: bool,
     /// `HouseClass::IsControlledByHuman @ 0x0050B730`.
     pub human: bool,
