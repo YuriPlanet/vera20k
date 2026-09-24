@@ -129,12 +129,12 @@ pub(crate) fn override_mission_on_blocked_step(
         return false;
     };
     let archived_destination = represented_archived_destination(entity);
+    // The calling locomotor owns its active-path stop.
     override_entity_to_attack(
         entity,
         TargetKind::Entity(blocker),
         blocker_commits,
         archived_destination,
-        false, // the calling locomotor owns its active-path stop
     )
 }
 
@@ -164,45 +164,12 @@ pub(crate) fn override_mission_on_wall_cell(
         return false;
     };
     let archived_destination = represented_archived_destination(entity);
+    // The calling locomotor owns its active-path stop.
     override_entity_to_attack(
         entity,
         TargetKind::Cell(cell.0, cell.1),
         true,
         archived_destination,
-        false, // the calling locomotor owns its active-path stop
-    )
-}
-
-/// Entity-local `Override(Attack, attacker, NULL)` used by the synchronous
-/// ReceiveDamage retaliation path.
-///
-/// `TechnoClass::ReceiveDamage @ 0x00701900` dispatches the concrete Mission
-/// wrapper before returning to its caller. Buildings archive/set only TarCom;
-/// Foot-derived objects archive NavCom first and assign the null destination
-/// after the target. Keeping this transaction over bare storage lets an
-/// ordered receiver make the new mission visible to a later live-order combat
-/// slot in the same frame.
-pub(crate) fn override_mission_on_damage_response(
-    entities: &mut crate::sim::entity_store::EntityStore,
-    receiver: u64,
-    attacker: u64,
-) -> bool {
-    if entities.get(attacker).is_none() {
-        return false;
-    }
-    // A dying source (its DeathWeapon's blast) still overrides the mission,
-    // but Assign_Target refuses the Health-0 object and commits NULL.
-    let attacker_commits = assign_target_commits(entities, Some(TargetKind::Entity(attacker)));
-    let Some(entity) = entities.get_mut(receiver) else {
-        return false;
-    };
-    let archived_destination = entity.navigation.nav_com;
-    override_entity_to_attack(
-        entity,
-        TargetKind::Entity(attacker),
-        attacker_commits,
-        archived_destination,
-        true,
     )
 }
 
@@ -215,30 +182,36 @@ fn override_entity_to_attack(
     target: TargetKind,
     target_commits: bool,
     archived_destination: Option<NavTargetRef>,
-    stop_active_path: bool,
+) -> bool {
+    if !override_entity_to_attack_target(entity, target, target_commits, archived_destination) {
+        return false;
+    }
+    if entity.category != EntityCategory::Structure {
+        represented_assign_destination_mode_one(entity, None);
+    }
+    true
+}
+
+/// `Override(Attack, target, NULL)` up to the Foot destination setter, which
+/// the caller runs. Concrete order: Foot NavCom archive, Techno TarCom
+/// archive, base verb, Target setter, then Foot destination setter
+/// (Foot::Override_Mission 0x4D8F40). Building skips both Foot writes; an
+/// Aircraft gate suppresses the transaction atomically.
+fn override_entity_to_attack_target(
+    entity: &mut crate::sim::game_entity::GameEntity,
+    target: TargetKind,
+    target_commits: bool,
+    archived_destination: Option<NavTargetRef>,
 ) -> bool {
     if !aircraft_allows(entity, MISSION_ATTACK) {
         return false;
     }
-
-    // Concrete order: Foot NavCom archive, Techno TarCom archive, base verb,
-    // Target setter, then Foot destination setter. Building skips both Foot
-    // writes; an Aircraft gate above suppresses the transaction atomically.
     if entity.category != EntityCategory::Structure {
         entity.navigation.suspended_nav_com = archived_destination;
     }
     entity.suspended_attack_target = entity.attack_target.as_ref().map(|target| target.target);
     verb::override_base(&mut entity.mission, MISSION_ATTACK);
     represented_assign_target_admitted(entity, Some(target), target_commits);
-    if entity.category != EntityCategory::Structure {
-        if stop_active_path {
-            // Native has one NavCom. VERA's active path executor is a second
-            // representation, so ReceiveDamage's concrete NULL destination
-            // must stop it in the same transaction.
-            entity.movement_target = None;
-        }
-        represented_assign_destination_mode_one(entity, None);
-    }
     true
 }
 
@@ -815,7 +788,7 @@ impl Simulation {
         if !self.substrate.entities.contains(receiver) {
             return Err(MissionAuthorityError::MissingReceiver(receiver));
         }
-        let mut effects = RepresentedConcreteMissionEffects;
+        let mut effects = RepresentedConcreteMissionEffects::default();
         let prepared =
             effects.preflight(self, receiver, ConcreteSetterRequest::Target { requested })?;
         effects.apply_target(self, &prepared, requested);
@@ -825,8 +798,9 @@ impl Simulation {
     pub(crate) fn mission_restore_after_target_expiry(
         &mut self,
         receiver: u64,
+        rules: Option<&RuleSet>,
     ) -> Result<bool, MissionAuthorityError> {
-        let mut effects = RepresentedConcreteMissionEffects;
+        let mut effects = RepresentedConcreteMissionEffects { rules };
         self.mission_restore_exact_with_effects(receiver, &mut effects)
     }
 
@@ -845,9 +819,56 @@ impl Simulation {
     pub(crate) fn mission_restore_on_target_detach(
         &mut self,
         receiver: u64,
+        rules: Option<&RuleSet>,
     ) -> Result<bool, MissionAuthorityError> {
-        let mut effects = RepresentedConcreteMissionEffects;
+        let mut effects = RepresentedConcreteMissionEffects { rules };
         self.mission_restore_exact_with_effects(receiver, &mut effects)
+    }
+
+    /// `Override(Attack, attacker, NULL)` from the synchronous ReceiveDamage
+    /// retaliation.
+    ///
+    /// `TechnoClass::ReceiveDamage @ 0x00701900` dispatches the concrete
+    /// Mission wrapper before returning to its caller, so an ordered receiver
+    /// makes the new mission visible to a later live-order combat slot in the
+    /// same frame. Buildings archive/set only TarCom; Foot-derived objects
+    /// archive NavCom first and then take the class setter's NULL destination
+    /// (Foot::Override_Mission `0x004D8F6D`), which for a Drive/Ship Unit is
+    /// Unit `0x00741970` ([`Self::assign_null_destination`]).
+    pub(crate) fn override_mission_on_damage_response(
+        &mut self,
+        receiver: u64,
+        attacker: u64,
+        rules: &RuleSet,
+    ) -> bool {
+        let entities = &mut self.substrate.entities;
+        if entities.get(attacker).is_none() {
+            return false;
+        }
+        // A dying source (its DeathWeapon's blast) still overrides the mission,
+        // but Assign_Target refuses the Health-0 object and commits NULL.
+        let attacker_commits = assign_target_commits(entities, Some(TargetKind::Entity(attacker)));
+        let Some(entity) = entities.get_mut(receiver) else {
+            return false;
+        };
+        let archived_destination = entity.navigation.nav_com;
+        if !override_entity_to_attack_target(
+            entity,
+            TargetKind::Entity(attacker),
+            attacker_commits,
+            archived_destination,
+        ) {
+            return false;
+        }
+        if entity.category == EntityCategory::Structure {
+            return true;
+        }
+        // Native has one NavCom. VERA's active path executor is a second
+        // representation, so the concrete NULL destination stops it in the
+        // same transaction.
+        entity.movement_target = None;
+        self.assign_null_destination(receiver, Some(rules));
+        true
     }
 
     /// The blocked-step Override every ground locomotor runs: stop, and fight

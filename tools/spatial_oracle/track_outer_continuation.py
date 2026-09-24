@@ -27,6 +27,7 @@ from tools.spatial_oracle.map_queries import dwords
 LOCO, OWNER, CELL = SCRATCH + 0x1000, SCRATCH + 0x2000, SCRATCH + 0x3000
 VTABLE, INTERFACE_VTABLE, CELL_VTABLE = SCRATCH + 0x4000, SCRATCH + 0x4800, SCRATCH + 0x4900
 DESTINATION, IDLE, IS_MOVING, CELL_RTTI = (SCRATCH + x for x in (0x5000, 0x5100, 0x5200, 0x5300))
+NAVCOM_COORD, MOVE_TO = SCRATCH + 0x5400, SCRATCH + 0x5500
 EXTERNAL_FRESH, EXTERNAL_TRACK = SCRATCH + 0x6000, SCRATCH + 0x6200
 SP = STACK_BASE + STACK_SIZE - 0x1000
 UNIT_VTABLE, FOOT_STOP, GET_CELL, SAMPLER = 0x7F5C70, 0x4DF0D0, 0x41BEA0, 0x4C9480
@@ -93,6 +94,14 @@ def execute(row):
     u.mem_write(INTERFACE_VTABLE + 0x10, dwords(IS_MOVING))
     u.mem_write(CELL_VTABLE + 0x2C, dwords(CELL_RTTI))
     u.mem_write(CELL_RTTI, return_body(row.get('navcom_rtti', 11)))
+    # NavCom vt+4C (out, requester) writes the supplied coordinate and returns
+    # out with RET8; interface vt+44 Move_To(this, coordinate) returns with RET10.
+    u.mem_write(CELL_VTABLE + 0x4C, dwords(NAVCOM_COORD))
+    x, y, z = row.get('navcom_coord', (2688, 2432, 48))
+    u.mem_write(NAVCOM_COORD, b'\x8B\x44\x24\x04' + b'\xC7\x00' + dwords(x)
+                + b'\xC7\x40\x04' + dwords(y) + b'\xC7\x40\x08' + dwords(z) + b'\xC2\x08\x00')
+    u.mem_write(INTERFACE_VTABLE + 0x44, dwords(MOVE_TO))
+    u.mem_write(MOVE_TO, b'\x31\xC0\xC2\x10\x00')
     u.mem_write(IS_MOVING, return_body(row.get('is_moving', 1), 4))
     receiver = byte_write(OWNER + 0x90, row.get('receiver_alive', 1))
     receiver += return_body(row.get('receiver_return', 0), 8)
@@ -140,7 +149,7 @@ def execute(row):
     events, writes, visits = [], [], []
 
     def observe(uc, address, _size, _data):
-        if address in (DESTINATION, IDLE, IS_MOVING, CELL_RTTI,
+        if address in (DESTINATION, IDLE, IS_MOVING, CELL_RTTI, NAVCOM_COORD, MOVE_TO,
                        FOOT_STOP, GET_CELL, SAMPLER, 0x746E20):
             sp = uc.reg_read(UC_X86_REG_ESP)
             event = dict(address=f'{address:08X}', state=state(uc))
@@ -153,6 +162,14 @@ def execute(row):
             elif address == IS_MOVING:
                 assert read_u32(uc, sp + 4) == LOCO + 4
                 event.update(event='is_moving', supplied_return=row.get('is_moving', 1))
+            elif address == NAVCOM_COORD:
+                assert uc.reg_read(UC_X86_REG_ECX) == CELL
+                event.update(event='navcom_coord', requester=f'{read_u32(uc, sp + 8):08X}',
+                             supplied_coord=list(row.get('navcom_coord', (2688, 2432, 48))))
+            elif address == MOVE_TO:
+                assert read_u32(uc, sp + 4) == LOCO + 4
+                event.update(event='move_to', coord=[struct.unpack('<i', uc.mem_read(sp + n, 4))[0]
+                                                     for n in (8, 12, 16)])
             else:
                 event['event'] = {CELL_RTTI: 'supplied_navcom_rtti', FOOT_STOP: 'foot_stop',
                                   GET_CELL: 'native_get_cell', SAMPLER: 'native_live_sampler',
@@ -267,6 +284,15 @@ def generate():
                         dict(is_moving=0, queue_head=-1), dict(is_moving=0, queue_head=2),
                         dict(unit_6d1=1)):
             rows.append(dict(family=family, stage='after_active', **changes))
+        # Unit -> Infantry NavCom re-aim before the post-track Process_Movement
+        # (Drive 4B05D0..4B063B; Ship has no such block).
+        for changes in (dict(navcom_rtti=15), dict(navcom_rtti=15, navcom_coord=(2944, 2432, 48)),
+                        dict(navcom_rtti=15, navcom_coord=(2688, 2432, 49)),
+                        dict(navcom_rtti=1, navcom_coord=(2944, 2432, 48)),
+                        dict(navcom_rtti=15, navcom_coord=(2944, 2432, 48), unit_6d1=1),
+                        dict(navcom_rtti=15, navcom_coord=(2944, 2432, 48), is_moving=0, queue_head=-1),
+                        dict(navcom_rtti=15, navcom_coord=(2944, 2432, 48), is_moving=0, queue_head=2)):
+            rows.append(dict(family=family, stage='after_active', navcom=True, reaim=True, **changes))
         for rotating, latch in product((False, True), (0, 1)):
             rows.append(dict(family=family, stage='live_turn', rotating=rotating, latch=latch))
         for predicate, queue_count, receiver_return, receiver_alive in product(
@@ -284,7 +310,7 @@ def generate():
                         dict(mission=5, active_bypass=True, active_return=1)):
             rows.append(dict(family=family, stage='early', control=True, **changes))
     results = [execute(row) for row in rows]
-    assert len(results) == 254
+    assert len(results) == 268
     # These are consistency checks on observed traces, not alternate outputs.
     # The reference vectors retain the native execution outcomes themselves.
     for result in results:
@@ -296,6 +322,23 @@ def generate():
             assert bool(post) == (row.get('output', 0) == 0 and row.get('fresh_alive', 1) != 0)
             if post:
                 assert post[0]['argument'] == int(row['stage'] == 'after_active')
+        getters = [event for event in events if event['event'] == 'navcom_coord']
+        moves = [event for event in events if event['event'] == 'move_to']
+        if row.get('reaim'):
+            eligible = row.get('unit_6d1', 0) == 0 and (row.get('is_moving', 1) != 0
+                                                       or row.get('queue_head', -1) != -1)
+            infantry = row['family'] == 'drive' and eligible and row['navcom_rtti'] == 15
+            assert bool(getters) == infantry and bool(post) == eligible
+            if infantry:
+                assert getters[0]['requester'] == f'{OWNER:08X}'
+            differs = tuple(row.get('navcom_coord', (2688, 2432, 48))) != (2688, 2432, 48)
+            assert bool(moves) == (infantry and differs)
+            if moves:
+                assert moves[0]['coord'] == list(row['navcom_coord'])
+                names = [event['event'] for event in events]
+                assert names.index('move_to') < names.index('external_fresh')
+        else:
+            assert not getters and not moves
         if row['stage'] == 'live_turn':
             assert not fresh and not post
             assert result['boundary'] == ('common_process_tail' if row['rotating']
@@ -318,7 +361,7 @@ def metadata():
     u = Uc(UC_ARCH_X86, UC_MODE_32)
     load_image(u)
     result = provenance(
-        scope='Original outer Drive/Ship Process continuation branches, call ordering and arguments around explicitly supplied fresh/track/destination/idle callees',
+        scope='Original outer Drive/Ship Process continuation branches, call ordering and arguments around explicitly supplied fresh/track/destination/idle/NavCom-coordinate/Move_To callees',
         assumptions=[
             'Interior frames start at ordinary fresh setup4B0A6B/6A0134, active gate4B055A/69FC6A, or live sampler4B0775/69FE22. The saved register/local/RET4 stack, ESI=class+4, EDI=complete class, EBX=0 and ECX=owner are supplied exactly in execute(). Floor/slope interpolation and type sampling before the active gate are outside entry; this is not a full Process oracle',
             'Original direct CALLs execute and produce their stack arguments/return address. Segmented execution stops at declared external fresh/TrackProcess entry, executes a scratch x86 fixture body, then resumes at the native return address. Fresh AL/output/alive/link and TrackProcess AL/retirement/alive/link are supplied, not discovered native callee behavior',
@@ -329,11 +372,13 @@ def metadata():
             'Destination and idle receivers are only dispatch fixtures. The original Unit vtable identity is asserted: +480->741970, +484->738970, +1B8->41BEA0. No destination refusal, NavQueue dequeue, END, mission promotion or receiver parity is claimed. Original Unit RTTI746E20 remains executable',
             'Producer reachability of synthetic callback results is not established. Owner unlink after fresh is supplied only with output nonzero, matching the protected caller boundary. Ship post-track null owner has no observed null guard and is excluded rather than normalized',
             'Every original RET4 must restore all saved registers and stack and returns AL0; all rows verify unchanged original code ranges, original Unit vtable, live Facing fields and supplied residual. Observers only record calls/stores and never mutate execution',
+            'Re-aim rows (after-active, NavCom set) cross NavCom RTTI15/1, a coordinate equal to the class destination, differing in X or only in Z, and the eligibility controls (Unit+6D1, not moving with and without a path word). Drive executes its Unit->Infantry block 4B05D0..4B063B; the Ship rows are the contrast (no such block). Only the NavCom coordinate getter and Move_To are supplied; the NavCom object is the fixture Cell with a supplied RTTI, so no Infantry coordinate semantics are claimed',
         ],
         substitutions=[
             'Direct Process_Movement and Process_Track callee bodies are replaced at explicit execution boundaries by scratch x86 return bodies; original caller CALLs and all caller branches remain unpatched',
             'Copied owner vtable replaces only +480/+484 with scratch receiver bodies that write the declared alive byte and return declared EAX using RET8. Their entry records native receiver identity, args and pre-callback state',
             'Supplied class-interface vtable+10 IsMoving uses RET4; supplied NavCom vtable+2C returns declared RTTI. Original owner GetCell and Unit RTTI execute from original copied slots. No original vtable/code byte is replaced',
+            'Supplied NavCom vtable+4C writes the declared coordinate to its out argument and returns it (RET8); supplied interface vtable+44 Move_To records its by-value coordinate and returns 0 (RET10)',
         ],
         entry_points={**{f'{name}_{key}': value for name, family in FAMILIES.items()
                         for key, value in family.items()},
@@ -345,8 +390,9 @@ def metadata():
         f'{a:08X}..{b:08X}': hashlib.sha256(bytes(u.mem_read(a, b-a))).hexdigest()
         for a, b in CODE_RANGES
     }
-    result['case_counts'] = dict(total=254, core_return_output_alive_matrix=128,
+    result['case_counts'] = dict(total=268, core_return_output_alive_matrix=128,
                                  supplemental_callback_state=38, active_eligibility=14,
+                                 infantry_navcom_reaim=14,
                                  live_sampler=8, early_destination_and_controls=66)
     return result
 

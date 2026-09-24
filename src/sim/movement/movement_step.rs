@@ -849,15 +849,14 @@ pub(super) fn prepare_native_track(
     // Ordinary Process4B0A75..4B0AAA /6A013E..6A0173 calls TrackProcess
     // after fresh selection even when AL is false. Its entry, not fresh
     // selection, clears residual when no valid descriptor/queue8 remains.
-    let mut invocation = TrackInvocation {
+    let mut invocation = TrackInvocation::after_process_movement(
         entity_id,
-        family: if kind == LocomotorKind::Ship {
+        if kind == LocomotorKind::Ship {
             TrackFamily::Ship
         } else {
             TrackFamily::Drive
         },
-        apply_fresh_occupation: false,
-    };
+    );
     let active = match kind {
         LocomotorKind::Drive => drive
             .as_ref()

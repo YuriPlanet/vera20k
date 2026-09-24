@@ -840,6 +840,8 @@ fn forced_track_terminal_samples_full_head_xy_before_relink() {
                 entity_id: 1,
                 family: super::track_process::TrackFamily::Drive,
                 apply_fresh_occupation: false,
+                active_gate: false,
+                retry: false,
             },
             128,
             None,

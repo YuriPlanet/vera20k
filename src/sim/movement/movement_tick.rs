@@ -41,7 +41,6 @@ use crate::util::fixed_math::{
 
 use super::block_index::{LentOwnerBlockSet, OwnerBlockIndex};
 use super::bump_crush;
-use super::drive_locomotion;
 use super::locomotor::{GroundMovePhase, MovementLayer};
 use super::movement_bridge::{BRIDGE_Z_OFFSET, apply_pending_bridge_render_state};
 use super::movement_occupancy::{
@@ -1075,6 +1074,19 @@ struct MovementPassEffects {
     foot_path_request: Option<FootPathRequest>,
 }
 
+/// Where a mover visit enters [`advance_ordinary_mover`].
+enum VisitEntry {
+    /// The object turn's Process: the active-track dispatch (Drive 0x4B055A /
+    /// Ship 0x69FC6A), else its Process_Movement.
+    Process,
+    /// Process_Movement(&out, 1, 0) again in the same Process after
+    /// Process_Track(0) ended the track (Drive 0x4B0647 / Ship 0x69FCEE):
+    /// no active-track dispatch and no new mover visit.
+    AfterTrackEnd,
+    /// Below the no-queue request, after Find_Path resumed head selection.
+    FootPathResume(Box<OrdinaryMoverVisit>),
+}
+
 /// Run one ordinary mover visit. An early return ends this visit, including
 /// its deferred-effect tail, exactly as the former outer-loop continue did.
 /// Track callback suspension will resume below the one-time mover preparation,
@@ -1103,7 +1115,7 @@ fn advance_ordinary_mover(
     effects: &mut MovementPassEffects,
     block_index: &mut OwnerBlockIndex,
     slave_bindings: Option<&BTreeMap<u64, Vec<u64>>>,
-    resume: Option<OrdinaryMoverVisit>,
+    entry: VisitEntry,
     houses: &BTreeMap<crate::sim::intern::InternedId, crate::sim::house_state::HouseState>,
 ) {
     let path_grid = ctx.path_grid;
@@ -1126,7 +1138,7 @@ fn advance_ordinary_mover(
         walk_boundary,
         foot_path_request,
     } = effects;
-    if resume.is_none() {
+    if matches!(entry, VisitEntry::Process) {
         let continuation = entities
             .get(entity_id)
             .is_some_and(|entity| super::track_head::active_track_family(entity).is_some());
@@ -1147,19 +1159,24 @@ fn advance_ordinary_mover(
                     super::track_process::TrackFamily::Drive
                 },
                 apply_fresh_occupation: false,
+                active_gate: true,
+                retry: false,
             });
             stats.movers_total = stats.movers_total.saturating_add(1);
             return;
         }
     }
-    let resumed_path_request = resume.is_some();
-    let visit = if let Some(visit) = resume {
-        visit
+    let resumed_path_request = matches!(entry, VisitEntry::FootPathResume(_));
+    let counts_visit = matches!(entry, VisitEntry::Process);
+    let visit = if let VisitEntry::FootPathResume(visit) = entry {
+        *visit
     } else {
         if contains_crush_victim(crush_kills, entity_id) {
             return;
         }
-        stats.movers_total = stats.movers_total.saturating_add(1);
+        if counts_visit {
+            stats.movers_total = stats.movers_total.saturating_add(1);
+        }
 
         // Snapshot mover data before entering the inner loop so we can release the
         // mutable borrow on `entities` when needed for crush/bump immutable lookups.
@@ -1231,11 +1248,11 @@ fn advance_ordinary_mover(
             // The outer Drive/Ship Process still reaches TrackProcess after
             // its fresh Process_Movement returns (4B0A75..0AAA /6A013E..0173).
             if let FootPathCaller::Track(family) = caller {
-                *native_track = Some(super::track_process::TrackInvocation {
-                    entity_id,
-                    family,
-                    apply_fresh_occupation: false,
-                });
+                *native_track = Some(
+                    super::track_process::TrackInvocation::after_process_movement(
+                        entity_id, family,
+                    ),
+                );
             }
             return;
         }
@@ -1420,11 +1437,11 @@ fn advance_ordinary_mover(
                                 _ => None,
                             };
                             if let Some(family) = family {
-                                *native_track = Some(super::track_process::TrackInvocation {
-                                    entity_id,
-                                    family,
-                                    apply_fresh_occupation: false,
-                                });
+                                *native_track = Some(
+                                    super::track_process::TrackInvocation::after_process_movement(
+                                        entity_id, family,
+                                    ),
+                                );
                             }
                             return;
                         }
@@ -2669,27 +2686,6 @@ fn prepare_movement_pass(
         })
         .collect();
 
-    let drive_reaims: Vec<(u64, crate::sim::components::DriveCoord)> =
-        drive_locomotion::drive_entity_nav_targets(entities, entity_order)
-            .into_iter()
-            .filter(|(mover_id, _)| !tube_active_at_start.contains(mover_id))
-            .map(|(mover_id, target)| {
-                super::navcom::nav_target_coordinate(
-                    target,
-                    Some(mover_id),
-                    entities,
-                    resolved_terrain,
-                    rules.map(|rules| (rules, &*interner)),
-                )
-                .map(|coord| (mover_id, coord))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-    for (mover_id, coord) in drive_reaims {
-        if let Some(entity) = entities.get_mut(mover_id) {
-            super::navcom::refresh_drive_destination_coord(entity, coord, resolved_terrain);
-        }
-    }
-
     let mut tube_processed = tube_active_at_start;
     if let Some(terrain) = resolved_terrain {
         for &entity_id in entity_order {
@@ -3011,6 +3007,16 @@ pub(crate) struct PendingMovementPass {
     entity_order: Vec<u64>,
 }
 
+/// Where the Process host re-enters the pending pass for the same mover.
+pub(crate) enum MoverReentry {
+    /// Find_Path resumed head selection (Walk after 0x75AFC5, Drive 0x4B32A1,
+    /// Ship 0x6A28F1).
+    FootPath(Box<FootPathRequest>),
+    /// Process_Movement after Process_Track(0) ended the track in the same
+    /// Process (Drive 0x4B0647 / Ship 0x69FCEE).
+    AfterTrackEnd(u64),
+}
+
 impl PendingMovementPass {
     pub(crate) fn take_foot_path_request(&mut self) -> Option<FootPathRequest> {
         self.effects.foot_path_request.take()
@@ -3034,9 +3040,9 @@ impl PendingMovementPass {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn resume_foot_path_request(
+    pub(crate) fn reenter_mover(
         &mut self,
-        request: FootPathRequest,
+        reentry: MoverReentry,
         entities: &mut EntityStore,
         path_grid: Option<&PathGrid>,
         zone_grid: Option<&ZoneGrid>,
@@ -3068,8 +3074,9 @@ impl PendingMovementPass {
             blocker: blocker_cache,
             block_index,
         } = caches;
-        // The Walk search between Mark0 and Mark1 moved the actor's own
-        // occupancy; the kept plane follows it through the touch log.
+        // The search between Mark0 and Mark1, or the ended track, moved the
+        // actor's own occupancy; the kept plane follows it through the touch
+        // log.
         let blocker_neighbor_counts = path_grid.map(|grid| {
             let touched = block_index.take_forwarded(entities);
             MovementPassCache::blocker_plane_in(
@@ -3109,9 +3116,16 @@ impl PendingMovementPass {
             path_delay_ticks,
             blockage_path_delay_ticks,
         };
+        let (entity_id, entry) = match reentry {
+            MoverReentry::FootPath(request) => (
+                request.entity_id,
+                VisitEntry::FootPathResume(Box::new(request.visit)),
+            ),
+            MoverReentry::AfterTrackEnd(entity_id) => (entity_id, VisitEntry::AfterTrackEnd),
+        };
         advance_ordinary_mover(
             entities,
-            request.entity_id,
+            entity_id,
             ctx,
             mcfg,
             terrain_costs,
@@ -3132,7 +3146,7 @@ impl PendingMovementPass {
             &mut self.effects,
             block_index,
             slave_bindings,
-            Some(request.visit),
+            entry,
             houses,
         );
     }
@@ -3343,7 +3357,7 @@ pub(crate) fn begin_movement_with_grids_scoped(
             &mut effects,
             block_index,
             slave_bindings,
-            None,
+            VisitEntry::Process,
             houses,
         );
     }

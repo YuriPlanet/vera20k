@@ -503,7 +503,8 @@ impl Simulation {
     /// `0x00471E3A..0x00471E73` then `vt+0x3D0` (`0x0070F850`, no class
     /// override): unless a Simple Deployer is deploying (Unload) or the
     /// object is Selling or under Construction, the captive drops its
-    /// destination, target and archive and is assigned Guard.
+    /// destination (`vt+0x480(0, 1)` at `0x0070F859`), target and archive and
+    /// is assigned Guard.
     fn reset_captured_orders(&mut self, target_id: u64, rules: &RuleSet) {
         let Some(target) = self.substrate.entities.get(target_id) else {
             return;
@@ -517,10 +518,8 @@ impl Simulation {
             return;
         }
         let now = self.session.binary_frame;
+        self.assign_null_destination(target_id, Some(rules));
         if let Some(target) = self.substrate.entities.get_mut(target_id) {
-            crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
-                target, None,
-            );
             target.movement_target = None;
             crate::sim::mission::concrete_effects::represented_assign_target(target, None);
             target.base_defense_response.set_archive_target(None);

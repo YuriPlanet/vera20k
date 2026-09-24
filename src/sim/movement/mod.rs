@@ -25,6 +25,8 @@
 //!   Walk or Drive/Ship no-queue Process request runs at Simulation level
 //! - `walk_path` / `track_path` — the Walk and Drive/Ship continuations after
 //!   Find_Path and the class receivers they reach
+//! - `track_continuation` — the Drive/Ship Process continuing into
+//!   Process_Movement and Process_Track(1) after a track ends in the same call
 //! - `movement_tick` — per-tick ground movement state machine (the main loop)
 //!
 //! ## Dependency rules
@@ -92,6 +94,7 @@ mod track_entry;
 #[cfg(test)]
 mod track_fresh_dispatch;
 pub(crate) mod track_head;
+mod track_continuation;
 mod track_host;
 mod track_path;
 pub(crate) mod track_process;

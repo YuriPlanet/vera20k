@@ -4400,7 +4400,7 @@ impl Simulation {
         // garrison transfer both come through here, so a squad that was firing
         // at a building stops the instant the building changes hands instead of
         // shooting at what is now its own structure.
-        self.stop_all_targeting_on_detach(stable_id);
+        self.stop_all_targeting_on_detach(stable_id, rules);
         self.substrate.entities.change_owner(stable_id, new_owner);
         self.update_house_tracking(
             stable_id,
@@ -4449,9 +4449,10 @@ impl Simulation {
     /// The mission half of `TechnoClass::ChangeOwner @ 0x007014A0`, every
     /// class (read 2026-09-23):
     /// - `0x007014D5..0x0070151A`: `Assign_Target(0)` (`+0x3C8`),
-    ///   `Assign_Destination(0, 1)` (`+0x480`), and the ArchiveTarget
-    ///   (`+0x218`) cleared unless a Unit is deploying (`0x00746DB0`, the
-    ///   `+0x6E1`/`+0x6E2` latches);
+    ///   `Assign_Destination(0, 1)` (`+0x480` at `0x007014E9`; a Drive/Ship
+    ///   Unit's is the Unit setter, [`Self::assign_null_destination`]), and
+    ///   the ArchiveTarget (`+0x218`) cleared unless a Unit is deploying
+    ///   (`0x00746DB0`, the `+0x6E1`/`+0x6E2` latches);
     /// - `0x00701524..0x0070156E`: `Queue_Mission(Guard, commence_now = 1)`
     ///   (`+0x1E8` = `MissionClass::Queue_Mission @ 0x005B35E0`) unless current
     ///   is Selling (0x13), or a Unit whose type is `IsSimpleDeployer`
@@ -4462,8 +4463,9 @@ impl Simulation {
     /// - `0x007017C0..0x00701849`, unless in limbo (`+0x81`), a
     ///   `WeaponsFactory=` building unloading, or in radio contact with a
     ///   `WeaponsFactory=` building (`BuildingType+0x16BD`, the war-factory
-    ///   exit link): `Assign_Destination(0, 1)`, `Assign_Target(0)` and
-    ///   `Enter_Idle_Mode(0, 1)` (`+0x484`), which reads the NEW owner:
+    ///   exit link): `Assign_Destination(0, 1)` (`0x0070182F`),
+    ///   `Assign_Target(0)` and `Enter_Idle_Mode(0, 1)` (`+0x484`), which
+    ///   reads the NEW owner:
     ///   - a war or chrono miner takes the Unit leaf's harvester arm
     ///     ([`harvester_enter_idle_mode_selector`]): Harvest for the new owner,
     ///     Guard when that owner is human and the miner stands off ore, and
@@ -4547,9 +4549,9 @@ impl Simulation {
         let now = self.session.binary_frame;
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
-            crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
-                entity, None,
-            );
+        }
+        self.assign_null_destination(stable_id, Some(rules));
+        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.movement_target = None;
             entity.order_intent = None;
             if !unit_deploying {
@@ -4598,10 +4600,8 @@ impl Simulation {
         if in_factory_contact {
             return;
         }
+        self.assign_null_destination(stable_id, Some(rules));
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
-                entity, None,
-            );
             entity.movement_target = None;
             crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
         }

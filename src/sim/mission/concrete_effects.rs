@@ -115,11 +115,15 @@ pub(crate) struct RepresentedPrepared {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct RepresentedConcreteMissionEffects;
+pub(crate) struct RepresentedConcreteMissionEffects<'r> {
+    /// The Unit class setter's WeaponsFactory contact test and blocked-path
+    /// timer read the rules (`Simulation::assign_null_destination`).
+    pub rules: Option<&'r crate::rules::ruleset::RuleSet>,
+}
 
-impl private::Sealed for RepresentedConcreteMissionEffects {}
+impl private::Sealed for RepresentedConcreteMissionEffects<'_> {}
 
-impl ConcreteMissionEffects for RepresentedConcreteMissionEffects {
+impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
     type Prepared = RepresentedPrepared;
 
     fn preflight(
@@ -156,6 +160,10 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects {
         prepared: &Self::Prepared,
         requested: Option<NavTargetRef>,
     ) {
+        if requested.is_none() {
+            sim.assign_null_destination(prepared.receiver, self.rules);
+            return;
+        }
         let entity = sim
             .substrate
             .entities

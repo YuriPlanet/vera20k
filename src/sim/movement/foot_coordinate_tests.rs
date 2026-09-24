@@ -202,9 +202,7 @@ fn production_drive_reaim_reads_retained_target_head() {
         DriveCoord::cell(7, 4, 0),
         target_head,
     ));
-    sim.process_ground_locomotor_for_test(1, None, None, None)
-        .unwrap();
-    assert_eq!(
+    let destination = |sim: &Simulation| {
         sim.substrate
             .entities
             .get(1)
@@ -212,9 +210,22 @@ fn production_drive_reaim_reads_retained_target_head() {
             .drive_locomotion
             .as_ref()
             .unwrap()
-            .destination,
-        Some(target_head)
+            .destination
+    };
+    // Drive 0x4B05D0 is reached only after a track end in the same Process;
+    // an ordinary visit leaves +34 alone.
+    sim.process_ground_locomotor_for_test(1, None, None, None)
+        .unwrap();
+    assert_eq!(destination(&sim), Some(DriveCoord::cell(7, 4, 0)));
+    assert!(
+        sim.begin_track_end_continuation(
+            1,
+            crate::sim::movement::track_process::TrackFamily::Drive,
+            None
+        )
+        .unwrap()
     );
+    assert_eq!(destination(&sim), Some(target_head));
 }
 
 #[test]

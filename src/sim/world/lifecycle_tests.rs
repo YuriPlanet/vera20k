@@ -7084,7 +7084,7 @@ fn detach_sweep_restores_before_clearing_target_in_descending_id_order() {
     }
     sim.lifecycle_test_events.clear();
 
-    sim.stop_all_targeting_on_detach(3);
+    sim.stop_all_targeting_on_detach(3, None);
 
     // The detaching object is untouched and still present: this is not removal.
     assert!(sim.substrate.entities.contains(3));
@@ -7149,7 +7149,7 @@ fn detach_sweep_clears_target_when_no_mission_was_suspended() {
         .apply_test_fixture(attack_fixture(MissionType::Attack, MissionId::NONE));
     sim.lifecycle_test_events.clear();
 
-    sim.stop_all_targeting_on_detach(2);
+    sim.stop_all_targeting_on_detach(2, None);
 
     let attacker = sim.substrate.entities.get(1).unwrap();
     assert!(attacker.attack_target.is_none());
@@ -7187,7 +7187,7 @@ fn detach_sweep_never_matches_a_cell_target() {
         MissionId::from_known(MissionType::Move),
     ));
 
-    sim.stop_all_targeting_on_detach(2);
+    sim.stop_all_targeting_on_detach(2, None);
 
     let attacker = sim.substrate.entities.get(1).unwrap();
     assert_eq!(
