@@ -9,7 +9,7 @@ description: >
 
 Compose paste-ready text only; do not launch or schedule it. Use the user's preferred
 August 30–September 6, 2026 pattern: clear outcome, production evidence, independent
-review before PRs, integrated increments, and persistence through whole-goal acceptance.
+review before PRs, integrated chains, and persistence through whole-goal acceptance.
 These are experience-backed defaults, not a guarantee of success or a fixed procedure.
 
 Establish a clear vision and an inspectable acceptance bar before implementation.
@@ -65,11 +65,11 @@ only where the work changes existing claims or usage.
 
 For implementation goals, the user's standing preference is to let the executor
 create or update PRs when it judges the work coherent and useful to review. Carry
-that permission into the prompt unless the current request narrows it. Choose PR
-boundaries and timing by dependency coherence and reviewability, not one PR per
-plan row or an arbitrary batch size. Drafts may expose unfinished work when useful;
+that permission into the prompt unless the current request narrows it. Follow
+AGENTS.md's chain rule for PR boundaries: one complete chain per PR, not one PR per
+plan row, gap or arbitrary batch size. Drafts may expose unfinished work when useful;
 they do not count as accepted work. Preserve any explicit no-draft restriction.
-When merge is also authorized, integrate validated increments, then continue from
+When merge is also authorized, integrate each validated chain, then continue from
 refreshed origin/main; do not accumulate unmerged accepted work. PR creation alone
 does not grant merge authority. Validate before merging; reuse the pre-PR critic pass,
 with subsequent fixes validated by the owner.
