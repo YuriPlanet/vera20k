@@ -439,7 +439,7 @@ fn movie_list_composition<'a>(
             align: ShellAlign::H_CENTER,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: Some(
-                crate::app::frontend::main_menu_shell_render::main_menu_title_path_a(window),
+                crate::app::frontend::main_menu_shell_render::shell_reveal_path_a(window),
             ),
         });
     }
@@ -450,21 +450,19 @@ fn movie_list_composition<'a>(
         rgb: SHELL_TEXT_RGB_ENABLED,
         path_a_reveal: None,
     });
-    let status_key = match hovered {
-        Some(MOVIE_LIST_CONTROL) => Some(MOVIE_LIST_TOOLTIP_KEY),
-        Some(id) => MOVIE_LIST_PAGE.button(id).map(|button| button.tooltip_key),
-        None => None,
-    };
-    if let Some(key) = status_key {
-        labels.push(PaintLabel {
-            text: resolve_csf(state, key),
-            rect: layout.page.status_help,
-            align: ShellAlign::V_CENTER,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
-        });
-    }
     (sprites, button_sprites, labels)
+}
+
+/// Hover help of dialog `0x129` for its status line `0x695`.
+fn movie_list_status_key(state: &AppState) -> Option<&'static str> {
+    let controller = &state.frontend.shell_controller;
+    if controller.top_id() != Some(MOVIE_LIST_PAGE.dialog) {
+        return None;
+    }
+    match controller.hovered()? {
+        MOVIE_LIST_CONTROL => Some(MOVIE_LIST_TOOLTIP_KEY),
+        id => MOVIE_LIST_PAGE.button(id).map(|button| button.tooltip_key),
+    }
 }
 
 /// Paint dialog `0x129`. Returns `false` when the shell chrome is missing.
@@ -481,15 +479,24 @@ pub(crate) fn render_movie_list(
         .frontend
         .shell_page_title
         .paint(std::time::Instant::now());
-    let Some(atlas) = state.frontend.main_menu_shell_chrome.as_ref() else {
-        return Ok(false);
-    };
     let layout = compute_movie_list_layout(
         state.renderer.gpu.config.width,
         state.renderer.gpu.config.height,
     );
-    let (sprites, button_sprites, labels) =
+    let status_text = movie_list_status_key(state)
+        .map(|key| resolve_csf(state, key).into_owned())
+        .unwrap_or_default();
+    let status_label = crate::app::frontend::menu_page_render::paint_shell_status_line(
+        state,
+        status_text,
+        layout.page.status_help,
+    );
+    let Some(atlas) = state.frontend.main_menu_shell_chrome.as_ref() else {
+        return Ok(false);
+    };
+    let (sprites, button_sprites, mut labels) =
         movie_list_composition(state, atlas, &layout, monitor_frame, title_window);
+    labels.extend(status_label);
     let text = shell_paint::paint_labels(&state.renderer.bit_font, &labels);
     let draws = [
         TexturedDraw {

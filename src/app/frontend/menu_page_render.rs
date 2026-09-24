@@ -6,7 +6,7 @@ use std::time::Instant;
 use anyhow::Result;
 
 use crate::app::AppState;
-use crate::app::frontend::main_menu_shell_render::{Ra2tsDialogOwner, main_menu_title_path_a};
+use crate::app::frontend::main_menu_shell_render::{Ra2tsDialogOwner, shell_reveal_path_a};
 use crate::app::frontend::shell_pass::{
     ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
     software_cursor,
@@ -18,6 +18,7 @@ use crate::render::shell_paint::{
     SHELL_TEXT_RGB_DISABLED, SHELL_TEXT_RGB_ENABLED,
 };
 use crate::render::shell_text::ShellAlign;
+use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::menu_page::{MenuPageLayout, MenuPageSpec, compute_layout};
 use crate::ui::shell::static_reveal::Kind1RevealWindow;
 
@@ -32,7 +33,6 @@ pub(crate) const MENU_PAGE_BUTTON_POLICY: ButtonPolicy = ButtonPolicy {
 };
 const MENU_PAGE_BUTTON_ALIGN: ShellAlign =
     ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
-const MENU_PAGE_STATUS_ALIGN: ShellAlign = ShellAlign::V_CENTER;
 
 pub(crate) enum MenuPageRenderResult {
     Rendered,
@@ -100,7 +100,8 @@ fn status_csf_key(spec: &MenuPageSpec, hovered: Option<u16>) -> Option<&'static 
         .map(|button| button.tooltip_key)
 }
 
-/// Button captions, heading, and the immediate 0x695 hover-help static.
+/// Button captions and the heading; the status line comes from
+/// [`paint_shell_status_line`].
 fn paint_labels<'a>(
     state: &'a AppState,
     view: &MenuPageView<'_>,
@@ -133,16 +134,7 @@ fn paint_labels<'a>(
             rect: layout.title,
             align: ShellAlign::H_CENTER,
             rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: Some(main_menu_title_path_a(window)),
-        });
-    }
-    if let Some(key) = status_csf_key(view.spec, input.hovered) {
-        out.push(PaintLabel {
-            text: resolve_csf(state, key),
-            rect: layout.status_help,
-            align: MENU_PAGE_STATUS_ALIGN,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
+            path_a_reveal: Some(shell_reveal_path_a(window)),
         });
     }
     out
@@ -175,6 +167,28 @@ pub(crate) fn paint_shell_monitor(state: &mut AppState) -> Option<usize> {
         .frontend
         .shell_monitor
         .paint(Instant::now(), frames, timers)
+}
+
+/// Status line `0x695` for this recomposition: deliver the hover help text
+/// (`0x4B2`, empty off every control) and return the label to draw, `None`
+/// while the static is hidden or blank. Kind-1 paint passes left alignment
+/// only (`0x00615A91`), so the text is top-left in the window.
+pub(crate) fn paint_shell_status_line(
+    state: &mut AppState,
+    text: String,
+    window: RectPx,
+) -> Option<PaintLabel<'static>> {
+    let now = Instant::now();
+    let status = &mut state.frontend.shell_status_line;
+    status.set_text(&text, now);
+    let reveal = status.paint(now)?;
+    (!text.is_empty()).then(|| PaintLabel {
+        text: text.into(),
+        rect: window,
+        align: ShellAlign::NONE,
+        rgb: SHELL_TEXT_RGB_ENABLED,
+        path_a_reveal: Some(shell_reveal_path_a(reveal)),
+    })
 }
 
 /// Heading text of the menu page a first-paint slide belongs to.
@@ -315,6 +329,10 @@ pub(crate) fn render_menu_page(
     let wave = state.frontend.shell_first_paint_slide.clone();
     let monitor_frame = paint_shell_monitor(state);
     let title_window = state.frontend.shell_page_title.paint(Instant::now());
+    let status_text = status_csf_key(view.spec, input.hovered)
+        .map(|key| resolve_csf(state, key).into_owned())
+        .unwrap_or_default();
+    let status_label = paint_shell_status_line(state, status_text, layout.status_help);
     let chrome = state
         .frontend
         .main_menu_shell_chrome
@@ -345,7 +363,8 @@ pub(crate) fn render_menu_page(
         Instant::now(),
         None,
     );
-    let labels = paint_labels(state, &view, &layout, input, title_window);
+    let mut labels = paint_labels(state, &view, &layout, input, title_window);
+    labels.extend(status_label);
     let text = shell_paint::paint_labels(&state.renderer.bit_font, &labels);
     let draws = [
         TexturedDraw {
@@ -391,14 +410,12 @@ mod tests {
     }
 
     #[test]
-    fn status_help_is_immediate_and_includes_disabled_load() {
+    fn status_help_includes_disabled_load() {
         assert_eq!(status_csf_key(&SINGLE_PLAYER_PAGE, None), None);
         assert_eq!(
             status_csf_key(&SINGLE_PLAYER_PAGE, Some(0x0689)),
             Some("STT:SingleButtonLoadSavedGame")
         );
-        assert!(MENU_PAGE_STATUS_ALIGN.contains(ShellAlign::V_CENTER));
-        assert!(!MENU_PAGE_STATUS_ALIGN.contains(ShellAlign::H_CENTER));
     }
 
     #[test]

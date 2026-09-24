@@ -12,15 +12,12 @@ use super::geom::{
     RectPx, RightPanelRects, SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW, center_offset, dlu_rect,
     lower_strip_rect, right_panel_rects, snap_button_biased_truncate,
 };
-use super::layout::anchor_rect;
+use super::layout::{anchor_rect, status_line_rect};
 use crate::ui::main_menu_shell::{MainMenuMovieBase, movie_base_for_screen_width};
 
 const SHELL_BASE_W: i32 = 800;
 const SHELL_BASE_H: i32 = 600;
 const RIGHT_PANEL_TILE_H: i32 = super::geom::RIGHT_PANEL_TILE_H;
-const STATUS_HELP_W: i32 = 456;
-const STATUS_HELP_H: i32 = 21;
-const STATUS_HELP_BOTTOM_INSET: i32 = 1;
 const RA2TS_L_W: i32 = 632;
 const RA2TS_L_H: i32 = 570;
 const RA2TS_S_W: i32 = 472;
@@ -95,17 +92,6 @@ fn movie_origin(screen_w: i32, screen_h: i32) -> (i32, i32) {
     )
 }
 
-fn status_help_rect(screen_w: i32, screen_h: i32) -> RectPx {
-    let offset_x = center_offset(screen_w, SHELL_BASE_W);
-    let offset_y = center_offset(screen_h, SHELL_BASE_H);
-    RectPx::new(
-        offset_x + 10,
-        screen_h - offset_y - STATUS_HELP_H - STATUS_HELP_BOTTOM_INSET,
-        STATUS_HELP_W,
-        STATUS_HELP_H,
-    )
-}
-
 fn back_rect(screen_w: i32, panel: RightPanelRects) -> RectPx {
     let offset_x = center_offset(screen_w, SHELL_BASE_W);
     RectPx::new(
@@ -165,7 +151,7 @@ pub fn compute_layout(spec: &MenuPageSpec, screen_w: u32, screen_h: u32) -> Menu
         movie: RectPx::new(movie_x, movie_y, movie_w, movie_h),
         title,
         warning_monitor,
-        status_help: status_help_rect(screen_w, screen_h),
+        status_help: status_line_rect(RectPx::new(2, 355, 303, 12), screen_w, screen_h),
         buttons,
         right_panel: panel,
         lower_strip: lower_strip_rect(screen_w, screen_h),

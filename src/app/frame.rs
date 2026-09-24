@@ -649,6 +649,7 @@ impl App {
         // advances it now that the frame reached the screen.
         state.frontend.shell_monitor.commit_presented();
         state.frontend.shell_page_title.commit_presented();
+        state.frontend.shell_status_line.commit_presented();
         if let Some(token) = pending_main_menu_entry_token.take() {
             crate::app::frontend::shell_transition::record_main_menu_entry_presented(state, token)?;
         }

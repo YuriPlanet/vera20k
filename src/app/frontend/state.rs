@@ -63,6 +63,10 @@ pub(crate) struct FrontendState {
     /// `0x129`): hidden until the page's first-paint slide completes, then a
     /// kind-1 reveal. Main menu `0xE2` keeps its own presented-entry reveal.
     pub(crate) shell_page_title: crate::ui::shell::static_reveal::PresentedKind1Static,
+    /// Status line `0x695` of the showing main-menu family dialog (`0xE2`,
+    /// `0x100`, `0x101`, `0x129`): hover help, hidden until the dialog's SHOW
+    /// completion, then a kind-1 reveal that restarts on every text change.
+    pub(crate) shell_status_line: crate::ui::shell::static_reveal::PresentedKind1Static,
     /// Active graceful quit cascade (music fade → trailing-voice wait → hard stop
     /// → exit). Some only between Exit-confirm OK and window close; freezes shell
     /// input while it runs.

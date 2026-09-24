@@ -488,6 +488,10 @@ impl App {
     /// profile, current-monitor dimension pairs, live CSF table, and frozen
     /// process-start common audio gate. No display mode is applied here.
     pub(crate) fn open_launcher_options_dialog(state: &mut AppState) {
+        // State 5 destroys `0xE2` (and its RA2TS static) before Options runs;
+        // closing Options creates a new `0xE2` with its own entry slide.
+        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
+        crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
         Self::ensure_skirmish_shell_chrome(state);
         state.frontend.launcher_options_presentation = Default::default();
         use crate::app::persistence::options::launcher::launcher_dialog_from_profile;
@@ -688,6 +692,8 @@ impl App {
             .ensure_active(crate::ui::shell::descriptor::DialogId(0x00E2), false);
         state.frontend.shell_controller.on_pointer_move(x, y, &feed);
         Self::mirror_shell_controller_to_main_menu(state);
+        // Every hover message repaints the status line (0x00615EF7).
+        state.frontend.shell_status_line.hover_repaint();
     }
 
     pub(super) fn handle_main_menu_shell_mouse_up(
@@ -834,6 +840,8 @@ impl App {
         let y = state.match_state.input.cursor_y.round() as i32;
         // Hover is enable-unfiltered: a disabled button still drives 0x695.
         state.frontend.shell_controller.on_pointer_move(x, y, &feed);
+        // Every hover message repaints the status line (0x00615EF7).
+        state.frontend.shell_status_line.hover_repaint();
     }
 
     pub(super) fn handle_menu_page_mouse_up(state: &mut AppState) {

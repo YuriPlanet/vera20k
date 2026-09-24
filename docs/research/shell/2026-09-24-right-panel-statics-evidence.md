@@ -1,9 +1,9 @@
 # Right-panel statics: native evidence
 
-Bounded evidence for two statics every right-panel shell dialog carries: the
-animated warning monitor `0x71C` and the heading `0x694`. It covers the
-main-menu family (`0xE2`, `0x100`, `0x101`, `0x129`) and the monitor of
-Options `0xD5`. Retail `gamemd.exe` SHA-256
+Bounded evidence for three statics every right-panel shell dialog carries: the
+animated warning monitor `0x71C`, the heading `0x694` and the status line
+`0x695`. It covers the main-menu family (`0xE2`, `0x100`, `0x101`, `0x129`) and
+the monitor of Options `0xD5`. Retail `gamemd.exe` SHA-256
 `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`; control
 flow and constants read from instructions (Capstone), Ghidra as a navigation
 aid.
@@ -120,23 +120,67 @@ takes the same window correction); heights other than 480/600/768 have unit
 tests only; the version line's one-pixel offset.
 
 Follow-ups outside this change: the RA2TS static `0x71A` timer (`0x65`) is
-equally frozen during a slide but VERA20k steps the movie; returning from
-Options rebuilds `0xE2` (state 5 → `0x12`, `0x0052DDAB`) with a new slide,
-heading and monitor while VERA20k keeps the old instance; score dialog `0x108`
+equally frozen during a slide but VERA20k steps the movie; score dialog `0x108`
 carries `0x71C` but draws none; `0xD5` is slide-eligible (`0x0060C540`) but has
 no first-paint slide in VERA20k.
 
-## Status line `0x695` (recorded for the next change)
+## Status line `0x695`
 
-- Kind 1 for dialogs accepted by `0x00601360` while no network session is
-  active (`0x00602AA5..0x00602AC7`); interval 15 ms (`0x0060134E`), step 3
-  (`0x00601D02..0x00601D14`), range 16 (`0x006023C8..0x006023D8`).
-- Placement `0x0060B550`: `(Δx + 10, H − h − Δy − 1, w, h)` with the
-  DLU-converted window size.
+- Kind 1 through `0x00602490` for dialogs accepted by `0x00601360` while no
+  network session is active (`0x00602AA5..0x00602AC7`); interval 15 ms, step 3,
+  range 16 (`0x0060134E`, `0x00601D02..0x00601D14`, `0x006023C8..0x006023D8`),
+  executed by `tools/storage_oracle/shell_static_timers.py` for `0xE2 0x100
+  0x101 0x129 0xD5 0x102 0xB7`.
+- The SHOW completion enumerates the dialog's children (`0x0060AA60`) and sends
+  `0x4EE` to every kind-1 static, so the status line starts together with the
+  heading; before that it is not drawn (`0x006153E0` WM_PAINT draws kind 1 only
+  once `+0xA8` is set).
+- Static wndproc `0x006153E0`: `0x4EE` sets `+0xA8`, count 1 and the timer;
+  WM_TIMER invalidates; WM_PAINT draws through `0x00621040` and then adds the
+  step until the count reaches `wcslen + range + 1`, where it kills the timer
+  (`+0xA8` stays set). With no text (`+0x28` NULL) nothing is drawn.
+- Hover help: the shared dialog handler `0x00622B50` runs on the dialog's
+  WM_NCHITTEST, finds the child under the cursor (`ChildWindowFromPointEx`,
+  `0x00622CCB`) and sends its help text, or an empty one, as `0x4B2`
+  (`0x00622E7D`); the child subclass sends it on the children's WM_MOUSEMOVE
+  (`0x00611CBA..0x00611E8B`). Neither checks for a change. The shared subclass
+  (`0x00611BC1`) replaces the text (an empty one is stored as NULL) and, when it
+  changed while `+0xA8` is set, kills the timer, clears `+0xA8` and sends
+  `0x4EE`: every new text restarts the reveal at count 1. It then passes the
+  message on (`0x00612345`) to the static's own `0x4B2` case (`0x00615EF7`),
+  which restores its saved background to the screen and invalidates it: every
+  hover message repaints the line, and that paint advances a running reveal
+  like a timer paint.
+- Placement `0x0060B550`: `(dx + 10, H − h − dy − 1, w, h)` with
+  `dx = max(0, (W − 800)/2)` and `dy = max(0, (H − 600)/2)`. The runtime window
+  carries the same one-pixel correction as the heading and monitor (456×21 for
+  the 303×12 DLU template), so it is `(10, 578, 456, 21)` at 800×600.
 - Kind-1 paint `0x00615A81..0x00615AE8` passes print flags `0x10`/`0x11`/`0x12`
   only (left/center/right from the window style); `0x00621040` centers
-  vertically only for flag 4, so the text is top-aligned.
-- Hover text reaches the static as message `0x4B2` from the dialog handler
-  (`0x00622CCB..0x00622E83`); the shared subclass stores it and, when it
-  changed after the reveal started, stops the timer and sends `0x4EE`
-  (`0x00611BC1..0x00611CAF`), restarting the reveal.
+  vertically only for flag 4, so the text is top-left in the window.
+
+VERA20k keeps one `FrontendState.shell_status_line` for the showing family
+dialog: reset with every new instance, started on the same completion edge as
+the heading, fed the dialog's hover help text each recomposition, and repainted
+by its timer and by every cursor move over the dialog; a paint advances the
+count only while it is below the target (the `jge` at `0x00615B2B`). A new
+`0xE2` instance clears the old one's hover and press. At 60 Hz a paint can
+advance at most once per presented frame, so a reveal under a moving mouse is
+somewhat slower than retail.
+
+Returning from Options rebuilds `0xE2` (state 5 → `0x12`, `0x0052DDAB`): the
+Options dialog and its Keyboard child now end the main-menu instance, so the
+menu slides in again with a new heading, status line and monitor.
+
+Comparison (800×600, production `--shell-capture` with the cursor on the movie
+list, against retail): `movie-list-0x129-steady` and `-selected` differ in 25
+pixels by one RGB565 unit, all in the last glyph of "Select Movie". Retail
+received a hover message after the last timer paint, so its line was painted
+at the final count and the last unit is plain yellow; the capture harness
+sends no pointer move after the reveal, so VERA20k shows the last timer paint
+(trail step 1). The line position and text match exactly.
+
+Evidence levels: getter values executed (Unicorn); start edge, text
+replacement, restart, hover repaint, step/stop order and placement read from
+instructions and pinned by Rust tests (`static_reveal`, `layout`,
+`shell_transition`); position and text compared with retail captures.
