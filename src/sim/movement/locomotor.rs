@@ -141,10 +141,10 @@ pub struct LocomotorState {
     /// Speed multiplier applied on top of ObjectType.speed.
     /// 1.0 for most units, 0.65 for Hover, etc.
     pub speed_multiplier: SimFixed,
-    /// Mission-controlled speed fraction (0.0–1.0). Acts as the *target* speed
-    /// for Fly aircraft — `fly_current_speed` ramps toward this value.
-    /// Set by aircraft missions for dive bombing deceleration and speed tiers.
-    /// Default 1.0 (full speed).
+    /// Fly target speed (`+0x40`), which `fly_current_speed` ramps toward.
+    /// Written by Fly Process's slowdown (`air_movement::
+    /// write_fly_target_speed`), the takeoff callback and the landing; the
+    /// Fly constructor (`0x004CC9E5`) starts it at 0. Only Fly reads it.
     pub speed_fraction: SimFixed,
     /// Actual flight speed fraction (0.0–1.0) for Fly aircraft.
     /// Ramps toward `speed_fraction` (which acts as target) by +/-0.1 per tick,
@@ -312,7 +312,11 @@ impl LocomotorState {
             phase: GroundMovePhase::Idle,
 
             speed_multiplier,
-            speed_fraction: sim_one,
+            speed_fraction: if kind == LocomotorKind::Fly {
+                SIM_ZERO
+            } else {
+                sim_one
+            },
             fly_current_speed: SIM_ZERO,
             altitude: SIM_ZERO,
 
@@ -362,7 +366,11 @@ impl LocomotorState {
             phase: GroundMovePhase::Idle,
 
             speed_multiplier,
-            speed_fraction: SimFixed::from_num(1),
+            speed_fraction: if kind == LocomotorKind::Fly {
+                SIM_ZERO
+            } else {
+                SimFixed::from_num(1)
+            },
             fly_current_speed: SIM_ZERO,
             altitude: SIM_ZERO,
 

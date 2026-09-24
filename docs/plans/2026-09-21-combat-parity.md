@@ -47,8 +47,10 @@ sounds, cursors and clicks) as #488 (`7d4b970c`), the launch scatter, shrapnel a
 through the native tables as #489 (`a97226a9`), GetFireError with its scan probe (C20) and the
 pursuit range stop as #490 (`a854028c`), the aircraft attack loop (states 4..10, the Carrier
 wing's re-issue, SetTarget's aircraft arm, idle mode's airfield) as #491 (`d900a2bb`). Gattling
-stages for units are on `feature/combat-gattling` (section below). The research lanes, designs
-and critic reports of this goal are archived outside the repo (not tracked):
+stages for units are on `feature/combat-gattling` (section below), and the Fly target speed
+(Process's slowdown, which left two of the Carrier wing's three Hornets standing at their hold)
+on `feature/carrier-hornet-wing`. The research lanes, designs and critic reports of this goal are
+archived outside the repo (not tracked):
 `Documents/vera20k-handoff/2026-09-24-combat-lanes` (every lane, among them the aircraft attack
 loop, Prism forwarding and native GetFireError) and `.../2026-09-24-combat-gattling-building`
 (the Gattling and building attack lanes with their oracles). Native oracles: `aircraft_states`
@@ -816,8 +818,9 @@ Aircraft attack loop (`feature/combat-aircraft-attack`, no schema change), owner
   `a_fighter_out_of_range_cycles_back_to_its_search`,
   `an_empty_fighter_lets_go_heads_for_its_edge_and_idles`,
   `a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue`, and a Carrier sortie through
-  `advance_tick`, `a_carrier_hornet_flies_a_whole_strafe_pass` (five bombs a ROF apart, the ammo
-  paid; the recall is asserted by the re-issue test).
+  `advance_tick`, `every_hornet_of_a_carrier_wing_flies_a_whole_strafe_pass` (every Hornet's five
+  bombs a ROF apart and its ammo paid; see the Fly target speed below; the recall is asserted by
+  the re-issue test).
 - Residuals: the source Scatter after each release (`481670`, recipients' `vt+174`); VERA's idle
   decision is its own tree (Enter_Idle_Mode `4176F0` unported beyond the dock destination: a
   computer house takes Guard where native takes Area Guard, and the landed, dockless, team and
@@ -825,10 +828,58 @@ Aircraft attack loop (`feature/combat-aircraft-attack`, no schema change), owner
   Airstrike `+294` and its
   Retreat have no producer; `+6D5` unrepresented; the strike states run in the combat phase after
   the Logic pass (the draw-order residual every FireAt shares); state 9's divide fault falls back
-  to 1 (no retail aircraft reaches it); the DropPayload carrier arm stays blocked. In that sortie
-  two of the three Hornets never leave their launch cell in approach state 3 (Fly or the approach,
-  not this loop; follow-up), and a recalled Hornet hovers over the Carrier (Fly's arrival
-  BeginLanding `4CF520` is unported).
+  to 1 (no retail aircraft reaches it); the DropPayload carrier arm stays blocked. A recalled
+  Hornet hovers over the Carrier (Fly's arrival BeginLanding `4CF520` is unported).
+
+Fly target speed (`feature/carrier-hornet-wing`, no schema change), owner `movement/air_movement.rs`
+(`write_fly_target_speed`, Fly Process's speed control):
+- Before: the legacy horizontal adapter only lowered the target speed (`+0x40`): distance tiers
+  (1, 0.75, 0.5, 0 at 768/512/128 leptons) as a running minimum, a fine-approach halving with a
+  0.05 floor, and nothing raised it again but invented Guard and Attack-state-10 writes of 1.0. A
+  Fly that stopped kept a zero target speed. In the Carrier sortie the first two Hornets stopped
+  over their hold cell and then stood in approach state 3, NavCom on the target, for good; only
+  the Hornet launched on the send-out pass, still on the constructor's 1.0 (native 0, `4CC9E5`),
+  reached the target. The ramp also ran on frames Process never reaches.
+- Now: Process `4CE145..4CE2DB` writes the target speed on every frame a Fly is moving and its
+  owner lives, is not landing, has climbed to half its takeoff height and holds a destination.
+  `4D0180` refusing (a locked aircraft, a cruising FlyBy, a cruising strafer or fighter with ammo)
+  gives 1.0; HunterSeeker 1.0 or 0; otherwise distance / SlowdownDistance capped at 1 and, under
+  the 0.1 floor, a 0.1 crawl beyond 85 leptons, else a stop that halves the current speed; then
+  the zero-distance clamp and the creep. The creep's 0.05 moves nothing: the ramp takes it back
+  to the zero target in the same Process (`4CE46F`; only the IsDropship attitude reads it), so a
+  slowing Fly stops once inside the stop arm (50 leptons at the retail SlowdownDistance 500). The
+  floor test is exactly `10 * distance <= SlowdownDistance` under the chop control word `0x0E7F`
+  the oracle runs with; rounded to nearest, an exact tenth would take the ratio arm (a 0.1 target
+  for that frame, no halving). The writer and the ramp run on every frame Process reaches them:
+  every frame the Fly is moving (`4CDA0B`, IsMoving `4CCA90`), from the ordinary path
+  (`4CD67F..4CD6A8`) and the airborne crash path (`4CD7A4`) alike; they skip a dead owner
+  themselves. The Fly target speed starts at 0 (`for_test_kind` fixtures too). The legacy tiers,
+  the fine approach and the two mission writes are deleted.
+- Native execution: `tools/spatial_oracle/fly_target_speed.py` runs the original range with real
+  Aircraft/Unit, IFlyControl, GetWeapon and GetHeight (374 rows); `air_movement::tests::
+  native_target_speed_rows` replays every row through the production writer, each speed within
+  one Q16 quantum (the ratio truncates; the halving rounds a dropped half away from zero so a
+  one-quantum speed does not take the creep's branch). Parity within those inputs, under the chop
+  control word the oracle sets.
+- Production regression: `every_hornet_of_a_carrier_wing_flies_a_whole_strafe_pass` through
+  `advance_tick`, with the fixture's cruising Hornets and with retail-shaped Landable ROT-3 ones:
+  every Hornet of the wing drops five bombs a ROF apart and pays its ammo. On the base code two of
+  the cruising wing never bomb; the Landable wing bombed there too, so the cruising shape is the
+  one that pins the stall.
+- Residuals: Horizontal_Step's arrival arm (`4CF4D2..4CF55D`: 0/0.5/0.75 target speeds under its
+  slowdown flag, dead stores whenever the next Process writes, and its BeginLanding) and the
+  Process landing trigger (`4CE3C0`) are unported; the legacy arrival (movement_target cleared
+  within 128 leptons below 0.05) stands in, so a Landable Fly that stops over its destination
+  hovers where native lands it. Process's airborne crash path (`4CD6AE..4CD7A4`: the fall step of
+  an airborne Fly that is unpowered or dead, and the impact frame, which returns before the speed
+  control) is not ported by this adapter; the speed control already follows native there, and no
+  VERA producer unpowers a flying aircraft. The ILoco_Process prelude (`4CCB47..4CCB81`,
+  FlightLevel restored when a full target speed meets a zero target height) and the
+  Guard-with-NavCom Move requeue (`4CD9C8..4CDA02`) are not ported; the legacy XY adapter's
+  half-height gate still holds a climbing Fly in place. A locked aircraft, a cruising FlyBy (SPYP,
+  BPLN) and a cruising strafer or fighter with nonzero Ammo now keep full speed through their
+  destination, as native: the test fixtures' non-Landable, armed Hornet circles its hold. A
+  cruising aircraft that neither strafes nor fights (PDPLANE, CARGOPLANE) still slows.
 
 Gattling stages, units (`feature/combat-gattling`, snapshot 200), owner `sim/combat/gattling.rs`
 (`GattlingState`: `+140` stage, `+144` value, `+4B8` report latch; the tables in
@@ -886,6 +937,7 @@ Sidecars record binary identity; landing-era SHA-256 `1cdd1180e49024fbda8ad568ca
 | aircraft_approach | `417FE0` entry/approach | 49 | FLH f32 1-lepton in 3 poses |
 | fly_destination / fly_takeoff / fly_takeoff_phase | `4CCC80`; `4CE680`; `4CD2A0` | 26/80/75 | pure takeoff only |
 | fly_paid_step | `4CDA3C..4CDB4C` | 199 | stops before placement |
+| fly_target_speed | `4CE145..4CE2E5` | 374 | supplied distance/type locals; no ramp, arm or landing trigger |
 | aircraft_mission_only | +3D4 regions | 96 | no full ObjectSelect/Unlimbo |
 | fly_map_edge | `4CDB4C..4CDCFD/4CDD0D` | 78 | supplied Team; Rust not wired |
 | team_creation / tag_lifecycle | creation; Tag histories | 39 / 49 | no Rust instance parity |
@@ -1058,12 +1110,13 @@ Fly flight (owners `FlyRuntime`, `world/fly_orders.rs`, `world/fly_landing.rs`):
 - BeginLanding `4CFA70` has its world owner; its Fly callers `4CE43C`/`4CF520` (arrival arm with
   cruise+5C, type+D27, `4D0180` gates)/`4CCDDB` are unported: a player-moved aircraft never
   attempts BeginLanding (native refuses AirportBound ones into Enter_Idle_Mode, i.e. home).
-  Observed in the dock trace: once the legacy horizontal adapter stalls inside 86 leptons
-  (creep floor 0.05 alternating with the ramp to 0, zero step speed) it never clears
-  `movement_target`, so `AircraftMission::Move` does not reach Idle through arrival there. Port `4CEFB0`/`4CE145` arrival with the landing arm. BeginTakeoff callers
+  The legacy creep that stalled the dock trace inside 86 leptons is deleted with the target-speed
+  port; a slowing Fly now stops at the native 0.1 floor (50 leptons at the retail SlowdownDistance
+  500), inside the legacy arrival radius. Port `4CEFB0` arrival with the landing arm. BeginTakeoff callers
   `4CCED4`/`4CE9DD`; its refusals `70EFD0` (+504 EMP) and `4DE770` (Foot timer +6A0/+6A8) lack
   producers. Mission_Enter HELLO and contact-slot pad offsets must absorb `AirfieldDocks`.
-- Process horizontal/slowdown/drift/arrival; `4CE3C0` landing gate; `4CEFB0` navigation (read instructions).
+- Process horizontal/drift/arrival (the target speed and ramp are ported); `4CE3C0` landing gate;
+  `4CEFB0` navigation (read instructions).
 - Map edge: `568300` shape, `41B890` predicate, FlyBy Type+E0B, `565660` ±128 via Map+12C
   (`566332`: width+height-1), one `49F420` scatter (one draw via `65C780`; reuse
   `inviso_scatter::random_direction_coord`), failed check skips SetCoords `4CDCFB`.

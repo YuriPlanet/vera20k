@@ -31,7 +31,7 @@ use crate::sim::mission::MissionTimer;
 use crate::sim::movement::locomotor::AirMovePhase;
 use crate::sim::production::foundation_dimensions;
 use crate::sim::world::Simulation;
-use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
+use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 
 /// Aircraft mission — determines the high-level behavior each tick.
 ///
@@ -204,7 +204,6 @@ struct MissionMutation {
     /// owner (NavCom and the Fly MoveTo), ahead of any `move_to`.
     assign_destination: Option<crate::sim::components::NavTargetRef>,
     self_destruct: bool,
-    set_speed_fraction: Option<SimFixed>,
     /// Fly BeginLanding4CFA70 through the world owner, after the mission write.
     begin_landing: bool,
     /// Fly BeginTakeoff4CF950 through the world owner.
@@ -232,7 +231,6 @@ fn mission_step(
         move_to: None,
         assign_destination: None,
         self_destruct: false,
-        set_speed_fraction: None,
         begin_landing: false,
         begin_takeoff: false,
         paradrop_chute_sound_at: None,
@@ -281,16 +279,11 @@ fn mission_step(
             // Type FlightLevel. Repeated attack mission visits must not
             // divide the mutable target by3. The horizontal target-selection
             // transaction remains part of the Fly migration.
-            if *sub_state == 10 {
-                m.set_speed_fraction = Some(SIM_ONE);
-            }
-
-            // Fly Process owns acceleration/approach speed. Mission_Attack
-            // does not write the old cell-distance speed tiers.
+            // Fly Process owns the target speed (`air_movement::
+            // write_fly_target_speed`); Mission_Attack writes no speed.
         }
 
         AircraftMission::Guard => {
-            m.set_speed_fraction = Some(SIM_ONE);
             let entity = sim.substrate.entities.get(id)?;
             let ammo = entity.aircraft_ammo.as_ref();
             let ammo_current = ammo.map_or(-1, |a| a.current);
@@ -697,12 +690,6 @@ fn apply_mission_mutation(
         if m.ammo_delta != 0 {
             if let Some(ref mut ammo) = entity.aircraft_ammo {
                 ammo.current = (ammo.current + m.ammo_delta).max(0).min(ammo.max);
-            }
-        }
-
-        if let Some(speed_frac) = m.set_speed_fraction {
-            if let Some(ref mut loco) = entity.locomotor {
-                loco.speed_fraction = speed_frac;
             }
         }
     }

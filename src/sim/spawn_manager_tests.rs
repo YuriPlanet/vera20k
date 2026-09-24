@@ -1762,17 +1762,30 @@ fn a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue() {
     );
 }
 
-/// A Carrier sortie through `advance_tick`, with retail-shaped Hornets:
-/// `HornetBomb` fires a `NormalBomb` (ROT 1, not Inviso), so a Hornet strafes
-/// and its pass drops five bombs (Mission_Attack states 4 and 6..9), then it
-/// pays its one ammo and is recalled. Before the manager queued Attack in the
-/// child's mission owner, `AircraftClass::AI` paid the pass's ammo the frame
-/// after the first bomb (`0x0041505E`, mission not Attack) and the manager
-/// recalled the Hornet. The wing's target is handed to the manager as the
-/// Carrier's spawner shot does (`SpawnManagerClass::SetTarget`).
-#[test]
-fn a_carrier_hornet_flies_a_whole_strafe_pass() {
+/// Every Hornet's `HornetBomb` frames from a 600-frame Carrier sortie
+/// through `advance_tick`, and the wing.
+struct StrafingSortie {
+    sim: Simulation,
+    wing: Vec<u64>,
+    bombs: BTreeMap<u64, Vec<u32>>,
+}
+
+/// The sortie with strafing Hornets: `HornetBomb` fires a `NormalBomb` (ROT 1,
+/// not Inviso), ROF 3. `hornet_keys` extends the fixture's HORNET section. The
+/// wing's target is handed to the manager as the Carrier's spawner shot does
+/// (`SpawnManagerClass::SetTarget`).
+fn strafing_carrier_sortie(hornet_keys: &str) -> StrafingSortie {
     let text = spawner_rules_text()
+        .replace(
+            "[HORNET]
+Name=Hornet
+",
+            &format!(
+                "[HORNET]
+Name=Hornet
+{hornet_keys}"
+            ),
+        )
         .replace(
             "[HornetBomb]
 Damage=60
@@ -1809,6 +1822,14 @@ CurleyShuffle=yes
     let target = sim
         .spawn_object("TARGET", "Yuri", 24, 10, 0, &rules, &hm)
         .expect("spawn TARGET");
+    let wing: Vec<u64> = sim
+        .substrate
+        .entities
+        .get(carrier)
+        .and_then(|e| e.spawn_manager.as_ref())
+        .map(|m| m.slots.iter().filter_map(|s| s.spawn).collect())
+        .expect("manager");
+    assert_eq!(wing.len(), 3);
     let hornet_bomb = sim.interner.intern("HornetBomb");
     let mut bombs: BTreeMap<u64, Vec<u32>> = BTreeMap::new();
     for _ in 0..600 {
@@ -1831,18 +1852,50 @@ CurleyShuffle=yes
             bombs.entry(event.attacker_id).or_default().push(frame);
         }
     }
-    let (hornet, frames) = bombs
-        .iter()
-        .max_by_key(|(_, frames)| frames.len())
-        .expect("a Hornet bombs");
-    assert_eq!(frames.len(), 5, "one pass, five bombs: {bombs:?}");
-    for pair in frames.windows(2) {
-        assert!(pair[1] - pair[0] >= 3, "a weapon ROF apart: {frames:?}");
+    StrafingSortie { sim, wing, bombs }
+}
+
+/// Every Hornet of a Carrier wing flies a whole strafe pass: five bombs a
+/// weapon ROF apart (Mission_Attack states 4 and 6..9), then its one ammo is
+/// paid. The first Hornets up hold over the deck until the whole wing is
+/// launched. The fixture Hornet (no `Landable=`) cruises over its hold, and as
+/// an armed strafer `0x004D0180` never lets it slow: it circles the hold at
+/// full speed. VERA's legacy Fly instead stalled it short of the hold with a
+/// zero target speed that no later destination raised again, so only the
+/// Hornet launched on the send-out pass ever reached the target. A
+/// retail-shaped Hornet (`Landable=`, ROT 3) does not cruise over its hold and
+/// slows by distance for it (native lands it there; the Process landing
+/// trigger is unported). Either way Fly Process's target speed (`0x004CE145`,
+/// `air_movement::write_fly_target_speed`) takes the Hornet to full speed for
+/// its run. Before the manager queued Attack in the child's mission owner,
+/// `AircraftClass::AI` paid a pass's ammo the frame after its first bomb
+/// (`0x0041505E`).
+#[test]
+fn every_hornet_of_a_carrier_wing_flies_a_whole_strafe_pass() {
+    for (shape, hornet_keys) in [("cruising", ""), ("Landable", "Landable=yes\nROT=3\n")] {
+        let sortie = strafing_carrier_sortie(hornet_keys);
+        for hornet in &sortie.wing {
+            let frames = sortie.bombs.get(hornet).map_or(&[][..], Vec::as_slice);
+            assert_eq!(
+                frames.len(),
+                5,
+                "{shape} Hornet {hornet}: one pass, five bombs: {:?}",
+                sortie.bombs
+            );
+            for pair in frames.windows(2) {
+                assert!(pair[1] - pair[0] >= 3, "a weapon ROF apart: {frames:?}");
+            }
+            assert_eq!(
+                sortie
+                    .sim
+                    .substrate
+                    .entities
+                    .get(*hornet)
+                    .and_then(|h| h.aircraft_ammo.as_ref())
+                    .map(|a| a.current),
+                Some(0),
+                "{shape} Hornet {hornet}: the pass paid its one ammo"
+            );
+        }
     }
-    let hornet = sim.substrate.entities.get(*hornet).unwrap();
-    assert_eq!(
-        hornet.aircraft_ammo.as_ref().unwrap().current,
-        0,
-        "the pass paid its one ammo"
-    );
 }
