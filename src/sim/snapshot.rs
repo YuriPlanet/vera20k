@@ -3536,7 +3536,9 @@ mod tests {
         // 195 -> 196: mind-control nodes, overload state and victim links.
         // 196 -> 197: TemporalClass links and the warped object's chain head.
         // 197 -> 198: the house defeat counts.
-        assert_eq!(super::SNAPSHOT_VERSION, 199);
+        // 198 -> 199: the Crazy Ivan bomb on its carrier.
+        // 199 -> 200: the Gattling stage, value and turret animation counter.
+        assert_eq!(super::SNAPSHOT_VERSION, 200);
     }
 
     #[test]
