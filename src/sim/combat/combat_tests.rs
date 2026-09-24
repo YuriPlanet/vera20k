@@ -3236,6 +3236,60 @@ fn gsi_04_07_damage_repair_bullet_cellspread_zero_keeps_signed_area_record() {
     assert!(pings.is_empty());
 }
 
+/// `Apply_area_damage`'s dispatch skips an `InvisibleInGame=` building
+/// (BuildingType `+0x1701`, `0x00489A1B..0x00489A29`), such as the invisible
+/// light posts, while a visible building in the same blast takes its record.
+#[test]
+fn gsi_04_07_area_dispatch_skips_an_invisible_in_game_building() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=LAMP\n1=SHED\n\
+         [LAMP]\nStrength=6000\nArmor=wood\nInvisibleInGame=yes\n\
+         [SHED]\nStrength=300\nArmor=wood\n\
+         [Warheads]\n0=HE\n\
+         [HE]\nCellSpread=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .expect("invisible-building fixture parses");
+    let mut entities = EntityStore::new();
+    entities.insert(make_structure_entity(1, "LAMP", 5, 5, 6000, 6000));
+    entities.insert(make_structure_entity(2, "SHED", 6, 5, 300, 300));
+    let mut interner = test_interner();
+    let warhead = interner.intern("HE");
+    let house = Some(interner.intern("Test"));
+    let receivers = [1, 2].map(|id| {
+        combat_aoe::AreaDamageReceiver::Entity(EntityDamageEvent::area(
+            id, 100, 0, 77, house, warhead,
+        ))
+    });
+    let mut main_rng = SimRng::new(3);
+    let mut scenario_rng = SimRng::new(4);
+    let mut handled_deaths = Vec::new();
+    let mut houses = BTreeMap::new();
+    let mut fatal_lifecycle = None;
+    let mut sound_sink = None;
+    commit_area_damage_receivers(
+        &receivers,
+        &mut entities,
+        &mut OccupancyGrid::new(),
+        &rules,
+        &mut interner,
+        &mut houses,
+        &[],
+        &HouseAllianceMap::new(),
+        &mut main_rng,
+        &mut scenario_rng,
+        &mut handled_deaths,
+        None,
+        None,
+        None,
+        None,
+        0,
+        &mut fatal_lifecycle,
+        &mut sound_sink,
+    );
+    assert_eq!(entities.get(1).unwrap().health.current, 6000);
+    assert_eq!(entities.get(2).unwrap().health.current, 200);
+}
+
 #[test]
 fn gsi_04_07_damage_receiver_updates_grudge_before_retaliation() {
     let rules = RuleSet::from_ini(&IniFile::from_str(

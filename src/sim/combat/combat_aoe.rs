@@ -1984,6 +1984,7 @@ mod tests {
             let make_air = |stable_id, rx, enter_order| {
                 let mut air = GameEntity::test_default(stable_id, "AIRBOMB", "Soviet", rx, 5);
                 air.category = EntityCategory::Aircraft;
+                air.lifecycle.in_limbo = false;
                 air.health.current = hp;
                 air.position.z = 0;
                 let mut air_locomotor =
@@ -2005,8 +2006,10 @@ mod tests {
             let air_perimeter = make_air(5, 3, 3);
 
             let mut center = GameEntity::test_default(20, "GROUNDBOMB", "Soviet", 5, 5);
+            center.lifecycle.in_limbo = false;
             center.health.current = hp;
             let mut east = GameEntity::test_default(10, "GROUNDBOMB", "Soviet", 7, 5);
+            east.lifecycle.in_limbo = false;
             east.health.current = hp;
 
             let mut entities = EntityStore::new();
@@ -2071,31 +2074,34 @@ mod tests {
                 },
             );
             let hit_order = hit_ids(&aoe.hits);
-            let damage_events = aoe.hits;
             let mut main_rng = SimRng::new(9);
             let mut handled_deaths = Vec::new();
             let mut houses = BTreeMap::new();
             let mut fatal_lifecycle = None;
             let mut sound_sink = None;
-            let (effects, pings) = crate::sim::combat::commit_damage_events(
-                &damage_events,
-                &mut entities,
-                &mut occupancy,
-                &rules,
-                &mut interner,
-                &mut houses,
-                &[],
-                &HouseAllianceMap::new(),
-                &mut main_rng,
-                &mut scenario_rng,
-                &mut handled_deaths,
-                Some(&mut overlays),
-                Some(&registry),
-                Some(&mut terrain),
-                0,
-                &mut fatal_lifecycle,
-                &mut sound_sink,
-            );
+            // The production Apply_area_damage commit, whose dispatch gates
+            // re-read each record's object when its turn comes.
+            let (effects, pings) =
+                crate::sim::combat::receiver_fixture::commit_area_damage_receivers(
+                    &aoe.receivers,
+                    &mut entities,
+                    &mut occupancy,
+                    &rules,
+                    &mut interner,
+                    &mut houses,
+                    &[],
+                    &HouseAllianceMap::new(),
+                    &mut main_rng,
+                    &mut scenario_rng,
+                    &mut handled_deaths,
+                    Some(&mut overlays),
+                    Some(&registry),
+                    Some(&mut terrain),
+                    None,
+                    0,
+                    &mut fatal_lifecycle,
+                    &mut sound_sink,
+                );
             assert!(pings.is_empty());
             (hit_order, effects, overlays, entities, scenario_rng.state())
         }
@@ -2108,12 +2114,12 @@ mod tests {
         );
         assert_eq!(
             fatal.immediate_uninit_ids,
-            vec![30, 40, 30, 5, 20, 10],
+            vec![30, 40, 5, 20, 10],
             // Aircraft4165C0 calls Foot at4165EC before its concrete cleanup.
-            // Nested30 therefore finishes before40, then the captured outer30
-            // record repeats its zero-HP receiver (no Aircraft Alive guard).
-            // Native producer-entry proof: bridge_zero_health_deathweapon.json.
-            "nested aircraft cleanup precedes its parent; the captured outer record still repeats"
+            // Nested30 therefore finishes before40. The captured outer30 record
+            // is then skipped: Apply_area_damage's dispatch reads its Health
+            // (0) at 0x00489A79 before calling the receiver.
+            "nested aircraft cleanup precedes its parent; the dead outer record is not dispatched"
         );
         let direct_cells: Vec<_> = fatal
             .wall_mutations

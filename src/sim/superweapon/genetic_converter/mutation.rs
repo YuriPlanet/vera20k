@@ -385,6 +385,9 @@ mod tests {
         ground.category = EntityCategory::Infantry;
         ground.is_voxel = false;
         ground.health = Health { current: 100 };
+        // In the cell's lists, so on the map: out of limbo and marked.
+        ground.lifecycle.in_limbo = false;
+        ground.lifecycle.cell_marked = true;
 
         let mut bridge = GameEntity::test_default(2, "E1", "Soviet", 5, 5);
         bridge.owner = owner;
@@ -394,6 +397,8 @@ mod tests {
         bridge.health = Health { current: 100 };
         bridge.on_bridge = true;
         bridge.position.z = 4;
+        bridge.lifecycle.in_limbo = false;
+        bridge.lifecycle.cell_marked = true;
 
         sim.substrate.entities.insert(ground);
         sim.substrate.entities.insert(bridge);
