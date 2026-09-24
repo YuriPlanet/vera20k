@@ -695,7 +695,13 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xDAF7_FF08_E159_
 // scenario and main RNG streams match main over all 600 ticks. The
 // retained-destination check expects a live track instead of the removed
 // next-frame deferral. Old values: the commit that moved them.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x591D_D8AB_05AD_B66C;
+// Schema202 folds the object's rearm timer (TechnoClass+0x2EC, started at the
+// construction frame as the constructor does) in place of the AttackTarget
+// cooldown/burst-delay counters and the cloak copy: composition only.
+// Before(202) reproduces the v201 pin; per-tick replay, the RNG stream pins and
+// the route tripwires are unchanged.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0xFFF8_3258_DF1E_850B;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0x591D_D8AB_05AD_B66C;
 const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 5260791561060714057;
 
 fn harness_ini() -> IniFile {
@@ -1023,6 +1029,11 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     let (_, final_scen, final_main, final_mapgen) =
         *recorded_streams.last().expect("final checkpoint recorded");
     let final_hash = *replayed.last().expect("at least one tick recorded");
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(202)),
+        GLOBAL_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202,
+        "v202 only folds the object's rearm timer in place of the target's counters"
+    );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
         0x065F_2FBB_F9DB_A8F8,

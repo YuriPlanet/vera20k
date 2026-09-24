@@ -680,6 +680,36 @@ pub struct GameEntity {
     /// hash does fold.
     #[serde(default = "default_last_fire_frame")]
     pub last_fire_frame: i64,
+    /// The rearm countdown (`TechnoClass+0x2EC`, a CDTimerClass whose
+    /// duration is `+0x2F4`). It belongs to the object, not to its target:
+    /// `Assign_Target @ 0x006FCDB0` never touches it, so a new target does not
+    /// reload the weapon.
+    ///
+    /// Writers, from a scan of every `+0x2EC..+0x2F4` operand in the image:
+    /// - `TechnoClass::FireAt`, every launched shot, with GetROF's value (the
+    ///   drawn gap mid-burst, the full reload after the burst's last shot),
+    ///   halved for a berserk firer (`0x006FF274..0x006FF2CB`); the DiskLaser
+    ///   path (`0x006FE4B0`) stores it unhalved. Ported
+    ///   (`world_receiver::emit_admitted_fire`), minus the DiskLaser path.
+    /// - `AircraftClass::Drop_Payload` restarts it with no duration
+    ///   (`0x00415E88`). Ported (the paradrop success arm).
+    /// - RESIDUAL, with their mechanisms: the C4 plant arms the planter with
+    ///   `GetROF(1)` (`InfantryClass::PerCellProcess 0x0051A564`/`0x0051A624`,
+    ///   see `tick_c4_plants`); `UnitClass::ReceiveGunner`/`RemoveGunner` hand
+    ///   a running rearm over (`0x0074646E`, `0x0074655C`, see `temporal.rs`);
+    ///   the Prism support beam arms a support tower with `Rules+0x4A4`
+    ///   (`0x0044ACB2`, unported Prism).
+    ///
+    /// Readers: GetFireError answers Rearm while it runs (`0x006FC94F`);
+    /// `CanAutoCloak @ 0x006FBDC0` waits for it; `FootClass::Mission_Guard`
+    /// returns its remaining frames as the next delay and draws nothing
+    /// (`0x004D52A9`). RESIDUAL: `CanDeploySlashUnload @ 0x00700D50` refuses
+    /// a deployed infantryman's undeploy while it runs (`0x00700E02`; see
+    /// `Command::ToggleInfantryDeploy`), and the charge-turret frame
+    /// (`IsChargeTurret=`, the Prism Tank) reads it with the `+0x2F8` ROF copy
+    /// (`0x006FA540`), which VERA does not keep or draw.
+    #[serde(default)]
+    pub rearm_timer: crate::sim::timer::CdTimer,
     /// Gattling stage, value and report latch (`TechnoClass+0x140`,
     /// `+0x144`, `+0x4B8`), owned by `combat::gattling`.
     #[serde(default)]
@@ -1417,6 +1447,9 @@ impl GameEntity {
             barrel_facing: None,
             turret_rotation_latch: false,
             last_fire_frame: NATIVE_LAST_FIRE_FRAME_INIT,
+            // `TechnoClass` constructor `0x006F2E81..0x006F2E8C`: started
+            // at the construction frame with no duration.
+            rearm_timer: crate::sim::timer::CdTimer::started(construction_frame as i32, 0),
             gattling: Default::default(),
             turret_anim_frame: 0,
             weapon_burst: Default::default(),
@@ -2033,8 +2066,6 @@ mod mission_shadow_tests {
         let mut e = GameEntity::test_default(1, "E1", "Americans", 3, 3);
         e.attack_target = Some(AttackTarget {
             target: TargetKind::Entity(2),
-            cooldown_ticks: 0,
-            burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });
         assert_eq!(e.derived_mission().0, MissionType::Attack);

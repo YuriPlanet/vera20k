@@ -111,8 +111,14 @@
 //!   killer, booking a loss). Draws inside `0x004585C0` are not established.
 //! - SlaveManager release with the attacker as liberator (`0x006B0AE0`):
 //!   VERA models no slave release on any master death.
-//! - ReceiveGunner's weapon-timer hand-over (`0x0074646E..0x007464B8`, and the
-//!   mirror in RemoveGunner) is not ported; only the TemporalClass moves.
+//! - ReceiveGunner's rearm hand-over (`0x0074646E..0x007464B8`) is not
+//!   ported; only the TemporalClass moves. While the gunner's rearm timer
+//!   (`GameEntity::rearm_timer`) runs, native steps the IFV's burst index and
+//!   re-arms the IFV with `GetROF(7)`, one Scenario draw; RemoveGunner does
+//!   the same for the gunner with `GetROF(0)` (`0x0074655C..0x00746592`).
+//!   Trigger: a Chrono Legionnaire entering or leaving an IFV inside its
+//!   reload. Effect: VERA's IFV can fire a reload early, and one draw is
+//!   missing. Needs GetROF as a callable owner (it is inline in FireAt).
 //! - `WarpPerStep` (`+0x4C`, written each step, read by no sim function) and
 //!   the `+0x2C` timer and `+0x38`/`+0x3C` fields (no writer) are not kept.
 //! - VERA fires in the combat phase after the live-object pass, so a warp

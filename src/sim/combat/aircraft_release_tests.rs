@@ -137,31 +137,24 @@ fn aircraft_request_preserves_rearm_and_state3_does_not_fire_early() {
             .fire_events()
             .is_empty()
     );
-    let attack = sim
-        .substrate
-        .entities
-        .get_mut(1)
-        .unwrap()
-        .attack_target
-        .as_mut()
-        .unwrap();
-    attack.cooldown_ticks = 4;
+    let frame = sim.session.binary_frame as i32;
+    sim.substrate.entities.get_mut(1).unwrap().rearm_timer =
+        crate::sim::timer::CdTimer::started(frame, 4);
     assert!(
         dispatch(&mut sim, &rules)
             .consequences
             .fire_events()
             .is_empty()
     );
+    // The request leaves the object's own reload running.
     assert_eq!(
         sim.substrate
             .entities
             .get(1)
             .unwrap()
-            .attack_target
-            .as_ref()
-            .unwrap()
-            .cooldown_ticks,
-        3
+            .rearm_timer
+            .remaining(frame),
+        4
     );
     assert!(
         !sim.substrate

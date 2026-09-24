@@ -231,7 +231,13 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 51339613354888284
 // instead of 165. The scenario-RNG draws are the same sequence, moved with
 // the arrival's Guard mission, so the absolute RNG state pin changes too. Old
 // values: the commit that moved them.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0xE38B_348B_1940_AF9A;
+// Schema202 folds the object's rearm timer (TechnoClass+0x2EC, started at the
+// construction frame as the constructor does) in place of the AttackTarget
+// cooldown/burst-delay counters and the cloak copy: composition only.
+// Before(202) reproduces the v201 pin; per-tick replay, the RNG stream pins and
+// the route tripwires are unchanged.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x95EE_1BFD_8C43_881B;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0xE38B_348B_1940_AF9A;
 const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 17631648094789127815;
 
 fn bridge_ini() -> IniFile {
@@ -843,6 +849,11 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
         27276201916352779,
         "v190 changes only the Foot neighbor-history hash composition in this fixture"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(202)),
+        BRIDGE_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202,
+        "v202 only folds the object's rearm timer in place of the target's counters"
     );
     assert_eq!(
         final_hash, BRIDGE_HARNESS_FINAL_HASH,

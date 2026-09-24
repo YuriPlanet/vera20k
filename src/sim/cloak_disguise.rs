@@ -30,22 +30,15 @@ pub struct CloakRuntime {
     pub step_delta: i32,
     pub step_timer: CloakStepTimer,
     /// **ReCloak delay, native `TechnoClass+0x240/+0x248`.** The offsets on
-    /// this pair and on `secondary_gate_*` used to be written the other way
-    /// round; the writer settles it. `CloakingTick` state 3 → 0 at
+    /// this pair and on the rearm timer (`+0x2EC`, now
+    /// [`GameEntity::rearm_timer`](crate::sim::game_entity::GameEntity::rearm_timer))
+    /// used to be written the other way round; the writer settles it. `CloakingTick` state 3 → 0 at
     /// `0x006FB9F8..0x006FBA07` does `LEA EDX,[ESI+0x240]` and stores
     /// `ftol([Rules+0x1410] * 900.0)` — `[General] CloakDelay` in minutes ×
     /// 900 frames — into `+0x248`. `CanAutoCloak @ 0x006FBDC0` reads it as its
     /// LAST timer gate (`param_1[0x90]`/`[0x92]`).
     pub recloak_delay_start: i32,
     pub recloak_delay_frames: i32,
-    /// **Weapon rearm (ROF) countdown, native `TechnoClass+0x2EC/+0x2F4`.**
-    /// Written by `TechnoClass::Fire_At @ 0x006FDD50` after every shot and read
-    /// by `GetFireError` (busy) and by `CanAutoCloak @ 0x006FBDC0` as its FIRST
-    /// timer gate (`param_1[0xbb]`/`[0xbd]`, checked immediately after the
-    /// `CloakState == 2` early-out). A sub that just fired therefore stays
-    /// surfaced for its whole `ROF=` before the CloakDelay above even starts.
-    pub secondary_gate_start: i32,
-    pub secondary_gate_frames: i32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -108,8 +101,6 @@ impl CloakRuntime {
             },
             recloak_delay_start: current_frame,
             recloak_delay_frames: 0,
-            secondary_gate_start: current_frame,
-            secondary_gate_frames: 0,
         }
     }
 
@@ -268,19 +259,13 @@ impl CloakRuntime {
         result
     }
 
-    pub fn recloak_delay_expired(&self, now: i32) -> bool {
-        Self::timer_remaining(self.recloak_delay_start, self.recloak_delay_frames, now) == 0
-            && Self::timer_remaining(self.secondary_gate_start, self.secondary_gate_frames, now)
-                == 0
-    }
-
-    /// `TechnoClass::Fire_At @ 0x006FDD50` arms the rearm countdown at
-    /// `+0x2EC/+0x2F4` on every shot; `CanAutoCloak @ 0x006FBDC0` refuses to
-    /// begin an auto-cloak while it is running. Called from the fire commit so
-    /// a Typhoon that surfaced to fire cannot dive again inside its own ROF.
-    pub fn arm_rearm_gate(&mut self, now: i32, rearm_frames: i32) {
-        self.secondary_gate_start = now;
-        self.secondary_gate_frames = rearm_frames.max(0);
+    /// `CanAutoCloak @ 0x006FBDC0`'s two timer gates: the object's weapon
+    /// rearm countdown (`+0x2EC`, `param_1[0xbb]`/`[0xbd]`, checked right after
+    /// the `CloakState == 2` early-out, so a sub that just fired stays surfaced
+    /// for its whole `ROF=`), then the CloakDelay above.
+    pub fn recloak_delay_expired(&self, now: i32, rearm_timer: crate::sim::timer::CdTimer) -> bool {
+        rearm_timer.remaining(now) == 0
+            && Self::timer_remaining(self.recloak_delay_start, self.recloak_delay_frames, now) == 0
     }
 
     /// `CloakState == 2` — fully cloaked. The only state the native target

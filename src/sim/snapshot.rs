@@ -585,7 +585,10 @@ use crate::sim::world::Simulation;
 // saved (`TechnoClass::Load` clears it, `0x0070C20E`). A 199 save has none.
 // 200 -> 201: an entity no longer keeps `last_attacker_id` (retaliation is the
 // receiver's inline ShouldRetaliate), and a TeamType keeps `Suicide=`.
-const SNAPSHOT_VERSION: u32 = 201;
+// 201 -> 202: the rearm countdown moves onto the object (`TechnoClass+0x2EC`):
+// AttackTarget loses its cooldown/burst-delay counters and the cloak runtime
+// its copy of the timer.
+const SNAPSHOT_VERSION: u32 = 202;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3534,7 +3537,8 @@ mod tests {
         // 198 -> 199: the Crazy Ivan bomb on its carrier.
         // 199 -> 200: the Gattling stage, value and turret animation counter.
         // 200 -> 201: no `last_attacker_id`; TeamType `Suicide=`.
-        assert_eq!(super::SNAPSHOT_VERSION, 201);
+        // 201 -> 202: the rearm timer on the object.
+        assert_eq!(super::SNAPSHOT_VERSION, 202);
     }
 
     #[test]

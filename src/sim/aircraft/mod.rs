@@ -743,6 +743,7 @@ fn apply_mission_mutation(
             m.paradrop_payload_count_pre,
             path_grid,
         );
+        let frame = sim.session.binary_frame as i32;
         if let Some(entity) = sim.substrate.entities.get_mut(aircraft_id) {
             if let Some(AircraftMission::ParaDropOverfly {
                 exit_rx,
@@ -752,13 +753,19 @@ fn apply_mission_mutation(
             }) = entity.aircraft_mission.clone()
             {
                 let new_mission = match result {
-                    drop_payload::DropResult::Success => AircraftMission::ParaDropOverfly {
-                        exit_rx,
-                        exit_ry,
-                        drop_cooldown: drop_interval,
-                        landing_state: drop_payload::LANDING_STATE_RESET,
-                        payload_count: payload_count.saturating_sub(1),
-                    },
+                    drop_payload::DropResult::Success => {
+                        // `Drop_Payload @ 0x00415E88..0x00415EAA`: beside the
+                        // LandingState write, a drop restarts the rearm timer
+                        // (`+0x2EC`) with no duration.
+                        entity.rearm_timer.start(frame, 0);
+                        AircraftMission::ParaDropOverfly {
+                            exit_rx,
+                            exit_ry,
+                            drop_cooldown: drop_interval,
+                            landing_state: drop_payload::LANDING_STATE_RESET,
+                            payload_count: payload_count.saturating_sub(1),
+                        }
+                    }
                     drop_payload::DropResult::ImpassableRetry
                     | drop_payload::DropResult::AttachFailedRetry => {
                         // Leave mission cadence at 0 — retry on the next

@@ -1635,9 +1635,8 @@ mod tests {
     fn foot_override_provider_order_includes_same_identity_target_dispatch() {
         let mut unit = entity(EntityCategory::Unit, GUARD);
         let mut active_target = AttackTarget::new(7);
-        active_target.cooldown_ticks = 17;
+        unit.rearm_timer = crate::sim::timer::CdTimer::started(0, 17);
         unit.weapon_burst.complete_shot(4);
-        active_target.burst_delay_ticks = 2;
         active_target.pending_infantry_fire = Some(PendingInfantryFire {
             sequence: SequenceKind::Attack,
             fire_frame: 4,
@@ -1695,12 +1694,14 @@ mod tests {
             .attack_target
             .as_ref()
             .unwrap();
-        assert_eq!(installed.cooldown_ticks, 17);
+        assert_eq!(
+            sim.substrate.entities.get(1).unwrap().rearm_timer,
+            crate::sim::timer::CdTimer::started(0, 17)
+        );
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().weapon_burst.index(),
             1
         );
-        assert_eq!(installed.burst_delay_ticks, 2);
         assert_eq!(
             installed.pending_infantry_fire,
             Some(PendingInfantryFire {

@@ -87,7 +87,6 @@ pub(crate) struct AttackerSnapshot {
     pub type_id: InternedId,
     pub facing: u8,
     pub veterancy: u16,
-    pub cooldown_ticks: u16,
     pub animation_sequence: Option<crate::sim::animation::SequenceKind>,
     pub animation_frame: Option<u16>,
     pub is_prone: bool,
@@ -100,7 +99,6 @@ pub(crate) struct AttackerSnapshot {
     /// snaps and vehicle turns. Facing gates and emission read its full
     /// 16-bit value rather than the byte mirrored for presentation.
     pub hull_facing: Option<crate::sim::movement::FacingClass>,
-    pub burst_delay_ticks: u8,
     /// Weapon-selection override (Gunner-IFV slot OR open-topped passenger weapon).
     pub weapon_override: Option<super::combat_weapon::WeaponOverride>,
     /// Garrison state — present only for garrisoned buildings (IsOccupied).
@@ -186,7 +184,6 @@ pub(crate) fn acquire_best_target_for_entity(
         type_id: entity.type_ref(),
         facing: entity.facing,
         veterancy: entity.veterancy,
-        cooldown_ticks: 0,
         animation_sequence: entity.animation.as_ref().map(|a| a.sequence),
         animation_frame: entity.animation.as_ref().map(|a| a.frame_index),
         is_prone: entity
@@ -199,7 +196,6 @@ pub(crate) fn acquire_best_target_for_entity(
         pending_building_fire: None,
         barrel_facing: entity.barrel_facing,
         hull_facing: entity.body_facing,
-        burst_delay_ticks: 0,
         weapon_override: entity.weapon_override,
         garrison: None,
         scan_mission: mask,

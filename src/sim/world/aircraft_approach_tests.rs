@@ -69,8 +69,6 @@ fn assert_flh(sim: &Simulation, rules: &RuleSet, row: &Value) {
     let snapshot = build_attacker_snapshot(
         entity,
         entity.attack_target.as_ref().unwrap().target,
-        0,
-        0,
         None,
         None,
         None,

@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "FireAt's rearm write after GetROF over the returned value's sign and magnitude (incl. int32 extremes), the berserk byte and the frame counter; Mission_Guard's rearm read over the timer's start (incl. the -1 paused sentinel and wrapping differences), duration (incl. zero and negative) and the frame counter, recording the value returned or the fall-through.",
+  "assumptions": [
+    "The FireAt block starts with GetROF's return in EAX and EBX holding the WeaponType (read only past the recorded end).",
+    "The Mission_Guard block is entered at 0x004D52A9 with ESI the Techno; its exits are observed at the instruction that sets EAX for the return."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "fire_begin": "0x006FF28F",
+    "fire_end": "0x006FF2BE",
+    "guard_begin": "0x004D52A9",
+    "guard_running": "0x004D52ED",
+    "guard_paused": "0x004D5338",
+    "guard_spent": "0x004D5301",
+    "guard_zero": "0x004D52F5"
+  },
+  "payload_sha256": "c3635328c1bf2f769a850d7594d85f81b2fba3ef2de9bc7c5cd6a7b7d3219bfc"
+}

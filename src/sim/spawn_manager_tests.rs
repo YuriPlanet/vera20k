@@ -1720,10 +1720,10 @@ fn a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue() {
         .unwrap()
         .slots[slot]
         .state = SpawnSlotState::ReturningToDock;
+    let frame = sim.session.binary_frame as i32;
     let child = sim.substrate.entities.get_mut(hornet).unwrap();
-    let mut attack = crate::sim::combat::AttackTarget::new(target);
-    attack.cooldown_ticks = 7;
-    child.attack_target = Some(attack);
+    child.attack_target = Some(crate::sim::combat::AttackTarget::new(target));
+    child.rearm_timer = crate::sim::timer::CdTimer::started(frame, 7);
     child.aircraft_mission = Some(crate::sim::aircraft::AircraftMission::Attack { sub_state: 7 });
     child.aircraft_ammo.as_mut().expect("Hornet ammo").current = 1;
 
@@ -1734,12 +1734,13 @@ fn a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue() {
         Some(crate::sim::aircraft::AircraftMission::Attack { sub_state: 7 })
     ));
     assert_eq!(
-        child
-            .attack_target
-            .as_ref()
-            .map(|a| (a.target, a.cooldown_ticks)),
-        Some((TargetKind::Entity(target), 7)),
+        child.attack_target.as_ref().map(|a| a.target),
+        Some(TargetKind::Entity(target)),
         "the same target is not re-assigned"
+    );
+    assert_eq!(
+        child.rearm_timer,
+        crate::sim::timer::CdTimer::started(frame, 7)
     );
 
     pass(&mut sim, Some(other));

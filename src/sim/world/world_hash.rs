@@ -1914,8 +1914,10 @@ impl Simulation {
                 cloak.step_timer.duration_frames.hash(hasher);
                 cloak.recloak_delay_start.hash(hasher);
                 cloak.recloak_delay_frames.hash(hasher);
-                cloak.secondary_gate_start.hash(hasher);
-                cloak.secondary_gate_frames.hash(hasher);
+                if !schema.includes(HashFeature::RearmTimer) {
+                    entity.rearm_timer.start_frame().hash(hasher);
+                    entity.rearm_timer.duration().hash(hasher);
+                }
             } else {
                 0u8.hash(hasher);
             }
@@ -1965,17 +1967,25 @@ impl Simulation {
 
             if let Some(ref attack) = entity.attack_target {
                 1u8.hash(hasher);
-                attack.cooldown_ticks.hash(hasher);
+                if !schema.includes(HashFeature::RearmTimer) {
+                    0u16.hash(hasher);
+                }
                 attack.target.hash(hasher);
                 if !schema.includes(HashFeature::WeaponBurstAuthority) {
                     // Bounded historical replay fixtures had no remaining
                     // burst shots. Arbitrary old AttackTarget state is unrecoverable.
                     0u8.hash(hasher);
                 }
-                attack.burst_delay_ticks.hash(hasher);
+                if !schema.includes(HashFeature::RearmTimer) {
+                    0u8.hash(hasher);
+                }
                 attack.pending_infantry_fire.hash(hasher);
             } else {
                 0u8.hash(hasher);
+            }
+            if schema.includes(HashFeature::RearmTimer) {
+                entity.rearm_timer.start_frame().hash(hasher);
+                entity.rearm_timer.duration().hash(hasher);
             }
             if schema.includes(HashFeature::WeaponBurstAuthority) {
                 entity.weapon_burst.hash(hasher);
