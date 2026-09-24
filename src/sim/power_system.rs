@@ -58,6 +58,55 @@ pub(crate) fn native_building_power_drain(power: i32) -> i32 {
     if power < 0 { power.wrapping_neg() } else { 0 }
 }
 
+/// The fields `BuildingClass::Is_Operational_For_Output` (vt+0x350,
+/// `0x004555D0`) reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct OperationalFacts {
+    /// Building `+0x660` online latch and `+0x67C` Tesla charger count.
+    pub online: bool,
+    pub tesla_chargers: i32,
+    /// `+0x504` EMP time and `+0x6C` Health.
+    pub emp_remaining: i32,
+    pub health: i32,
+    /// Type `+0x1573` Powered and `+0xEE4` drain (the negated negative
+    /// `Power=`, [`native_building_power_drain`]).
+    pub powered: bool,
+    pub power_drain: i32,
+    /// Type `+0x1574` PoweredSpecial; the owner's blackout timer
+    /// (`House+0x2A4/+0x2AC`) has time left or `House+0x577B` is set.
+    pub powered_special: bool,
+    pub owner_outage: bool,
+    /// Type `+0x1552` NeedsEngineer, Building `+0x6CC` HasEngineer.
+    pub needs_engineer: bool,
+    pub has_engineer: bool,
+    /// vt+0x184: current mission, or queued when current is -1.
+    pub effective_mission: i32,
+}
+
+/// `BuildingClass::Is_Operational_For_Output @ 0x004555D0`. The house power
+/// ratio (`0x004FCE30`, below 1.0) is read only for a Powered building with a
+/// positive drain.
+pub(crate) fn is_operational_for_output(
+    facts: &OperationalFacts,
+    power_below_full: impl FnOnce() -> bool,
+) -> bool {
+    if !facts.online && facts.tesla_chargers < 2 {
+        return false;
+    }
+    if facts.emp_remaining > 0 || facts.health == 0 {
+        return false;
+    }
+    if facts.powered && facts.power_drain > 0 && power_below_full() && facts.tesla_chargers < 2 {
+        return false;
+    }
+    if facts.powered_special && facts.owner_outage {
+        return false;
+    }
+    (!facts.needs_engineer || facts.has_engineer)
+        && facts.effective_mission != 0x12
+        && facts.effective_mission != 0x13
+}
+
 /// Events emitted when a player's power state transitions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PowerEvent {

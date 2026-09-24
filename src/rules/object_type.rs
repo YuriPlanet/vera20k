@@ -1225,6 +1225,31 @@ pub struct ObjectType {
     /// `Unnatural=` (`TechnoTypeClass+0x694`, ReadINI `0x0071496D`).
     pub unnatural: bool,
 
+    /// GetFireError's type flags, each zeroed by its class constructor
+    /// unless noted and read with the current value as default:
+    /// - `Natural=` (`TechnoTypeClass+0x693`, ReadINI `0x00714953`): a
+    ///   Natural attacker never fires at an Unnatural target (T14).
+    /// - `Pushy=` (`+0x692`, key `0x008439E4`): I3.
+    /// - `BerserkFriendly=` (`+0x690`, key `0x008439F8`): a berserk attacker
+    ///   spares it (T13).
+    /// - `MobileFire=` (`+0x6AE`, ReadINI `0x00714830`; constructor 1 at
+    ///   `0x00711150`): U7.
+    /// - `HunterSeeker=` (`+0xD27`, ReadINI `0x00714CC2`): T49.
+    /// - `NonVehicle=` (UnitType `+0xE1B`, UnitTypeClass::ReadINI
+    ///   `0x007478B0`): U6's vehicle test.
+    /// - `JumpJetTurn=` (InfantryType `+0xECB`, InfantryTypeClass::ReadINI
+    ///   `0x00524668`): I6.
+    /// - `EMPulseCannon=` (BuildingType `+0x16C3`, BuildingTypeClass::ReadINI
+    ///   `0x00460B76`): B3.
+    pub natural: bool,
+    pub pushy: bool,
+    pub berserk_friendly: bool,
+    pub mobile_fire: bool,
+    pub hunter_seeker: bool,
+    pub non_vehicle: bool,
+    pub jumpjet_turn: bool,
+    pub emp_pulse_cannon: bool,
+
     /// `IsGattling=` (`TechnoTypeClass+0xCD5`, ReadINI `0x0071402A`).
     pub is_gattling: bool,
 
@@ -2231,6 +2256,17 @@ impl ObjectType {
             reselect_if_limboed: section.get_bool("ReselectIfLimboed").unwrap_or(false),
             rejoin_team_if_limboed: section.get_bool("RejoinTeamIfLimboed").unwrap_or(false),
             unnatural: section.get_bool("Unnatural").unwrap_or(false),
+            natural: section.get_bool("Natural").unwrap_or(false),
+            pushy: section.get_bool("Pushy").unwrap_or(false),
+            berserk_friendly: section.get_bool("BerserkFriendly").unwrap_or(false),
+            mobile_fire: section.get_bool("MobileFire").unwrap_or(true),
+            hunter_seeker: section.get_bool("HunterSeeker").unwrap_or(false),
+            non_vehicle: category == ObjectCategory::Vehicle
+                && section.get_bool("NonVehicle").unwrap_or(false),
+            jumpjet_turn: category == ObjectCategory::Infantry
+                && section.get_bool("JumpJetTurn").unwrap_or(false),
+            emp_pulse_cannon: category == ObjectCategory::Building
+                && section.get_bool("EMPulseCannon").unwrap_or(false),
             is_gattling: section.get_bool("IsGattling").unwrap_or(false),
             turret_count: section.get_i32("TurretCount").unwrap_or(0),
             drainable: section.get_bool("Drainable").unwrap_or(false),

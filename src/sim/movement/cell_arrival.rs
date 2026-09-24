@@ -277,6 +277,7 @@ mod tests {
                 crate::sim::combat::ScanMission::Guard,
                 None,
                 crate::sim::combat::line_of_fire::LineOfFireInputs::default(),
+                Some(sim),
             )
         };
         assert_eq!(list(&sim, (6, 5)), vec![2, 3]);

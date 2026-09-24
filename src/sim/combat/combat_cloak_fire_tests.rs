@@ -36,13 +36,10 @@ fn entities(target_type: &str) -> EntityStore {
     cloak.establish_unlimbo_fully_cloaked();
     bsub.cloak = Some(cloak);
     store.insert(bsub);
-    store.insert(GameEntity::test_default(
-        2,
-        target_type,
-        "Americans",
-        11,
-        10,
-    ));
+    // On the map: GetFireError refuses a target in limbo (T12, `0x006FC1BE`).
+    let mut target = GameEntity::test_default(2, target_type, "Americans", 11, 10);
+    target.lifecycle.in_limbo = false;
+    store.insert(target);
     store
 }
 

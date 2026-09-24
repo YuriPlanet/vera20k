@@ -308,6 +308,82 @@ fn guard_still_chases_where_sticky_would_not() {
     );
 }
 
+/// The range stop in `FootClass::Per_Cell_Process` calls the class
+/// SetDestination(NULL, 1) (`0x004D8968`), so a vehicle that halts in range
+/// holds no NavCom, and GetFireError's U9 (`0x007411D9`) refuses a spark or
+/// flame weapon only while NavCom is set. The IFV's engineer fires
+/// `RepairBullet` (`UseSparkParticles=yes`): a halt that kept NavCom left it in
+/// range, never firing.
+#[test]
+fn a_spark_weapon_fires_once_its_pursuit_halts() {
+    use crate::sim::combat::tick_combat;
+    use crate::sim::components::{MovementTarget, NavTargetRef};
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=SPRK\n1=HTNK\n\
+         [InfantryTypes]\n[BuildingTypes]\n[AircraftTypes]\n\
+         [SPRK]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=Sparks\n\
+         [HTNK]\nStrength=400\nArmor=heavy\nSpeed=5\n\
+         [Sparks]\nDamage=40\nROF=30\nRange=6\nWarhead=AP\nOmniFire=yes\n\
+         UseSparkParticles=yes\n\
+         [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .expect("spark rules");
+    let scene = || {
+        let mut sparker = make_unit(1, "SPRK", "Americans", 8, 5, 300);
+        sparker.category = crate::map::entities::EntityCategory::Unit;
+        sparker.lifecycle.in_limbo = false;
+        sparker.attack_target = Some(AttackTarget::new(2));
+        sparker.movement_target = Some(MovementTarget::default());
+        sparker.navigation.nav_com = Some(NavTargetRef::Cell { rx: 10, ry: 5 });
+        sparker
+            .mission
+            .apply_test_fixture(crate::sim::mission::state::MissionTestFixture {
+                current: crate::sim::mission::MissionId::from_known(
+                    crate::sim::mission::MissionType::Attack,
+                ),
+                suspended: crate::sim::mission::MissionId::NONE,
+                queued: crate::sim::mission::MissionId::NONE,
+                movement_bypass_latch: 0,
+                handler_state: 0,
+                mission_start_frame: 0,
+                ai_counter: 0,
+                dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(0),
+            });
+        let mut victim = make_unit(2, "HTNK", "Soviet", 10, 5, 400);
+        victim.lifecycle.in_limbo = false;
+        make_sim(vec![sparker, victim])
+    };
+    let shoot = |sim: &mut Simulation| {
+        let mut occupancy = crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
+        let mut rng = crate::sim::rng::SimRng::new(7);
+        tick_combat(
+            &mut sim.substrate.entities,
+            &mut occupancy,
+            &rules,
+            &mut sim.interner,
+            1,
+            67,
+            1,
+            &mut rng,
+        );
+        sim.substrate.entities.get(2).unwrap().health.current
+    };
+
+    // Still driving: U9 holds the spark weapon.
+    let (mut moving, _) = scene();
+    assert_eq!(shoot(&mut moving), 400, "no spark shot on the move");
+
+    let (mut sim, grid) = scene();
+    sim.tick_attack_pursuit(&rules, Some(&grid));
+    let halted = sim.substrate.entities.get(1).unwrap();
+    assert!(halted.movement_target.is_none());
+    assert_eq!(
+        halted.navigation.nav_com, None,
+        "the range stop takes NavCom with the path"
+    );
+    assert!(shoot(&mut sim) < 400, "halted, it fires");
+}
+
 // ---------------------------------------------------------------------------
 // The pursuit predicate is the fire gate's predicate, walk included.
 //

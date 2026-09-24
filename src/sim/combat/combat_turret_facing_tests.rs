@@ -30,7 +30,7 @@ fn rules_with_mtnk_rot(rot: u32) -> RuleSet {
 [InfantryTypes]\n0=ENGI\n\n\
 [BuildingTypes]\n0=GAPILE\n\n\
 [AircraftTypes]\n\n\
-[MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=105mm\nROT={rot}\n\n\
+[MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=105mm\nROT={rot}\nTurret=yes\n\n\
 [ENGI]\nStrength=75\nArmor=none\nSpeed=4\n\n\
 [GAPILE]\nStrength=300\nArmor=heavy\n\n\
 [105mm]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\n\n\

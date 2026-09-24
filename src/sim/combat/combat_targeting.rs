@@ -100,12 +100,6 @@ pub(crate) struct AttackerSnapshot {
     /// snaps and vehicle turns. Facing gates and emission read its full
     /// 16-bit value rather than the byte mirrored for presentation.
     pub hull_facing: Option<crate::sim::movement::FacingClass>,
-    /// Turret rotation latch (`UnitClass+0x6AF`) as it stood BEFORE this tick's
-    /// `Facing_Update`, which is the value `UnitClass::GetFireError @
-    /// 0x00741233` reads: `UnitClass::AI` runs `Fire_At_Target @ 0x007365E1`
-    /// before `Facing_Update @ 0x007365E8`, and VERA commits the new latch in
-    /// `apply_unit_facing` after Phase 5.
-    pub turret_rotation_latch: bool,
     pub burst_delay_ticks: u8,
     /// Weapon-selection override (Gunner-IFV slot OR open-topped passenger weapon).
     pub weapon_override: Option<super::combat_weapon::WeaponOverride>,
@@ -156,6 +150,7 @@ pub(crate) fn acquire_best_target_for_entity(
     mask: ScanMission,
     zone_grid: Option<&crate::sim::pathfinding::zone_map::ZoneGrid>,
     los: super::line_of_fire::LineOfFireInputs<'_>,
+    fire_world: Option<&crate::sim::world::Simulation>,
 ) -> Option<u64> {
     let entity = entities.get(attacker_id)?;
     // Aircraft with 0 ammo should not acquire new targets — need to reload.
@@ -204,7 +199,6 @@ pub(crate) fn acquire_best_target_for_entity(
         pending_building_fire: None,
         barrel_facing: entity.barrel_facing,
         hull_facing: entity.body_facing,
-        turret_rotation_latch: entity.turret_rotation_latch,
         burst_delay_ticks: 0,
         weapon_override: entity.weapon_override,
         garrison: None,
@@ -223,6 +217,7 @@ pub(crate) fn acquire_best_target_for_entity(
         require_playfield_membership,
         zone_grid,
         los,
+        fire_world,
     )
 }
 
@@ -260,6 +255,7 @@ pub(crate) fn acquire_best_target(
     require_playfield_membership: bool,
     zone_grid: Option<&crate::sim::pathfinding::zone_map::ZoneGrid>,
     los: super::line_of_fire::LineOfFireInputs<'_>,
+    fire_world: Option<&crate::sim::world::Simulation>,
 ) -> Option<u64> {
     super::greatest_threat::greatest_threat(
         entities,
@@ -274,6 +270,7 @@ pub(crate) fn acquire_best_target(
         require_playfield_membership,
         zone_grid,
         los,
+        fire_world,
     )
 }
 
@@ -722,6 +719,7 @@ mod tests {
                 ScanMission::Guard,
                 None,
                 crate::sim::combat::line_of_fire::LineOfFireInputs::default(),
+                None,
             ),
             Some(2)
         );

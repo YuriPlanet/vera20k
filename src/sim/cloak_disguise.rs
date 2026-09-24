@@ -490,36 +490,6 @@ pub fn choose_default_mirage_disguise<T: Copy>(pool: &[Option<T>], random_index:
     pool[index]
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FireCloakGateResult {
-    pub should_call_reveal_area1: bool,
-    pub fire_error_code: Option<u8>,
-}
-
-/// `TechnoClass::FireWeaponImpl` / `TechnoClass::GetFireError` closed gate windows.
-#[cfg(test)]
-pub fn evaluate_fire_cloak_gates(
-    reveal_on_fire: bool,
-    target_house_passes_reveal_check: bool,
-    decloak_to_fire: bool,
-    current_cloak_state: i32,
-    what_am_i: i32,
-) -> FireCloakGateResult {
-    FireCloakGateResult {
-        should_call_reveal_area1: reveal_on_fire && target_house_passes_reveal_check,
-        fire_error_code: fire_requires_uncloaking(decloak_to_fire, current_cloak_state, what_am_i)
-            .then_some(9),
-    }
-}
-
-pub(crate) fn fire_requires_uncloaking(
-    decloak_to_fire: bool,
-    current_cloak_state: i32,
-    what_am_i: i32,
-) -> bool {
-    decloak_to_fire && current_cloak_state != 0 && (what_am_i != 2 || current_cloak_state == 2)
-}
-
 #[cfg(test)]
 #[path = "cloak_sound_tests.rs"]
 mod sound_tests;
@@ -670,29 +640,6 @@ mod tests {
         assert_eq!(
             choose_default_mirage_disguise(&[Some(7), Some(11), Some(13)], 99),
             Some(13)
-        );
-    }
-
-    #[test]
-    fn fire_gate_vectors() {
-        assert_eq!(
-            evaluate_fire_cloak_gates(true, true, false, 0, 2),
-            FireCloakGateResult {
-                should_call_reveal_area1: true,
-                fire_error_code: None
-            }
-        );
-        assert_eq!(
-            evaluate_fire_cloak_gates(true, false, true, 1, 0).fire_error_code,
-            Some(9)
-        );
-        assert_eq!(
-            evaluate_fire_cloak_gates(false, true, true, 1, 2).fire_error_code,
-            None
-        );
-        assert_eq!(
-            evaluate_fire_cloak_gates(false, true, true, 2, 2).fire_error_code,
-            Some(9)
         );
     }
 

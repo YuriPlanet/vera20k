@@ -37,17 +37,14 @@
 //! Background: `docs/research/SPAWN_MANAGER_CLASS_GHIDRA_REPORT.md`,
 //! `docs/research/ROCKET_LOCOMOTION_CLASS_GHIDRA_REPORT.md`.
 //!
-//! ## Deliberately not parsed
+//! ## `Spawned=`
 //!
-//! `Spawned=` (`TechnoTypeClass+0xD54`) is a live flag with four verified
-//! consumers — `search_instructions operand_pattern=0xd54]` finds it read by
+//! `Spawned=` (`TechnoTypeClass+0xD54`, `ObjectType::spawned`) has four
+//! verified readers — `search_instructions operand_pattern=0xd54]` finds
 //! `AircraftClass::Is_Cell_Free_For_Landing` (two sites),
-//! `TechnoClass::GetFireError` (`0x006FC67B`),
+//! `TechnoClass::GetFireError` (`0x006FC67B`, T36 in `combat::fire_error`),
 //! `TechnoClass::Set_ArchiveTarget` and `TechnoClass::IsIdleForAutoTarget`.
-//! None of those four behaviours are implemented by this slice, and the
-//! auto-target one lives in the techno-AI host rather than here, so the key is
-//! left unparsed rather than parsed-and-ignored. Whoever wires the first of
-//! those consumers should add it then.
+//! Only GetFireError's is ported; the other three are not this slice's.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on sim/world, sim/combat, sim/movement, rules/.

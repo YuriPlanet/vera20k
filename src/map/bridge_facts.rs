@@ -21,6 +21,30 @@ pub(crate) const RETAINED_CELLCLASS_BRIDGE_FLAG_MASK: u32 =
 /// The additional400/800 stores of SetBridgeDirection47E040/47E470.
 /// Anchor/F1/F2/opposite share them; F3/extra preserve both. This matches the
 /// existing full BridgeCellFacts Mark/Destroy writer without inventing relations.
+/// `TechnoClass::IsOnBridge_ForFiring @ 0x00703B10` (`mask` `0x100`) and its
+/// `0x00703CC0` twin (`0x400`), over the `CellClass+0x140` words of an object's
+/// own cell and of its S, N, E and W neighbours (`g_DirectionOffsets`
+/// `0x0089F688` indices 4, 0, 2, 6): the own cell carries `mask`, or a S/N
+/// neighbour carries it with the span axis bit `0x800`, or an E/W one without.
+/// A missing neighbour answers nothing. The OnBridge (`+0x8C`) exemption
+/// before the test belongs to the caller.
+pub(crate) fn near_bridge(
+    own: u32,
+    [south, north, east, west]: [Option<u32>; 4],
+    mask: u32,
+) -> bool {
+    let span = |flags: Option<u32>, axis: bool| {
+        flags.is_some_and(|flags| {
+            flags & mask != 0 && (flags & BRIDGE_FLAG_DIRECTION_ZERO != 0) == axis
+        })
+    };
+    own & mask != 0
+        || span(south, true)
+        || span(north, true)
+        || span(east, false)
+        || span(west, false)
+}
+
 pub(crate) fn apply_retained_cellclass_bridge_slot(
     flags: &mut u32,
     slot: BridgeStampSlot,

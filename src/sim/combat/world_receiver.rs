@@ -1957,18 +1957,6 @@ fn admit_attacker_fire<'r>(
             entity.pending_building_fire = None;
         }
     }
-    // `TechnoClass::GetFireError @ 0x006FC109`: a firer being warped out
-    // (vtable +0x1D4) returns ILLEGAL (5) before any other test. A Temporal
-    // victim's frozen AI has already dropped its target; this covers the
-    // teleport writer.
-    if world
-        .substrate
-        .entities
-        .get(snap.stable_id)
-        .is_some_and(|firer| firer.is_warped_out())
-    {
-        return None;
-    }
     // Pre-compute garrison scan range for retargeting (includes +1 buffer).
     let garrison_retarget_range: Option<SimFixed> = snap.garrison.as_ref().map(|gs| {
         let cells = gs.half_foundation as i32 + 1 + rules.garrison_rules.occupy_weapon_range;
@@ -1987,8 +1975,8 @@ fn admit_attacker_fire<'r>(
     // Stock Sonic weapons occupy index 0, and native FireAt tests that
     // WeaponType before resolving the target. Preserve that whole-call gate
     // so a stale/missing target cannot retarget or clear the order while the
-    // owner's exact Wave link remains live. The selected-weapon check below
-    // retains the same protection for non-stock overrides/secondary layouts.
+    // owner's exact Wave link remains live. GetFireError's T37/T46 (the live
+    // Wave on either slot) keep the same protection for other layouts.
     if has_active_wave
         && combat_weapon::primary_for_tier(obj, snap.veterancy)
             .and_then(|weapon_id| rules.weapon(weapon_id))
@@ -2072,10 +2060,10 @@ fn admit_attacker_fire<'r>(
                 return None;
             }
             if let Some(new_target) = acquire_best_target(
-                &mut world.substrate.entities,
+                &world.substrate.entities,
                 &world.substrate.occupancy,
                 rules,
-                &mut world.interner,
+                &world.interner,
                 snap,
                 obj,
                 fog,
@@ -2093,6 +2081,7 @@ fn admit_attacker_fire<'r>(
                     overlay_registry,
                     alliances: fog.map(|fog_state| &fog_state.alliances),
                 },
+                Some(&*world),
             ) {
                 out.retarget_events.push((snap.stable_id, new_target));
             } else {
@@ -2101,32 +2090,6 @@ fn admit_attacker_fire<'r>(
             return None;
         }
     };
-
-    // `TechnoClass::GetFireError @ 0x006FC133`: a target that is already this
-    // object's `DrainTarget` (`+0x1CC`) is refused — a linked Floating Disc
-    // fires nothing further at the building it drains (GSI-09.01).
-    if let TargetKind::Entity(target_id) = snap.target
-        && world
-            .substrate
-            .entities
-            .get(snap.stable_id)
-            .is_some_and(|attacker| attacker.drain_target == Some(target_id))
-    {
-        return None;
-    }
-    // GetFireError `0x006FC14F..0x006FC16B`: while this object's
-    // TemporalClass holds the target, a shot at it is REARM (3). The beam
-    // holds; a re-fire would restart the warp (InitiateWarp lets go first).
-    if let TargetKind::Entity(target_id) = snap.target
-        && world
-            .substrate
-            .entities
-            .get(snap.stable_id)
-            .and_then(|attacker| attacker.temporal.warp_target())
-            == Some(target_id)
-    {
-        return None;
-    }
 
     let target_armor: String = rules
         .object(world.interner.resolve(target_type_ref))
@@ -2169,8 +2132,23 @@ fn admit_attacker_fire<'r>(
     };
 
     // Weapon selection: garrison uses occupant's OccupyWeapon, everything
-    // else runs the native selection ladder.
-    let (selected, is_garrison) = if let Some(saved_slot) = delayed_building_slot {
+    // else runs the native selection ladder (`What_Weapon_Should_I_Use`
+    // `0x006F3330`, which asks no legality; GetFireError below does).
+    //
+    // RESIDUAL: two arms still filter before GetFireError, as the selection
+    // owner does until it loses its legality subset.
+    // - A delayed building shot resolves its saved slot through
+    //   `select_weapon_slot` (`targeting_fire_error_blocks`). Effect: none;
+    //   ProcessDelayedFire drops the shot on any refusal (`0x004504D7`) either
+    //   way.
+    // - Garrison fire picks the occupant's weapon by AA/AG and Verses and drops
+    //   the target when none fits. Native GetWeapon (`0x004526F0`) hands the
+    //   occupant weapon over whatever the target, and the base asks AA only of
+    //   a high-flying or airborne Foot (T38/T39) and AG of no techno. Trigger: a
+    //   garrison aimed at a landed aircraft, or an occupant with an AA-only
+    //   weapon at a ground target. Effect: VERA drops a target native would
+    //   shoot. Frequency: rare.
+    let (weapon_index, selected, is_garrison) = if let Some(saved_slot) = delayed_building_slot {
         let capture = world
             .substrate
             .entities
@@ -2184,7 +2162,7 @@ fn admit_attacker_fire<'r>(
             &target_facts,
             capture,
         ) {
-            Some(selected) => (selected, false),
+            Some(selected) => (selected.index, Some(selected), false),
             None => return None,
         }
     } else if let Some(ref gs) = snap.garrison {
@@ -2195,7 +2173,7 @@ fn admit_attacker_fire<'r>(
             target_cat,
             &target_armor,
         ) {
-            Some(s) => (s, true),
+            Some(s) => (s.index, Some(s), true),
             None => {
                 out.remove_attack.push(snap.stable_id);
                 return None;
@@ -2208,90 +2186,25 @@ fn admit_attacker_fire<'r>(
             .get(snap.stable_id)
             .map(|entity| combat_weapon::attacker_facts(entity, obj))
             .unwrap_or_else(|| combat_weapon::attacker_facts_from_snapshot(snap, obj));
-        match combat_weapon::select_weapon_for_target(rules, obj, &attacker_facts, &target_facts) {
-            Some(s) => (s, false),
-            None => {
-                out.remove_attack.push(snap.stable_id);
-                return None;
-            }
-        }
+        (
+            combat_weapon::what_weapon_should_i_use(
+                rules,
+                obj,
+                &attacker_facts,
+                Some(&target_facts),
+            ),
+            combat_weapon::select_weapon_for_emission(
+                rules,
+                obj,
+                &attacker_facts,
+                Some(&target_facts),
+            ),
+            false,
+        )
     };
-    let weapon = selected.weapon;
-    // gamemd-derived: `TechnoClass::FireAt @ 0x006FDE4A..0x006FDE5C`.
-    // Only an IsSonic selected weapon observes the firer's active-Wave link,
-    // and that return precedes every shot/cooldown/report/current-weapon side
-    // effect owned below. Type-3's local effect check is not this gate.
-    if weapon.is_sonic && has_active_wave {
-        return None;
-    }
-    // GetFireError `0x006FC5D5..0x006FC600`: a target being warped out
-    // (vtable +0x1D4) takes only Temporal shots; anything else is ILLEGAL (5),
-    // so only other Chrono weapons join the erase. VERA drops the target as
-    // for the Parasite gates below, with the same up-to-15-frame residual.
-    if !selected.warhead.temporal
-        && let TargetKind::Entity(target_id) = snap.target
-        && world
-            .substrate
-            .entities
-            .get(target_id)
-            .is_some_and(|target| target.is_warped_out())
+    if delayed_building_slot.is_none()
+        && let Some(selected) = selected.as_ref()
     {
-        if delayed_building_slot.is_none() {
-            out.remove_attack.push(snap.stable_id);
-        }
-        return None;
-    }
-    // GetFireError 0x006FCAC5..0x006FCB21: a Parasite shot at a Foot another
-    // jump has launch-locked (Foot+698) or at an Iron-Curtained one is
-    // FIRE_ILLEGAL (5), like the CanInfect gate in the targeting subset, and
-    // VERA drops the target for all three alike. RESIDUAL: native keeps an
-    // ILLEGAL target until TechnoClass::AI's 16-frame check
-    // (0x006FA472..0x006FA4CB) drops it, so VERA gives up up to 15 frames
-    // sooner; no RNG or state beyond the target is involved.
-    if selected.warhead.parasite
-        && let TargetKind::Entity(target_id) = snap.target
-        && world
-            .substrate
-            .entities
-            .get(target_id)
-            .is_some_and(|target| {
-                binary_frame < target.parasite_launch_lock
-                    || crate::sim::superweapon::invulnerability::is_invulnerable(
-                        target.invulnerability.as_ref(),
-                        binary_frame,
-                    )
-            })
-    {
-        if delayed_building_slot.is_none() {
-            out.remove_attack.push(snap.stable_id);
-        }
-        return None;
-    }
-    // GetFireError `0x006FCB3B`: the live CanCapture for a MindControl shot,
-    // whose Iron Curtain gate (vt+0x160) reads the frame the targeting
-    // subset lacks. VERA drops the target, as for the Parasite gates above.
-    if selected.warhead.mind_control
-        && let TargetKind::Entity(target_id) = snap.target
-        && !world.can_capture(snap.stable_id, target_id, rules)
-    {
-        if delayed_building_slot.is_none() {
-            out.remove_attack.push(snap.stable_id);
-        }
-        return None;
-    }
-    // GetFireError, FootClass::IsParalyzed `0x004DE770`: a paralyzed firer
-    // cannot launch a Spawner weapon (`0x006FC61F..0x006FC62B`, CANT) and an
-    // Organic one cannot fire at all (`0x006FCCBD..0x006FCCDD`, ILLEGAL).
-    if (weapon.spawner || obj.organic)
-        && world
-            .substrate
-            .entities
-            .get(snap.stable_id)
-            .is_some_and(|firer| firer.is_paralyzed(binary_frame))
-    {
-        return None;
-    }
-    if delayed_building_slot.is_none() {
         out.current_weapon_updates.push((
             snap.stable_id,
             match selected.slot {
@@ -2315,10 +2228,10 @@ fn admit_attacker_fire<'r>(
                 return None;
             }
             if let Some(new_target) = acquire_best_target(
-                &mut world.substrate.entities,
+                &world.substrate.entities,
                 &world.substrate.occupancy,
                 rules,
-                &mut world.interner,
+                &world.interner,
                 snap,
                 obj,
                 fog,
@@ -2336,6 +2249,7 @@ fn admit_attacker_fire<'r>(
                     overlay_registry,
                     alliances: fog.map(|fog_state| &fog_state.alliances),
                 },
+                Some(&*world),
             ) {
                 out.retarget_events.push((snap.stable_id, new_target));
             } else {
@@ -2348,10 +2262,10 @@ fn admit_attacker_fire<'r>(
                 return None;
             }
             if let Some(new_target) = acquire_best_target(
-                &mut world.substrate.entities,
+                &world.substrate.entities,
                 &world.substrate.occupancy,
                 rules,
-                &mut world.interner,
+                &world.interner,
                 snap,
                 obj,
                 fog,
@@ -2369,63 +2283,12 @@ fn admit_attacker_fire<'r>(
                     overlay_registry,
                     alliances: fog.map(|fog_state| &fog_state.alliances),
                 },
+                Some(&*world),
             ) {
                 out.retarget_events.push((snap.stable_id, new_target));
             } else {
                 out.remove_attack.push(snap.stable_id);
             }
-            return None;
-        }
-    }
-
-    // `TechnoClass::GetFireError @ 0x006FC24D..0x006FC29D` — the target-side
-    // cloak exit, ahead of ammo and the `DecloakToFire` self-check:
-    //
-    //   vs = target->GetVisualState(1, this->pOwner);          // vt+0x68
-    //   if (vs == 5 && !SensorCountForHouse(targetCell, myHouse->ArrayIndex)) {
-    //       if (GetWeaponRange(this, -1) > 0)            return 6;   // 0x006FCD29
-    //       if (!IsAlliedWith(target->pOwner, myOwner))  return 6;
-    //   }
-    //
-    // `GetVisualState(1, house) @ 0x00703860` returns 5 for a `CloakState == 2`
-    // object exactly when that house has no sensor on its cell, so for cloak
-    // this is "fully cloaked and unsensed by me". Error 6 suppresses the shot
-    // only — no retarget and no clear, like the bridge-mismatch arm above.
-    //
-    // Acquisition already refuses such a candidate; this is the case
-    // acquisition cannot cover — a target held from before the dive (the
-    // attacker's house was sensing the cell, so `PointerExpired` let it keep
-    // the pointer) that later falls out of sensor coverage.
-    //
-    // The range-zero/allied fall-through is modelled: a range-0 weapon against
-    // an ALLIED invisible target is allowed through, everything else is not.
-    //
-    // RESIDUAL (SUBSTITUTION) — the range term is the SELECTED weapon's range;
-    // native's `GetWeaponRange(this, -1)` at `0x006FC27C` asks the object for
-    // its range across weapons, so the two differ only when the selected weapon
-    // has range 0 while another slot does not.
-    // - Trigger: a zero-range weapon aimed at an allied, fully cloaked,
-    //   unsensed target.
-    // - Player effect: VERA lets the shot through where native returns 6.
-    // - Frequency: none observed in stock — no stock weapon pairs range 0 with
-    //   a second armed slot on a unit that can hold an allied cloaked target.
-    // - Downstream risk: low; it is one range lookup.
-    if let TargetKind::Entity(target_sid) = snap.target
-        && world
-            .substrate
-            .entities
-            .get(target_sid)
-            .and_then(|target| target.cloak.as_ref())
-            .is_some_and(|cloak| cloak.is_fully_cloaked())
-        && fog.is_some_and(|fog_state| {
-            !fog_state.has_sensor_for_house(snap.owner, target_rx, target_ry)
-        })
-    {
-        let attacker_owner_str = world.interner.resolve(snap.owner);
-        let target_owner_str = world.interner.resolve(target_owner);
-        let allied = fog
-            .is_some_and(|fog_state| fog_state.is_friendly(attacker_owner_str, target_owner_str));
-        if weapon.range > SimFixed::ZERO || !allied {
             return None;
         }
     }
@@ -2450,403 +2313,192 @@ fn admit_attacker_fire<'r>(
         }
     }
 
-    // Range check (lepton-precise, sub-cell aware).
-    // Garrison range: (half_foundation + OccupyWeaponRange) cells (no +1 buffer for fire).
-    let effective_range = if let Some(ref gs) = snap.garrison {
+    // `GetFireError` (vt+0x3C0, `fire_error`) with `SelectWeapon(Target)` and
+    // the range check, asked where each class's fire routine asks it:
+    // `UnitClass::Fire_At_Target @ 0x00736E3A`, `InfantryClass::
+    // Fire_At_Target @ 0x005206F3` (`0x005209DE` on the fire frame),
+    // `BuildingClass::Mission_Attack @ 0x0044B00F` (`ProcessDelayedFire
+    // @ 0x00450476` for a delayed shot) and `AircraftClass::Mission_Attack
+    // @ 0x0041832E`. Each routine then acts on the code as below.
+    let garrison_fire = if is_garrison {
+        let (Some(gs), Some(selected)) = (snap.garrison.as_ref(), selected.as_ref()) else {
+            return None;
+        };
         let cells = gs.half_foundation as i32 + rules.garrison_rules.occupy_weapon_range;
-        SimFixed::from_num(cells.max(1))
+        Some((selected.weapon, SimFixed::from_num(cells.max(1))))
     } else {
-        weapon.range
+        None
     };
-    // Range failure: range alone does not clear or retarget — the pursuit
-    // pre-combat stage walks the unit into range. Combat tick just skips
-    // this tick's fire attempt and lets the unit close the gap.
-    let in_range_for_fire = if !is_garrison && effective_range == weapon.range {
-        // Standard fire: 3D check via compute_in_range when terrain available.
-        match (
-            world.resolved_terrain.as_ref(),
-            world.substrate.entities.get(snap.stable_id),
-        ) {
-            (Some(t), Some(attacker_entity)) => {
-                let Some(src) = in_range::fire_source_coords(
-                    attacker_entity,
-                    &snap.target,
-                    weapon,
-                    &world.substrate.entities,
-                    t,
-                ) else {
-                    return None;
-                };
-                in_range::compute_in_range(
-                    attacker_entity,
-                    src,
-                    &snap.target,
-                    weapon,
-                    rules,
-                    &world.interner,
-                    &world.substrate.entities,
-                    t,
-                    &line_of_fire::LineOfFireInputs {
-                        overlay_grid: world.overlay_grid.as_ref(),
-                        overlay_registry,
-                        alliances: fog.map(|fog_state| &fog_state.alliances),
-                    },
-                )
-            }
-            _ => {
-                let dist_sq = lepton_distance_sq_raw(
-                    snap.pos_rx,
-                    snap.pos_ry,
-                    snap.sub_x,
-                    snap.sub_y,
-                    target_rx,
-                    target_ry,
-                    target_sub_x,
-                    target_sub_y,
-                );
-                is_within_range_leptons(dist_sq, effective_range)
-            }
+    let subject = |world: &Simulation,
+                   answer: &mut dyn FnMut(&fire_error_world::FireSubject<'_>)| {
+        if let Some(firer) = world.substrate.entities.get(snap.stable_id) {
+            answer(&fire_error_world::FireSubject {
+                world,
+                rules,
+                overlay_registry,
+                fog,
+                firer,
+                obj,
+                target: Some(snap.target),
+                weapon_index,
+                garrison: garrison_fire,
+            });
         }
-    } else {
-        // Garrison override path — preserve 2D until a later stage threads
-        // override-aware 3D.
-        //
-        // RESIDUAL (line of fire) — because this arm never calls
-        // `compute_in_range`, it never runs the wall/cliff walk that
-        // `TechnoClass::InRange` 0x006F7220 ends in at 0x006F7642.
-        // - Trigger: any garrisoned occupant firing across a wall or a
-        //   ≥4-Level step; stock `[E1]`'s `M60` is `Projectile=InvisibleLow`
-        //   (`SubjectToWalls=yes`, `SubjectToCliffs=yes`) and its `SA` warhead
-        //   has no `Wall=`, so gamemd refuses that shot.
-        // - Player effect: a garrisoned GI shoots straight through a GAWALL the
-        //   identical GI standing in the open is refused.
-        // - Frequency: routine on urban maps — garrisoning a building next to
-        //   a wall line is an ordinary opening, not an edge case.
-        // - Downstream risk: none to deterministic state. The cure is the
-        //   override-aware range VALUE chain M8 records (Garrison / Bunker /
-        //   OpenTopped), which lets this branch use `compute_in_range` instead
-        //   of a second walk bolted onto the 2-D twin.
-        let dist_sq = lepton_distance_sq_raw(
-            snap.pos_rx,
-            snap.pos_ry,
-            snap.sub_x,
-            snap.sub_y,
-            target_rx,
-            target_ry,
-            target_sub_x,
-            target_sub_y,
-        );
-        is_within_range_leptons(dist_sq, effective_range)
     };
-    if !in_range_for_fire {
-        if pending_at_fire_frame {
-            out.pending_infantry_updates.push((snap.stable_id, None));
-            out.animation_switches.push((
-                snap.stable_id,
-                infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
-            ));
-        }
-        return None;
-    }
-
-    // `TechnoClass::GetFireError` 0x006FC0B0 refuses the shot with error 5 when
-    // attacker and target disagree on OnBridge, both stand in bridge cells, and
-    // the attacker is not high-flying — a unit on the deck and a unit sheltering
-    // directly beneath it cannot shoot each other. `InRange` 0x006F7220 already
-    // blocks the under-to-over half through
-    // `attacker_under_bridge_targeting_above`; this is the over-to-under half
-    // and the cases where the height test does not fire.
-    //
-    // Evaluated here rather than inside `compute_in_range` because the native
-    // InRange has no such clause. Like the native it only suppresses the shot:
-    // no retarget, no clear, no effect on the pursuit stage.
-    if let (Some(t), Some(attacker_entity)) = (
-        world.resolved_terrain.as_ref(),
-        world.substrate.entities.get(snap.stable_id),
-    ) && in_range::fire_error_on_bridge_mismatch(
-        attacker_entity,
-        &snap.target,
-        &world.substrate.entities,
-        t,
-    ) {
-        if pending_at_fire_frame {
-            out.pending_infantry_updates.push((snap.stable_id, None));
-            out.animation_switches.push((
-                snap.stable_id,
-                infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
-            ));
-        }
-        return None;
-    }
-
-    // Burst / cooldown state machine.
-    if snap.cooldown_ticks > 0 || snap.burst_delay_ticks > 0 {
-        if pending_at_fire_frame {
-            out.pending_infantry_updates.push((snap.stable_id, None));
-            out.animation_switches.push((
-                snap.stable_id,
-                infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
-            ));
-        }
-        return None;
-    }
-
-    // UnitClass::GetFireError `0x00741206..0x00741226`: a Unit carrying a
-    // TemporalClass (an IFV with a Chrono Legionnaire gunner) cannot fire
-    // while it has a NavCom (MOVING, 7).
-    if snap.category == EntityCategory::Unit
-        && world
-            .substrate
-            .entities
-            .get(snap.stable_id)
-            .is_some_and(|entity| entity.temporal.has_link() && entity.navigation.nav_com.is_some())
-    {
-        return None;
-    }
-
-    // InfantryClass::GetFireError 0051C9B8..0051C9C9: after common legality,
-    // Foot+578 > binary64 0.1 returns error 7, before starting or emitting fire.
-    // Read the existing Foot owner: an attack order retains its paid Walk step
-    // even after clearing NavCom. A movement-target test is not this predicate.
-    // 0.1 lies between SimFixed raw 6553 and 6554; integer division selects the
-    // largest admissible representable fraction. Original boundary witnesses:
-    // tools/spatial_oracle/infantry_fire_speed.json.
-    if snap.category == EntityCategory::Infantry
-        && world
-            .substrate
-            .entities
-            .get(snap.stable_id)
-            .is_some_and(|entity| {
-                entity.foot_speed.applied_fraction > SimFixed::ONE / SimFixed::from_num(10)
-            })
-    {
-        if pending_at_fire_frame {
-            out.pending_infantry_updates.push((snap.stable_id, None));
-            out.animation_switches.push((
-                snap.stable_id,
-                infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
-            ));
-        }
-        return None;
-    }
-
-    // TechnoClass::GetFireError @ 0x006FC0B0 returns 9 after the ordinary
-    // busy/rearm/ammo gates when DecloakToFire= is set and the current cloak
-    // state requires surfacing. UnitClass::Fire_At_Target @ 0x00736DF0 then
-    // rechecks CanFireAt, calls StartUncloaking(0), and emits no shot, damage,
-    // rearm, report, or fire event on this visit. The retained attack target is
-    // the Rust retry latch; native's separate firing-sequence byte has no Rust
-    // producer or reader to clear.
-    if snap.category == EntityCategory::Unit {
-        let cloak_state = world
-            .substrate
-            .entities
-            .get(snap.stable_id)
-            .and_then(|entity| entity.cloak.as_ref())
-            .map_or(0, |cloak| cloak.state);
-        if crate::sim::cloak_disguise::fire_requires_uncloaking(
-            weapon.decloak_to_fire,
-            cloak_state,
-            1, // UnitClass::WhatAmI, not locomotor kind.
-        ) {
-            let start = world
-                .substrate
-                .entities
-                .get_mut(snap.stable_id)
-                .and_then(|entity| entity.cloak.as_mut())
-                .map(|cloak| {
-                    cloak.start_uncloaking_to_fire(binary_frame as i32, obj.cloaking_speed)
-                });
-            if start.is_some_and(|result| result.play_sound)
-                && let Some(sound_name) = rules.general.cloak_sound.as_deref()
-                && let Some(sink) = sound_enabled.then_some(&mut world.sound_events)
-                && let Some(entity) = world.substrate.entities.get(snap.stable_id)
-            {
-                sink.push(SimSoundEvent::cloak_sound(
-                    sound_name.to_owned(),
-                    &entity.position,
-                ));
-            }
-            return None;
-        }
-    }
-
-    // The projectile's `ROT=` (`BulletTypeClass+0x2DC`) is read twice in this
-    // region of `UnitClass::GetFireError`: once by the rotation refusal below
-    // (`0x00741243`) and once to widen the angle tolerance (`0x007412B6`).
-    let projectile_homes = weapon
-        .projectile
-        .as_deref()
-        .and_then(|id| rules.projectile(id))
-        .is_some_and(|projectile| projectile.rot != 0);
-
-    // ---- FIRE_ROTATING (4) ----------------------------------------------
-    //
-    // gamemd-derived: `UnitClass::GetFireError @ 0x00740FD0` step 14,
-    // `0x00741229`..`0x00741259` (disassembled this session):
-    //
-    //   MOV AL,[ESI+0x68D] / TEST AL,AL / JNZ 0x0074125C  ; firing sequence set
-    //   MOV AL,[ESI+0x6AF] / TEST AL,AL / JZ  0x0074125C  ; latch clear
-    //   MOV EDX,[EBX+0xA0] / MOV EAX,[EDX+0x2DC] / TEST / JNZ 0x0074125C ; homing
-    //   MOV EAX,0x4 / RET 0xC                             ; FIRE_ROTATING
-    //
-    // A vehicle whose turret is mid-arc is refused HERE, before the OmniFire
-    // skip at `0x0074125C` and before the step-17 angle test — so it may not
-    // fire until the arc it committed to has actually finished, not merely
-    // once the animated turret wanders inside the tolerance. Without this the
-    // latch would delay the aim but not the shot, and every re-aim wider than
-    // one tolerance step would open fire two to three frames early.
-    //
-    // Unit-and-turret only. This is the only FIRE gate that reads `+0x6AF`
-    // (`search_instructions` over `+ 0x6af]` — the other readers on this layout
-    // are Receive_Radio, Mission_Unload, Scatter, PassiveAcquireGate, the
-    // not-moving-and-not-rotating sound test in `FUN_00740E80 @ 0x00740EA7`,
-    // and the checksum walk; `BuildingClass`/`InfantryClass::GetFireError` have
-    // no such term). The only writer that ever SETS it is
-    // `UnitClass::Facing_Update @ 0x00736B16`, exclusively inside the
-    // `Turret=yes` arm; the other two writes are the `FootClass::Constructor`
-    // zero-fill at `0x004D3420` and the unconditional clear at `0x00736AD5`.
-    //
-    // The firing-sequence byte needs no VERA analogue: of the 21 references to
-    // `+0x68D`, the only store of 1 is `InfantryClass::Fire_At_Target @
-    // 0x00520912`. On a UnitClass receiver the byte is written 0 by
-    // `FootClass::Constructor @ 0x004D33C6` and by three sites in
-    // `UnitClass::Fire_At_Target` (`0x00736EF9`, `0x0073702D`, `0x0073704B`)
-    // and never set, so for a vehicle the first test always falls through.
-    if snap.category == EntityCategory::Unit && snap.turret_rotation_latch && !projectile_homes {
-        // Native code 4, which is also one of the {0, 2, 3, 4} codes that drive
-        // gattling spin-up. `FireDecision` has no variant for it and no
-        // producer at all — that gap is the residual recorded on the enum in
-        // `fire_decision.rs`, not something this return introduces.
-        return None;
-    }
-
-    // ---- Facing arm of the fire gate ------------------------------------
-    //
-    // gamemd-derived: `UnitClass::GetFireError @ 0x00740FD0` step 17
-    // (`0x00741288`..`0x007412EF`, read this session by `disassemble_bytes`;
-    // Ghidra has no function boundary there) and its structure twin
-    // `BuildingClass::GetFireError @ 0x00447F10` (`0x00447FE1`..`0x00448045`).
-    //
-    // Native picks the facing to test by `Turret=` (`TechnoType+0xCA1`), NOT by
-    // whether a turret interpolator exists: `Turret=yes` compares the turret
-    // `+0x3A0`, `Turret=no` compares the HULL `+0x388`. Both use the same
-    // tolerance, both take the 16-bit signed difference against
-    // `DirectionToTarget`, and the `JGE` at `0x007412EF` skips the error return
-    // — so `|delta| == tol` passes and `tol + 1` fails. There is no
-    // not-rotating term.
-    //
-    // Infantry are NOT angle-gated: `InfantryClass::Fire_At_Target @
-    // 0x005206B0` snaps `+0x388` with `UpdateFacing` at `0x00520925` the moment
-    // firing becomes possible and applies no test. A turretless STRUCTURE gets
-    // no gate either (`0x00447FE3` requires `HasTurret`, vtable `+0x3FC`).
-    //
-    // Aircraft41A9E0 compares SecondaryFacing even without Turret. Fighter
-    // bypasses only that class-specific arc; OmniFire/homing do not widen it.
-    let facing_gate_applies = match snap.category {
-        EntityCategory::Unit => true,
-        // `0x00447FE3` requires `HasTurret` (vtable `+0x3FC`) before the
-        // building facing test — a turretless structure is never angle-gated.
-        EntityCategory::Structure => snap.barrel_facing.is_some(),
-        EntityCategory::Aircraft => !obj.fighter,
-        // Infantry are gated by their FIRE sequence, never by angle.
-        EntityCategory::Infantry => false,
-    };
-    if facing_gate_applies && (snap.category == EntityCategory::Aircraft || !weapon.omni_fire) {
-        let desired: u16 = crate::sim::movement::turret::facing_toward_lepton(
-            snap.pos_rx,
-            snap.pos_ry,
-            snap.sub_x,
-            snap.sub_y,
-            target_rx,
-            target_ry,
-            target_sub_x,
-            target_sub_y,
-        );
-        // `Turret=yes` reads the turret, `Turret=no` reads the hull. VERA gives
-        // a turret interpolator to exactly the `Turret=yes` types, so its
-        // presence is the same predicate.
-        let current: u16 = match snap.barrel_facing {
-            Some(ref barrel) => barrel.current(binary_frame),
-            None => match snap.hull_facing {
-                Some(ref hull) => hull.current(binary_frame),
-                None => crate::sim::movement::turret::body_facing_to_turret(snap.facing),
-            },
-        };
-        // A BUILDING narrows to an exact match when its turret art is a voxel
-        // (`BuildingTypeClass+0x16C5`); everything else widens to 1/16 of a turn
-        // when the PROJECTILE homes (`BulletTypeClass+0x2DC != 0`).
-        let is_voxel_turret_building =
-            snap.category == EntityCategory::Structure && obj.turret_anim_is_voxel;
-        let tolerance: i32 = if snap.category == EntityCategory::Aircraft {
-            0x800
-        } else if is_voxel_turret_building {
-            NATIVE_FIRE_FACING_TOLERANCE_VOXEL_TURRET
-        } else if projectile_homes {
-            NATIVE_FIRE_FACING_TOLERANCE_HOMING
-        } else {
-            NATIVE_FIRE_FACING_TOLERANCE
-        };
-        let delta = i32::from(current.wrapping_sub(desired) as i16);
-        let mut aligned = delta.abs() <= tolerance;
-
-        // `BuildingClass::Mission_Attack @ 0x0044ACF0` gives a voxel turret a
-        // second chance in the SAME visit: when the miss is within one `ROT=`
-        // step (`0x0044B068`..`0x0044B0A4`, or unconditionally when
-        // `BuildingType+0x71C` is zero) it snaps `+0x388` with `UpdateFacing`
-        // at `0x0044B0AC` and re-runs `GetFireError`. That is why a Grand
-        // Cannon at `ROT=1` fires on the tick it comes within one step instead
-        // of waiting a further frame.
-        if !aligned && is_voxel_turret_building {
-            // 44B068..44B0A4 uses abs(low-byte ROT << 8 interpreted as
-            // signed16), WITHOUT FacingClass SetROT's upper clamp. Keep this
-            // native difference: ROT128 allows a half-turn retry; ROT256 only
-            // an exact match. Original decisions: building_fire_turn.json.
-            let rot_step = i32::from(((obj.turret_rot as u8 as u16) << 8) as i16).abs();
-            if obj.turret_rot == 0 || delta.abs() <= rot_step {
-                if let Some(barrel) = world
-                    .substrate
-                    .entities
-                    .get_mut(snap.stable_id)
-                    .and_then(|entity| entity.barrel_facing.as_mut())
+    let mut code = None;
+    subject(&*world, &mut |s| code = Some(s.fire_error(true)));
+    let mut code = code?;
+    let direction = crate::sim::movement::turret::facing_toward_lepton(
+        snap.pos_rx,
+        snap.pos_ry,
+        snap.sub_x,
+        snap.sub_y,
+        target_rx,
+        target_ry,
+        target_sub_x,
+        target_sub_y,
+    );
+    match snap.category {
+        // The table at `0x00737148`.
+        EntityCategory::Unit => match code {
+            // Case 2 (`0x00736FB6..0x0073701C`): a turretless vehicle standing
+            // with no destination turns its hull toward the target at its own
+            // `ROT=` (`0x00737004`) and copies the hull's destination into the
+            // turret slot (`0x0073701C`); a moving one does not turn. A turret
+            // follows its target through the turret sweep.
+            fire_error::FireError::Facing => {
+                if snap.barrel_facing.is_none()
+                    && !snap.has_movement
+                    && let Some(update) = out
+                        .unit_facing
+                        .iter_mut()
+                        .find(|u| u.entity_id == snap.stable_id)
                 {
-                    barrel.snap(desired, binary_frame);
+                    update.hull_destination = Some(direction);
                 }
-                aligned = true;
+            }
+            // Case 5 (`0x00736E7E`).
+            fire_error::FireError::Illegal => {
+                if heal_weapon_drops_target(
+                    world,
+                    rules,
+                    selected.as_ref().map(|selected| selected.weapon),
+                    snap.target,
+                    EntityCategory::Unit,
+                ) {
+                    out.remove_attack.push(snap.stable_id);
+                }
+            }
+            // Case 9 (`0x00737023`): surface only in range (`CanFireAt
+            // 0x006F77B0`).
+            fire_error::FireError::Cloaked => {
+                let mut in_range = false;
+                subject(&*world, &mut |s| in_range = s.in_range());
+                if in_range {
+                    uncloak_to_fire(world, rules, obj, snap.stable_id, sound_enabled);
+                }
+            }
+            // RESIDUAL: case 6 (`0x00737054`) also clears a spawner's targets
+            // (`SpawnManagerClass 0x006B7BB0`), not ported. Trigger: a V3,
+            // Dreadnought, Boomer or Carrier whose shot is CANT (EMP,
+            // paralysis, a bridge beside it). Effect: its launched spawns keep
+            // their target. Frequency: rare. Downstream: spawn targeting only.
+            _ => {}
+        },
+        EntityCategory::Infantry => {
+            if pending_at_fire_frame {
+                // Block 2 (`0x005209FD`): a refusal ends the fire action.
+                if code != fire_error::FireError::Ok {
+                    out.pending_infantry_updates.push((snap.stable_id, None));
+                    out.animation_switches.push((
+                        snap.stable_id,
+                        infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
+                    ));
+                }
+            } else {
+                match code {
+                    // `0x00520721`.
+                    fire_error::FireError::Illegal => {
+                        if heal_weapon_drops_target(
+                            world,
+                            rules,
+                            selected.as_ref().map(|selected| selected.weapon),
+                            snap.target,
+                            EntityCategory::Infantry,
+                        ) {
+                            out.remove_attack.push(snap.stable_id);
+                        }
+                    }
+                    // `0x0052070F`.
+                    fire_error::FireError::Cloaked => {
+                        uncloak_to_fire(world, rules, obj, snap.stable_id, sound_enabled);
+                    }
+                    _ => {}
+                }
             }
         }
-
-        if !aligned {
-            if pending_at_fire_frame {
-                out.pending_infantry_updates.push((snap.stable_id, None));
-                out.animation_switches.push((
-                    snap.stable_id,
-                    infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
-                ));
+        // The table at `0x0044B728`. A delayed shot is dropped on any refusal
+        // (`0x004504D7`).
+        EntityCategory::Structure if delayed_building_slot.is_none() => match code {
+            // The voxel-turret retry (`0x0044B017..0x0044B0CC`): within one
+            // `ROT=` step (`abs(low-byte ROT << 8)` as signed16, without
+            // FacingClass SetROT's clamp; any miss at ROT 0) the turret snaps
+            // (`0x0044B0AC`) and GetFireError is asked again with the same
+            // weapon. Only its last test (B7, the facing) had failed, so the
+            // retry passes. Original decisions: building_fire_turn.json.
+            fire_error::FireError::Facing => {
+                if obj.turret_anim_is_voxel
+                    && let Some(barrel) = snap.barrel_facing
+                {
+                    let delta =
+                        i32::from(barrel.current(binary_frame).wrapping_sub(direction) as i16);
+                    let rot_step = i32::from(((obj.turret_rot as u8 as u16) << 8) as i16).abs();
+                    if obj.turret_rot == 0 || delta.abs() <= rot_step {
+                        if let Some(barrel) = world
+                            .substrate
+                            .entities
+                            .get_mut(snap.stable_id)
+                            .and_then(|entity| entity.barrel_facing.as_mut())
+                        {
+                            barrel.snap(direction, binary_frame);
+                        }
+                        code = fire_error::FireError::Ok;
+                    }
+                }
             }
-            // `UnitClass::Fire_At_Target @ 0x00736DF0` case 2
-            // (`0x00736FB6`..`0x0073701C`): a TURRETLESS vehicle that is
-            // stationary with no destination turns its HULL toward the target at
-            // its own `ROT=` — `FacingClass::Set(+0x388)` at `0x00737004`, with
-            // no locomotor involvement — and copies the hull's raw destination
-            // into the turret slot at `0x0073701C`. A moving one does not turn
-            // at all. This is the emitter the gate above depends on: without it
-            // an artillery piece would be refused every frame and never line up.
-            if snap.category == EntityCategory::Unit
-                && snap.barrel_facing.is_none()
-                && !snap.has_movement
-                && let Some(update) = out
-                    .unit_facing
-                    .iter_mut()
-                    .find(|u| u.entity_id == snap.stable_id)
-            {
-                update.hull_destination = Some(desired);
+            // Codes 1, 5, 6 and 8 (`0x0044B0DE`): the target is dropped.
+            // RESIDUAL: the rest of that arm (`+0x664 = 0`, the planning hook,
+            // Queue_Mission(Guard) and Commence, `0x0044B0DE..0x0044B148`, then
+            // the Gattling tail it falls into) and the `+0x148` count both
+            // tables bump on codes 0 and 3 (Unit `0x0073713A`, Building
+            // `0x0044B713`/`0x0044B23C`) are not ported; they belong with the
+            // Gattling and mission owners.
+            fire_error::FireError::Ammo
+            | fire_error::FireError::Illegal
+            | fire_error::FireError::Cant
+            | fire_error::FireError::Range => out.remove_attack.push(snap.stable_id),
+            // Code 9 (`0x0044B284`).
+            fire_error::FireError::Cloaked => {
+                uncloak_to_fire(world, rules, obj, snap.stable_id, sound_enabled);
             }
-            // FireDecision::Facing — drives gattling spin-up via
-            // drives_gattling_spinup() == true.
-            return None;
+            _ => {}
+        },
+        EntityCategory::Structure => {}
+        // State 4 (`0x0041834C`): code 9 surfaces. RESIDUAL: the other codes'
+        // state moves (to 5 or 10, the strafe and CurleyShuffle arms,
+        // `0x00418368`/`0x00418544`) belong to the aircraft attack loop;
+        // VERA holds state 4 and asks again on its next visit.
+        EntityCategory::Aircraft => {
+            if code == fire_error::FireError::Cloaked {
+                uncloak_to_fire(world, rules, obj, snap.stable_id, sound_enabled);
+            }
         }
     }
+    if code != fire_error::FireError::Ok {
+        return None;
+    }
+    // GetFireError passed T21, so the slot names a weapon.
+    let selected = selected?;
 
     if delayed_building_slot.is_none()
         && snap.category == EntityCategory::Structure
@@ -2948,6 +2600,67 @@ fn admit_attacker_fire<'r>(
     })
 }
 
+/// `Fire_At_Target`'s ILLEGAL arm (Unit `0x00736E7E`, Infantry `0x00520721`):
+/// a healing weapon (`0x006F3970` of the selected slot, Damage + AmbientDamage
+/// below zero) keeps only a damaged target of the firer's own class (health
+/// ratio below `Rules+0x16F8`, 1.0; a NaN ratio keeps); any other target is
+/// dropped. Every other weapon keeps it for `TechnoClass::AI`'s 16-frame
+/// check.
+fn heal_weapon_drops_target(
+    world: &Simulation,
+    rules: &RuleSet,
+    weapon: Option<&WeaponType>,
+    target: TargetKind,
+    class: EntityCategory,
+) -> bool {
+    if weapon.is_none_or(|weapon| weapon.damage.wrapping_add(weapon.ambient_damage) >= 0) {
+        return false;
+    }
+    let TargetKind::Entity(id) = target else {
+        return true;
+    };
+    let Some(target) = world
+        .substrate
+        .entities
+        .get(id)
+        .filter(|target| target.category == class)
+    else {
+        return true;
+    };
+    let strength = rules
+        .object(world.interner.resolve(target.type_ref()))
+        .map_or(0, |object| object.strength);
+    fire_error::health_ratio_full(target.health.current, strength)
+}
+
+/// `TechnoClass::Uncloak` (vt+0x45C, `0x007036C0`) with its sound, each
+/// class's CLOAKED (9) arm.
+fn uncloak_to_fire(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    obj: &ObjectType,
+    id: u64,
+    sound_enabled: bool,
+) {
+    let binary_frame = world.session.binary_frame;
+    let start = world
+        .substrate
+        .entities
+        .get_mut(id)
+        .and_then(|entity| entity.cloak.as_mut())
+        .map(|cloak| cloak.start_uncloaking_to_fire(binary_frame as i32, obj.cloaking_speed));
+    if start.is_some_and(|result| result.play_sound)
+        && let Some(sound_name) = rules.general.cloak_sound.as_deref()
+        && let Some(sink) = sound_enabled.then_some(&mut world.sound_events)
+        && let Some(entity) = world.substrate.entities.get(id)
+    {
+        sink.push(SimSoundEvent::cloak_sound(
+            sound_name.to_owned(),
+            &entity.position,
+        ));
+    }
+}
+
 /// Call-local result of admission and fire-action work.
 /// This is call-local data, never a saved permission to fire on a later frame.
 /// Native Mission_Attack418403 checks legality once before its burst loop;
@@ -2995,36 +2708,9 @@ fn emit_admitted_fire(
     // the first random draw as well as above bullet allocation, a spawner fire
     // consumes zero scenario-RNG draws natively.
     //
-    // `TechnoClass::GetFireError` step 18 (`disassemble_bytes 0x006FC606`) adds
-    // three gates ahead of the shot, all read off the FIRER, not the target:
-    //   1. `TechnoClass__IsOnBridge_ForFiring` (`0x00703B10`) → error 6.
-    //      **NOT MODELLED.** It is not a plain "am I on a bridge deck" test —
-    //      it is gated on the firer's own OnBridge byte being *clear*, then
-    //      samples the firer's cell plus four direction-offset neighbours and
-    //      tests cell flags 0x100/0x800 in four different combinations. It
-    //      refuses a launch made from under or alongside a bridge span. Trigger:
-    //      a V3/Dreadnought/Boomer ordered to fire while standing in a
-    //      bridge-adjacent cell. Player effect: VERA launches where retail
-    //      refuses; the missile flies where retail would have made the unit hold
-    //      fire. Frequency: uncommon — needs the launcher parked under a span,
-    //      which players avoid because it blocks line of sight anyway.
-    //      Downstream risk: none — the gate only suppresses a launch, it feeds
-    //      nothing.
-    //
-    //      Blocker updated 2026-08-19: the flags and offsets are no longer
-    //      UNCHECKED. 0x100 is "cell belongs to a bridge", 0x800 is the span's
-    //      axis bit, and the four offsets are `g_DirectionOffsets` 0x0089F688
-    //      indices 4/0/2/6 — S, N, E, W — with N and S requiring 0x800 SET and
-    //      E and W requiring it CLEAR (table filled at runtime from 0x0049F2F0).
-    //      The predicate itself is now ported, as
-    //      `app::presentation::instances::helpers::is_on_bridge_for_firing`.
-    //      What blocks this gate is placement, not evidence: that function sits
-    //      above the sim boundary and `sim/` must never depend on `app/`, so
-    //      wiring it here means moving the predicate down to `map/bridge_facts`
-    //      first and having both callers read it there.
-    //   2. `this->vtable+0x380` (FootClass::IsParalyzed `0x004DE770`) → error
-    //      6. MODELLED in `admit_attacker_fire`.
-    //   3. `SpawnManagerClass::CountAliveSpawns == 0` → error 3. MODELLED below.
+    // GetFireError T35 (`0x006FC606`) has already refused a launch from a
+    // bridge-side cell (`IsOnBridge_ForFiring 0x00703B10`), from a paralysed
+    // firer, and with no spawn out of regeneration (REARM).
     if weapon.spawner {
         let alive = world
             .substrate
@@ -3877,8 +3563,6 @@ pub(crate) fn tick_combat(
             .as_ref()
             .is_none_or(|fixture| fixture.fog_enabled)
     });
-    let power_snapshot = world.power_states.clone();
-    let power_states = &power_snapshot;
     let active_wave_owners: BTreeSet<_> = world.active_wave_links.keys().copied().collect();
     let missile_detonations = std::mem::take(&mut world.pending_missile_detonations);
 
@@ -3931,13 +3615,8 @@ pub(crate) fn tick_combat(
         under_attack_events.append(&mut pings);
     }
 
-    // Pre-scan: collect entities blocked from firing by locomotor or power state.
-    let fire_blocked = combat_fire_gate::collect_fire_blocked_entities(
-        &mut world.substrate.entities,
-        power_states,
-        Some(rules),
-        &mut world.interner,
-    );
+    // Pre-scan: collect entities whose attack routine does not run.
+    let fire_blocked = combat_fire_gate::collect_fire_blocked_entities(&world.substrate.entities);
 
     let keys: Vec<u64> = world.substrate.entities.keys_sorted();
 

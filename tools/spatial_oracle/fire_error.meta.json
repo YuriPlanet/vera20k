@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "UnitClass 0x00740FD0, InfantryClass 0x0051C8B0, BuildingClass 0x00447F10 and AircraftClass 0x0041A9E0 GetFireError, each running TechnoClass::GetFireError 0x006FC0B0: returned code and ordered substituted-call names per row, covering every test T1..T61, U1..U13, I1..I10, B1..B7, A1..A2 with a deciding row and a row where it runs and does not decide (T22 dead, T43 dominated by T4: see covers). Not consumer behaviour, weapon selection or the stubbed leaves.",
+  "assumptions": [
+    "One emulator; per row the scratch region and stack frame are rewritten, general registers zeroed, FPCW 0x0E7F with an empty x87 stack; a write hook proves no native write outside the stack, so no state carries between rows.",
+    "[0x00B0EB34] = 104 from its static initializers 0x006F28A0, 0x006F28D0, 0x006F28F0, 0x006F2910, 0x006F2930, 0x006F2950, 0x006F2970 run in address order at FPCW 0x027F; 0x0047B3A0's local statics warmed once through CellClass GetCoords 0x00486840 before the write hook.",
+    "Frame [0x00A8ED84] per row (1000 unless stated); Rules [0x008871E0]+0x16F8 = 1.0.",
+    "Original vtables cloned to scratch with only the stubbed slots replaced; each clone's +0x3C0 equals the called class entry.",
+    "Type pointer Unit/Aircraft +0x6C4, Infantry +0x6C0, Building +0x520; AbstractFlags +0x14 = 7 Foot, 3 Building, 2 TerrainClass object, 0 cell; firer house index 0, target house 1; veterancy 0.0, so GetWeapon returns TechnoType+0x898+0x1C*i.",
+    "Building occupant vector count +0x694 = the occupants verdict with the fire index +0x69C at its end, so Building GetWeapon 0x004526F0 resolves the type's own slots.",
+    "All weapon slots share one warhead and one projectile; only the fired weapon's are read. FacingClass fixtures have ROT 0, so Current 0x004C93D0 returns the value.",
+    "Excluded because they fault natively: Burst 0 with weapon index 0 on a Unit (T44 IDIV), a Spawner weapon without SpawnManager (T35), a NULL warhead (T36), a NULL target cell (T40), a NULL radio link while tethered (U5), weapon index -1 (GetWeapon returns NULL, dereferenced at 0x006FC32B); a NULL projectile, read unchecked wherever T38, T39, T41, U11 or U12 reads it, is never used.",
+    "covers tags are checked against the executed trace: the deciding return block and each test's first instruction (lane sections 2 and 3)."
+  ],
+  "substitutions": [
+    "Firer vt+0x3A8 in_range, vt+0x2E8 naval_selector, vt+0x54 firer_high_flying, vt+0x1BC firer_cell; Building vt+0x408 occupants, vt+0x4E8 turret_direction: return the row's verdict, logged.",
+    "Target vt+0x50 low_flying, vt+0x54 high_flying, vt+0x68 visual_state, vt+0x78 target_layer, vt+0x1BC target_cell: return the row's verdict, logged.",
+    "Direct calls CellClass 0x004870D0 sensor, HouseClass 0x004F9A50 allied, 0x00703B10 bridge_for_firing, 0x0062A8E0 can_infect, 0x00471C90 can_capture, CellClass 0x00487C10 deploy_cell_ok, 0x005F3DB0 direction_to_target, HouseClass 0x004FCE30 power_fraction (binary64 via FLD): the row's verdict, logged.",
+    "Scratch ILocomotion objects: firer +0x80 locomotor_moving, +0x8C locomotor_can_fire; target +0x80 target_locomotor_moving; IPersist +0xC jumpjet_locomotor writes the CLSID at 0x007E9AC0 or the Drive CLSID; logged. IUnknown QueryInterface (IID_IPersist 0x00818858 only), AddRef, Release: silent.",
+    "Aircraft IFlyControl at +0x6C0: scratch vtable, +0x1C fighter, logged.",
+    "MapClass::GetCell 0x00565730 at its two direct sites (returns 0x006FC19C, 0x0074107D): a scratch cell, silent; any other caller fails the row."
+  ],
+  "entry_points": {
+    "unit_get_fire_error": "0x00740FD0",
+    "infantry_get_fire_error": "0x0051C8B0",
+    "building_get_fire_error": "0x00447F10",
+    "aircraft_get_fire_error": "0x0041A9E0",
+    "techno_get_fire_error": "0x006FC0B0",
+    "damage_query": "0x006F3970",
+    "building_operational": "0x004555D0",
+    "building_get_weapon": "0x004526F0",
+    "level_height_initializer": "0x006F2970"
+  },
+  "payload_sha256": "daf8a4abc820fa3f3a957eaa1dda5a67a22a075cb45407d47e26d63c8e83feb8"
+}

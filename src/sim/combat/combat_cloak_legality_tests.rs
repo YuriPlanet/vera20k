@@ -91,6 +91,7 @@ fn acquire(
         crate::sim::combat::ScanMission::Guard,
         None,
         crate::sim::combat::line_of_fire::LineOfFireInputs::default(),
+        None,
     )
 }
 

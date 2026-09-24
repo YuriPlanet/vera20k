@@ -154,7 +154,9 @@ pub struct WeaponType {
     pub disguise_fire_only: bool,
     /// Mind control effect has no unit limit (+0x140).
     pub infinite_mind_control: bool,
-    /// Unit can fire this weapon while moving (+0x141).
+    /// Unit can fire this weapon while moving (+0x141). The constructor sets
+    /// it (`0x00771DE6`) and `ReadINI` keeps that as its default
+    /// (`0x0077221E..0x00772232`); stock only DiskDrain says no.
     pub fire_while_moving: bool,
     /// Weapon drains target's health to heal the firer (+0x142).
     pub drain_weapon: bool,
@@ -283,7 +285,7 @@ impl WeaponType {
             mig_attack_cursor: section.get_bool("MigAttackCursor").unwrap_or(false),
             disguise_fire_only: section.get_bool("DisguiseFireOnly").unwrap_or(false),
             infinite_mind_control: section.get_bool("InfiniteMindControl").unwrap_or(false),
-            fire_while_moving: section.get_bool("FireWhileMoving").unwrap_or(false),
+            fire_while_moving: section.get_bool("FireWhileMoving").unwrap_or(true),
             drain_weapon: section.get_bool("DrainWeapon").unwrap_or(false),
             fire_in_transport: section.get_bool("FireInTransport").unwrap_or(false),
             suicide: section.get_bool("Suicide").unwrap_or(false),
