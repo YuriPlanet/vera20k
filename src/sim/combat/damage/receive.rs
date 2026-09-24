@@ -1,19 +1,33 @@
 //! Receiver preparation: Techno armor/gates and Object entry/kernel.
 //! Object's mutable packet rewrite, HP commit and native return classification
 //! live in combat::object_health and execute once after this preparation.
-//! The represented order follows Techno701900 and Object5F5390; defense math
-//! below retains its explicitly documented older host-f64 boundary.
+//! The represented order follows Techno701900 and Object5F5390.
 
 use super::gates::evaluate_gates;
 use super::kernel::apply_warhead_damage;
-use super::{CombatMods, DamageGate, DamageOutcome, ImmunityInputs, TargetDamageView};
+use super::{DamageGate, DamageOutcome, DefenceDivisors, ImmunityInputs, TargetDamageView};
+use crate::util::native_x87::MaskedX87Chop53 as X;
 
-/// Unmigrated defense-stage host-f64 conversion. This saturating cast does not
-/// implement native7C5F00's signed64/low32 contract. The shared warhead kernel
-/// already uses X87Chop53; the preceding defense arithmetic still needs migration.
-#[inline]
-fn ftol(v: f64) -> i32 {
-    v as i32
+/// `TechnoClass::ReceiveDamage @ 0x00701900`'s defence divides for a
+/// defended, non-negative hit (`0x00701939..0x007019E3`), each an x87 divide
+/// (53-bit, chop) and `Math::ftol`'s low 32 bits:
+/// `ftol(damage / (GetArmorMultForType * Techno+0x158))`, then for a STRONGER
+/// rank `ftol(damage / VeteranArmor)`, then at least 1. A zero divisor gives
+/// an infinity whose conversion is 0, so the hit still lands for 1.
+///
+/// Native execution: `tools/spatial_oracle/damage_build.py` (`receive` rows).
+pub(crate) fn defence_divides(damage: i32, divisors: &DefenceDivisors) -> i32 {
+    let mut damage = X::ftol_i32_low_masked(X::div(
+        X::load_i32(damage),
+        X::mul(
+            X::load_f32(divisors.house_type_armor),
+            X::load_f64(divisors.unit_armor),
+        ),
+    ));
+    if let Some(rank_armor) = divisors.rank_armor {
+        damage = X::ftol_i32_low_masked(X::div(X::load_i32(damage), X::load_f64(rank_armor)));
+    }
+    damage.max(1)
 }
 
 /// Prepare the receiver packet without committing HP or predicting its result.
@@ -27,7 +41,7 @@ pub(crate) fn receive_damage(
     percent_at_max: f64,
     verses_f64: &[f64; 11],
     target: &TargetDamageView,
-    mods: &CombatMods,
+    divisors: &DefenceDivisors,
     gates: &ImmunityInputs,
     distance_leptons: i32,
     scenario_no_damage: bool,
@@ -42,23 +56,12 @@ pub(crate) fn receive_damage(
         reached_survivor_postlude: false,
     };
 
-    // Nonnegative receiver divides. Healing (incoming < 0) bypasses. gamemd
-    // runs the divides BEFORE the immunity gates (TypeImmune included), so the
-    // gates are evaluated below, not before the divides.
+    // Nonnegative receiver divides (`0x0070192B..0x00701933` skips them for
+    // ignoreDefenses or a heal). gamemd runs them BEFORE the immunity gates
+    // (TypeImmune included), so the gates are evaluated below.
     let mut dmg = incoming;
     if !gates.ignore_defenses && dmg >= 0 {
-        // country-armor DIVIDE folding per-unit ArmorMultiplier, ONE ftol.
-        // FDIVR: damage / (country * unit); larger mult => less damage.
-        let armor_div = mods.defender_country_armor * mods.defender_unit_armor;
-        if armor_div != 0.0 {
-            dmg = ftol(dmg as f64 / armor_div);
-        }
-        // VeteranArmor DIVIDE, ONE ftol (only when set and != 1.0).
-        if mods.defender_vet_armor != 0.0 && mods.defender_vet_armor != 1.0 {
-            dmg = ftol(dmg as f64 / mods.defender_vet_armor);
-        }
-        // Defender min-1: AFTER the divides, BEFORE the gates and Verses kernel.
-        dmg = dmg.max(1);
+        dmg = defence_divides(dmg, divisors);
     }
 
     // Immunity gates (after the divides; TypeImmune handled inside).
@@ -151,11 +154,169 @@ pub(crate) fn receive_damage(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
-    use crate::sim::combat::damage::{ArmorClass, CombatMods, ImmunityInputs, TargetDamageView};
+    use crate::sim::combat::damage::{
+        ArmorClass, DefenceDivisors, ImmunityInputs, TargetDamageView,
+    };
 
     const MAXD: i32 = 10000;
+
+    /// A TechnoType whose rank lists hold (or lack) `ability`.
+    pub(crate) fn object_with_ability(
+        ability: crate::rules::object_type::Ability,
+        veteran: bool,
+        elite: bool,
+    ) -> crate::rules::object_type::ObjectType {
+        use crate::rules::object_type::{AbilityFlags, ObjectCategory, ObjectType};
+        let ini = crate::rules::ini_parser::IniFile::from_str("[X]\nStrength=300\n");
+        let mut object =
+            ObjectType::from_ini_section("X", ini.section("X").unwrap(), ObjectCategory::Vehicle);
+        let flags = |on: bool| {
+            if on {
+                AbilityFlags::from_abilities(&[ability])
+            } else {
+                AbilityFlags::from_abilities(&[])
+            }
+        };
+        object.veteran_abilities = flags(veteran);
+        object.elite_abilities = flags(elite);
+        object
+    }
+
+    /// The production adapter picks the float native loaded:
+    /// `RuleSet::country_armor_mult_for_type` over every corpus row whose
+    /// WhatAmI VERA represents (infantry, unit, aircraft, building with and
+    /// without `BuildCat=Combat`), parsed through the production reader.
+    #[test]
+    fn original_armor_mult_for_type_rows_through_the_rules_reader() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        #[derive(serde::Deserialize)]
+        struct Corpus {
+            receive: Vec<Row>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Row {
+            input: Input,
+            armor_mult_for_type: u32,
+        }
+        #[derive(serde::Deserialize)]
+        struct Input {
+            type_whatami: u32,
+            build_cat: u32,
+            house_type_mults: [u32; 5],
+        }
+        let corpus: Corpus = serde_json::from_str(include_str!(
+            "../../../../tools/spatial_oracle/damage_build.json"
+        ))
+        .expect("original damage-build corpus");
+        let mut rulesets = std::collections::BTreeMap::new();
+        let mut compared = 0;
+        for (index, row) in corpus.receive.iter().enumerate() {
+            let input = &row.input;
+            let list = match input.type_whatami {
+                0x10 => "InfantryTypes",
+                0x28 => "VehicleTypes",
+                0x03 => "AircraftTypes",
+                0x07 => "BuildingTypes",
+                _ => continue,
+            };
+            let rules = rulesets
+                .entry((input.house_type_mults, list, input.build_cat))
+                .or_insert_with(|| {
+                    let float = |bits: u32| f32::from_bits(bits).to_string();
+                    let [infantry, units, aircraft, buildings, defenses] =
+                        input.house_type_mults.map(float);
+                    let build_cat = match input.build_cat {
+                        5 => "BuildCat=Combat\n",
+                        3 => "BuildCat=Power\n",
+                        _ => "",
+                    };
+                    RuleSet::from_ini(&IniFile::from_str(&format!(
+                        "[Countries]\n0=T\n[T]\nArmorInfantryMult={infantry}\n\
+                         ArmorUnitsMult={units}\nArmorAircraftMult={aircraft}\n\
+                         ArmorBuildingsMult={buildings}\nArmorDefensesMult={defenses}\n\
+                         [{list}]\n0=X\n[X]\nStrength=1\n{build_cat}"
+                    )))
+                    .expect("armor-mult fixture parses")
+                });
+            let object = rules.object("X").expect("fixture type");
+            assert_eq!(
+                rules.country_armor_mult_for_type("T", object).to_bits(),
+                row.armor_mult_for_type,
+                "row {index}"
+            );
+            compared += 1;
+        }
+        assert!(compared > 1000, "{compared} rows compared");
+    }
+
+    /// Native execution of `0x00701939..0x007019E3`
+    /// (`tools/spatial_oracle/damage_build.py`, `receive` rows): VERA's
+    /// STRONGER gate takes the branch native took, and the divides reproduce
+    /// every result from the float `GetArmorMultForType` loaded.
+    #[test]
+    fn original_defence_divides_rows() {
+        use crate::rules::object_type::Ability;
+        use crate::sim::combat::veterancy::{has_weapon_ability, rank_of};
+        use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
+        #[derive(serde::Deserialize)]
+        struct Corpus {
+            receive: Vec<Row>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Row {
+            input: Input,
+            stages: Vec<String>,
+            armor_mult_for_type: u32,
+            damage: i32,
+        }
+        #[derive(serde::Deserialize)]
+        struct Input {
+            damage: i32,
+            armor_mult: Option<u64>,
+            veterancy: u32,
+            veteran_stronger: u8,
+            elite_stronger: u8,
+            veteran_armor: u32,
+        }
+        let corpus: Corpus = serde_json::from_str(include_str!(
+            "../../../../tools/spatial_oracle/damage_build.json"
+        ))
+        .expect("original damage-build corpus");
+        assert_eq!(corpus.receive.len(), 1659);
+        for (index, row) in corpus.receive.iter().enumerate() {
+            let input = &row.input;
+            let object = object_with_ability(
+                Ability::Stronger,
+                input.veteran_stronger != 0,
+                input.elite_stronger != 0,
+            );
+            let stronger = has_weapon_ability(
+                rank_of(NativeF32Bits::from_bits(input.veterancy)),
+                &object,
+                Ability::Stronger,
+            );
+            assert_eq!(
+                stronger,
+                row.stages.iter().any(|stage| stage == "rank_armor"),
+                "row {index}: STRONGER gate"
+            );
+            // ReadDouble's value: the parsed single widened.
+            let veteran_armor = f64::from(f32::from_bits(input.veteran_armor));
+            let divisors = DefenceDivisors {
+                house_type_armor: NativeF32Bits::from_bits(row.armor_mult_for_type),
+                unit_armor: NativeF64Bits::from_bits(input.armor_mult.unwrap_or(1.0_f64.to_bits())),
+                rank_armor: stronger.then(|| NativeF64Bits::from_bits(veteran_armor.to_bits())),
+            };
+            assert_eq!(
+                defence_divides(input.damage, &divisors),
+                row.damage,
+                "row {index}"
+            );
+        }
+    }
 
     fn tgt(_strength: i32, hp: i32) -> TargetDamageView {
         TargetDamageView {
@@ -187,7 +348,7 @@ mod tests {
             1.0,
             &verses(0.25),
             &tgt(300, 0),
-            &CombatMods::default(),
+            &DefenceDivisors::default(),
             &allow(),
             0,
             false,
@@ -217,7 +378,7 @@ mod tests {
             1.0,
             &verses(1.0),
             &tgt(300, 0),
-            &CombatMods::default(),
+            &DefenceDivisors::default(),
             &ignoring,
             0,
             false,
@@ -235,7 +396,7 @@ mod tests {
             1.0,
             &verses(0.25),
             &tgt(300, 1),
-            &CombatMods::default(),
+            &DefenceDivisors::default(),
             &allow(),
             0,
             false,
@@ -253,80 +414,13 @@ mod tests {
             1.0,
             &verses(1.0),
             &tgt(300, 50),
-            &CombatMods::default(),
+            &DefenceDivisors::default(),
             &allow(),
             0,
             false,
             MAXD,
         );
         assert_eq!(o.hp_delta, 500);
-    }
-
-    #[test]
-    fn veteran_armor_divides() {
-        // VeteranArmor 1.5: 60 incoming => ftol(60/1.5)=40.
-        let mods = CombatMods {
-            defender_vet_armor: 1.5,
-            ..CombatMods::default()
-        };
-        let o = receive_damage(
-            60,
-            0.0,
-            1.0,
-            &verses(1.0),
-            &tgt(300, 300),
-            &mods,
-            &allow(),
-            0,
-            false,
-            MAXD,
-        );
-        assert_eq!(o.hp_delta, 40);
-    }
-
-    #[test]
-    fn country_armor_mult_applies() {
-        // Country armor mult 2.0 (tougher): 80 incoming => ftol(80/2)=40.
-        let mods = CombatMods {
-            defender_country_armor: 2.0,
-            ..CombatMods::default()
-        };
-        let o = receive_damage(
-            80,
-            0.0,
-            1.0,
-            &verses(1.0),
-            &tgt(300, 300),
-            &mods,
-            &allow(),
-            0,
-            false,
-            MAXD,
-        );
-        assert_eq!(o.hp_delta, 40);
-    }
-
-    #[test]
-    fn min_one_floor_positive() {
-        // Country armor mult 100 makes a 50-incoming hit floor to 1 (defender
-        // min-1 after the divides), then Verses 1.0 keeps 1.
-        let mods = CombatMods {
-            defender_country_armor: 100.0,
-            ..CombatMods::default()
-        };
-        let o = receive_damage(
-            50,
-            0.0,
-            1.0,
-            &verses(1.0),
-            &tgt(300, 300),
-            &mods,
-            &allow(),
-            0,
-            false,
-            MAXD,
-        );
-        assert_eq!(o.hp_delta, 1);
     }
 
     #[test]
@@ -338,7 +432,7 @@ mod tests {
             1.0,
             &verses(0.0001),
             &tgt(1000, 1000),
-            &CombatMods::default(),
+            &DefenceDivisors::default(),
             &allow(),
             0,
             false,
@@ -360,7 +454,7 @@ mod tests {
             1.0,
             &verses(1.0),
             &tgt(300, 300),
-            &CombatMods::default(),
+            &DefenceDivisors::default(),
             &g,
             0,
             false,
@@ -382,7 +476,7 @@ mod tests {
             1.0,
             &verses(1.0),
             &tgt(300, 300),
-            &CombatMods::default(),
+            &DefenceDivisors::default(),
             &g,
             0,
             false,

@@ -75,11 +75,13 @@ at `Documents/vera20k-handoff/2026-09-24-combat-audit`) ranks the remaining gaps
 DetonateAtCoord's special chain for Inviso shots as #496 (`2e787283`), and FireAt's launch geometry
 (the `WeaponTypeClass::GetSpeed` launch speed, without which no retail Grizzly/Rhino shell ever
 launched past one cell; `Dropping=`, not `Arcing=`, as the only source swap; the moving-target lead
-`70BCB0`; the homing fuse on the unled target; oracle `projectile_oracle/fireat_speed`). Next, in
-order: the damage numbers (`Fire_At` damage build and `ReceiveDamage` defence divides through x87,
-with difficulty `Armor=` removed: `House+0x1A0` has no damage reader), `Apply_area_damage`'s
-dispatch gates (double deaths in cascades), kill credit (buildings are not Trainable), retaliation
-gates and the object-owned rearm timer, then the remaining lanes' ranked rows.
+`70BCB0`; the homing fuse on the unled target; oracle `projectile_oracle/fireat_speed`) as #497
+(`96b6c137`), and the damage numbers (`Fire_At`'s damage build `6FE306..6FE45C` and
+`ReceiveDamage`'s defence divides `701939..7019E3` through x87, with difficulty and country
+`Armor=` removed because `House+0x1A0` has no damage reader; oracle `spatial_oracle/damage_build`).
+Next, in order: `Apply_area_damage`'s dispatch gates (double deaths in cascades), kill credit
+(buildings are not Trainable), retaliation gates and the object-owned rearm timer, then the
+remaining lanes' ranked rows.
 
 ## Landed mechanisms
 
@@ -1186,9 +1188,12 @@ Whole-combat gaps (plan list plus review coverage top 10):
   null-destination helper never clears the NavQueue (`741970` mode 1); production ignores
   FindFactory's online
   argument (`5F7900`), which the power toggle and triggers (GoOffline `452360`) also clear.
-- Open-topped passenger fire: VERA fires a passenger's weapon from the transport, so a Chrono
-  Legionnaire or Yuri in a Battle Fortress has no TemporalClass or CaptureManager behind the shot;
-  the Temporal Update's OpenToppedWarpDistance release is ported but has no producer yet.
+- Open-topped passenger fire: VERA's passengers never fire. The `WeaponOverride::OpenTransport`
+  bridge indexes the transport's own weapons, so a loaded Battle Fortress fires only its
+  `20mmRapid` (its missing Secondary returns 0 before the override arm). Natively each passenger
+  fires itself with `+0x82` set (`SetInOpenTransport 710470`): its own weapon, rank, TemporalClass
+  or CaptureManager, and `OpenToppedDamageMultiplier` (ported in `damage::attacker`, unreached).
+  The Temporal Update's OpenToppedWarpDistance release is ported but has no producer yet.
 - Destruction: construct each death object at its native call (voxel debris, debris anims,
   death anims, InfDeath anims and the death weapon's impact anim inline in the receiver, the
   outer impact anim after its receivers; the fatal prelude after the Techno death arm; verify the

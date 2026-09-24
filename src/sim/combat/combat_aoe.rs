@@ -2904,7 +2904,13 @@ mod tests {
         let rules = RuleSet::from_ini(&ini).expect("Rhino/Grizzly receiver fixture");
         let warhead = rules.warhead("AP").expect("AP").clone();
         assert_eq!(rules.weapon("RhinoGun").unwrap().damage, 90);
-        assert!(rules.object("MTNK").unwrap().veteran_stronger);
+        assert!(
+            rules
+                .object("MTNK")
+                .unwrap()
+                .veteran_abilities
+                .has(crate::rules::object_type::Ability::Stronger)
+        );
         assert_eq!(rules.general.veteran_armor, 1.5);
 
         let mut interner = test_interner();
@@ -3234,6 +3240,8 @@ mod tests {
             "[General]\nFixtureOnly=1\n\
              [Normal]\nArmor=1.0\n\
              [Easy]\nArmor=1.2\n\
+             [Countries]\n0=EasyHouse\n\
+             [EasyHouse]\nArmorInfantryMult=1.2\n\
              [InfantryTypes]\n0=E1\n\
              [VehicleTypes]\n0=MTNK\n\
              [AircraftTypes]\n\
@@ -3361,15 +3369,20 @@ mod tests {
 
         assert_eq!(entities.get(2).unwrap().health.current, 0);
         assert!(death.despawned_ids.contains(&2));
+        // The Easy house's `[Easy] Armor=1.2` divides nothing: it only feeds
+        // `House+0x1A0`, which no damage path reads. Its country's
+        // `ArmorInfantryMult=1.2` does (`GetArmorMultForType @ 0x0050BD30`),
+        // after the prone pre-scale: ftol(ftol(65 * .5) / 1.2) = 26. Dividing
+        // first would give ftol(ftol(65 / 1.2) * .5) = 27.
         assert_eq!(
             entities.get(3).unwrap().health.current,
             74,
-            "ftol(65 * .5)=32, then Easy armor 1.2 yields 26 (not 27)"
+            "ftol(65 * .5) = 32, then the country's 1.2 yields 26 (not 27)"
         );
         assert_eq!(
             entities.get(4).unwrap().health.current,
             46,
-            "standing Infantry bypasses the concrete prone pre-scale"
+            "standing Infantry bypasses the concrete prone pre-scale: 65 / 1.2 = 54"
         );
     }
 

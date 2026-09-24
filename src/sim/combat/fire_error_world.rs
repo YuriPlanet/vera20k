@@ -197,11 +197,15 @@ impl FireSubject<'_> {
                 .map_or(0, |z| z as i32),
             berserk: firer.berserk.active,
             falling: firer.object_is_falling_down != 0,
-            // An open-topped transport fires its passengers' weapons itself in
-            // VERA (`WeaponOverride::OpenTransport`), so a passenger reaches
-            // T32/T33 only through a target of its own.
-            in_open_transport: transport
-                .is_some_and(|(_, transport_obj)| transport_obj.is_some_and(|obj| obj.open_topped)),
+            // VERA's passengers never reach the fire path, so a passenger
+            // reaches T32/T33 only through a target of its own.
+            in_open_transport: crate::sim::passenger::open_topped_transport(
+                &self.world.substrate.entities,
+                self.rules,
+                &self.world.interner,
+                firer,
+            )
+            .is_some(),
             transporter: match transport {
                 None => Transporter::None,
                 Some((transport, _)) if Some(transport.stable_id()) == target_id => {

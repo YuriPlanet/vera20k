@@ -1,21 +1,24 @@
 //! Damage math over caller-built views: the shared warhead numeric receiver,
-//! surrounding receiver stages and staged attacker transforms.
+//! the surrounding receiver stages and FireAt's damage build.
 //!
 //! ## Dependency rules
 //! - sim/ submodule: uses shared util arithmetic and caller-resolved rule inputs.
 //! - NEVER depends on render/ui/sidebar/audio/net. No EntityStore/GameEntity
 //!   reach-in: callers extract inputs into the value-types below.
-//! - The kernel uses native PC53/chop, binary32 spills and signed64 conversion's
-//!   low32 through util/native_x87. A host `f64 as i32` is not that conversion.
-//!   Surrounding defense/attacker stages still contain unmigrated host arithmetic.
+//! - The kernel, the defence divides and the attacker's damage build use native
+//!   PC53/chop, binary32 spills and signed64 conversion's low32 through
+//!   util/native_x87. A host `f64 as i32` is not that conversion.
 //!
 //! Original `489180` kernel comparisons live in spatial_oracle/estimated_damage;
+//! the defence divides and the damage build in spatial_oracle/damage_build;
 //! shared hardware primitive comparisons live in spatial_oracle/x87_masked_hardware.
 //! These bounded comparisons do not establish complete receiver/attacker parity.
 //! See docs/research/SHARED_WARHEAD_NUMERIC_COMPARISON.md and local citations.
 //!
 //! Ordered Apply_area_damage records use the receiver service live. Legacy
 //! direct/radiation routes still arrive as precomputed damage amounts.
+
+use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 
 pub(crate) mod attacker;
 pub(crate) mod gates;
@@ -27,61 +30,29 @@ pub(crate) mod receive;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ArmorClass(pub u8);
 
-/// Attacker (Fire_At) + defender (ReceiveDamage) modifiers, gathered by the
-/// caller. All default 1.0 => no-op. Carried as f64 because gamemd applies each
-/// as a double multiply/divide with an ftol truncation per stage.
-///
-/// Attacker stages are gamemd's verified Fire_At chain (not the pre-plan
-/// guess): FirePower fold -> VeteranCombat -> Occupy -> TankBunker -> OpenTopped.
-/// Each stage is gated in gamemd by a *condition flag*; the caller resolves the
-/// flag into either the rules mult (stage active) or 1.0 (stage inactive), so
-/// `fire_damage` can multiply unconditionally (ftol(d*1.0) == d).
+/// `TechnoClass::ReceiveDamage @ 0x00701900`'s defence divisors for one
+/// target, gathered by the caller (`0x00701939..0x007019E3`, see
+/// [`receive::defence_divides`]).
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct CombatMods {
-    // --- Attacker side (Fire_At), folded/truncated in this order ---
-    // These verified inputs remain staged until the authoritative fire path
-    // adopts `attacker::fire_damage`; production currently reads only defender fields.
-    /// Country FirePower mult (House+0x188).
-    pub attacker_country_firepower: f64,
-    /// Per-unit Firepower mult (Techno+0x160); folded with country + base damage
-    /// into ONE ftol stage.
-    pub attacker_unit_firepower: f64,
-    /// VeteranCombat (Rules+0x670, ~1.1, double) when the attacker has the
-    /// firepower vet/elite ability, else 1.0.
-    pub attacker_vet_combat: f64,
-    /// Occupy/garrison damage mult (Rules+0xf40, float) when the attacker is an
-    /// occupant firing from a garrisonable building, else 1.0.
-    pub attacker_occupy: f64,
-    /// Tank-bunker mult (Rules+0xf4c) when the attacker is a tank-bunker
-    /// occupant (this+0x2e4 link, non-building), else 1.0.
-    pub attacker_tank_bunker: f64,
-    /// Open-topped transport mult (Rules+0xf58) when the attacker fires from an
-    /// OpenTopped transport (this+0x82), else 1.0.
-    pub attacker_open_topped: f64,
-
-    // --- Defender side (ReceiveDamage) — DIVIDE, each ftol-truncated ---
-    /// Country armor mult (GetArmorMultForType(target)); larger => tougher.
-    pub defender_country_armor: f64,
-    /// Per-unit ArmorMultiplier (Techno+0x158); folded with country into ONE
-    /// divide stage.
-    pub defender_unit_armor: f64,
-    /// VeteranArmor (Rules+0x688, ~1.5) when the target has the armor vet/elite
-    /// ability, else 1.0.
-    pub defender_vet_armor: f64,
+pub(crate) struct DefenceDivisors {
+    /// `HouseClass::GetArmorMultForType @ 0x0050BD30`: the owner's HouseType
+    /// float for the target's category (`ArmorInfantryMult=`, `ArmorUnitsMult=`,
+    /// `ArmorAircraftMult=`, `ArmorBuildingsMult=`, or `ArmorDefensesMult=` for
+    /// a `BuildCat=Combat` building). Difficulty and country `Armor=` never
+    /// reach it: `House+0x1A0` has no damage reader.
+    pub house_type_armor: NativeF32Bits,
+    /// `Techno+0x158`, the per-object ArmorMultiplier.
+    pub unit_armor: NativeF64Bits,
+    /// `Rules+0x688` `VeteranArmor=` when the target's rank holds STRONGER.
+    pub rank_armor: Option<NativeF64Bits>,
 }
 
-impl Default for CombatMods {
+impl Default for DefenceDivisors {
     fn default() -> Self {
         Self {
-            attacker_country_firepower: 1.0,
-            attacker_unit_firepower: 1.0,
-            attacker_vet_combat: 1.0,
-            attacker_occupy: 1.0,
-            attacker_tank_bunker: 1.0,
-            attacker_open_topped: 1.0,
-            defender_country_armor: 1.0,
-            defender_unit_armor: 1.0,
-            defender_vet_armor: 1.0,
+            house_type_armor: NativeF32Bits::from_bits(1.0_f32.to_bits()),
+            unit_armor: NativeF64Bits::ONE,
+            rank_armor: None,
         }
     }
 }
