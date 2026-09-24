@@ -366,7 +366,11 @@ impl LocomotorState {
             phase: GroundMovePhase::Idle,
 
             speed_multiplier,
-            speed_fraction: SimFixed::from_num(1),
+            speed_fraction: if kind == LocomotorKind::Fly {
+                SIM_ZERO
+            } else {
+                SimFixed::from_num(1)
+            },
             fly_current_speed: SIM_ZERO,
             altitude: SIM_ZERO,
 

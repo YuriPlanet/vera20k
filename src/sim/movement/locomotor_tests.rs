@@ -5,7 +5,7 @@ use super::*;
 use crate::rules::jumpjet_params::JumpjetParams;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
 use crate::rules::object_type::{ObjectCategory, ObjectType, PipScale};
-use crate::util::fixed_math::{SIM_ONE, SimFixed, sim_from_f32};
+use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed, sim_from_f32};
 
 #[test]
 fn walk_destination_and_cell_producer_match_original_startup_conversion() {
@@ -526,6 +526,10 @@ fn test_fly_locomotor_air_layer() {
     assert!(!state.is_ground_mover());
     assert!(state.is_air_mover());
     assert_eq!(state.fly_target_height(), 0);
+    assert_eq!(
+        state.speed_fraction, SIM_ZERO,
+        "constructor4CC9E5 target speed"
+    );
 }
 
 #[test]

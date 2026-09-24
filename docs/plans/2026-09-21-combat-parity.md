@@ -834,20 +834,27 @@ Fly target speed (`feature/carrier-hornet-wing`, no schema change), owner `movem
   over their hold cell and then stood in approach state 3, NavCom on the target, for good; only
   the Hornet launched on the send-out pass, still on the constructor's 1.0 (native 0, `4CC9E5`),
   reached the target. The ramp also ran on frames Process never reaches.
-- Now: Process `4CE145..4CE2DB` writes the target speed every Process frame whose owner lives, is
-  not landing, has climbed to half its takeoff height and holds a destination. `4D0180` refusing
-  (a locked aircraft, a FlyBy, a cruising strafer or fighter with ammo) gives 1.0; HunterSeeker
-  1.0 or 0; otherwise distance / SlowdownDistance capped at 1 and, under the 0.1 floor (exactly
-  `10 * distance <= SlowdownDistance`), a 0.1 crawl beyond 85 leptons, else a stop that halves the
-  current speed; then the zero-distance clamp and the 0.05 creep. The writer and the ramp run only
-  where Process reaches them, the ordinary path (`4CD67F..4CD6A8`) of a moving Fly (`4CDA0B`,
-  IsMoving `4CCA90`). The Fly target speed starts at 0. The legacy tiers, the fine approach and
-  the two mission writes are deleted.
+- Now: Process `4CE145..4CE2DB` writes the target speed on every frame a Fly is moving and its
+  owner lives, is not landing, has climbed to half its takeoff height and holds a destination.
+  `4D0180` refusing (a locked aircraft, a cruising FlyBy, a cruising strafer or fighter with ammo)
+  gives 1.0; HunterSeeker 1.0 or 0; otherwise distance / SlowdownDistance capped at 1 and, under
+  the 0.1 floor, a 0.1 crawl beyond 85 leptons, else a stop that halves the current speed; then
+  the zero-distance clamp and the creep. The creep's 0.05 moves nothing: the ramp takes it back
+  to the zero target in the same Process (`4CE46F`; only the IsDropship attitude reads it), so a
+  slowing Fly stops once inside the stop arm (50 leptons at the retail SlowdownDistance 500). The
+  floor test is exactly `10 * distance <= SlowdownDistance` under the chop control word `0x0E7F`
+  the oracle runs with; rounded to nearest, an exact tenth would take the ratio arm (a 0.1 target
+  for that frame, no halving). The writer and the ramp run on every frame Process reaches them:
+  every frame the Fly is moving (`4CDA0B`, IsMoving `4CCA90`), from the ordinary path
+  (`4CD67F..4CD6A8`) and the airborne crash path (`4CD7A4`) alike; they skip a dead owner
+  themselves. The Fly target speed starts at 0 (`for_test_kind` fixtures too). The legacy tiers,
+  the fine approach and the two mission writes are deleted.
 - Native execution: `tools/spatial_oracle/fly_target_speed.py` runs the original range with real
   Aircraft/Unit, IFlyControl, GetWeapon and GetHeight (374 rows); `air_movement::tests::
   native_target_speed_rows` replays every row through the production writer, each speed within
   one Q16 quantum (the ratio truncates; the halving rounds a dropped half away from zero so a
-  one-quantum speed does not fake the creep). Parity within those inputs.
+  one-quantum speed does not take the creep's branch). Parity within those inputs, under the chop
+  control word the oracle sets.
 - Production regression: `every_hornet_of_a_carrier_wing_flies_a_whole_strafe_pass` through
   `advance_tick`, with the fixture's cruising Hornets and with retail-shaped Landable ROT-3 ones:
   every Hornet of the wing drops five bombs a ROF apart and pays its ammo. On the base code two of
@@ -857,12 +864,16 @@ Fly target speed (`feature/carrier-hornet-wing`, no schema change), owner `movem
   slowdown flag, dead stores whenever the next Process writes, and its BeginLanding) and the
   Process landing trigger (`4CE3C0`) are unported; the legacy arrival (movement_target cleared
   within 128 leptons below 0.05) stands in, so a Landable Fly that stops over its destination
-  hovers where native lands it. Process's airborne crash path (`4CD6AE`, unpowered or dead) is not ported beyond keeping the
-  speed control out of it; the ILoco_Process prelude (`4CCB47..4CCB81`, FlightLevel restored when
-  a full target speed meets a zero target height) and the Guard-with-NavCom Move requeue
-  (`4CD9C8..4CDA02`) are not ported; the legacy XY adapter's half-height gate still holds a
-  climbing Fly in place. A non-Landable (or armed strafer) Fly now keeps full speed through its
-  destination, as native: the test fixtures' non-Landable Hornet circles its hold.
+  hovers where native lands it. Process's airborne crash path (`4CD6AE..4CD7A4`: the fall step of
+  an airborne Fly that is unpowered or dead, and the impact frame, which returns before the speed
+  control) is not ported by this adapter; the speed control already follows native there, and no
+  VERA producer unpowers a flying aircraft. The ILoco_Process prelude (`4CCB47..4CCB81`,
+  FlightLevel restored when a full target speed meets a zero target height) and the
+  Guard-with-NavCom Move requeue (`4CD9C8..4CDA02`) are not ported; the legacy XY adapter's
+  half-height gate still holds a climbing Fly in place. A locked aircraft, a cruising FlyBy (SPYP,
+  BPLN) and a cruising strafer or fighter with nonzero Ammo now keep full speed through their
+  destination, as native: the test fixtures' non-Landable, armed Hornet circles its hold. A
+  cruising aircraft that neither strafes nor fights (PDPLANE, CARGOPLANE) still slows.
 
 ## Native evidence inventory
 

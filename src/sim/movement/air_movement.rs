@@ -113,24 +113,31 @@ pub(crate) struct FlySpeedFacts {
 }
 
 /// Fly Process `0x004CE145..0x004CE2DB`: the target speed (`+0x40`) that the
-/// ramp chases, rewritten every Process frame whose owner lives, is not
-/// landing, has climbed to half its takeoff height and holds a destination:
-/// - `0x004D0180` refusing: full speed. A cruising strafer or fighter with
-///   ammo, a FlyBy or a locked aircraft never slows for its destination.
+/// ramp chases, rewritten on every frame the Fly is moving and its owner
+/// lives, is not landing, has climbed to half its takeoff height and holds a
+/// destination:
+/// - `0x004D0180` refusing: full speed. A locked aircraft, a cruising FlyBy
+///   and a cruising strafer or fighter with ammo never slow for their
+///   destination.
 /// - HunterSeeker: full speed while it has a Target and is not taking off,
 ///   else a stop.
 /// - Otherwise `distance / SlowdownDistance`, capped at 1. Under 0.1 it is a
 ///   0.1 crawl beyond 85 leptons and, within, a stop that halves the current
 ///   speed. A current speed above the integer distance drops to it (only at
-///   distance 0), and a Fly stopped short of its destination creeps at 0.05.
+///   distance 0). A Fly already at a standstill short of its destination gets
+///   a 0.05 current speed, which only the IsDropship attitude reads before the
+///   ramp (`0x004CE46F`) takes it back to the zero target: it moves nothing.
 ///
 /// Native keeps binary64 and VERA SimFixed, each result within one quantum of
 /// native: the ratio truncates to Q16, and the halving rounds a dropped half
 /// away from zero, so it is zero exactly when native's is (a speed of one
-/// quantum truncated to zero would fake the creep). The floor test is the
-/// exact `10 * distance <= SlowdownDistance`: the chop x87 quotient of an
-/// exact tenth falls below the stored 0.1. The rows of
-/// `tools/spatial_oracle/fly_target_speed` hold the native outputs.
+/// quantum truncated to zero would take the creep's branch). The floor test
+/// is the exact `10 * distance <= SlowdownDistance`, assuming gamemd's chop
+/// control word `0x0E7F`, under which the oracle runs: the chop quotient of
+/// an exact tenth falls below the stored 0.1. Rounded to nearest it would
+/// equal 0.1 and take the ratio arm (a 0.1 target for that frame, no
+/// halving). The rows of `tools/spatial_oracle/fly_target_speed` hold the
+/// native outputs.
 pub(crate) fn write_fly_target_speed(loco: &mut LocomotorState, facts: &FlySpeedFacts) {
     let Some(state) = loco.fly_runtime() else {
         return;
@@ -341,12 +348,11 @@ pub fn tick_air_movement(
         // reads the full retained direction, not this quantized cache.
         entity.facing = (entity.body_facing.unwrap().current(binary_frame) >> 8) as u8;
         // Process reaches its speed control (the target speed and the ramp)
-        // only on the ordinary path, powered and alive or on the ground
-        // (4CD67F..4CD6A8), of a moving Fly (4CDA0B, IsMoving 4CCA90).
-        let speed_control = ((entity.locomotor.as_ref().unwrap().powered
-            && entity.health.current != 0)
-            || current_fly_height(entity, terrain) == 0)
-            && super::motion_query::is_moving(entity) == Some(true);
+        // on every frame the Fly is moving (4CDA0B, IsMoving 4CCA90), from
+        // its ordinary path (4CD67F..4CD6A8) and its airborne crash path
+        // (4CD7A4) alike; only a crash's impact frame (unported) returns
+        // first. The writer and the ramp skip a dead owner themselves.
+        let speed_control = super::motion_query::is_moving(entity) == Some(true);
 
         // --- Horizontal movement (facing-based, only when airborne) ---
         let has_movement: bool = entity.movement_target.is_some();

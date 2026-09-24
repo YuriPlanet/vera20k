@@ -1684,6 +1684,10 @@ documented as matching native `Horizontal_Step` zones; this fourth zone is bolte
 **Replacement:** the native `FlyLocomotionClass::Process` flight model, including its real
 map-boundary handling (deflect ±0x80 leptons for FlyBy types, else scatter) instead of
 `.min(511)`.
+**Status (2026-09-24):** the distance tiers (`approach_target_speed`) and the fine-approach
+halving are deleted; Process's own target-speed writer (`0x004CE145..0x004CE2DB`,
+`air_movement::write_fly_target_speed`) replaces them. The snap arrival and the map bound
+remain; see the Fly target speed residuals in `2026-09-21-combat-parity.md`.
 
 ### R9 — Hardcoded 25 lep/s speed floor and `Speed=4` default, five copies
 `movement_tick.rs:553–557`, `scatter.rs:368–377`, `world/world_commands.rs:86–89`,
