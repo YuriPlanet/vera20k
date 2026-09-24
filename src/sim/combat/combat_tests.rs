@@ -88,6 +88,7 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
     );
     let mut rng = SimRng::new(0x50_4e_49_43);
     let rng_before = rng.logical_state();
+    let rearm_before = entities.get(1).unwrap().rearm_timer;
     let mut hooks: Option<&mut FixtureTrace> = None;
     let mut emit = CombatEmit::default();
 
@@ -119,10 +120,7 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
     assert!(emit.damage_events.is_empty());
     assert!(emit.projectile_spawns.is_empty());
     assert!(emit.current_weapon_updates.is_empty());
-    assert_eq!(
-        entities.get(1).unwrap().rearm_timer,
-        crate::sim::timer::CdTimer::default()
-    );
+    assert_eq!(entities.get(1).unwrap().rearm_timer, rearm_before);
     assert!(emit.retarget_events.is_empty());
     assert!(emit.remove_attack.is_empty());
     assert_eq!(rng.logical_state(), rng_before);

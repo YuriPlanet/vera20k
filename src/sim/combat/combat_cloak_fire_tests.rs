@@ -90,6 +90,7 @@ fn resolve_once(
 fn bsub_cruise_launcher_uncloaks_without_same_tick_fire_then_retry_fires() {
     let rules = boomer_rules();
     let mut entities = entities("TGTWOOD");
+    let rearm_before = entities.get(1).unwrap().rearm_timer;
     let mut interner = test_interner();
     let mut sounds = Vec::new();
     let mut blocked = CombatEmit::default();
@@ -116,7 +117,7 @@ fn bsub_cruise_launcher_uncloaks_without_same_tick_fire_then_retry_fires() {
     assert!(blocked.projectile_spawns.is_empty());
     assert_eq!(
         entities.get(1).unwrap().rearm_timer,
-        crate::sim::timer::CdTimer::default(),
+        rearm_before,
         "no ROF/burst write on the surfacing visit"
     );
     assert!(matches!(
