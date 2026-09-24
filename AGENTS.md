@@ -185,7 +185,8 @@ Avoid tests that merely mirror the implementation or require maintaining a secon
   `cargo clippy -p vera20k --lib` on the final candidate with retail `ini/` and
   `VERA20K_REQUIRE_RETAIL_INI=1`; no baseline runs. Validate later fixes with
   focused tests; repeat both only when a fix reaches beyond the tested modules or
-  a `main` merge conflicts. CI runs both on every PR, without retail INIs.
+  a `main` merge conflicts. CI runs both only when dispatched manually, without
+  retail INIs.
 - Asset binding, loader or rules-closure changes: a release-build retail map load
   before merge; the lib suite never runs the app loader against retail assets.
 - Docs/skills: validate content, links/examples and tooling; no Cargo suite.
