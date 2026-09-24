@@ -119,11 +119,18 @@ The result decides what follows:
 ## VERA20k
 
 - `ShellExit` in `app::frontend::shell_transition` owns the running teardown
-  slide: kind, `ShellFrameWave::new_slide_out` and the result to commit.
+  slide: its `ShellFrameWave::new_slide_out` and the result to commit (the
+  result names its dialog).
 - `App::leave_shell_dialog` starts it when the dialog is showing steady and
-  plays `GUIMoveOutSound`. Otherwise it commits at once, like `0x00608070`'s
-  early returns.
-- `App::drive_shell_exit` commits the result after the last tick.
+  plays `GUIMoveOutSound`. A dialog that is not showing steady commits at once,
+  like `0x00608070`'s early returns; a second result while one slides out is
+  ignored.
+- `App::drive_shell_exit` commits the result after the last tick. It is the
+  first step of the frame prelude, before the next dialog is armed and before
+  the surface is acquired, so the frame after the last slide-out tick is the
+  next screen's first frame (tick 0 of its entry slide, or the movie, credits
+  or Exit confirmation). An exit whose dialog stopped showing (another route
+  replaced it) is dropped without its result.
 - Input is blocked while the slide runs.
 
 Routes that now slide out:
@@ -160,10 +167,16 @@ Release build, `--shell-capture` with the cursor at (400, 300), compared with
 - **`main-menu-0xe2-slide-out-tick-13` vs `exit-confirm.png`:** the last
   slide-out frame before state 6 has 0 differing pixels outside the message box
   (cursor masked), except the three plate tiles between Movies & Credits and Exit
-  (18,900 pixels). That exception is expected: the dialog repaint draws plates,
-  and state 6 then redraws every tile shuttered (RightPanel__Draw parameter 0).
-  The five emptied slots, the blank heading, status and version line, the
-  monitor art and the backdrop all match.
+  (18,900 pixels): the dialog repaint draws plates, and state 6 redraws every
+  tile shuttered (RightPanel__Draw parameter 0). This shows that VERA20k's last
+  slide-out frame hands over to the state 6 screen without a visible jump. It is
+  not evidence of what retail shows during the slide-out, because state 6
+  repaints the whole screen (`0x0052DE06`, and the message box again at
+  `0x005D3514`); that claim rests on instruction reading only.
+- **`movie-list-0x129-back-first-frame`:** Back on the movie list, read back on
+  the first frame after the teardown commits. The harness requires that frame
+  to be the recreated `0x101`'s entry slide at tick 0, and it is: empty slots,
+  backdrop, no captions.
 - **`main-menu-0xe2-slide-out-tick-<N>` and `movie-list-0x129-slide-out-tick-<N>`**
   hold the production teardown slide at tick `N`; they were inspected at ticks 0,
   6 and 13 (`0xE2`) and 0, 5 and 10 (`0x129`).
@@ -185,13 +198,13 @@ Release build, `--shell-capture` with the cursor at (400, 300), compared with
   paint-path slide, the repaint that blanks the children, the slide-capable
   list, and the state 6 backdrop, template and results, all from instructions.
 - **Rust regression tested:** slide-out ramp and `0xE2` schedule
-  (`ui::shell::slide`), teardown completion (`shell_transition`), the retail
-  `[AudioVisual]` cues through the production reader (`rules::ruleset`), and the
-  `0x120` layout (`ui::shell::modal`).
-- **Parity demonstrated:** bounded to the comparisons above. Mid-slide-out
-  frames have no retail capture. Their schedule is the tested entry schedule,
-  and what they leave blank rests on the paint-path reading above, which the
-  last `0xE2` frame matches against the retail backdrop.
+  (`ui::shell::slide`), the teardown start rule, result ownership and
+  completion (`shell_transition`), commit-before-acquire ordering
+  (`app::frame`), the retail `[AudioVisual]` cues through the production reader
+  (`rules::ruleset`), and the `0x120` layout (`ui::shell::modal`).
+- **Parity demonstrated:** bounded to the comparisons above. Slide-out frames
+  have no retail capture: their schedule is the tested entry schedule, and what
+  they leave blank rests on the paint-path reading above.
 
 ## Residuals
 
@@ -200,9 +213,17 @@ Release build, `--shell-capture` with the cursor at (400, 300), compared with
 - **Post-slide lull.** After an entry slide, retail can show the frame-1 slots
   without captions or movie for a moment before the first full paint. The
   trigger is not traced.
-- **Other slide-capable dialogs.** Skirmish `0x102` and Options `0xD5` are
-  slide-capable in retail. VERA20k slides `0x102` in but not out, and slides
-  `0xD5` neither way.
+- **Other slide-capable dialogs.** `0x0060C540` also marks Skirmish `0x102`,
+  Options `0xD5`, Load `0xB7`, Score `0x108` and the in-game menu dialogs
+  (`0xB5`, `0xB6`, `0xB8`, `0xBBA`, `0xBBB`). VERA20k slides `0x102` in but not
+  out, and the others neither way.
+- **Quit fade image.** After OK, retail destroys the message box without a
+  repaint (`0x0052DE21..0x0052DE34`), so its last image most likely stays on
+  screen through the state 7 fade. VERA20k shows the empty backdrop alone.
+  Once per session, until the screen fades to black.
+- **Hidden window.** A minimized window stalls the slide-out until it is shown
+  again, then plays the remaining ticks. Retail gives up after 5000 ms
+  (`0x0060822B`) and destroys the dialog.
 - **Single Player substitute panels.** New Campaign and Load Saved Game still
   open substitute panels over `0x100`, so they do not slide it out.
 - **Unported routes.** Network and Internet have no ported route, so there is no

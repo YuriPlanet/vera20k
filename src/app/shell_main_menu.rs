@@ -717,7 +717,7 @@ impl App {
             .and_then(crate::ui::main_menu_shell::MainMenuControlId::from_resource_id)
             .map(crate::ui::main_menu_shell::action_for_control)
         {
-            use crate::app::frontend::shell_transition::{ShellExitThen, ShellSlideKind};
+            use crate::app::frontend::shell_transition::ShellExitThen;
             use crate::ui::main_menu_shell::MainMenuShellAction;
             match action {
                 // These results destroy 0xE2 (Exit's confirmation is state 6,
@@ -725,11 +725,9 @@ impl App {
                 MainMenuShellAction::SinglePlayer
                 | MainMenuShellAction::MoviesAndCredits
                 | MainMenuShellAction::Options
-                | MainMenuShellAction::ExitGame => Self::leave_shell_dialog(
-                    state,
-                    ShellSlideKind::MainMenu,
-                    ShellExitThen::MainMenu(action),
-                ),
+                | MainMenuShellAction::ExitGame => {
+                    Self::leave_shell_dialog(state, ShellExitThen::MainMenu(action))
+                }
                 _ => Self::handle_main_menu_shell_action(state, action),
             }
         }
@@ -869,7 +867,7 @@ impl App {
         let Some(activated) = state.frontend.shell_controller.on_pointer_up(x, y, &feed) else {
             return;
         };
-        use crate::app::frontend::shell_transition::{ShellExitThen, ShellSlideKind};
+        use crate::app::frontend::shell_transition::ShellExitThen;
         match page {
             ActiveMenuPage::SinglePlayer => {
                 use crate::ui::single_player_shell::SinglePlayerShellAction;
@@ -884,11 +882,7 @@ impl App {
                         // Load Saved Game still open substitute panels over the
                         // page, so they keep it.
                         SinglePlayerShellAction::MainMenu | SinglePlayerShellAction::Skirmish => {
-                            Self::leave_shell_dialog(
-                                state,
-                                ShellSlideKind::SinglePlayer,
-                                ShellExitThen::SinglePlayer(action),
-                            );
+                            Self::leave_shell_dialog(state, ShellExitThen::SinglePlayer(action));
                         }
                         _ => Self::handle_single_player_shell_action(state, action),
                     }
@@ -897,11 +891,7 @@ impl App {
             ActiveMenuPage::MoviesAndCredits => {
                 if let Some(action) = crate::ui::movies_credits_shell::action_for_control(activated)
                 {
-                    Self::leave_shell_dialog(
-                        state,
-                        ShellSlideKind::MoviesAndCredits,
-                        ShellExitThen::MoviesCredits(action),
-                    );
+                    Self::leave_shell_dialog(state, ShellExitThen::MoviesCredits(action));
                 }
             }
         }
@@ -939,16 +929,16 @@ impl App {
     /// Leave the showing family dialog with the result `then`: its teardown
     /// (`0x00622720`) slides the buttons out first (`0x00608070`), and the
     /// result runs when the slide has ended. A dialog that is not showing
-    /// steady commits at once.
+    /// steady commits at once; a dialog already sliding out keeps its result.
     pub(super) fn leave_shell_dialog(
         state: &mut AppState,
-        kind: crate::app::frontend::shell_transition::ShellSlideKind,
         then: crate::app::frontend::shell_transition::ShellExitThen,
     ) {
-        if crate::app::frontend::shell_transition::begin_shell_exit(state, kind, then) {
-            Self::play_shell_slide_out_sound(state);
-        } else {
-            Self::commit_shell_exit(state, then);
+        use crate::app::frontend::shell_transition::ShellExitStart;
+        match crate::app::frontend::shell_transition::begin_shell_exit(state, then) {
+            ShellExitStart::Sliding => Self::play_shell_slide_out_sound(state),
+            ShellExitStart::Immediate => Self::commit_shell_exit(state, then),
+            ShellExitStart::AlreadyLeaving => {}
         }
     }
 

@@ -39,6 +39,9 @@ pub(super) enum MoviesTarget {
         kind: ShellSlideKind,
         tick: u32,
     },
+    /// Back on `0x129`, read back on the first frame after its teardown: the
+    /// recreated `0x101` must already show its entry slide at tick 0.
+    ListBackFirstFrame,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -109,7 +112,6 @@ impl MoviesCapture {
                             .push(json!({"dialog": 0xe2, "frame": frame, "action": "ExitGame"}));
                         App::leave_shell_dialog(
                             state,
-                            ShellSlideKind::MainMenu,
                             crate::app::frontend::shell_transition::ShellExitThen::MainMenu(
                                 crate::ui::main_menu_shell::MainMenuShellAction::ExitGame,
                             ),
@@ -136,6 +138,7 @@ impl MoviesCapture {
                         }
                         MoviesTarget::List0x129
                         | MoviesTarget::List0x129Selected
+                        | MoviesTarget::ListBackFirstFrame
                         | MoviesTarget::SlideOut {
                             kind: ShellSlideKind::MovieList,
                             ..
@@ -200,11 +203,13 @@ impl MoviesCapture {
                     self.route.push(
                         json!({"dialog": 0x129, "frame": frame, "action": "pointer at neutral"}),
                     );
-                    if let MoviesTarget::SlideOut { .. } = self.target {
+                    if matches!(
+                        self.target,
+                        MoviesTarget::SlideOut { .. } | MoviesTarget::ListBackFirstFrame
+                    ) {
                         // Back (0x686) through the production teardown.
                         App::leave_shell_dialog(
                             state,
-                            ShellSlideKind::MovieList,
                             crate::app::frontend::shell_transition::ShellExitThen::MovieListBack,
                         );
                         ensure!(
@@ -220,22 +225,21 @@ impl MoviesCapture {
                 }
             }
             (Phase::SlideOut, PresentedShell::MainMenu | PresentedShell::MovieList) => {
+                if self.target == MoviesTarget::ListBackFirstFrame {
+                    // Every slide-out frame presents; `ready` takes the first
+                    // frame after the teardown commits.
+                    return Ok(());
+                }
                 let MoviesTarget::SlideOut { kind, tick: target } = self.target else {
                     bail!("slide-out phase without a slide-out target");
                 };
-                let exit = state
-                    .frontend
-                    .shell_exit
-                    .as_mut()
-                    .filter(|exit| exit.kind == kind)
-                    .context("teardown slide ended before capture")?;
-                let tick = exit
-                    .wave
+                let tick = crate::app::frontend::shell_transition::shell_exit_wave(state, kind)
+                    .context("teardown slide ended before capture")?
                     .compatibility_tick()
                     .context("teardown slide without a tick clock")?;
                 ensure!(tick <= target, "teardown slide passed tick {target}");
                 if tick == target {
-                    exit.wave.hold_for_capture();
+                    crate::app::frontend::shell_transition::hold_shell_exit_for_capture(state);
                     self.route
                         .push(json!({"dialog": kind.dialog_id().0, "frame": frame,
                         "action": "hold teardown slide", "tick": tick}));
@@ -300,6 +304,25 @@ impl MoviesCapture {
     }
 
     pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
+        if self.target == MoviesTarget::ListBackFirstFrame {
+            // Checked after acquisition: once the teardown has committed, this
+            // very frame must be the recreated page's entry tick 0.
+            if self.phase != Phase::SlideOut || state.frontend.shell_exit.is_some() {
+                return Ok(false);
+            }
+            let entry_tick = state
+                .frontend
+                .shell_first_paint_slide
+                .as_ref()
+                .and_then(|wave| wave.compatibility_tick());
+            ensure!(
+                state.frontend.shell_route.movies_and_credits() && entry_tick == Some(0),
+                "the frame after the 0x129 teardown is not the 0x101 entry tick 0 \
+                 (route M&C {}, entry tick {entry_tick:?})",
+                state.frontend.shell_route.movies_and_credits()
+            );
+            return Ok(true);
+        }
         if self.phase != Phase::Settling(0) {
             return Ok(false);
         }
@@ -316,7 +339,8 @@ impl MoviesCapture {
             MoviesTarget::Credits { .. }
             | MoviesTarget::SneakPeek { .. }
             | MoviesTarget::ExitConfirm
-            | MoviesTarget::SlideOut { .. } => true,
+            | MoviesTarget::SlideOut { .. }
+            | MoviesTarget::ListBackFirstFrame => true,
         };
         if !heading_settled {
             return Ok(false);
@@ -336,6 +360,7 @@ impl MoviesCapture {
                     .and_then(|wave| wave.compatibility_tick())
                     == Some(tick)
             }
+            MoviesTarget::ListBackFirstFrame => unreachable!("handled above"),
         };
         ensure!(expected, "movies capture route changed before readback");
         Ok(true)

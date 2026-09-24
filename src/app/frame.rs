@@ -11,11 +11,17 @@ use super::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ShellFramePreludeStep {
+    CommitTeardown,
     MaintainIntro,
     ObserveEntry,
 }
 
+/// A finished teardown slide destroys its dialog and runs the result
+/// (`0x00622720` returns into PrepareSession) before the next dialog is armed
+/// or the surface is acquired, so the frame after the last slide-out tick is
+/// already the next screen's first frame.
 const MAIN_MENU_SHELL_PRELUDE: &[ShellFramePreludeStep] = &[
+    ShellFramePreludeStep::CommitTeardown,
     ShellFramePreludeStep::MaintainIntro,
     ShellFramePreludeStep::ObserveEntry,
 ];
@@ -154,6 +160,7 @@ impl App {
         // owner. An arm stays silent until the matching surface is acquired.
         for step in MAIN_MENU_SHELL_PRELUDE {
             match step {
+                ShellFramePreludeStep::CommitTeardown => Self::drive_shell_exit(state),
                 ShellFramePreludeStep::MaintainIntro => Self::maintain_main_menu_intro(state),
                 ShellFramePreludeStep::ObserveEntry => {
                     crate::app::frontend::shell_transition::prepare_main_menu_first_paint_before_acquire(state)
@@ -256,9 +263,6 @@ impl App {
                 }
             }
             GameScreen::MainMenu => {
-                // A finished teardown slide commits its route before this
-                // frame picks the dialog to paint.
-                Self::drive_shell_exit(state);
                 if let crate::app::frontend::shell_transition::ShellFirstPaintRenderResult::Rendered {
                     main_menu_entry_token,
                 } = crate::app::frontend::shell_transition::render_shell_first_paint_slide(
@@ -734,10 +738,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn main_menu_intro_precedes_entry_observation() {
+    fn teardown_commits_before_intro_and_entry_observation() {
         assert_eq!(
             MAIN_MENU_SHELL_PRELUDE,
             [
+                ShellFramePreludeStep::CommitTeardown,
                 ShellFramePreludeStep::MaintainIntro,
                 ShellFramePreludeStep::ObserveEntry,
             ]

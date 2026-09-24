@@ -313,11 +313,18 @@ pub(crate) fn render_menu_page(
         return Ok(MenuPageRenderResult::Fallback);
     }
 
-    let kind = page_slide_kind(view.spec);
+    // The page's slide, if one runs: its teardown slide-out or its entry
+    // slide. Either way the buttons animate through their SDBTNANM ramp
+    // frames; off-slide they paint steady-state.
+    let exit_wave =
+        crate::app::frontend::shell_transition::shell_exit_wave(state, page_slide_kind(view.spec))
+            .cloned();
+    let leaving = exit_wave.is_some();
+    let wave = exit_wave.or_else(|| state.frontend.shell_first_paint_slide.clone());
     // While either slide runs the RA2TS static shows no movie and gets no
     // timer (`0x006071E0`; the teardown also stops it with 0x4E2), so the
     // shell background shows and the movie clock starts after the slide.
-    let sliding = crate::app::frontend::shell_transition::shell_slide_running(state);
+    let sliding = wave.is_some();
     if sliding {
         state.frontend.main_menu_movie_last_step = Instant::now();
     } else if let Some(movie) = state.frontend.main_menu_movie.as_mut() {
@@ -342,11 +349,6 @@ pub(crate) fn render_menu_page(
         state.renderer.gpu.config.height,
     );
     let input = page_input(state, view.spec);
-    // While a first-paint slide is live the buttons animate through their
-    // SDBTNANM ramp frames; off-slide this is None and they paint steady-state.
-    let exit_wave = crate::app::frontend::shell_transition::shell_exit_wave(state, kind).cloned();
-    let leaving = exit_wave.is_some();
-    let wave = exit_wave.or_else(|| state.frontend.shell_first_paint_slide.clone());
     // The teardown slide starts with a full dialog repaint (`0x00622C4F`)
     // and pumps no messages until it ends: the statics stay blank and the
     // monitor window shows the right panel's own art.

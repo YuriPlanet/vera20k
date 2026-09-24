@@ -131,24 +131,35 @@ fn push_entry_sized(
     });
 }
 
+/// The slide a painted `0xE2` frame belongs to.
+#[derive(Debug, Clone)]
+enum MainMenuSlide {
+    Steady,
+    /// The first-paint slide-in, one presented tick.
+    Entry(MainMenuEntryPaintFrame),
+    /// The teardown slide-out (`0x00608070`).
+    Exit(ShellFrameWave),
+}
+
 /// Map the layout + shell state into the owner-draw button list for the paint
 /// pass. 0xE2 never disables a control, so every button is `enabled: true`;
-/// during a first-paint slide each button rides Group A's ramp.
+/// during either slide each button rides Group A's ramp.
 fn main_menu_paint_buttons(
     layout: &MainMenuShellLayout,
     pressed_button: Option<MainMenuControlId>,
-    entry_frame: Option<MainMenuEntryPaintFrame>,
-    exit_wave: Option<&ShellFrameWave>,
+    slide: &MainMenuSlide,
 ) -> Vec<PaintButton> {
     layout
         .buttons
         .iter()
         .map(|button| {
             let resource_id = button.id.resource_id();
-            let wave_frame = match (entry_frame, exit_wave) {
-                (Some(frame), _) => frame.sdbtnanm_frame(resource_id, ButtonGroup::A),
-                (None, Some(wave)) => wave.main_menu_sdbtnanm_frame(resource_id, ButtonGroup::A),
-                (None, None) => None,
+            let wave_frame = match slide {
+                MainMenuSlide::Steady => None,
+                MainMenuSlide::Entry(frame) => frame.sdbtnanm_frame(resource_id, ButtonGroup::A),
+                MainMenuSlide::Exit(wave) => {
+                    wave.main_menu_sdbtnanm_frame(resource_id, ButtonGroup::A)
+                }
             };
             PaintButton {
                 rect: button.rect,
@@ -256,17 +267,10 @@ fn select_parent_background(
     }
 }
 
-/// Build the parent-background instance drawn behind the movie and chrome.
-/// Drawn at native SHP canvas size at the centered shell origin.
-fn build_parent_background_instances(
-    atlas: &MainMenuShellChromeAtlas,
-    layout: &MainMenuShellLayout,
-) -> Vec<SpriteInstance> {
-    shell_parent_background_instances(atlas, layout.screen.w, layout.screen.h)
-}
-
 /// The MNSCRN parent background of a right-panel shell at `screen_w` x
-/// `screen_h`, as the RA2TS dialogs show it while no movie is drawn.
+/// `screen_h`, drawn at native SHP canvas size at the centered shell origin:
+/// behind the `0xE2` movie and chrome, and in the RA2TS area of the menu pages
+/// while no movie is drawn.
 pub(crate) fn shell_parent_background_instances(
     atlas: &MainMenuShellChromeAtlas,
     screen_w: i32,
@@ -388,13 +392,14 @@ pub(crate) fn render_main_menu_shell(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<MainMenuShellRenderResult> {
-    // The teardown slide hides the heading (`0x00606800` sets +0xBC).
-    let leaving = crate::app::frontend::shell_transition::shell_exit_wave(
+    let slide = crate::app::frontend::shell_transition::shell_exit_wave(
         state,
         crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
     )
-    .is_some();
-    let (title_window, title_receipt) = if leaving {
+    .cloned()
+    .map_or(MainMenuSlide::Steady, MainMenuSlide::Exit);
+    // The teardown slide leaves the heading blank.
+    let (title_window, title_receipt) = if matches!(slide, MainMenuSlide::Exit(_)) {
         (None, None)
     } else {
         match state.frontend.main_menu_shell_state.title_reveal.paint_window() {
@@ -413,7 +418,7 @@ pub(crate) fn render_main_menu_shell(
             depth: &depth,
         },
         title_window,
-        None,
+        slide,
     )?;
     match result {
         MainMenuShellRenderResult::Rendered { .. } => {
@@ -442,7 +447,7 @@ pub(crate) fn render_main_menu_first_paint_frame(
             depth: &depth,
         },
         None,
-        Some(frame),
+        MainMenuSlide::Entry(frame),
     )?;
     match result {
         MainMenuShellRenderResult::Rendered { .. } => {
@@ -467,10 +472,13 @@ fn render_main_menu_shell_to_target_inner(
     encoder: &mut wgpu::CommandEncoder,
     target: ShellRenderTarget<'_>,
     title_window: Option<Kind1RevealWindow>,
-    entry_frame: Option<MainMenuEntryPaintFrame>,
+    slide: MainMenuSlide,
 ) -> Result<MainMenuShellRenderResult> {
     // States 6 and 7 (Exit confirmation, then the quit) run after 0xE2 is
-    // destroyed: only the empty shell backdrop (`0x0052FEC0`) shows.
+    // destroyed: the confirmation shows over the empty shell backdrop
+    // (`0x0052FEC0`). Retail leaves the destroyed box's last image on screen
+    // through the quit fade (nothing repaints after OK); here the backdrop
+    // shows alone (evidence note residual).
     let backdrop =
         state.frontend.exit_confirm_modal.is_some() || state.frontend.quit_cascade.is_some();
     if !backdrop {
@@ -484,12 +492,8 @@ fn render_main_menu_shell_to_target_inner(
     // While either slide runs the RA2TS static shows no movie and gets no
     // timer (`0x006071E0`; the teardown also stops it with 0x4E2), so the
     // parent background shows and the movie clock starts after the slide.
-    let sliding = crate::app::frontend::shell_transition::shell_slide_running(state);
-    let exit_wave = crate::app::frontend::shell_transition::shell_exit_wave(
-        state,
-        crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
-    )
-    .cloned();
+    let sliding = !matches!(slide, MainMenuSlide::Steady);
+    let leaving = matches!(slide, MainMenuSlide::Exit(_));
     let movie_shown = !sliding && !backdrop;
     if !movie_shown {
         state.frontend.main_menu_movie_last_step = Instant::now();
@@ -511,7 +515,6 @@ fn render_main_menu_shell_to_target_inner(
     // that covers the children, and the engine pumps no messages until it
     // ends: the heading, status and version statics stay blank and the
     // monitor window shows the right panel's own art underneath.
-    let leaving = exit_wave.is_some();
     let monitor_frame = if backdrop || leaving {
         None
     } else {
@@ -544,7 +547,8 @@ fn render_main_menu_shell_to_target_inner(
         .map(|movie| movie.batch_texture());
 
     // 0xE2-only MNSCRN parent background, submitted FIRST (no analog on 0x100).
-    let background_instances = build_parent_background_instances(chrome, &layout);
+    let background_instances =
+        shell_parent_background_instances(chrome, layout.screen.w, layout.screen.h);
     let movie_instances = if movie_shown && movie_texture.is_some() {
         build_movie_instances(&layout)
     } else {
@@ -574,8 +578,7 @@ fn render_main_menu_shell_to_target_inner(
                 .frontend
                 .main_menu_shell_state
                 .pressed_owner_draw_button,
-            entry_frame,
-            exit_wave.as_ref(),
+            &slide,
         )
     };
     // 0xE2 never flashes, so the hover clock is unused (None) — keep the call
@@ -596,18 +599,19 @@ fn render_main_menu_shell_to_target_inner(
         .frontend
         .main_menu_shell_state
         .pressed_owner_draw_button;
-    let mut labels = main_menu_paint_labels(
-        state,
-        &layout,
-        pressed,
-        (!leaving).then_some(version_text.as_str()),
-        title_window,
-        !sliding,
-    );
+    let mut labels = if backdrop {
+        Vec::new()
+    } else {
+        main_menu_paint_labels(
+            state,
+            &layout,
+            pressed,
+            (!leaving).then_some(version_text.as_str()),
+            title_window,
+            !sliding,
+        )
+    };
     labels.extend(status_label);
-    if backdrop {
-        labels.clear();
-    }
     let text_draws = shell_paint::paint_labels(&state.renderer.bit_font, &labels);
 
     // Quit-confirm SHP modal overlay (blocking; drawn over the menu, under the
@@ -936,7 +940,11 @@ mod tests {
             );
         }
         let frame = wave.current_main_menu_frame().expect("tick 6");
-        let buttons = main_menu_paint_buttons(&compute_layout(800, 600), None, Some(frame), None);
+        let buttons = main_menu_paint_buttons(
+            &compute_layout(800, 600),
+            None,
+            &MainMenuSlide::Entry(frame),
+        );
         assert_eq!(buttons[4].wave_frame, buttons[5].wave_frame);
     }
 
@@ -947,7 +955,7 @@ mod tests {
         let mut wave = ShellFrameWave::new_presented_main_menu(2);
         assert!(wave.activate_after_acquire());
         let frame = wave.current_main_menu_frame().expect("tick 0");
-        let painted = main_menu_paint_buttons(&layout, None, Some(frame), None);
+        let painted = main_menu_paint_buttons(&layout, None, &MainMenuSlide::Entry(frame));
         for (button, paint) in layout.buttons.iter().zip(painted.iter()) {
             assert_eq!(
                 paint.wave_frame,

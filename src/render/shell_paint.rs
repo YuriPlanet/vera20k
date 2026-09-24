@@ -207,7 +207,7 @@ pub fn paint_chrome(
 /// `RightPanel__Draw` (`0x0072E450`) with its overlay flag clear, as the empty
 /// shell backdrop (`0x0072E820(0)`, painted by `0x0052FEC0` between dialogs)
 /// draws it: SDBTNANM frame 10, the closed shutter, right-aligned over every
-/// tile.
+/// tile of [`paint_chrome`]'s tile column.
 pub fn paint_shuttered_tiles(
     atlas: &MainMenuShellChromeAtlas,
     panel: RightPanelRects,
@@ -221,7 +221,7 @@ pub fn paint_shuttered_tiles(
     for row in 0..panel.tile_count {
         let rect = RectPx::new(
             panel.tile.x + panel.tile.w - w,
-            panel.tile.y + row * h,
+            panel.tile.y + row * panel.tile.h,
             w,
             h,
         );

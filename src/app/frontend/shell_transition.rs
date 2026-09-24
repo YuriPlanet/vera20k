@@ -94,38 +94,75 @@ pub(crate) enum ShellExitThen {
     MovieListBack,
 }
 
+impl ShellExitThen {
+    /// The dialog whose result this is.
+    pub(crate) fn dialog(self) -> ShellSlideKind {
+        match self {
+            Self::MainMenu(_) => ShellSlideKind::MainMenu,
+            Self::SinglePlayer(_) => ShellSlideKind::SinglePlayer,
+            Self::MoviesCredits(_) => ShellSlideKind::MoviesAndCredits,
+            Self::PlayMovie | Self::MovieListBack => ShellSlideKind::MovieList,
+        }
+    }
+}
+
 /// A shown family dialog's teardown slide (`0x00622720 -> 0x00608070`): the
 /// buttons ramp out on the entry schedule while input is blocked, then the
 /// dialog is destroyed and `then` runs.
 #[derive(Debug, Clone)]
 pub(crate) struct ShellExit {
-    pub(crate) kind: ShellSlideKind,
-    pub(crate) wave: ShellFrameWave,
-    pub(crate) then: ShellExitThen,
+    wave: ShellFrameWave,
+    then: ShellExitThen,
 }
 
-/// Begin the teardown slide of the showing family dialog `kind`, or `None`
-/// when that dialog is not the one showing steady (no slide then runs, as
-/// `0x00608070` requires the dialog to be shown); the caller then commits at
-/// once.
-pub(crate) fn begin_shell_exit(
-    state: &mut AppState,
+/// How a request to leave a family dialog starts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ShellExitStart {
+    /// The teardown slide runs; the result follows when it ends.
+    Sliding,
+    /// The dialog is not showing steady, so `0x00608070` returns without a
+    /// slide: the result runs at once.
+    Immediate,
+    /// The dialog is already sliding out with a result; this one is dropped.
+    AlreadyLeaving,
+}
+
+/// How leaving dialog `kind` starts, given the running exit, the showing
+/// target, the dialog whose slide state is live and whether its entry slide
+/// still runs.
+fn exit_start_rule(
+    exit_running: bool,
+    target: Option<ShellSlideKind>,
+    active: Option<ShellSlideKind>,
+    entry_running: bool,
     kind: ShellSlideKind,
-    then: ShellExitThen,
-) -> bool {
-    let showing = current_shell_slide_target(state) == Some(kind)
-        && state.frontend.shell_slide_active_shell == Some(kind)
-        && state.frontend.shell_first_paint_slide.is_none()
-        && state.frontend.shell_exit.is_none();
-    if !showing {
-        return false;
+) -> ShellExitStart {
+    if exit_running {
+        ShellExitStart::AlreadyLeaving
+    } else if target == Some(kind) && active == Some(kind) && !entry_running {
+        ShellExitStart::Sliding
+    } else {
+        ShellExitStart::Immediate
     }
-    state.frontend.shell_exit = Some(ShellExit {
+}
+
+/// Begin the teardown slide of the dialog that produced `then`.
+pub(crate) fn begin_shell_exit(state: &mut AppState, then: ShellExitThen) -> ShellExitStart {
+    let kind = then.dialog();
+    let start = exit_start_rule(
+        state.frontend.shell_exit.is_some(),
+        current_shell_slide_target(state),
+        state.frontend.shell_slide_active_shell,
+        state.frontend.shell_first_paint_slide.is_some(),
         kind,
-        wave: ShellFrameWave::new_slide_out(kind.slot_count(), Instant::now()),
-        then,
-    });
-    true
+    );
+    if start == ShellExitStart::Sliding {
+        state.frontend.shell_exit = Some(ShellExit {
+            wave: ShellFrameWave::new_slide_out(kind.slot_count(), Instant::now()),
+            then,
+        });
+    }
+    start
 }
 
 impl ShellExit {
@@ -137,9 +174,16 @@ impl ShellExit {
     }
 }
 
-/// Advance the running teardown slide; returns its continuation once the last
-/// tick has been shown.
+/// Advance the running teardown slide; returns its result once the last tick
+/// has been shown. A dialog that stopped showing while it slid out (another
+/// route replaced it, such as a game loaded from an overlay panel) takes its
+/// result with it.
 pub(crate) fn advance_shell_exit(state: &mut AppState, now: Instant) -> Option<ShellExitThen> {
+    let kind = state.frontend.shell_exit.as_ref()?.then.dialog();
+    if current_shell_slide_target(state) != Some(kind) {
+        state.frontend.shell_exit = None;
+        return None;
+    }
     if !state.frontend.shell_exit.as_mut()?.advance(now) {
         return None;
     }
@@ -152,13 +196,22 @@ pub(crate) fn shell_exit_wave(state: &AppState, kind: ShellSlideKind) -> Option<
         .frontend
         .shell_exit
         .as_ref()
-        .filter(|exit| exit.kind == kind)
+        .filter(|exit| exit.then.dialog() == kind)
         .map(|exit| &exit.wave)
+}
+
+/// Shell capture only: keep the running teardown slide at its current tick.
+pub(crate) fn hold_shell_exit_for_capture(state: &mut AppState) {
+    if let Some(exit) = state.frontend.shell_exit.as_mut() {
+        exit.wave.hold_for_capture();
+    }
 }
 
 /// Either slide of the showing family dialog runs: the slide engine draws
 /// only the button frames (no captions), the RA2TS static shows no movie and
 /// no static timer is delivered (`0x006071E0` sleeps without dispatching).
+/// Both slides belong to the showing dialog: an entry slide is armed for the
+/// current target and an exit is dropped once its dialog stops showing.
 pub(crate) fn shell_slide_running(state: &AppState) -> bool {
     state.frontend.shell_first_paint_slide.is_some() || state.frontend.shell_exit.is_some()
 }
@@ -425,8 +478,8 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     }
     // Options `0xD5` (and its Keyboard child) runs after `0xE2` is destroyed
     // (state 5); state 0x12 builds a new `0xE2` when it closes (`0x0052DDAB`).
-    // The Exit confirmation and the quit that follows it (states 6 and 7)
-    // show only the empty shell backdrop.
+    // The Exit confirmation (state 6) and the quit after it (state 7) also run
+    // without a family dialog.
     if state.frontend.options_dialog.is_some()
         || state.frontend.keyboard_dialog.is_some()
         || state.frontend.exit_confirm_modal.is_some()
@@ -649,11 +702,47 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    fn teardown_slides_only_for_the_steadily_shown_dialog() {
+        use ShellSlideKind::{MainMenu, MovieList};
+        let start = |running, target, active, entry| {
+            exit_start_rule(running, target, active, entry, MovieList)
+        };
+        let shown = Some(MovieList);
+        assert_eq!(start(false, shown, shown, false), ShellExitStart::Sliding);
+        // Its entry slide still runs, or it is not the showing dialog:
+        // 0x00608070 returns without a slide and the result runs at once.
+        assert_eq!(start(false, shown, shown, true), ShellExitStart::Immediate);
+        assert_eq!(
+            start(false, Some(MainMenu), Some(MainMenu), false),
+            ShellExitStart::Immediate
+        );
+        assert_eq!(start(false, None, shown, false), ShellExitStart::Immediate);
+        // A second result while it slides out neither restarts nor commits.
+        assert_eq!(
+            start(true, shown, shown, false),
+            ShellExitStart::AlreadyLeaving
+        );
+    }
+
+    #[test]
+    fn exit_results_belong_to_their_dialogs() {
+        use crate::ui::main_menu_shell::MainMenuShellAction;
+        assert_eq!(
+            ShellExitThen::MainMenu(MainMenuShellAction::ExitGame).dialog(),
+            ShellSlideKind::MainMenu
+        );
+        assert_eq!(ShellExitThen::PlayMovie.dialog(), ShellSlideKind::MovieList);
+        assert_eq!(
+            ShellExitThen::MovieListBack.dialog(),
+            ShellSlideKind::MovieList
+        );
+    }
+
+    #[test]
     fn a_teardown_slide_shows_every_tick_before_its_result() {
         // Movie list 0x129: two buttons, 2 + 9 = 11 ticks of 30 ms.
         let t0 = Instant::now();
         let mut exit = ShellExit {
-            kind: ShellSlideKind::MovieList,
             wave: ShellFrameWave::new_slide_out(ShellSlideKind::MovieList.slot_count(), t0),
             then: ShellExitThen::MovieListBack,
         };

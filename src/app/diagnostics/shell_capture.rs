@@ -36,6 +36,7 @@ const CHECKPOINT_MOVIE_LIST_0X129_STEADY: &str = "movie-list-0x129-steady";
 const CHECKPOINT_MOVIE_LIST_0X129_SELECTED: &str = "movie-list-0x129-selected";
 const CHECKPOINT_MOVIE_LIST_0X129_FULL: &str = "movie-list-0x129-full";
 const CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2: &str = "movie-list-0x129-full-down2";
+const CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME: &str = "movie-list-0x129-back-first-frame";
 const CHECKPOINT_CREDITS_ROLL_FRAME_PREFIX: &str = "credits-roll-frame-";
 const CHECKPOINT_SNEAK_PEEK_FRAME_PREFIX: &str = "sneak-peek-frame-";
 const CHECKPOINT_MAIN_MENU_0XE2_SLIDE_OUT_PREFIX: &str = "main-menu-0xe2-slide-out-tick-";
@@ -77,6 +78,9 @@ pub enum ShellCaptureCheckpoint {
     /// down-arrow presses.
     MovieList0x129Full,
     MovieList0x129FullDown2,
+    /// Back on the movie list: the first frame after its teardown slide,
+    /// which must already be the recreated `0x101`'s entry slide at tick 0.
+    MovieList0x129BackFirstFrame,
     /// Show_Credits pinned at one roll frame (`credits-roll-frame-<N>`).
     CreditsRollFrame(u64),
     /// Sneak Peeks Play_Movie pinned at one video frame (`sneak-peek-frame-<N>`).
@@ -143,6 +147,7 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_MOVIE_LIST_0X129_SELECTED => Ok(Self::MovieList0x129Selected),
             CHECKPOINT_MOVIE_LIST_0X129_FULL => Ok(Self::MovieList0x129Full),
             CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2 => Ok(Self::MovieList0x129FullDown2),
+            CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME => Ok(Self::MovieList0x129BackFirstFrame),
             _ => bail!("unsupported shell-capture checkpoint {value:?}"),
         }
     }
@@ -158,6 +163,7 @@ impl ShellCaptureCheckpoint {
             Self::MovieList0x129Selected => CHECKPOINT_MOVIE_LIST_0X129_SELECTED,
             Self::MovieList0x129Full => CHECKPOINT_MOVIE_LIST_0X129_FULL,
             Self::MovieList0x129FullDown2 => CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2,
+            Self::MovieList0x129BackFirstFrame => CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME,
             Self::CreditsRollFrame(_) => "credits-roll-frame",
             Self::SneakPeekFrame(_) => "sneak-peek-frame",
             Self::MainMenu0xE2SlideOut(_) => "main-menu-0xe2-slide-out",
@@ -173,6 +179,7 @@ impl ShellCaptureCheckpoint {
             Self::MovieList0x129Selected => movies::MoviesTarget::List0x129Selected,
             Self::MovieList0x129Full => movies::MoviesTarget::FullList { down_presses: 0 },
             Self::MovieList0x129FullDown2 => movies::MoviesTarget::FullList { down_presses: 2 },
+            Self::MovieList0x129BackFirstFrame => movies::MoviesTarget::ListBackFirstFrame,
             Self::CreditsRollFrame(frame) => movies::MoviesTarget::Credits { frame },
             Self::SneakPeekFrame(frame) => movies::MoviesTarget::SneakPeek { frame },
             Self::MainMenu0xE2SlideOut(tick) => movies::MoviesTarget::SlideOut {

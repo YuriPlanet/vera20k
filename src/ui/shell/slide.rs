@@ -145,10 +145,11 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[ShellSlideSpec] = &[
 /// allow-listed but not yet rendered here (`0x94`/`0x6B` per
 /// `docs/research/skirmish-ui/SHELL_FIRST_PAINT_SLIDE_GENERIC_TRIGGER_GHIDRA_REPORT.md`
 /// §3); those slide automatically once a renderer maps to them and gains a
-/// `RENDERED_SHELL_SLIDES` slot count. The original's full allow-list is wider
-/// (~58 ids, mostly network/WOL setup dialogs that are out of scope here).
-/// Excluded: modal dialogs (`0x120` confirm, `0xCE` body-ok) and the in-game
-/// Options dialog (`0xBBB`), all of which carry `slide_eligible = false`.
+/// `RENDERED_SHELL_SLIDES` slot count. The original's full list
+/// (`0x0060C540`, 55 ids) also marks Options `0xD5` and its children, Load
+/// `0xB7`, Score `0x108`, the in-game menu dialogs (`0xB5`, `0xB6`, `0xB8`,
+/// `0xBBA`, `0xBBB`) and the LAN/WOL setup dialogs; none of them slides here
+/// yet. Message boxes (`0x120` confirm, `0xCE` body-ok) are not in it.
 pub(crate) const SHELL_SLIDE_ALLOW_LIST: &[u16] =
     &[0x00E2, 0x0094, 0x006B, 0x0100, 0x0101, 0x0102, 0x0129];
 
@@ -177,6 +178,13 @@ const MAIN_MENU_GROUP_A_ENTRY_TICKS: &[(u16, i32)] = &[
     (0x055C, 5),
     (0x03EE, 5),
 ];
+
+/// Schedule entry tick of a `0xE2` button by resource id.
+fn main_menu_entry_tick(resource_id: u16) -> Option<i32> {
+    MAIN_MENU_GROUP_A_ENTRY_TICKS
+        .iter()
+        .find_map(|&(id, tick)| (id == resource_id).then_some(tick))
+}
 
 #[derive(Debug, Clone)]
 enum WaveClock {
@@ -224,12 +232,9 @@ impl MainMenuEntryPaintFrame {
     }
 
     pub(crate) fn sdbtnanm_frame(self, resource_id: u16, group: ButtonGroup) -> Option<usize> {
-        let entry_tick = MAIN_MENU_GROUP_A_ENTRY_TICKS
-            .iter()
-            .find_map(|&(id, tick)| (id == resource_id).then_some(tick))?;
         Some(frame_for_tick(
             i32::from(self.tick),
-            entry_tick,
+            main_menu_entry_tick(resource_id)?,
             group,
             WaveDirection::SlideIn,
         ))
@@ -402,12 +407,9 @@ impl ShellFrameWave {
         let WaveClock::Compatibility { tick, .. } = self.clock else {
             return None;
         };
-        let entry_tick = MAIN_MENU_GROUP_A_ENTRY_TICKS
-            .iter()
-            .find_map(|&(id, tick)| (id == resource_id).then_some(tick))?;
         Some(frame_for_tick(
             tick as i32,
-            entry_tick,
+            main_menu_entry_tick(resource_id)?,
             group,
             self.direction,
         ))
