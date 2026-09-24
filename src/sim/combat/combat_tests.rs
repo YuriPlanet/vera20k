@@ -9182,8 +9182,7 @@ fn gsi_08_12_a_garrison_kill_pays_the_occupant_next_in_line() {
     for id in [1, 3] {
         let mut occupant = make_infantry_entity(id, "E1", 5, 5, 125);
         occupant.owner = test_intern("Soviet");
-        occupant.passenger_role =
-            crate::sim::passenger::PassengerRole::Inside { transport_id: 10 };
+        occupant.passenger_role = crate::sim::passenger::PassengerRole::Inside { transport_id: 10 };
         store.insert(occupant);
     }
     let mut victim = make_infantry_entity(2, "E2", 8, 5, 1);

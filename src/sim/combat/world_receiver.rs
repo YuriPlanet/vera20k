@@ -4653,7 +4653,6 @@ pub(crate) fn tick_combat(
         }
     }
 
-
     // Phase 3.5: fold radiation-emitting detonations into the field, then
     // collect the periodic radiation damage. The original applies this damage
     // inside each foot unit's own AI step, gated on the global frame counter;
