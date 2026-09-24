@@ -81,28 +81,9 @@ pub fn movie_base_for_screen_width(screen_w: u32) -> MainMenuMovieBase {
     }
 }
 
-/// Bottom-left tooltip/status rect anchored to the screen bottom-left.
-///
-/// X is offset `+10` px from the centering margin; Y places the control's
-/// bottom edge one pixel above the screen bottom (or above the centered
-/// shell's bottom on oversized screens).
+/// Status line `0x695` window (template `(2, 355, 303, 12)` DLU).
 fn tooltip_line_rect(screen_w: i32, screen_h: i32) -> RectPx {
-    let base = dlu_rect(2, 355, 303, 12);
-    let ctrl_w = base.w;
-    let ctrl_h = base.h;
-    let delta_x = if screen_w > SHELL_BASE_W {
-        (screen_w - SHELL_BASE_W) / 2
-    } else {
-        0
-    };
-    let delta_y = if screen_h > SHELL_BASE_H {
-        (screen_h - SHELL_BASE_H) / 2
-    } else {
-        0
-    };
-    let x = delta_x + 10;
-    let y = screen_h - ctrl_h - delta_y - 1;
-    RectPx::new(x, y, ctrl_w, ctrl_h)
+    crate::ui::shell::layout::status_line_rect(RectPx::new(2, 355, 303, 12), screen_w, screen_h)
 }
 
 /// Bottom-right version-line rect anchored to the SDBTM lower-cap bottom edge.
@@ -376,10 +357,11 @@ mod tests {
 
     #[test]
     fn tooltip_line_anchors_bottom_left_with_10_px_inset() {
-        // DLU (2, 355, 303, 12) at 800x600 → pixel (3, 577, 455, 20).
-        // Bottom-left layout pass: X = 0 + 10 = 10, Y = 600 - 20 - 0 - 1 = 579.
+        // DLU (2, 355, 303, 12) at 800x600 → pixel (3, 577, 455, 20), one
+        // pixel larger at runtime (456x21). 0x0060B550: X = 0 + 10 = 10,
+        // Y = 600 - 21 - 0 - 1 = 578.
         let layout = compute_layout(800, 600);
-        assert_eq!(layout.tooltip_line, RectPx::new(10, 579, 455, 20));
+        assert_eq!(layout.tooltip_line, RectPx::new(10, 578, 456, 21));
     }
 
     #[test]

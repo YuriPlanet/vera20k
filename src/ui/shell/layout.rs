@@ -135,6 +135,20 @@ pub fn layout_pass_in_game_options(
         .collect()
 }
 
+/// Status line `0x695` of the right-panel shells outside a network session
+/// (`0x0060B550`): the window at `x = dx + 10`, `y = H - h - dy - 1`, where
+/// `dx`/`dy` are the non-negative halves of the screen beyond 800x600. The
+/// runtime window carries the same one-pixel size correction as the heading
+/// and the monitor (456x21 for the 303x12 DLU template at 800x600, so the
+/// retail text ink starts at y 581).
+pub fn status_line_rect(dlu: RectPx, screen_w: i32, screen_h: i32) -> RectPx {
+    let converted = geom::dlu_rect(dlu.x, dlu.y, dlu.w, dlu.h);
+    let (w, h) = (converted.w + 1, converted.h + 1);
+    let dx = geom::center_offset(screen_w, SHELL_BASE_W);
+    let dy = geom::center_offset(screen_h, SHELL_BASE_H);
+    RectPx::new(dx + 10, screen_h - h - dy - 1, w, h)
+}
+
 /// Resolve one include-set control outside a descriptor table, with the same
 /// per-control rule `layout_pass` applies.
 pub fn anchor_rect(rule: AnchorRule, dlu: RectPx, screen_w: i32, screen_h: i32) -> RectPx {

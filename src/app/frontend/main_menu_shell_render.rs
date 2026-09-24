@@ -49,9 +49,6 @@ const MAIN_MENU_BUTTON_POLICY: ButtonPolicy = ButtonPolicy {
     disabled_dim: false,
 };
 
-/// Native static `0x695` is left-aligned and vertically centered.
-const MAIN_MENU_STATUS_ALIGN: ShellAlign = ShellAlign::V_CENTER;
-
 pub(crate) enum MainMenuShellRenderResult {
     Rendered {
         title_receipt: Option<Kind1RevealReceipt>,
@@ -168,9 +165,9 @@ fn main_menu_status_csf_key(hovered_button: Option<MainMenuControlId>) -> Option
     hovered_button.map(tooltip_csf_key_for_control)
 }
 
-/// Path-A tint for a right-panel heading reveal: yellow text with a white
-/// highlight trail.
-pub(crate) fn main_menu_title_path_a(window: Kind1RevealWindow) -> PathAReveal {
+/// Path-A tint for a right-panel kind-1 static (heading `0x694`, status line
+/// `0x695`): yellow text with a white highlight trail.
+pub(crate) fn shell_reveal_path_a(window: Kind1RevealWindow) -> PathAReveal {
     PathAReveal {
         count: window.count,
         range: window.range,
@@ -187,7 +184,6 @@ fn main_menu_paint_labels<'a>(
     state: &'a AppState,
     layout: &MainMenuShellLayout,
     pressed_button: Option<MainMenuControlId>,
-    hovered_button: Option<MainMenuControlId>,
     version_text: &'a str,
     title_window: Option<Kind1RevealWindow>,
 ) -> Vec<PaintLabel<'a>> {
@@ -211,7 +207,7 @@ fn main_menu_paint_labels<'a>(
             rect: layout.title,
             align: ShellAlign::H_CENTER,
             rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: Some(main_menu_title_path_a(window)),
+            path_a_reveal: Some(shell_reveal_path_a(window)),
         });
     }
     out.push(PaintLabel {
@@ -221,15 +217,6 @@ fn main_menu_paint_labels<'a>(
         rgb: SHELL_TEXT_RGB_ENABLED,
         path_a_reveal: None,
     });
-    if let Some(key) = main_menu_status_csf_key(hovered_button) {
-        out.push(PaintLabel {
-            text: resolve_csf(state, key),
-            rect: layout.tooltip_line,
-            align: MAIN_MENU_STATUS_ALIGN,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
-        });
-    }
     out
 }
 
@@ -493,6 +480,15 @@ fn render_main_menu_shell_to_target_inner(
 
     let layout = compute_layout(state.renderer.gpu.config.width, state.renderer.gpu.config.height);
     let monitor_frame = crate::app::frontend::menu_page_render::paint_shell_monitor(state);
+    let hovered = state.frontend.main_menu_shell_state.hovered_owner_draw_button;
+    let status_text = main_menu_status_csf_key(hovered)
+        .map(|key| resolve_csf(state, key).into_owned())
+        .unwrap_or_default();
+    let status_label = crate::app::frontend::menu_page_render::paint_shell_status_line(
+        state,
+        status_text,
+        layout.tooltip_line,
+    );
     let chrome = state
         .frontend.main_menu_shell_chrome
         .as_ref()
@@ -534,14 +530,12 @@ fn render_main_menu_shell_to_target_inner(
         resolve_csf(state, "GUI:Version"),
         state.frontend.version_txt
     );
-    let labels = main_menu_paint_labels(
-        state,
-        &layout,
-        state.frontend.main_menu_shell_state.pressed_owner_draw_button,
-        state.frontend.main_menu_shell_state.hovered_owner_draw_button,
-        &version_text,
-        title_window,
-    );
+    let pressed = state
+        .frontend
+        .main_menu_shell_state
+        .pressed_owner_draw_button;
+    let mut labels = main_menu_paint_labels(state, &layout, pressed, &version_text, title_window);
+    labels.extend(status_label);
     let text_draws = shell_paint::paint_labels(&state.renderer.bit_font, &labels);
 
     // Quit-confirm SHP modal overlay (blocking; drawn over the menu, under the
@@ -916,14 +910,8 @@ mod tests {
     }
 
     #[test]
-    fn status_static_is_left_aligned_and_vertically_centered() {
-        assert_eq!(MAIN_MENU_STATUS_ALIGN, ShellAlign::V_CENTER);
-        assert!(!MAIN_MENU_STATUS_ALIGN.contains(ShellAlign::H_CENTER));
-    }
-
-    #[test]
     fn terminal_title_metadata_is_content_agnostic_path_a() {
-        let reveal = main_menu_title_path_a(Kind1RevealWindow {
+        let reveal = shell_reveal_path_a(Kind1RevealWindow {
             count: 17,
             range: 8,
         });

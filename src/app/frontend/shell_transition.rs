@@ -107,6 +107,7 @@ struct ShellLifecycleReducer<'a> {
     title_reveal: &'a mut crate::ui::shell::static_reveal::Kind1StaticReveal,
     monitor: &'a mut crate::ui::shell::warning_monitor::WarningMonitor,
     page_title: &'a mut crate::ui::shell::static_reveal::PresentedKind1Static,
+    status_line: &'a mut crate::ui::shell::static_reveal::PresentedKind1Static,
 }
 
 impl<'a> ShellLifecycleReducer<'a> {
@@ -118,6 +119,7 @@ impl<'a> ShellLifecycleReducer<'a> {
             title_reveal: &mut state.frontend.main_menu_shell_state.title_reveal,
             monitor: &mut state.frontend.shell_monitor,
             page_title: &mut state.frontend.shell_page_title,
+            status_line: &mut state.frontend.shell_status_line,
         }
     }
 
@@ -140,9 +142,10 @@ impl<'a> ShellLifecycleReducer<'a> {
         match target {
             Some(kind) => {
                 // A new dialog instance creates new statics: 0x71C at frame 0
-                // with its timer unarmed (0x0060A982) and a hidden 0x694.
+                // with its timer unarmed (0x0060A982), hidden 0x694 and 0x695.
                 *self.monitor = Default::default();
-                *self.page_title = Default::default();
+                self.page_title.reset();
+                self.status_line.reset();
                 *self.first_paint_slide = Some(if kind == ShellSlideKind::MainMenu {
                     *self.slide_generation = self.slide_generation.wrapping_add(1);
                     if *self.slide_generation == 0 {
@@ -208,6 +211,8 @@ impl<'a> ShellLifecycleReducer<'a> {
             }
             return false;
         }
+        // The same SHOW completion (0x0060AA60) starts status line 0x695.
+        self.status_line.start(now);
         *self.first_paint_slide = None;
         true
     }
@@ -233,6 +238,17 @@ pub(crate) fn advance_shell_static_reveals(state: &mut AppState) {
 /// produce a fresh 0xE2 entry edge instead of inheriting the old terminal title.
 pub(crate) fn invalidate_main_menu_dialog_instance(state: &mut AppState) {
     ShellLifecycleReducer::from_state(state).invalidate_main_menu_dialog_instance();
+    // A new 0xE2 starts with no press or hover: its status line stays empty
+    // until a hover message arrives from the real cursor position.
+    let menu = &mut state.frontend.main_menu_shell_state;
+    menu.pressed_owner_draw_button = None;
+    menu.hovered_owner_draw_button = None;
+    if state.frontend.shell_controller.top_id() == Some(DialogId(0x00E2)) {
+        state
+            .frontend
+            .shell_controller
+            .reset_to(DialogId(0x00E2), false);
+    }
 }
 
 /// Deliver the kind-1 timer only while the bare 0xE2 dialog owns steady paint.
@@ -322,6 +338,11 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     // Play_Movie and Show_Credits run after their source dialog is destroyed
     // and before the next one exists: no shell dialog is showing.
     if state.frontend.fullscreen_movie.is_some() || state.frontend.credits_roll.is_some() {
+        return None;
+    }
+    // Options `0xD5` (and its Keyboard child) runs after `0xE2` is destroyed
+    // (state 5); state 0x12 builds a new `0xE2` when it closes (`0x0052DDAB`).
+    if state.frontend.options_dialog.is_some() || state.frontend.keyboard_dialog.is_some() {
         return None;
     }
     let candidate =
@@ -517,11 +538,12 @@ pub(crate) fn render_shell_first_paint_slide(
         // Menu pages start their heading reveal on the same edge (0xE2 starts
         // its own in the presented-entry completion transaction).
         Some(ShellWaveCompletion::MenuPage) => {
+            let now = Instant::now();
             let title = crate::app::frontend::menu_page_render::active_page_title_text(state, kind);
-            state
-                .frontend
-                .shell_page_title
-                .start(&title, Instant::now());
+            let frontend = &mut state.frontend;
+            frontend.shell_page_title.set_text(&title, now);
+            frontend.shell_page_title.start(now);
+            frontend.shell_status_line.start(now);
         }
         None => {}
     }
@@ -580,7 +602,12 @@ mod tests {
         let start = Instant::now();
         let mut title_reveal = Kind1StaticReveal::default();
         let mut monitor = crate::ui::shell::warning_monitor::WarningMonitor::default();
-        let mut page_title = crate::ui::shell::static_reveal::PresentedKind1Static::default();
+        let mut page_title = crate::ui::shell::static_reveal::PresentedKind1Static::new(
+            crate::ui::shell::static_reveal::HEADING_KIND1,
+        );
+        let mut status_line = crate::ui::shell::static_reveal::PresentedKind1Static::new(
+            crate::ui::shell::static_reveal::STATUS_LINE_KIND1,
+        );
         assert!(title_reveal.start("Main Menu", start));
         for count in 1..=17 {
             let Kind1PaintWindow::Due { window, receipt } = title_reveal.paint_window() else {
@@ -609,6 +636,7 @@ mod tests {
             title_reveal: &mut title_reveal,
             monitor: &mut monitor,
             page_title: &mut page_title,
+            status_line: &mut status_line,
         }
         .invalidate_main_menu_dialog_instance();
         assert_eq!(title_reveal.paint_window(), Kind1PaintWindow::Hidden);
@@ -624,6 +652,7 @@ mod tests {
             title_reveal: &mut title_reveal,
             monitor: &mut monitor,
             page_title: &mut page_title,
+            status_line: &mut status_line,
         }
         .invalidate_main_menu_dialog_instance();
         assert!(first_paint_slide.is_none());
@@ -638,6 +667,7 @@ mod tests {
             title_reveal: &mut title_reveal,
             monitor: &mut monitor,
             page_title: &mut page_title,
+            status_line: &mut status_line,
         }
         .observe_target(Some(ShellSlideKind::MainMenu), start);
         assert_eq!(effect, ShellEntryEffect::Started(ShellSlideKind::MainMenu));
@@ -697,6 +727,7 @@ mod tests {
                 title_reveal: &mut title_reveal,
                 monitor: &mut monitor,
                 page_title: &mut page_title,
+                status_line: &mut status_line,
             }
             .complete_presented_main_menu(42, "Main Menu", completion_at)
         );
@@ -712,6 +743,55 @@ mod tests {
         };
         assert_eq!(window.count, 1);
         assert_eq!(slide_sound_edges, [ShellSlideKind::MainMenu]);
+        // The same SHOW completion starts status line 0x695 (0x0060AA60).
+        assert!(status_line.paint(completion_at).is_some());
+    }
+
+    #[test]
+    fn a_new_dialog_instance_hides_its_statics_and_restarts_the_monitor() {
+        use crate::ui::shell::static_reveal::{PresentedKind1Static, STATUS_LINE_KIND1};
+        use crate::ui::shell::warning_monitor::WarningMonitor;
+        let t0 = Instant::now();
+        let mut title_reveal = Kind1StaticReveal::default();
+        let mut monitor = WarningMonitor::default();
+        let mut page_title =
+            PresentedKind1Static::new(crate::ui::shell::static_reveal::HEADING_KIND1);
+        let mut status_line = PresentedKind1Static::new(STATUS_LINE_KIND1);
+        // A finished Single Player instance: statics shown, monitor animating.
+        page_title.set_text("Single Player", t0);
+        assert!(page_title.start(t0));
+        status_line.set_text("Help", t0);
+        assert!(status_line.start(t0));
+        for ms in [2, 100, 200] {
+            monitor.paint(t0 + Duration::from_millis(ms), 91, true);
+            monitor.commit_presented();
+        }
+        assert_ne!(
+            monitor.paint(t0 + Duration::from_millis(300), 91, true),
+            Some(0)
+        );
+
+        let mut active_shell = Some(ShellSlideKind::SinglePlayer);
+        let mut first_paint_slide = None;
+        let mut slide_generation = 0;
+        let later = t0 + Duration::from_secs(1);
+        let effect = ShellLifecycleReducer {
+            active_shell: &mut active_shell,
+            first_paint_slide: &mut first_paint_slide,
+            slide_generation: &mut slide_generation,
+            title_reveal: &mut title_reveal,
+            monitor: &mut monitor,
+            page_title: &mut page_title,
+            status_line: &mut status_line,
+        }
+        .observe_target(Some(ShellSlideKind::MoviesAndCredits), later);
+        assert_eq!(
+            effect,
+            ShellEntryEffect::Started(ShellSlideKind::MoviesAndCredits)
+        );
+        assert_eq!(page_title.paint(later), None);
+        assert_eq!(status_line.paint(later), None);
+        assert_eq!(monitor.paint(later, 91, false), Some(0));
     }
 
     #[test]
@@ -722,7 +802,12 @@ mod tests {
         let mut slide_generation = 52;
         let mut title_reveal = Kind1StaticReveal::default();
         let mut monitor = crate::ui::shell::warning_monitor::WarningMonitor::default();
-        let mut page_title = crate::ui::shell::static_reveal::PresentedKind1Static::default();
+        let mut page_title = crate::ui::shell::static_reveal::PresentedKind1Static::new(
+            crate::ui::shell::static_reveal::HEADING_KIND1,
+        );
+        let mut status_line = crate::ui::shell::static_reveal::PresentedKind1Static::new(
+            crate::ui::shell::static_reveal::STATUS_LINE_KIND1,
+        );
 
         let wave = first_paint_slide.as_mut().expect("presented wave");
         assert!(wave.activate_after_acquire());
@@ -750,6 +835,7 @@ mod tests {
                 title_reveal: &mut title_reveal,
                 monitor: &mut monitor,
                 page_title: &mut page_title,
+                status_line: &mut status_line,
             }
             .complete_presented_main_menu(51, "Main Menu", accepted_at)
         );

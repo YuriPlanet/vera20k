@@ -113,6 +113,8 @@ impl App {
         if let Some(list) = state.frontend.movie_list.as_mut() {
             list.scroll_pointer_moved(layout.list, x, y);
         }
+        // Every hover message repaints the status line (0x00615EF7).
+        state.frontend.shell_status_line.hover_repaint();
     }
 
     /// Scrollbar arrow auto-repeat; returns the next wake deadline.

@@ -215,12 +215,16 @@ impl MoviesCapture {
         if self.phase != Phase::Settling(0) {
             return Ok(false);
         }
-        // Steady page frames wait for the heading's kind-1 reveal to finish.
+        // Steady page frames wait for the heading's and the status line's
+        // kind-1 reveals to finish.
         let heading_settled = match self.target {
             MoviesTarget::Page0x101
             | MoviesTarget::List0x129
             | MoviesTarget::List0x129Selected
-            | MoviesTarget::FullList { .. } => state.frontend.shell_page_title.is_terminal(),
+            | MoviesTarget::FullList { .. } => {
+                state.frontend.shell_page_title.is_terminal()
+                    && state.frontend.shell_status_line.is_terminal()
+            }
             MoviesTarget::Credits { .. } | MoviesTarget::SneakPeek { .. } => true,
         };
         if !heading_settled {

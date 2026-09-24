@@ -653,7 +653,12 @@ impl App {
                 shell_slide_active_shell: None,
                 shell_slide_generation: 0,
                 shell_monitor: Default::default(),
-                shell_page_title: Default::default(),
+                shell_page_title: crate::ui::shell::static_reveal::PresentedKind1Static::new(
+                    crate::ui::shell::static_reveal::HEADING_KIND1,
+                ),
+                shell_status_line: crate::ui::shell::static_reveal::PresentedKind1Static::new(
+                    crate::ui::shell::static_reveal::STATUS_LINE_KIND1,
+                ),
                 quit_cascade: None,
                 startup_splash,
                 exit_confirm_modal: None,
