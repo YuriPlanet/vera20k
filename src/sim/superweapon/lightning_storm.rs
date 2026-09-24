@@ -1037,6 +1037,7 @@ Layer=ground
         let mut building = GameEntity::test_default(10, "GAPOWR", "Soviet", 5, 5);
         building.category = EntityCategory::Structure;
         building.lifecycle.in_limbo = false;
+        building.lifecycle.cell_marked = true;
         building.owner = sim.interner.intern("Soviet");
         building.type_ref = type_ref;
         building.health = Health { current: 150 };
@@ -1150,10 +1151,14 @@ Layer=ground
         let owner = sim.interner.intern("Soviet");
         let type_ref = sim.interner.intern(type_name);
 
+        // Both stand in the cell's lists, so they are on the map: out of
+        // limbo and marked (`+0x74`), which Apply_area_damage's dispatch reads.
         let mut ground = GameEntity::test_default(1, type_name, "Soviet", 5, 5);
         ground.owner = owner;
         ground.type_ref = type_ref;
         ground.health = Health { current: 100 };
+        ground.lifecycle.in_limbo = false;
+        ground.lifecycle.cell_marked = true;
 
         let mut bridge = GameEntity::test_default(2, type_name, "Soviet", 5, 5);
         bridge.owner = owner;
@@ -1161,6 +1166,8 @@ Layer=ground
         bridge.health = Health { current: 100 };
         bridge.on_bridge = true;
         bridge.position.z = 4;
+        bridge.lifecycle.in_limbo = false;
+        bridge.lifecycle.cell_marked = true;
 
         sim.substrate.entities.insert(ground);
         sim.substrate.entities.insert(bridge);

@@ -106,14 +106,12 @@ pub(crate) fn receive_damage(
     // return 0`, ahead of the Immune test: the kernel, the building min-1, the
     // HP write and the state classification are all skipped for an
     // already-dead receiver, while the Techno tail still feeds the anger nodes
-    // the PRE-kernel damage. VERA filtered dead targets at collection only, so
-    // a target driven to zero by an earlier record of the SAME blast — a Demo
-    // Truck, an Ivan-bombed cluster, any `DeathWeapon` cascade — was
-    // re-processed here and fed the post-Verses value instead.
+    // the PRE-kernel damage. An area record never gets here dead:
+    // `Apply_area_damage` checks Health before dispatching it
+    // (`world_receiver::area_record_dispatches`). The direct callers do — the
+    // bridge, C4 and Ivan expiry receivers and Blowup_All.
     // The `Health < 1` half is UNCONDITIONAL — only the Immune clause is behind
-    // `ignoreDefenses`. That distinction is the whole point here: VERA's two
-    // `ignore_defenses` callers are the C4 and Ivan expiry receivers, which is
-    // exactly the same-blast cascade this gate exists to stop.
+    // `ignoreDefenses`, which VERA's C4 and Ivan expiry receivers set.
     if target.current_hp < 1 || dmg == 0 || (!gates.ignore_defenses && target.object_immune) {
         return DamageOutcome {
             post_object_damage: Some(dmg),
