@@ -44,18 +44,15 @@ Aircraft arm) as #451 (`1aa3041b`), mind control (CaptureManagerClass) as #457 (
 Chrono Legionnaire's erase (TemporalClass) as #474 (`80f4494a`), the house defeat (tracking
 counts, the gate, Blowup_All) as #476 (`3783b0ee`), the Crazy Ivan bomb (BombClass, its clock,
 sounds, cursors and clicks) as #488 (`7d4b970c`), the launch scatter, shrapnel and cluster trig
-through the native tables as #489 (`a97226a9`). GetFireError, the fire-legality owner, with its
-scan probe (C20) and the pursuit range stop it needs, is on `feature/combat-fire-error`. A
-production sortie showed the Carrier wing never attacks: every manager pass re-issues each
-Hornet's attack from sub-state 0 (`assign_child_attack`), so the aircraft attack run never
-completes and the wing never lands. Research lanes finished 2026-09-24 (scratchpad, not tracked):
+through the native tables as #489 (`a97226a9`), GetFireError with its scan probe (C20) and the
+pursuit range stop as #490 (`a854028c`). The aircraft attack loop (states 4..10, the Carrier
+wing's re-issue, SetTarget's aircraft arm) is on `feature/combat-aircraft-attack`. Research lanes finished 2026-09-24 (scratchpad, not tracked):
 the aircraft attack loop, Prism forwarding, Gattling spin-up and native GetFireError. Native
-oracles built 2026-09-24, not yet moved into `tools/`: `aircraft_states` (Mission_Attack
-`417FE0` whole, 368 rows over states 4..10) and four Gattling stems (stage, Unit fire, building
-attack, selection). Next, by player visibility: the aircraft attack loop (Mission_Attack 5..10)
-and the Carrier wing cycle, Gattling, the remaining GetFireError consumers (weapon selection
-without legality, C19's auto-target drop, retaliation, base-defence and cursor peeks), Prism
-forwarding, the Slave Miner's
+oracles built 2026-09-24: `aircraft_states` (in `tools/`) and four Gattling stems (scratchpad,
+not yet moved: stage, Unit fire, building attack, selection). Next, by player visibility:
+Gattling, the source Scatter the aircraft shots and the infantry Incoming tail call, the
+remaining GetFireError consumers (weapon selection without legality, C19's auto-target drop,
+retaliation, base-defence and cursor peeks), Prism forwarding, the Slave Miner's
 slave release at its death (`6B0AE0`), the other special warhead bodies (Magnetron and the rest),
 homing launch and steering through the native tables (HomingTrack `5B20F0`, the sidewinder sine),
 the ship sink, the Foot
@@ -776,6 +773,57 @@ owner):
   building drop arm's tail and the `+0x148` counts, aircraft states 5..10 (C2..C6), the SAM path
   (C7), and weapon selection's own legality subset for pursuit and can-fire.
 
+Aircraft attack loop (`feature/combat-aircraft-attack`, no schema change), owner
+`sim/aircraft/attack_mission.rs` (states 4..10 as pure functions over facts and a host) with
+`combat/aircraft_release.rs` (the strike states' combat-phase host) and `world/aircraft_attack.rs`
+(the dispatch prefix and state 10's host):
+- Before: states 5..9 collapsed to 10, so a strafer (Hornet, Osprey) dropped one bomb a pass
+  where the original drops five, and a Fighter had neither its free state-5 shot nor the
+  out-of-range 4, 5, 1 cycle; state 4 polled every frame on any refusal; state 10 went to a
+  legacy Guard without the target clear, the edge destination or its draws. The Carrier's manager
+  restarted each Hornet's run at state 0 every ten frames and never queued Attack in the child's
+  mission owner, so `AircraftClass::AI` (`41505E`, mission not Attack) paid a pass's ammo the frame
+  after its first bomb and the manager recalled the Hornet.
+  SetTarget had no aircraft arm; `CurleyShuffle=` was unparsed; the shared edge picker scanned
+  North's local row -1.
+- Now: `strike_visit` runs states 4..9 in native order: GetFireError through `FireSubject`,
+  IsClose (InRange with SelectWeapon's slot), the facings, state 4's burst, single FireAts,
+  `Assign(T, 1)`, Uncloak and the Rate epilogue on the Scenario stream (`mission_epilogue`, also
+  state 1's). `exit_visit` runs state 10: the target clear by house control and `+3D4`, the
+  own-edge `PickCellOnEdge` destination with its draws, and Enter_Idle_Mode in the same visit,
+  whose return to an airfield replaces that destination with the dock (`4179B4`, `4179D7`).
+  Every state and the idle decision read one Target-present predicate (a dying object is
+  detached at the killing hit, `5F5765`).
+  The manager's per-pass re-issue is the native no-op (Assign_Target's same-target return,
+  Queue_Mission's skip), and its Queue_Mission calls (Attack, and the hold's and recall's Move) go
+  through the child's mission owner; SetTarget's aircraft arm (`6FCE27`) empties a spawned aircraft
+  that is retargeted mid-run. `[General] CurleyShuffle=` (Rules+17E1) ported; North's edge row fixed to 0
+  (the paradrop carrier's spawn cell moves one row; its exit still uses the legacy picker).
+- Native execution: `tools/spatial_oracle/aircraft_states.py` runs the whole `417FE0` per visit
+  (368 stored rows standing for about 9,400 executed visits: every code, class, Ammo, Target,
+  CurleyShuffle and IsClose for states 4..9, the state-9 delay, state 10's full product and 20
+  seeded edge scans). `attack_mission::tests` replays every covered combination: state, delay,
+  latch, pending, Ammo, the ordered queries, effects and draws, and the Scenario continuation;
+  state 10 runs the production edge picker on the oracle's map. Parity within those inputs; the
+  stubbed callees keep their own evidence (GetFireError: `fire_error.py`).
+- Production regressions: `a_strafer_drops_five_bombs_on_one_pass`,
+  `a_fighter_out_of_range_cycles_back_to_its_search`,
+  `an_empty_fighter_lets_go_heads_for_its_edge_and_idles`,
+  `a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue`, and a Carrier sortie through
+  `advance_tick`, `a_carrier_hornet_flies_a_whole_strafe_pass` (five bombs a ROF apart, the ammo
+  paid; the recall is asserted by the re-issue test).
+- Residuals: the source Scatter after each release (`481670`, recipients' `vt+174`); VERA's idle
+  decision is its own tree (Enter_Idle_Mode `4176F0` unported beyond the dock destination: a
+  computer house takes Guard where native takes Area Guard, and the landed, dockless, team and
+  `+3D4` arms keep their destination and Target; recorded on `aircraft::enter_idle_mode`); the
+  Airstrike `+294` and its
+  Retreat have no producer; `+6D5` unrepresented; the strike states run in the combat phase after
+  the Logic pass (the draw-order residual every FireAt shares); state 9's divide fault falls back
+  to 1 (no retail aircraft reaches it); the DropPayload carrier arm stays blocked. In that sortie
+  two of the three Hornets never leave their launch cell in approach state 3 (Fly or the approach,
+  not this loop; follow-up), and a recalled Hornet hovers over the Carrier (Fly's arrival
+  BeginLanding `4CF520` is unported).
+
 ## Native evidence inventory
 
 Run `python -m tools.spatial_oracle.<stem> --check` (`flat_art`: `tools/projectile_oracle`).
@@ -958,17 +1006,10 @@ unloaded passengers' rules-less reveal (`passenger/departure.rs`).
 
 ## Open required work
 
-Aircraft attack loop (owner `world/aircraft_attack.rs` + shared admission/rearm):
-- States 5..9 collapse to 10 (`attack_mission.rs:124`) though release writes 5/6. 6..8 accept
-  GetFireError 0/2/8/9, fire once, Scatter, assign Target, advance, return raw ROF; 9 enters 3 and
-  returns signed `(Range+1024)/AircraftType.Speed`; 5 needs error reasons, CurleyShuffle (+17E1),
-  busy-3 retry, uncloak on 9, range `6F7780 -> +3A8/6F77B0 -> 6F7220`. Probe
-  `.local/probe_aircraft_error.py` (`41A9E0` codes).
-- State 10: zero-ammo/targetless return, conditional clear `418C21..418C3D`, RNG/NavCom suffix.
-- Release: call `481670(Aircraft+9C copy,1,0,0)` after the FireAt loop, before the suffix.
-- Admission: GetFireError produces the codes (state 4 surfaces on 9); the other codes' state
-  moves are this loop's. Aircraft+6C9 (`4143FC` sets, `413D47` clears, A1 `41A9FF` refuses;
-  writers `65DCE9`/`65E7B8`/`65EA0B`); DropPayload arm blocked.
+Aircraft attack loop (owner `aircraft/attack_mission.rs`; states 4..10 landed, see above):
+- Every shot: call `481670(Aircraft+9C copy,1,0,0)` (the source Scatter mechanism).
+- Aircraft+6C9 (`4143FC` sets, `413D47` clears, A1 `41A9FF` refuses; writers
+  `65DCE9`/`65E7B8`/`65EA0B`); DropPayload arm blocked. Enter_Idle_Mode `4176F0`.
 - Air FireAt velocity, ROT0/1/homing and 6CA suffix; GetROF House/bunker/authored delay; SpawnManager
   burst writes `6B73F6`/`6B7585` (`746493`/`74656C` unverified).
 - ~17 raw `attack_target = None` sites skip `WeaponBurst::clear_target`; classify against

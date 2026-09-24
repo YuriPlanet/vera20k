@@ -36,7 +36,15 @@ fn make_spawner_rules() -> RuleSet {
 }
 
 fn make_spawner_rules_with_hornet_strength(strength: i32) -> RuleSet {
-    let text = "\
+    let text = spawner_rules_text().replace(
+        "[HORNET]\nName=Hornet\nStrength=75",
+        &format!("[HORNET]\nName=Hornet\nStrength={strength}"),
+    );
+    RuleSet::from_ini(&IniFile::from_str(&text)).expect("spawner rules should parse")
+}
+
+fn spawner_rules_text() -> &'static str {
+    "\
 [General]
 BuildSpeed=0.75
 MultipleFactory=0.7
@@ -239,12 +247,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 
 [CMISLEWH]
 Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
-";
-    let text = text.replace(
-        "[HORNET]\nName=Hornet\nStrength=75",
-        &format!("[HORNET]\nName=Hornet\nStrength={strength}"),
-    );
-    RuleSet::from_ini(&IniFile::from_str(&text)).expect("spawner rules should parse")
+"
 }
 
 fn empty_height_map() -> BTreeMap<(u16, u16), u8> {
@@ -1654,5 +1657,192 @@ fn a_launch_at_a_vanished_target_leaves_no_orphan() {
             .map(|m| m.slots[0].state),
         Some(SpawnSlotState::ReadyDocked),
         "the slot is not committed to InFlight without a flight"
+    );
+}
+
+/// The manager re-issues `Assign_Target(CurrentTarget)` and `Queue_Mission(
+/// Attack, 0)` to an attacking child on every pass (`0x006B7718`,
+/// `0x006B772C`). Both are no-ops on a Hornet already running that target
+/// (`0x006FCDCC`, `0x005B35E0`), so its pass goes on: VERA used to restart it
+/// at state 0 every ten frames, and the wing never finished a pass. A new wing
+/// target mid-run is SetTarget's aircraft arm (`0x006FCE27`): the Hornet drops
+/// it and its ammo, and the next pass recalls it.
+#[test]
+fn a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue() {
+    let rules = make_spawner_rules();
+    let mut sim = flat_sim();
+    let hm = empty_height_map();
+    let carrier = sim
+        .spawn_object("CARRIER", "Americans", 10, 10, 0, &rules, &hm)
+        .expect("spawn CARRIER");
+    let target = sim
+        .spawn_object("TARGET", "Yuri", 30, 10, 0, &rules, &hm)
+        .expect("spawn TARGET");
+    let other = sim
+        .spawn_object("TARGET", "Yuri", 30, 20, 0, &rules, &hm)
+        .expect("spawn the other TARGET");
+    let pass = |sim: &mut Simulation, wing_target: Option<u64>| {
+        if let Some(manager) = sim
+            .substrate
+            .entities
+            .get_mut(carrier)
+            .and_then(|e| e.spawn_manager.as_mut())
+        {
+            if let Some(id) = wing_target {
+                manager.set_target(Some(TargetKind::Entity(id)));
+            }
+            manager.update_timer = SpawnTimer::ready();
+        }
+        tick_spawn_managers(sim, &rules, &[carrier], None);
+    };
+    for _ in 0..2 {
+        pass(&mut sim, Some(target));
+    }
+    // Stage the attacking slot (native status 3) around a launched Hornet
+    // three bombs into its run.
+    let (slot, hornet) = {
+        let manager = sim
+            .substrate
+            .entities
+            .get(carrier)
+            .and_then(|e| e.spawn_manager.as_ref())
+            .expect("manager");
+        manager
+            .slots
+            .iter()
+            .enumerate()
+            .find_map(|(i, s)| (s.state == SpawnSlotState::InFlight).then_some((i, s.spawn?)))
+            .expect("a launched Hornet")
+    };
+    sim.substrate
+        .entities
+        .get_mut(carrier)
+        .and_then(|e| e.spawn_manager.as_mut())
+        .unwrap()
+        .slots[slot]
+        .state = SpawnSlotState::ReturningToDock;
+    let child = sim.substrate.entities.get_mut(hornet).unwrap();
+    let mut attack = crate::sim::combat::AttackTarget::new(target);
+    attack.cooldown_ticks = 7;
+    child.attack_target = Some(attack);
+    child.aircraft_mission = Some(crate::sim::aircraft::AircraftMission::Attack { sub_state: 7 });
+    child.aircraft_ammo.as_mut().expect("Hornet ammo").current = 1;
+
+    pass(&mut sim, None);
+    let child = sim.substrate.entities.get(hornet).unwrap();
+    assert!(matches!(
+        child.aircraft_mission,
+        Some(crate::sim::aircraft::AircraftMission::Attack { sub_state: 7 })
+    ));
+    assert_eq!(
+        child
+            .attack_target
+            .as_ref()
+            .map(|a| (a.target, a.cooldown_ticks)),
+        Some((TargetKind::Entity(target), 7)),
+        "the same target is not re-assigned"
+    );
+
+    pass(&mut sim, Some(other));
+    let child = sim.substrate.entities.get(hornet).unwrap();
+    assert_eq!(child.aircraft_ammo.as_ref().unwrap().current, 0);
+    assert!(child.attack_target.is_none(), "the aircraft arm drops it");
+
+    pass(&mut sim, None);
+    let manager = sim
+        .substrate
+        .entities
+        .get(carrier)
+        .and_then(|e| e.spawn_manager.as_ref())
+        .unwrap();
+    assert_eq!(
+        manager.slots[slot].state,
+        SpawnSlotState::LandingAtDock,
+        "an empty Hornet is recalled"
+    );
+}
+
+/// A Carrier sortie through `advance_tick`, with retail-shaped Hornets:
+/// `HornetBomb` fires a `NormalBomb` (ROT 1, not Inviso), so a Hornet strafes
+/// and its pass drops five bombs (Mission_Attack states 4 and 6..9), then it
+/// pays its one ammo and is recalled. Before the manager queued Attack in the
+/// child's mission owner, `AircraftClass::AI` paid the pass's ammo the frame
+/// after the first bomb (`0x0041505E`, mission not Attack) and the manager
+/// recalled the Hornet. The wing's target is handed to the manager as the
+/// Carrier's spawner shot does (`SpawnManagerClass::SetTarget`).
+#[test]
+fn a_carrier_hornet_flies_a_whole_strafe_pass() {
+    let text = spawner_rules_text()
+        .replace(
+            "[HornetBomb]
+Damage=60
+ROF=50
+Range=4
+Projectile=Invisible",
+            "[HornetBomb]
+Damage=60
+ROF=3
+Range=5
+Projectile=NormalBomb",
+        )
+        .replace(
+            "[Special]",
+            "[NormalBomb]
+ROT=1
+AG=yes
+
+[Special]",
+        )
+        .replace(
+            "[General]
+",
+            "[General]
+CurleyShuffle=yes
+",
+        );
+    let rules = RuleSet::from_ini(&IniFile::from_str(&text)).expect("strafing carrier rules");
+    let mut sim = flat_sim();
+    let hm = empty_height_map();
+    let carrier = sim
+        .spawn_object("CARRIER", "Americans", 10, 10, 0, &rules, &hm)
+        .expect("spawn CARRIER");
+    let target = sim
+        .spawn_object("TARGET", "Yuri", 24, 10, 0, &rules, &hm)
+        .expect("spawn TARGET");
+    let hornet_bomb = sim.interner.intern("HornetBomb");
+    let mut bombs: BTreeMap<u64, Vec<u32>> = BTreeMap::new();
+    for _ in 0..600 {
+        if let Some(manager) = sim
+            .substrate
+            .entities
+            .get_mut(carrier)
+            .and_then(|e| e.spawn_manager.as_mut())
+        {
+            manager.set_target(Some(TargetKind::Entity(target)));
+        }
+        sim.fire_events.clear();
+        sim.advance_tick(&[], Some(&rules), &hm, None, None, 67);
+        let frame = sim.session.binary_frame;
+        for event in sim
+            .fire_events
+            .iter()
+            .filter(|e| e.weapon_id == hornet_bomb)
+        {
+            bombs.entry(event.attacker_id).or_default().push(frame);
+        }
+    }
+    let (hornet, frames) = bombs
+        .iter()
+        .max_by_key(|(_, frames)| frames.len())
+        .expect("a Hornet bombs");
+    assert_eq!(frames.len(), 5, "one pass, five bombs: {bombs:?}");
+    for pair in frames.windows(2) {
+        assert!(pair[1] - pair[0] >= 3, "a weapon ROF apart: {frames:?}");
+    }
+    let hornet = sim.substrate.entities.get(*hornet).unwrap();
+    assert_eq!(
+        hornet.aircraft_ammo.as_ref().unwrap().current,
+        0,
+        "the pass paid its one ammo"
     );
 }

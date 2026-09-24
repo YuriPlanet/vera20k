@@ -985,8 +985,8 @@ pub struct Simulation {
     /// the same tick.
     #[serde(skip)]
     pub(crate) pending_missile_detonations: Vec<crate::sim::spawn_manager::MissileDetonation>,
-    /// Aircraft whose Mission_Attack state4 visit, dispatched in their own
-    /// LogicVector slot, requested the combat receiver's release this frame.
+    /// Aircraft whose Mission_Attack strike state (4..9), dispatched in their
+    /// own LogicVector slot, asked the combat phase for its visit this frame.
     /// Filled by the live pass, drained by combat in the same frame.
     #[serde(skip)]
     pub(crate) aircraft_fire_requests: std::collections::BTreeSet<u64>,
@@ -6108,7 +6108,7 @@ impl Simulation {
         }
 
         // Aircraft missions ran in their own LogicVector slots during the live
-        // pass; combat admits the state4 releases they requested.
+        // pass; combat runs the strike visits (states 4..9) they requested.
         let aircraft_fire_requests = std::mem::take(&mut self.aircraft_fire_requests);
 
         // Wake anims under moving units on water (native gate and cadence in

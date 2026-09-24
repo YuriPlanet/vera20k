@@ -2480,10 +2480,9 @@ fn admit_attacker_fire<'r>(
             _ => {}
         },
         EntityCategory::Structure => {}
-        // State 4 (`0x0041834C`): code 9 surfaces. RESIDUAL: the other codes'
-        // state moves (to 5 or 10, the strafe and CurleyShuffle arms,
-        // `0x00418368`/`0x00418544`) belong to the aircraft attack loop;
-        // VERA holds state 4 and asks again on its next visit.
+        // Mission_Attack's strike states act on their codes in
+        // `aircraft_release`; an aircraft reaches this only outside such a
+        // visit, where code 9 surfaces as state 4's arm (`0x0041834C`) does.
         EntityCategory::Aircraft => {
             if code == fire_error::FireError::Cloaked {
                 uncloak_to_fire(world, rules, obj, snap.stable_id, sound_enabled);
@@ -3898,12 +3897,15 @@ pub(crate) fn tick_combat(
                 continue;
             };
             // Skip snapshot for entities blocked by locomotor state (cooldowns still tick).
-            if fire_blocked.contains(&id)
-                || (entity
-                    .aircraft_mission
-                    .as_ref()
-                    .is_some_and(|mission| mission.is_attacking())
-                    && !aircraft_fire_requests.contains(&id))
+            // An aircraft's Mission_Attack visit runs whenever its dispatch asked
+            // for it; the visit opens with its own prefix.
+            let requested = aircraft_fire_requests.contains(&id);
+            if !requested
+                && (fire_blocked.contains(&id)
+                    || entity
+                        .aircraft_mission
+                        .as_ref()
+                        .is_some_and(|mission| mission.is_attacking()))
             {
                 // Delayed expiry rechecks fire admissibility and clears on any
                 // failure rather than postponing until the building is usable.
@@ -4058,16 +4060,14 @@ pub(crate) fn tick_combat(
         let n_remove = emit.remove_attack.len();
         let boundary = FireCommitBoundary::capture(&emit);
         if aircraft_fire_requests.contains(&live_snap.stable_id) {
-            aircraft_release::fire(
+            aircraft_release::visit(
                 world,
                 run,
                 rules,
                 overlay_registry,
                 &live_snap,
                 fog,
-                require_playfield_membership,
                 binary_frame,
-                tick_ms,
                 &mut emit,
                 &mut under_attack_events,
             );

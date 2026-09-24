@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "AircraftClass::Mission_Attack 0x00417FE0 visits in states 4..10 on a supplied Aircraft: per state 4..9 the full product code {0..11, -1} x class {strafe, fighter, neither (+ strafe_fighter in state 4)} x Ammo {1, 0, -1} x Target {set, null} x CurleyShuffle {1, 0} x IsClose {1, 0}, and for state 10 pending x Ammo {1, 0, -1, 2} x Target x +0x3D4 x [0x00A8B238] x House+0x1EC/+0x1ED x +0x294 x House+0x577C {0..3, -1, 4}, executed in full and kept once per distinct result (`covers`); plus state-9 delay divisions, faulting divisors, the bare epilogue over seeds/Rates/mission, state-10 edge draws over seeds, selected-weapon, bullet, burst and target-cell rows, and a re-run of the 300 non-elite aircraft_attack_release rows. Returned delay, Mission+0xBC, +0x6C8, +0x6D2, Ammo, owner write set, path, ordered call log and Scenario RNG continuation. Not FireAt, GetFireError, IsClose, Scatter recipients, AssignDestination, Uncloak, Enter_Idle_Mode or Queue_Mission behaviour, and not frame-to-frame sortie timing.",
+  "assumptions": [
+    "One emulator; per row the object region (0x10000 bytes of scratch), the stack frame and the declared globals are rewritten; the flat map (cell table and 128 x 128 cells) is written once and the write hook proves no row modifies it.",
+    "Owner Aircraft at cell (60, 64) z 500 (+0x9C), Mission +0xAC = 1, veterancy 0.0, House +0x21C, no SpawnManager (+0x2D0 = 0) or fire particles (+0x304 = 0); both FacingClass fields desired 0, timer -1, ROT 0 (Set is immediate); IFlyControl +0x6C0 = original 0x007E2250; type +0x6C4 with Type+0x678 (default 30) and Fighter +0xE0E.",
+    "Target: a Unit on the original vtable 0x007F5C70 at cell (64, 64) z 0, only +0x9C supplied (read by GetCoords 0x005F65A0).",
+    "Two weapon slots (Type+0x898/+0x8B4), no elite slots: Burst +0x9C, Projectile +0xA0, ROF +0xB0 (20 / 37), Range +0xB4 (1280 / 768); projectile ROT +0x2DC and Inviso +0x29E per class (strafe ROT 1, others ROT 100; slot 1 always ROT 100).",
+    "Rules [0x008871E0]+0x17E1 CurleyShuffle per row; Frame [0x00A8ED84] 1000; MissionControl [0x00A8E3A8]: entry 1 Rate = f32(0.016) widened to double (retail [Attack] Rate=.016), entry Mission = the row's Rate; all other entries 0.",
+    "Scenario [0x00A8B230] with its RNG at +0x218 filled by the original seeder 0x0065C6D0 (seed 31 unless stated); FPCW 0x0E7F equals ftol's [0x00822D80].",
+    "Map 0x0087F7E8: cell table +0x13C (0x40000 entries, count +0x140) over 128 x 128 flat cells (all bytes 0 except MapCoords +0x24), MapSize width +0xF4 = 64, LocalSize +0xFC..+0x108 = (1, 4, 62, 50); [0x00889E68] and [0x008A03F8] set by their original static initializers 0x00413C60 and 0x004A85E0 (both (0, 0)).",
+    "State 10: House +0x1EC, +0x1ED, +0x577C and [0x00A8B238] per row; AirstrikeClass behind +0x294 has +0x4C != owner, so SetTarget's 0x0041DB40 call is not reached.",
+    "Excluded because they fault natively (verified in state9_delay_faults): AircraftType+0x678 = 0 and (Range 0x7FFFFC00, Type+0x678 = -1), divide error at the IDIV 0x00418BB4.",
+    "Per row: RET to the probe with ESP = entry + 4 and EBX/EBP/ESI/EDI preserved; no write outside stack/owner/RNG/heap (dummy-cell coordinates reported); every read of scratch or BSS bytes falls on supplied bytes."
+  ],
+  "substitutions": [
+    "Cloned Aircraft vtable slots return the row's value, logged with arguments: vt+0x2E4 select_weapon, vt+0x3AC is_close, vt+0x3C0 fire_error, vt+0x3CC fire_at (null or an opaque bullet), vt+0x45C uncloak, vt+0x480 assign_dest, vt+0x1E8 queue_mission, vt+0x484 enter_idle (the last three return 0).",
+    "CellClass 0x00481670 entry hook: logs (cell, source coords, a2, a3, a4) and returns RET 0x10 without running the body (recipients' Scatter and their RNG excluded).",
+    "operator new 0x007C8E17 / operator delete 0x007C8B3D entry hooks: scratch bump allocation / no-op (state-10 South edge candidate vector only; allocations must equal frees).",
+    "Observation probe at RET_MAGIC+0x200 (outside native memory): the visit returns into MOV ECX,rng / CALL 0x0065C780 / MOV [slot],EAX to read the RNG continuation."
+  ],
+  "entry_points": {
+    "mission_attack": "0x00417FE0",
+    "strafe": "0x0041B7F0",
+    "fighter": "0x0041B840",
+    "get_weapon": "0x0070E140",
+    "dir_to": "0x005F3DB0",
+    "facing_set": "0x004C9220",
+    "get_cell": "0x00565730",
+    "mission_control": "0x005B3A00",
+    "ftol": "0x007C5F00",
+    "random_ranged": "0x0065C7E0",
+    "random": "0x0065C780",
+    "rng_seed": "0x0065C6D0",
+    "house_control": "0x0050B730",
+    "house_edge": "0x0050DA80",
+    "set_target": "0x006FCDB0",
+    "pick_cell_on_edge": "0x004AA440",
+    "map_cell": "0x005657A0",
+    "edge_reference_initializer": "0x00413C60",
+    "edge_sentinel_initializer": "0x004A85E0"
+  },
+  "payload_sha256": "fb87ee18b85562044868dffbed8cc76c22b6da50066f90db2ce23376f9d9147e"
+}
