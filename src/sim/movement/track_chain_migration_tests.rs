@@ -162,6 +162,10 @@ fn chain_fixture(passive: bool) -> (Simulation, RuleSet, PathGrid, TrackInvocati
     )))
     .unwrap();
     let mut sim = Simulation::with_seed(17);
+    // The chain query (0x4B1C3E) asks the native Unit+1AC over map cells.
+    sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
+        24,
+    ));
     let head = DriveCoord::cell(10, 9, 0);
     let mut mover = GameEntity::test_default(MOVER, "MTNK", "Americans", 10, 10);
     mover.category = EntityCategory::Unit;
@@ -218,8 +222,14 @@ fn add_blocker(sim: &mut Simulation, moving: bool) {
     blocker.lifecycle.in_limbo = false;
     blocker.lifecycle.cell_marked = true;
     if moving {
-        // Unit Can_Enter_Cell's code2 body arm retains Foot+6B6 while moving.
+        // Unit Can_Enter_Cell's code2 body arm (0x73F86B) sees a NavCom and
+        // retains Foot+6B6 while moving.
         blocker.movement_target = Some(MovementTarget::default());
+        blocker.navigation.nav_com = Some(NavTargetRef::cell(20, 9));
+        blocker.drive_locomotion = Some(DriveLocomotionRuntime {
+            destination: Some(DriveCoord::cell(20, 9, 0)),
+            ..Default::default()
+        });
         blocker.foot_occupation_enabled = true;
     }
     sim.substrate.entities.insert(blocker);
@@ -316,25 +326,25 @@ fn production_chain_clear_and_code2_share_admission_and_never_scatter_or_repath(
                     .raw_cell_occupation
                     .mark_ground(CANDIDATE.0, CANDIDATE.1, 0x20);
             }
-            let classified =
-                cell_entry::classify_occupied_cell_with_layers_and_ignored_and_occupation(
-                    CANDIDATE,
-                    cell_entry::CanEnterLayerContext::single(MovementLayer::Ground),
+            let cell = sim
+                .resolved_terrain
+                .as_ref()
+                .unwrap()
+                .native_cell_identity((CANDIDATE.0 as i16, CANDIDATE.1 as i16));
+            let classified = sim
+                .foot_can_enter(
                     MOVER,
-                    bump_crush::CrushCapability::new(true, false),
-                    "Americans",
-                    LocomotorKind::Drive,
-                    false,
+                    cell,
+                    crate::sim::movement::infantry_entry::InfantryEntryArgs {
+                        direction: 2,
+                        height: 0,
+                        previous_cell: None,
+                    },
+                    &rules,
                     None,
-                    &sim.substrate.occupancy,
-                    &sim.substrate.cell_occupation,
-                    &sim.substrate.raw_cell_occupation,
-                    sim.session.binary_frame,
-                    &sim.substrate.entities,
-                    &sim.house_alliances,
-                    &sim.interner,
-                );
-            assert_eq!(classified.yr_code(), if blocker == 0 { 0 } else { 2 });
+                )
+                .unwrap();
+            assert_eq!(classified, if blocker == 0 { 0 } else { 2 });
             let rng_before = sim.scenario_rng.logical_state();
             let path_before = sim
                 .substrate

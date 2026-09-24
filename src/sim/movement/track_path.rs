@@ -79,7 +79,7 @@ fn track_unit(entity: &GameEntity) -> bool {
         })
 }
 
-fn track_destination(entity: &GameEntity) -> Option<DriveCoord> {
+pub(super) fn track_destination(entity: &GameEntity) -> Option<DriveCoord> {
     match entity.locomotor.as_ref()?.kind {
         LocomotorKind::Drive => entity.drive_locomotion.as_ref()?.destination,
         LocomotorKind::Ship => entity.ship_locomotion.as_ref()?.destination,
@@ -89,7 +89,7 @@ fn track_destination(entity: &GameEntity) -> Option<DriveCoord> {
 
 /// `if (head != Null) { head = Null; +63 = 0; }` as every arm here writes it.
 /// Raw occupation marks are untouched, as in native.
-fn clear_track_head(entity: &mut GameEntity) {
+pub(super) fn clear_track_head(entity: &mut GameEntity) {
     match entity.locomotor.as_ref().map(|loco| loco.kind) {
         Some(LocomotorKind::Drive) => {
             if let Some(drive) = entity.drive_locomotion.as_mut()
@@ -255,7 +255,7 @@ impl Simulation {
                 location.x.wrapping_sub(destination.x),
                 location.y.wrapping_sub(destination.y),
                 location.z.wrapping_sub(destination.z),
-            ) < self.close_enough.to_num::<i32>()
+            ) < rules.general.close_enough
             && matches!(mission, Some(MissionType::Move | MissionType::AreaGuard))
         {
             //4B29AF..4B2A44: clear the head, then stop or take the waypoint.
@@ -430,7 +430,6 @@ impl Simulation {
                     &mut self.substrate.entities,
                     &self.substrate.occupancy,
                     (cell.0 as u16, cell.1 as u16),
-                    MovementLayer::Ground,
                     id,
                     &owner,
                     rules,
@@ -523,7 +522,7 @@ impl Simulation {
             location.x.wrapping_sub(destination.x),
             location.y.wrapping_sub(destination.y),
             location.z.wrapping_sub(destination.z),
-        ) < self.close_enough.to_num::<i32>();
+        ) < rules.general.close_enough;
         let standing_land = terrain
             .cell(actor.position.rx, actor.position.ry)
             .map(|c| c.yr_cell_land_type);
@@ -554,11 +553,13 @@ impl Simulation {
             } else {
                 MovementLayer::Ground
             },
+            true,
             grid.as_deref(),
             self.resolved_terrain.as_ref(),
             &mut self.scenario_rng,
             Some(rules),
             &self.interner,
+            &self.houses,
             super::DestinationTiming::new(
                 self.session.binary_frame,
                 rules.general.blockage_path_delay_ticks,
@@ -571,7 +572,7 @@ impl Simulation {
     /// SetDestination(NULL, 1), else Foot 0x4DF0D0 (NavCom only) then the
     /// Unit idle entry (+0x484 = 0x738970), whose AL the caller may return.
     /// Returns that AL (false after the NULL setter).
-    fn stop_or_take_next_waypoint(&mut self, id: u64, rules: &RuleSet) -> bool {
+    pub(super) fn stop_or_take_next_waypoint(&mut self, id: u64, rules: &RuleSet) -> bool {
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return false;
         };
@@ -609,7 +610,7 @@ impl Simulation {
     }
 
     /// Foot+90 as Drive re-reads it after a synchronous setter.
-    fn track_owner_alive(&self, id: u64) -> bool {
+    pub(super) fn track_owner_alive(&self, id: u64) -> bool {
         self.substrate
             .entities
             .get(id)

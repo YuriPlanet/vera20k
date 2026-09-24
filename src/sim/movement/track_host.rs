@@ -19,7 +19,6 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::lifecycle_request::{LifecycleRequest, UninitReason};
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::pathfinding::PathGrid;
-use crate::sim::pathfinding::cell_entry::CellEntryResult;
 use crate::sim::world::Simulation;
 use crate::util::fixed_math::SimFixed;
 
@@ -603,7 +602,7 @@ impl Simulation {
                     fallback_grid,
                     registry,
                     observe,
-                ) {
+                )? {
                     chain_allowed = false;
                     if !self.track_survives(id) {
                         return Ok(TrackPass::paid(moved));
@@ -890,7 +889,7 @@ impl Simulation {
 
     /// Apply_Track_Occupation_Mode(0/1), Drive4B0AD0 / Ship6A01A0:
     /// direct raw handoff then full supplied head, with no Foot+6B6 gate.
-    fn track_apply_occupation(
+    pub(super) fn track_apply_occupation(
         &mut self,
         id: u64,
         family: TrackFamily,
@@ -1010,89 +1009,122 @@ impl Simulation {
         fallback_grid: Option<&PathGrid>,
         registry: Option<&OverlayTypeRegistry>,
         observe: &mut impl FnMut(&mut Simulation, u64, TrackWorldEvent),
-    ) -> bool {
+    ) -> Result<bool, String> {
         let Some(entity) = self.substrate.entities.get(id) else {
-            return false;
+            return Ok(false);
         };
         let Some(from) = call.chain_target_facing() else {
-            return false;
+            return Ok(false);
         };
         if direction >= 8 || crate::util::direction::direction_from_facing(from) == direction {
-            return false;
+            return Ok(false);
         }
         let Some(selection) = super::drive_track::select_drive_track(from, direction * 32, false)
         else {
-            return false;
+            return Ok(false);
         };
         if selection.entry_index == 0 {
-            return false;
+            return Ok(false);
         }
+        // A component fixture without rules or map cells cannot ask the
+        // native predicate; production always has both. It takes no chain.
+        let (Some(rules), Some(terrain)) = (rules, self.resolved_terrain.as_ref()) else {
+            return Ok(false);
+        };
         let candidate = super::track_head::offset_head(head(entity, family), direction);
         let saved_speed = entity.foot_speed.applied_fraction;
-        // Chain supplies its live height; fresh movement retains a different
-        // call-local argument across its candidate queries.
-        let effective_height = super::movement_occupancy::runtime_current_effective_height(
-            self.path_grid.as_deref().or(fallback_grid),
-            (entity.position.rx, entity.position.ry),
-            entity.on_bridge,
-            entity.position.z,
-        );
-        let Some(super::track_entry::TrackEntryEvaluation {
-            result,
-            query: chain,
-            mover: snapshot,
-        }) = self.query_track_entry(
-            id,
-            candidate,
-            direction as i8,
-            effective_height,
-            rules,
-            fallback_grid,
-            registry,
-        )
-        else {
-            return false;
+        //4B1BA1..4B1C3E: Unit+1AC(cell(head + delta), dir, Object 0x5F5F00,
+        //0, 1), with no Mark bracket.
+        let target = super::foot_path::coord_cell(candidate);
+        let (height, native) = {
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            let height = super::ground_pose::query_object_cell_height(
+                &cells,
+                position_world_coord(&entity.position),
+                entity.on_bridge,
+            );
+            (height, cells.lookup(target))
         };
-        let grid = self.path_grid.as_deref().or(fallback_grid);
-        match result {
-            // Original jump table4B2608 admits codes0 and2 here. Code1
-            // goes to redraw4B1E52 and common advancement, without a chain.
-            CellEntryResult::Clear
-            | CellEntryResult::Crushable { .. }
-            | CellEntryResult::TemporaryBlock { .. }
-            | CellEntryResult::TemporaryOccupation => {}
-            CellEntryResult::ScatterRequired { .. } => {
-                super::movement_tick::request_track_entry_gate(
+        let code = self.foot_can_enter(
+            id,
+            native,
+            super::infantry_entry::InfantryEntryArgs {
+                direction: i32::from(direction),
+                height,
+                previous_cell: None,
+            },
+            rules,
+            registry,
+        )?;
+        //4B1C44..4B1C4D: the jump table 0x4B2608 over codes 0..6.
+        match code {
+            0 | 2 => {}
+            //4B1E52..4B1E68: redraw (presentation), no chain.
+            1 => return Ok(false),
+            //4B1E6D..4B1EBB: the gate question, answer discarded.
+            3 => {
+                let owner = self
+                    .substrate
+                    .entities
+                    .get(id)
+                    .map(|actor| self.interner.resolve(actor.owner()).to_owned())
+                    .unwrap_or_default();
+                let _ = crate::sim::gate_runtime::request_gate_open_for_cell(
                     &mut self.substrate.entities,
                     &self.substrate.occupancy,
-                    chain,
+                    (target.0 as u16, target.1 as u16),
                     id,
-                    &snapshot,
+                    &owner,
                     rules,
                     &self.house_alliances,
                     &self.interner,
                 );
-                return false;
+                return Ok(false);
             }
-            CellEntryResult::FriendlyStationary { blocker_id } => {
-                super::bump_crush::scatter_blocker(
-                    &mut self.substrate.entities,
-                    blocker_id,
-                    grid,
-                    self.resolved_terrain.as_ref(),
-                    &self.substrate.occupancy,
-                    chain.layers.object_list_layer,
-                    &mut self.scenario_rng,
-                    rules,
-                    &self.interner,
-                    crate::sim::movement::DestinationTiming::from_rules(
-                        self.session.binary_frame,
-                        rules,
-                    ),
-                );
-                return false;
+            //4B1EC0..4B1F43: Scatter_Objects(Null, 1, 1, deck) on the cell,
+            //the deck list when it is structural and the Foot is more than
+            //two levels from it.
+            6 => {
+                let terrain = self
+                    .resolved_terrain
+                    .as_ref()
+                    .ok_or("Drive/Ship chain query requires map cells")?;
+                let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                let level = i32::from(cells.ground_fields(native).0 as i8);
+                let z = self
+                    .substrate
+                    .entities
+                    .get(id)
+                    .map_or(0, |actor| position_world_coord(&actor.position).z);
+                let deck = cells.flags(native) & 0x100 != 0
+                    && (z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS - level).abs() > 2;
+                if target.0 >= 0 && target.1 >= 0 {
+                    let grid = self.path_grid_snapshot();
+                    super::bump_crush::scatter_cell_objects(
+                        &mut self.substrate.entities,
+                        &self.substrate.occupancy,
+                        (target.0 as u16, target.1 as u16),
+                        if deck {
+                            MovementLayer::Bridge
+                        } else {
+                            MovementLayer::Ground
+                        },
+                        true,
+                        grid.as_deref().or(fallback_grid),
+                        self.resolved_terrain.as_ref(),
+                        &mut self.scenario_rng,
+                        Some(rules),
+                        &self.interner,
+                        &self.houses,
+                        crate::sim::movement::DestinationTiming::from_rules(
+                            self.session.binary_frame,
+                            Some(rules),
+                        ),
+                    );
+                }
+                return Ok(false);
             }
-            _ => return false,
+            _ => return Ok(false),
         }
         // Actual Unit+2C dispatch746E20 returns1; the next test reads
         // UnitType Passive+E0C. Stock absent Passive defaults false.
@@ -1100,17 +1132,17 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .and_then(|entity| rules?.object(self.interner.resolve(entity.type_ref())))
+            .and_then(|entity| rules.object(self.interner.resolve(entity.type_ref())))
             .is_some_and(|object| object.passive)
         {
-            return false;
+            return Ok(false);
         }
         let entity = self.substrate.entities.get_mut(id).unwrap();
         if !call.accept_chain(
             progress_mut(entity, family).unwrap(),
             selection.turn_track_index as i32,
         ) {
-            return false;
+            return Ok(false);
         }
         set_head(entity, family, None);
         // Drive4B1CF5 / Ship6A1338 publish +63 for the PerCell receiver.
@@ -1118,7 +1150,7 @@ impl Simulation {
         self.unit_track_per_cell(
             id,
             super::track_turn::PerCellReason::Arrival,
-            rules,
+            Some(rules),
             fallback_grid,
         );
         observe(self, id, TrackWorldEvent::PerCell);
@@ -1127,7 +1159,7 @@ impl Simulation {
             set_track_valid(entity, family, false);
         }
         if !self.track_survives(id) {
-            return true;
+            return Ok(true);
         }
         let entity = self.substrate.entities.get_mut(id).unwrap();
         // Callback writes to the head are cleared before candidate install.
@@ -1143,7 +1175,7 @@ impl Simulation {
             entity.foot_speed.applied_fraction = saved_speed;
             super::path_markers::consume_path_replay(&mut entity.navigation.path_replay, 1);
         }
-        true
+        Ok(true)
     }
 
     fn track_reached_destination(

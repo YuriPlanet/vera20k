@@ -7044,9 +7044,6 @@ fn cell_scatter_world_reads_live_house_and_veteran_ability() {
     assert!(!rules.general.player_scatter);
     for (iq, rank, expected) in [(0, 0, false), (2, 0, true), (0, 100, true)] {
         let mut sim = crate::sim::world::Simulation::new();
-        // The ordinary 576-lepton CloseEnough would finish this short route
-        // before its occupied cell, so require arrival for this fixture.
-        sim.close_enough = SIM_ZERO;
         let mut mover = make_hover_mover(vec![(1, 1), (2, 1), (3, 1)], 250);
         mover.regular_crusher = true;
         mover.lifecycle.cell_marked = true;
@@ -7097,7 +7094,7 @@ fn cell_scatter_world_reads_live_house_and_veteran_ability() {
         for frame in 1..1500 {
             let before_x = sim.substrate.entities.get(1).unwrap().position.sub_x;
             sim.session.binary_frame = frame;
-            let timing = super::MovementConfig::from_rules(frame, SIM_ZERO, Some(&rules));
+            let timing = super::MovementConfig::from_rules(frame, Some(&rules));
             let stats = sim
                 .process_ground_locomotor_with_config_for_test(1, Some(&rules), None, None, timing)
                 .unwrap();

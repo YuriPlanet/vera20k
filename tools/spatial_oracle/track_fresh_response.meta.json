@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Unit Cell setter then Drive/Ship outer Process through Process_Movement(&out,1,0) and every recursion it makes, stopping where it returns to the outer Process: the facing gate, code-0 straight/turning/extension/straight-forcing acceptance with the finalize tail, second-candidate codes, the first-candidate code-2 latch/timer/urgency ladder, the code-3 tail, the retry recursions of codes 1/4/5/6/7 into the no-queue arm and the fresh arm again, the code-6 CloseEnough stop and scatter, and the wall Override.",
+  "assumptions": [
+    "Fixture from track_destination (real Unit/Drive/Ship vtables, 32x32 original Cell table, Rules at EXTRA+0x10000 with BlockagePathDelay 22) plus unit_entry owner prestate. Actor Cell 10,10 centre, MovementZone 0 zone table, no NavQueue, TarCom or radio contact.",
+    "Rules ConditionYellow 0.5, CloseEnough 576 unless the row sets it, PathDelay 0.01 (9 frames). Land rows: Clear 1.0 and Road 0.75 for every SpeedType unless set. Supplied overlays are indices 5.. with only +22D Crushable and +2A8 Wall.",
+    "Setter at frame 100; Process at frame 101. The route words are written after the setter and the body FacingClass rests on the first word octant (timer -1) unless the row sets a facing. Foot+640/+668/+6B7/+64C are supplied after the setter.",
+    "Can_Enter_Cell answers are supplied per call in call order; the recorded arguments are the caller's. Find_Path answers are supplied per call: a list is written to Foot+5E0 with AL=1, failed returns AL=0 with no writes (the destination survives)."
+  ],
+  "substitutions": [
+    "Unit Can_Enter_Cell 0x73F0A0 (stdcall 20) and Foot Find_Path 0x4D3920 (stdcall 12) are supplied at entry.",
+    "Cell Scatter_Objects 0x481670 (thiscall, 16) and Foot::Override_Mission 0x4D8F40 (thiscall, 12) are recorded and returned at entry; their bodies do not run.",
+    "Only OS Interlocked imports inherited from the fixture."
+  ],
+  "entry_points": {
+    "unit_destination": "0x00741970",
+    "can_enter": "0x0073F0A0",
+    "find_path": "0x004D3920",
+    "scatter_objects": "0x00481670",
+    "override_mission": "0x004D8F40",
+    "drive": "0x004B0500",
+    "ship": "0x0069FC10",
+    "drive_returned": "0x004B0A7E",
+    "ship_returned": "0x006A0147"
+  },
+  "payload_sha256": "1447b56c127fac1d1106b8e656063bb4f7ca8ef562b2a9f28c1843422546c6f5"
+}

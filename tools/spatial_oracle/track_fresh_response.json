@@ -1,0 +1,6362 @@
+[
+  {
+    "events": [
+      "gate"
+    ],
+    "input": {
+      "facing": 0,
+      "family": "drive",
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0
+      ],
+      "family": "drive",
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0,
+        0
+      ],
+      "family": "drive",
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        3200,
+        2432,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        12,
+        9
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 17,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        3
+      ],
+      "gate"
+    ],
+    "input": {
+      "codes": [
+        0,
+        3
+      ],
+      "family": "drive",
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        -1,
+        1,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        0,
+        0
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        1
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0,
+        1,
+        0,
+        0
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0,
+        6,
+        0,
+        0
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        7
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0,
+        7,
+        0,
+        0
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        2
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0,
+        2,
+        0
+      ],
+      "family": "drive",
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        1,
+        2,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        4
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0,
+        4,
+        0,
+        0
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        1
+      ],
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "unit_destination",
+        0
+      ]
+    ],
+    "input": {
+      "close_enough": 1024,
+      "codes": [
+        1,
+        0,
+        0,
+        6
+      ],
+      "destination": [
+        11,
+        10
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          1,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        1,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        0,
+        0
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.30000001192092896,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        1
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "scatter",
+        [
+          12,
+          9
+        ],
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        1,
+        0,
+        0,
+        6
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          1,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        -1,
+        1,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        0,
+        0
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "find_path",
+        14,
+        10,
+        0,
+        0,
+        "found"
+      ]
+    ],
+    "input": {
+      "codes": [
+        0
+      ],
+      "destination": [
+        14,
+        10
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3712,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        14,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "find_path",
+        14,
+        10,
+        0,
+        0,
+        "failed"
+      ]
+    ],
+    "input": {
+      "codes": [
+        0
+      ],
+      "destination": [
+        14,
+        10
+      ],
+      "family": "drive",
+      "find_path": [
+        "failed"
+      ],
+      "route": [
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3712,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        14,
+        10
+      ],
+      "out": 0,
+      "path": [
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0
+      ],
+      "destination": [
+        11,
+        10
+      ],
+      "family": "drive",
+      "route": [
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "out": 0,
+      "path": [
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0
+      ],
+      "family": "drive",
+      "overlays": [
+        [
+          11,
+          10,
+          true,
+          false
+        ]
+      ],
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        1,
+        2,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 1,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0
+      ],
+      "family": "drive",
+      "overlays": [
+        [
+          12,
+          9,
+          true,
+          false
+        ]
+      ],
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        1,
+        2,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 1,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        2
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        1,
+        "found"
+      ]
+    ],
+    "input": {
+      "blocked_timer": [
+        100,
+        0,
+        22
+      ],
+      "codes": [
+        2
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "latched": false,
+      "movement_timer": [
+        100,
+        0,
+        0
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 1,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        2
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        2,
+        "found"
+      ]
+    ],
+    "input": {
+      "blocked_timer": [
+        50,
+        0,
+        22
+      ],
+      "codes": [
+        2
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "latched": true,
+      "movement_timer": [
+        100,
+        0,
+        0
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        50,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 1,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        2
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        1,
+        "failed"
+      ]
+    ],
+    "input": {
+      "blocked_timer": [
+        90,
+        0,
+        22
+      ],
+      "codes": [
+        2
+      ],
+      "family": "drive",
+      "find_path": [
+        "failed"
+      ],
+      "latched": true,
+      "movement_timer": [
+        100,
+        0,
+        0
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        90,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 1,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        2
+      ]
+    ],
+    "input": {
+      "blocked_timer": [
+        100,
+        0,
+        22
+      ],
+      "codes": [
+        2
+      ],
+      "family": "drive",
+      "find_path": [],
+      "latched": false,
+      "movement_timer": [
+        100,
+        0,
+        9
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 1,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        2
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        1,
+        "failed"
+      ],
+      [
+        "unit_destination",
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        2
+      ],
+      "family": "drive",
+      "far_zone": [
+        [
+          13,
+          10
+        ]
+      ],
+      "find_path": [
+        "failed"
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        3
+      ],
+      "gate"
+    ],
+    "input": {
+      "codes": [
+        3
+      ],
+      "family": "drive",
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        1
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        1
+      ],
+      [
+        "unit_destination",
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        1,
+        0,
+        1
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        4
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        4
+      ]
+    ],
+    "input": {
+      "codes": [
+        4,
+        0,
+        4
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        5
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        5
+      ]
+    ],
+    "input": {
+      "codes": [
+        5,
+        0,
+        5
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "scatter",
+        [
+          11,
+          10
+        ],
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        6,
+        0,
+        6
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        7
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        7
+      ],
+      [
+        "unit_destination",
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        7,
+        0,
+        7
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "unit_destination",
+        0
+      ]
+    ],
+    "input": {
+      "close_enough": 1024,
+      "codes": [
+        6,
+        0,
+        6
+      ],
+      "destination": [
+        11,
+        10
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "scatter",
+        [
+          11,
+          10
+        ],
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "close_enough": 1024,
+      "codes": [
+        6,
+        0,
+        6
+      ],
+      "destination": [
+        11,
+        10
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ],
+      "tunnel": [
+        [
+          10,
+          10
+        ]
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        5
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        5
+      ],
+      [
+        "override",
+        1,
+        [
+          11,
+          10
+        ],
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        5,
+        0,
+        5
+      ],
+      "family": "drive",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "overlays": [
+        [
+          11,
+          10,
+          false,
+          true
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate"
+    ],
+    "input": {
+      "facing": 0,
+      "family": "ship",
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0
+      ],
+      "family": "ship",
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0,
+        0
+      ],
+      "family": "ship",
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        3200,
+        2432,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        12,
+        9
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 17,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        3
+      ],
+      "gate"
+    ],
+    "input": {
+      "codes": [
+        0,
+        3
+      ],
+      "family": "ship",
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        -1,
+        1,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        0,
+        0
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        1
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0,
+        1,
+        0,
+        0
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0,
+        6,
+        0,
+        0
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        7
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0,
+        7,
+        0,
+        0
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        2
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0,
+        2,
+        0
+      ],
+      "family": "ship",
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        1,
+        2,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        4
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0,
+        4,
+        0,
+        0
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        1
+      ],
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "unit_destination",
+        0
+      ]
+    ],
+    "input": {
+      "close_enough": 1024,
+      "codes": [
+        1,
+        0,
+        0,
+        6
+      ],
+      "destination": [
+        11,
+        10
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          1,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        1,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        0,
+        0
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.30000001192092896,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        1
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "can_enter",
+        [
+          12,
+          9
+        ],
+        1,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "scatter",
+        [
+          12,
+          9
+        ],
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        1,
+        0,
+        0,
+        6
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          1,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        -1,
+        1,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        0,
+        0
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "find_path",
+        14,
+        10,
+        0,
+        0,
+        "found"
+      ]
+    ],
+    "input": {
+      "codes": [
+        0
+      ],
+      "destination": [
+        14,
+        10
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3712,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        14,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "find_path",
+        14,
+        10,
+        0,
+        0,
+        "failed"
+      ]
+    ],
+    "input": {
+      "codes": [
+        0
+      ],
+      "destination": [
+        14,
+        10
+      ],
+      "family": "ship",
+      "find_path": [
+        "failed"
+      ],
+      "route": [
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3712,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        14,
+        10
+      ],
+      "out": 0,
+      "path": [
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0
+      ],
+      "destination": [
+        11,
+        10
+      ],
+      "family": "ship",
+      "route": [
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "out": 0,
+      "path": [
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 0,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0
+      ],
+      "family": "ship",
+      "overlays": [
+        [
+          11,
+          10,
+          true,
+          false
+        ]
+      ],
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        1,
+        2,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 1,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        0
+      ],
+      "family": "ship",
+      "overlays": [
+        [
+          12,
+          9,
+          true,
+          false
+        ]
+      ],
+      "route": [
+        2,
+        1,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        2944,
+        2688,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        1,
+        2,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        11,
+        10
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": 18,
+      "straight": 1,
+      "target_speed": 1.0,
+      "valid": 1
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        2
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        1,
+        "found"
+      ]
+    ],
+    "input": {
+      "blocked_timer": [
+        100,
+        0,
+        22
+      ],
+      "codes": [
+        2
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "latched": false,
+      "movement_timer": [
+        100,
+        0,
+        0
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 1,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        2
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        2,
+        "found"
+      ]
+    ],
+    "input": {
+      "blocked_timer": [
+        50,
+        0,
+        22
+      ],
+      "codes": [
+        2
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "latched": true,
+      "movement_timer": [
+        100,
+        0,
+        0
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        50,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 1,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        2
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        1,
+        "failed"
+      ]
+    ],
+    "input": {
+      "blocked_timer": [
+        90,
+        0,
+        22
+      ],
+      "codes": [
+        2
+      ],
+      "family": "ship",
+      "find_path": [
+        "failed"
+      ],
+      "latched": true,
+      "movement_timer": [
+        100,
+        0,
+        0
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        90,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 1,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        2
+      ]
+    ],
+    "input": {
+      "blocked_timer": [
+        100,
+        0,
+        22
+      ],
+      "codes": [
+        2
+      ],
+      "family": "ship",
+      "find_path": [],
+      "latched": false,
+      "movement_timer": [
+        100,
+        0,
+        9
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 1,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        2
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        1,
+        "failed"
+      ],
+      [
+        "unit_destination",
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        2
+      ],
+      "family": "ship",
+      "far_zone": [
+        [
+          13,
+          10
+        ]
+      ],
+      "find_path": [
+        "failed"
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        3
+      ],
+      "gate"
+    ],
+    "input": {
+      "codes": [
+        3
+      ],
+      "family": "ship",
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        100,
+        0
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        1
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        1
+      ],
+      [
+        "unit_destination",
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        1,
+        0,
+        1
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        4
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        4
+      ]
+    ],
+    "input": {
+      "codes": [
+        4,
+        0,
+        4
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        5
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        5
+      ]
+    ],
+    "input": {
+      "codes": [
+        5,
+        0,
+        5
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "scatter",
+        [
+          11,
+          10
+        ],
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        6,
+        0,
+        6
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        7
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        7
+      ],
+      [
+        "unit_destination",
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        7,
+        0,
+        7
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "unit_destination",
+        0
+      ]
+    ],
+    "input": {
+      "close_enough": 1024,
+      "codes": [
+        6,
+        0,
+        6
+      ],
+      "destination": [
+        11,
+        10
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        101,
+        22
+      ],
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        0
+      ],
+      "nav": null,
+      "out": 0,
+      "path": [
+        -1,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "find_path",
+        11,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        6
+      ],
+      [
+        "scatter",
+        [
+          11,
+          10
+        ],
+        1,
+        1,
+        0
+      ]
+    ],
+    "input": {
+      "close_enough": 1024,
+      "codes": [
+        6,
+        0,
+        6
+      ],
+      "destination": [
+        11,
+        10
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ],
+      "tunnel": [
+        [
+          10,
+          10
+        ]
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        2944,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        11,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  },
+  {
+    "events": [
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        5
+      ],
+      [
+        "find_path",
+        13,
+        10,
+        0,
+        0,
+        "found"
+      ],
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        0
+      ],
+      "gate",
+      [
+        "can_enter",
+        [
+          11,
+          10
+        ],
+        2,
+        0,
+        0,
+        1,
+        5
+      ],
+      [
+        "override",
+        1,
+        [
+          11,
+          10
+        ],
+        0
+      ]
+    ],
+    "input": {
+      "codes": [
+        5,
+        0,
+        5
+      ],
+      "family": "ship",
+      "find_path": [
+        [
+          2,
+          2,
+          2
+        ]
+      ],
+      "overlays": [
+        [
+          11,
+          10,
+          false,
+          true
+        ]
+      ],
+      "route": [
+        2,
+        2,
+        2
+      ]
+    },
+    "state": {
+      "applied_speed": 0.0,
+      "blocked_timer": [
+        100,
+        22
+      ],
+      "destination": [
+        3456,
+        2688,
+        0
+      ],
+      "facing": 16384,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "latched": 0,
+      "mission": 2,
+      "movement_timer": [
+        101,
+        9
+      ],
+      "nav": [
+        13,
+        10
+      ],
+      "out": 0,
+      "path": [
+        2,
+        2,
+        2,
+        -1,
+        -1,
+        -1
+      ],
+      "reference": [
+        9,
+        8
+      ],
+      "retries": 10,
+      "returned": true,
+      "selector": -1,
+      "straight": 0,
+      "target_speed": 0.0,
+      "valid": 0
+    }
+  }
+]

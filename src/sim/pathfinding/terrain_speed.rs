@@ -178,6 +178,33 @@ pub fn compute_cell_speed_modifier(
     combine_speed_stages(terrain_factor, slope_factor, below_condition_yellow)
 }
 
+/// Drive/Ship Process_Movement's target for an admitted first candidate
+/// (`0x004B357F..0x004B35D6`, `0x004B3C84..0x004B3DF6`): the candidate Cell's
+/// land speed row, or `road_row` (land type 1) when the caller found its
+/// retained height two or more levels from the Cell, then the same slope,
+/// zero and damage stages as [`compute_cell_speed_modifier`].
+pub(crate) fn fresh_track_speed_fraction(
+    speed_type: SpeedType,
+    mover_world: (i32, i32),
+    next_cell: (u16, u16),
+    road_row: Option<SimFixed>,
+    terrain: &ResolvedTerrainGrid,
+    config: &TerrainSpeedConfig,
+    below_condition_yellow: bool,
+) -> SimFixed {
+    let terrain_factor = road_row.map_or_else(
+        || terrain_speed_factor(speed_type, next_cell, terrain),
+        |row| row.min(TERRAIN_SPEED_MAX),
+    );
+    let slope_factor = slope_factor_for(
+        speed_type,
+        ground_height_at_world(mover_world, terrain),
+        ground_height_at_world(cell_centre_world(next_cell), terrain),
+        config,
+    );
+    combine_speed_stages(terrain_factor, slope_factor, below_condition_yellow)
+}
+
 /// Stages 2–4 of the per-cell multiplier chain, isolated so the ordering can be
 /// pinned without building a terrain grid.
 ///

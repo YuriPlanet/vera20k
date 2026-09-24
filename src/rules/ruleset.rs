@@ -932,9 +932,13 @@ pub struct GeneralRules {
     pub extra_aircraft_light: i32,
 
     // -- Movement arrival --
-    /// Distance in leptons below which a blocked unit stops instead of repathing.
-    /// CloseEnough=2.25 in vanilla rulesmd.ini (2.25 cells × 256 lep/cell ≈ 576 leptons).
-    pub close_enough: SimFixed,
+    /// `Rules+0x1718`, `[General] CloseEnough=` in leptons: a blocked mover
+    /// within this distance of its destination stops instead of repathing.
+    /// Read by `RulesClass::ReadGeneral` at `0x00670EDD..0x00670EF7` through
+    /// `CCINIClass::ReadRange 0x00474620` (cells x 256, chopped) over the
+    /// current value; the constructor writes `0x280` (`0x00667588`). Retail
+    /// `CloseEnough=2.25` is 576.
+    pub close_enough: i32,
 
     // -- Service depot / unit repair --
     /// Ticks between applying RepairStep HP when a unit is on a repair depot.
@@ -1383,8 +1387,8 @@ impl Default for GeneralRules {
             extra_unit_light: 0,
             extra_infantry_light: 0,
             extra_aircraft_light: 0,
-            // CloseEnough=2.25 cells in vanilla rulesmd.ini → 576 leptons.
-            close_enough: SimFixed::from_num(576),
+            // RulesClass constructor 0x00667588.
+            close_enough: 0x280,
             // URepairRate=.016 min = 0.96 sec ≈ 14 ticks at 15 Hz.
             unit_repair_rate_ticks: 14,
             repair_step: 5,
@@ -2421,10 +2425,7 @@ impl GeneralRules {
                 })
                 .unwrap_or(defaults.extra_aircraft_light as f64 / 1000.0)
                 * 1000.0) as i32,
-            close_enough: general
-                .get_f32("CloseEnough")
-                .map(|cells| sim_from_f32(cells * 256.0))
-                .unwrap_or(defaults.close_enough),
+            close_enough: general.read_range("CloseEnough", defaults.close_enough),
             // URepairRate= is in minutes. Convert to ticks: minutes * 60 * 15 ticks/sec.
             unit_repair_rate_ticks: general
                 .get_f32("URepairRate")

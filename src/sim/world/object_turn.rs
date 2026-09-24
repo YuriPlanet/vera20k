@@ -83,7 +83,7 @@ fn reenter_pending_pass(
         overlay_registry,
         sim.playfield_bounds,
         &sim.terrain_speed_config,
-        sim.close_enough,
+        timing.close_enough,
         timing.path_delay_ticks,
         timing.blockage_path_delay_ticks,
         &mut sim.interner,
@@ -128,11 +128,7 @@ impl Simulation {
         path_grid: Option<&PathGrid>,
         overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     ) -> Result<GroundLocomotorOutcome, super::FrameAdvanceError> {
-        let timing = movement::MovementConfig::from_rules(
-            self.session.binary_frame,
-            self.close_enough,
-            rules,
-        );
+        let timing = movement::MovementConfig::from_rules(self.session.binary_frame, rules);
         self.process_ground_locomotor_with_config(
             stable_id,
             rules,
@@ -226,7 +222,7 @@ impl Simulation {
                 overlay_registry,
                 sim.playfield_bounds,
                 &sim.terrain_speed_config,
-                sim.close_enough,
+                timing.close_enough,
                 timing.path_delay_ticks,
                 timing.blockage_path_delay_ticks,
                 &mut sim.interner,
@@ -261,18 +257,6 @@ impl Simulation {
                 let outcome = sim
                     .run_foot_path_request(&request, lent, rules, path_grid, overlay_registry)
                     .map_err(|cause| frame_error(sim, cause))?;
-                if outcome == movement::FootPathOutcome::Returned
-                    && let movement::movement_tick::FootPathCaller::Track(family) = request.caller
-                {
-                    // Drive4B0AAA / Ship6A0173: Process_Track follows every
-                    // returned Process_Movement of a live Foot.
-                    pending_movement.record_native_track(
-                        movement::track_process::TrackInvocation::after_process_movement(
-                            request.entity_id,
-                            family,
-                        ),
-                    );
-                }
                 if outcome == movement::FootPathOutcome::Resume {
                     reenter_pending_pass(
                         sim,
@@ -282,6 +266,38 @@ impl Simulation {
                         path_grid,
                         overlay_registry,
                         timing,
+                    );
+                }
+            }
+            // Drive4B0A79 / Ship6A0142 and the track-end continuation
+            // 4B0647 / 69FCEE: Process_Movement(&out, 1, 0); Process_Track
+            // follows unless the out byte is set or the Foot died
+            // (4B0A7E..4B0AAA, 4B064C..4B0667).
+            if let Some((id, family)) = pending_movement.take_track_movement() {
+                let rules = rules.ok_or_else(|| {
+                    frame_error(sim, "Drive/Ship Process_Movement requires rules".into())
+                })?;
+                let out = sim
+                    .run_track_process_movement(
+                        id,
+                        family,
+                        movement::ProcessMovementArgs::OUTER,
+                        rules,
+                        path_grid,
+                        overlay_registry,
+                    )
+                    .map_err(|cause| frame_error(sim, cause))?;
+                if !out
+                    && sim
+                        .substrate
+                        .entities
+                        .get(id)
+                        .is_some_and(|entity| entity.lifecycle.object_alive)
+                {
+                    pending_movement.record_native_track(
+                        movement::track_process::TrackInvocation::after_process_movement(
+                            id, family,
+                        ),
                     );
                 }
             }

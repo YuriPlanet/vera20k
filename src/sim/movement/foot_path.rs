@@ -202,6 +202,28 @@ impl Simulation {
     ) -> Result<FindPathResult, String> {
         let id = request.entity_id;
         let frame = self.session.binary_frame;
+        #[cfg(test)]
+        if let Some(path) = super::fresh_oracle_seam::supplied_path(
+            (request.destination.x / 256, request.destination.y / 256),
+            request.urgency,
+        ) {
+            use super::fresh_oracle_seam::SuppliedPath;
+            let queue = &mut self
+                .substrate
+                .entities
+                .get_mut(id)
+                .ok_or("retired Find_Path requester")?
+                .navigation
+                .path_replay;
+            return Ok(match path {
+                SuppliedPath::Found(words) => {
+                    queue.directions = words;
+                    queue.cursor = 0;
+                    FindPathResult::Route
+                }
+                SuppliedPath::Failed => FindPathResult::Failed,
+            });
+        }
         //4D392A..393A: append=false clears one head before the +2CC
         //precheck; the backing suffix is retained.
         self.substrate
@@ -565,7 +587,7 @@ impl Simulation {
                     native_xyz_distance(coord.x - centre.x, coord.y - centre.y, coord.z - centre.z);
                 //0x4D3A9B: dist <= CloseEnough keeps the target. IsTrain (+C94)
                 //is set by no retail TechnoType (no IsTrain=yes in rulesmd).
-                if distance <= self.close_enough.to_num::<i32>() {
+                if distance <= rules.general.close_enough {
                     return Ok(destination);
                 }
                 let Some(near) = self.find_path_nearby_cell(id, target, rules)? else {

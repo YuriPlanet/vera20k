@@ -684,7 +684,6 @@ pub(super) fn handle_deferred_occupancy(
             entities,
             occupancy,
             (nx, ny),
-            object_list_layer,
             entity_id,
             interner.resolve(snap.owner),
             rules,
