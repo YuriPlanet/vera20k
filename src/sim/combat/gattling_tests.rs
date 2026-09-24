@@ -420,16 +420,17 @@ fn fire_error_of(code: i64) -> Option<FireError> {
 
 // ---- production regressions through `advance_tick` ----
 
-/// A Gattling Tank (`GTNK`, the retail tables) whose stage weapons differ
-/// (`G0`..`G5`, each with its own report), a transport it fits and a sturdy
-/// target.
+/// A Gattling Tank (`GTNK`, the retail `[YTNK]` tables, sight and locomotor)
+/// whose stage weapons differ (`G0`..`G5`, each with its own report), a
+/// transport it fits and a sturdy target.
 fn spin_rules() -> crate::rules::ruleset::RuleSet {
     let mut text = String::from(
         "[VehicleTypes]\n0=GTNK\n1=POST\n2=HOVR\n[InfantryTypes]\n[BuildingTypes]\n\
          [AircraftTypes]\n\
          [GTNK]\nStrength=300\nArmor=light\nSpeed=6\nTurret=yes\nROT=10\nIsGattling=yes\n\
          TurretCount=1\nWeaponCount=6\nWeaponStages=3\nStage1=200\nStage2=400\nStage3=600\n\
-         EliteStage1=100\nEliteStage2=200\nEliteStage3=300\nRateUp=1\nRateDown=50\nSize=3\n",
+         EliteStage1=100\nEliteStage2=200\nEliteStage3=300\nRateUp=1\nRateDown=50\nSize=3\n\
+         Sight=10\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
     );
     for slot in 0..6 {
         text.push_str(&format!("Weapon{}=G{slot}\n", slot + 1));
@@ -448,45 +449,62 @@ fn spin_rules() -> crate::rules::ruleset::RuleSet {
         .expect("spin-up rules")
 }
 
+/// The tank (YuriCountry, human) on the flat arena, where the ordinary fog
+/// update gives it sight, and its orders as the player's commands.
 struct Spin {
     sim: crate::sim::world::Simulation,
     rules: crate::rules::ruleset::RuleSet,
+    grid: crate::sim::pathfinding::PathGrid,
     hm: std::collections::BTreeMap<(u16, u16), u8>,
     tank: u64,
-    post: u64,
 }
 
 impl Spin {
+    /// The tank alone: nothing it could pick a target from.
     fn new() -> Self {
         let rules = spin_rules();
         let hm = std::collections::BTreeMap::new();
         let mut sim = crate::sim::world::Simulation::new();
+        for (name, side, human) in [("YuriCountry", 2, true), ("Americans", 0, false)] {
+            let id = sim.interner.intern(name);
+            sim.houses.insert(
+                id,
+                crate::sim::house_state::HouseState::new(id, side, None, human, 0, 10),
+            );
+            sim.session.house_order.push(id);
+        }
+        let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
         let tank = sim
             .spawn_object("GTNK", "YuriCountry", 10, 10, 0, &rules, &hm)
             .expect("spawn GTNK");
-        let post = sim
-            .spawn_object("POST", "Americans", 13, 10, 0, &rules, &hm)
-            .expect("spawn POST");
         Self {
             sim,
             rules,
+            grid,
             hm,
             tank,
-            post,
         }
     }
 
-    fn attack(&mut self) {
-        let target = Some(crate::sim::combat::TargetKind::Entity(self.post));
-        let commits = crate::sim::mission::concrete_effects::assign_target_commits(
-            &self.sim.substrate.entities,
-            target,
-        );
-        crate::sim::mission::concrete_effects::represented_assign_target_admitted(
-            self.sim.substrate.entities.get_mut(self.tank).unwrap(),
-            target,
-            commits,
-        );
+    /// An enemy post (Americans) three cells east of the tank.
+    fn spawn_post(&mut self) -> u64 {
+        self.sim
+            .spawn_object("POST", "Americans", 13, 10, 0, &self.rules, &self.hm)
+            .expect("spawn POST")
+    }
+
+    /// A player order and the frame it lands on. EventClass dispatch is the
+    /// frame's tail rung, after the object walk and combat, so the tank first
+    /// acts on the order the frame after this one.
+    fn order(&mut self, command: crate::sim::command::Command) {
+        let owner = self.sim.interner.intern("YuriCountry");
+        self.sim
+            .queue_command(crate::sim::command::CommandEnvelope::new(
+                owner,
+                self.sim.session.tick + 1,
+                command,
+            ));
+        self.tick();
     }
 
     fn state(&self) -> GattlingState {
@@ -497,8 +515,15 @@ impl Spin {
     fn tick(&mut self) -> (Vec<String>, Vec<crate::sim::world::SimSoundEvent>) {
         self.sim.fire_events.clear();
         self.sim.sound_events.clear();
-        self.sim
-            .advance_tick(&[], Some(&self.rules), &self.hm, None, None, 67);
+        let commands = self.sim.take_due_commands();
+        self.sim.advance_tick(
+            &commands,
+            Some(&self.rules),
+            &self.hm,
+            Some(&self.grid),
+            None,
+            67,
+        );
         let fired = self
             .sim
             .fire_events
@@ -530,7 +555,7 @@ impl Spin {
     }
 }
 
-/// A Gattling Tank holding a target charges one point every frame it fires,
+/// A Gattling Tank ordered to attack charges one point every frame it fires,
 /// reloads or turns, and steps up on the 201st and 401st such frames, as the
 /// original does (`gattling_stage.py`: 201/401, cap 600). Each stage fires
 /// its own weapon from the next frame on; the loop starts on the first frame
@@ -538,7 +563,11 @@ impl Spin {
 #[test]
 fn a_gattling_tank_spins_up_while_it_fights() {
     let mut spin = Spin::new();
-    spin.attack();
+    let post = spin.spawn_post();
+    spin.order(crate::sim::command::Command::Attack {
+        attacker_id: spin.tank,
+        target_id: post,
+    });
     let mut stage_ups = Vec::new();
     let mut weapons_by_stage: std::collections::BTreeMap<i32, std::collections::BTreeSet<String>> =
         Default::default();
@@ -585,21 +614,27 @@ fn a_gattling_tank_spins_up_while_it_fights() {
     assert_eq!(loops, ["Loop0", "stop", "Loop2", "stop", "Loop4"]);
 }
 
-/// Target lost at the cap: the tank loses 50 a frame, drops to stage 1 on
-/// the 5th frame and to 0 on the 9th, and is empty on the 12th (the
-/// original's rookie decay, `gattling_stage.py`); the loop is released once.
+/// Stopped at the cap after firing at the ground, with nothing to pick
+/// another target from: from the first frame without its target the tank
+/// loses 50 a frame, drops to stage 1 on the 5th frame and to 0 on the 9th,
+/// and is empty on the 12th (the original's rookie decay,
+/// `gattling_stage.py`); the loop is released once.
 #[test]
 fn a_gattling_tank_winds_down_without_a_target() {
+    use crate::sim::command::Command;
     let mut spin = Spin::new();
-    spin.attack();
+    spin.order(Command::ForceAttackCell {
+        attacker_id: spin.tank,
+        target_rx: 13,
+        target_ry: 10,
+    });
     for _ in 0..620 {
         spin.tick();
     }
     assert_eq!((spin.state().stage(), spin.state().value()), (2, 600));
-    crate::sim::mission::concrete_effects::represented_assign_target(
-        spin.sim.substrate.entities.get_mut(spin.tank).unwrap(),
-        None,
-    );
+    spin.order(Command::Stop {
+        entity_id: spin.tank,
+    });
     let mut timeline = Vec::new();
     let mut releases = 0;
     for _ in 0..13 {

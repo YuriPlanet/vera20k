@@ -45,12 +45,18 @@ Chrono Legionnaire's erase (TemporalClass) as #474 (`80f4494a`), the house defea
 counts, the gate, Blowup_All) as #476 (`3783b0ee`), the Crazy Ivan bomb (BombClass, its clock,
 sounds, cursors and clicks) as #488 (`7d4b970c`), the launch scatter, shrapnel and cluster trig
 through the native tables as #489 (`a97226a9`), GetFireError with its scan probe (C20) and the
-pursuit range stop as #490 (`a854028c`). The aircraft attack loop (states 4..10, the Carrier
-wing's re-issue, SetTarget's aircraft arm) is on `feature/combat-aircraft-attack`. Research lanes finished 2026-09-24 (scratchpad, not tracked):
-the aircraft attack loop, Prism forwarding, Gattling spin-up and native GetFireError. Native
-oracles built 2026-09-24: `aircraft_states` (in `tools/`) and four Gattling stems (scratchpad,
-not yet moved: stage, Unit fire, building attack, selection). Next, by player visibility:
-Gattling, the source Scatter the aircraft shots and the infantry Incoming tail call, the
+pursuit range stop as #490 (`a854028c`), the aircraft attack loop (states 4..10, the Carrier
+wing's re-issue, SetTarget's aircraft arm, idle mode's airfield) as #491 (`d900a2bb`). Gattling
+stages for units are on `feature/combat-gattling` (section below). The research lanes, designs
+and critic reports of this goal are archived outside the repo (not tracked):
+`Documents/vera20k-handoff/2026-09-24-combat-lanes` (every lane, among them the aircraft attack
+loop, Prism forwarding and native GetFireError) and `.../2026-09-24-combat-gattling-building`
+(the Gattling and building attack lanes with their oracles). Native oracles: `aircraft_states`
+and the unit-side Gattling stems (stage, Unit fire, selection) are in `tools/spatial_oracle/`;
+the building attack stem and the six building-mission oracles (Mission_Guard, Mission_Attack,
+the dispatch, SetTarget, the BuildingClass::AI blocks, the retaliation gate) pass `--check` from
+the second folder and move with the building mechanism. Next, by player visibility: the building attack mission (with the Gattling
+Cannon's hooks), the source Scatter the aircraft shots and the infantry Incoming tail call, the
 remaining GetFireError consumers (weapon selection without legality, C19's auto-target drop,
 retaliation, base-defence and cursor peeks), Prism forwarding, the Slave Miner's
 slave release at its death (`6B0AE0`), the other special warhead bodies (Magnetron and the rest),
