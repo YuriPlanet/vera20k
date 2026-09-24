@@ -175,7 +175,9 @@ fn spawn_refinery(sim: &mut Simulation, sid: u64, rx: u16, ry: u16) {
         5,
         false,
     );
+    // Placed in its cells' lists: on the map, out of limbo and marked.
     ge.lifecycle.in_limbo = false;
+    ge.lifecycle.cell_marked = true;
     sim.substrate.entities.insert(ge);
     occupy_structure_cells(sim, sid, rx, ry, 4, 3);
     if sim.substrate.next_stable_object_id <= sid {

@@ -49,6 +49,22 @@ fn with_world<R>(
 ) -> R {
     let mut world = Simulation::new();
     world.substrate.entities = std::mem::take(entities);
+    // A hand-placed fixture object out of limbo stands on the map: native
+    // Unlimbo marks it (`ObjectClass::Mark 0x005F58F7`, `+0x74`), which
+    // `Apply_area_damage`'s dispatch reads. Mark such objects for the phase
+    // and hand the caller back its own flag.
+    let unmarked: Vec<u64> = world
+        .substrate
+        .entities
+        .values()
+        .filter(|entity| !entity.lifecycle.in_limbo && !entity.lifecycle.cell_marked)
+        .map(|entity| entity.stable_id())
+        .collect();
+    for &id in &unmarked {
+        if let Some(entity) = world.substrate.entities.get_mut(id) {
+            entity.lifecycle.cell_marked = true;
+        }
+    }
     world.substrate.occupancy = std::mem::take(occupancy);
     world.interner = std::mem::take(interner);
     if let Some(houses) = houses.as_deref_mut() {
@@ -107,6 +123,11 @@ fn with_world<R>(
     }
     if let Some(handled) = handled_deaths {
         *handled = run.handled_deaths;
+    }
+    for id in unmarked {
+        if let Some(entity) = world.substrate.entities.get_mut(id) {
+            entity.lifecycle.cell_marked = false;
+        }
     }
     *entities = world.substrate.entities;
     *occupancy = world.substrate.occupancy;

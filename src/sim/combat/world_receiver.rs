@@ -198,6 +198,9 @@ pub(crate) fn commit_area(
     for receiver in receivers {
         match *receiver {
             combat_aoe::AreaDamageReceiver::Entity(event) => {
+                if !area_record_dispatches(world, rules, &event) {
+                    continue;
+                }
                 let (nested, mut pings) = commit_entities(
                     world,
                     run,
@@ -222,6 +225,33 @@ pub(crate) fn commit_area(
     }
 
     (effects, under_attack_events)
+}
+
+/// `Apply_area_damage @ 0x00489280`'s per-record dispatch gates
+/// (`0x004899F1..0x00489A95`), read live when the record's turn comes: an
+/// earlier record's receiver (a death weapon, an Ivan bomb, a C4 cascade) can
+/// kill, remove or limbo a later record's object before it is reached. The
+/// object must be alive (`+0x90`), not an `InvisibleInGame=` building
+/// (BuildingType `+0x1701`, `0x00489A1B`), have Health above zero (`+0x6C`,
+/// `0x00489A79`), be marked on the map (`+0x74`, `0x00489A80`) and be out of
+/// limbo (`+0x81`, `0x00489A87`). The distance bound (`0x00489A91`) and the
+/// airborne-aircraft halving (`0x00489A59..0x00489A77`) are fixed at
+/// collection; the near-centre Iron Curtain filter is `commit_entities`'.
+fn area_record_dispatches(world: &Simulation, rules: &RuleSet, event: &EntityDamageEvent) -> bool {
+    world
+        .substrate
+        .entities
+        .get(event.target_id)
+        .is_some_and(|target| {
+            target.lifecycle.object_alive
+                && !(target.category == EntityCategory::Structure
+                    && rules
+                        .object(world.interner.resolve(target.type_ref()))
+                        .is_some_and(|object| object.invisible_in_game))
+                && target.health.current > 0
+                && target.lifecycle.cell_marked
+                && !target.lifecycle.in_limbo
+        })
 }
 
 /// Complete one TerrainClass receiver, including its nested C4 and removal.
