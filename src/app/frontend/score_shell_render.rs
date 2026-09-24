@@ -345,7 +345,6 @@ fn render_score_shell_to_target(
         pressed: state.frontend.score_shell_state.continue_pressed,
         hovered: state.frontend.score_shell_state.continue_hovered,
         enabled: true,
-        wave_frame: None,
     }];
     let button_instances = shell_paint::paint_buttons(
         chrome,

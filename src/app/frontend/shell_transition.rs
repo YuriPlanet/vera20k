@@ -1,13 +1,13 @@
 //! Generic shell first-paint slide driver (menu / single-player / skirmish).
 //!
-//! The original plays a controls-reveal animation on the *first paint of every
-//! allow-listed shell dialog* — not a menu->skirmish edge transition and not a
-//! whole-screen crossfade. Each owner-draw control's chrome-SHP frame index
-//! advances on a staggered 30 ms-per-frame schedule; controls are never
-//! repositioned.
+//! The original slides every allow-listed shell dialog in on its first paint and
+//! out when it closes — not a menu->skirmish edge transition and not a
+//! whole-screen crossfade. The slide engine animates the dialog's right-panel
+//! column (every tile row's SDBTNANM frame, plus the Skirmish map button and top
+//! panel) on a 30 ms tick; nothing is repositioned.
 //!
 //! The render-agnostic data + schedule live in [`crate::ui::shell::slide`] (the
-//! dialog-id allow-list, per-dialog animated-slot count, and the [`ShellFrameWave`]
+//! dialog-id allow-list, each dialog's slide column, and the [`ShellFrameWave`]
 //! frame sweep). This module is the app/render glue: it maps the currently-showing
 //! screen to a shell dialog, (re)starts/advances the wave on entry edges, plays
 //! the slide-in start cue, and dispatches the per-frame shell repaint while the
@@ -24,7 +24,8 @@ use crate::ui::shell::descriptor::DialogId;
 // Re-export the render-agnostic schedule types from the shared substrate so the
 // shell renderers (and the `AppState` field) keep their existing import paths.
 pub(crate) use crate::ui::shell::slide::{
-    ButtonGroup, MainMenuEntryPaintFrame, MainMenuEntryPresentToken, PresentedPoll, ShellFrameWave,
+    ColumnDraw, MainMenuEntryPaintFrame, MainMenuEntryPresentToken, PanelArt, PresentedPoll,
+    ShellFrameWave, SlideColumn,
 };
 
 pub(crate) enum ShellFirstPaintRenderResult {
@@ -43,25 +44,25 @@ pub(crate) enum MainMenuFirstPaintPoll {
 
 /// Which shell dialog a first-paint slide belongs to. Every allow-listed shell
 /// dialog slides on its own first paint; this identifies the one currently
-/// showing so the trigger can detect entry edges and look up the control count.
+/// showing so the trigger can detect entry edges and look up its slide column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ShellSlideKind {
-    /// Dialog 0xE2 — main menu (6 owner-draw buttons).
+    /// Dialog 0xE2 — main menu.
     MainMenu,
-    /// Dialog 0x100 — single-player shell (4 owner-draw buttons).
+    /// Dialog 0x100 — single-player page.
     SinglePlayer,
-    /// Dialog 0x101 — Movies & Credits (4 owner-draw buttons).
+    /// Dialog 0x101 — Movies & Credits page.
     MoviesAndCredits,
     /// Dialog 0x129 — movie list (Play Movie and Back).
     MovieList,
-    /// Dialog 0x102 — offline skirmish setup (3 right-panel buttons).
+    /// Dialog 0x102 — offline skirmish setup.
     Skirmish,
 }
 
 impl ShellSlideKind {
     /// The Win32 dialog resource id this shell maps to. The slide's eligibility
-    /// and animated-slot count are looked up from this id in the data-driven
-    /// `slide` table (no hardcoded per-kind counts here).
+    /// and column are looked up from this id in the data-driven `slide` table
+    /// (no hardcoded per-kind counts here).
     pub(crate) fn dialog_id(self) -> DialogId {
         DialogId(match self {
             ShellSlideKind::MainMenu => 0x00E2,
@@ -72,18 +73,27 @@ impl ShellSlideKind {
         })
     }
 
-    /// Number of animated owner-draw button slots, which sets the stagger length.
-    /// Sourced from the data-driven `slide` table; every rendered shell has an
-    /// entry, so a miss is a programming error.
-    fn slot_count(self) -> u32 {
-        crate::ui::shell::slide::slot_count_for(self.dialog_id())
-            .expect("rendered shell dialog must have a slide slot count")
+    /// The dialog's slide column with the panel's `rows` tile rows. Every
+    /// rendered shell has a `slide` table entry, so a miss is a programming
+    /// error.
+    pub(crate) fn column(self, rows: u32) -> SlideColumn {
+        crate::ui::shell::slide::slide_spec_for(self.dialog_id())
+            .expect("rendered shell dialog must have a slide column")
+            .column(rows)
     }
+}
+
+/// Right-panel tile rows at the current surface size (`[0x00B0FA20]`).
+fn panel_rows(state: &AppState) -> u32 {
+    let config = &state.renderer.gpu.config;
+    crate::ui::shell::geom::right_panel_rects(config.width as i32, config.height as i32)
+        .tile_count
+        .max(1) as u32
 }
 
 /// What a family dialog's teardown leads to once its slide-out has run: the
 /// dialog proc's result, dispatched to the state that owns it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ShellExitThen {
     MainMenu(crate::ui::main_menu_shell::MainMenuShellAction),
     SinglePlayer(crate::ui::single_player_shell::SinglePlayerShellAction),
@@ -92,16 +102,22 @@ pub(crate) enum ShellExitThen {
     PlayMovie,
     /// Movie list Back (state `0xE` result -1).
     MovieListBack,
+    /// Skirmish Start Game (result `0x617`) with the session packed and
+    /// resolved when it was pressed.
+    SkirmishStart(Box<crate::skirmish_launch::SkirmishLaunchSession>),
+    /// Skirmish Back (result `0x5C0`) to the Single Player page.
+    SkirmishBack,
 }
 
 impl ShellExitThen {
     /// The dialog whose result this is.
-    pub(crate) fn dialog(self) -> ShellSlideKind {
+    pub(crate) fn dialog(&self) -> ShellSlideKind {
         match self {
             Self::MainMenu(_) => ShellSlideKind::MainMenu,
             Self::SinglePlayer(_) => ShellSlideKind::SinglePlayer,
             Self::MoviesCredits(_) => ShellSlideKind::MoviesAndCredits,
             Self::PlayMovie | Self::MovieListBack => ShellSlideKind::MovieList,
+            Self::SkirmishStart(_) | Self::SkirmishBack => ShellSlideKind::Skirmish,
         }
     }
 }
@@ -116,14 +132,21 @@ pub(crate) struct ShellExit {
 }
 
 /// How a request to leave a family dialog starts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) enum ShellExitStart {
     /// The teardown slide runs; the result follows when it ends.
     Sliding,
     /// The dialog is not showing steady, so `0x00608070` returns without a
-    /// slide: the result runs at once.
-    Immediate,
+    /// slide: the returned result runs at once.
+    Immediate(ShellExitThen),
     /// The dialog is already sliding out with a result; this one is dropped.
+    AlreadyLeaving,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExitStartRule {
+    Slide,
+    Immediate,
     AlreadyLeaving,
 }
 
@@ -136,33 +159,37 @@ fn exit_start_rule(
     active: Option<ShellSlideKind>,
     entry_running: bool,
     kind: ShellSlideKind,
-) -> ShellExitStart {
+) -> ExitStartRule {
     if exit_running {
-        ShellExitStart::AlreadyLeaving
+        ExitStartRule::AlreadyLeaving
     } else if target == Some(kind) && active == Some(kind) && !entry_running {
-        ShellExitStart::Sliding
+        ExitStartRule::Slide
     } else {
-        ShellExitStart::Immediate
+        ExitStartRule::Immediate
     }
 }
 
 /// Begin the teardown slide of the dialog that produced `then`.
 pub(crate) fn begin_shell_exit(state: &mut AppState, then: ShellExitThen) -> ShellExitStart {
     let kind = then.dialog();
-    let start = exit_start_rule(
+    match exit_start_rule(
         state.frontend.shell_exit.is_some(),
         current_shell_slide_target(state),
         state.frontend.shell_slide_active_shell,
         state.frontend.shell_first_paint_slide.is_some(),
         kind,
-    );
-    if start == ShellExitStart::Sliding {
-        state.frontend.shell_exit = Some(ShellExit {
-            wave: ShellFrameWave::new_slide_out(kind.slot_count(), Instant::now()),
-            then,
-        });
+    ) {
+        ExitStartRule::Slide => {
+            let column = kind.column(panel_rows(state));
+            state.frontend.shell_exit = Some(ShellExit {
+                wave: ShellFrameWave::new_slide_out(column, Instant::now()),
+                then,
+            });
+            ShellExitStart::Sliding
+        }
+        ExitStartRule::Immediate => ShellExitStart::Immediate(then),
+        ExitStartRule::AlreadyLeaving => ShellExitStart::AlreadyLeaving,
     }
-    start
 }
 
 impl ShellExit {
@@ -236,6 +263,8 @@ enum ShellWaveCompletion {
 /// dialog destroyed between paints cannot be hidden from an edge detector that
 /// only remembers the last rendered target.
 struct ShellLifecycleReducer<'a> {
+    /// Right-panel tile rows for a new wave's column.
+    panel_rows: u32,
     active_shell: &'a mut Option<ShellSlideKind>,
     first_paint_slide: &'a mut Option<ShellFrameWave>,
     slide_generation: &'a mut u64,
@@ -248,6 +277,7 @@ struct ShellLifecycleReducer<'a> {
 impl<'a> ShellLifecycleReducer<'a> {
     fn from_state(state: &'a mut AppState) -> Self {
         Self {
+            panel_rows: panel_rows(state),
             active_shell: &mut state.frontend.shell_slide_active_shell,
             first_paint_slide: &mut state.frontend.shell_first_paint_slide,
             slide_generation: &mut state.frontend.shell_slide_generation,
@@ -286,9 +316,12 @@ impl<'a> ShellLifecycleReducer<'a> {
                     if *self.slide_generation == 0 {
                         *self.slide_generation = 1;
                     }
-                    ShellFrameWave::new_presented_main_menu(*self.slide_generation)
+                    ShellFrameWave::new_presented_main_menu(
+                        *self.slide_generation,
+                        kind.column(self.panel_rows),
+                    )
                 } else {
-                    ShellFrameWave::new_first_paint_slide(kind.slot_count(), now)
+                    ShellFrameWave::new_first_paint_slide(kind.column(self.panel_rows), now)
                 });
                 ShellEntryEffect::Started(kind)
             }
@@ -575,9 +608,8 @@ pub(crate) fn activate_shell_first_paint_after_acquire(state: &mut AppState) {
 
 /// Render the currently-showing shell while its first-paint slide is live, then
 /// advance/complete the wave. Returns `Rendered` when it owned the frame. The shell
-/// renderer reads `state.shell_first_paint_slide` and swaps each owner-draw
-/// button's SDBTNANM frame index — controls are never repositioned, and the rest
-/// of the shell paints exactly as it does steady-state.
+/// renderer reads `state.shell_first_paint_slide` and paints the slide column in
+/// place of the buttons, without the children the slide leaves blank.
 pub(crate) fn render_shell_first_paint_slide(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
@@ -708,19 +740,19 @@ mod tests {
             exit_start_rule(running, target, active, entry, MovieList)
         };
         let shown = Some(MovieList);
-        assert_eq!(start(false, shown, shown, false), ShellExitStart::Sliding);
+        assert_eq!(start(false, shown, shown, false), ExitStartRule::Slide);
         // Its entry slide still runs, or it is not the showing dialog:
         // 0x00608070 returns without a slide and the result runs at once.
-        assert_eq!(start(false, shown, shown, true), ShellExitStart::Immediate);
+        assert_eq!(start(false, shown, shown, true), ExitStartRule::Immediate);
         assert_eq!(
             start(false, Some(MainMenu), Some(MainMenu), false),
-            ShellExitStart::Immediate
+            ExitStartRule::Immediate
         );
-        assert_eq!(start(false, None, shown, false), ShellExitStart::Immediate);
+        assert_eq!(start(false, None, shown, false), ExitStartRule::Immediate);
         // A second result while it slides out neither restarts nor commits.
         assert_eq!(
             start(true, shown, shown, false),
-            ShellExitStart::AlreadyLeaving
+            ExitStartRule::AlreadyLeaving
         );
     }
 
@@ -733,28 +765,37 @@ mod tests {
         );
         assert_eq!(ShellExitThen::PlayMovie.dialog(), ShellSlideKind::MovieList);
         assert_eq!(
+            ShellExitThen::SkirmishBack.dialog(),
+            ShellSlideKind::Skirmish
+        );
+        assert_eq!(
             ShellExitThen::MovieListBack.dialog(),
             ShellSlideKind::MovieList
         );
     }
 
+    /// Last presented tick of a `0xE2` entry at 800x600 (9 tile rows).
+    fn main_menu_terminal_tick() -> u8 {
+        ShellSlideKind::MainMenu.column(9).total_ticks() as u8 - 1
+    }
+
     #[test]
     fn a_teardown_slide_shows_every_tick_before_its_result() {
-        // Movie list 0x129: two buttons, 2 + 9 = 11 ticks of 30 ms.
+        // Movie list 0x129 at 800x600: 9 tile rows, 9 + 9 = 18 ticks of 30 ms.
         let t0 = Instant::now();
         let mut exit = ShellExit {
-            wave: ShellFrameWave::new_slide_out(ShellSlideKind::MovieList.slot_count(), t0),
+            wave: ShellFrameWave::new_slide_out(ShellSlideKind::MovieList.column(9), t0),
             then: ShellExitThen::MovieListBack,
         };
-        for tick in 1..=10u64 {
+        for tick in 1..=17u64 {
             assert!(
                 !exit.advance(t0 + Duration::from_millis(30 * tick)),
                 "tick {tick}"
             );
         }
-        // The last button frame reached its empty slot on tick 10.
-        assert_eq!(exit.wave.sdbtnanm_frame(1, ButtonGroup::A), 10);
-        assert!(exit.advance(t0 + Duration::from_millis(330)));
+        // Every tile row, the buttons and the empty ones, closed on the last tick.
+        assert!(exit.wave.button_draws().iter().all(|draw| draw.frame == 10));
+        assert!(exit.advance(t0 + Duration::from_millis(30 * 18)));
         assert_eq!(exit.then, ShellExitThen::MovieListBack);
     }
 
@@ -766,12 +807,22 @@ mod tests {
     }
 
     #[test]
-    fn shell_kinds_resolve_data_driven_slot_counts() {
-        assert_eq!(ShellSlideKind::MainMenu.slot_count(), 5);
-        assert_eq!(ShellSlideKind::SinglePlayer.slot_count(), 4);
-        assert_eq!(ShellSlideKind::MoviesAndCredits.slot_count(), 4);
-        assert_eq!(ShellSlideKind::MovieList.slot_count(), 2);
-        assert_eq!(ShellSlideKind::Skirmish.slot_count(), 3);
+    fn shell_kinds_resolve_their_slide_columns() {
+        let top_and_bottom = |kind: ShellSlideKind| {
+            let column = kind.column(9);
+            (column.top_buttons, column.bottom_button, column.map_button)
+        };
+        assert_eq!(top_and_bottom(ShellSlideKind::MainMenu), (5, true, false));
+        assert_eq!(
+            top_and_bottom(ShellSlideKind::SinglePlayer),
+            (3, true, false)
+        );
+        assert_eq!(
+            top_and_bottom(ShellSlideKind::MoviesAndCredits),
+            (3, true, false)
+        );
+        assert_eq!(top_and_bottom(ShellSlideKind::MovieList), (1, true, false));
+        assert_eq!(top_and_bottom(ShellSlideKind::Skirmish), (2, true, true));
     }
 
     #[test]
@@ -829,6 +880,7 @@ mod tests {
 
         // Open 0x100: 0xE2 is destroyed, but no 0x100 frame is allowed to run.
         ShellLifecycleReducer {
+            panel_rows: 9,
             active_shell: &mut active_shell,
             first_paint_slide: &mut first_paint_slide,
             slide_generation: &mut slide_generation,
@@ -845,6 +897,7 @@ mod tests {
 
         // Queued Back destroys 0x100 and recreates 0xE2 before the frame driver.
         ShellLifecycleReducer {
+            panel_rows: 9,
             active_shell: &mut active_shell,
             first_paint_slide: &mut first_paint_slide,
             slide_generation: &mut slide_generation,
@@ -860,6 +913,7 @@ mod tests {
         // The next production frame observes only the recreated 0xE2. No 0x100
         // wave or sound ever existed; exactly one fresh 0xE2 entry edge does.
         let effect = ShellLifecycleReducer {
+            panel_rows: 9,
             active_shell: &mut active_shell,
             first_paint_slide: &mut first_paint_slide,
             slide_generation: &mut slide_generation,
@@ -886,13 +940,13 @@ mod tests {
         );
 
         let mut accepted_at = start;
-        for expected_tick in 0..=crate::ui::shell::slide::MAIN_MENU_TERMINAL_TICK {
+        for expected_tick in 0..=main_menu_terminal_tick() {
             let wave = first_paint_slide.as_mut().expect("active main-menu wave");
             let frame = wave.current_main_menu_frame().expect("ready frame");
             assert_eq!((frame.generation(), frame.tick()), (42, expected_tick));
             let token = wave.mint_present_token(frame).expect("matching token");
             wave.record_presented(token, accepted_at).expect("commit");
-            if expected_tick < crate::ui::shell::slide::MAIN_MENU_TERMINAL_TICK {
+            if expected_tick < main_menu_terminal_tick() {
                 accepted_at += Duration::from_millis(30);
                 assert_eq!(
                     wave.poll_presented(accepted_at),
@@ -920,6 +974,7 @@ mod tests {
         let mut completion_events = vec!["ShellButtonSlideSound"];
         assert!(
             ShellLifecycleReducer {
+                panel_rows: 9,
                 active_shell: &mut active_shell,
                 first_paint_slide: &mut first_paint_slide,
                 slide_generation: &mut slide_generation,
@@ -975,6 +1030,7 @@ mod tests {
         let mut slide_generation = 0;
         let later = t0 + Duration::from_secs(1);
         let effect = ShellLifecycleReducer {
+            panel_rows: 9,
             active_shell: &mut active_shell,
             first_paint_slide: &mut first_paint_slide,
             slide_generation: &mut slide_generation,
@@ -997,7 +1053,10 @@ mod tests {
     fn completion_generation_mismatch_poison_prevents_retry() {
         let start = Instant::now();
         let mut active_shell = Some(ShellSlideKind::MainMenu);
-        let mut first_paint_slide = Some(ShellFrameWave::new_presented_main_menu(52));
+        let mut first_paint_slide = Some(ShellFrameWave::new_presented_main_menu(
+            52,
+            ShellSlideKind::MainMenu.column(9),
+        ));
         let mut slide_generation = 52;
         let mut title_reveal = Kind1StaticReveal::default();
         let mut monitor = crate::ui::shell::warning_monitor::WarningMonitor::default();
@@ -1011,14 +1070,13 @@ mod tests {
         let wave = first_paint_slide.as_mut().expect("presented wave");
         assert!(wave.activate_after_acquire());
         let mut accepted_at = start;
-        for expected_tick in 0..=crate::ui::shell::slide::MAIN_MENU_TERMINAL_TICK {
+        for expected_tick in 0..=main_menu_terminal_tick() {
             let frame = wave.current_main_menu_frame().expect("ready frame");
             assert_eq!(frame.tick(), expected_tick);
             let token = wave.mint_present_token(frame).expect("matching token");
             wave.record_presented(token, accepted_at).expect("commit");
             accepted_at += Duration::from_millis(30);
-            let expected_poll = if expected_tick < crate::ui::shell::slide::MAIN_MENU_TERMINAL_TICK
-            {
+            let expected_poll = if expected_tick < main_menu_terminal_tick() {
                 PresentedPoll::Acquire
             } else {
                 PresentedPoll::Complete
@@ -1028,6 +1086,7 @@ mod tests {
 
         assert!(
             !ShellLifecycleReducer {
+                panel_rows: 9,
                 active_shell: &mut active_shell,
                 first_paint_slide: &mut first_paint_slide,
                 slide_generation: &mut slide_generation,

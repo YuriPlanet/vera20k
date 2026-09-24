@@ -79,7 +79,7 @@ def _write_bundle(directory: Path, manifest: dict[str, object] | None = None) ->
 
 
 class EntrySequenceValidationTests(unittest.TestCase):
-    def test_valid_bundle_reports_all_fourteen_frame_hashes(self) -> None:
+    def test_valid_bundle_reports_every_frame_hash(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             bundle = Path(temp) / "bundle"
             _write_bundle(bundle)

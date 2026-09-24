@@ -937,7 +937,7 @@ impl App {
         use crate::app::frontend::shell_transition::ShellExitStart;
         match crate::app::frontend::shell_transition::begin_shell_exit(state, then) {
             ShellExitStart::Sliding => Self::play_shell_slide_out_sound(state),
-            ShellExitStart::Immediate => Self::commit_shell_exit(state, then),
+            ShellExitStart::Immediate(then) => Self::commit_shell_exit(state, then),
             ShellExitStart::AlreadyLeaving => {}
         }
     }
@@ -966,6 +966,8 @@ impl App {
             }
             ShellExitThen::PlayMovie => Self::play_selected_movie(state),
             ShellExitThen::MovieListBack => Self::open_movies_credits_page(state),
+            ShellExitThen::SkirmishStart(session) => Self::commit_skirmish_start(state, *session),
+            ShellExitThen::SkirmishBack => Self::commit_skirmish_back(state),
         }
     }
 

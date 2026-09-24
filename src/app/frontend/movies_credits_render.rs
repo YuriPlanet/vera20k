@@ -8,7 +8,6 @@ use crate::app::frontend::shell_pass::{
     ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
     software_cursor,
 };
-use crate::app::frontend::shell_transition::ButtonGroup;
 use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::{MainMenuShellChromeAtlas, MainMenuShellChromeEntry};
 use crate::render::shell_paint::{
@@ -410,19 +409,29 @@ fn movie_list_composition<'a>(
     let pressed = active.then(|| controller.pressed()).flatten();
     let hovered = active.then(|| controller.hovered()).flatten();
     let wave = exit_wave.or(state.frontend.shell_first_paint_slide.as_ref());
-    let buttons: Vec<PaintButton> = layout
-        .page
-        .buttons
-        .iter()
-        .enumerate()
-        .map(|(slot, button)| PaintButton {
-            rect: button.rect,
-            pressed: pressed == Some(button.id),
-            hovered: hovered == Some(button.id),
-            enabled: true,
-            wave_frame: wave.map(|w| w.sdbtnanm_frame(slot as u32, ButtonGroup::A)),
-        })
-        .collect();
+    // While a slide runs the engine draws the whole tile column in place of
+    // the buttons (`0x006071E0`).
+    let buttons: Vec<PaintButton> = match wave {
+        Some(wave) => {
+            sprites.extend(shell_paint::paint_slide_column(
+                atlas,
+                layout.page.right_panel,
+                &wave.button_draws(),
+            ));
+            Vec::new()
+        }
+        None => layout
+            .page
+            .buttons
+            .iter()
+            .map(|button| PaintButton {
+                rect: button.rect,
+                pressed: pressed == Some(button.id),
+                hovered: hovered == Some(button.id),
+                enabled: true,
+            })
+            .collect(),
+    };
     let button_sprites = shell_paint::paint_buttons(
         atlas,
         &buttons,
