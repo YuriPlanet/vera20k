@@ -2972,6 +2972,71 @@ fn fireat_launch_aim(
     }
 }
 
+/// `TechnoClass::FireAt`'s damage build (`damage::attacker::fire_damage`)
+/// for the shot `snap` fires with `weapon`. The firer's own rank and type
+/// decide the FIREPOWER stage; for a garrison shot that is the building,
+/// exactly as native's `this` is.
+///
+/// RESIDUAL: the firepower fold's `House+0x188` and `Techno+0x160` are 1.0.
+/// The house value is `[Easy]/[Normal]/[Difficult] FirePower=` times the
+/// country's `Firepower=`, both 1.0 by default (`0x0066D28E`, `0x00511980`)
+/// and set by no retail layer; the per-object value is raised only by the
+/// Firepower crate, which VERA does not have.
+///
+/// RESIDUAL: the open-topped stage has no production firer yet. Natively a
+/// passenger of an `OpenTopped=` transport (retail: `[BFRT]`) runs its own
+/// FireAt with `+0x82` set (`PerCellProcess 0x0051A45E`/`0x0073A75D` ->
+/// `SetInOpenTransport 0x00710470`); VERA's passengers never reach the fire
+/// path, and a loaded Battle Fortress fires only its own weapon. Trigger:
+/// any infantry in a Battle Fortress. Effect: their shots (x1.2 here, plus
+/// their own FIREPOWER stage) are missing entirely, not mis-scaled.
+fn fireat_damage(
+    world: &Simulation,
+    rules: &RuleSet,
+    snap: &AttackerSnapshot,
+    obj: &ObjectType,
+    weapon: &crate::rules::weapon_type::WeaponType,
+    is_garrison: bool,
+) -> i32 {
+    use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
+    let firer = world.substrate.entities.get(snap.stable_id);
+    let f32_bits = |value: f32| NativeF32Bits::from_bits(value.to_bits());
+    let multipliers = &rules.garrison_rules;
+    let stages = damage::attacker::FireDamageStages {
+        house_firepower: NativeF64Bits::ONE,
+        unit_firepower: NativeF64Bits::ONE,
+        rank_firepower: self::veterancy::has_weapon_ability(
+            self::veterancy::rank_from_u16(snap.veterancy),
+            obj,
+            crate::rules::object_type::Ability::Firepower,
+        )
+        .then(|| NativeF64Bits::from_bits(rules.general.veteran_combat.to_bits())),
+        // `vt+0x400`: BuildingClass `0x00458DD0`, CanBeOccupied &&
+        // CanOccupyFire && an occupant; false for every other class.
+        occupied: is_garrison.then(|| f32_bits(multipliers.occupy_damage_multiplier)),
+        // `+0x2E4` on a non-building: a unit installed in a Tank Bunker.
+        bunkered: firer
+            .filter(|firer| firer.category != EntityCategory::Structure)
+            .and_then(|firer| firer.bunker_link.installed_in())
+            .map(|_| f32_bits(multipliers.bunker_damage_multiplier)),
+        open_topped: firer
+            .and_then(|firer| {
+                crate::sim::passenger::open_topped_transport(
+                    &world.substrate.entities,
+                    rules,
+                    &world.interner,
+                    firer,
+                )
+            })
+            .map(|_| f32_bits(multipliers.open_topped_damage_multiplier)),
+    };
+    damage::attacker::fire_damage(
+        weapon.damage,
+        weapon.is_sonic || weapon.use_fire_particles,
+        &stages,
+    )
+}
+
 /// Existing FireAt delivery and bookkeeping, shared by the world receiver.
 /// The caller still owns legality, fire-action timing and inline damage commit.
 fn emit_admitted_fire(
@@ -3067,31 +3132,7 @@ fn emit_admitted_fire(
     );
     let launch_source = fireat_launch_source(world, rules, snap, &fire, weapon);
     let warhead = selected.warhead;
-    // `TechnoClass::Fire_At @ 0x006FDD50`, damage chain: the firepower fold
-    // (`0x006FE33D..0x006FE34D`, country x per-unit x `Damage=`, not
-    // modelled here — VERA reads the bare `Damage=`), THEN the FIREPOWER
-    // ability stage `ftol(damage * Rules.VeteranCombat)` at
-    // `0x006FE3C8..0x006FE3D8`, THEN the occupy multiplier. The firer's own
-    // rank and type decide the stage — for a garrison shot that is the
-    // building, exactly as native's `this` is.
-    let firer_rank = self::veterancy::rank_from_u16(snap.veterancy);
-    let veteran_damage = self::veterancy::scale_if_ability(
-        weapon.damage,
-        firer_rank,
-        obj,
-        crate::rules::object_type::Ability::Firepower,
-        rules.general.veteran_combat,
-    );
-    // Garrison damage: apply OccupyDamageMultiplier to base damage before AoE or
-    // single-target paths. Matches gamemd Fire_At which modifies damage before bullet
-    // creation, so AoE splash uses the modified value.
-    let base_damage = if is_garrison {
-        sim_to_i32(
-            SimFixed::from_num(veteran_damage) * rules.garrison_rules.occupy_damage_multiplier,
-        )
-    } else {
-        veteran_damage
-    };
+    let base_damage = fireat_damage(world, rules, snap, obj, weapon, is_garrison);
     let persistent_delivery = classify_projectile_delivery(weapon, rules);
     if let ProjectileDelivery::Persistent {
         arm_frames,

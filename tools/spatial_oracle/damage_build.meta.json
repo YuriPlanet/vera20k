@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "FireAt's damage build over Damage= sign/magnitude (incl. int32 overflow), IsSonic/UseFireParticles, the firepower fold, rank x FIREPOWER flags, VeteranCombat, and the occupied/bunker/open-topped stages; ReceiveDamage's defence divides over damage, target category and BuildCat, HouseType per-category floats incl. zero, the per-object armour multiplier incl. zero, rank x STRONGER flags and VeteranArmor incl. zero, and the minimum of one.",
+  "assumptions": [
+    "x87 control word 0x0E7F (PC53, chop), the harness default.",
+    "Rules VeteranCombat/VeteranArmor hold ReadDouble's widened single.",
+    "The FireAt block's [ESP+0x40] is the WeaponType; the ReceiveDamage block's [ESP+0x14] and [EBX] hold the incoming damage (the prologue's copies).",
+    "The ignoreDefenses / damage < 0 gate before the ReceiveDamage block is not run."
+  ],
+  "substitutions": [
+    "Rows record which stage instructions executed (stages) and which float GetArmorMultForType loaded (armor_mult_for_type), by address observation.",
+    "Techno vt+0x84 returns the case's TechnoType",
+    "Techno vt+0x400 returns the case's occupied flag",
+    "Techno vt+0x2C returns the case's What_Am_I",
+    "TechnoType vt+0x2C returns the case's AbstractType"
+  ],
+  "entry_points": {
+    "fire_begin": "0x006FE302",
+    "fire_end": "0x006FE460",
+    "receive_begin": "0x00701939",
+    "receive_end": "0x007019E3"
+  },
+  "payload_sha256": "80f9ae2d6bbe45a4786eb83d6864b3694dc4349884c04d568764d4e732a39624"
+}

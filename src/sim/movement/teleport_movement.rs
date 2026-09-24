@@ -620,8 +620,6 @@ mod tests {
             self_healing: false,
             veteran_explodes: false,
             elite_explodes: false,
-            veteran_stronger: false,
-            elite_stronger: false,
             veteran_scatter: false,
             elite_scatter: false,
             veteran_cloak: false,

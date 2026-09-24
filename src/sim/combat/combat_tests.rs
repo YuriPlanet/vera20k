@@ -8876,6 +8876,181 @@ fn gsi_08_05_elite_rof_and_firepower_abilities_reach_the_fire_path() {
     assert!((30..=31).contains(&elite_rof), "elite reload {elite_rof}");
 }
 
+/// A heal is never rank-scaled: `Fire_At`'s `JLE @ 0x006FE331` skips the
+/// firepower fold and the FIREPOWER stage for damage <= 0, so an elite repairer
+/// with FIREPOWER restores the bare 50, not `ftol(-50 * 1.1)`.
+#[test]
+fn gsi_08_05_a_heal_skips_the_firepower_rank_stage() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=MTNK\n1=HTNK\n\
+         [MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nCost=700\nPrimary=Repair\nVeteranAbilities=STRONGER,FIREPOWER,ROF\n\
+         [HTNK]\nStrength=400\nArmor=heavy\nSpeed=4\nCost=900\n\
+         [Repair]\nDamage=-50\nROF=50\nRange=6\nWarhead=Mech\n\
+         [Mech]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [General]\nVeteranCombat=1.1\n",
+    ))
+    .expect("heal fixture parses");
+    let heal_once = |elite: bool| -> i32 {
+        let mut store = EntityStore::new();
+        let mut firer = make_entity_owned(1, "MTNK", 5, 5, 300, "Soviet");
+        if elite {
+            crate::sim::combat::veterancy::set_elite(&mut firer);
+        }
+        store.insert(firer);
+        let _ = test_intern("HTNK");
+        store.insert(make_entity_owned(2, "HTNK", 8, 5, 200, "Soviet"));
+        let mut interner = test_interner();
+        issue_attack_command(&mut store, 1, 2, None, &interner);
+        align_attackers_to_targets(&mut store, &rules, &interner);
+        tick_combat(
+            &mut store,
+            &mut OccupancyGrid::new(),
+            &rules,
+            &mut interner,
+            0,
+            100,
+            0,
+            &mut SimRng::new(0x475A_5A4C),
+        );
+        store.get(2).expect("patient").health.current - 200
+    };
+    assert_eq!(heal_once(false), 50);
+    assert_eq!(heal_once(true), 50, "not ftol(-50 * 1.1) = -55");
+}
+
+/// An `IsSonic=` weapon's shot carries no damage: `Fire_At` zeroes it
+/// (`0x006FE306..0x006FE32A`) and the Sonic wave hurts instead (its
+/// `AmbientDamage=`). Before, the Dolphin's shot also hit for its `Damage=4`.
+#[test]
+fn gsi_08_05_a_sonic_shot_carries_no_damage() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=DLPH\n1=TARGET\n\n\
+         [DLPH]\nStrength=200\nArmor=light\nSpeed=8\nPrimary=SonicZap\n\n\
+         [TARGET]\nStrength=100\nArmor=wood\n\n\
+         [SonicZap]\nDamage=4\nAmbientDamage=10\nROF=20\nRange=6\nWarhead=SonicWH\nIsSonic=yes\n\n\
+         [SonicWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n",
+    ))
+    .expect("Sonic fixture parses");
+    let mut store = EntityStore::new();
+    store.insert(make_entity_owned(1, "DLPH", 5, 5, 200, "Soviet"));
+    let _ = test_intern("TARGET");
+    store.insert(make_entity_owned(2, "TARGET", 8, 5, 100, "Americans"));
+    let mut interner = test_interner();
+    issue_attack_command(&mut store, 1, 2, None, &interner);
+    align_attackers_to_targets(&mut store, &rules, &interner);
+    let result = tick_combat(
+        &mut store,
+        &mut OccupancyGrid::new(),
+        &rules,
+        &mut interner,
+        0,
+        100,
+        0,
+        &mut SimRng::new(0x475A_5A4C),
+    );
+    assert_eq!(
+        result.consequences.fire_events().len(),
+        1,
+        "the Dolphin fired"
+    );
+    assert_eq!(store.get(2).expect("target").health.current, 100);
+}
+
+/// A vehicle installed in a Tank Bunker fires for `ftol(damage * f32
+/// BunkerDamageMultiplier)` (`0x006FE40B..0x006FE437`, a `+0x2E4` link on a
+/// non-building): the retail 1.3 turns a 90-damage gun into 116 (the single
+/// 1.3 sits just below 1.3, so 117 is never reached).
+#[test]
+fn gsi_08_05_a_bunkered_vehicle_takes_the_bunker_damage_multiplier() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=HTNK\n1=MTNK\n\
+         [HTNK]\nStrength=300\nArmor=heavy\nSpeed=4\nCost=900\nPrimary=RhinoGun\n\
+         [MTNK]\nStrength=400\nArmor=heavy\nSpeed=6\nCost=700\n\
+         [RhinoGun]\nDamage=90\nROF=50\nRange=6\nWarhead=AP\n\
+         [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [CombatDamage]\nBunkerDamageMultiplier=1.3\n",
+    ))
+    .expect("bunker fixture parses");
+    let fire_once = |bunkered: bool| -> i32 {
+        let mut store = EntityStore::new();
+        let mut firer = make_entity_owned(1, "HTNK", 5, 5, 300, "Soviet");
+        if bunkered {
+            firer.bunker_link = crate::sim::game_entity::BunkerLink::Installed(99);
+        }
+        store.insert(firer);
+        let _ = test_intern("MTNK");
+        store.insert(make_entity_owned(2, "MTNK", 8, 5, 400, "Americans"));
+        let mut interner = test_interner();
+        issue_attack_command(&mut store, 1, 2, None, &interner);
+        align_attackers_to_targets(&mut store, &rules, &interner);
+        tick_combat(
+            &mut store,
+            &mut OccupancyGrid::new(),
+            &rules,
+            &mut interner,
+            0,
+            100,
+            0,
+            &mut SimRng::new(0x475A_5A4C),
+        );
+        400 - store.get(2).expect("target").health.current
+    };
+    assert_eq!(fire_once(false), 90);
+    assert_eq!(fire_once(true), 116, "ftol(90 * 1.3f)");
+}
+
+/// A garrison's shot is multiplied by the f32 `OccupyDamageMultiplier=` on the
+/// x87 (`FILD; FMUL dword Rules+0xF40; ftol`, `0x006FE3F1`): a 30-damage
+/// weapon under the retail 1.2 carries 36. VERA's former fixed-point 1.2
+/// (`78643/65536`, below the single) truncated it to 35. Native value:
+/// `tools/spatial_oracle/damage_build.py` (fire rows, damage 30, occupied).
+#[test]
+fn gsi_08_05_a_garrison_shot_takes_the_f32_occupy_multiplier() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "\
+[InfantryTypes]\n0=E1\n1=E2\n\n\
+[VehicleTypes]\n\n\
+[AircraftTypes]\n\n\
+[BuildingTypes]\n0=CAGAS\n\n\
+[CombatDamage]\nOccupyDamageMultiplier=1.2\n\n\
+[CAGAS]\nStrength=800\nArmor=wood\nCanBeOccupied=yes\nCanOccupyFire=yes\nMaxNumberOccupants=5\n\n\
+[E1]\nStrength=125\nArmor=flak\nSpeed=4\nPrimary=UCPara\nOccupyWeapon=UCPara\n\n\
+[E2]\nStrength=125\nArmor=flak\nSpeed=4\n\n\
+[UCPara]\nDamage=30\nROF=20\nRange=5\nWarhead=SA\n\n\
+[SA]\nVerses=100%,100%,100%,90%,70%,25%,100%,25%,25%,0%,0%\n",
+    ))
+    .expect("garrison rules parse");
+    let mut store = EntityStore::new();
+    let mut building = make_entity(10, "CAGAS", 5, 5, 800);
+    building.category = EntityCategory::Structure;
+    let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 1);
+    assert!(cargo.board(1, 1));
+    building.passenger_role = crate::sim::passenger::PassengerRole::Transport { cargo };
+    store.insert(building);
+    let mut occupant = make_infantry_entity(1, "E1", 5, 5, 125);
+    occupant.passenger_role = crate::sim::passenger::PassengerRole::Inside { transport_id: 10 };
+    store.insert(occupant);
+    store.insert(make_infantry_entity(2, "E2", 8, 5, 125));
+    let mut interner = test_interner();
+    issue_attack_command(&mut store, 10, 2, None, &interner);
+    let result = tick_combat(
+        &mut store,
+        &mut OccupancyGrid::new(),
+        &rules,
+        &mut interner,
+        0,
+        100,
+        0,
+        &mut SimRng::new(1),
+    );
+    assert_eq!(
+        result.consequences.fire_events().len(),
+        1,
+        "the garrison fired"
+    );
+    assert_eq!(store.get(2).expect("target").health.current, 125 - 36);
+}
+
 /// `UnitClass::Death_Explosion @ 0x00738680` plays one anim from the dying
 /// type's own `Explosion=` list and then one from `DestroyAnim=`, at its own
 /// coordinate, one `Random__Next()` draw each. Before this the type's list had
