@@ -1299,6 +1299,10 @@ fn test_issue_attack_command() {
     let mut store = EntityStore::new();
     store.insert(make_entity(1, "MTNK", 5, 5, 300));
     store.insert(make_entity(2, "MTNK", 8, 5, 300));
+    // Mid-reload: the reload is the object's (`TechnoClass+0x2EC`), and
+    // `Assign_Target @ 0x006FCDB0` never touches it.
+    let rearm = crate::sim::timer::CdTimer::started(0, 40);
+    store.get_mut(1).unwrap().rearm_timer = rearm;
 
     let result: bool = issue_attack_command(&mut store, 1, 2, None, &test_interner());
     assert!(result, "Should succeed for valid entities");
@@ -1309,9 +1313,9 @@ fn test_issue_attack_command() {
         crate::sim::combat::TargetKind::Entity(2)
     ));
     assert_eq!(
-        store.get(1).unwrap().rearm_timer.remaining(0),
-        0,
-        "no reload before the first shot"
+        store.get(1).unwrap().rearm_timer,
+        rearm,
+        "a new attack order does not reload the weapon"
     );
 }
 
@@ -9971,6 +9975,8 @@ fn gsi_08_06_a_failed_arc_launch_skips_the_rest_of_the_shot() {
         let mut interner = test_interner();
         issue_attack_command(&mut store, 1, 2, None, &interner);
         let before = store.get(1).unwrap().clone();
+        let mut rng = SimRng::new(3);
+        let rng_before = rng.logical_state();
         let result = tick_combat(
             &mut store,
             &mut OccupancyGrid::new(),
@@ -9979,30 +9985,38 @@ fn gsi_08_06_a_failed_arc_launch_skips_the_rest_of_the_shot() {
             0,
             100,
             0,
-            &mut SimRng::new(3),
+            &mut rng,
         );
         let shooter = store.get(1).unwrap();
         (
             result.projectile_spawns.len(),
+            result.consequences.fire_events().len(),
+            rng.logical_state() != rng_before,
             shooter.rearm_timer != before.rearm_timer,
             shooter.weapon_burst.index() != before.weapon_burst.index(),
             shooter.last_fire_frame != before.last_fire_frame,
         )
     };
-    assert_eq!(shoot("no"), (1, true, true, true), "the control launches");
+    assert_eq!(
+        shoot("no"),
+        (1, 1, true, true, true, true),
+        "the control launches"
+    );
     assert_eq!(
         shoot("yes"),
-        (0, false, false, false),
-        "no bullet, no rearm, no burst step, no last-fire store"
+        (0, 0, false, false, false, false),
+        "no bullet, no report or anim, no GetROF draw, no rearm, no burst step, no \
+         last-fire store"
     );
 }
 
-/// `TechnoClass::FireAt 0x006FF28F..0x006FF2BE` for every GetROF value the
-/// oracle ran (`tools/spatial_oracle/rearm_timer.py`, `fire` rows): the timer
-/// starts at the frame with GetROF's value, halved toward zero for a berserk
-/// firer, and `+0x2F8` keeps the same value.
+/// `TechnoClass::FireAt 0x006FF28F..0x006FF2BE`: the duration stored from
+/// every GetROF value the oracle ran (`tools/spatial_oracle/rearm_timer.py`,
+/// `fire` rows, int32 extremes included) is `fireat_rearm_frames` of it,
+/// halved toward zero for a berserk firer. (The rows also record the start
+/// frame and the `+0x2F8` copy, which VERA does not keep.)
 #[test]
-fn gsi_08_05_rearm_write_matches_the_original() {
+fn gsi_08_05_rearm_frames_match_the_original() {
     let vectors: serde_json::Value = serde_json::from_str(include_str!(
         "../../../tools/spatial_oracle/rearm_timer.json"
     ))
@@ -10011,20 +10025,14 @@ fn gsi_08_05_rearm_write_matches_the_original() {
     assert_eq!(rows.len(), 89);
     for row in rows {
         let field = |name: &str| row["input"][name].as_i64().unwrap() as i32;
-        let duration =
-            super::world_receiver::fireat_rearm_frames(field("rof"), field("berserk") != 0);
-        let timer = crate::sim::timer::CdTimer::started(field("frame"), duration);
         assert_eq!(
-            i64::from(timer.start_frame()),
-            row["start"].as_i64().unwrap(),
-            "{row}"
-        );
-        assert_eq!(
-            i64::from(timer.duration()),
+            i64::from(super::world_receiver::fireat_rearm_frames(
+                field("rof"),
+                field("berserk") != 0
+            )),
             row["duration"].as_i64().unwrap(),
             "{row}"
         );
-        assert_eq!(row["rof_copy"], row["duration"], "{row}");
     }
 }
 

@@ -412,6 +412,10 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
         //   takes it — committing the draw alone would be wrong on the other.
         //   Trigger: a deployed Desolator. Player effect: cadence and stream.
         //   Frequency: continuous wherever a Soviet player deploys one.
+        // In VERA both excluded arms fall to the Foot body: on Guard or Sticky
+        // that is `evaluate_foot_guard_cadence` (the rearm wait while the
+        // reload runs, else `Rate + (0, 2)`), which native's shim never reaches
+        // for them.
         (
             EntityCategory::Infantry,
             Some(MissionType::Guard | MissionType::Sticky | MissionType::AreaGuard),

@@ -3630,12 +3630,14 @@ fn emit_admitted_fire(
     }
 
     // A failed launch resumes at `0x006FF749`, past the rest of the shot
-    // (`0x006FF031..0x006FF743`): the occupant advance, the burst step, GetROF
-    // and its draws, the rearm, the muzzle anim, Report, RevealOnFire and the
-    // `+0x120` store, so the firer may try again next frame. What follows
-    // `0x006FF749` dereferences the bullet (LimboLaunch at `0x006FF825`), so no
-    // weapon that reaches it can fail to launch.
+    // (`0x006FF031..0x006FF743`): the occupant advance, recoil, particle
+    // systems, the burst step, GetROF and its draws, the rearm, the muzzle
+    // anim, Report, the laser/bolt/wave, DecreaseAmmo (`0x006FF656`), the
+    // `+0x3BC` 15-frame timer (`0x006FF4B0`), RevealOnFire and the `+0x120`
+    // store, so the firer may try again next frame. The tail from
+    // `0x006FF749` still runs.
     if !launched {
+        fireat_tail(world, rules, snap, weapon);
         return;
     }
 
@@ -3775,10 +3777,19 @@ fn emit_admitted_fire(
     // `0x006FF743` stores the frame in `+0x120`, the since-my-last-shot mark
     // `UnitClass::Facing_Update`'s idle dwell reads (the constructor at
     // `0x006F2B9C` is its only other writer).
+    // The remainder (`0x006FF2C5`) divides by the Burst of the weapon fired,
+    // where GetROF's mid-burst test read the (next) weapon GetWeapon answers.
+    // A DiskLaser weapon's own path stores GetROF's value unhalved
+    // (`0x006FE4A4..0x006FE4C5`); the rest of that path (the disk laser fires
+    // and FireAt returns) is the unported DiskLaser delivery.
     if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
-        let rearm = fireat_rearm_frames(rof, entity.berserk.active);
+        let rearm = if weapon.disk_laser {
+            rof
+        } else {
+            fireat_rearm_frames(rof, entity.berserk.active)
+        };
         entity.rearm_timer.start(binary_frame as i32, rearm);
-        entity.weapon_burst.complete_shot(rof_weapon.burst.max(1));
+        entity.weapon_burst.complete_shot(weapon.burst.max(1));
         entity.last_fire_frame = i64::from(binary_frame);
     }
     // Aircraft ammo deduction: one ammo per burst completion (not per shot).
@@ -3793,8 +3804,30 @@ fn emit_admitted_fire(
         out.ammo_deduct.push(snap.stable_id);
     }
 
-    // `TechnoClass::Fire @ 0x006FF749..0x006FF872` runs after the bullet
-    // launch, rearm, Report and weapon Anim.
+    fireat_tail(world, rules, snap, weapon);
+}
+
+/// `TechnoClass::FireAt 0x006FF749..0x006FF939`, which runs after a launched
+/// and a failed shot alike: a `LimboLaunch=` weapon takes the firer off the
+/// map (`0x006FF7F3`). Its `Parasite=` arm hands the bullet the firer
+/// (`0x006FF825`, the tail's one bullet dereference), so a parasite shot is
+/// never a failed launch.
+///
+/// RESIDUAL, pre-existing and not ported:
+/// - FireOnce (`WeaponType+0x135`, `0x006FF8F1..0x006FF929`): a team member
+///   steps its team (`0x006E9050`), then the firer drops its target
+///   (Assign_Target(NULL)). Triggers: every mind-control, Psi wave, Ivan bomb,
+///   disguise kit, disc drain and defuse kit shot. Effect: VERA's firer keeps
+///   the target where native's lets go at once.
+/// - DistributedFire (TechnoType `+0x6B0`, `0x006FF872..0x006FF8EB`): the
+///   target is remembered at `+0x470`, then dropped. Trigger: the Aegis
+///   Cruiser. Effect: VERA's Aegis keeps its target.
+fn fireat_tail(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    snap: &AttackerSnapshot,
+    weapon: &WeaponType,
+) {
     if weapon.limbo_launch {
         world.parasite_limbo_launch(snap.stable_id, snap.target, weapon, rules);
     }
@@ -4236,7 +4269,7 @@ pub(crate) fn tick_combat(
         }
     }
 
-    // Phase 1: snapshot all attackers and advance cooldowns / burst delays.
+    // Phase 1: snapshot all attackers.
     let mut snapshots: Vec<AttackerSnapshot> = Vec::new();
     for &id in &keys {
         // TubeMovement owns this object's complete AI turn.  The active state
@@ -4245,9 +4278,9 @@ pub(crate) fn tick_combat(
         if fire_suppressed.contains(&id) {
             continue;
         }
-        // Mutable borrow: tick cooldowns and capture the per-attacker scalars +
-        // garrison cargo info. Entity field-reads move into `build_attacker_snapshot`
-        // (pure) below, after this borrow releases.
+        // Mutable borrow: capture the per-attacker scalars and garrison cargo
+        // info. Entity field-reads move into `build_attacker_snapshot` (pure)
+        // below, after this borrow releases.
         let (attack_target, pending_infantry_fire, pending_building_fire, garrison_cargo) = {
             let entity = match world.substrate.entities.get_mut(id) {
                 Some(e) => e,
@@ -4287,7 +4320,7 @@ pub(crate) fn tick_combat(
                 }
                 continue;
             };
-            // Skip snapshot for entities blocked by locomotor state (cooldowns still tick).
+            // Skip snapshot for entities blocked by locomotor state.
             // An aircraft's Mission_Attack visit runs whenever its dispatch asked
             // for it; the visit opens with its own prefix.
             let requested = aircraft_fire_requests.contains(&id);
@@ -4660,9 +4693,10 @@ pub(crate) fn tick_combat(
         drain_links: _,
     } = emit;
 
-    // Phase 3: apply retargets. Burst and rearm writes already happened in
-    // each attacker's `commit_fire_bookkeeping` boundary. Auto-retargets only ever produce Entity targets (acquire_best_target
-    // scans hostile entities), so this wraps the u64 in TargetKind::Entity.
+    // Phase 3: apply retargets. The burst step and rearm were written in each
+    // shot's FireAt emission. Auto-retargets only ever produce Entity targets
+    // (acquire_best_target scans hostile entities), so this wraps the u64 in
+    // TargetKind::Entity.
     for &(attacker_id, new_target_sid) in &retarget_events {
         if let Some(entity) = world.substrate.entities.get_mut(attacker_id) {
             retarget_in_place(entity, new_target_sid);

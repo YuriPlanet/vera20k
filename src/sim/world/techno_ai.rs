@@ -1433,12 +1433,11 @@ fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
 ///
 /// Steps 3 and 4 are merged below. The original drops the pointer and
 /// immediately re-acquires, which lands back on the same value whenever the
-/// same candidate still wins. VERA must not perform that round trip literally:
-/// the weapon's rearm cooldown lives on the target record here, not on the
-/// object, so a no-op drop-and-reinstall would restart ROF on every cadence and
-/// a unit whose ROF exceeds the ~28-frame scan interval would never get a shot
-/// off. Installing the scan result directly is the same observable outcome —
-/// the target setter is a no-op when the pick is unchanged.
+/// same candidate still wins; installing the scan result directly is the same
+/// observable outcome, since the target setter is a no-op when the pick is
+/// unchanged. (The reload is the object's own timer,
+/// [`GameEntity::rearm_timer`](crate::sim::game_entity::GameEntity::rearm_timer),
+/// so neither form touches it.)
 ///
 /// The Area Guard delay branch is written because it belongs to the scanner,
 /// but Area Guard is not one of the three missions that reach here from the AI
@@ -1559,12 +1558,9 @@ fn passive_target_scan(
     // unit that acquires does NOT walk toward what it found.
     //
     // Swinging an existing attack onto a different victim goes through the
-    // shared in-place retarget so the weapon's rearm countdown, burst counter
-    // and inter-shot delay survive. Rebuilding the attack record instead would
-    // zero all three and hand out a free shot on every re-pick — and with a
-    // ~28-frame cadence against stock ROF values that mostly exceed it, a Guard
-    // unit would fire at roughly double its stock rate whenever two enemies
-    // traded places as nearest.
+    // shared in-place retarget, which keeps the attack record. The reload and
+    // burst position are the object's (`rearm_timer`, `weapon_burst`), so a
+    // re-pick cannot hand out a free shot either way.
     let pick_kind = pick.map(crate::sim::combat::TargetKind::Entity);
     let current_kind = sim
         .substrate
@@ -1577,7 +1573,7 @@ fn passive_target_scan(
                 crate::sim::combat::retarget_in_place(entity, sid);
             }
         }
-        // Fresh install, or a clear: no rearm state exists to carry over.
+        // Fresh install, or a clear.
         _ => {
             let _ = sim.set_archive_target_represented(id, pick_kind);
         }
@@ -2267,6 +2263,72 @@ mod tests {
         sim
     }
 
+    /// `FootClass::Mission_Guard 0x004D52A9` in production: a guarding tank
+    /// that has fired is next dispatched when its reload runs out, not on
+    /// `[Guard] Rate` plus a draw. The 50-frame `105mm` reload spans several
+    /// 14-frame Guard dispatches.
+    #[test]
+    fn a_guarding_tank_that_fired_waits_out_its_reload() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nNormalTargetingDelay=27\nGuardAreaTargetingDelay=36\n\n\
+             [Guard]\nRate=.016\n\n\
+             [InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [VehicleTypes]\n0=MTNK\n1=UNARM\n\
+             [MTNK]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             Strength=300\nArmor=heavy\nSpeed=6\nSight=10\nPrimary=105mm\n\n\
+             [UNARM]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             Strength=3000\nArmor=heavy\nSpeed=6\nSight=10\n\n\
+             [105mm]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\n\n\
+             [AP]\nVerses=100%,100%,90%,75%,75%,75%,60%,30%,20%,0%,0%\n",
+        ))
+        .expect("guard reload rules parse");
+        let heights: std::collections::BTreeMap<(u16, u16), u8> = std::collections::BTreeMap::new();
+        let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
+        let mut sim = Simulation::with_seed(0x5CA1_AB1E_0009);
+        let tank = crate::map::entities::MapEntity {
+            mission: Some(MissionType::Guard),
+            ..passive_map_entity("Americans", "MTNK", 20, 20, EntityCategory::Unit)
+        };
+        sim.spawn_from_map(
+            &[
+                tank,
+                passive_map_entity("Soviet", "UNARM", 23, 20, EntityCategory::Unit),
+            ],
+            Some(&rules),
+            &heights,
+        );
+        let mut waits = 0;
+        let mut last_dispatch = None;
+        for _ in 0..400 {
+            let _ = sim.advance_tick(&[], Some(&rules), &heights, Some(&grid), None, 67);
+            let tank = sim.substrate.entities.get(1).expect("tank present");
+            assert_eq!(tank.mission.current().known(), Some(MissionType::Guard));
+            let timer = tank.mission.dispatch_timer();
+            if last_dispatch == Some(timer) {
+                continue;
+            }
+            last_dispatch = Some(timer);
+            // A dispatch after the last shot's rearm was armed saw this timer.
+            let rearm = tank.rearm_timer;
+            if rearm.duration() > 0
+                && rearm.start_frame() < timer.start_frame()
+                && rearm.remaining(timer.start_frame()) != 0
+            {
+                assert_eq!(
+                    timer.delay(),
+                    rearm.remaining(timer.start_frame()),
+                    "dispatch at {}",
+                    timer.start_frame()
+                );
+                waits += 1;
+            }
+        }
+        assert!(
+            waits >= 3,
+            "precondition: dispatches landed inside reloads ({waits})"
+        );
+    }
+
     #[test]
     fn idle_guard_unit_acquires_a_target_with_no_order_at_all() {
         // The headline behavior: a parked tank opens fire on an enemy that is
@@ -2464,9 +2526,8 @@ mod tests {
 
     #[test]
     fn rescan_that_repicks_the_same_target_does_not_reset_the_weapon_cooldown() {
-        // The rearm cooldown lives on the target record here rather than on the
-        // object, so a literal drop-and-reinstall every cadence would restart
-        // ROF and a slow-firing unit would never fire.
+        // The reload is the object's own timer; a re-pick of the same target
+        // must not touch it.
         let rules = passive_rules();
         let heights: std::collections::BTreeMap<(u16, u16), u8> = std::collections::BTreeMap::new();
         let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
@@ -2502,12 +2563,9 @@ mod tests {
 
     #[test]
     fn rescan_that_changes_target_also_preserves_the_weapon_cooldown() {
-        // The sibling of the test above, and the one that matters more: a
-        // CHANGED pick must not restart the weapon either. Rebuilding the attack
-        // record zeroes the rearm countdown, and since the scanner re-picks
-        // nearest-first every ~28 frames while most stock ROF values are longer
-        // than that, every time two enemies trade places as nearest the attacker
-        // would get a free shot.
+        // The sibling of the test above: a CHANGED pick must not restart the
+        // weapon either, or two enemies trading places as nearest every
+        // ~28-frame scan would hand out free shots.
         let rules = passive_rules();
         let heights: std::collections::BTreeMap<(u16, u16), u8> = std::collections::BTreeMap::new();
         let grid = crate::sim::pathfinding::PathGrid::new(64, 64);

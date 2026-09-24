@@ -3311,14 +3311,26 @@ pub(crate) fn is_within_range_leptons(dist_sq_leptons: i64, range_cells: SimFixe
 ///
 /// The `VeteranROF=` arm follows in `veteran_rof_frames`.
 ///
-/// RESIDUAL (GSI-08.05) — two arms of the native function are still absent.
-/// - The per-house difficulty multiplier. Native scales `ROF` by the owning
-///   house's difficulty ROF before the truncation; VERA parses no
-///   `[Easy]/[Normal]/[Difficult] ROF=` and plumbs no per-house difficulty to
-///   this site. Frequency today: zero — every house in VERA is Normal, whose
-///   stock value is `1.0`, and there is no AI opponent to carry another.
-///   It becomes ±20% on every weapon in the game the moment a difficulty other
-///   than Normal can reach a house.
+/// RESIDUAL (GSI-08.05) — arms of the native function still absent:
+/// - Returns with no draw (`0x006FCFA9..0x006FD036`, `0x006FD1FA`): an empty
+///   weapon slot returns 1; a building with more than one Ammo returns 1
+///   (dormant); `IsSonic=`, and a weapon whose spark, fire or railgun particle
+///   system is live on the firer (`+0x308/+0x304/+0x314`, which FireAt creates
+///   before it calls GetROF), return the raw `ROF=` with no draw, no house
+///   multiplier, no `VeteranROF=` and no garrison divide. Triggers: every
+///   Dolphin (`SonicZap`), IFV repair (`RepairBullet`), `FireballLauncher` and
+///   `LtRail` shot. Effect: VERA draws one extra Scenario value per shot and
+///   can apply `VeteranROF=`.
+/// - The per-house difficulty multiplier, `ftol(ROF * House+0x1A8 + r)` with
+///   the draw taken first (`0x006FD09E..0x006FD0CF`; the house value comes
+///   from `HouseClass::SetDifficulty @ 0x004F6EC0`). VERA plumbs no per-house
+///   difficulty to this site, and AI houses now carry one, so every AI shot
+///   is affected.
+/// - The tank-bunker divide (`BunkerROFMultiplier=`, `Rules+0xF50`,
+///   `0x006FD1B1..0x006FD1EF`) for a non-building inside a bunker (`+0x2E4`):
+///   parsed, never applied, so a bunkered unit reloads slower than native.
+/// - The garrison `OccupyROFMultiplier=` divide is fixed-point here, not the
+///   native single (`0x006FD19C`).
 /// - `RadialFireSegments=` (`TechnoTypeClass+0x6A4`) is not parsed. One stock
 ///   author, `[AEGIS]`, which is buildable in an ordinary skirmish: native
 ///   replaces the launch direction with
@@ -3326,8 +3338,8 @@ pub(crate) fn is_within_range_leptons(dist_sq_leptons: i64, range_cells: SimFixe
 ///   `TechnoClass+0x43C`. Player effect: the Aegis Cruiser fires straight at
 ///   one target instead of sweeping its flak arc. Frequency: every Aegis
 ///   engagement in an Allied naval match.
-/// - Downstream risk: both change firing cadence or direction, so each moves
-///   combat-timing fixtures and the pinned replay hash.
+/// - Downstream risk: each changes firing cadence, draws or direction, so each
+///   moves combat-timing fixtures and the pinned replay hashes.
 fn rof_to_cooldown_frames(rof_frames: i32, scenario_rng: &mut SimRng) -> u16 {
     let jitter = scenario_rng.next_range_u32_inclusive(0, 2) as i32;
     rof_frames.saturating_add(jitter).clamp(1, u16::MAX as i32) as u16

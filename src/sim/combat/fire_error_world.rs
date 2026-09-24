@@ -234,7 +234,7 @@ impl FireSubject<'_> {
             rearming: firer
                 .rearm_timer
                 .remaining(self.world.session.binary_frame as i32)
-                > 0,
+                != 0,
             ammo: firer.aircraft_ammo.as_ref().map_or(-1, |ammo| ammo.current),
             cloak_state: firer.cloak.as_ref().map_or(0, |cloak| cloak.state),
             current_weapon: combat_weapon::attacker_facts(firer, obj).current_weapon_number,

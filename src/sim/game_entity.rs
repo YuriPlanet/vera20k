@@ -686,28 +686,46 @@ pub struct GameEntity {
     /// reload the weapon.
     ///
     /// Writers, from a scan of every `+0x2EC..+0x2F4` operand in the image:
+    /// - The constructor starts it at the current frame with no duration
+    ///   (`0x006F2E81`). Ported.
     /// - `TechnoClass::FireAt`, every launched shot, with GetROF's value (the
     ///   drawn gap mid-burst, the full reload after the burst's last shot),
-    ///   halved for a berserk firer (`0x006FF274..0x006FF2CB`); the DiskLaser
-    ///   path (`0x006FE4B0`) stores it unhalved. Ported
-    ///   (`world_receiver::emit_admitted_fire`), minus the DiskLaser path.
+    ///   halved for a berserk firer (`0x006FF274..0x006FF2CB`). Its DiskLaser
+    ///   path stores the value unhalved, fires the disk laser and returns
+    ///   (`0x006FE4A4..0x006FE4EF`). Ported (`world_receiver::emit_admitted_fire`);
+    ///   VERA fires a DiskLaser weapon through the ordinary path, keeping only
+    ///   the unhalved rearm.
     /// - `AircraftClass::Drop_Payload` restarts it with no duration
     ///   (`0x00415E88`). Ported (the paradrop success arm).
-    /// - RESIDUAL, with their mechanisms: the C4 plant arms the planter with
-    ///   `GetROF(1)` (`InfantryClass::PerCellProcess 0x0051A564`/`0x0051A624`,
-    ///   see `tick_c4_plants`); `UnitClass::ReceiveGunner`/`RemoveGunner` hand
-    ///   a running rearm over (`0x0074646E`, `0x0074655C`, see `temporal.rs`);
-    ///   the Prism support beam arms a support tower with `Rules+0x4A4`
-    ///   (`0x0044ACB2`, unported Prism).
+    /// - RESIDUAL, with their mechanisms:
+    ///   - the C4 plant arms the planter with `GetROF(1)`
+    ///     (`InfantryClass::PerCellProcess 0x0051A564`/`0x0051A624`; see
+    ///     `tick_c4_plants`);
+    ///   - `UnitClass::ReceiveGunner`/`RemoveGunner` read a running rearm
+    ///     (`0x0074643A`, `0x00746502`) and hand it over (`0x0074646E`,
+    ///     `0x0074655C`; see `temporal.rs`);
+    ///   - the Prism support beam arms a support tower with
+    ///     `PrismSupportDelay=` (`0x0044ACB2`; unported Prism);
+    ///   - `UnitClass::PerCellProcess` arms a unit that stops with no NavCom
+    ///     and no path with `GetROF(1) / 4` when its type has
+    ///     `MobileFire=no` (`0x0073ADCA..0x0073AE18`). Dormant: no retail
+    ///     type sets it (the constructor's default is yes, `0x00711150`).
     ///
     /// Readers: GetFireError answers Rearm while it runs (`0x006FC94F`);
     /// `CanAutoCloak @ 0x006FBDC0` waits for it; `FootClass::Mission_Guard`
     /// returns its remaining frames as the next delay and draws nothing
-    /// (`0x004D52A9`). RESIDUAL: `CanDeploySlashUnload @ 0x00700D50` refuses
-    /// a deployed infantryman's undeploy while it runs (`0x00700E02`; see
-    /// `Command::ToggleInfantryDeploy`), and the charge-turret frame
-    /// (`IsChargeTurret=`, the Prism Tank) reads it with the `+0x2F8` ROF copy
-    /// (`0x006FA540`), which VERA does not keep or draw.
+    /// (`0x004D52A9`); `TechnoClass::Compute_CRC` folds it (`0x0070C362`).
+    /// RESIDUAL:
+    /// - `AircraftClass::Mission_Guard` falls into the same Foot body
+    ///   (`0x0041A92B`), but VERA's aircraft Guard is not a port of it.
+    /// - `CanDeploySlashUnload @ 0x00700D50` refuses a deployed infantryman's
+    ///   undeploy while it runs (`0x00700E02`; see
+    ///   `Command::ToggleInfantryDeploy`).
+    /// - The Prism support-candidate loop skips a tower while it runs
+    ///   (`0x0044B3AE`).
+    /// - The charge-turret frame (`IsChargeTurret=`, the Prism Tank) reads it
+    ///   with the `+0x2F8` ROF copy (`0x006FA540`), which VERA does not keep
+    ///   or draw.
     #[serde(default)]
     pub rearm_timer: crate::sim::timer::CdTimer,
     /// Gattling stage, value and report latch (`TechnoClass+0x140`,
