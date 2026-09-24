@@ -1,0 +1,6925 @@
+[
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 0,
+      "name": "slowdown_0_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 1,
+      "distance": 0,
+      "name": "slowdown_0_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "distance_clamp"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 3,
+      "distance": 0,
+      "name": "slowdown_0_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "distance_clamp"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 3276,
+      "distance": 0,
+      "name": "slowdown_0_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "distance_clamp"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 6554,
+      "distance": 0,
+      "name": "slowdown_0_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "distance_clamp"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 32768,
+      "distance": 0,
+      "name": "slowdown_0_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "distance_clamp"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 65536,
+      "distance": 0,
+      "name": "slowdown_0_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "distance_clamp"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.05,
+    "current_bits": "3fa999999999999a",
+    "current_q16": 3276,
+    "input": {
+      "current": 0,
+      "distance": 1,
+      "name": "slowdown_1_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "creep"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 7.62939453125e-06,
+    "current_bits": "3ee0000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 1,
+      "distance": 1,
+      "name": "slowdown_1_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 2.288818359375e-05,
+    "current_bits": "3ef8000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 3,
+      "distance": 1,
+      "name": "slowdown_1_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.024993896484375,
+    "current_bits": "3f99980000000000",
+    "current_q16": 1638,
+    "input": {
+      "current": 3276,
+      "distance": 1,
+      "name": "slowdown_1_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.0500030517578125,
+    "current_bits": "3fa99a0000000000",
+    "current_q16": 3277,
+    "input": {
+      "current": 6554,
+      "distance": 1,
+      "name": "slowdown_1_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 32768,
+      "distance": 1,
+      "name": "slowdown_1_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 65536,
+      "distance": 1,
+      "name": "slowdown_1_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.05,
+    "current_bits": "3fa999999999999a",
+    "current_q16": 3276,
+    "input": {
+      "current": 0,
+      "distance": 2,
+      "name": "slowdown_2_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "creep"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 7.62939453125e-06,
+    "current_bits": "3ee0000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 1,
+      "distance": 2,
+      "name": "slowdown_2_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 2.288818359375e-05,
+    "current_bits": "3ef8000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 3,
+      "distance": 2,
+      "name": "slowdown_2_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.024993896484375,
+    "current_bits": "3f99980000000000",
+    "current_q16": 1638,
+    "input": {
+      "current": 3276,
+      "distance": 2,
+      "name": "slowdown_2_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.0500030517578125,
+    "current_bits": "3fa99a0000000000",
+    "current_q16": 3277,
+    "input": {
+      "current": 6554,
+      "distance": 2,
+      "name": "slowdown_2_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 32768,
+      "distance": 2,
+      "name": "slowdown_2_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 65536,
+      "distance": 2,
+      "name": "slowdown_2_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.05,
+    "current_bits": "3fa999999999999a",
+    "current_q16": 3276,
+    "input": {
+      "current": 0,
+      "distance": 49,
+      "name": "slowdown_49_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "creep"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 7.62939453125e-06,
+    "current_bits": "3ee0000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 1,
+      "distance": 49,
+      "name": "slowdown_49_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 2.288818359375e-05,
+    "current_bits": "3ef8000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 3,
+      "distance": 49,
+      "name": "slowdown_49_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.024993896484375,
+    "current_bits": "3f99980000000000",
+    "current_q16": 1638,
+    "input": {
+      "current": 3276,
+      "distance": 49,
+      "name": "slowdown_49_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.0500030517578125,
+    "current_bits": "3fa99a0000000000",
+    "current_q16": 3277,
+    "input": {
+      "current": 6554,
+      "distance": 49,
+      "name": "slowdown_49_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 32768,
+      "distance": 49,
+      "name": "slowdown_49_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 65536,
+      "distance": 49,
+      "name": "slowdown_49_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.05,
+    "current_bits": "3fa999999999999a",
+    "current_q16": 3276,
+    "input": {
+      "current": 0,
+      "distance": 50,
+      "name": "slowdown_50_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "creep"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 7.62939453125e-06,
+    "current_bits": "3ee0000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 1,
+      "distance": 50,
+      "name": "slowdown_50_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 2.288818359375e-05,
+    "current_bits": "3ef8000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 3,
+      "distance": 50,
+      "name": "slowdown_50_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.024993896484375,
+    "current_bits": "3f99980000000000",
+    "current_q16": 1638,
+    "input": {
+      "current": 3276,
+      "distance": 50,
+      "name": "slowdown_50_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.0500030517578125,
+    "current_bits": "3fa99a0000000000",
+    "current_q16": 3277,
+    "input": {
+      "current": 6554,
+      "distance": 50,
+      "name": "slowdown_50_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 32768,
+      "distance": 50,
+      "name": "slowdown_50_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 65536,
+      "distance": 50,
+      "name": "slowdown_50_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 51,
+      "name": "slowdown_51_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.102,
+    "target_speed_bits": "3fba1cac083126e9",
+    "target_speed_q16": 6684
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 51,
+      "name": "slowdown_51_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.102,
+    "target_speed_bits": "3fba1cac083126e9",
+    "target_speed_q16": 6684
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 51,
+      "name": "slowdown_51_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.102,
+    "target_speed_bits": "3fba1cac083126e9",
+    "target_speed_q16": 6684
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 51,
+      "name": "slowdown_51_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.102,
+    "target_speed_bits": "3fba1cac083126e9",
+    "target_speed_q16": 6684
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 51,
+      "name": "slowdown_51_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.102,
+    "target_speed_bits": "3fba1cac083126e9",
+    "target_speed_q16": 6684
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 51,
+      "name": "slowdown_51_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.102,
+    "target_speed_bits": "3fba1cac083126e9",
+    "target_speed_q16": 6684
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 51,
+      "name": "slowdown_51_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.102,
+    "target_speed_bits": "3fba1cac083126e9",
+    "target_speed_q16": 6684
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 84,
+      "name": "slowdown_84_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.16799999999999998,
+    "target_speed_bits": "3fc5810624dd2f1a",
+    "target_speed_q16": 11010
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 84,
+      "name": "slowdown_84_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.16799999999999998,
+    "target_speed_bits": "3fc5810624dd2f1a",
+    "target_speed_q16": 11010
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 84,
+      "name": "slowdown_84_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.16799999999999998,
+    "target_speed_bits": "3fc5810624dd2f1a",
+    "target_speed_q16": 11010
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 84,
+      "name": "slowdown_84_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.16799999999999998,
+    "target_speed_bits": "3fc5810624dd2f1a",
+    "target_speed_q16": 11010
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 84,
+      "name": "slowdown_84_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.16799999999999998,
+    "target_speed_bits": "3fc5810624dd2f1a",
+    "target_speed_q16": 11010
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 84,
+      "name": "slowdown_84_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.16799999999999998,
+    "target_speed_bits": "3fc5810624dd2f1a",
+    "target_speed_q16": 11010
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 84,
+      "name": "slowdown_84_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.16799999999999998,
+    "target_speed_bits": "3fc5810624dd2f1a",
+    "target_speed_q16": 11010
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 85,
+      "name": "slowdown_85_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.16999999999999998,
+    "target_speed_bits": "3fc5c28f5c28f5c2",
+    "target_speed_q16": 11141
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 85,
+      "name": "slowdown_85_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.16999999999999998,
+    "target_speed_bits": "3fc5c28f5c28f5c2",
+    "target_speed_q16": 11141
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 85,
+      "name": "slowdown_85_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.16999999999999998,
+    "target_speed_bits": "3fc5c28f5c28f5c2",
+    "target_speed_q16": 11141
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 85,
+      "name": "slowdown_85_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.16999999999999998,
+    "target_speed_bits": "3fc5c28f5c28f5c2",
+    "target_speed_q16": 11141
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 85,
+      "name": "slowdown_85_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.16999999999999998,
+    "target_speed_bits": "3fc5c28f5c28f5c2",
+    "target_speed_q16": 11141
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 85,
+      "name": "slowdown_85_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.16999999999999998,
+    "target_speed_bits": "3fc5c28f5c28f5c2",
+    "target_speed_q16": 11141
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 85,
+      "name": "slowdown_85_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.16999999999999998,
+    "target_speed_bits": "3fc5c28f5c28f5c2",
+    "target_speed_q16": 11141
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 86,
+      "name": "slowdown_86_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.172,
+    "target_speed_bits": "3fc604189374bc6a",
+    "target_speed_q16": 11272
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 86,
+      "name": "slowdown_86_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.172,
+    "target_speed_bits": "3fc604189374bc6a",
+    "target_speed_q16": 11272
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 86,
+      "name": "slowdown_86_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.172,
+    "target_speed_bits": "3fc604189374bc6a",
+    "target_speed_q16": 11272
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 86,
+      "name": "slowdown_86_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.172,
+    "target_speed_bits": "3fc604189374bc6a",
+    "target_speed_q16": 11272
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 86,
+      "name": "slowdown_86_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.172,
+    "target_speed_bits": "3fc604189374bc6a",
+    "target_speed_q16": 11272
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 86,
+      "name": "slowdown_86_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.172,
+    "target_speed_bits": "3fc604189374bc6a",
+    "target_speed_q16": 11272
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 86,
+      "name": "slowdown_86_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.172,
+    "target_speed_bits": "3fc604189374bc6a",
+    "target_speed_q16": 11272
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 87,
+      "name": "slowdown_87_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.174,
+    "target_speed_bits": "3fc645a1cac08312",
+    "target_speed_q16": 11403
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 87,
+      "name": "slowdown_87_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.174,
+    "target_speed_bits": "3fc645a1cac08312",
+    "target_speed_q16": 11403
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 87,
+      "name": "slowdown_87_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.174,
+    "target_speed_bits": "3fc645a1cac08312",
+    "target_speed_q16": 11403
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 87,
+      "name": "slowdown_87_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.174,
+    "target_speed_bits": "3fc645a1cac08312",
+    "target_speed_q16": 11403
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 87,
+      "name": "slowdown_87_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.174,
+    "target_speed_bits": "3fc645a1cac08312",
+    "target_speed_q16": 11403
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 87,
+      "name": "slowdown_87_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.174,
+    "target_speed_bits": "3fc645a1cac08312",
+    "target_speed_q16": 11403
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 87,
+      "name": "slowdown_87_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.174,
+    "target_speed_bits": "3fc645a1cac08312",
+    "target_speed_q16": 11403
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 125,
+      "name": "slowdown_125_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.25,
+    "target_speed_bits": "3fd0000000000000",
+    "target_speed_q16": 16384
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 125,
+      "name": "slowdown_125_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.25,
+    "target_speed_bits": "3fd0000000000000",
+    "target_speed_q16": 16384
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 125,
+      "name": "slowdown_125_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.25,
+    "target_speed_bits": "3fd0000000000000",
+    "target_speed_q16": 16384
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 125,
+      "name": "slowdown_125_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.25,
+    "target_speed_bits": "3fd0000000000000",
+    "target_speed_q16": 16384
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 125,
+      "name": "slowdown_125_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.25,
+    "target_speed_bits": "3fd0000000000000",
+    "target_speed_q16": 16384
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 125,
+      "name": "slowdown_125_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.25,
+    "target_speed_bits": "3fd0000000000000",
+    "target_speed_q16": 16384
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 125,
+      "name": "slowdown_125_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.25,
+    "target_speed_bits": "3fd0000000000000",
+    "target_speed_q16": 16384
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 128,
+      "name": "slowdown_128_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.25599999999999995,
+    "target_speed_bits": "3fd0624dd2f1a9fb",
+    "target_speed_q16": 16777
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 128,
+      "name": "slowdown_128_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.25599999999999995,
+    "target_speed_bits": "3fd0624dd2f1a9fb",
+    "target_speed_q16": 16777
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 128,
+      "name": "slowdown_128_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.25599999999999995,
+    "target_speed_bits": "3fd0624dd2f1a9fb",
+    "target_speed_q16": 16777
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 128,
+      "name": "slowdown_128_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.25599999999999995,
+    "target_speed_bits": "3fd0624dd2f1a9fb",
+    "target_speed_q16": 16777
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 128,
+      "name": "slowdown_128_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.25599999999999995,
+    "target_speed_bits": "3fd0624dd2f1a9fb",
+    "target_speed_q16": 16777
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 128,
+      "name": "slowdown_128_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.25599999999999995,
+    "target_speed_bits": "3fd0624dd2f1a9fb",
+    "target_speed_q16": 16777
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 128,
+      "name": "slowdown_128_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.25599999999999995,
+    "target_speed_bits": "3fd0624dd2f1a9fb",
+    "target_speed_q16": 16777
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 250,
+      "name": "slowdown_250_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 250,
+      "name": "slowdown_250_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 250,
+      "name": "slowdown_250_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 250,
+      "name": "slowdown_250_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 250,
+      "name": "slowdown_250_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "name": "slowdown_250_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 250,
+      "name": "slowdown_250_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 333,
+      "name": "slowdown_333_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.6659999999999999,
+    "target_speed_bits": "3fe54fdf3b645a1c",
+    "target_speed_q16": 43646
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 333,
+      "name": "slowdown_333_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.6659999999999999,
+    "target_speed_bits": "3fe54fdf3b645a1c",
+    "target_speed_q16": 43646
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 333,
+      "name": "slowdown_333_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.6659999999999999,
+    "target_speed_bits": "3fe54fdf3b645a1c",
+    "target_speed_q16": 43646
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 333,
+      "name": "slowdown_333_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.6659999999999999,
+    "target_speed_bits": "3fe54fdf3b645a1c",
+    "target_speed_q16": 43646
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 333,
+      "name": "slowdown_333_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.6659999999999999,
+    "target_speed_bits": "3fe54fdf3b645a1c",
+    "target_speed_q16": 43646
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 333,
+      "name": "slowdown_333_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.6659999999999999,
+    "target_speed_bits": "3fe54fdf3b645a1c",
+    "target_speed_q16": 43646
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 333,
+      "name": "slowdown_333_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.6659999999999999,
+    "target_speed_bits": "3fe54fdf3b645a1c",
+    "target_speed_q16": 43646
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 499,
+      "name": "slowdown_499_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.998,
+    "target_speed_bits": "3fefef9db22d0e56",
+    "target_speed_q16": 65404
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 499,
+      "name": "slowdown_499_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.998,
+    "target_speed_bits": "3fefef9db22d0e56",
+    "target_speed_q16": 65404
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 499,
+      "name": "slowdown_499_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.998,
+    "target_speed_bits": "3fefef9db22d0e56",
+    "target_speed_q16": 65404
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 499,
+      "name": "slowdown_499_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.998,
+    "target_speed_bits": "3fefef9db22d0e56",
+    "target_speed_q16": 65404
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 499,
+      "name": "slowdown_499_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.998,
+    "target_speed_bits": "3fefef9db22d0e56",
+    "target_speed_q16": 65404
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 499,
+      "name": "slowdown_499_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.998,
+    "target_speed_bits": "3fefef9db22d0e56",
+    "target_speed_q16": 65404
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 499,
+      "name": "slowdown_499_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.998,
+    "target_speed_bits": "3fefef9db22d0e56",
+    "target_speed_q16": 65404
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 500,
+      "name": "slowdown_500_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 500,
+      "name": "slowdown_500_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 500,
+      "name": "slowdown_500_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 500,
+      "name": "slowdown_500_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 500,
+      "name": "slowdown_500_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 500,
+      "name": "slowdown_500_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 500,
+      "name": "slowdown_500_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 501,
+      "name": "slowdown_501_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 501,
+      "name": "slowdown_501_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 501,
+      "name": "slowdown_501_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 501,
+      "name": "slowdown_501_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 501,
+      "name": "slowdown_501_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 501,
+      "name": "slowdown_501_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 501,
+      "name": "slowdown_501_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 700,
+      "name": "slowdown_700_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 700,
+      "name": "slowdown_700_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 700,
+      "name": "slowdown_700_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 700,
+      "name": "slowdown_700_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 700,
+      "name": "slowdown_700_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 700,
+      "name": "slowdown_700_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 700,
+      "name": "slowdown_700_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 32767,
+      "name": "slowdown_32767_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 32767,
+      "name": "slowdown_32767_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 32767,
+      "name": "slowdown_32767_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 32767,
+      "name": "slowdown_32767_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 32767,
+      "name": "slowdown_32767_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 32767,
+      "name": "slowdown_32767_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 32767,
+      "name": "slowdown_32767_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 32768,
+      "name": "slowdown_32768_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 32768,
+      "name": "slowdown_32768_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 32768,
+      "name": "slowdown_32768_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 32768,
+      "name": "slowdown_32768_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 32768,
+      "name": "slowdown_32768_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 32768,
+      "name": "slowdown_32768_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 32768,
+      "name": "slowdown_32768_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 100000,
+      "name": "slowdown_100000_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 100000,
+      "name": "slowdown_100000_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 100000,
+      "name": "slowdown_100000_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 100000,
+      "name": "slowdown_100000_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 100000,
+      "name": "slowdown_100000_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 100000,
+      "name": "slowdown_100000_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 100000,
+      "name": "slowdown_100000_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 0,
+      "distance": 2147483647,
+      "name": "slowdown_2147483647_0"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 1.52587890625e-05,
+    "current_bits": "3ef0000000000000",
+    "current_q16": 1,
+    "input": {
+      "current": 1,
+      "distance": 2147483647,
+      "name": "slowdown_2147483647_1"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 4.57763671875e-05,
+    "current_bits": "3f08000000000000",
+    "current_q16": 3,
+    "input": {
+      "current": 3,
+      "distance": 2147483647,
+      "name": "slowdown_2147483647_3"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.04998779296875,
+    "current_bits": "3fa9980000000000",
+    "current_q16": 3276,
+    "input": {
+      "current": 3276,
+      "distance": 2147483647,
+      "name": "slowdown_2147483647_3276"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "current": 6554,
+      "distance": 2147483647,
+      "name": "slowdown_2147483647_6554"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 2147483647,
+      "name": "slowdown_2147483647_32768"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 1.0,
+    "current_bits": "3ff0000000000000",
+    "current_q16": 65536,
+    "input": {
+      "current": 65536,
+      "distance": 2147483647,
+      "name": "slowdown_2147483647_65536"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 16384,
+      "distance": 0,
+      "name": "authored_-500_0",
+      "slowdown": -500
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "distance_clamp"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 1,
+      "name": "authored_-500_1",
+      "slowdown": -500
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 5,
+      "name": "authored_-500_5",
+      "slowdown": -500
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 85,
+      "name": "authored_-500_85",
+      "slowdown": -500
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 86,
+      "name": "authored_-500_86",
+      "slowdown": -500
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 99,
+      "name": "authored_-500_99",
+      "slowdown": -500
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 100,
+      "name": "authored_-500_100",
+      "slowdown": -500
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 101,
+      "name": "authored_-500_101",
+      "slowdown": -500
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 849,
+      "name": "authored_-500_849",
+      "slowdown": -500
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 850,
+      "name": "authored_-500_850",
+      "slowdown": -500
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 851,
+      "name": "authored_-500_851",
+      "slowdown": -500
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 5000,
+      "name": "authored_-500_5000",
+      "slowdown": -500
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 16384,
+      "distance": 0,
+      "name": "authored_-1_0",
+      "slowdown": -1
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "distance_clamp"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 1,
+      "name": "authored_-1_1",
+      "slowdown": -1
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 5,
+      "name": "authored_-1_5",
+      "slowdown": -1
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 85,
+      "name": "authored_-1_85",
+      "slowdown": -1
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 86,
+      "name": "authored_-1_86",
+      "slowdown": -1
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 99,
+      "name": "authored_-1_99",
+      "slowdown": -1
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 100,
+      "name": "authored_-1_100",
+      "slowdown": -1
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 101,
+      "name": "authored_-1_101",
+      "slowdown": -1
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 849,
+      "name": "authored_-1_849",
+      "slowdown": -1
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 850,
+      "name": "authored_-1_850",
+      "slowdown": -1
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 851,
+      "name": "authored_-1_851",
+      "slowdown": -1
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 5000,
+      "name": "authored_-1_5000",
+      "slowdown": -1
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 16384,
+      "distance": 0,
+      "name": "authored_0_0",
+      "slowdown": 0
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "distance_clamp"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 1,
+      "name": "authored_0_1",
+      "slowdown": 0
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 5,
+      "name": "authored_0_5",
+      "slowdown": 0
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 85,
+      "name": "authored_0_85",
+      "slowdown": 0
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 86,
+      "name": "authored_0_86",
+      "slowdown": 0
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 99,
+      "name": "authored_0_99",
+      "slowdown": 0
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 100,
+      "name": "authored_0_100",
+      "slowdown": 0
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 101,
+      "name": "authored_0_101",
+      "slowdown": 0
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 849,
+      "name": "authored_0_849",
+      "slowdown": 0
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 850,
+      "name": "authored_0_850",
+      "slowdown": 0
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 851,
+      "name": "authored_0_851",
+      "slowdown": 0
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 5000,
+      "name": "authored_0_5000",
+      "slowdown": 0
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 16384,
+      "distance": 0,
+      "name": "authored_1_0",
+      "slowdown": 1
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "distance_clamp"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 1,
+      "name": "authored_1_1",
+      "slowdown": 1
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 5,
+      "name": "authored_1_5",
+      "slowdown": 1
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 85,
+      "name": "authored_1_85",
+      "slowdown": 1
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 86,
+      "name": "authored_1_86",
+      "slowdown": 1
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 99,
+      "name": "authored_1_99",
+      "slowdown": 1
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 100,
+      "name": "authored_1_100",
+      "slowdown": 1
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 101,
+      "name": "authored_1_101",
+      "slowdown": 1
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 849,
+      "name": "authored_1_849",
+      "slowdown": 1
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 850,
+      "name": "authored_1_850",
+      "slowdown": 1
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 851,
+      "name": "authored_1_851",
+      "slowdown": 1
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 5000,
+      "name": "authored_1_5000",
+      "slowdown": 1
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 16384,
+      "distance": 0,
+      "name": "authored_10_0",
+      "slowdown": 10
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "distance_clamp"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 1,
+      "name": "authored_10_1",
+      "slowdown": 10
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 5,
+      "name": "authored_10_5",
+      "slowdown": 10
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 85,
+      "name": "authored_10_85",
+      "slowdown": 10
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 86,
+      "name": "authored_10_86",
+      "slowdown": 10
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 99,
+      "name": "authored_10_99",
+      "slowdown": 10
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 100,
+      "name": "authored_10_100",
+      "slowdown": 10
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 101,
+      "name": "authored_10_101",
+      "slowdown": 10
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 849,
+      "name": "authored_10_849",
+      "slowdown": 10
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 850,
+      "name": "authored_10_850",
+      "slowdown": 10
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 851,
+      "name": "authored_10_851",
+      "slowdown": 10
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 5000,
+      "name": "authored_10_5000",
+      "slowdown": 10
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 16384,
+      "distance": 0,
+      "name": "authored_50_0",
+      "slowdown": 50
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "distance_clamp"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 1,
+      "name": "authored_50_1",
+      "slowdown": 50
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 5,
+      "name": "authored_50_5",
+      "slowdown": 50
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 85,
+      "name": "authored_50_85",
+      "slowdown": 50
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 86,
+      "name": "authored_50_86",
+      "slowdown": 50
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 99,
+      "name": "authored_50_99",
+      "slowdown": 50
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 100,
+      "name": "authored_50_100",
+      "slowdown": 50
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 101,
+      "name": "authored_50_101",
+      "slowdown": 50
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 849,
+      "name": "authored_50_849",
+      "slowdown": 50
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 850,
+      "name": "authored_50_850",
+      "slowdown": 50
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 851,
+      "name": "authored_50_851",
+      "slowdown": 50
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 5000,
+      "name": "authored_50_5000",
+      "slowdown": 50
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 16384,
+      "distance": 0,
+      "name": "authored_850_0",
+      "slowdown": 850
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "distance_clamp"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 1,
+      "name": "authored_850_1",
+      "slowdown": 850
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 5,
+      "name": "authored_850_5",
+      "slowdown": 850
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 85,
+      "name": "authored_850_85",
+      "slowdown": 850
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 86,
+      "name": "authored_850_86",
+      "slowdown": 850
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.10117647058823528,
+    "target_speed_bits": "3fb9e6b3804d19e6",
+    "target_speed_q16": 6630
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 99,
+      "name": "authored_850_99",
+      "slowdown": 850
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.11647058823529412,
+    "target_speed_bits": "3fbdd104376a9dd1",
+    "target_speed_q16": 7633
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 100,
+      "name": "authored_850_100",
+      "slowdown": 850
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.11764705882352941,
+    "target_speed_bits": "3fbe1e1e1e1e1e1e",
+    "target_speed_q16": 7710
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 101,
+      "name": "authored_850_101",
+      "slowdown": 850
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.1188235294117647,
+    "target_speed_bits": "3fbe6b3804d19e6b",
+    "target_speed_q16": 7787
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 849,
+      "name": "authored_850_849",
+      "slowdown": 850
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.9988235294117647,
+    "target_speed_bits": "3feff65cc3298ff6",
+    "target_speed_q16": 65458
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 850,
+      "name": "authored_850_850",
+      "slowdown": 850
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 851,
+      "name": "authored_850_851",
+      "slowdown": 850
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 5000,
+      "name": "authored_850_5000",
+      "slowdown": 850
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 16384,
+      "distance": 0,
+      "name": "authored_851_0",
+      "slowdown": 851
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "distance_clamp"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 1,
+      "name": "authored_851_1",
+      "slowdown": 851
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 5,
+      "name": "authored_851_5",
+      "slowdown": 851
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 85,
+      "name": "authored_851_85",
+      "slowdown": 851
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 86,
+      "name": "authored_851_86",
+      "slowdown": 851
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.10105757931844887,
+    "target_speed_bits": "3fb9dee8d62f87ab",
+    "target_speed_q16": 6622
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 99,
+      "name": "authored_851_99",
+      "slowdown": 851
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.1163337250293772,
+    "target_speed_bits": "3fbdc80c086c4bce",
+    "target_speed_q16": 7624
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 100,
+      "name": "authored_851_100",
+      "slowdown": 851
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.11750881316098706,
+    "target_speed_bits": "3fbe150ebd84a9a9",
+    "target_speed_q16": 7701
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 101,
+      "name": "authored_851_101",
+      "slowdown": 851
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.11868390129259694,
+    "target_speed_bits": "3fbe6211729d0785",
+    "target_speed_q16": 7778
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 849,
+      "name": "authored_851_849",
+      "slowdown": 851
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.9976498237367802,
+    "target_speed_bits": "3fefecbf52b9e889",
+    "target_speed_q16": 65381
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 850,
+      "name": "authored_851_850",
+      "slowdown": 851
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.9988249118683901,
+    "target_speed_bits": "3feff65fa95cf444",
+    "target_speed_q16": 65458
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 851,
+      "name": "authored_851_851",
+      "slowdown": 851
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 5000,
+      "name": "authored_851_5000",
+      "slowdown": 851
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 16384,
+      "distance": 0,
+      "name": "authored_860_0",
+      "slowdown": 860
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "distance_clamp"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 1,
+      "name": "authored_860_1",
+      "slowdown": 860
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 5,
+      "name": "authored_860_5",
+      "slowdown": 860
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 85,
+      "name": "authored_860_85",
+      "slowdown": 860
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 86,
+      "name": "authored_860_86",
+      "slowdown": 860
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 99,
+      "name": "authored_860_99",
+      "slowdown": 860
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.11511627906976743,
+    "target_speed_bits": "3fbd7842add7842a",
+    "target_speed_q16": 7544
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 100,
+      "name": "authored_860_100",
+      "slowdown": 860
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.11627906976744186,
+    "target_speed_bits": "3fbdc47711dc4771",
+    "target_speed_q16": 7620
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 101,
+      "name": "authored_860_101",
+      "slowdown": 860
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.11744186046511627,
+    "target_speed_bits": "3fbe10ab75e10ab7",
+    "target_speed_q16": 7696
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 849,
+      "name": "authored_860_849",
+      "slowdown": 860
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.9872093023255814,
+    "target_speed_bits": "3fef9737f679737f",
+    "target_speed_q16": 64697
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 850,
+      "name": "authored_860_850",
+      "slowdown": 860
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.9883720930232558,
+    "target_speed_bits": "3fefa0be82fa0be8",
+    "target_speed_q16": 64773
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 851,
+      "name": "authored_860_851",
+      "slowdown": 860
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.9895348837209301,
+    "target_speed_bits": "3fefaa450f7aa450",
+    "target_speed_q16": 64850
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 5000,
+      "name": "authored_860_5000",
+      "slowdown": 860
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 16384,
+      "distance": 0,
+      "name": "authored_1000_0",
+      "slowdown": 1000
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "distance_clamp"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 1,
+      "name": "authored_1000_1",
+      "slowdown": 1000
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 5,
+      "name": "authored_1000_5",
+      "slowdown": 1000
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 85,
+      "name": "authored_1000_85",
+      "slowdown": 1000
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 86,
+      "name": "authored_1000_86",
+      "slowdown": 1000
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 99,
+      "name": "authored_1000_99",
+      "slowdown": 1000
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 100,
+      "name": "authored_1000_100",
+      "slowdown": 1000
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 101,
+      "name": "authored_1000_101",
+      "slowdown": 1000
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.10099999999999999,
+    "target_speed_bits": "3fb9db22d0e56041",
+    "target_speed_q16": 6619
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 849,
+      "name": "authored_1000_849",
+      "slowdown": 1000
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.849,
+    "target_speed_bits": "3feb2b020c49ba5e",
+    "target_speed_q16": 55640
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 850,
+      "name": "authored_1000_850",
+      "slowdown": 1000
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.85,
+    "target_speed_bits": "3feb333333333333",
+    "target_speed_q16": 55705
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 851,
+      "name": "authored_1000_851",
+      "slowdown": 1000
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.851,
+    "target_speed_bits": "3feb3b645a1cac08",
+    "target_speed_q16": 55771
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 5000,
+      "name": "authored_1000_5000",
+      "slowdown": 1000
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.0,
+    "current_bits": "0000000000000000",
+    "current_q16": 0,
+    "input": {
+      "current": 16384,
+      "distance": 0,
+      "name": "authored_65536_0",
+      "slowdown": 65536
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve",
+      "distance_clamp"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 1,
+      "name": "authored_65536_1",
+      "slowdown": 65536
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 5,
+      "name": "authored_65536_5",
+      "slowdown": 65536
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.125,
+    "current_bits": "3fc0000000000000",
+    "current_q16": 8192,
+    "input": {
+      "current": 16384,
+      "distance": 85,
+      "name": "authored_65536_85",
+      "slowdown": 65536
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "halve"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 86,
+      "name": "authored_65536_86",
+      "slowdown": 65536
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 99,
+      "name": "authored_65536_99",
+      "slowdown": 65536
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 100,
+      "name": "authored_65536_100",
+      "slowdown": 65536
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 101,
+      "name": "authored_65536_101",
+      "slowdown": 65536
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 849,
+      "name": "authored_65536_849",
+      "slowdown": 65536
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 850,
+      "name": "authored_65536_850",
+      "slowdown": 65536
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 851,
+      "name": "authored_65536_851",
+      "slowdown": 65536
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.25,
+    "current_bits": "3fd0000000000000",
+    "current_q16": 16384,
+    "input": {
+      "current": 16384,
+      "distance": 5000,
+      "name": "authored_65536_5000",
+      "slowdown": 65536
+    },
+    "path": [
+      "may_slow",
+      "slowdown",
+      "tenth"
+    ],
+    "target_speed": 0.1,
+    "target_speed_bits": "3fb999999999999a",
+    "target_speed_q16": 6553
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "strafe",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_strafe_False_1_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "strafe",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_strafe_False_1_True"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "strafe",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_strafe_False_0_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "strafe",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_strafe_False_0_True"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "strafe",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_strafe_False_-1_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "strafe",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_strafe_False_-1_True"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "strafe",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_strafe_True_1_False"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "strafe",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_strafe_True_1_True"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "strafe",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_strafe_True_0_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "strafe",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_strafe_True_0_True"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "strafe",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_strafe_True_-1_False"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "strafe",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_strafe_True_-1_True"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "fighter",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_fighter_False_1_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "fighter",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_fighter_False_1_True"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "fighter",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_fighter_False_0_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "fighter",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_fighter_False_0_True"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "fighter",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_fighter_False_-1_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "fighter",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_fighter_False_-1_True"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "fighter",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_fighter_True_1_False"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "fighter",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_fighter_True_1_True"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "fighter",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_fighter_True_0_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "fighter",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_fighter_True_0_True"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "fighter",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_fighter_True_-1_False"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "fighter",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_fighter_True_-1_True"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "neither",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_neither_False_1_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "neither",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_neither_False_1_True"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "neither",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_neither_False_0_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "neither",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_neither_False_0_True"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "neither",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_neither_False_-1_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "neither",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_neither_False_-1_True"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "neither",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_neither_True_1_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "neither",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_neither_True_1_True"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "neither",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_neither_True_0_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "neither",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_neither_True_0_True"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "neither",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_neither_True_-1_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "neither",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_neither_True_-1_True"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "inviso",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_inviso_False_1_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "inviso",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_inviso_False_1_True"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "inviso",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_inviso_False_0_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "inviso",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_inviso_False_0_True"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "inviso",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_inviso_False_-1_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "inviso",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_inviso_False_-1_True"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "inviso",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_inviso_True_1_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "inviso",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_inviso_True_1_True"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "inviso",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_inviso_True_0_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "inviso",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_inviso_True_0_True"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "inviso",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_inviso_True_-1_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "inviso",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_inviso_True_-1_True"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "unarmed",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_unarmed_False_1_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "unarmed",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_unarmed_False_1_True"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "unarmed",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_unarmed_False_0_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "unarmed",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_unarmed_False_0_True"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "unarmed",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_unarmed_False_-1_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "unarmed",
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_unarmed_False_-1_True"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "unarmed",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_unarmed_True_1_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 1,
+      "class": "unarmed",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_unarmed_True_1_True"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "unarmed",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_unarmed_True_0_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "class": "unarmed",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_unarmed_True_0_True"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "unarmed",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": false,
+      "name": "may_slow_unarmed_True_-1_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": -1,
+      "class": "unarmed",
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "fly_by": true,
+      "name": "may_slow_unarmed_True_-1_True"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "locked": false,
+      "name": "locked_False_False"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "locked": false,
+      "name": "locked_False_True"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "cruise": false,
+      "current": 32768,
+      "distance": 250,
+      "locked": true,
+      "name": "locked_True_False"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "locked": true,
+      "name": "locked_True_True"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.100006103515625,
+    "current_bits": "3fb99a0000000000",
+    "current_q16": 6554,
+    "input": {
+      "class": "strafe",
+      "cruise": true,
+      "current": 6554,
+      "distance": 40,
+      "name": "strafe_cruise_armed_target",
+      "target": true
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 3,
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "kind": "unit",
+      "name": "unit_owner_ammo"
+    },
+    "path": [
+      "may_not_slow",
+      "full"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 0,
+      "cruise": true,
+      "current": 32768,
+      "distance": 250,
+      "kind": "unit",
+      "name": "unit_owner_empty"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "ammo": 3,
+      "current": 32768,
+      "distance": 250,
+      "kind": "unit",
+      "name": "unit_owner_not_cruising"
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "hunter_seeker": true,
+      "name": "hunter_False_False",
+      "taking_off": false,
+      "target": false,
+      "z": 1500
+    },
+    "path": [
+      "may_slow",
+      "hunter_stop"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "hunter_seeker": true,
+      "name": "hunter_False_True",
+      "taking_off": true,
+      "target": false,
+      "z": 1500
+    },
+    "path": [
+      "may_slow",
+      "hunter_stop"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "hunter_seeker": true,
+      "name": "hunter_True_False",
+      "taking_off": false,
+      "target": true,
+      "z": 1500
+    },
+    "path": [
+      "may_slow",
+      "hunter_chase"
+    ],
+    "target_speed": 1.0,
+    "target_speed_bits": "3ff0000000000000",
+    "target_speed_q16": 65536
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "hunter_seeker": true,
+      "name": "hunter_True_True",
+      "taking_off": true,
+      "target": true,
+      "z": 1500
+    },
+    "path": [
+      "may_slow",
+      "hunter_stop"
+    ],
+    "target_speed": 0.0,
+    "target_speed_bits": "0000000000000000",
+    "target_speed_q16": 0
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "health": 0,
+      "name": "health_0",
+      "target_speed": 13107
+    },
+    "path": [],
+    "target_speed": 0.1999969482421875,
+    "target_speed_bits": "3fc9998000000000",
+    "target_speed_q16": 13107
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "health": -1,
+      "name": "health_-1",
+      "target_speed": 13107
+    },
+    "path": [],
+    "target_speed": 0.1999969482421875,
+    "target_speed_bits": "3fc9998000000000",
+    "target_speed_q16": 13107
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "health": 1,
+      "name": "health_1",
+      "target_speed": 13107
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "landing": true,
+      "name": "landing",
+      "target_speed": 13107
+    },
+    "path": [],
+    "target_speed": 0.1999969482421875,
+    "target_speed_bits": "3fc9998000000000",
+    "target_speed_q16": 13107
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "name": "takeoff_1500_749",
+      "taking_off": true,
+      "target_height": 1500,
+      "target_speed": 13107,
+      "z": 749
+    },
+    "path": [],
+    "target_speed": 0.1999969482421875,
+    "target_speed_bits": "3fc9998000000000",
+    "target_speed_q16": 13107
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "name": "takeoff_1500_750",
+      "taking_off": true,
+      "target_height": 1500,
+      "target_speed": 13107,
+      "z": 750
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "name": "takeoff_1501_749",
+      "taking_off": true,
+      "target_height": 1501,
+      "target_speed": 13107,
+      "z": 749
+    },
+    "path": [],
+    "target_speed": 0.1999969482421875,
+    "target_speed_bits": "3fc9998000000000",
+    "target_speed_q16": 13107
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "name": "takeoff_1501_750",
+      "taking_off": true,
+      "target_height": 1501,
+      "target_speed": 13107,
+      "z": 750
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "name": "takeoff_1500_0",
+      "taking_off": true,
+      "target_height": 1500,
+      "target_speed": 13107,
+      "z": 0
+    },
+    "path": [],
+    "target_speed": 0.1999969482421875,
+    "target_speed_bits": "3fc9998000000000",
+    "target_speed_q16": 13107
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "name": "takeoff_-3_-2",
+      "taking_off": true,
+      "target_height": -3,
+      "target_speed": 13107,
+      "z": -2
+    },
+    "path": [],
+    "target_speed": 0.1999969482421875,
+    "target_speed_bits": "3fc9998000000000",
+    "target_speed_q16": 13107
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "name": "takeoff_-3_-1",
+      "taking_off": true,
+      "target_height": -3,
+      "target_speed": 13107,
+      "z": -1
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "distance": 250,
+      "name": "takeoff_0_0",
+      "taking_off": true,
+      "target_height": 0,
+      "target_speed": 13107,
+      "z": 0
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "destination": [
+        0,
+        0,
+        0
+      ],
+      "distance": 250,
+      "name": "destination_[0, 0, 0]",
+      "target_speed": 13107
+    },
+    "path": [],
+    "target_speed": 0.1999969482421875,
+    "target_speed_bits": "3fc9998000000000",
+    "target_speed_q16": 13107
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "destination": [
+        0,
+        0,
+        1
+      ],
+      "distance": 250,
+      "name": "destination_[0, 0, 1]",
+      "target_speed": 13107
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "destination": [
+        1,
+        0,
+        0
+      ],
+      "distance": 250,
+      "name": "destination_[1, 0, 0]",
+      "target_speed": 13107
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  },
+  {
+    "current": 0.5,
+    "current_bits": "3fe0000000000000",
+    "current_q16": 32768,
+    "input": {
+      "current": 32768,
+      "destination": [
+        0,
+        1,
+        0
+      ],
+      "distance": 250,
+      "name": "destination_[0, 1, 0]",
+      "target_speed": 13107
+    },
+    "path": [
+      "may_slow",
+      "slowdown"
+    ],
+    "target_speed": 0.5,
+    "target_speed_bits": "3fe0000000000000",
+    "target_speed_q16": 32768
+  }
+]

@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "The per-frame Fly target-speed writer: SlowdownDistance ratio and cap (including zero and negative authored distances), the strict 0.1 floor and its 85-lepton stop-and-halve arm, the zero-distance current clamp and the 0.05 creep; 0x004D0180 lock/landing/cruise/FlyBy/strafe/fighter/Inviso/unarmed/Ammo precedence for Aircraft and Unit owners; HunterSeeker; and the health, landing, half-height takeoff and null-destination gate.",
+  "assumptions": [
+    "Supplied post-vertical-step frame: EBP zero as both entry paths leave it, the distance local [ESP+0x20] and the type local [ESP+0x2C].",
+    "Original Fly constructor, then supplied owner, destination, target height, target and current speed, takeoff/landing bytes +50/+51 and cruise +5C. Target and current speeds are exact Q16 values, matching the SimFixed policy; unrestricted binary64 inputs are excluded.",
+    "Real Aircraft/Unit vtables; the Aircraft IFlyControl subobject 7E2250 at +6C0 as its constructor installs it; supplied type HunterSeeker +D27, SlowdownDistance +2F8, FlyBy +E0B, Fighter +E0E and weapon 0 with its projectile ROT +2DC and Inviso +29E. Rookie owner (base weapon).",
+    "Takeoff rows read GetHeight over one real level-0 cell with the Map+13C table and +140 length initialized, as fly_height. PC53/chop ambient state.",
+    "The following attitude, landing trigger, ramp and Horizontal_Step are outside this range."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "target_speed": "0x004CE145",
+    "after_release": "0x004CE2E5",
+    "may_slow": "0x004D0180",
+    "aircraft_query_interface": "0x00414290",
+    "is_strafe": "0x0041B7F0",
+    "is_fighter": "0x0041B840",
+    "is_locked": "0x0041B860",
+    "get_weapon": "0x0070E140",
+    "get_height": "0x005F5F40",
+    "fly_constructor": "0x004CC9A0",
+    "null_coordinate": "0x004CC940"
+  },
+  "payload_sha256": "e2aa589b8919da9f43b61c5f59a0521f1d5c46fcd4a0db2882089b23d07ce73b"
+}

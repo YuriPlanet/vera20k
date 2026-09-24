@@ -1,15 +1,19 @@
 //! Fly movement transaction: legacy horizontal steering followed by native
-//! integer height stepping. Jumpjet, Rocket and Parachute have separate owners.
+//! integer height stepping and the native speed control (the target speed
+//! and its ramp). Jumpjet, Rocket and Parachute have separate owners.
 //!
-//! The vertical range is compared against original instructions in `fly_height`.
-//! Horizontal approach zones, arrival handling and landing callbacks still need
-//! their native migration; they are not covered by that height comparison.
+//! The vertical range is compared against original instructions in
+//! `fly_height`, the target speed in `fly_target_speed`. Horizontal_Step's
+//! arrival arm, the Process landing trigger and the landing callbacks still
+//! need their native migration; the legacy arrival below stands in.
 
+use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;
+use crate::sim::components::DriveCoord;
 use crate::sim::debug_event_log::DebugEventKind;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::movement::locomotor::{AirMovePhase, LocomotorState, MovementLayer};
-use crate::util::fixed_math::{SIM_HALF, SIM_ONE, SIM_ZERO, SimFixed};
+use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
 
 /// Fly interface+84 /4CFE20 reads TYPE Speed, not Foot's adjusted speed.
 /// The retained fraction follows the existing SimFixed policy. Its dyadic
@@ -25,17 +29,21 @@ pub(crate) fn current_fly_speed(type_speed: i32, fraction: SimFixed) -> i32 {
 /// Full acceleration 0->1 takes 10 ticks.
 const FLY_SPEED_RAMP_STEP: SimFixed = SimFixed::lit("0.1");
 
-/// Fine approach deceleration threshold in leptons (~1/3 cell).
-/// Below this distance, speed is halved each tick for smooth landing.
-const FINE_APPROACH_THRESHOLD: i32 = 86;
+/// The target speed of a Fly crawling in under the 0.1 slowdown floor
+/// (`0x004CE27C`).
+const FLY_CRAWL_SPEED: SimFixed = SimFixed::lit("0.1");
 
-/// Speed halving factor for fine approach deceleration.
-const RAPID_DECEL_FACTOR: SimFixed = SimFixed::lit("0.5");
-
-/// Minimum creep speed to prevent zero-speed deadlock during final approach.
+/// The 0.05 current speed of Process's creep (`0x004CE2D1`) and of
+/// Horizontal_Step's landing test (`0x007E8AE8`), which the legacy arrival
+/// below and [`fly_landing_arrival`] stand in for.
 const MIN_CREEP_SPEED: SimFixed = SimFixed::lit("0.05");
 
-/// Ramp fly_current_speed toward speed_fraction (target) by +/-FLY_SPEED_RAMP_STEP.
+/// `TechnoTypeClass` constructor `SlowdownDistance` (`0x00710BB2`), for a
+/// mover without a resolved type.
+const DEFAULT_SLOWDOWN_DISTANCE: i32 = 500;
+
+/// Process `0x004CE441..0x004CE495`: the current speed (`+0x48`) chases the
+/// target speed (`+0x40`) by 0.1 a frame.
 fn ramp_fly_speed(loco: &mut LocomotorState) {
     let target = loco.speed_fraction;
     let current = loco.fly_current_speed;
@@ -46,24 +54,174 @@ fn ramp_fly_speed(loco: &mut LocomotorState) {
     }
 }
 
-/// Legacy distance-based approach zones; native4CE145 uses continuous slowdown.
-/// Returns the target speed fraction for the given distance in leptons.
+/// What `0x004D0180` reads to decide whether a Fly slows for its destination.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FlySlowFacts {
+    /// The owner is an Aircraft: only an Aircraft has the IFlyControl
+    /// subobject (`+0x6C0`, found through QueryInterface `0x00414290`) and a
+    /// FlyBy type.
+    pub aircraft: bool,
+    /// IFlyControl `+0x20` (`0x0041B860`): the release latch, Aircraft `+0x6D2`.
+    pub locked: bool,
+    /// AircraftType `FlyBy=` (`+0xE0B`).
+    pub fly_by: bool,
+    /// IFlyControl `+0x18` Is_Strafe (`0x0041B7F0`) or `+0x1C` Is_Fighter
+    /// (`0x0041B840`).
+    pub strafe_or_fighter: bool,
+    /// Techno Ammo (`+0x2FC`), signed.
+    pub ammo: i32,
+}
+
+/// Fly `0x004D0180`: no while an aircraft's release latch holds; yes while
+/// landing or out of cruise mode (`+0x5C`); otherwise no for a FlyBy, yes for
+/// an aircraft that neither strafes nor fights, and for the rest (strafers,
+/// fighters, non-aircraft owners) only at Ammo 0. Horizontal_Step's arrival
+/// arm reads the same gate (`0x004CF4DC`).
+fn fly_may_slow(landing: bool, cruise: bool, facts: &FlySlowFacts) -> bool {
+    if facts.aircraft && facts.locked {
+        return false;
+    }
+    if landing || !cruise {
+        return true;
+    }
+    if facts.aircraft && facts.fly_by {
+        return false;
+    }
+    if facts.aircraft && !facts.strafe_or_fighter {
+        return true;
+    }
+    facts.ammo == 0
+}
+
+/// Everything Process's target-speed writer reads besides the Fly state.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FlySpeedFacts {
+    /// Owner Health (`+0x6C`).
+    pub health: i32,
+    /// Owner GetHeight after the vertical step; read only while taking off.
+    pub height: i32,
+    /// The `0x004CDDD3` local: XY leptons from the owner to the retained
+    /// destination after this frame's paid step.
+    pub distance: i32,
+    pub slow: FlySlowFacts,
+    /// TechnoType `HunterSeeker=` (`+0xD27`).
+    pub hunter_seeker: bool,
+    /// Techno Target (`+0x2B4`) is set.
+    pub target: bool,
+    /// TechnoType `SlowdownDistance=` (`+0x2F8`).
+    pub slowdown_distance: i32,
+}
+
+/// Fly Process `0x004CE145..0x004CE2DB`: the target speed (`+0x40`) that the
+/// ramp chases, rewritten every Process frame whose owner lives, is not
+/// landing, has climbed to half its takeoff height and holds a destination:
+/// - `0x004D0180` refusing: full speed. A cruising strafer or fighter with
+///   ammo, a FlyBy or a locked aircraft never slows for its destination.
+/// - HunterSeeker: full speed while it has a Target and is not taking off,
+///   else a stop.
+/// - Otherwise `distance / SlowdownDistance`, capped at 1. Under 0.1 it is a
+///   0.1 crawl beyond 85 leptons and, within, a stop that halves the current
+///   speed. A current speed above the integer distance drops to it (only at
+///   distance 0), and a Fly stopped short of its destination creeps at 0.05.
 ///
-/// | Distance          | TargetSpeed |
-/// |-------------------|-------------|
-/// | >= 768 (3 cells)  | 1.0         |
-/// | >= 512 (2 cells)  | 0.75        |
-/// | >= 128 (0.5 cell) | 0.5         |
-/// | < 128             | 0.0         |
-fn approach_target_speed(dist_leptons: i32) -> SimFixed {
-    if dist_leptons >= 768 {
-        SIM_ONE
-    } else if dist_leptons >= 512 {
-        SimFixed::lit("0.75")
-    } else if dist_leptons >= 128 {
-        SIM_HALF
+/// Native keeps binary64 and VERA SimFixed, each result within one quantum of
+/// native: the ratio truncates to Q16, and the halving rounds a dropped half
+/// away from zero, so it is zero exactly when native's is (a speed of one
+/// quantum truncated to zero would fake the creep). The floor test is the
+/// exact `10 * distance <= SlowdownDistance`: the chop x87 quotient of an
+/// exact tenth falls below the stored 0.1. The rows of
+/// `tools/spatial_oracle/fly_target_speed` hold the native outputs.
+pub(crate) fn write_fly_target_speed(loco: &mut LocomotorState, facts: &FlySpeedFacts) {
+    let Some(state) = loco.fly_runtime() else {
+        return;
+    };
+    let taking_off = state.taking_off();
+    if facts.health <= 0
+        || state.landing()
+        || (taking_off && facts.height < state.target_height() / 2)
+        || state.destination() == (DriveCoord { x: 0, y: 0, z: 0 })
+    {
+        return;
+    }
+    if !fly_may_slow(state.landing(), state.cruise_mode(), &facts.slow) {
+        loco.speed_fraction = SIM_ONE;
+        return;
+    }
+    if facts.hunter_seeker {
+        loco.speed_fraction = if !taking_off && facts.target {
+            SIM_ONE
+        } else {
+            SIM_ZERO
+        };
+        return;
+    }
+    let distance = i64::from(facts.distance);
+    let slowdown = i64::from(facts.slowdown_distance);
+    // A zero SlowdownDistance divides to +inf (NaN at distance 0), which the
+    // cap turns into full speed; a negative one is always under the floor.
+    if slowdown == 0 || (slowdown > 0 && distance * 10 > slowdown) {
+        loco.speed_fraction = if slowdown == 0 || distance >= slowdown {
+            SIM_ONE
+        } else {
+            SimFixed::from_bits(((distance << 16) / slowdown) as i32)
+        };
+    } else if distance > 0x55 {
+        loco.speed_fraction = FLY_CRAWL_SPEED;
     } else {
-        SIM_ZERO
+        let bits = loco.fly_current_speed.to_bits();
+        loco.fly_current_speed = SimFixed::from_bits(bits / 2 + bits % 2);
+        loco.speed_fraction = SIM_ZERO;
+    }
+    if distance << 16 < i64::from(loco.fly_current_speed.to_bits()) {
+        loco.fly_current_speed = SimFixed::from_bits((distance << 16) as i32);
+    }
+    if loco.speed_fraction == SIM_ZERO && loco.fly_current_speed == SIM_ZERO && distance > 0 {
+        loco.fly_current_speed = MIN_CREEP_SPEED;
+    }
+}
+
+/// The facts [`write_fly_target_speed`] reads from a live mover. Ammo is
+/// represented on Aircraft only; no stock non-aircraft owner flies.
+fn fly_speed_facts(
+    entity: &crate::sim::game_entity::GameEntity,
+    distance: i32,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    rules_context: Option<(
+        &crate::rules::ruleset::RuleSet,
+        &crate::sim::intern::StringInterner,
+    )>,
+) -> FlySpeedFacts {
+    let aircraft = entity.category == EntityCategory::Aircraft;
+    let object = rules_context
+        .and_then(|(rules, interner)| rules.object(interner.resolve(entity.type_ref())));
+    let strafe_or_fighter = aircraft
+        && rules_context
+            .zip(object)
+            .is_some_and(|((rules, _), object)| {
+                object.fighter
+                    || crate::sim::combat::combat_weapon::aircraft_strafes(
+                        rules,
+                        object,
+                        entity.veterancy,
+                    )
+            });
+    FlySpeedFacts {
+        health: entity.health.current,
+        height: current_fly_height(entity, terrain),
+        distance,
+        slow: FlySlowFacts {
+            aircraft,
+            locked: entity
+                .mission_leaf
+                .as_aircraft()
+                .is_some_and(|leaf| leaf.action_latch() != 0),
+            fly_by: aircraft && object.is_some_and(|o| o.fly_by),
+            strafe_or_fighter,
+            ammo: entity.aircraft_ammo.as_ref().map_or(-1, |a| a.current),
+        },
+        hunter_seeker: object.is_some_and(|o| o.hunter_seeker),
+        target: entity.attack_target.is_some(),
+        slowdown_distance: object.map_or(DEFAULT_SLOWDOWN_DISTANCE, |o| o.slowdown_distance),
     }
 }
 
@@ -88,10 +246,9 @@ pub(crate) fn fly_coordinate_admitted(entity: &crate::sim::game_entity::GameEnti
 }
 
 /// Horizontal_Step4CF520's landing arm: within 0x80 leptons (XY) of the
-/// retained destination with speed+48 below 0.05. The legacy horizontal
-/// adapter above never clears its path inside the fine-approach radius, so
-/// this is the arrival test, not `movement_target`. Its cruise+5C, type+D27
-/// and 4D0180 gates and its own BeginLanding call belong to the pending Fly
+/// retained destination with speed+48 below 0.05, read from the retained
+/// destination rather than `movement_target`. Its cruise+5C, type+D27 and
+/// 4D0180 gates and its own BeginLanding call belong to the pending Fly
 /// navigation migration; the legacy dock drivers call BeginLanding on it.
 pub(crate) fn fly_landing_arrival(entity: &crate::sim::game_entity::GameEntity) -> bool {
     let Some(loco) = entity.locomotor.as_ref() else {
@@ -183,6 +340,13 @@ pub fn tick_air_movement(
         // This byte is a presentation/legacy projection; displacement below
         // reads the full retained direction, not this quantized cache.
         entity.facing = (entity.body_facing.unwrap().current(binary_frame) >> 8) as u8;
+        // Process reaches its speed control (the target speed and the ramp)
+        // only on the ordinary path, powered and alive or on the ground
+        // (4CD67F..4CD6A8), of a moving Fly (4CDA0B, IsMoving 4CCA90).
+        let speed_control = ((entity.locomotor.as_ref().unwrap().powered
+            && entity.health.current != 0)
+            || current_fly_height(entity, terrain) == 0)
+            && super::motion_query::is_moving(entity) == Some(true);
 
         // --- Horizontal movement (facing-based, only when airborne) ---
         let has_movement: bool = entity.movement_target.is_some();
@@ -248,26 +412,6 @@ pub fn tick_air_movement(
                 };
                 let dist_i32: i32 = dist.to_num::<i32>();
 
-                // The native step consumes entry speed BEFORE approach
-                // slowdown. The remaining policy below is still the legacy
-                // adapter, pending the full4CE145/4CEFB0 migration.
-                let approach_speed = approach_target_speed(dist_i32);
-                if let Some(ref mut loco) = entity.locomotor {
-                    // Only lower speed_fraction for approach; missions can set it
-                    // higher (e.g., full speed during attack run).
-                    loco.speed_fraction = loco.speed_fraction.min(approach_speed);
-                }
-
-                // 4. Fine approach deceleration.
-                if dist_i32 < FINE_APPROACH_THRESHOLD {
-                    if let Some(ref mut loco) = entity.locomotor {
-                        loco.fly_current_speed *= RAPID_DECEL_FACTOR;
-                        if loco.fly_current_speed < MIN_CREEP_SPEED && dist_i32 > 0 {
-                            loco.fly_current_speed = MIN_CREEP_SPEED;
-                        }
-                    }
-                }
-
                 //4CDA3C..4CDB4C: full Primary.Current, integer Fly speed and
                 // final world-coordinate truncation using the shared table.
                 if speed > 0 {
@@ -290,7 +434,9 @@ pub fn tick_air_movement(
                     );
                 }
 
-                // 6. Arrival detection: close enough AND speed near zero.
+                // Legacy arrival, standing in for Horizontal_Step's arrival
+                // arm (4CF4D2) and the Process landing trigger (4CE3C0) until
+                // they are ported: close enough AND speed near zero.
                 let arrived = dist_i32 < 128
                     && entity
                         .locomotor
@@ -326,6 +472,10 @@ pub fn tick_air_movement(
         // remains authoritative; loco.altitude is a bounded read cache only.
         let phase_before = fly_mission_phase(entity, terrain);
         update_fly_height(entity, terrain, rules_context);
+        if speed_control {
+            let facts = fly_speed_facts(entity, approach_distance, terrain, rules_context);
+            write_fly_target_speed(entity.locomotor.as_mut().unwrap(), &facts);
+        }
         // Process4CCC15..4CCC49 requests navigation after movement/height and
         // before phase callbacks. Destination choice is still the legacy
         // adapter pending4CEFB0's docking/strafe migration. Its heading request
@@ -381,8 +531,8 @@ pub fn tick_air_movement(
             );
         }
 
-        // Speed ramping for Fly aircraft (after altitude and movement).
-        if entity.health.current > 0
+        if speed_control
+            && entity.health.current > 0
             && let Some(ref mut loco) = entity.locomotor
         {
             ramp_fly_speed(loco);
@@ -483,6 +633,7 @@ mod tests {
     use super::*;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::locomotion::LocomotorSlot;
+    use crate::util::fixed_math::SIM_HALF;
 
     #[test]
     fn test_issue_air_move_command() {
@@ -676,15 +827,69 @@ mod tests {
         assert_eq!(loco.fly_current_speed, SIM_ZERO);
     }
 
+    /// Every row of `tools/spatial_oracle/fly_target_speed`, the original
+    /// Process target-speed writer, through [`write_fly_target_speed`]: the
+    /// gate, `0x004D0180`, HunterSeeker and the slowdown law. Target and
+    /// current speed land within one Q16 quantum of the native binary64.
     #[test]
-    fn test_approach_speed_zones() {
-        assert_eq!(approach_target_speed(1000), SIM_ONE);
-        assert_eq!(approach_target_speed(768), SIM_ONE);
-        assert_eq!(approach_target_speed(600), SimFixed::lit("0.75"));
-        assert_eq!(approach_target_speed(512), SimFixed::lit("0.75"));
-        assert_eq!(approach_target_speed(300), SIM_HALF);
-        assert_eq!(approach_target_speed(128), SIM_HALF);
-        assert_eq!(approach_target_speed(100), SIM_ZERO);
-        assert_eq!(approach_target_speed(0), SIM_ZERO);
+    fn native_target_speed_rows() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/fly_target_speed.json"
+        ))
+        .unwrap();
+        assert_eq!(rows.len(), 374);
+        for row in &rows {
+            let input = &row["input"];
+            let int = |name: &str, fallback: i64| input[name].as_i64().unwrap_or(fallback) as i32;
+            let flag = |name: &str| input[name].as_bool().unwrap_or(false);
+            let aircraft = input["kind"].as_str().unwrap_or("aircraft") == "aircraft";
+            let class = input["class"].as_str().unwrap_or("neither");
+            let mut loco = make_fly_loco();
+            let destination = input["destination"]
+                .as_array()
+                .map_or([2944, 2688, 0], |xyz| {
+                    [0, 1, 2].map(|n| xyz[n].as_i64().unwrap() as i32)
+                });
+            *loco.fly_runtime_mut().unwrap() = serde_json::from_value(serde_json::json!({
+                "target_height": int("target_height", 1500),
+                "taking_off": flag("taking_off"),
+                "landing": flag("landing"),
+                "destination": destination,
+                "cruise_mode": flag("cruise"),
+                "moving": true,
+            }))
+            .unwrap();
+            loco.speed_fraction = SimFixed::from_bits(int("target_speed", 65536));
+            loco.fly_current_speed = SimFixed::from_bits(int("current", 32768));
+            let facts = FlySpeedFacts {
+                health: int("health", 100),
+                // The takeoff rows stand over one level-0 cell.
+                height: int("z", 1500),
+                distance: int("distance", 0),
+                slow: FlySlowFacts {
+                    aircraft,
+                    locked: flag("locked"),
+                    fly_by: flag("fly_by"),
+                    strafe_or_fighter: aircraft && matches!(class, "strafe" | "fighter"),
+                    ammo: int("ammo", 1),
+                },
+                hunter_seeker: flag("hunter_seeker"),
+                target: flag("target"),
+                slowdown_distance: int("slowdown", 500),
+            };
+            write_fly_target_speed(&mut loco, &facts);
+            for (actual, native) in [
+                (loco.speed_fraction, &row["target_speed"]),
+                (loco.fly_current_speed, &row["current"]),
+            ] {
+                let native = native.as_f64().unwrap() * 65536.0;
+                assert!(
+                    (f64::from(actual.to_bits()) - native).abs() < 1.0,
+                    "{}: {} vs native {native}",
+                    input["name"],
+                    actual.to_bits()
+                );
+            }
+        }
     }
 }
