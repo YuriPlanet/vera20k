@@ -152,23 +152,20 @@ impl<F: FnMut(CellCoord) -> DepthCell> Cells<F> {
     }
 
     /// 0x00703B10 (mask 0x100), 0x00703CC0 (mask 0x400). All four
-    /// neighbors are resolved before testing, in the native S,N,E,W order.
+    /// neighbors are resolved before testing, in the native S,N,E,W order,
+    /// so each failed lookup stamps the shared dummy.
     fn near_bridge(&mut self, context: FootDepthContext, mask: u32) -> bool {
         let current = self.get(context.cell);
         if context.on_bridge {
             return false;
         }
-        let south = self.get(offset(context.cell, DIRECTIONS[4]));
-        let north = self.get(offset(context.cell, DIRECTIONS[0]));
-        let east = self.get(offset(context.cell, DIRECTIONS[2]));
-        let west = self.get(offset(context.cell, DIRECTIONS[6]));
-        current.flags & mask != 0
-            || [south, north]
-                .iter()
-                .any(|cell| cell.flags & mask != 0 && cell.flags & 0x800 != 0)
-            || [east, west]
-                .iter()
-                .any(|cell| cell.flags & mask != 0 && cell.flags & 0x800 == 0)
+        let [south, north, east, west] = [4, 0, 2, 6]
+            .map(|direction| self.get(offset(context.cell, DIRECTIONS[direction])).flags);
+        crate::map::bridge_facts::near_bridge(
+            current.flags,
+            [Some(south), Some(north), Some(east), Some(west)],
+            mask,
+        )
     }
 
     /// 0x00703E70: S/E each assign one; SE increments that result.

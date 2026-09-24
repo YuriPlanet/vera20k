@@ -1159,6 +1159,7 @@ fn retaliate_and_scan(
             overlay_registry: ctx.overlay_registry,
             alliances: Some(&sim.fog.alliances),
         },
+        Some(&*sim),
     );
     if let Some(sid) = pick {
         let _ = sim
@@ -1961,6 +1962,7 @@ fn infantry_deployed_attack_reacquire(
             overlay_registry: ctx.overlay_registry,
             alliances: Some(&sim.fog.alliances),
         },
+        Some(&*sim),
     );
     if had_target || pick.is_some() {
         let current = sim

@@ -10,8 +10,6 @@
 //!   only U4's dormant DeployToFire reads it.
 //! - `locomotor_can_fire` answers OK: only the Tunnel locomotor, unused in
 //!   retail, refuses.
-//! - `visual_state` answers 5 exactly for a fully cloaked target, the reading
-//!   the old cloak gate used; `GetVisualState 0x00703860` is not ported.
 
 use super::fire_error::{
     CellFacts, FireError, FireFacts, FireQuery, FireTargetKind, FirerCell, FirerClass, FirerFacts,
@@ -178,11 +176,12 @@ impl FireSubject<'_> {
                         .object(self.world.interner.resolve(transport.type_ref())),
                 )
             });
-        // The dock-entered projection stands for the `+0x418` tether that
-        // radio `0x18` sets (VERA owns no exact tether byte,
-        // `radio/receive.rs`), with `RadioLinks[0]` the dock it entered.
-        let dock = firer
-            .dock_entered_with
+        // U5 reads the `+0x418` tether byte that radio `0x18` sets, whose
+        // stand-in is the dock-entered projection (VERA owns no exact tether
+        // byte, `radio/receive.rs`), and `RadioLinks[0]`.
+        let radio_link = firer
+            .radio_contacts
+            .slot(0)
             .and_then(|id| self.world.substrate.entities.get(id));
         let current = |facing: Option<crate::sim::movement::FacingClass>, fallback: u8| {
             facing.map_or(u16::from(fallback) << 8, |facing| facing.current(frame))
@@ -191,12 +190,13 @@ impl FireSubject<'_> {
             enslaved: firer.slave_harvester.is_some(),
             warped_out: firer.is_warped_out(),
             warping_in: firer.is_warping_in(),
-            on_bridge: firer.bridge_occupancy.is_some(),
+            on_bridge: firer.on_bridge,
             z: self
                 .terrain()
                 .and_then(|terrain| in_range::effective_z_leptons(firer, terrain))
                 .map_or(0, |z| z as i32),
             berserk: firer.berserk.active,
+            falling: firer.object_is_falling_down != 0,
             // An open-topped transport fires its passengers' weapons itself in
             // VERA (`WeaponOverride::OpenTransport`), so a passenger reaches
             // T32/T33 only through a target of its own.
@@ -217,7 +217,10 @@ impl FireSubject<'_> {
                 .world
                 .active_wave_links
                 .contains_key(&firer.stable_id()),
-            spark_particles_live: firer.damage_particle_live_until > u64::from(frame),
+            // `+0x308`: the damage-spark system, armed and expired on
+            // `session.tick` by `techno_ai`'s common post step (`0` none,
+            // `u64::MAX` held).
+            spark_particles_live: self.world.session.tick < firer.damage_particle_live_until,
             rearming: attack
                 .is_some_and(|attack| attack.cooldown_ticks > 0 || attack.burst_delay_ticks > 0),
             ammo: firer.aircraft_ammo.as_ref().map_or(-1, |ammo| ammo.current),
@@ -229,10 +232,9 @@ impl FireSubject<'_> {
                 .temporal
                 .has_link()
                 .then(|| link(firer.temporal.warp_target())),
-            owner_is_human: crate::sim::house_state::house_state_for_owner(
+            owner_is_human: crate::sim::house_state::house_state_for_owner_id(
                 &self.world.houses,
-                self.world.interner.resolve(firer.owner()),
-                &self.world.interner,
+                firer.owner(),
             )
             .is_some_and(|house| house.is_human),
             paralyzed: firer.is_paralyzed(frame),
@@ -260,10 +262,12 @@ impl FireSubject<'_> {
                 > crate::util::fixed_math::SimFixed::ONE
                     / crate::util::fixed_math::SimFixed::from_num(10),
             deploying: unit_deploying(firer),
-            tethered: dock.is_some(),
-            radio_link: match dock {
+            tethered: firer.dock_entered_with.is_some(),
+            radio_link: match radio_link {
                 None => RadioLink::None,
-                Some(dock) if dock.category == EntityCategory::Structure => RadioLink::Building,
+                Some(contact) if contact.category == EntityCategory::Structure => {
+                    RadioLink::Building
+                }
                 Some(_) => RadioLink::Other,
             },
             // `+0x6AF` as it stood before this frame's `Facing_Update`: Unit AI
@@ -327,7 +331,7 @@ impl FireSubject<'_> {
                         },
                         bomb: entity.bomb.is_some(),
                         in_limbo: entity.lifecycle.in_limbo,
-                        on_bridge: entity.bridge_occupancy.is_some(),
+                        on_bridge: entity.on_bridge,
                         z: self
                             .terrain()
                             .and_then(|terrain| in_range::effective_z_leptons(entity, terrain))
@@ -538,19 +542,44 @@ impl FireQuery for WorldQuery<'_, '_> {
                     entity,
                     obj,
                     subject.terrain(),
-                    self.allied_now(),
+                    self.house_allied(subject.firer.owner(), entity.owner()),
                 )
             });
         combat_weapon::select_naval_targeting_weapon(subject.obj, facts.as_ref())
     }
 
+    /// `TechnoClass::GetVisualState @ 0x00703860` as T17 asks it (`0x006FC25B`:
+    /// the sensor argument set, the firer's house). `+0x41A`, whose writer is
+    /// unidentified, is held clear; the map editor never runs.
     fn visual_state(&mut self) -> i32 {
-        let cloaked = self
-            .subject
-            .target_entity()
-            .and_then(|target| target.cloak.as_ref())
-            .is_some_and(|cloak| cloak.is_fully_cloaked());
-        if cloaked { 5 } else { 0 }
+        let subject = self.subject;
+        let (Some(target), Some(obj)) = (subject.target_entity(), subject.target_obj()) else {
+            return 0;
+        };
+        let building = target.category == EntityCategory::Structure;
+        // `+0xC9A`: `Invisible=`, which a BuildingType's `InvisibleInGame=`
+        // also sets (`0x00460E09`).
+        if obj.invisible || (building && obj.invisible_in_game) {
+            return 5;
+        }
+        let Some(cloak) = target.cloak.as_ref() else {
+            return 0;
+        };
+        if cloak.state == 0 || building {
+            return 0;
+        }
+        if cloak.state == 2 {
+            // The firer's house senses the target's Location cell.
+            let sensed = subject.fog.is_some_and(|fog| {
+                fog.has_sensor_for_house(
+                    subject.firer.owner(),
+                    target.position.rx,
+                    target.position.ry,
+                )
+            });
+            return if sensed { 3 } else { 5 };
+        }
+        i32::from(cloak.transition_visual_state())
     }
 
     fn high_flying(&mut self) -> bool {
@@ -600,7 +629,11 @@ impl FireQuery for WorldQuery<'_, '_> {
     }
 
     fn allied(&mut self) -> bool {
-        self.allied_now()
+        // T17 `0x006FC289..0x006FC296`: the target's house asks.
+        let subject = self.subject;
+        subject
+            .target_entity()
+            .is_some_and(|target| self.house_allied(target.owner(), subject.firer.owner()))
     }
 
     fn bridge_for_firing(&mut self) -> bool {
@@ -693,15 +726,17 @@ impl FireQuery for WorldQuery<'_, '_> {
 }
 
 impl WorldQuery<'_, '_> {
-    /// `HouseClass::IsAlliedWith @ 0x004F9A50` of the target's house.
-    fn allied_now(&self) -> bool {
-        let subject = self.subject;
-        let (Some(fog), Some(target)) = (subject.fog, subject.target_entity()) else {
-            return false;
-        };
-        fog.is_friendly(
-            subject.world.interner.resolve(target.owner()),
-            subject.world.interner.resolve(subject.firer.owner()),
+    /// `HouseClass::IsAlliedWith @ 0x004F9A50`: `asker`'s own ally bits.
+    fn house_allied(
+        &self,
+        asker: crate::sim::intern::InternedId,
+        other: crate::sim::intern::InternedId,
+    ) -> bool {
+        combat_weapon::is_ally_by_object(
+            self.subject.fog.map(|fog| &fog.alliances),
+            &self.subject.world.interner,
+            asker,
+            other,
         )
     }
 

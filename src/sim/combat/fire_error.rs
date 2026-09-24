@@ -25,13 +25,22 @@
 //! - T7/T57: sinking.
 //! - T15: the Chronosphere warp latch.
 //! - T18: balloon docking.
-//! - T19: falling paradrops.
+//! - T19: ObjectClass `+0x8D`, VERA's `object_is_falling_down`, which no
+//!   paradrop or drop-in writes yet.
 //! - T20: EMP.
 //! - T32/T33: open-topped passengers (VERA never fires from a transport).
-//! - T37/T46: particle systems. Only the Sonic wave is live.
+//! - T37/T46: particle systems. The Sonic wave and the damage-spark system
+//!   are live; Fire's own systems are not produced: `+0x304` (`0x006FF1A7`,
+//!   UseFireParticles), `+0x308` (`0x006FF1AD`, UseSparkParticles, the IFV's
+//!   RepairBullet) and `+0x314` (railgun), so those shots rearm on ROF alone.
 //! - Dormant in retail: T44 (FiringSyncFrame), U1 (DeathFrames),
 //!   U3 (DirectRocker), U4 (DeployToFire), U7 (MobileFire=no), I3 (Pushy).
 //! - B3: EMPulseCannon, whose cannon fires only through its superweapon.
+//! - B7: the upgrade turret (`0x004527D0`'s upgrade walk; `turret_upgrade`).
+//! - A1: a paradrop plane's payload (`+0x6C9`, `paradrop_payload`).
+//! - U6: a Building target counts as a vehicle when it undeploys into a unit
+//!   and stands on one cell (`0x00457620` -> `0x00465D40`); held false, and no
+//!   retail building qualifies (the Construction Yards are 4x4).
 
 /// The codes, as every producer returns them (`MOV EAX, imm32`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -840,10 +849,11 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
         }
         // T17 `0x006FC24D..0x006FC29D`: a cloaked target this house cannot
         // sense takes only a harmless shot from an ally.
-        if query.visual_state() == 5 && !query.sensor() {
-            if weapon_value(facts, query) > 0 || !query.allied() {
-                return Cant;
-            }
+        if query.visual_state() == 5
+            && !query.sensor()
+            && (weapon_value(facts, query) > 0 || !query.allied())
+        {
+            return Cant;
         }
         // T18 `0x006FC2A3`: a docked balloon.
         if target.docked && target_type.balloon_hover && !query.high_flying() {

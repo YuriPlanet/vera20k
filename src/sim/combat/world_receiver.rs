@@ -1975,8 +1975,8 @@ fn admit_attacker_fire<'r>(
     // Stock Sonic weapons occupy index 0, and native FireAt tests that
     // WeaponType before resolving the target. Preserve that whole-call gate
     // so a stale/missing target cannot retarget or clear the order while the
-    // owner's exact Wave link remains live. The selected-weapon check below
-    // retains the same protection for non-stock overrides/secondary layouts.
+    // owner's exact Wave link remains live. GetFireError's T37/T46 (the live
+    // Wave on either slot) keep the same protection for other layouts.
     if has_active_wave
         && combat_weapon::primary_for_tier(obj, snap.veterancy)
             .and_then(|weapon_id| rules.weapon(weapon_id))
@@ -2060,10 +2060,10 @@ fn admit_attacker_fire<'r>(
                 return None;
             }
             if let Some(new_target) = acquire_best_target(
-                &mut world.substrate.entities,
+                &world.substrate.entities,
                 &world.substrate.occupancy,
                 rules,
-                &mut world.interner,
+                &world.interner,
                 snap,
                 obj,
                 fog,
@@ -2081,6 +2081,7 @@ fn admit_attacker_fire<'r>(
                     overlay_registry,
                     alliances: fog.map(|fog_state| &fog_state.alliances),
                 },
+                Some(&*world),
             ) {
                 out.retarget_events.push((snap.stable_id, new_target));
             } else {
@@ -2133,6 +2134,20 @@ fn admit_attacker_fire<'r>(
     // Weapon selection: garrison uses occupant's OccupyWeapon, everything
     // else runs the native selection ladder (`What_Weapon_Should_I_Use`
     // `0x006F3330`, which asks no legality; GetFireError below does).
+    //
+    // RESIDUAL: two arms still filter before GetFireError, as the selection
+    // owner does until it loses its legality subset.
+    // - A delayed building shot resolves its saved slot through
+    //   `select_weapon_slot` (`targeting_fire_error_blocks`). Effect: none;
+    //   ProcessDelayedFire drops the shot on any refusal (`0x004504D7`) either
+    //   way.
+    // - Garrison fire picks the occupant's weapon by AA/AG and Verses and drops
+    //   the target when none fits. Native GetWeapon (`0x004526F0`) hands the
+    //   occupant weapon over whatever the target, and the base asks AA only of
+    //   a high-flying or airborne Foot (T38/T39) and AG of no techno. Trigger: a
+    //   garrison aimed at a landed aircraft, or an occupant with an AA-only
+    //   weapon at a ground target. Effect: VERA drops a target native would
+    //   shoot. Frequency: rare.
     let (weapon_index, selected, is_garrison) = if let Some(saved_slot) = delayed_building_slot {
         let capture = world
             .substrate
@@ -2213,10 +2228,10 @@ fn admit_attacker_fire<'r>(
                 return None;
             }
             if let Some(new_target) = acquire_best_target(
-                &mut world.substrate.entities,
+                &world.substrate.entities,
                 &world.substrate.occupancy,
                 rules,
-                &mut world.interner,
+                &world.interner,
                 snap,
                 obj,
                 fog,
@@ -2234,6 +2249,7 @@ fn admit_attacker_fire<'r>(
                     overlay_registry,
                     alliances: fog.map(|fog_state| &fog_state.alliances),
                 },
+                Some(&*world),
             ) {
                 out.retarget_events.push((snap.stable_id, new_target));
             } else {
@@ -2246,10 +2262,10 @@ fn admit_attacker_fire<'r>(
                 return None;
             }
             if let Some(new_target) = acquire_best_target(
-                &mut world.substrate.entities,
+                &world.substrate.entities,
                 &world.substrate.occupancy,
                 rules,
-                &mut world.interner,
+                &world.interner,
                 snap,
                 obj,
                 fog,
@@ -2267,6 +2283,7 @@ fn admit_attacker_fire<'r>(
                     overlay_registry,
                     alliances: fog.map(|fog_state| &fog_state.alliances),
                 },
+                Some(&*world),
             ) {
                 out.retarget_events.push((snap.stable_id, new_target));
             } else {
@@ -2450,6 +2467,12 @@ fn admit_attacker_fire<'r>(
                 }
             }
             // Codes 1, 5, 6 and 8 (`0x0044B0DE`): the target is dropped.
+            // RESIDUAL: the rest of that arm (`+0x664 = 0`, the planning hook,
+            // Queue_Mission(Guard) and Commence, `0x0044B0DE..0x0044B148`, then
+            // the Gattling tail it falls into) and the `+0x148` count both
+            // tables bump on codes 0 and 3 (Unit `0x0073713A`, Building
+            // `0x0044B713`/`0x0044B23C`) are not ported; they belong with the
+            // Gattling and mission owners.
             fire_error::FireError::Ammo
             | fire_error::FireError::Illegal
             | fire_error::FireError::Cant

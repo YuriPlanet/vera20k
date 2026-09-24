@@ -136,6 +136,7 @@ impl Simulation {
                     overlay_registry,
                     alliances: Some(&self.fog.alliances),
                 },
+                Some(&*self),
             ) else {
                 continue;
             };
@@ -1196,8 +1197,9 @@ impl Simulation {
                 continue;
             };
 
-            // Resolve the weapon using the shared helper. None means no weapon
-            // can engage; combat tick will drop on its own weapon-select fail.
+            // Resolve the weapon using the shared helper. None means the
+            // selection refuses; the fire routine's GetFireError and the
+            // 16-frame check decide what happens to the target.
             let Some(weapon) = combat::pursuit_selected_weapon(
                 entity,
                 &attack.target,
@@ -1331,15 +1333,30 @@ impl Simulation {
                     // No-op if A* fails — pursuit retries next tick.
                 }
                 PursuitAction::ClearMovement { entity_id } => {
-                    if let Some(e) = self.substrate.entities.get_mut(entity_id) {
-                        // A prior null destination (for example Stop) still
-                        // leaves a paid Walk head active until its completion.
-                        if !e.locomotor.as_ref().is_some_and(|loco| {
-                            loco.kind == crate::rules::locomotor_type::LocomotorKind::Walk
-                                && loco.step_head().is_some()
-                        }) {
-                            e.movement_target = None;
-                        }
+                    let Some(e) = self.substrate.entities.get_mut(entity_id) else {
+                        continue;
+                    };
+                    // A prior null destination (for example Stop) still
+                    // leaves a paid Walk head active until its completion.
+                    if !e.locomotor.as_ref().is_some_and(|loco| {
+                        loco.kind == crate::rules::locomotor_type::LocomotorKind::Walk
+                            && loco.step_head().is_some()
+                    }) {
+                        e.movement_target = None;
+                    }
+                    // The range stop in `FootClass::Per_Cell_Process`
+                    // (`0x004D8920..0x004D8968`): under Rescue, Area Guard,
+                    // Attack or Hunt with an empty NavQueue it calls the class
+                    // SetDestination(NULL, 1), so a vehicle that stops to fire
+                    // holds no NavCom. GetFireError's NavCom tests (U7..U10)
+                    // would otherwise keep refusing a spark, flame, drain or
+                    // temporal weapon. Infantry take the Walk port's stop
+                    // (`finish_walk_pursuit_at_per_cell`).
+                    if e.category == EntityCategory::Unit
+                        && [21, 11, 1, 15].contains(&e.mission.effective().raw())
+                        && e.navigation.nav_queue.is_empty()
+                    {
+                        self.set_unit_null_destination(entity_id, Some(rules));
                     }
                 }
                 PursuitAction::DropTargetAndMovement { entity_id } => {

@@ -667,10 +667,9 @@ fn target_own_z_leptons(
 /// always answer, so 0x006F77B0 has no "could not build a source" path. Two of
 /// the three `None` arms are new with this function — a `CellRangefinding=`
 /// attacker whose own cell has no resolved terrain, and a high-flying attacker
-/// whose entity target has already left the store. Callers treat `None` as
-/// "no shot" and return BEFORE the range-failure bookkeeping they would
-/// otherwise run (`resolve_attacker_fire`'s `pending_infantry_updates` and idle
-/// switch), so such a shot is dropped one step earlier than a native refusal.
+/// whose entity target has already left the store. GetFireError's range
+/// question reads `None` as out of range (RANGE, 8), so a building drops its
+/// target and an infantry fire action ends where native would have measured.
 /// Trigger: an unresolved/off-map cell under a `CellRangefinding=` attacker, or
 /// a target removed between the attacker snapshot and the fire step in the same
 /// tick. Frequency: rare — the entity arm needs a same-tick removal, and the
@@ -777,14 +776,12 @@ fn cell_is_bridge(terrain: &ResolvedTerrainGrid, rx: u16, ry: u16) -> bool {
 }
 
 /// `TechnoClass::IsOnBridge_ForFiring @ 0x00703B10`, GetFireError T35's
-/// refusal of a Spawner launch: an object not on a deck stands in a bridge
-/// cell, or beside one whose span runs along that side. The own cell needs
-/// flag `0x100`; the neighbours at `g_DirectionOffsets` (`0x0089F688`,
-/// filled at `0x0049F2F0`) S and N need `0x100` with the axis bit `0x800`
-/// set, E and W need it clear. A missing cell (off the map) answers nothing.
+/// refusal of a Spawner launch: an object not on a deck (OnBridge `+0x8C`,
+/// VERA's `on_bridge`) in or beside a bridge cell
+/// ([`crate::map::bridge_facts::near_bridge`], shared with the render depth
+/// fudge). A missing cell (off the map) answers nothing.
 pub(crate) fn is_on_bridge_for_firing(entity: &GameEntity, terrain: &ResolvedTerrainGrid) -> bool {
-    use crate::map::bridge_facts::{BRIDGE_FLAG_DIRECTION_ZERO, BRIDGE_FLAG_STRUCTURAL};
-    if entity.bridge_occupancy.is_some() {
+    if entity.on_bridge {
         return false;
     }
     let (rx, ry) = (entity.position.rx, entity.position.ry);
@@ -796,17 +793,11 @@ pub(crate) fn is_on_bridge_for_firing(entity: &GameEntity, terrain: &ResolvedTer
     let Some(own) = flags(0, 0) else {
         return false;
     };
-    let span = |dx, dy, axis_set: bool| {
-        flags(dx, dy).is_some_and(|flags| {
-            flags & BRIDGE_FLAG_STRUCTURAL != 0
-                && (flags & BRIDGE_FLAG_DIRECTION_ZERO != 0) == axis_set
-        })
-    };
-    own & BRIDGE_FLAG_STRUCTURAL != 0
-        || span(0, 1, true)
-        || span(-1, 0, false)
-        || span(1, 0, false)
-        || span(0, -1, true)
+    crate::map::bridge_facts::near_bridge(
+        own,
+        [flags(0, 1), flags(0, -1), flags(1, 0), flags(-1, 0)],
+        crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL,
+    )
 }
 
 /// `TechnoClass::InRange` 0x006F7220, the block at 0x006F75FB reached once the
@@ -2214,7 +2205,7 @@ mod tests {
         // Diagonals are not asked.
         assert!(!is_on_bridge_for_firing(&unit, &with(&[((11, 11), span)])));
         let mut on_deck = unit.clone();
-        on_deck.bridge_occupancy = Some(crate::sim::components::BridgeOccupancy { deck_level: 4 });
+        on_deck.on_bridge = true;
         assert!(!is_on_bridge_for_firing(
             &on_deck,
             &with(&[((10, 10), BRIDGE_FLAG_STRUCTURAL)])

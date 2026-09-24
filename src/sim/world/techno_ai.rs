@@ -897,7 +897,7 @@ fn techno_common_steps(
 /// illegal target; this is where they let go of it.
 fn illegal_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     use crate::sim::combat::{TargetKind, combat_weapon, fire_error::FireError};
-    if sim.session.binary_frame % 16 != 0 {
+    if !sim.session.binary_frame.is_multiple_of(16) {
         return;
     }
     let Some(entity) = sim.substrate.entities.get(id) else {
@@ -1552,6 +1552,7 @@ fn passive_target_scan(
             overlay_registry: ctx.overlay_registry,
             alliances: Some(&sim.fog.alliances),
         },
+        Some(&*sim),
     );
     // Install the target only — no mission, no destination, and nothing fires
     // this tick. A unit that acquires while driving keeps driving, and an idle
@@ -3848,7 +3849,8 @@ mod tests {
     /// `TechnoClass::AI_Update @ 0x006FA472..0x006FA4CB`: an attack dog
     /// (`Natural=yes`) holding a Brute (`Unnatural=yes`) is refused (T14,
     /// ILLEGAL). Its own fire routine keeps the target; the sixteenth-frame
-    /// check lets go of it. A dog without `Natural=` keeps it.
+    /// check lets go of it. A dog without `Natural=` keeps it, unless the
+    /// Brute is cloaked where its house has no sensor (T17, CANT).
     #[test]
     fn a_natural_attacker_lets_go_of_an_unnatural_target_on_the_sixteenth_frame() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -3861,7 +3863,7 @@ mod tests {
              [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
         ))
         .expect("dog rules");
-        let held = |attacker: &str, frame: u32| {
+        let held = |attacker: &str, frame: u32, cloaked: bool| {
             let mut sim = Simulation::with_seed(0x6FA4);
             sim.session.binary_frame = frame;
             for (id, type_name, owner, rx) in
@@ -3875,6 +3877,11 @@ mod tests {
                 entity.owner = sim.interner.intern(owner);
                 entity.type_ref = sim.interner.intern(type_name);
                 sim.substrate.entities.insert(entity);
+            }
+            if cloaked {
+                let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0, 9);
+                cloak.state = 2;
+                sim.substrate.entities.get_mut(2).unwrap().cloak = Some(cloak);
             }
             let dog = sim.substrate.entities.get_mut(1).unwrap();
             dog.attack_target = Some(AttackTarget::new(2));
@@ -3890,9 +3897,14 @@ mod tests {
                 .attack_target
                 .is_some()
         };
-        assert!(held("DOG", 15), "the fire routine keeps an illegal target");
-        assert!(!held("DOG", 16), "the sixteenth frame drops it");
-        assert!(held("PUP", 16), "a dog that is not Natural keeps it");
+        assert!(
+            held("DOG", 15, false),
+            "the fire routine keeps an illegal target"
+        );
+        assert!(!held("DOG", 16, false), "the sixteenth frame drops it");
+        assert!(held("PUP", 16, false), "a dog that is not Natural keeps it");
+        assert!(held("PUP", 15, true), "a cloaked target is kept until then");
+        assert!(!held("PUP", 16, true), "and dropped on CANT");
     }
 
     #[test]

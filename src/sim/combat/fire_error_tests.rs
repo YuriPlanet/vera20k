@@ -547,8 +547,9 @@ fn retail_fire_error_flags() {
     assert!(!object("E1").natural);
     // T13: berserk units spare the Chaos Drone.
     assert!(object("CAOS").berserk_friendly);
-    // I6: only the Rocketeer turns in flight.
+    // I6: only the Cosmonaut turns in flight; the Rocketeer does not.
     assert!(object("LUNR").jumpjet_turn);
+    assert!(!object("JUMPJET").jumpjet_turn);
     // U8: only the Floating Disc's drain beam holds fire while moving.
     assert!(!rules.weapon("DiskDrain").unwrap().fire_while_moving);
     assert!(rules.weapon("DiskLaser").unwrap().fire_while_moving);

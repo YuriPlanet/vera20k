@@ -150,6 +150,7 @@ pub(crate) fn acquire_best_target_for_entity(
     mask: ScanMission,
     zone_grid: Option<&crate::sim::pathfinding::zone_map::ZoneGrid>,
     los: super::line_of_fire::LineOfFireInputs<'_>,
+    fire_world: Option<&crate::sim::world::Simulation>,
 ) -> Option<u64> {
     let entity = entities.get(attacker_id)?;
     // Aircraft with 0 ammo should not acquire new targets — need to reload.
@@ -216,6 +217,7 @@ pub(crate) fn acquire_best_target_for_entity(
         require_playfield_membership,
         zone_grid,
         los,
+        fire_world,
     )
 }
 
@@ -253,6 +255,7 @@ pub(crate) fn acquire_best_target(
     require_playfield_membership: bool,
     zone_grid: Option<&crate::sim::pathfinding::zone_map::ZoneGrid>,
     los: super::line_of_fire::LineOfFireInputs<'_>,
+    fire_world: Option<&crate::sim::world::Simulation>,
 ) -> Option<u64> {
     super::greatest_threat::greatest_threat(
         entities,
@@ -267,6 +270,7 @@ pub(crate) fn acquire_best_target(
         require_playfield_membership,
         zone_grid,
         los,
+        fire_world,
     )
 }
 
@@ -715,6 +719,7 @@ mod tests {
                 ScanMission::Guard,
                 None,
                 crate::sim::combat::line_of_fire::LineOfFireInputs::default(),
+                None,
             ),
             Some(2)
         );

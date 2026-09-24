@@ -999,8 +999,10 @@ pub(crate) fn can_fire_at_target(
 /// selection so pursuit and combat agree on "in range" at the boundary.
 ///
 /// Returns `None` if the selected weapon cannot legally fire at the target
-/// (GetFireError targeting subset). Pursuit treats `None` as "skip — combat
-/// tick will drop the attack on its own weapon-select fail."
+/// (the selection's GetFireError subset). Pursuit treats `None` as "skip":
+/// the fire routine asks GetFireError itself, and `TechnoClass::AI`'s
+/// 16-frame check drops an ILLEGAL or CANT target (a building drops it at
+/// once).
 pub(crate) fn pursuit_selected_weapon<'a>(
     entity: &GameEntity,
     target: &TargetKind,

@@ -44,16 +44,18 @@ Aircraft arm) as #451 (`1aa3041b`), mind control (CaptureManagerClass) as #457 (
 Chrono Legionnaire's erase (TemporalClass) as #474 (`80f4494a`), the house defeat (tracking
 counts, the gate, Blowup_All) as #476 (`3783b0ee`), the Crazy Ivan bomb (BombClass, its clock,
 sounds, cursors and clicks) as #488 (`7d4b970c`), the launch scatter, shrapnel and cluster trig
-through the native tables as #489 (`a97226a9`). GetFireError, the fire-legality owner, is on
-`feature/combat-fire-error`. A production
-sortie showed the Carrier wing never attacks: every manager pass re-issues each Hornet's attack
-from sub-state 0 (`assign_child_attack`), so the aircraft attack run never completes and the wing
-never lands. Research lanes finished 2026-09-24 (scratchpad, not tracked): the aircraft attack
-loop, Prism forwarding, Gattling spin-up and native GetFireError. Aircraft states 5..9 and Gattling
-both consume GetFireError codes, so GetFireError came first. Next, by player visibility: the
-aircraft attack loop (Mission_Attack 5..10) and the Carrier wing cycle, Gattling, the remaining
-GetFireError consumers (weapon selection without legality, the scan, retaliation, base-defence
-and cursor peeks), Prism forwarding, the Slave Miner's
+through the native tables as #489 (`a97226a9`). GetFireError, the fire-legality owner, with its
+scan probe (C20) and the pursuit range stop it needs, is on `feature/combat-fire-error`. A
+production sortie showed the Carrier wing never attacks: every manager pass re-issues each
+Hornet's attack from sub-state 0 (`assign_child_attack`), so the aircraft attack run never
+completes and the wing never lands. Research lanes finished 2026-09-24 (scratchpad, not tracked):
+the aircraft attack loop, Prism forwarding, Gattling spin-up and native GetFireError. Native
+oracles built 2026-09-24, not yet moved into `tools/`: `aircraft_states` (Mission_Attack
+`417FE0` whole, 368 rows over states 4..10) and four Gattling stems (stage, Unit fire, building
+attack, selection). Next, by player visibility: the aircraft attack loop (Mission_Attack 5..10)
+and the Carrier wing cycle, Gattling, the remaining GetFireError consumers (weapon selection
+without legality, C19's auto-target drop, retaliation, base-defence and cursor peeks), Prism
+forwarding, the Slave Miner's
 slave release at its death (`6B0AE0`), the other special warhead bodies (Magnetron and the rest),
 homing launch and steering through the native tables (HomingTrack `5B20F0`, the sidewinder sine),
 the ship sink, the Foot
@@ -709,51 +711,70 @@ owner):
 - Before: VERA had no producer of the code. Fire admission spread about twenty of the base's tests
   over early returns in an order native contradicts (range and the bridge deck before ROF, ammo,
   cloak and legality); weapon selection refused illegal targets and dropped them at once; a
-  pre-scan skipped low-power, empty-garrison and teleporting firers. Missing outright: a unit
-  warping in held no fire (T3: VERA shot during a Chronosphere or Legionnaire warp-in); Natural
-  attackers spare Unnatural targets (T14: dogs bit Brutes and Yuri Prime); a computer house spares
-  the Iron Curtain (T16); a drained defence stops (B2); a building drops a target that left its
-  range (C8); a docked miner holds fire (U5); a moving Floating Disc does not drain (U8, whose
-  FireWhileMoving default was wrong); bunkered tanks against short weapons (T24); deploying units
-  (T25); gas against bunkered or psionic-immune targets (T26/T27); the other slot's live effect
-  (T37); HunterSeeker (T49); the medic and repair healer rules (U6/I2); TechnoClass::AI's 16-frame
-  drop. The cloak test (T17) read the weapon's range where native reads its damage value.
+  pre-scan skipped low-power, empty-garrison and teleporting firers; the passive scan's probe
+  (Evaluate_Candidate `6F7CE8`) knew only the Temporal arm. Missing outright: a unit warping in
+  held no fire (T3); Natural attackers spare Unnatural targets (T14: dogs bit Brutes and Yuri
+  Prime); a computer house spares the Iron Curtain (T16); a drained defence stops (B2); a building
+  drops a target that left its range (C8); a docked miner holds fire (U5); a moving Floating Disc
+  does not drain (U8, whose FireWhileMoving default was wrong); bunkered tanks against short
+  weapons (T24); deploying units (T25); gas against bunkered or psionic-immune targets (T26/T27);
+  the other slot's live effect (T37); HunterSeeker (T49); the medic and repair healer rules
+  (U6/I2); TechnoClass::AI's 16-frame drop. The cloak test (T17) read the weapon's range where
+  native reads its damage value.
 - Now: `get_fire_error` runs the class prefix, the base's 61 tests and the class suffix in native
   order. `FireSubject` supplies the facts and answers the questions through their owners (InRange,
-  the naval selector, cells, sensors, alliances, CanInfect, CanCapture, Is_Moving_Now;
-  Is_Operational_For_Output is now one predicate, `power_system::is_operational_for_output`, shared
-  with the gap generator; `IsOnBridge_ForFiring` moved into sim as
-  `in_range::is_on_bridge_for_firing`). Admission asks it once where each class's fire routine
-  asks it and applies that routine's table: Unit `Fire_At_Target` (2 turns a turretless hull, 5
-  applies the heal rule, 9 surfaces in range), Infantry blocks 1 and 2 (5 heal rule, 9 surfaces; a
-  refusal on the fire frame ends the action), Building `Mission_Attack` (1/5/6/8 drop the target, 2
-  the voxel retry, 9 surfaces), Aircraft state 4 (9 surfaces). Selection in the fire path is
-  SelectWeapon alone. The 16-frame check (`6FA472..6FA4CB`) drops an ILLEGAL or CANT target. Keys
-  ported: Natural, Pushy, BerserkFriendly, MobileFire (constructor yes), HunterSeeker, NonVehicle
-  (UnitType), JumpJetTurn (InfantryType), EMPulseCannon (BuildingType); FireWhileMoving defaults to
-  yes (constructor `771DE6`). Deleted: `fire_decision.rs`, the admission's inline gates,
-  `fire_error_on_bridge_mismatch`, the pre-scan's power, garrison and teleport terms.
+  the naval selector, GetVisualState `703860` exactly, cells, sensors, directional alliances,
+  CanInfect, CanCapture, Is_Moving_Now). Is_Operational_For_Output is one predicate,
+  `power_system::is_operational_for_output`, shared with the gap generator; the five-cell
+  `IsOnBridge_ForFiring` test (`703B10`, and `703CC0`) is one predicate,
+  `map::bridge_facts::near_bridge`, shared by sim and the render depth fudge. Consumers: fire
+  admission asks it once where each class's fire routine asks it and applies that routine's table
+  (Unit `Fire_At_Target`: 2 turns a turretless hull, 5 applies the heal rule, 9 surfaces in range;
+  Infantry blocks 1 and 2: 5 heal rule, 9 surfaces, a refusal on the fire frame ends the action;
+  Building `Mission_Attack`: 1/5/6/8 drop the target, 2 the voxel retry, 9 surfaces; Aircraft
+  state 4: 9 surfaces). TechnoClass::AI's 16-frame check (C21, `6FA472..6FA4CB`) drops an ILLEGAL
+  or CANT target. Evaluate_Candidate's probe (C20) rejects an ILLEGAL candidate, so the scan never
+  picks a target the fire routine refuses (no acquire, refuse, drop cycle). The pursuit's halt
+  performs the range stop's SetDestination(NULL, 1) (`4D8968`) for a Unit, so a vehicle stopped to
+  fire holds no NavCom (GetFireError's U7..U10 read NavCom). Selection in the fire path is
+  SelectWeapon, except two arms that still filter (residuals). Keys ported: Natural, Pushy,
+  BerserkFriendly, MobileFire (constructor yes), HunterSeeker, NonVehicle (UnitType), JumpJetTurn
+  (InfantryType), EMPulseCannon (BuildingType); FireWhileMoving defaults to yes (constructor
+  `771DE6`). Deleted: `fire_decision.rs`, the admission's inline gates,
+  `fire_error_on_bridge_mismatch`, `fire_requires_uncloaking` (a second T48), the pre-scan's
+  power, garrison and teleport terms, the scan's Temporal-only probe.
 - Native execution: `tools/spatial_oracle/fire_error.py` runs the four class entries natively
   (1191 rows: each test's deciding row and just-missed twin, the boundaries and precedence pairs;
   codes and the ordered query log). `fire_error::tests::original_fire_error_rows` replays every
   row, all matching. Parity demonstrated for the composition and order within those inputs; the
-  answered questions keep their own evidence. Reading only: the consumer tables and the body of
-  IsOnBridge_ForFiring (the render and sim ports agree).
-- Production regressions: `a_drained_defence_drops_its_target_and_holds_fire`,
-  `a_building_drops_a_target_out_of_range_but_keeps_it_while_reloading` and
-  `a_warping_in_unit_holds_fire_until_it_lands` (each fails on the old admission),
-  `a_natural_attacker_lets_go_of_an_unnatural_target_on_the_sixteenth_frame`,
-  `a_spawner_beside_a_span_along_that_side_is_on_bridge_for_firing`; retail
-  `retail_fire_error_flags` (the stock types that carry each key).
+  answered questions keep their own evidence. Reading only: the consumer tables, the range stop,
+  the probe site, GetVisualState and IsOnBridge_ForFiring.
+- Production regressions (`fire_error_world_tests`, `combat_pursuit_tests`, `techno_ai`):
+  the drained defence, the out-of-range building kept while reloading, the warp-in, the unpowered
+  defence (B5), the empty garrison (B1), the relocating unit (T5), the repair weapon at a healthy
+  vehicle (U6 and case 5), the bridge deck (T58, OnBridge `+0x8C`), the spawner under a bridge
+  (T35), the Natural scanner (C20), the spark weapon after the pursuit halt (U9), the 16-frame
+  drop on ILLEGAL and on CANT; `bsub_cruise_launcher_uncloaks_without_same_tick_fire_then_retry_fires`
+  (Unit case 9); retail `retail_fire_error_flags`.
+- Critic: one fresh pass, no must-fix. Fixed: the OnBridge facts (F1), the scan cycle (F2, by
+  porting C20), the selection claim (F3, residuals below), the missing regressions (F4), stale
+  comments (F5), the duplicated bridge test (F6), the NavCom halt it suspected, and minors M1, M3,
+  M4, M5. Follow-ups: M2 (VERA writes `current_weapon_index` from fire selection; native `+0x138`
+  has two writers, the constructor and SetGunnerWeapon `70DCA5`), M6 (duplicated garrison
+  occupant and range reads), M7 (`is_building_powered` beside `is_operational_for_output`), M8
+  (garrison scan +1 ring churn).
 - Residuals: facts with no VERA producer hold the constructor value (listed in `fire_error.rs`:
   the Magnetron hold T4/T11/T28..T31/T42, Robot Control T6, sinking T7/T57, the Chronosphere latch
-  T15, balloon docking T18, paradrop falling T19, EMP T20, particle systems T37/T46 but the Sonic
-  wave; dormant keys T44/U1/U3/U4/U7/I3; B3). Fixed answers: the target layer (T39), the deploy
-  cell (U4), Can_Fire (U13/I10), GetVisualState (fully cloaked reads 5). Consumers not yet driven by
-  the code: the Unit case 6 spawn clear (`6B7BB0`), gattling (the C14 and C8 tails), aircraft
-  states 5..10 (C2..C6), the building face arms (VERA's turret sweep turns every frame), the SAM
-  path (C7), and the peeks that keep their own subsets (selection legality for pursuit, threat and
-  can-fire; C18 cursor, C19, C20, C22/C23, C24).
+  T15, balloon docking T18, drop-in falling T19, EMP T20, Fire's own particle systems T37/T46 (the
+  IFV engineer's RepairBullet spark system among them), dormant keys T44/U1/U3/U4/U7/I3, B3, B7's
+  upgrade turret, A1's paradrop payload, U6's building vehicle). Fixed answers: the target layer
+  (T39), the deploy cell (U4), Can_Fire (U13/I10). Two selection arms still filter before
+  GetFireError: the delayed building shot (no effect) and garrison fire by AA/AG (a garrison drops
+  a landed aircraft native would shoot). Consumers not yet driven by the code: C19 (the
+  auto-target drop on 5/8 and its RandomRanged draw), C18 cursor, C22/C23 base defence, C24
+  retaliation, the Unit case 6 spawn clear (`6B7BB0`), Gattling (the C14 and C8 tails), the
+  building drop arm's tail and the `+0x148` counts, aircraft states 5..10 (C2..C6), the SAM path
+  (C7), and weapon selection's own legality subset for pursuit and can-fire.
 
 ## Native evidence inventory
 
@@ -891,8 +912,10 @@ All saved and read back; no byte or prototype edits. One boundary repair (below,
   (the two shrapnel branches).
 - GetFireError: created `51C8B0` InfantryClass__GetFireError and `740FD0` UnitClass__GetFireError
   (no functions were defined), renamed `6F3970` TechnoClass__GetWeaponDamageValue (was
-  GetWeaponRange); plates `6FC0B0`, the four overrides, `6F3970`, `703B10`; comments `6FC0EE`
-  (+0x2AC is the Magnetron's LocomotorTarget, not DeployedFrom), `6FC27C`, `6FC720`, `6FA472`.
+  GetWeaponRange); plates `6FC0B0`, the four overrides, `6F3970`, `703B10`, `703860`; comments
+  `6FC0EE` (+0x2AC is the Magnetron's LocomotorTarget, not DeployedFrom), `6FC27C`, `6FC720`,
+  `6FA472`, `6FCDCC`, `6FCE27`, `4D8968` (the range stop), `6F7CE8` (the scan probe), `6FF1AD`
+  (Fire's spark system).
 - Comments, other: `4143EB`, `65E6BE`, `692766`, `41CD6E`, `4CDBE1`, `4CDC37`, `4CDCFB`, `566332`,
   `6EA089`, `6EC300`, `6E53A0`, `726C9C`, `71F4E0`, `55AFB0`, `481670`, `518C56`, `51D200`,
   `51D212`, Teleport `718080`, Foot `4DDC60` (EOL; no function), Foot `4DB800`
@@ -1012,9 +1035,9 @@ Whole-combat gaps (plan list plus review coverage top 10):
 - Special warheads: 8 bodies no-op (`projectile.rs:856`); Parasite ported (squid residual), mind
   control ported (Psychic Dominator residual), Temporal ported (teleport-writer freeze residual).
 - Found by the Temporal review, not Temporal defects: VERA's Stop assigns a Stop mission the native
-  IDLE event never assigns (`4C74CB`), which every Attack idle exit after Stop depends on;
-  Evaluate_Candidate lacks the rest of its GetFireError probe (`6F7CE8`); the null-destination
-  helper never clears the NavQueue (`741970` mode 1); production ignores FindFactory's online
+  IDLE event never assigns (`4C74CB`), which every Attack idle exit after Stop depends on; the
+  null-destination helper never clears the NavQueue (`741970` mode 1); production ignores
+  FindFactory's online
   argument (`5F7900`), which the power toggle and triggers (GoOffline `452360`) also clear.
 - Open-topped passenger fire: VERA fires a passenger's weapon from the transport, so a Chrono
   Legionnaire or Yuri in a Battle Fortress has no TemporalClass or CaptureManager behind the shot;

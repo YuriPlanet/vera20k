@@ -1204,6 +1204,7 @@ fn only_a_temporal_scanner_acquires_a_warped_enemy() {
             crate::sim::combat::ScanMission::Guard,
             None,
             crate::sim::combat::line_of_fire::LineOfFireInputs::default(),
+            Some(sim),
         )
     };
     assert_eq!(acquire(&sim, gi), Some(tank), "the control");

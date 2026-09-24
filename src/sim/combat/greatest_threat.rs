@@ -666,6 +666,10 @@ struct ScanContext<'a> {
     /// ring walk and the aircraft pre-walk push the `NullCoord` sentinel
     /// (`PUSH 0xb0ea90` at `0x006F929A` and `0x006F9C18`).
     threat_reference: ThreatReference,
+    /// The world GetFireError reads for Evaluate_Candidate's probe
+    /// (`0x006F7CE8`). Every production caller supplies it; `None` only in
+    /// unit tests of the walk and the score, which then skip the probe.
+    fire_world: Option<&'a crate::sim::world::Simulation>,
 }
 
 impl ScanContext<'_> {
@@ -797,6 +801,7 @@ pub(crate) fn greatest_threat(
     require_playfield_membership: bool,
     zone_grid: Option<&ZoneGrid>,
     los: crate::sim::combat::line_of_fire::LineOfFireInputs<'_>,
+    fire_world: Option<&crate::sim::world::Simulation>,
 ) -> Option<u64> {
     let range = match scan_range_override {
         Some(cells) => ScanRange::Hard(cells),
@@ -868,6 +873,7 @@ pub(crate) fn greatest_threat(
         } else {
             ThreatReference::NullCoord
         },
+        fire_world,
     };
 
     // `TEST AL,0x3 ; JZ 0x006F9B6E`. Mask 0 takes the flat topology; every
@@ -1156,18 +1162,7 @@ fn evaluate_candidate(ctx: &ScanContext<'_>, candidate: &GameEntity) -> Option<i
         &scanner_facts,
         &candidate_facts,
     )?;
-    // G2b — the GetFireError probe (`0x006F7CDB..0x006F7CF1`, taken because
-    // no represented flag word carries `0x18200`) rejects FIRE_ILLEGAL. Only
-    // its Temporal arm is represented: a candidate being warped out is illegal
-    // to a weapon whose warhead is not `Temporal=` (`0x006FC5D5..0x006FC600`).
-    // RESIDUAL: the probe's other arms are not ported, including those before
-    // this one that answer 3 or 6 (`vt+0x37C`, weapon `+0x14F`) and so would
-    // let a warped candidate through. Trigger: those attacker states during a
-    // warp. Effect: VERA rejects the candidate where native scores it and
-    // drops it at fire admission.
-    if candidate.is_warped_out() && !selected.warhead.temporal {
-        return None;
-    }
+    // G2b, the GetFireError probe, runs after the last gate below.
     // G3 sits between selection and the verses gate. The rest of the
     // conditional native +3BC FIRE_ILLEGAL probe and the null-weapon
     // continuation remain separate gaps in the existing early ladder; this
@@ -1472,6 +1467,19 @@ fn evaluate_candidate(ctx: &ScanContext<'_>, candidate: &GameEntity) -> Option<i
     //   `ResolvedTerrainGrid` into the scan, which is terrain plumbing rather
     //   than targeting.
 
+    // G2b — the GetFireError probe (`0x006F7CDB..0x006F7CF1`): vt+0x3BC, the
+    // function with check_range 0, against this candidate with the slot
+    // SelectWeapon chose (`0x006F7CBE`). ILLEGAL rejects; every other code
+    // scores on. Native asks it right after SelectWeapon; every gate of this
+    // ladder is a pure predicate, so asking it after the cheaper ones rejects
+    // the same candidates. The scan methods that skip it (`0x18200`: capture,
+    // occupiable and tech buildings) have no represented caller.
+    if let Some(world) = ctx.fire_world
+        && probe_is_illegal(ctx, world, candidate, selected.index)
+    {
+        return None;
+    }
+
     // G28/P9 — truncate first, then Normal VHPScan, then final acceptance.
     // Native's additional house/target/zone modifiers at6F875F..6F8928 remain
     // unrepresented; they belong after this VHP transform and before finish_score.
@@ -1494,6 +1502,39 @@ fn evaluate_candidate(ctx: &ScanContext<'_>, candidate: &GameEntity) -> Option<i
         score,
     );
     finish_score(score)
+}
+
+/// Evaluate_Candidate's GetFireError probe: the scanner's own code against
+/// `candidate` with `weapon_index`, range unasked.
+fn probe_is_illegal(
+    ctx: &ScanContext<'_>,
+    world: &crate::sim::world::Simulation,
+    candidate: &GameEntity,
+    weapon_index: i32,
+) -> bool {
+    let Some(firer) = world.substrate.entities.get(ctx.attacker.stable_id) else {
+        return false;
+    };
+    let target = super::TargetKind::Entity(candidate.stable_id());
+    super::fire_error_world::FireSubject {
+        world,
+        rules: ctx.rules,
+        overlay_registry: ctx.los.overlay_registry,
+        fog: ctx.fog,
+        firer,
+        obj: ctx.attacker_obj,
+        target: Some(target),
+        weapon_index,
+        garrison: super::fire_error_world::garrison_weapon(
+            world,
+            ctx.rules,
+            firer,
+            ctx.attacker_obj,
+            target,
+        ),
+    }
+    .fire_error(false)
+        == super::fire_error::FireError::Illegal
 }
 
 /// `BuildingTypeClass::Is1x1WithUndeploy @ 0x00465D40` (reached through the
@@ -1656,6 +1697,7 @@ mod tests {
                 super::super::ScanMission::Guard,
                 None,
                 crate::sim::combat::line_of_fire::LineOfFireInputs::default(),
+                None,
             )
         };
         assert_eq!(acquire(&occupancy), Some(2));
@@ -1761,6 +1803,7 @@ mod tests {
                         super::super::ScanMission::Guard,
                         None,
                         crate::sim::combat::line_of_fire::LineOfFireInputs::default(),
+                        Some(sim),
                     )
                 };
                 assert_eq!(
@@ -1875,6 +1918,7 @@ mod tests {
             mask,
             zones,
             crate::sim::combat::line_of_fire::LineOfFireInputs::default(),
+            None,
         )
     }
 
