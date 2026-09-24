@@ -121,7 +121,6 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
     assert!(emit.projectile_spawns.is_empty());
     assert!(emit.current_weapon_updates.is_empty());
     assert_eq!(entities.get(1).unwrap().rearm_timer, rearm_before);
-    assert!(emit.retarget_events.is_empty());
     assert!(emit.remove_attack.is_empty());
     assert_eq!(rng.logical_state(), rng_before);
     assert_eq!(entities.get(1).unwrap().current_weapon_index, 1);
@@ -756,6 +755,8 @@ fn gsi_04_05_building_attack_frame_remains_live_after_world_receiver_dispatch() 
 fn make_infantry_entity(id: u64, type_ref: &str, rx: u16, ry: u16, hp: i32) -> GameEntity {
     let mut e = make_entity(id, type_ref, rx, ry, hp);
     e.category = EntityCategory::Infantry;
+    e.mission_leaf =
+        crate::sim::mission::leaf::MissionLeafState::for_entity_category(EntityCategory::Infantry);
     e.is_voxel = false;
     e.animation = Some(Animation::new(SequenceKind::Stand));
     e.infantry = Some(crate::sim::game_entity::InfantryRuntime::new());
@@ -2365,60 +2366,6 @@ fn retaliation_gate_world(
     (sim, rules)
 }
 
-/// Puts `member` in a one-member team whose TeamType has `Suicide=suicide`.
-fn join_retaliation_team(sim: &mut crate::sim::world::Simulation, member: u64, suicide: bool) {
-    use crate::rules::object_type::ObjectCategory;
-    use crate::rules::team_ai_ini::TeamAiDefinitionSource;
-    use crate::sim::team_script_vm::{
-        TeamMemberTypeIdentity, TeamScriptDefinition, TeamScriptMember, TeamTaskForceDefinition,
-        TeamTaskForceEntry, TeamTypeDefinition,
-    };
-    let owner = sim.substrate.entities.get(member).unwrap().owner();
-    let member_type = TeamMemberTypeIdentity {
-        category: ObjectCategory::Vehicle,
-        id: sim.substrate.entities.get(member).unwrap().type_ref(),
-    };
-    let script_id = sim.interner.intern("GATE_SCRIPT");
-    let task_force_id = sim.interner.intern("GATE_TASK_FORCE");
-    let team_type_id = sim.interner.intern("GATE_TEAM");
-    let teams = &mut sim.team_script_vm;
-    teams.register_script(TeamScriptDefinition {
-        id: script_id,
-        source: TeamAiDefinitionSource::FixedAimd,
-        actions: Vec::new(),
-    });
-    teams.register_task_force(TeamTaskForceDefinition {
-        id: task_force_id,
-        source: TeamAiDefinitionSource::FixedAimd,
-        group: -1,
-        entries: vec![TeamTaskForceEntry {
-            member_type,
-            count: 1,
-        }],
-    });
-    teams.register_team_type(TeamTypeDefinition {
-        id: team_type_id,
-        script_id,
-        task_force_id,
-        priority: 0,
-        is_base_defense: false,
-        suicide,
-        combined_movement_zone: crate::rules::locomotor_type::MovementZone::Normal,
-        base_zone_relation_enforced: true,
-        transport_crossing_required: false,
-    });
-    teams.create_team_from_type(
-        owner,
-        team_type_id,
-        &[TeamScriptMember {
-            entity_id: member,
-            member_type,
-        }],
-        None,
-        0,
-    );
-}
-
 /// `ShouldRetaliate @ 0x007087C0`'s refusals that read world state. Each case
 /// changes one fact of a world whose baseline retaliates.
 #[test]
@@ -2497,7 +2444,12 @@ fn gsi_04_07_should_retaliate_world_refusals() {
     // `0x00708A2C..0x00708A54`: a member of a `Suicide=` team.
     for suicide in [false, true] {
         let (mut sim, rules) = tank(false);
-        join_retaliation_team(&mut sim, GATE_VICTIM, suicide);
+        crate::sim::team_script_vm::join_one_member_team_for_test(
+            &mut sim,
+            GATE_VICTIM,
+            suicide,
+            false,
+        );
         assert_eq!(
             should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE),
             !suicide,
@@ -5743,19 +5695,25 @@ fn test_cell_distance() {
     assert!((cell_distance(0, 0, 1, 0) - 1.0).abs() < f32::EPSILON);
 }
 
+/// No fire path reads shroud or fog: GetFireError `0x006FC0B0`, the class
+/// fire routines and Greatest_Threat never call `IsShrouded @ 0x00586360`,
+/// and `IsFogged @ 0x005865E0` is a constant false. A target on a cell its
+/// attacker's house cannot see is shot like any other.
 #[test]
-fn test_tick_combat_visibility_blocks_fire() {
+fn an_unseen_target_is_fired_at() {
     let rules: RuleSet = test_rules();
     let mut store = EntityStore::new();
     store.insert(make_entity_owned(1, "MTNK", 5, 5, 300, "Americans"));
     store.insert(make_entity_owned(2, "MTNK", 8, 5, 300, "Soviet"));
     let mut interner = test_interner();
     issue_attack_command(&mut store, 1, 2, None, &interner);
+    align_attackers_to_targets(&mut store, &rules, &interner);
 
     let fog = FogState::default();
+    assert!(!fog.is_cell_visible(test_intern("Americans"), 8, 5));
     let mut occupancy = mark_fixture_entities(&mut store);
     let mut main_rng = SimRng::new(1);
-    tick_combat_with_fog(
+    let result = tick_combat_with_fog(
         &mut store,
         &mut occupancy,
         &rules,
@@ -5774,193 +5732,8 @@ fn test_tick_combat_visibility_blocks_fire() {
         &mut main_rng,
     );
 
-    let target_health = store.get(2).expect("target alive").health.current;
-    assert_eq!(target_health, 300, "Hidden target should not be damaged");
-    // Acquisition has no shroud gate. `TechnoClass::Evaluate_Candidate @
-    // 0x006F7CA0` was read end to end for GSI-08.01: its only visibility gates
-    // are the cloak/sensor arm at `0x006F7DA9` and the "discovered by the local
-    // player" arm at `0x006F81B8`, and the latter is guarded by `g_GameMode ==
-    // 0` — campaign only; a skirmish runs mode 5. So the re-acquire that the
-    // invisible-target branch triggers hands the attacker the SAME enemy back,
-    // and the shroud is enforced where native enforces it, at fire time.
-    assert!(
-        matches!(
-            store
-                .get(1)
-                .unwrap()
-                .attack_target
-                .as_ref()
-                .map(|t| t.target),
-            Some(crate::sim::combat::TargetKind::Entity(2))
-        ),
-        "the scan re-picks the hidden enemy; only firing is blocked"
-    );
-}
-
-#[derive(Clone, Copy)]
-enum PlayfieldRetargetBranch {
-    DeadOrMissing,
-    NewlyFriendly,
-    Invisible,
-}
-
-fn run_playfield_retarget_branch(
-    branch: PlayfieldRetargetBranch,
-    require_playfield_membership: bool,
-) -> u64 {
-    let rules = test_rules();
-    let mut store = EntityStore::new();
-    store.insert(make_entity_owned(10, "MTNK", 5, 5, 300, "Americans"));
-    let (current_hp, current_owner) = match branch {
-        PlayfieldRetargetBranch::DeadOrMissing => (0, "Soviet"),
-        PlayfieldRetargetBranch::NewlyFriendly => (300, "Allies"),
-        PlayfieldRetargetBranch::Invisible => (300, "Soviet"),
-    };
-    store.insert(make_entity_owned(
-        99,
-        "MTNK",
-        8,
-        5,
-        current_hp,
-        current_owner,
-    ));
-    let mut false_candidate = make_entity_owned(20, "MTNK", 6, 5, 300, "Soviet");
-    false_candidate.in_playfield = false;
-    store.insert(false_candidate);
-    let mut true_candidate = make_entity_owned(30, "MTNK", 7, 5, 300, "Soviet");
-    true_candidate.in_playfield = true;
-    store.insert(true_candidate);
-
-    let mut interner = test_interner();
-    issue_attack_command(&mut store, 10, 99, None, &interner);
-    let mut fog = FogState::default();
-    let american = test_intern("Americans");
-    fog.mark_visible_for_owner(american, 6, 5);
-    fog.mark_visible_for_owner(american, 7, 5);
-    if !matches!(branch, PlayfieldRetargetBranch::Invisible) {
-        fog.mark_visible_for_owner(american, 8, 5);
-    }
-    if matches!(branch, PlayfieldRetargetBranch::NewlyFriendly) {
-        fog.alliances
-            .entry("AMERICANS".to_string())
-            .or_default()
-            .insert("ALLIES".to_string());
-        fog.alliances
-            .entry("ALLIES".to_string())
-            .or_default()
-            .insert("AMERICANS".to_string());
-    }
-
-    let mut occupancy = mark_fixture_entities(&mut store);
-    let mut scenario_rng = SimRng::new(1);
-    if require_playfield_membership {
-        let handles = Some(crate::sim::type_handle_table::ResolvedRuleHandles::resolve(
-            &rules,
-            &mut interner,
-        ));
-        let mut main_rng = SimRng::new(0);
-        tick_combat_with_fog_and_main_rng_with_terrain_area(
-            &mut store,
-            &mut occupancy,
-            &rules,
-            &mut interner,
-            handles,
-            Some(&fog),
-            &BTreeMap::new(),
-            &mut BTreeMap::new(),
-            &[],
-            &HouseAllianceMap::new(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            false,
-            true,
-            0,
-            100,
-            0,
-            &[],
-            &BTreeSet::new(),
-            &BTreeSet::new(),
-            &[],
-            &[],
-            None,
-            &[],
-            &mut scenario_rng,
-            &mut main_rng,
-            None,
-            None,
-        );
-    } else {
-        // Public/headless adapter deliberately has no live MapClass authority.
-        tick_combat_with_fog(
-            &mut store,
-            &mut occupancy,
-            &rules,
-            &mut interner,
-            Some(&fog),
-            &BTreeMap::new(),
-            None,
-            None,
-            None,
-            None,
-            0,
-            100,
-            0,
-            &[],
-            None,
-            &mut scenario_rng,
-        );
-    }
-
-    match store
-        .get(10)
-        .and_then(|entity| entity.attack_target.as_ref())
-        .map(|attack| attack.target)
-        .expect("attacker retargets")
-    {
-        TargetKind::Entity(stable_id) => stable_id,
-        TargetKind::Cell(_, _) => panic!("retarget must stay object-backed"),
-    }
-}
-
-#[test]
-fn techno_playfield_dead_target_reacquisition_rejects_false_candidate() {
-    assert_eq!(
-        run_playfield_retarget_branch(PlayfieldRetargetBranch::DeadOrMissing, false),
-        20,
-        "headless adapter preserves candidate admission without MapClass authority"
-    );
-    assert_eq!(
-        run_playfield_retarget_branch(PlayfieldRetargetBranch::DeadOrMissing, true),
-        30,
-        "Evaluate_Candidate 0x006F7DB0 rejects stored +0x3D5=false"
-    );
-}
-
-#[test]
-fn techno_playfield_newly_friendly_reacquisition_rejects_false_candidate() {
-    assert_eq!(
-        run_playfield_retarget_branch(PlayfieldRetargetBranch::NewlyFriendly, false),
-        20
-    );
-    assert_eq!(
-        run_playfield_retarget_branch(PlayfieldRetargetBranch::NewlyFriendly, true),
-        30
-    );
-}
-
-#[test]
-fn techno_playfield_invisible_target_reacquisition_rejects_false_candidate() {
-    assert_eq!(
-        run_playfield_retarget_branch(PlayfieldRetargetBranch::Invisible, false),
-        20
-    );
-    assert_eq!(
-        run_playfield_retarget_branch(PlayfieldRetargetBranch::Invisible, true),
-        30
-    );
+    assert!(!result.consequences.fire_events().is_empty());
+    assert!(store.get(2).expect("target alive").health.current < 300);
 }
 
 /// Two identical enemies share one cell. `TechnoClass::Scan_Cell_For_Target @
@@ -5979,40 +5752,32 @@ fn gsi_08_01_a_shared_cell_offers_only_its_list_head() {
     store.insert(make_entity_owned(99, "MTNK", 6, 5, 0, "Soviet")); // dead
     store.insert(make_entity_owned(20, "MTNK", 7, 5, 300, "Soviet"));
     store.insert(make_entity_owned(3, "MTNK", 7, 5, 300, "Soviet"));
-    let mut interner = test_interner();
-    issue_attack_command(&mut store, 10, 99, None, &interner);
+    let interner = test_interner();
 
     let mut fog = FogState::default();
     fog.mark_visible_for_owner(test_intern("Americans"), 7, 5);
-    let mut occupancy = mark_fixture_entities(&mut store);
-    let mut main_rng = SimRng::new(1);
-    tick_combat_with_fog(
-        &mut store,
-        &mut occupancy,
+    let occupancy = mark_fixture_entities(&mut store);
+    // `TechnoClass::Greatest_Threat @ 0x006F8DF0` with the passive mask.
+    let pick = acquire_best_target_for_entity(
+        &store,
+        &occupancy,
         &rules,
-        &mut interner,
+        &interner,
+        10,
         Some(&fog),
-        &BTreeMap::<InternedId, PowerState>::new(),
         None,
+        false,
+        crate::sim::combat::ScanMission::Guard,
         None,
+        crate::sim::combat::line_of_fire::LineOfFireInputs {
+            overlay_grid: None,
+            overlay_registry: None,
+            alliances: Some(&fog.alliances),
+        },
         None,
-        None,
-        0u64,
-        100,
-        0u32,
-        &[],
-        None,
-        &mut main_rng,
     );
-
-    let attack = store
-        .get(10)
-        .unwrap()
-        .attack_target
-        .as_ref()
-        .expect("attacker should retarget");
     assert!(
-        matches!(attack.target, crate::sim::combat::TargetKind::Entity(20)),
+        pick == Some(20),
         "the cell's list head is the candidate, not the lower stable id"
     );
 }
@@ -6027,44 +5792,36 @@ fn gsi_08_01_unarmed_building_loses_to_a_tank_at_equal_distance() {
     building.category = crate::map::entities::EntityCategory::Structure;
     store.insert(building);
     store.insert(make_entity_owned(200, "MTNK", 7, 5, 300, "Soviet"));
-    let mut interner = test_interner();
-    issue_attack_command(&mut store, 10, 99, None, &interner);
+    let interner = test_interner();
 
     let mut fog = FogState::default();
     fog.mark_visible_for_owner(test_intern("Americans"), 7, 5);
-    let mut occupancy = mark_fixture_entities(&mut store);
-    let mut main_rng = SimRng::new(1);
-    tick_combat_with_fog(
-        &mut store,
-        &mut occupancy,
+    let occupancy = mark_fixture_entities(&mut store);
+    // `TechnoClass::Greatest_Threat @ 0x006F8DF0` with the passive mask.
+    let pick = acquire_best_target_for_entity(
+        &store,
+        &occupancy,
         &rules,
-        &mut interner,
+        &interner,
+        10,
         Some(&fog),
-        &BTreeMap::<InternedId, PowerState>::new(),
         None,
+        false,
+        crate::sim::combat::ScanMission::Guard,
         None,
+        crate::sim::combat::line_of_fire::LineOfFireInputs {
+            overlay_grid: None,
+            overlay_registry: None,
+            alliances: Some(&fog.alliances),
+        },
         None,
-        None,
-        0u64,
-        100,
-        0u32,
-        &[],
-        None,
-        &mut main_rng,
     );
-
-    let attack = store
-        .get(10)
-        .unwrap()
-        .attack_target
-        .as_ref()
-        .expect("attacker should retarget");
     // Not a "threat class" tie-break — gamemd has none. `[GAPOWR]` carries no
     // weapon and `ThreatPosed=0`, so the human-attacker building gate at
     // `TechnoClass::Evaluate_Candidate @ 0x006F85AB` refuses it outright and
     // the tank is the only candidate the cell can offer that survives.
     assert!(
-        matches!(attack.target, crate::sim::combat::TargetKind::Entity(200)),
+        pick == Some(200),
         "an unarmed enemy building is not a legal passive target for a human unit"
     );
 }
@@ -10866,66 +10623,6 @@ fn gsi_08_33_direct_rocker_only_claims_a_vehicle_target() {
         1,
         "infantry falls through 0x004697b2 to the next test, so damage runs"
     );
-}
-
-/// The real receiver checks visible directly, so newly concealed transient
-/// mapping must not leave a bright-object targeting loophole over dark terrain.
-#[test]
-fn shroud_current_sight_concealed_transient_rejects_combat_fire() {
-    for psychic in [false, true] {
-        let rules = test_rules();
-        let mut interner = test_interner();
-        let owner = test_intern("Americans");
-        let enemy = test_intern("Soviet");
-        let mut fog = FogState {
-            width: 24,
-            height: 24,
-            ..Default::default()
-        };
-        if psychic {
-            crate::sim::vision::reveal_radius_for_direct_allies(
-                &mut fog, owner, 8, 5, 2, &interner,
-            );
-            crate::sim::vision::apply_gap_generators(&mut fog, &[(enemy, 8, 5, 3)], &interner);
-        } else {
-            crate::sim::vision::reveal_radius(&mut fog, owner, 8, 5, 2);
-            fog.flush_pending_gap_conceal(120);
-        }
-        assert!(!fog.is_cell_revealed(owner, 8, 5));
-        assert!(!fog.is_cell_visible(owner, 8, 5));
-        let mut store = EntityStore::new();
-        store.insert(make_entity_owned(1, "MTNK", 5, 5, 300, "Americans"));
-        store.insert(make_entity_owned(2, "MTNK", 8, 5, 300, "Soviet"));
-        issue_attack_command(&mut store, 1, 2, None, &interner);
-        let mut main_rng = SimRng::new(1);
-        let result = tick_combat_with_fog(
-            &mut store,
-            &mut OccupancyGrid::new(),
-            &rules,
-            &mut interner,
-            Some(&fog),
-            &BTreeMap::<InternedId, PowerState>::new(),
-            None,
-            None,
-            None,
-            None,
-            0u64,
-            100,
-            0u32,
-            &[],
-            None,
-            &mut main_rng,
-        );
-        assert!(
-            result.consequences.fire_events().is_empty(),
-            "concealed transient must not emit a fire event"
-        );
-        assert_eq!(
-            store.get(2).unwrap().health.current,
-            300,
-            "concealed transient source psychic={psychic}"
-        );
-    }
 }
 
 /// A Drive `Crusher=yes` vehicle that is not `CrusherAll` leaves a plain wall

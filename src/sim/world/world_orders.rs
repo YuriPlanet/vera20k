@@ -1167,6 +1167,16 @@ impl Simulation {
             if entity.passively_acquired_target {
                 continue;
             }
+            // `FootClass::Mission_Guard @ 0x004D5070` has no approach call
+            // (vt+0x53C): an object committed to Guard fires at what it holds
+            // from where it stands, whoever assigned it. A player "guard this
+            // spot" order is VERA's Area Guard stand-in (`OrderIntent::Guard`)
+            // and still approaches.
+            if entity.mission.current().known() == Some(crate::sim::mission::MissionType::Guard)
+                && entity.order_intent.is_none()
+            {
+                continue;
+            }
             if entity.category == EntityCategory::Structure {
                 continue;
             }

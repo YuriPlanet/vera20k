@@ -613,6 +613,7 @@ mod tests {
             opportunity_fire: false,
             can_retaliate: true,
             can_passive_acquire: true,
+            spray_attack: false,
             distributed_fire: false,
             vhp_scan: crate::rules::object_type::VhpScan::None,
             explodes: false,

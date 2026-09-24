@@ -595,7 +595,6 @@ pub(crate) fn resolve_attacker_fire(
                 overlay_registry,
                 snap,
                 fog,
-                require_playfield_membership,
                 binary_frame,
                 _tick_ms,
                 has_active_wave,

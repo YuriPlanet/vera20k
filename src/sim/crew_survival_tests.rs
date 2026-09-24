@@ -568,7 +568,20 @@ fn a_crewed_vehicle_rolls_crew_escape_then_places_its_crewman() {
                     assert_eq!(type_name(&sim, crew[0]), "E1");
                     assert_eq!(crewman.health.current, health);
                     assert_eq!((crewman.position.rx, crewman.position.ry), (10, 10));
-                    assert_eq!(queued(&sim, crew[0]), MissionId::from_known(mission));
+                    // Unlimbo commits Guard (`0x006F6E2A`); the crew Queue
+                    // then queues Hunt, or leaves Guard alone
+                    // (`Queue_Mission 0x005B3601..0x005B3612`).
+                    let crew_mission = &sim.substrate.entities.get(crew[0]).unwrap().mission;
+                    assert_eq!(
+                        crew_mission.current(),
+                        MissionId::from_known(MissionType::Guard)
+                    );
+                    let expected_queue = if mission == MissionType::Guard {
+                        MissionId::NONE
+                    } else {
+                        MissionId::from_known(mission)
+                    };
+                    assert_eq!(crew_mission.queued(), expected_queue);
                 }
                 None => assert!(crew.is_empty()),
             }

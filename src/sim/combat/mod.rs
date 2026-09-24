@@ -46,9 +46,9 @@ pub(crate) use receiver_fixture::{
 };
 pub(crate) mod line_of_fire;
 pub(crate) mod parasite;
+pub(crate) mod rof;
 pub mod smudge_dispatch;
 pub(crate) mod threat_range;
-pub(crate) mod rof;
 pub(crate) mod veterancy;
 pub(crate) mod world_receiver;
 
@@ -745,7 +745,6 @@ pub struct AttackTarget {
     pub pending_infantry_fire: Option<PendingInfantryFire>,
 }
 
-
 fn infantry_fire_sequence(
     obj: &ObjectType,
     weapon_slot: WeaponSlot,
@@ -1197,40 +1196,79 @@ pub fn issue_attack_command(
     true
 }
 
-/// Swing an existing attack onto a different entity in place.
+/// `TechnoClass::EstimateDamage @ 0x006FDB80` for `attacker_id` shooting
+/// `target_id` with `weapon` (see [`damage::estimate`]): the target house's
+/// category multiplier for the attacker's type, the attacker's
+/// `ArmorMultiplier`, the attacker's FIREPOWER and the target's STRONGER ranks.
 ///
-/// The weapon's reload is the object's own timer
-/// ([`GameEntity::rearm_timer`], `TechnoClass+0x2EC`) and the burst index is
-/// `weapon_burst`; the original's target assignment writes neither, so no
-/// swing restarts the weapon.
-///
-/// This is the one owner of that operation: combat's own auto-retarget and the
-/// passive scanner's re-pick both go through it. Only the pending infantry shot
-/// is dropped, because it was latched against the old victim.
-///
-/// RESIDUAL: this does NOT perform the infantry firing-sequence and animation
-/// reset that the full target setter does. That was unreachable in practice
-/// before the passive scanner existed; it is now reachable on every infantry
-/// re-pick, roughly every 28 frames. Deterministic and visual only — the fire
-/// decision does not read the sequence — so it is recorded rather than fixed
-/// here.
-///
-/// **Target provenance is preserved on purpose.** Swinging onto a new victim
-/// continues whatever acquisition installed the target in the first place — an
-/// auto-retarget after the old victim died is not a new order — so
-/// `passively_acquired_target` carries over. Clearing it here would leave the
-/// object holding a live target with the flag false, and that state is exactly
-/// what the passive block, the pursuit skip and the release-on-range-loss path
-/// all key off: the object would stop re-evaluating, start being chased across
-/// the map, and never let go of a target that walked out of range. The
-/// flag-clearing that the original's target ASSIGNMENT performs lives in the
-/// target setter, which is the assignment's counterpart; this in-place swing has
-/// no counterpart there.
-pub(crate) fn retarget_in_place(entity: &mut GameEntity, new_target_sid: u64) {
-    if let Some(ref mut attack) = entity.attack_target {
-        attack.target = TargetKind::Entity(new_target_sid);
-        attack.pending_infantry_fire = None;
-    }
+/// RESIDUAL: `House+0x188` and `Techno+0x160` are 1.0, as in FireAt's damage
+/// build (`world_receiver::fireat_damage`).
+pub(crate) fn estimated_damage_on(
+    sim: &crate::sim::world::Simulation,
+    rules: &RuleSet,
+    attacker_id: u64,
+    target_id: u64,
+    weapon: &crate::rules::weapon_type::WeaponType,
+) -> i32 {
+    use crate::rules::object_type::Ability;
+    use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
+    let entities = &sim.substrate.entities;
+    let (Some(attacker), Some(target)) = (entities.get(attacker_id), entities.get(target_id))
+    else {
+        return 0;
+    };
+    let Some(attacker_obj) = rules.object(sim.interner.resolve(attacker.type_ref())) else {
+        return 0;
+    };
+    let target_obj = rules.object(sim.interner.resolve(target.type_ref()));
+    let house_type_armor = sim.houses.get(&target.owner()).map_or(1.0, |house| {
+        let country = house
+            .country
+            .map(|country| sim.interner.resolve(country))
+            .unwrap_or_else(|| sim.interner.resolve(target.owner()));
+        rules.country_armor_mult_for_type(country, attacker_obj)
+    });
+    let rank_firepower = self::veterancy::has_weapon_ability(
+        self::veterancy::rank_from_u16(attacker.veterancy),
+        attacker_obj,
+        Ability::Firepower,
+    )
+    .then(|| NativeF64Bits::from_bits(rules.general.veteran_combat.to_bits()));
+    let rank_armor = target_obj
+        .is_some_and(|object| {
+            self::veterancy::has_weapon_ability(
+                self::veterancy::rank_from_u16(target.veterancy),
+                object,
+                Ability::Stronger,
+            )
+        })
+        .then(|| NativeF64Bits::from_bits(rules.general.veteran_armor.to_bits()));
+    let warhead = combat_weapon::warhead_of(rules, weapon);
+    damage::estimate::estimated_damage(&damage::estimate::EstimateInputs {
+        damage: weapon.damage,
+        zeroed: weapon.is_sonic || weapon.use_fire_particles,
+        stages: damage::attacker::FireDamageStages {
+            house_firepower: NativeF64Bits::ONE,
+            unit_firepower: NativeF64Bits::ONE,
+            rank_firepower,
+            occupied: None,
+            bunkered: None,
+            open_topped: None,
+        },
+        divisors: damage::DefenceDivisors {
+            house_type_armor: NativeF32Bits::from_bits(house_type_armor.to_bits()),
+            unit_armor: attacker.armor_multiplier,
+            rank_armor,
+        },
+        warhead: warhead.map(|warhead| damage::estimate::EstimateWarhead {
+            cell_spread: warhead.cell_spread_f64,
+            percent_at_max: warhead.percent_at_max_f64,
+            verses: &warhead.verses_f64,
+        }),
+        armor: damage::ArmorClass(target_obj.map_or(0, |object| armor_index(&object.armor) as u8)),
+        scenario_no_damage: sim.session.no_damage,
+        max_damage: rules.combat_damage.max_damage,
+    })
 }
 
 /// Issue a force-fire-on-cell command: make `attacker` fire at a ground cell.
@@ -1321,7 +1359,7 @@ pub(crate) fn cell_distance(ax: u16, ay: u16, bx: u16, by: u16) -> f32 {
     (dx * dx + dy * dy).sqrt()
 }
 
-use self::combat_targeting::{AttackerSnapshot, GarrisonSnapshot, acquire_best_target};
+use self::combat_targeting::{AttackerSnapshot, GarrisonSnapshot};
 
 /// A `CanBeOccupied` building destroyed in combat with live occupants —
 /// gamemd routes this through `BuildingClass::SellBuilding @ 0x00457DE0`, the
@@ -2614,8 +2652,6 @@ pub(crate) struct CombatEmit {
     /// Native-order ReceiveDamage calls, including raw area records.
     pub(crate) damage_events: Vec<combat_aoe::AreaDamageReceiver>,
     pub(crate) remove_attack: Vec<u64>,
-    /// (attacker_id, new_target_id)
-    pub(crate) retarget_events: Vec<(u64, u64)>,
     pub(crate) fire_events: Vec<SimFireEvent>,
     pub(crate) reveal_events: Vec<RevealEvent>,
     /// aircraft that fired this tick

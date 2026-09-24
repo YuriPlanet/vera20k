@@ -1872,7 +1872,6 @@ pub(crate) fn commit_projectiles(
     );
 
     debug_assert!(emit.remove_attack.is_empty());
-    debug_assert!(emit.retarget_events.is_empty());
     debug_assert!(emit.fire_events.is_empty());
     debug_assert!(emit.reveal_events.is_empty());
     debug_assert!(emit.ammo_deduct.is_empty());
@@ -1972,7 +1971,6 @@ pub(super) fn resolve_attacker_fire(
     overlay_registry: Option<&OverlayTypeRegistry>,
     snap: &AttackerSnapshot,
     fog: Option<&FogState>,
-    require_playfield_membership: bool,
     binary_frame: u32,
     _tick_ms: u32,
     has_active_wave: bool,
@@ -1985,7 +1983,6 @@ pub(super) fn resolve_attacker_fire(
         overlay_registry,
         snap,
         fog,
-        require_playfield_membership,
         binary_frame,
         _tick_ms,
         has_active_wave,
@@ -2003,7 +2000,6 @@ fn admit_attacker_fire<'r>(
     overlay_registry: Option<&OverlayTypeRegistry>,
     snap: &AttackerSnapshot,
     fog: Option<&FogState>,
-    require_playfield_membership: bool,
     binary_frame: u32,
     _tick_ms: u32,
     has_active_wave: bool,
@@ -2021,11 +2017,6 @@ fn admit_attacker_fire<'r>(
             entity.pending_building_fire = None;
         }
     }
-    // Pre-compute garrison scan range for retargeting (includes +1 buffer).
-    let garrison_retarget_range: Option<SimFixed> = snap.garrison.as_ref().map(|gs| {
-        let cells = gs.half_foundation as i32 + 1 + rules.garrison_rules.occupy_weapon_range;
-        SimFixed::from_num(cells.max(1))
-    });
     let obj = match rules.object(world.interner.resolve(snap.type_id)) {
         Some(o) => o,
         None => {
@@ -2113,7 +2104,7 @@ fn admit_attacker_fire<'r>(
         _target_hp,
         target_cat,
         target_type_ref,
-        target_owner,
+        _target_owner,
         _target_prone_infantry,
     ) = match target_data {
         Some((rx, ry, sx, sy, hp, cat, tr, own, prone)) if hp > 0 => {
@@ -2123,34 +2114,9 @@ fn admit_attacker_fire<'r>(
             if delayed_building_slot.is_some() {
                 return None;
             }
-            if let Some(new_target) = acquire_best_target(
-                &world.substrate.entities,
-                &world.substrate.occupancy,
-                rules,
-                &world.interner,
-                snap,
-                obj,
-                fog,
-                garrison_retarget_range,
-                world.resolved_terrain.as_ref(),
-                require_playfield_membership,
-                // No zone grid on the retarget path, and none is needed: this
-                // snapshot's mask comes from `build_attacker_snapshot`, i.e.
-                // `scan_mission_for`, which only ever returns `1` or `2`. The
-                // scanner-zone slot native fills at `0x006F8EC4` is read only by
-                // the mask-0 flat walk, which this callsite cannot select.
-                None,
-                line_of_fire::LineOfFireInputs {
-                    overlay_grid: world.overlay_grid.as_ref(),
-                    overlay_registry,
-                    alliances: fog.map(|fog_state| &fog_state.alliances),
-                },
-                Some(&*world),
-            ) {
-                out.retarget_events.push((snap.stable_id, new_target));
-            } else {
-                out.remove_attack.push(snap.stable_id);
-            }
+            // Pointer expiry clears a dead target natively before any fire
+            // routine runs; only a kill that skips the broadcast reaches here.
+            out.remove_attack.push(snap.stable_id);
             return None;
         }
     };
@@ -2277,84 +2243,6 @@ fn admit_attacker_fire<'r>(
             },
             world.interner.intern(selected.weapon_id),
         ));
-    }
-
-    // Friendly-fire and visibility-driven retarget logic only applies to
-    // Entity targets. Cell targets are an explicit player force-fire — the
-    // player intentionally chose this cell (allies, ground, anything), so
-    // never auto-retarget away from a Cell.
-    let is_cell_target = matches!(snap.target, TargetKind::Cell(_, _));
-    if let Some(fog_state) = fog {
-        let snap_owner_str = world.interner.resolve(snap.owner);
-        let target_owner_str = world.interner.resolve(target_owner);
-        if !is_cell_target && fog_state.is_friendly(snap_owner_str, target_owner_str) {
-            if delayed_building_slot.is_some() {
-                return None;
-            }
-            if let Some(new_target) = acquire_best_target(
-                &world.substrate.entities,
-                &world.substrate.occupancy,
-                rules,
-                &world.interner,
-                snap,
-                obj,
-                fog,
-                garrison_retarget_range,
-                world.resolved_terrain.as_ref(),
-                require_playfield_membership,
-                // No zone grid on the retarget path, and none is needed: this
-                // snapshot's mask comes from `build_attacker_snapshot`, i.e.
-                // `scan_mission_for`, which only ever returns `1` or `2`. The
-                // scanner-zone slot native fills at `0x006F8EC4` is read only by
-                // the mask-0 flat walk, which this callsite cannot select.
-                None,
-                line_of_fire::LineOfFireInputs {
-                    overlay_grid: world.overlay_grid.as_ref(),
-                    overlay_registry,
-                    alliances: fog.map(|fog_state| &fog_state.alliances),
-                },
-                Some(&*world),
-            ) {
-                out.retarget_events.push((snap.stable_id, new_target));
-            } else {
-                out.remove_attack.push(snap.stable_id);
-            }
-            return None;
-        }
-        if !is_cell_target && !fog_state.is_cell_visible(snap.owner, target_rx, target_ry) {
-            if delayed_building_slot.is_some() {
-                return None;
-            }
-            if let Some(new_target) = acquire_best_target(
-                &world.substrate.entities,
-                &world.substrate.occupancy,
-                rules,
-                &world.interner,
-                snap,
-                obj,
-                fog,
-                garrison_retarget_range,
-                world.resolved_terrain.as_ref(),
-                require_playfield_membership,
-                // No zone grid on the retarget path, and none is needed: this
-                // snapshot's mask comes from `build_attacker_snapshot`, i.e.
-                // `scan_mission_for`, which only ever returns `1` or `2`. The
-                // scanner-zone slot native fills at `0x006F8EC4` is read only by
-                // the mask-0 flat walk, which this callsite cannot select.
-                None,
-                line_of_fire::LineOfFireInputs {
-                    overlay_grid: world.overlay_grid.as_ref(),
-                    overlay_registry,
-                    alliances: fog.map(|fog_state| &fog_state.alliances),
-                },
-                Some(&*world),
-            ) {
-                out.retarget_events.push((snap.stable_id, new_target));
-            } else {
-                out.remove_attack.push(snap.stable_id);
-            }
-            return None;
-        }
     }
 
     let infantry_fire_sync =
@@ -3994,14 +3882,6 @@ pub(crate) fn tick_combat(
     let sound_enabled = sound_enabled(world);
 
     let binary_frame = world.session.binary_frame;
-    let require_playfield_membership = world.playfield_bounds.is_some();
-    #[cfg(test)]
-    let require_playfield_membership = world
-        .receiver_fixture
-        .as_ref()
-        .map_or(require_playfield_membership, |fixture| {
-            fixture.require_playfield_membership
-        });
     let fog_snapshot = world.fog.clone();
     let fog = Some(&fog_snapshot);
     #[cfg(test)]
@@ -4519,7 +4399,6 @@ pub(crate) fn tick_combat(
         live_snap.pending_infantry_fire = live_attack.1;
         live_snap.pending_building_fire = live_attack.2;
 
-        let n_retarget = emit.retarget_events.len();
         let n_remove = emit.remove_attack.len();
         let boundary = FireCommitBoundary::capture(&emit);
         if aircraft_fire_requests.contains(&live_snap.stable_id) {
@@ -4541,7 +4420,6 @@ pub(crate) fn tick_combat(
                 overlay_registry,
                 &live_snap,
                 fog,
-                require_playfield_membership,
                 binary_frame,
                 tick_ms,
                 active_wave_owners.contains(&live_snap.stable_id),
@@ -4559,14 +4437,6 @@ pub(crate) fn tick_combat(
             // (admit returned before GetFireError) the tail takes the
             // no-target arm. For a dead target that is native: pointer expiry
             // has cleared `+0x2B4`, so `0x00736DF0` takes its no-target arm.
-            // RESIDUAL: VERA's friendly-target and unseen-cell retargets in
-            // `admit_attacker_fire` have no counterpart in `0x00736DF0`, which
-            // asks GetFireError of the target it holds and may charge (codes
-            // 0/2/3/4). Trigger: a Gattling Tank whose target is allied or
-            // stands on a cell its house cannot see (a Gap Generator field).
-            // Effect: VERA decays 50 a frame and releases the loop there.
-            // Frequency: situational. Whether native keeps such targets is not
-            // established; the retargets themselves are VERA's.
             if snap.category == EntityCategory::Unit
                 && unit_reaches_fire_update(world, snap.stable_id)
             {
@@ -4580,7 +4450,7 @@ pub(crate) fn tick_combat(
                 );
             }
         }
-        // S3: only this Unit's explicit retarget/remove may replace its seeded
+        // S3: only this Unit's own target removal may replace its seeded
         // destination. Synchronous target expiry from VERA's immediate-delivery
         // approximation is deliberately not visible to native Facing_Update.
         let Some(e) = world
@@ -4591,39 +4461,15 @@ pub(crate) fn tick_combat(
         else {
             continue;
         };
-        let own_retarget = emit.retarget_events[n_retarget..]
-            .iter()
-            .find(|&&(aid, _)| aid == snap.stable_id)
-            .map(|&(_, tid)| tid);
         let own_removed = emit.remove_attack[n_remove..].contains(&snap.stable_id);
-        // Which side of the `+0x6AF` store at `0x00736B16` the replacement
-        // belongs on. A retarget still leaves `Target != 0`, so native reaches
-        // it through arm A's `Set` at `0x00736A89` and the arc arms the latch
-        // on its first frame. A removal leaves `Target == 0`, so native's arm A
-        // does not run at all and the only `Set` left is arm B's idle return at
-        // `0x00736BDD`, which the store precedes — that arc starts with a clear
+        // A removal leaves `Target == 0`, so native's arm A does not run and the
+        // only `Set` left is arm B's idle return at `0x00736BDD`, which the
+        // `+0x6AF` store at `0x00736B16` precedes: that arc starts with a clear
         // latch. (VERA swings back on the removal tick rather than after the
-        // dwell; that difference is the pre-existing S3 kill-tick behaviour,
-        // not this flag.)
-        let replacement_is_idle_return = own_retarget.is_none();
-        let replacement: Option<u16> = if let Some(tid) = own_retarget {
-            Some(
-                crate::sim::movement::turret::facing_toward_target(
-                    e,
-                    &TargetKind::Entity(tid),
-                    &world.substrate.entities,
-                    Some(rules),
-                    &world.interner,
-                )
-                .unwrap_or_else(|| crate::sim::movement::turret::body_facing_to_turret(e.facing)),
-            )
-        } else if own_removed {
-            Some(crate::sim::movement::turret::body_facing_to_turret(
-                e.facing,
-            ))
-        } else {
-            None
-        };
+        // dwell; that difference is the pre-existing S3 kill-tick behaviour.)
+        let replacement_is_idle_return = true;
+        let replacement: Option<u16> =
+            own_removed.then(|| crate::sim::movement::turret::body_facing_to_turret(e.facing));
         if let Some(replacement) = replacement {
             let update = emit
                 .unit_facing
@@ -4695,7 +4541,6 @@ pub(crate) fn tick_combat(
         projectile_spawns,
         mut damage_events,
         mut remove_attack,
-        retarget_events,
         fire_events,
         reveal_events,
         ammo_deduct,
@@ -4707,15 +4552,8 @@ pub(crate) fn tick_combat(
         drain_links: _,
     } = emit;
 
-    // Phase 3: apply retargets. The burst step and rearm were written in each
-    // shot's FireAt emission. Auto-retargets only ever produce Entity targets
-    // (acquire_best_target scans hostile entities), so this wraps the u64 in
-    // TargetKind::Entity.
-    for &(attacker_id, new_target_sid) in &retarget_events {
-        if let Some(entity) = world.substrate.entities.get_mut(attacker_id) {
-            retarget_in_place(entity, new_target_sid);
-        }
-    }
+    // Phase 3: the burst step and rearm were written in each shot's FireAt
+    // emission.
     for &(attacker_id, sequence) in &animation_switches {
         if let Some(entity) = world.substrate.entities.get_mut(attacker_id) {
             if entity.infantry_terminal.is_some() {
@@ -4851,9 +4689,7 @@ pub(crate) fn tick_combat(
     remove_attack.dedup();
     for &attacker_id in &remove_attack {
         if let Some(entity) = world.substrate.entities.get_mut(attacker_id) {
-            entity.attack_target = None;
-            // The provenance flag cannot outlive the target it describes.
-            entity.passively_acquired_target = false;
+            crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
         }
     }
 

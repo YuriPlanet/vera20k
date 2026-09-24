@@ -4401,6 +4401,7 @@ mod tests {
                 priority: 0,
                 is_base_defense: true,
                 suicide: false,
+                aggressive: false,
                 combined_movement_zone: crate::rules::locomotor_type::MovementZone::Amphibious,
                 base_zone_relation_enforced: false,
                 transport_crossing_required: true,

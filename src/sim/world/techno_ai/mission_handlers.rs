@@ -3,7 +3,7 @@
 //! The object-AI host and its ordering remain in the parent module; this module
 //! owns only handler inputs, results, and the single timer epilogue.
 
-use super::{PASSIVE_SCAN_DELAY_JITTER_MAX, Simulation, can_acquire_target, passive_target_scan};
+use super::{Simulation, can_acquire_target};
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::mission::authority::EntityReadyInputProvider;
@@ -948,6 +948,40 @@ pub(crate) fn queue_foot_enter_idle_mode(sim: &mut Simulation, id: u64, rules: &
     }
 }
 
+/// `TechnoClass::Unlimbo @ 0x006F6E2A..0x006F6E4F` for an infantryman:
+/// `Enter_Idle_Mode(1, 1)` (`InfantryClass::Enter_Idle_Mode @ 0x0051CBA0`),
+/// then Ready_To_Commence and Commence, so the mission it picks is current at
+/// once. A fresh infantryman with nowhere to go takes Guard; a map placement
+/// then assigns its authored mission over it.
+///
+/// RESIDUALS, beside those on [`foot_enter_idle_mode_selection`]:
+/// - the Area Guard arm (a computer infantryman outside a team whose house IQ
+///   reaches `[IQ] GuardArea=`, or a `DefaultToGuardArea=`/GUARD_AREA type) is
+///   committed as Guard: VERA's `Mission_AreaGuard` lacks the guard post, the
+///   leash and the approach. Trigger: every computer-built infantryman and
+///   every dog. Effect: they hold their ground instead of covering an area.
+/// - Units, buildings and aircraft keep VERA's mission bridge
+///   (`GameEntity::passive_acquire_mission`) until their own leaves are ported.
+pub(crate) fn infantry_unlimbo_idle_mode(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    if entity.category != EntityCategory::Infantry {
+        return;
+    }
+    let selection = foot_enter_idle_mode_selection(
+        rules,
+        entity.category,
+        entity.mission.current().known(),
+        entity.navigation.nav_com.is_some(),
+        entity.mission.effective().known(),
+    );
+    if let Some(mission) = selection {
+        let now = sim.session.binary_frame;
+        let _ = sim.mission_assign_exact(id, MissionId::from_known(mission), now);
+    }
+}
+
 fn foot_enter_idle_mode_selection(
     rules: &RuleSet,
     category: EntityCategory,
@@ -960,7 +994,10 @@ fn foot_enter_idle_mode_selection(
         mission,
         Some(MissionType::Patrol) | Some(MissionType::AreaGuard)
     ) || (category == EntityCategory::Unit
-        && matches!(mission, Some(MissionType::Unload) | Some(MissionType::Eaten)));
+        && matches!(
+            mission,
+            Some(MissionType::Unload) | Some(MissionType::Eaten)
+        ));
     if committed_blocks_assign {
         return None;
     }
@@ -1009,176 +1046,6 @@ fn foot_enter_idle_mode_selection(
     }
 
     Some(MissionType::Guard)
-}
-
-/// `TechnoClass::Retaliate_And_Scan @ 0x00709820`, vtable `+0x39C` — the
-/// scanner the mission handlers call directly, as opposed to the passive block
-/// in the common Techno AI body.
-///
-/// `disassemble_function 0x00709820`. Entry order, all of it load-bearing:
-/// 1. `[this+0x4FC] = frame` (`0x0070982E`);
-/// 2. **one unconditional `RandomRanged(0, 2)`** on the scenario RNG at
-///    `*(0x00A8B230)+0x218` — the `PUSH 0x2` / `PUSH 0x0` pair at `0x0070982C`
-///    and `0x0070983D` is set up before the very first branch, so the draw
-///    happens on every call whatever the routine goes on to do;
-/// 3. the scan timer re-arms to `Rules->GuardAreaTargetingDelay` (`+0xE04`)
-///    when the object's committed mission is Area Guard (`CMP EAX,0xB` at
-///    `0x0070983A`) and `Rules->NormalTargetingDelay` (`+0xE08`) otherwise,
-///    **plus that same draw**;
-/// 4. a target the object's own scanner installed may be dropped;
-/// 5. `if (Target == 0)` the threat scan runs and its result is committed
-///    through `Assign_Target` (`vt+0x3C8`, called at `0x00709960`).
-///
-/// **The one thing that separates this from [`super::passive_target_scan`]:
-/// step 5 does NOT set the passively-acquired byte `[this+0x50C]`.** The whole
-/// body only ever *reads* it (`0x007098C3`); the write lives in the passive
-/// block's caller inside `TechnoClass::AI_Update`. So a target a mission
-/// handler acquires through this routine is an ordinary target — VERA's
-/// pursuit pass will close on it, which is exactly how a hunting object gets
-/// to what it found. Installing through the shared target setter reproduces
-/// that: `RepresentedConcreteMissionEffects::apply_target` clears the byte.
-///
-/// Returns the native return value: `this->Target != 0` (`SETNZ` at
-/// `0x007099C4`).
-///
-/// RESIDUAL — step 4's drop is not modelled, exactly as
-/// [`super::passive_target_scan`] records for the same three action codes
-/// (`vt+0x3C0` returning 5, 6 or 8) whose meanings are UNCHECKED. Here it can
-/// only matter for an object that walked onto Hunt still holding a target its
-/// own scanner picked up on Guard: retail may re-evaluate it, VERA keeps it.
-/// Trigger: a passive target surviving a mission change into Hunt — Hunt is not
-/// one of the twelve missions that strip one. Frequency: uncommon; the berserk
-/// path that produces most Hunt assignments hits idle and engaged units alike.
-/// Downstream risk: none beyond target choice.
-///
-/// RESIDUAL — the post-install debit at `0x00709966`-`0x007099B5` is not
-/// modelled. After `Assign_Target` native calls
-/// `vt+0x2E4` (`0x00709971`) and `vt+0x3F8` (`0x0070998C`), then — gated on the
-/// newly acquired target's `[+0x14] & 1` (`0x0070997B`-`0x00709985`; EDI is the
-/// scan result, `MOV EDI,EAX @ 0x0070993C`) and on the selected weapon's
-/// `[[weapon+0xA0]+0x2A2] == 0` (`0x0070999C`-`0x007099AA`) — calls
-/// `0x006FDB80` and does `SUB dword ptr [EDI+0x70], EAX` (`0x007099B5`) — a
-/// **write into another object**. `TechnoClass+0x70` is the same field
-/// `Evaluate_Candidate` scores candidates on (`[ESI+0x70] < 1` at `0x006F872A`
-/// and `[ESI+0x70]` against `TechnoType->[0xA0] / 2` at `0x006F874B`-
-/// `0x006F8755`), so acquisition debits a running claim on the target that
-/// later scanners then read. What `0x006FDB80` returns is UNCHECKED — not
-/// decompiled — so the amount cannot be reproduced and none of this is
-/// implemented. Trigger: every scan through this routine that installs a
-/// target, i.e. every Hunt or Area Guard acquisition. Player effect: with the
-/// claim never debited, VERA's scanners keep seeing the full value and can
-/// over-commit several attackers onto one target instead of spreading. Player-
-/// visible only where three or more units acquire freely at once. Frequency:
-/// common once several hunting units share a battlefield; nil in a duel.
-/// Downstream risk: target distribution only — VERA has no `+0x70` analogue,
-/// so nothing else reads or writes it, and neither lifecycle nor determinism
-/// is touched.
-///
-/// RESIDUAL — ordering, inert today. Native runs the scan (`vt+0x3C4` at
-/// `0x00709932`) and only then reads `TechnoType+0x6B0` (`DistributedFire`,
-/// `0x00709944`) to decide between the spread-fire assignment and
-/// `Assign_Target`; the early return below tests the type first and so skips
-/// the scan. No stream divergence: `Evaluate_Candidate`'s only draw is the
-/// disguise-blink `RandomRanged(0,99)`, which short-circuits on
-/// `IsControlledByHuman` for every VERA house. Trigger: a `DistributedFire=`
-/// type dispatching Hunt or Area Guard with no target. Frequency: rare on stock
-/// data. Downstream risk: it would surface the moment a non-human-controlled
-/// house exists. This mirrors the shape [`super::passive_target_scan`] already
-/// has rather than introducing a new one.
-///
-/// `scan_mask` is `Greatest_Threat`'s argument 2, forwarded from whoever
-/// dispatched this routine. No callsite derives it from the object it is
-/// scanning for: `FootClass::Mission_Hunt` pushes the literal `0` at
-/// `0x004D5373`, and mask 0 is not a wider radius — it is a different scan
-/// topology (see [`crate::sim::combat::ScanMission::Hunt`]). What the `+0x3C4`
-/// overrides then do to that literal before `TechnoClass::Greatest_Threat` sees
-/// it is documented there and on
-/// [`crate::sim::combat::greatest_threat::greatest_threat`]; VERA forwards the
-/// literal unchanged.
-fn retaliate_and_scan(
-    sim: &mut Simulation,
-    id: u64,
-    rules: &RuleSet,
-    mission: MissionType,
-    scan_mask: crate::sim::combat::ScanMission,
-    ctx: super::ObjectAiCtx<'_>,
-) -> bool {
-    let now = sim.session.binary_frame;
-    let base_delay = if mission == MissionType::AreaGuard {
-        rules.general.guard_area_targeting_delay
-    } else {
-        rules.general.normal_targeting_delay
-    };
-    let jitter = sim
-        .scenario_rng
-        .next_range_u32_inclusive(0, PASSIVE_SCAN_DELAY_JITTER_MAX);
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.last_target_scan_frame = now;
-        entity
-            .passive_scan_timer
-            .arm(now, base_delay.saturating_add(jitter));
-    }
-
-    let Some(has_target) = sim
-        .substrate
-        .entities
-        .get(id)
-        .map(|entity| entity.attack_target.is_some())
-    else {
-        return false;
-    };
-    // Step 5 is `if (Target == 0)`: a live target ends the routine and is
-    // reported back as success.
-    if has_target {
-        return true;
-    }
-    // `if (GetTechnoType()[0x6B0]) FUN_00709550(this)` at `0x00709944` — a
-    // `DistributedFire` type takes the spread-fire assignment instead of the
-    // single-target one, which VERA does not implement (recorded on
-    // `passive_target_scan`). It installs nothing here, as there.
-    let spreads_fire = sim
-        .substrate
-        .entities
-        .get(id)
-        .and_then(|entity| sim.interner.try_resolve(entity.type_ref()))
-        .and_then(|name| rules.object(name))
-        .is_some_and(|obj| obj.distributed_fire);
-    if spreads_fire {
-        return false;
-    }
-    let pick = crate::sim::combat::acquire_best_target_for_entity(
-        &sim.substrate.entities,
-        &sim.substrate.occupancy,
-        rules,
-        &sim.interner,
-        id,
-        Some(&sim.fog),
-        sim.resolved_terrain.as_ref(),
-        sim.playfield_bounds.is_some(),
-        // The mask the CALLER pushes. `FootClass::Mission_Hunt` pushes the
-        // literal `0` at `0x004D5373` and this routine forwards whatever it was
-        // handed; mask 0 is what makes the scan enumerate the global object list
-        // with no distance cutoff instead of walking cell rings.
-        scan_mask,
-        // `MapClass` itself in native — `MOV ECX,0x87f7e8` at `0x006F8EBA`.
-        // Mask 0 asks it for the hunter's own movement-zone component and
-        // refuses every candidate outside it.
-        sim.zone_grid.as_ref(),
-        crate::sim::combat::line_of_fire::LineOfFireInputs {
-            overlay_grid: sim.overlay_grid.as_ref(),
-            overlay_registry: ctx.overlay_registry,
-            alliances: Some(&sim.fog.alliances),
-        },
-        Some(&*sim),
-    );
-    if let Some(sid) = pick {
-        let _ = sim
-            .set_archive_target_represented(id, Some(crate::sim::combat::TargetKind::Entity(sid)));
-    }
-    sim.substrate
-        .entities
-        .get(id)
-        .is_some_and(|entity| entity.attack_target.is_some())
 }
 
 /// `FootClass::Mission_Hunt @ 0x004D5350` — "go find something and kill it".
@@ -1312,11 +1179,10 @@ fn evaluate_foot_hunt(
         // and the idle / return-to-base arm (already covered elsewhere), so
         // nothing branches on it here — but the call itself is the mission:
         // it is what installs the target the pursuit pass then closes on.
-        let _acquired = retaliate_and_scan(
+        let _acquired = super::target_scan::scan(
             sim,
             id,
             rules,
-            MissionType::Hunt,
             // `PUSH 0x0` at `0x004D5373` — the literal threat mask Hunt hands
             // the scanner.
             crate::sim::combat::ScanMission::Hunt,
@@ -1405,13 +1271,21 @@ fn evaluate_foot_area_guard(
         .entities
         .get(id)
         .is_some_and(|entity| entity.attack_target.is_none());
-    if needs_target && can_acquire_target(sim, id, rules) {
-        passive_target_scan(sim, id, rules, MissionType::AreaGuard, ctx);
-        let acquired = sim
-            .substrate
-            .entities
-            .get(id)
-            .is_some_and(|entity| entity.attack_target.is_some());
+    // `0x004D6EDB..0x004D6F06`: no target, CanAcquireTarget, and the
+    // targeting timer run out (`0x0070F7E0`), then the scan with mask 2.
+    let timer_due = sim
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| entity.passive_scan_timer.due(sim.session.binary_frame));
+    if needs_target && can_acquire_target(sim, id, rules) && timer_due {
+        let acquired = super::target_scan::scan(
+            sim,
+            id,
+            rules,
+            crate::sim::combat::ScanMission::AreaGuard,
+            ctx,
+        );
         if acquired {
             // The original returns one frame the moment the scan installs a
             // target, ahead of the cadence tail — so this path draws the
@@ -1553,7 +1427,7 @@ fn evaluate_foot_area_guard(
 ///   Player effect: it re-evaluates every frame instead of every ~26. Frequency:
 ///   the Aegis Cruiser is the only stock `DistributedFire` type, so naval maps
 ///   with an Allied player only. Downstream risk: VERA implements no
-///   distributed-fire mechanism at all (recorded at `passive_target_scan`), so
+///   distributed-fire mechanism at all (recorded at `target_scan`), so
 ///   the counter this gate reads has no VERA counterpart to bind to.
 fn evaluate_foot_guard_cadence(
     sim: &mut Simulation,
@@ -1953,7 +1827,7 @@ fn infantry_deployed_attack_reacquire(
     if had_target && !attack_target_is_stale(sim, id) {
         return None;
     }
-    // The raw scan, NOT `passive_target_scan`: that routine also stamps the
+    // The raw scan, NOT `Retaliate_And_Scan`: that routine also stamps the
     // scan frame and re-arms the acquisition cadence with its own
     // `RandomRanged(0, 2)` draw, and `0x0051F330` calls `Greatest_Threat`
     // directly through `[vtable+0x3C4]` without either.
@@ -1982,32 +1856,12 @@ fn infantry_deployed_attack_reacquire(
         },
         Some(&*sim),
     );
+    // `0x0051F38A..0x0051F39D`: Assign_Target(pick) when a target is held or
+    // one was found. It writes no `+0x50C`, so the setter leaves the flag
+    // clear.
     if had_target || pick.is_some() {
-        let current = sim
-            .substrate
-            .entities
-            .get(id)
-            .and_then(|e| e.attack_target.as_ref().map(|t| t.target));
-        match (current, pick) {
-            // Swinging onto a different victim keeps the rearm countdown, the
-            // burst counter and the inter-shot delay, exactly as the scanner's
-            // own retarget does — rebuilding the record would hand out a free
-            // shot on every re-pick.
-            (Some(held), Some(sid)) if held != crate::sim::combat::TargetKind::Entity(sid) => {
-                if let Some(entity) = sim.substrate.entities.get_mut(id) {
-                    crate::sim::combat::retarget_in_place(entity, sid);
-                }
-            }
-            _ => {
-                let _ = sim.set_archive_target_represented(
-                    id,
-                    pick.map(crate::sim::combat::TargetKind::Entity),
-                );
-            }
-        }
-        if let Some(entity) = sim.substrate.entities.get_mut(id) {
-            entity.passively_acquired_target = pick.is_some();
-        }
+        let _ = sim
+            .set_archive_target_represented(id, pick.map(crate::sim::combat::TargetKind::Entity));
     }
     if pick.is_some() {
         return None;

@@ -588,6 +588,10 @@ pub struct ObjectType {
     /// was explicitly given. Default **yes**; stock `rulesmd.ini` opts 17 types
     /// out ("Won't try to pick up own targets").
     pub can_passive_acquire: bool,
+    /// `SprayAttack=` (TechnoType `+0x691`, read at `0x0071491A`, constructor
+    /// 0 at `0x00711104`): the passive-acquire gate's AreaFire test reads
+    /// weapon slot 0 instead of 1 (`0x0070DD70`).
+    pub spray_attack: bool,
     /// `DistributedFire=` — the type spreads fire across several nearby targets
     /// instead of committing to one. VERA parses it only to keep those types
     /// OFF the single-target passive-acquire commit; the spread-fire mechanism
@@ -1977,6 +1981,7 @@ impl ObjectType {
             can_retaliate: section.get_bool("CanRetaliate").unwrap_or(true),
             // Default yes. The INI spelling really is "Aquire" — do not correct it.
             can_passive_acquire: section.get_bool("CanPassiveAquire").unwrap_or(true),
+            spray_attack: section.get_bool("SprayAttack").unwrap_or(false),
             distributed_fire: section.get_bool("DistributedFire").unwrap_or(false),
             vhp_scan: VhpScan::read_ini(section),
             explodes: section.get_bool("Explodes").unwrap_or(false),
