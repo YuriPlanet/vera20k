@@ -141,6 +141,16 @@ num-traits = "0.2"
 # (same team behind cpal). Covers all RA2 needs: SFX, music, volume control.
 rodio = "0.22"
 
+# --- macOS application icon ---
+# macOS has no per-window icon; the Dock shows NSApplication's icon image, which
+# `app::window_icon` sets at startup. These are the objc2 0.6 / AppKit 0.3 versions
+# already in the lock (via arboard/glutin); default features are off because they
+# enable every AppKit framework class.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage", "NSResponder"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData"] }
+
 # --- Build speed ---
 # Optimize all code at opt-level 1 in dev builds. The game rebuilds sprite
 # instances, sorts them, and iterates over thousands of cells every frame —
