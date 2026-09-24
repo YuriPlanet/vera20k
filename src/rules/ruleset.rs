@@ -241,6 +241,8 @@ pub struct GeneralRules {
     /// Gravity=` (NOT `[General]` — stock rulesmd.ini defines it under
     /// [AudioVisual], value 6; the engine's code default is 3). Native stores a
     /// signed integer and converts to f32 at the behavior-3 tick boundary.
+    /// Also the ballistic gravity: `WeaponTypeClass::GetSpeed @ 0x00773070`
+    /// derives every `ROT=0` launch speed from it.
     pub gravity: i32,
     /// `[General] VeteranSight=` — `RulesClass+0x680`, a double.
     ///

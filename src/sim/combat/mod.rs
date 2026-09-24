@@ -83,6 +83,10 @@ mod combat_cloak_damage_tests;
 #[path = "delayed_building_fire_tests.rs"]
 mod delayed_building_fire_tests;
 
+#[cfg(test)]
+#[path = "fireat_launch_tests.rs"]
+mod fireat_launch_tests;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use self::combat_weapon::{WeaponSlot, select_weapon_against, select_weapon_slot};

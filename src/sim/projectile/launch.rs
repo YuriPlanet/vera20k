@@ -205,6 +205,139 @@ pub(crate) struct FireAtLaunchResult {
     pub speed: i32,
 }
 
+/// `[0x007E5190]`, the launch-speed helper's 1.2.
+const LAUNCH_SPEED_FACTOR: NativeF64Bits = NativeF64Bits::from_bits(0x3ff3_3333_3333_3333);
+/// `[0x007F4E80]`, the lead's 0.9.
+const LEAD_SPEED_FACTOR: NativeF64Bits = NativeF64Bits::from_bits(0x3fec_cccc_cccc_cccd);
+
+/// The projectile fields `WeaponTypeClass::GetSpeed` reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LaunchSpeedProjectile {
+    /// `BulletTypeClass+0x2DC` `ROT=`.
+    pub rot: i32,
+    /// `BulletTypeClass+0x295` `Floater=`.
+    pub floater: bool,
+}
+
+/// `WeaponTypeClass::GetSpeed @ 0x00773070`: the speed a shot is launched
+/// with, for a `distance` in leptons. A projectile with `ROT=0` ignores the
+/// weapon's `Speed=` and launches at `ftol(Sqrt_Approx(distance * gravity *
+/// 1.2))` (`0x0048AB90`), where gravity is `Gravity=` (`Rules+0x16B8`) or, for
+/// a `Floater=` projectile, half of it (`0x0048ACF0`); anything else (a homing
+/// projectile, or no projectile) launches at `Speed=` (`+0xA8`). Every cannon
+/// shell in the game takes the first arm: `[Cannon]` is `Arcing=true`, and at
+/// retail `Gravity=6` its `Speed=40` has no ballistic solution beyond about one
+/// cell, where the derived speed (85 at four cells) always has one.
+///
+/// Native execution: `tools/projectile_oracle/fireat_speed.py` (`speed` rows).
+pub(crate) fn weapon_launch_speed(
+    weapon_speed: i32,
+    projectile: Option<LaunchSpeedProjectile>,
+    gravity: i32,
+    distance: i32,
+) -> i32 {
+    let Some(projectile) = projectile.filter(|projectile| projectile.rot == 0) else {
+        return weapon_speed;
+    };
+    // 0x0077308D..0x007730A3: FILD Gravity (times 0.5 for a Floater), then
+    // FSTP qword as the helper's argument.
+    let gravity = X::load_i32(gravity);
+    let gravity = round(if projectile.floater {
+        X::mul(gravity, d(NativeF64Bits::HALF))
+    } else {
+        gravity
+    });
+    // 0x0048AB98..0x0048ABAE: FILD distance; FMUL gravity; FMUL 1.2; FSTP
+    // qword; Sqrt_Approx; ftol.
+    int(sqrt(X::mul(
+        X::mul(X::load_i32(distance), gravity),
+        d(LAUNCH_SPEED_FACTOR),
+    )))
+}
+
+/// `TechnoClass::FireAt @ 0x006FE4F6..0x006FE537`: the distance FireAt hands
+/// [`weapon_launch_speed`]. The squared X and Y deltas between the target
+/// coordinate and the launch source add as signed 32-bit integers (IMUL, ADD),
+/// then FILD, `Sqrt_Approx` and ftol; Z takes no part.
+///
+/// Native execution: `tools/projectile_oracle/fireat_speed.py` (`distance`).
+pub(crate) fn fireat_launch_distance(source: ProjectileCoord, target: ProjectileCoord) -> i32 {
+    let dx = target.x.wrapping_sub(source.x);
+    let dy = target.y.wrapping_sub(source.y);
+    let squared = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
+    int(sqrt(X::load_i32(squared)))
+}
+
+/// The lead of FireAt's aim point `0x0070BCB0` (`0x0070BD84..0x0070BE20`) for
+/// a moving UnitClass target: `ftol(distance / (shot_speed * 0.9) *
+/// target_speed)` leptons along the target's body facing, added to `aim` as
+/// `(ftol(cos * lead + x), ftol(y - sin * lead))`, Z unchanged. `distance` is
+/// `ObjectClass::Distance_AdjForFoundation` from the firer, `shot_speed` the
+/// current weapon's [`weapon_launch_speed`] at that distance and
+/// `target_speed` `FootClass::GetCurrentSpeed`. A zero shot speed divides to
+/// infinity, whose ftol is the integer-indefinite value with a zero low word,
+/// so no lead.
+///
+/// Native execution: `tools/projectile_oracle/fireat_speed.py` (`aim`).
+pub(crate) fn lead_aim(
+    aim: ProjectileCoord,
+    target_facing: u16,
+    distance: i32,
+    shot_speed: i32,
+    target_speed: i32,
+) -> ProjectileCoord {
+    let (trig, _) = crate::map::retail_trig::required_math_tables();
+    lead_aim_with_table(aim, target_facing, distance, shot_speed, target_speed, trig)
+}
+
+fn lead_aim_with_table(
+    aim: ProjectileCoord,
+    target_facing: u16,
+    distance: i32,
+    shot_speed: i32,
+    target_speed: i32,
+    trig: &TrigTable,
+) -> ProjectileCoord {
+    // 0x0070BD9A..0x0070BDAC: FILD speed; FMUL 0.9; FDIVR distance; FIMUL
+    // target speed; ftol (the masked conversion: infinity gives 0).
+    let lead = crate::util::native_x87::MaskedX87Chop53::ftol_i32_low_masked(
+        crate::util::native_x87::MaskedX87Chop53::mul(
+            crate::util::native_x87::MaskedX87Chop53::div(
+                crate::util::native_x87::MaskedX87Chop53::load_i32(distance),
+                crate::util::native_x87::MaskedX87Chop53::mul(
+                    crate::util::native_x87::MaskedX87Chop53::load_i32(shot_speed),
+                    crate::util::native_x87::MaskedX87Chop53::load_f64(LEAD_SPEED_FACTOR),
+                ),
+            ),
+            crate::util::native_x87::MaskedX87Chop53::load_i32(target_speed),
+        ),
+    );
+    // 0x0070BDC5..0x0070BE20: the facing word to radians, then the same
+    // offset shape as the launch scatter.
+    offset_along(aim, radians(target_facing), lead, trig)
+}
+
+/// `(ftol(cos(angle) * magnitude + x), ftol(y - sin(angle) * magnitude))`,
+/// Z unchanged: the shape both the launch scatter (`0x006FE79A..0x006FE7E9`)
+/// and the aim's lead (`0x0070BDFA..0x0070BE20`) use.
+fn offset_along(
+    point: ProjectileCoord,
+    angle: NativeF64Bits,
+    magnitude: i32,
+    trig: &TrigTable,
+) -> ProjectileCoord {
+    let magnitude = X::load_i32(magnitude);
+    let y = int(X::sub(
+        X::load_i32(point.y),
+        X::mul(sin(trig, angle), magnitude),
+    ));
+    let x = int(X::add(
+        X::mul(cos(trig, angle), magnitude),
+        X::load_i32(point.x),
+    ));
+    ProjectileCoord::new(x, y, point.z)
+}
+
 /// Native 70D590, after the firing owner resolves source raw Location and the
 /// current target's virtual+48 coordinate. Its second target read is equivalent
 /// for these stable Techno coordinates; cell dummy receivers remain upstream.
@@ -305,16 +438,7 @@ fn scatter_delta(
         X::mul(X::load_i32(raw), d(INVERSE_DRAW_SPAN)),
         d(TWO_PI),
     )));
-    let magnitude = X::load_i32(magnitude);
-    let y = int(X::sub(
-        X::load_i32(delta.y),
-        X::mul(sin(trig, angle), magnitude),
-    ));
-    let x = int(X::add(
-        X::mul(cos(trig, angle), magnitude),
-        X::load_i32(delta.x),
-    ));
-    ProjectileCoord::new(x, y, delta.z)
+    offset_along(delta, angle, magnitude, trig)
 }
 
 /// `BulletClass::SpawnShrapnel`'s child launch velocity. Both branches turn
@@ -618,6 +742,122 @@ mod tests {
     fn coord(value: &Value) -> ProjectileCoord {
         let axis = |index: usize| value[index].as_i64().unwrap() as i32;
         ProjectileCoord::new(axis(0), axis(1), axis(2))
+    }
+
+    fn fireat_speed_corpus() -> Value {
+        serde_json::from_str(include_str!(
+            "../../../tools/projectile_oracle/fireat_speed.json"
+        ))
+        .unwrap()
+    }
+
+    /// `tools/projectile_oracle/fireat_speed.json`: `WeaponTypeClass::GetSpeed`
+    /// on the original instructions over ROT, Floater, gravity (negative and
+    /// zero included) and distance (negative, zero and the signed32 maximum),
+    /// plus the homing and projectile-less arms.
+    #[test]
+    fn original_weapon_launch_speed_rows() {
+        let corpus = fireat_speed_corpus();
+        let rows = corpus["speed"].as_array().unwrap();
+        assert_eq!(rows.len(), 359);
+        for (index, row) in rows.iter().enumerate() {
+            let input = &row["input"];
+            let int = |key: &str| input[key].as_i64().unwrap() as i32;
+            let projectile =
+                input["projectile"]
+                    .as_bool()
+                    .unwrap()
+                    .then(|| LaunchSpeedProjectile {
+                        rot: int("rot"),
+                        floater: int("floater") != 0,
+                    });
+            assert_eq!(
+                weapon_launch_speed(int("speed"), projectile, int("gravity"), int("distance")),
+                row["speed"].as_i64().unwrap() as i32,
+                "row {index}: {input}"
+            );
+        }
+    }
+
+    /// The same corpus's FireAt distance block (`0x006FE4F6..0x006FE537`),
+    /// signed32 overflow of the squared deltas included.
+    #[test]
+    fn original_fireat_launch_distance_rows() {
+        let corpus = fireat_speed_corpus();
+        let rows = corpus["distance"].as_array().unwrap();
+        assert_eq!(rows.len(), 23);
+        for (index, row) in rows.iter().enumerate() {
+            let input = &row["input"];
+            let point = |key: &str| {
+                let xy = &input[key];
+                ProjectileCoord::new(
+                    xy[0].as_i64().unwrap() as i32,
+                    xy[1].as_i64().unwrap() as i32,
+                    // Z takes no part; a nonzero source Z must not change it.
+                    if key == "source" { 999 } else { 0 },
+                )
+            };
+            assert_eq!(
+                fireat_launch_distance(point("source"), point("target")),
+                row["distance"].as_i64().unwrap() as i32,
+                "row {index}: {input}"
+            );
+        }
+    }
+
+    /// The same corpus's aim rows (`0x0070BCB0`): every moving-Unit row's lead,
+    /// from the distance `Distance_AdjForFoundation` measures (Location to
+    /// Location, 3-D), the current weapon's launch speed at it and the target's
+    /// speed and facing. The rows whose native aim is the unled target
+    /// coordinate (another class, not moving, no weapon) are the caller's gate
+    /// and must be exactly that coordinate.
+    #[test]
+    #[ignore = "requires RA2_DIR with verified gamemd.exe math tables"]
+    fn original_aim_lead_rows() {
+        let (trig, _) = tables();
+        let corpus = fireat_speed_corpus();
+        let rows = corpus["aim"].as_array().unwrap();
+        assert_eq!(rows.len(), 596);
+        let mut led = 0;
+        for (index, row) in rows.iter().enumerate() {
+            let input = &row["input"];
+            if !input["target"].as_bool().unwrap() {
+                continue;
+            }
+            let int = |key: &str| input[key].as_i64().unwrap() as i32;
+            let firer = coord(&input["firer_xyz"]);
+            let target = coord(&input["target_xyz"]);
+            let expected = coord(&row["aim"]);
+            let leads = int("whatami") == 1 && int("moving") != 0 && input["weapon"] == true;
+            if !leads {
+                assert_eq!(expected, target, "row {index}: no lead");
+                continue;
+            }
+            let distance = crate::util::native_x87::distance_3d_leptons(
+                [firer.x, firer.y, firer.z],
+                [target.x, target.y, target.z],
+            );
+            let shot_speed = weapon_launch_speed(
+                int("speed"),
+                Some(LaunchSpeedProjectile {
+                    rot: int("rot"),
+                    floater: false,
+                }),
+                int("gravity"),
+                distance,
+            );
+            let actual = lead_aim_with_table(
+                target,
+                int("facing") as u16,
+                distance,
+                shot_speed,
+                int("target_speed"),
+                trig,
+            );
+            assert_eq!(actual, expected, "row {index}: {input}");
+            led += 1;
+        }
+        assert_eq!(led, 587);
     }
 
     fn launch_scatter_corpus() -> Value {

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "WeaponTypeClass::GetSpeed over ROT/Floater/gravity/distance, FireAt's launch distance block over signed deltas incl. signed32 overflow, and the aim point 0x0070BCB0 over target class, motion, speed, body facing, distance, gravity, projectile ROT/Speed, a missing weapon and a missing target.",
+  "assumptions": [
+    "x87 control word 0x0E7F (PC53, chop), the harness default.",
+    "Rules+0x16B8 Gravity, WeaponType +0xA0/+0xA8, BulletType +0x2DC/+0x295 supplied.",
+    "The target FacingClass at +0x388 has rate 0 (Current returns the stored facing).",
+    "0x00B0EA90..0x00B0EA98 (the aim's starting coordinate) are the zero-filled BSS."
+  ],
+  "substitutions": [
+    "target vt+0x58 / vt+0x48 return the case's target coordinate",
+    "firer vt+0x48 returns the case's firer coordinate",
+    "target vt+0x2C returns the case's What_Am_I; vt+0x538 its current speed",
+    "target locomotor ILocomotion vt+0x10 Is_Moving returns the case's flag",
+    "firer vt+0x3F4 GetCurrentWeapon returns a Weapon struct naming the case's weapon"
+  ],
+  "entry_points": {
+    "get_speed": "0x00773070",
+    "distance_begin": "0x006FE4F6",
+    "distance_end": "0x006FE537",
+    "aim": "0x0070BCB0"
+  },
+  "payload_sha256": "1fb9187392f8740d63ac191631d5e141cdf516ed26a5876d24e5252fa7206d52"
+}

@@ -70,6 +70,17 @@ Fortress), the survivor flag `+6D9`, the death weapon as a real bullet (`Fire_De
 70D690`: DetonateAtCoord's tail and its Inviso scatter draw on every Inviso death weapon), and
 constructing each death object at its native call.
 
+Checkpoint (2026-09-24): a whole-combat audit (six read-only lanes, archived outside the repo
+at `Documents/vera20k-handoff/2026-09-24-combat-audit`) ranks the remaining gaps. Landed from it:
+DetonateAtCoord's special chain for Inviso shots as #496 (`2e787283`), and FireAt's launch geometry
+(the `WeaponTypeClass::GetSpeed` launch speed, without which no retail Grizzly/Rhino shell ever
+launched past one cell; `Dropping=`, not `Arcing=`, as the only source swap; the moving-target lead
+`70BCB0`; the homing fuse on the unled target; oracle `projectile_oracle/fireat_speed`). Next, in
+order: the damage numbers (`Fire_At` damage build and `ReceiveDamage` defence divides through x87,
+with difficulty `Armor=` removed: `House+0x1A0` has no damage reader), `Apply_area_damage`'s
+dispatch gates (double deaths in cascades), kill credit (buildings are not Trainable), retaliation
+gates and the object-owned rearm timer, then the remaining lanes' ranked rows.
+
 ## Landed mechanisms
 
 Merged to main:
