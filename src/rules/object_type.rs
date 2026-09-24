@@ -4562,6 +4562,29 @@ mod tests {
         crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini")
     }
 
+    /// Retail `Trainable=` through the production reader: a BuildingType is
+    /// untrainable unless its section says so (constructor `0x0045E42E`), so a
+    /// garrisonable building and a Tank Bunker never rank while the Yuri
+    /// refinery (the one retail `Trainable=yes` building) and ordinary units
+    /// do.
+    #[test]
+    fn retail_trainable_defaults_by_category() {
+        let Some(ini) = retail_rules_ini() else {
+            return;
+        };
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).expect("retail rules parse");
+        for (id, trainable) in [
+            ("CAGAS01", false),
+            ("NABNKR", false),
+            ("GAPILL", false),
+            ("YAREFN", true),
+            ("E1", true),
+            ("HTNK", true),
+        ] {
+            assert_eq!(rules.object(id).unwrap().trainable, trainable, "[{id}]");
+        }
+    }
+
     /// The two stock sections that take their Jumpjet locomotor from the
     /// `Locomotor=` GUID alone and never author `JumpJet=`.
     ///

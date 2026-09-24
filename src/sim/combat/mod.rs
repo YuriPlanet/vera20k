@@ -3047,7 +3047,8 @@ pub(crate) fn score_award_for_victim(victim: Option<&ObjectType>, veterancy: u16
 ///    the key, so every garrison kill lands here: its occupants promote, the
 ///    building never does. FireAt has already advanced the index past the
 ///    shooter (`0x006FF031..0x006FF085`) when its bullet kills, so with
-///    several occupants the NEXT one in line is paid.
+///    several occupants the NEXT one in line is paid. (VERA's line runs in
+///    reverse entry order: see `passenger::PassengerCargo`.)
 /// 5. else nobody.
 ///
 /// RESIDUAL — the costs on both sides are `TechnoTypeClass::GetActualCost`

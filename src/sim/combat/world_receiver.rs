@@ -3133,6 +3133,9 @@ fn emit_admitted_fire(
     let warhead = selected.warhead;
     let base_damage = fireat_damage(world, rules, snap, obj, weapon, is_garrison);
     let persistent_delivery = classify_projectile_delivery(weapon, rules);
+    // A failed launch (`0x006FF000`/`0x006FF01E` -> `0x006FF749`) skips the
+    // occupant advance below; an immediate (Inviso) delivery always launches.
+    let mut launched = true;
     if let ProjectileDelivery::Persistent {
         arm_frames,
         tracks_target,
@@ -3367,6 +3370,7 @@ fn emit_admitted_fire(
         // 6FF000/6FF93C destroys a failed launch, then rejoins the remaining
         // FireAt effects at6FF749. Do not manufacture a stationary projectile
         // or return before the common fire-event/burst bookkeeping below.
+        launched = launch.is_some();
         if let Some(FireAtLaunchResult {
             velocity,
             speed: launch_speed,
@@ -3614,8 +3618,42 @@ fn emit_admitted_fire(
         });
     }
 
+    // `TechnoClass::FireAt @ 0x006FF031..0x006FF085`, right after
+    // `BulletClass::Fire`: an occupied building advances its firing occupant,
+    // `(+0x69C + 1) % occupants`. Everything after reads the new index: the
+    // rearm below (`GetROF` at `0x006FF289` takes the building's weapon
+    // through `BuildingClass::GetWeapon @ 0x004526F0`, i.e. the NEXT
+    // occupant's ROF and Burst) and the shot's own kill credit, since its
+    // Inviso bullet detonates later in its own AI (VERA's inline commit after
+    // this emission).
+    if is_garrison
+        && launched
+        && let Some(cargo) = world
+            .substrate
+            .entities
+            .get_mut(snap.stable_id)
+            .and_then(|building| building.passenger_role.cargo_mut())
+    {
+        let count = cargo.count() as u8;
+        if count > 0 {
+            cargo.garrison_fire_index = (cargo.garrison_fire_index + 1) % count;
+        }
+    }
+    let rof_weapon = if is_garrison {
+        world
+            .substrate
+            .entities
+            .get(snap.stable_id)
+            .and_then(|building| {
+                super::fire_error_world::garrison_weapon(world, rules, building, obj, snap.target)
+            })
+            .map_or(weapon, |(occupant_weapon, _)| occupant_weapon)
+    } else {
+        weapon
+    };
+
     let next_index = burst.next_index();
-    let mid_burst = next_index < weapon.burst;
+    let mid_burst = next_index < rof_weapon.burst;
     if mid_burst {
         // gamemd-derived: `TechnoClass::GetROF @ 0x006FCFA0`, mid-burst branch.
         // The gap between shots inside a burst is drawn, not fixed.
@@ -3633,7 +3671,7 @@ fn emit_admitted_fire(
         ) as u8;
         out.burst_updates.push((snap.stable_id, burst_delay, 0));
     } else {
-        let mut rof_ticks = rof_to_cooldown_frames(weapon.rof, &mut world.scenario_rng);
+        let mut rof_ticks = rof_to_cooldown_frames(rof_weapon.rof, &mut world.scenario_rng);
         // `GetROF @ 0x006FCFA0`, `0x006FD0E2..0x006FD14C`: a ROF-ability
         // holder then stores `ftol(rof * Rules.VeteranROF)` — applied ONCE,
         // after the jitter and before the garrison divides. The firer's rank
@@ -3661,7 +3699,7 @@ fn emit_admitted_fire(
 
     // Aircraft ammo deduction: one ammo per burst completion (not per shot).
     if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
-        entity.weapon_burst.complete_shot(weapon.burst.max(1));
+        entity.weapon_burst.complete_shot(rof_weapon.burst.max(1));
     }
     if !mid_burst
         && !world
@@ -3672,24 +3710,6 @@ fn emit_admitted_fire(
             .is_some_and(|mission| mission.is_attacking())
     {
         out.ammo_deduct.push(snap.stable_id);
-    }
-
-    // `TechnoClass::FireAt @ 0x006FF031..0x006FF085`, right after
-    // `BulletClass::Fire`: an occupied building advances its firing occupant,
-    // `(+0x69C + 1) % occupants`. The shot's own detonation comes later (its
-    // Inviso bullet's AI; VERA's inline commit after this emission), so its
-    // kill credit, and every later reader of the index, see the next occupant.
-    if is_garrison
-        && let Some(cargo) = world
-            .substrate
-            .entities
-            .get_mut(snap.stable_id)
-            .and_then(|building| building.passenger_role.cargo_mut())
-    {
-        let count = cargo.count() as u8;
-        if count > 0 {
-            cargo.garrison_fire_index = (cargo.garrison_fire_index + 1) % count;
-        }
     }
 
     // `TechnoClass::Fire @ 0x006FF749..0x006FF872` runs after the bullet
