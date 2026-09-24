@@ -237,15 +237,15 @@ pub(super) fn primary_range_leptons(
 ///   (see `combat_weapon` R1). Trigger: an airborne-but-low target — a
 ///   Rocketeer or Kirov just after lift-off. Frequency: brief windows per
 ///   flight.
-/// - `0x006FC727` splits the high-flying verdict into 3 (the target is this
-///   object's `DeployedFrom`, instance field `TechnoClass+0x2AC`) and 5, and
-///   the caller admits 3 (`0x00708282`/`0x007084B8` are `CMP EAX,0x5 / JZ
-///   <reject>` — only 5 rejects). VERA reports `Illegal` for both, so such a
-///   candidate is rejected where gamemd keeps it — the one arm here that makes
-///   VERA *less* permissive. Trigger: `0x006FC70E` must first find the target
-///   `IsHighFlying`, and `+0x2AC` links to the structure this object deployed
-///   out of, which is never at flight level. Frequency: practically
-///   unreachable on stock data.
+/// - `0x006FC727` splits the high-flying verdict into 3 when the target is
+///   this object's LocomotorTarget (`TechnoClass+0x2AC`, the object its
+///   Magnetron beam holds) and 5 otherwise, but T4 (`0x006FC0EE`) already
+///   answers 3 for that target, so this arm always returns 5 (native
+///   execution: `tools/spatial_oracle/fire_error.py`). The caller admits 3
+///   (`0x00708282`/`0x007084B8` are `CMP EAX,0x5 / JZ <reject>`), so a
+///   Magnetron responder holding the attacker is kept natively; this peek
+///   does not model T4. VERA has no Magnetron hold, so the case never
+///   arises.
 pub(crate) fn responder_peek_fire_error(
     candidate: &GameEntity,
     target: &GameEntity,

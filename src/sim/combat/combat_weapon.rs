@@ -949,8 +949,8 @@ fn targeting_fire_error_blocks(
             {
                 return true;
             }
-            // 0x006FC705..0x006FC739: `IsHighFlying && !AA` → 5 (3 when the
-            // target is this object's `DeployedFrom`; both block the shot).
+            // 0x006FC705..0x006FC739: `IsHighFlying && !AA` → 5 (its REARM arm
+            // needs the Magnetron's held target, which T4 answers first).
             //
             // RESIDUAL (UNCHECKED) — 0x006FC73C..0x006FC75C is a second gate:
             // a Foot target whose `InWhichLayer (vt+0x78) != 2` also needs an

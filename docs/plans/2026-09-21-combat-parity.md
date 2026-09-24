@@ -43,15 +43,17 @@ death anims (building DestructionEffects, Unit Death_Explosion with the ship-sin
 Aircraft arm) as #451 (`1aa3041b`), mind control (CaptureManagerClass) as #457 (`32fc312b`), the
 Chrono Legionnaire's erase (TemporalClass) as #474 (`80f4494a`), the house defeat (tracking
 counts, the gate, Blowup_All) as #476 (`3783b0ee`), the Crazy Ivan bomb (BombClass, its clock,
-sounds, cursors and clicks) as #488 (`7d4b970c`). The launch scatter, shrapnel and cluster trig
-through the native tables is on `feature/combat-scatter-trig`. A production
+sounds, cursors and clicks) as #488 (`7d4b970c`), the launch scatter, shrapnel and cluster trig
+through the native tables as #489 (`a97226a9`). GetFireError, the fire-legality owner, is on
+`feature/combat-fire-error`. A production
 sortie showed the Carrier wing never attacks: every manager pass re-issues each Hornet's attack
 from sub-state 0 (`assign_child_attack`), so the aircraft attack run never completes and the wing
 never lands. Research lanes finished 2026-09-24 (scratchpad, not tracked): the aircraft attack
 loop, Prism forwarding, Gattling spin-up and native GetFireError. Aircraft states 5..9 and Gattling
-both consume GetFireError codes, which VERA does not produce, so GetFireError is the next
-mechanism. Next, by player visibility: that fire-legality owner, then the aircraft attack loop
-(Mission_Attack 5..10) and the Carrier wing cycle, Gattling, Prism forwarding, the Slave Miner's
+both consume GetFireError codes, so GetFireError came first. Next, by player visibility: the
+aircraft attack loop (Mission_Attack 5..10) and the Carrier wing cycle, Gattling, the remaining
+GetFireError consumers (weapon selection without legality, the scan, retaliation, base-defence
+and cursor peeks), Prism forwarding, the Slave Miner's
 slave release at its death (`6B0AE0`), the other special warhead bodies (Magnetron and the rest),
 homing launch and steering through the native tables (HomingTrack `5B20F0`, the sidewinder sine),
 the ship sink, the Foot
@@ -700,6 +702,59 @@ Launch scatter trig (`feature/combat-scatter-trig`, no schema change), owner
   exact root where native uses Sqrt_Approx, and its target point is the raw position (dormant in
   stock); FU6 the atan table has two owners (compiled in, and loaded from the executable).
 
+GetFireError (`feature/combat-fire-error`, no schema change), owner `sim/combat/fire_error.rs`
+(the native function over plain facts and a lazily asked `FireQuery`) with
+`combat/fire_error_world.rs` (the facts read from live objects, each question answered by its
+owner):
+- Before: VERA had no producer of the code. Fire admission spread about twenty of the base's tests
+  over early returns in an order native contradicts (range and the bridge deck before ROF, ammo,
+  cloak and legality); weapon selection refused illegal targets and dropped them at once; a
+  pre-scan skipped low-power, empty-garrison and teleporting firers. Missing outright: a unit
+  warping in held no fire (T3: VERA shot during a Chronosphere or Legionnaire warp-in); Natural
+  attackers spare Unnatural targets (T14: dogs bit Brutes and Yuri Prime); a computer house spares
+  the Iron Curtain (T16); a drained defence stops (B2); a building drops a target that left its
+  range (C8); a docked miner holds fire (U5); a moving Floating Disc does not drain (U8, whose
+  FireWhileMoving default was wrong); bunkered tanks against short weapons (T24); deploying units
+  (T25); gas against bunkered or psionic-immune targets (T26/T27); the other slot's live effect
+  (T37); HunterSeeker (T49); the medic and repair healer rules (U6/I2); TechnoClass::AI's 16-frame
+  drop. The cloak test (T17) read the weapon's range where native reads its damage value.
+- Now: `get_fire_error` runs the class prefix, the base's 61 tests and the class suffix in native
+  order. `FireSubject` supplies the facts and answers the questions through their owners (InRange,
+  the naval selector, cells, sensors, alliances, CanInfect, CanCapture, Is_Moving_Now;
+  Is_Operational_For_Output is now one predicate, `power_system::is_operational_for_output`, shared
+  with the gap generator; `IsOnBridge_ForFiring` moved into sim as
+  `in_range::is_on_bridge_for_firing`). Admission asks it once where each class's fire routine
+  asks it and applies that routine's table: Unit `Fire_At_Target` (2 turns a turretless hull, 5
+  applies the heal rule, 9 surfaces in range), Infantry blocks 1 and 2 (5 heal rule, 9 surfaces; a
+  refusal on the fire frame ends the action), Building `Mission_Attack` (1/5/6/8 drop the target, 2
+  the voxel retry, 9 surfaces), Aircraft state 4 (9 surfaces). Selection in the fire path is
+  SelectWeapon alone. The 16-frame check (`6FA472..6FA4CB`) drops an ILLEGAL or CANT target. Keys
+  ported: Natural, Pushy, BerserkFriendly, MobileFire (constructor yes), HunterSeeker, NonVehicle
+  (UnitType), JumpJetTurn (InfantryType), EMPulseCannon (BuildingType); FireWhileMoving defaults to
+  yes (constructor `771DE6`). Deleted: `fire_decision.rs`, the admission's inline gates,
+  `fire_error_on_bridge_mismatch`, the pre-scan's power, garrison and teleport terms.
+- Native execution: `tools/spatial_oracle/fire_error.py` runs the four class entries natively
+  (1191 rows: each test's deciding row and just-missed twin, the boundaries and precedence pairs;
+  codes and the ordered query log). `fire_error::tests::original_fire_error_rows` replays every
+  row, all matching. Parity demonstrated for the composition and order within those inputs; the
+  answered questions keep their own evidence. Reading only: the consumer tables and the body of
+  IsOnBridge_ForFiring (the render and sim ports agree).
+- Production regressions: `a_drained_defence_drops_its_target_and_holds_fire`,
+  `a_building_drops_a_target_out_of_range_but_keeps_it_while_reloading` and
+  `a_warping_in_unit_holds_fire_until_it_lands` (each fails on the old admission),
+  `a_natural_attacker_lets_go_of_an_unnatural_target_on_the_sixteenth_frame`,
+  `a_spawner_beside_a_span_along_that_side_is_on_bridge_for_firing`; retail
+  `retail_fire_error_flags` (the stock types that carry each key).
+- Residuals: facts with no VERA producer hold the constructor value (listed in `fire_error.rs`:
+  the Magnetron hold T4/T11/T28..T31/T42, Robot Control T6, sinking T7/T57, the Chronosphere latch
+  T15, balloon docking T18, paradrop falling T19, EMP T20, particle systems T37/T46 but the Sonic
+  wave; dormant keys T44/U1/U3/U4/U7/I3; B3). Fixed answers: the target layer (T39), the deploy
+  cell (U4), Can_Fire (U13/I10), GetVisualState (fully cloaked reads 5). Consumers not yet driven by
+  the code: the Unit case 6 spawn clear (`6B7BB0`), gattling (the C14 and C8 tails), aircraft
+  states 5..10 (C2..C6), the building face arms (VERA's turret sweep turns every frame), the SAM
+  path (C7), and the peeks that keep their own subsets (selection legality for pursuit, threat and
+  can-fire; C18 cursor, C19, C20, C22/C23, C24).
+
 ## Native evidence inventory
 
 Run `python -m tools.spatial_oracle.<stem> --check` (`flat_art`: `tools/projectile_oracle`).
@@ -742,6 +797,7 @@ Sidecars record binary identity; landing-era SHA-256 `1cdd1180e49024fbda8ad568ca
 | house_defeat_gate | `4F8E86..4F8F82` with the CounterClass readers | 21 | Blowup_All, MPlayer_Defeated stubbed |
 | house_blowup_all | `4FC6D0` with `70F820`, `4722F0`, `472330` | 10 | ReceiveDamage, `71AD40`, side lookup stubbed |
 | bomb_class | `438E70`, `438A70`, `438A00`, `438720`, `4389B0`, `438BF0` (with `50B6F0`, Sqrt_Approx, ftol); `6FA6F5`; arms `469343`/`4699C4`; `6FCB8D` | 97 | sounds, anim, damage, bridge calls, virtuals recorded |
+| fire_error | `6FC0B0` through `740FD0`/`51C8B0`/`447F10`/`41A9E0`, with GetWeapon, `6F3970`, `4555D0`, `4527D0`, the timers and spawn counts | 1191 | InRange, flying, layer, cells, sensor, alliance, bridge, CanInfect, CanCapture, locomotor and facing queries supplied |
 | launch_scatter (`tools/projectile_oracle`) | `6FE663..6FE8EE`; `46A5B2..46A875`, `46AA66..46AD29`; `49F420`; the cluster loop `469008..469091` (with Sqrt_Approx, sin/cos/atan2, ftol) | 87 + 54 + 792 + 6 | draws, GetWeaponRange, GetCoords supplied; child launch and DetonateAtCoord observed |
 
 Also `tools/infantry_scatter_oracle`, `tools/mcv_deploy_oracle`. Pre-branch main harnesses (review): techno_target_scan 171,
@@ -833,6 +889,10 @@ All saved and read back; no byte or prototype edits. One boundary repair (below,
   `41C430` Vector3D__Length2D_Twin (same body), `41C3C0` Vector3D__Length3D, `41C3F0`
   Vector3D__SeedIfZero (all were FUN_); comments `6FE663` (the scatter) and `46A5B2`/`46AA66`
   (the two shrapnel branches).
+- GetFireError: created `51C8B0` InfantryClass__GetFireError and `740FD0` UnitClass__GetFireError
+  (no functions were defined), renamed `6F3970` TechnoClass__GetWeaponDamageValue (was
+  GetWeaponRange); plates `6FC0B0`, the four overrides, `6F3970`, `703B10`; comments `6FC0EE`
+  (+0x2AC is the Magnetron's LocomotorTarget, not DeployedFrom), `6FC27C`, `6FC720`, `6FA472`.
 - Comments, other: `4143EB`, `65E6BE`, `692766`, `41CD6E`, `4CDBE1`, `4CDC37`, `4CDCFB`, `566332`,
   `6EA089`, `6EC300`, `6E53A0`, `726C9C`, `71F4E0`, `55AFB0`, `481670`, `518C56`, `51D200`,
   `51D212`, Teleport `718080`, Foot `4DDC60` (EOL; no function), Foot `4DB800`
@@ -883,8 +943,9 @@ Aircraft attack loop (owner `world/aircraft_attack.rs` + shared admission/rearm)
   `.local/probe_aircraft_error.py` (`41A9E0` codes).
 - State 10: zero-ammo/targetless return, conditional clear `418C21..418C3D`, RNG/NavCom suffix.
 - Release: call `481670(Aircraft+9C copy,1,0,0)` after the FireAt loop, before the suffix.
-- Admission: GetFireError codes lack producers; Aircraft+6C9 (`4143FC` sets, `413D47` clears,
-  `41A9FF` refuses; writers `65DCE9`/`65E7B8`/`65EA0B`); DropPayload arm blocked.
+- Admission: GetFireError produces the codes (state 4 surfaces on 9); the other codes' state
+  moves are this loop's. Aircraft+6C9 (`4143FC` sets, `413D47` clears, A1 `41A9FF` refuses;
+  writers `65DCE9`/`65E7B8`/`65EA0B`); DropPayload arm blocked.
 - Air FireAt velocity, ROT0/1/homing and 6CA suffix; GetROF House/bunker/authored delay; SpawnManager
   burst writes `6B73F6`/`6B7585` (`746493`/`74656C` unverified).
 - ~17 raw `attack_target = None` sites skip `WeaponBurst::clear_target`; classify against
@@ -970,7 +1031,8 @@ Whole-combat gaps (plan list plus review coverage top 10):
   the projectile SHP frame and MagBeam edges still use host trig.
 - Gattling stage pinned 0 (`combat_weapon.rs:1070`); Prism forwarding absent; Tesla overpower.
 - Legacy `tick_retaliation` beside `7087C0`; 2-D in_range twin (-512); retarget skips sequence reset.
-- FLH slope/building arms; vehicle click (+6E0, `692640`/`692666`, `5F4578`); fire legality.
+- FLH slope/building arms; vehicle click (+6E0, `692640`/`692666`, `5F4578`); the remaining
+  GetFireError consumers (see its section).
 - Final owner audit; release retail load and rendered takeoff->landing->reload on the final
   candidate. Last load (landing increment): parity-digest `728c32753109a51dca9bc1c996a1219101db050ce3cf0887a9595a375f08471f`,
   two `Dustbowl.mmx` runs, seed `0x00C0FFEE`, 30 frames, identical digests (loading only).

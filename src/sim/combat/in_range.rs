@@ -776,79 +776,37 @@ fn cell_is_bridge(terrain: &ResolvedTerrainGrid, rx: u16, ry: u16) -> bool {
         .is_some_and(|cell| cell.bridge_facts.has_structural_bridge())
 }
 
-/// `TechnoClass::GetFireError` 0x006FC0B0, the block at 0x006FCBE6.
-///
-/// ```text
-/// MOV CL,[ESI+0x8C]        ; attacker OnBridge
-/// MOV AL,[EBP+0x8C]        ; target   OnBridge
-/// CMP CL,AL ; JZ           ; only runs when they DISAGREE
-/// ...  both objects' own cells (vtable+0x1BC = ObjectClass::GetOccupiedCell
-///      0x005F6960) must carry cell+0x140 & 0x100
-/// ...  and the attacker must NOT satisfy vtable+0x54
-/// -> FireError 5, the shot does not happen
-/// ```
-///
-/// `EBP` is built at 0x006FC177 as `(target->flags_0x14 & 1) ? target : 0` and
-/// the tail is guarded by `TEST EBP,EBP` at 0x006FCAFA, so the block is reached
-/// only when the target narrows to a TechnoClass — a cell target never gets
-/// here.
-///
-/// **vtable+0x54, pinned 2026-08-19.** For `FootClass` (so every infantry and
-/// vehicle) the slot holds `ObjectClass::IsHighFlying` 0x004DE620:
-/// `this->+0x74 != 0 && this->vtable+0x1C8() >= 2 * g_nFootLevelHeightLeptons`,
-/// i.e. height at or above 208 leptons. `AircraftClass` overrides it at
-/// 0x0041B920 and forwards to the same body EXCEPT for two Rules-designated
-/// types, which answer from the spawn manager's `vtable+0x80` instead:
-/// `RulesClass+0x4E0` = `[General] V3RocketType` (key string 0x0083BA88,
-/// written at 0x006713B0) and `RulesClass+0x514` = `[General] DMislType`
-/// (key string 0x0083B9B0, written at 0x0067156A). Both are missile bodies
-/// that are airborne whenever they are alive, so the branch cannot decide this
-/// gate for anything a player commands.
-///
-/// `is_high_flying` is the universal `ObjectClass` predicate — the same body
-/// this slot resolves to — so the exemption now answers for any high-flying
-/// object, not only for the aircraft category. That is a behaviour change AT
-/// THIS SITE: a Jumpjet vehicle or a Rocketeer above 208 leptons used to eat
-/// FireError 5 for a bridge mismatch and now does not, which is what
-/// `vtable+0x54` does at 0x006FCBE6. Do NOT re-scope the predicate to
-/// `EntityCategory::Aircraft` to "tighten" this gate: the stock Kirov `[ZEP]`
-/// is a `[VehicleTypes]` Jumpjet, and a category test grounds it.
-///
-/// This is deliberately NOT folded into `compute_in_range`. The native
-/// `InRange` 0x006F7220 has no such clause; putting it there would be a gate
-/// gamemd's InRange lacks. It is evaluated beside the range test at the fire
-/// site, as its own refusal.
-///
-/// What a refused attacker does NEXT is a separate question. Native consumers
-/// of the FireError code outside 0x006FC0B0 have not been traced — UNCHECKED —
-/// so this only suppresses the shot and leaves target selection and pursuit
-/// exactly as they were.
-pub(crate) fn fire_error_on_bridge_mismatch(
-    attacker: &GameEntity,
-    target: &crate::sim::combat::TargetKind,
-    entities: &EntityStore,
-    terrain: &ResolvedTerrainGrid,
-) -> bool {
-    let crate::sim::combat::TargetKind::Entity(target_id) = target else {
+/// `TechnoClass::IsOnBridge_ForFiring @ 0x00703B10`, GetFireError T35's
+/// refusal of a Spawner launch: an object not on a deck stands in a bridge
+/// cell, or beside one whose span runs along that side. The own cell needs
+/// flag `0x100`; the neighbours at `g_DirectionOffsets` (`0x0089F688`,
+/// filled at `0x0049F2F0`) S and N need `0x100` with the axis bit `0x800`
+/// set, E and W need it clear. A missing cell (off the map) answers nothing.
+pub(crate) fn is_on_bridge_for_firing(entity: &GameEntity, terrain: &ResolvedTerrainGrid) -> bool {
+    use crate::map::bridge_facts::{BRIDGE_FLAG_DIRECTION_ZERO, BRIDGE_FLAG_STRUCTURAL};
+    if entity.bridge_occupancy.is_some() {
+        return false;
+    }
+    let (rx, ry) = (entity.position.rx, entity.position.ry);
+    let flags = |dx: i32, dy: i32| {
+        let x = u16::try_from(i32::from(rx) + dx).ok()?;
+        let y = u16::try_from(i32::from(ry) + dy).ok()?;
+        terrain.cell(x, y).map(|cell| cell.bridge_facts.raw_flags)
+    };
+    let Some(own) = flags(0, 0) else {
         return false;
     };
-    let Some(target_entity) = entities.get(*target_id) else {
-        return false;
+    let span = |dx, dy, axis_set: bool| {
+        flags(dx, dy).is_some_and(|flags| {
+            flags & BRIDGE_FLAG_STRUCTURAL != 0
+                && (flags & BRIDGE_FLAG_DIRECTION_ZERO != 0) == axis_set
+        })
     };
-    if attacker.bridge_occupancy.is_some() == target_entity.bridge_occupancy.is_some() {
-        return false;
-    }
-    if !cell_is_bridge(terrain, attacker.position.rx, attacker.position.ry) {
-        return false;
-    }
-    if !cell_is_bridge(
-        terrain,
-        target_entity.position.rx,
-        target_entity.position.ry,
-    ) {
-        return false;
-    }
-    !is_high_flying(attacker)
+    own & BRIDGE_FLAG_STRUCTURAL != 0
+        || span(0, 1, true)
+        || span(-1, 0, false)
+        || span(1, 0, false)
+        || span(0, -1, true)
 }
 
 /// `TechnoClass::InRange` 0x006F7220, the block at 0x006F75FB reached once the
@@ -2214,197 +2172,53 @@ mod tests {
         );
     }
 
-    /// `TechnoClass::GetFireError` 0x006FC0B0 block at 0x006FCBE6, ported as
-    /// `fire_error_on_bridge_mismatch`. One test per term of the conjunction.
-    fn bridge_pair_terrain() -> ResolvedTerrainGrid {
-        let mut terrain = flat_terrain(16, 16);
-        for (rx, ry) in [(10u16, 10u16), (11, 10)] {
-            let idx = ry as usize * 16 + rx as usize;
-            terrain.cells[idx].bridge_facts.raw_flags |=
-                crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
-        }
-        terrain
-    }
-
-    /// Attacker at (10,10), target at (11,10); `on_deck` picks which of the
-    /// two carries the OnBridge byte.
-    fn mismatched_pair(attacker_on_deck: bool, target_on_deck: bool) -> EntityStore {
-        let mut store = EntityStore::new();
-        let mut attacker = GameEntity::test_default(1, "MTNK", "Test", 10, 10);
-        attacker.category = EntityCategory::Unit;
-        if attacker_on_deck {
-            attacker.bridge_occupancy =
-                Some(crate::sim::components::BridgeOccupancy { deck_level: 4 });
-        }
-        let mut target = GameEntity::test_default(2, "MTNK", "Test", 11, 10);
-        target.category = EntityCategory::Unit;
-        if target_on_deck {
-            target.bridge_occupancy =
-                Some(crate::sim::components::BridgeOccupancy { deck_level: 4 });
-        }
-        store.insert(attacker);
-        store.insert(target);
-        store
-    }
-
+    /// `IsOnBridge_ForFiring @ 0x00703B10` over its five cells: the own cell
+    /// needs the bridge flag; S and N neighbours need it with the axis bit
+    /// `0x800`, E and W without; an object on the deck is exempt.
     #[test]
-    fn getfireerror_refuses_a_shot_from_the_deck_down_at_a_unit_beneath_it() {
-        // The half `InRange` 0x006F75FB does NOT cover: the attacker is on the
-        // deck, so its own under-bridge height clause never fires.
-        let terrain = bridge_pair_terrain();
-        let store = mismatched_pair(true, false);
-        let attacker = store.get(1).unwrap();
-        assert!(fire_error_on_bridge_mismatch(
-            attacker,
-            &crate::sim::combat::TargetKind::Entity(2),
-            &store,
-            &terrain,
+    fn a_spawner_beside_a_span_along_that_side_is_on_bridge_for_firing() {
+        use crate::map::bridge_facts::{BRIDGE_FLAG_DIRECTION_ZERO, BRIDGE_FLAG_STRUCTURAL};
+        let unit = GameEntity::test_default(1, "MTNK", "Test", 10, 10);
+        let with = |cells: &[((u16, u16), u32)]| {
+            let mut terrain = flat_terrain(16, 16);
+            for &((rx, ry), flags) in cells {
+                terrain.cells[ry as usize * 16 + rx as usize]
+                    .bridge_facts
+                    .raw_flags = flags;
+            }
+            terrain
+        };
+        let span = BRIDGE_FLAG_STRUCTURAL | BRIDGE_FLAG_DIRECTION_ZERO;
+        assert!(!is_on_bridge_for_firing(&unit, &with(&[])));
+        assert!(is_on_bridge_for_firing(
+            &unit,
+            &with(&[((10, 10), BRIDGE_FLAG_STRUCTURAL)])
         ));
-    }
-
-    #[test]
-    fn getfireerror_refuses_the_shot_from_underneath_as_well() {
-        let terrain = bridge_pair_terrain();
-        let store = mismatched_pair(false, true);
-        let attacker = store.get(1).unwrap();
-        assert!(fire_error_on_bridge_mismatch(
-            attacker,
-            &crate::sim::combat::TargetKind::Entity(2),
-            &store,
-            &terrain,
-        ));
-    }
-
-    #[test]
-    fn getfireerror_allows_the_shot_when_both_agree_on_onbridge() {
-        // CMP CL,AL / JZ — equal OnBridge bytes skip the whole block.
-        let terrain = bridge_pair_terrain();
-        for both in [false, true] {
-            let store = mismatched_pair(both, both);
-            let attacker = store.get(1).unwrap();
-            assert!(
-                !fire_error_on_bridge_mismatch(
-                    attacker,
-                    &crate::sim::combat::TargetKind::Entity(2),
-                    &store,
-                    &terrain,
-                ),
-                "both on_bridge={both} must not refuse"
-            );
+        for north_south in [(10, 11), (10, 9)] {
+            assert!(is_on_bridge_for_firing(
+                &unit,
+                &with(&[(north_south, span)])
+            ));
+            assert!(!is_on_bridge_for_firing(
+                &unit,
+                &with(&[(north_south, BRIDGE_FLAG_STRUCTURAL)])
+            ));
         }
-    }
-
-    #[test]
-    fn getfireerror_needs_both_cells_to_carry_the_structural_flag() {
-        // Same mismatch, but one of the two cells is ordinary ground.
-        let store = mismatched_pair(true, false);
-        let attacker = store.get(1).unwrap();
-        for drop_idx in [10usize * 16 + 10, 10 * 16 + 11] {
-            let mut terrain = bridge_pair_terrain();
-            terrain.cells[drop_idx].bridge_facts.raw_flags = 0;
-            assert!(
-                !fire_error_on_bridge_mismatch(
-                    attacker,
-                    &crate::sim::combat::TargetKind::Entity(2),
-                    &store,
-                    &terrain,
-                ),
-                "cell {drop_idx} without 0x100 must not refuse"
-            );
+        for east_west in [(11, 10), (9, 10)] {
+            assert!(is_on_bridge_for_firing(
+                &unit,
+                &with(&[(east_west, BRIDGE_FLAG_STRUCTURAL)])
+            ));
+            assert!(!is_on_bridge_for_firing(&unit, &with(&[(east_west, span)])));
         }
-    }
-
-    #[test]
-    fn getfireerror_exempts_a_high_flying_attacker() {
-        // vtable+0x54. An aircraft at or above 2 level heights is exempt; the
-        // same aircraft sitting on the deck is not.
-        let terrain = bridge_pair_terrain();
-        let mut store = EntityStore::new();
-        let mut flyer = aircraft_at_altitude(HIGH_FLIGHT_THRESHOLD_LEPTONS);
-        flyer.position.rx = 10;
-        flyer.position.ry = 10;
-        let mut target = GameEntity::test_default(3, "MTNK", "Test", 11, 10);
-        target.category = EntityCategory::Unit;
-        target.bridge_occupancy = Some(crate::sim::components::BridgeOccupancy { deck_level: 4 });
-        store.insert(flyer);
-        store.insert(target);
-        let flyer_ref = store.get(2).unwrap();
-        assert!(!fire_error_on_bridge_mismatch(
-            flyer_ref,
-            &crate::sim::combat::TargetKind::Entity(3),
-            &store,
-            &terrain,
+        // Diagonals are not asked.
+        assert!(!is_on_bridge_for_firing(&unit, &with(&[((11, 11), span)])));
+        let mut on_deck = unit.clone();
+        on_deck.bridge_occupancy = Some(crate::sim::components::BridgeOccupancy { deck_level: 4 });
+        assert!(!is_on_bridge_for_firing(
+            &on_deck,
+            &with(&[((10, 10), BRIDGE_FLAG_STRUCTURAL)])
         ));
-    }
-
-    #[test]
-    fn getfireerror_skips_a_cell_target() {
-        // EBP is null unless the target narrows to a TechnoClass, and the tail
-        // is guarded by TEST EBP,EBP at 0x006FCAFA.
-        let terrain = bridge_pair_terrain();
-        let store = mismatched_pair(true, false);
-        let attacker = store.get(1).unwrap();
-        assert!(!fire_error_on_bridge_mismatch(
-            attacker,
-            &crate::sim::combat::TargetKind::Cell(11, 10),
-            &store,
-            &terrain,
-        ));
-    }
-
-    /// RESIDUAL — gamemd address 0x006FC0B0, fall-through of the same block at
-    /// 0x006FCC5D–0x006FCCBA.
-    ///
-    /// Mechanism: when the warhead byte at `WeaponType+0xAC` `+0x159` is set
-    /// and `abs(attacker.Z - target.Z)` exceeds
-    /// `2 * g_nTechnoInRangeLevelHeightLeptons` (`LEA EDX,[ECX+ECX]` at
-    /// 0x006FCCA7), the call returns FireError 5 at 0x006FCCAE. Reached under
-    /// the same `OnBridge`-mismatch guard as the gate above.
-    ///
-    /// Trigger: a warhead whose `Parasite=` flag is set, fired across a
-    /// deck at a height difference over two level heights. The byte is
-    /// written by `WarheadTypeClass::ReadINI` at 0x0075D84E from the key
-    /// string at 0x0081717C, which `read_memory` gives as `Parasite`.
-    ///
-    /// Effect: unmodelled; VERA allows shots gamemd refuses.
-    ///
-    /// Frequency: bounded to the three stock warheads carrying
-    /// `Parasite=yes` in `ini/rulesmd.ini` - `[Parasite]` (Terror Drone),
-    /// `[ParasiteDog]` (attack dog) and `[ParasitePlus]` (Giant Squid) -
-    /// each attacking across a bridge deck. Uncommon, but all three are
-    /// ordinary skirmish units rather than edge cases.
-    #[test]
-    #[ignore = "gamemd 0x006FCCAE Parasite-warhead height clause across a deck is unported"]
-    fn getfireerror_bridge_height_clause_is_unported() {
-        panic!("unimplemented: GetFireError 0x006FCCAE warhead +0x159 height clause");
-    }
-
-    /// RESIDUAL — gamemd address 0x006FC612, calling
-    /// `TechnoClass::IsOnBridge_ForFiring` 0x00703B10.
-    ///
-    /// Mechanism: `MOV AL,[EDI+0x131]` at 0x006FC606 gates on the weapon-type
-    /// byte that `WeaponTypeClass::ReadINI` 0x007720FA fills from the INI key
-    /// `Spawner=` (key string at 0x00849538); the call to
-    /// `SpawnManagerClass::CountAliveSpawns` 0x006B7D30 just after confirms it.
-    /// When set, `IsOnBridge_ForFiring` non-zero returns FireError 6 at
-    /// 0x006FCD29. That predicate is NOT the mismatch gate: it early-outs to 0
-    /// when the object's own `OnBridge` byte +0x8C is set, then tests the
-    /// object's own cell for flag 0x100 plus four neighbour cells, each
-    /// qualified by that neighbour's orientation bit 0x800 matching the axis it
-    /// lies on.
-    ///
-    /// Trigger: a `Spawner=` unit (aircraft carrier, Boomer sub) standing
-    /// UNDER or immediately beside a bridge deck cell. Not on the deck — the
-    /// +0x8C early-out exempts a unit that is actually on it.
-    ///
-    /// Effect: gamemd refuses to launch spawns; VERA launches them.
-    ///
-    /// Frequency: occasional — needs a naval or amphibious map with a bridge
-    /// over water and a spawner unit parked at it.
-    #[test]
-    #[ignore = "gamemd 0x006FC612 blocks spawner weapons on/beside a bridge; VERA does not"]
-    fn getfireerror_spawner_bridge_block_is_unported() {
-        panic!("unimplemented: GetFireError 0x006FC612 IsOnBridge_ForFiring spawner gate");
     }
 
     /// RESIDUAL — gamemd address 0x006F7220, the arcing branch of

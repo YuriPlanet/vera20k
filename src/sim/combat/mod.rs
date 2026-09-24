@@ -27,7 +27,8 @@ pub(crate) mod combat_weapon;
 pub(crate) mod damage;
 pub(crate) mod destruction_effects;
 pub(crate) mod fire_coord;
-pub(crate) mod fire_decision;
+pub(crate) mod fire_error;
+pub(crate) mod fire_error_world;
 pub(crate) mod greatest_threat;
 pub(crate) mod in_range;
 pub(crate) mod inviso_scatter;
@@ -139,26 +140,6 @@ use super::production::foundation_dimensions;
 /// Radius in cells that RevealOnFire clears shroud around the fire location.
 const REVEAL_ON_FIRE_RADIUS: u16 = 3;
 /// Step size for selecting explosion anim from a warhead's AnimList: idx = damage / 25.
-/// The facing slack a firer is allowed before its shot is refused, in 16-bit
-/// facing units — 1/32 of a turn.
-///
-/// gamemd-derived: `UnitClass::GetFireError @ 0x00740FD0`, built at
-/// `0x007412C9`/`0x007412CC` and compared at `0x007412ED`/`0x007412EF`.
-const NATIVE_FIRE_FACING_TOLERANCE: i32 = 0x0800;
-
-/// The widened slack a HOMING weapon gets — 1/16 of a turn. Native builds the
-/// tolerance byte from the PROJECTILE's `ROT=` (`WeaponType+0xA0` →
-/// `BulletTypeClass+0x2DC`, read at `0x007412BC`) with
-/// `NEG`/`SBB`/`AND 8`/`ADD 8` at `0x007412C3`..`0x007412CC`: 8 when that ROT is
-/// zero, 0x10 when it is not, then `MOV CH,BL` shifts it into the high byte.
-const NATIVE_FIRE_FACING_TOLERANCE_HOMING: i32 = 0x1000;
-
-/// A voxel-turret BUILDING must match its target facing EXACTLY.
-/// `BuildingClass::GetFireError @ 0x00447F10` builds the same tolerance byte
-/// from `BuildingTypeClass+0x16C5` (`TurretAnimIsVoxel=`, read at `0x00448010`)
-/// but with `AND -8`, giving 0 for a voxel turret and 8 for an SHP one.
-const NATIVE_FIRE_FACING_TOLERANCE_VOXEL_TURRET: i32 = 0x0000;
-
 const ANIM_LIST_DAMAGE_STEP: u16 = 25;
 
 /// One Unit's post-Foot Facing slot output for this tick — the write half of
@@ -2988,7 +2969,6 @@ pub(crate) fn build_attacker_snapshot(
         pending_building_fire,
         barrel_facing: entity.barrel_facing,
         hull_facing: entity.body_facing,
-        turret_rotation_latch: entity.turret_rotation_latch,
         burst_delay_ticks,
         weapon_override: entity.weapon_override,
         garrison,

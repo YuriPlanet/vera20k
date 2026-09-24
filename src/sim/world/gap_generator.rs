@@ -25,20 +25,35 @@ impl Simulation {
             return None;
         }
         let object = rules.object(self.interner.resolve(entity.type_ref()))?;
-        // `0x004555DA`: an offline building (the warp's latch) is not
-        // operational. RESIDUAL: native keeps one with two or more Tesla
-        // chargers (`+0x67C >= 2`) operational; VERA has no charger vector.
-        let operational = entity.health.current != 0
-            && entity.building_online()
-            && (!object.needs_engineer || entity.building_has_engineer)
-            //Actual Rust placement currently retains Construction in the
-            //BuildingUp owner, without publishing that native Mission yet.
-            //Keep its admission closed until that represented build completes.
-            && entity.building_up.is_none()
-            && !matches!(entity.mission.effective().raw(), 0x12 | 0x13)
-            && power_system::is_building_powered(&self.power_states, rules, entity, &self.interner)
-            && !(object.powered_special && self.building_power_outage(id));
-        Some(operational)
+        let facts = power_system::OperationalFacts {
+            // `0x004555DA`: an offline building (the warp's latch) is not
+            // operational. RESIDUAL: native keeps one with two or more Tesla
+            // chargers (`+0x67C >= 2`) operational; VERA has no charger
+            // vector, and no EMP.
+            online: entity.building_online(),
+            tesla_chargers: 0,
+            emp_remaining: 0,
+            health: entity.health.current,
+            powered: object.powered,
+            power_drain: power_system::native_building_power_drain(object.power),
+            powered_special: object.powered_special,
+            owner_outage: self.building_power_outage(id),
+            needs_engineer: object.needs_engineer,
+            has_engineer: entity.building_has_engineer,
+            // Actual Rust placement currently retains Construction in the
+            // BuildingUp owner, without publishing that native Mission yet.
+            // Keep its admission closed until that represented build completes.
+            effective_mission: if entity.building_up.is_some() {
+                0x12
+            } else {
+                entity.mission.effective().raw()
+            },
+        };
+        Some(power_system::is_operational_for_output(&facts, || {
+            self.power_states
+                .get(&entity.owner())
+                .is_some_and(|state| !state.has_full_power())
+        }))
     }
 
     pub(crate) fn building_power_outage(&self, id: u64) -> bool {

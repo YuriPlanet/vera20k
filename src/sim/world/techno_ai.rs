@@ -880,12 +880,92 @@ fn techno_common_steps(
 ) -> bool {
     veterancy_promotion_step(sim, id, rules);
     crate::sim::credit_income::drain_common_step(sim, id, rules);
+    illegal_target_drop_step(sim, id, rules);
     sim.capture_manager_update(id, rules, overlay_registry);
     if !sim.substrate.entities.get(id).is_some_and(|e| e.is_alive()) {
         return false;
     }
     self_heal_step(sim, id, rules);
     true
+}
+
+/// `TechnoClass::AI_Update @ 0x006FA472..0x006FA4CB`, after the drain
+/// blocks: on every sixteenth frame an object with a target asks GetFireError
+/// without range (vt+0x3BC, `SelectWeapon(Target)`) and drops the target on
+/// ILLEGAL (5) or CANT (6), unless its current mission is Capture (8) or
+/// Sabotage (0x11). A Unit's and an Infantry's own fire routines keep an
+/// illegal target; this is where they let go of it.
+fn illegal_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    use crate::sim::combat::{TargetKind, combat_weapon, fire_error::FireError};
+    if sim.session.binary_frame % 16 != 0 {
+        return;
+    }
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    let Some(target) = entity.attack_target.as_ref().map(|attack| attack.target) else {
+        return;
+    };
+    // A target that no longer resolves never reaches this check natively
+    // (`PointerExpired` clears it first); the Attack handler owns VERA's
+    // clear of such a stale target.
+    if let TargetKind::Entity(target_id) = target
+        && sim.substrate.entities.get(target_id).is_none()
+    {
+        return;
+    }
+    if matches!(entity.mission.current().raw(), 8 | 0x11) {
+        return;
+    }
+    let Some(obj) = rules.object(sim.interner.resolve(entity.type_ref())) else {
+        return;
+    };
+    let terrain = sim.resolved_terrain.as_ref();
+    let target_facts = match target {
+        TargetKind::Entity(target_id) => sim.substrate.entities.get(target_id).and_then(|target| {
+            rules
+                .object(sim.interner.resolve(target.type_ref()))
+                .map(|target_obj| {
+                    combat_weapon::techno_target_facts(
+                        target,
+                        target_obj,
+                        terrain,
+                        combat_weapon::is_ally_by_object(
+                            Some(&sim.fog.alliances),
+                            &sim.interner,
+                            entity.owner(),
+                            target.owner(),
+                        ),
+                    )
+                })
+        }),
+        TargetKind::Cell(rx, ry) => Some(combat_weapon::cell_target_facts(rx, ry, terrain)),
+    };
+    let weapon_index = combat_weapon::what_weapon_should_i_use(
+        rules,
+        obj,
+        &combat_weapon::attacker_facts(entity, obj),
+        target_facts.as_ref(),
+    );
+    let code = crate::sim::combat::fire_error_world::FireSubject {
+        world: sim,
+        rules,
+        overlay_registry: None,
+        fog: Some(&sim.fog),
+        firer: entity,
+        obj,
+        target: Some(target),
+        weapon_index,
+        garrison: crate::sim::combat::fire_error_world::garrison_weapon(
+            sim, rules, entity, obj, target,
+        ),
+    }
+    .fire_error(false);
+    if matches!(code, FireError::Illegal | FireError::Cant)
+        && let Some(entity) = sim.substrate.entities.get_mut(id)
+    {
+        crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+    }
 }
 
 /// The bomb fuse's slot in `TechnoClass::AI_Update` (`0x006FA6F5..
@@ -3357,7 +3437,11 @@ mod tests {
         attacker.owner = sim.interner.intern("Americans");
         attacker.type_ref = sim.interner.intern(type_name);
         sim.substrate.entities.insert(attacker);
-        register_entity(&mut sim, entity_of(2, EntityCategory::Unit));
+        // On the map: TechnoClass::AI's 16-frame check drops a target in limbo
+        // (GetFireError T12).
+        let mut target = entity_of(2, EntityCategory::Unit);
+        target.lifecycle.in_limbo = false;
+        register_entity(&mut sim, target);
         sim
     }
 
@@ -3761,6 +3845,56 @@ mod tests {
         );
     }
 
+    /// `TechnoClass::AI_Update @ 0x006FA472..0x006FA4CB`: an attack dog
+    /// (`Natural=yes`) holding a Brute (`Unnatural=yes`) is refused (T14,
+    /// ILLEGAL). Its own fire routine keeps the target; the sixteenth-frame
+    /// check lets go of it. A dog without `Natural=` keeps it.
+    #[test]
+    fn a_natural_attacker_lets_go_of_an_unnatural_target_on_the_sixteenth_frame() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\n\n[Attack]\nRate=.016\n\n[Guard]\nRate=.016\n\n\
+             [VehicleTypes]\n\n[InfantryTypes]\n0=DOG\n1=PUP\n2=BRUTE\n\n\
+             [DOG]\nStrength=100\nNatural=yes\nPrimary=Jaw\n\n\
+             [PUP]\nStrength=100\nPrimary=Jaw\n\n\
+             [BRUTE]\nStrength=300\nUnnatural=yes\n\n\
+             [Jaw]\nDamage=100\nROF=20\nRange=2\nWarhead=WH\n\n\
+             [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        ))
+        .expect("dog rules");
+        let held = |attacker: &str, frame: u32| {
+            let mut sim = Simulation::with_seed(0x6FA4);
+            sim.session.binary_frame = frame;
+            for (id, type_name, owner, rx) in
+                [(1, attacker, "Russians", 5), (2, "BRUTE", "YuriCountry", 6)]
+            {
+                let mut entity = GameEntity::test_default(id, type_name, owner, rx, 5);
+                entity.category = EntityCategory::Infantry;
+                entity.mission_leaf =
+                    MissionLeafState::for_entity_category(EntityCategory::Infantry);
+                entity.lifecycle.in_limbo = false;
+                entity.owner = sim.interner.intern(owner);
+                entity.type_ref = sim.interner.intern(type_name);
+                sim.substrate.entities.insert(entity);
+            }
+            let dog = sim.substrate.entities.get_mut(1).unwrap();
+            dog.attack_target = Some(AttackTarget::new(2));
+            update_mission_test_fixture(&mut dog.mission, |fixture| {
+                fixture.current = MissionId::from_known(MissionType::Attack);
+                fixture.dispatch_timer = MissionDispatchTimer::at_frame(frame);
+            });
+            sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .attack_target
+                .is_some()
+        };
+        assert!(held("DOG", 15), "the fire routine keeps an illegal target");
+        assert!(!held("DOG", 16), "the sixteenth frame drops it");
+        assert!(held("PUP", 16), "a dog that is not Natural keeps it");
+    }
+
     #[test]
     fn attack_handler_clears_only_an_authoritatively_stale_entity_target() {
         let mut sim = Simulation::with_seed(0xA773);
@@ -4132,7 +4266,9 @@ mod tests {
         attacker.owner = sim.interner.intern("Americans");
         attacker.type_ref = sim.interner.intern("SHORTVEH");
         sim.substrate.entities.insert(attacker);
-        register_entity(&mut sim, entity_of(2, EntityCategory::Unit));
+        let mut target = entity_of(2, EntityCategory::Unit);
+        target.lifecycle.in_limbo = false;
+        register_entity(&mut sim, target);
 
         let mut expected_rng = sim.clone_scenario_rng();
         let jitter = expected_rng.next_range_u32_inclusive(0, 2) as i32;
