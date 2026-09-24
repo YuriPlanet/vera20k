@@ -43,6 +43,15 @@ use crate::util::fixed_math::ra2_speed_to_leptons_per_second;
 /// `0x00473400`) and `CargoClass::RemoveFirstPassenger @ 0x00473430` pops the
 /// head, so every native consumer — transport unload, paradrop, sell eject —
 /// releases the LAST boarded passenger first.
+///
+/// RESIDUAL: a garrisoned building's occupants natively live in a separate
+/// `Occupants` vector that APPENDS (`AddGarrisonOccupant 0x00522947..
+/// 0x0052297C`), so its firing order (`+0x69C`, index 0 first) is entry
+/// order, while a sale removes them last to first (`0x004580A9..
+/// 0x0045819E`). VERA keeps garrisons in this cargo's prepend order, so a
+/// garrison fires newest-first and the kill credit (`Record_The_Kill`'s
+/// occupant arm) walks the same reversed line. Trigger: a garrison holding
+/// two or more occupants. Effect: which occupant fires, and is paid, next.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PassengerCargo {
     /// Stable IDs of entities currently inside, head first: the most recently

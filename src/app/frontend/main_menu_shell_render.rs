@@ -6,6 +6,7 @@ use std::time::Instant;
 use anyhow::Result;
 
 use crate::app::AppState;
+use crate::app::frontend::shell_pass::{owner_draw_button_label_rect, resolve_csf};
 use crate::app::frontend::shell_transition::{
     ButtonGroup, MainMenuEntryPaintFrame, MainMenuEntryPresentToken,
 };
@@ -19,8 +20,8 @@ use crate::render::shell_text::ShellAlign;
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::render::shell_transition_pass::ShellRenderTarget;
 use crate::ui::main_menu_shell::{
-    MainMenuControlId, MainMenuMovieBase, MainMenuShellLayout, RectPx, compute_layout,
-    csf_key_for_control, tooltip_csf_key_for_control,
+    MainMenuControlId, MainMenuMovieBase, MainMenuShellLayout, compute_layout, csf_key_for_control,
+    tooltip_csf_key_for_control,
 };
 use crate::ui::shell::static_reveal::{Kind1PaintWindow, Kind1RevealReceipt, Kind1RevealWindow};
 
@@ -68,6 +69,7 @@ pub(crate) enum MainMenuEntryRenderResult {
 pub(crate) enum Ra2tsDialogOwner {
     MainMenu0xE2,
     SinglePlayer0x100,
+    MoviesAndCredits0x101,
 }
 
 /// Identity of the one RA2TS session installed for a movie-bearing dialog.
@@ -157,13 +159,6 @@ fn main_menu_paint_buttons(
         .collect()
 }
 
-fn resolve_csf<'a>(state: &'a AppState, key: &'static str) -> std::borrow::Cow<'a, str> {
-    state
-        .process_assets.csf
-        .as_ref()
-        .map(|csf| csf.text(key))
-        .unwrap_or(std::borrow::Cow::Borrowed(key))
-}
 
 pub(crate) fn main_menu_title_text(state: &AppState) -> std::borrow::Cow<'_, str> {
     resolve_csf(state, "GUI:MainMenu")
@@ -242,13 +237,18 @@ fn main_menu_paint_labels<'a>(
 /// is centered, offsetting by ((w-800)/2, (h-600)/2). The parent background is
 /// painted at this origin at its native SHP canvas size.
 fn shell_origin(layout: &MainMenuShellLayout) -> (i32, i32) {
-    let x = if layout.screen.w > SHELL_LETTERBOX_W_THRESHOLD {
-        (layout.screen.w - SHELL_BASE_W) / 2
+    shell_background_origin(layout.screen.w, layout.screen.h)
+}
+
+/// Parent-background origin shared by every full-screen shell dialog.
+pub(crate) fn shell_background_origin(screen_w: i32, screen_h: i32) -> (i32, i32) {
+    let x = if screen_w > SHELL_LETTERBOX_W_THRESHOLD {
+        (screen_w - SHELL_BASE_W) / 2
     } else {
         0
     };
-    let y = if layout.screen.h > SHELL_LETTERBOX_H_THRESHOLD {
-        (layout.screen.h - SHELL_BASE_H) / 2
+    let y = if screen_h > SHELL_LETTERBOX_H_THRESHOLD {
+        (screen_h - SHELL_BASE_H) / 2
     } else {
         0
     };
@@ -388,30 +388,6 @@ pub(crate) fn ensure_movie_for_current_layout(
     Ok(())
 }
 
-/// Build the menu software-cursor sprite instance in screen space.
-///
-/// The menu always shows the default arrow (no hover/feedback variants), frame
-/// 0, hotspot (0,0). Returns None when no software cursor is loaded. The menu
-/// render uses a camera offset of (0,0), so the cursor sits at the raw screen
-/// pointer position minus the hotspot.
-fn menu_cursor_instance(state: &AppState) -> Option<SpriteInstance> {
-    let cursor = state.match_state.match_presentation.software_cursor.as_ref()?;
-    let sequence = cursor.get(crate::app::types::CursorId::Default)?;
-    let frame = crate::app::input::cursor::current_software_cursor_frame(sequence)?;
-    Some(SpriteInstance {
-        position: [
-            state.match_state.input.cursor_x - sequence.hotspot[0],
-            state.match_state.input.cursor_y - sequence.hotspot[1],
-        ],
-        size: [frame.width, frame.height],
-        uv_origin: [0.0, 0.0],
-        uv_size: [1.0, 1.0],
-        depth: CURSOR_DEPTH,
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
-        ..Default::default()
-    })
-}
 
 /// Paint the normal 0xE2 route through its active-retail presentation boundary.
 ///
@@ -615,7 +591,11 @@ fn render_main_menu_shell_to_target_inner(
                 .collect()
         })
         .unwrap_or_default();
-    let cursor_instances: Vec<SpriteInstance> = menu_cursor_instance(state).into_iter().collect();
+    let cursor_instances: Vec<SpriteInstance> =
+        crate::app::frontend::shell_pass::software_cursor(state, CURSOR_DEPTH)
+            .map(|(_, instance)| instance)
+            .into_iter()
+            .collect();
     let cursor_buffer = state
         .renderer.batch_renderer
         .create_instance_buffer(&state.renderer.gpu, &cursor_instances);
@@ -858,22 +838,12 @@ fn build_exit_confirm_modal_overlay(state: &AppState) -> Option<shell_paint::Mod
     ))
 }
 
-/// Exact owner-draw button label clipping rectangle: unpressed
-/// `+0x/+1y/-2w/-1h`, pressed `+2x/+5y/-4w/-5h`.
-fn owner_draw_button_label_rect(rect: RectPx, pressed: bool) -> RectPx {
-    let (dx, dy) = if pressed { (2, 5) } else { (0, 1) };
-    RectPx::new(
-        rect.x + dx,
-        rect.y + dy,
-        (rect.w - 2 - dx).max(0),
-        (rect.h - dy).max(0),
-    )
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ui::main_menu_shell::compute_layout;
+    use crate::ui::shell::geom::RectPx;
     use crate::ui::shell::slide::{PresentedPoll, ShellFrameWave};
     use std::time::Duration;
 

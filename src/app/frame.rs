@@ -219,6 +219,42 @@ impl App {
             _ if state.frontend.keyboard_dialog.is_some() => {
                 crate::app::frontend::skirmish_shell_render::render_keyboard_shell(state, &mut encoder, &output.texture)?;
             }
+            GameScreen::MainMenu if state.frontend.fullscreen_movie.is_some() => {
+                Self::advance_fullscreen_movie(state)?;
+                if state.frontend.fullscreen_movie.is_some() {
+                    crate::app::frontend::movies_credits_render::render_fullscreen_movie(
+                        state,
+                        &mut encoder,
+                        &output.texture,
+                    )?;
+                    presented_shell = PresentedShell::FullscreenMovie;
+                } else {
+                    // The movie ended this frame: recreate the caller's
+                    // dialog on the next frame's normal dispatch.
+                    crate::app::frontend::movies_credits_render::render_fullscreen_black(
+                        state,
+                        &mut encoder,
+                        &output.texture,
+                    );
+                }
+            }
+            GameScreen::MainMenu if state.frontend.credits_roll.is_some() => {
+                Self::advance_credits_roll(state);
+                if state.frontend.credits_roll.is_some() {
+                    crate::app::frontend::movies_credits_render::render_credits_roll(
+                        state,
+                        &mut encoder,
+                        &output.texture,
+                    )?;
+                    presented_shell = PresentedShell::CreditsRoll;
+                } else {
+                    crate::app::frontend::movies_credits_render::render_fullscreen_black(
+                        state,
+                        &mut encoder,
+                        &output.texture,
+                    );
+                }
+            }
             GameScreen::MainMenu => {
                 if let crate::app::frontend::shell_transition::ShellFirstPaintRenderResult::Rendered {
                     main_menu_entry_token,
@@ -228,6 +264,16 @@ impl App {
                     &output.texture,
                 )? {
                     pending_main_menu_entry_token = main_menu_entry_token;
+                } else if Self::movie_list_active(state) {
+                    if crate::app::frontend::movies_credits_render::render_movie_list(
+                        state,
+                        &mut encoder,
+                        &output.texture,
+                    )? {
+                        presented_shell = PresentedShell::MovieList;
+                    } else {
+                        Self::render_egui_main_menu_fallback(state, &mut encoder, &view, event_loop)?;
+                    }
                 } else if Self::native_launcher_options_active(state) {
                     pending_launcher_title_receipt = Some(
                         crate::app::frontend::skirmish_shell_render::render_launcher_options(
@@ -242,14 +288,21 @@ impl App {
                     if state.frontend.skirmish_shell_chrome.is_some() {
                         presented_shell = PresentedShell::Skirmish;
                     }
-                } else if Self::single_player_shell_active(state) {
-                    match crate::app::frontend::single_player_shell_render::render_single_player_shell(
+                } else if let Some(page) = crate::app::frontend::menu_page_render::ActiveMenuPage::from_state(state) {
+                    match crate::app::frontend::menu_page_render::render_active_menu_page(
                         state,
                         &mut encoder,
                         &output.texture,
                     )? {
-                        crate::app::frontend::single_player_shell_render::SinglePlayerShellRenderResult::Rendered => {
-                            presented_shell = PresentedShell::SinglePlayer;
+                        crate::app::frontend::menu_page_render::MenuPageRenderResult::Rendered => {
+                            presented_shell = match page {
+                                crate::app::frontend::menu_page_render::ActiveMenuPage::SinglePlayer => {
+                                    PresentedShell::SinglePlayer
+                                }
+                                crate::app::frontend::menu_page_render::ActiveMenuPage::MoviesAndCredits => {
+                                    PresentedShell::MoviesAndCredits
+                                }
+                            };
                             state.renderer.egui.begin_frame(&state.platform.window);
                             if state.match_state.match_presentation.show_save_load_panel {
                                 Self::handle_save_load_panel(state);
@@ -266,7 +319,7 @@ impl App {
                                 state.use_software_cursor(),
                             );
                         }
-                        crate::app::frontend::single_player_shell_render::SinglePlayerShellRenderResult::Fallback => {
+                        crate::app::frontend::menu_page_render::MenuPageRenderResult::Fallback => {
                             Self::render_egui_main_menu_fallback(
                                 state,
                                 &mut encoder,

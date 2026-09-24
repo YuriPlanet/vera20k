@@ -9,6 +9,10 @@ pub(crate) enum PresentedShell {
     Other,
     MainMenu,
     SinglePlayer,
+    MoviesAndCredits,
+    MovieList,
+    FullscreenMovie,
+    CreditsRoll,
     Skirmish,
 }
 

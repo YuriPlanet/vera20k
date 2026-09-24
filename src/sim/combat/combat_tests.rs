@@ -9284,6 +9284,182 @@ fn gsi_08_12_a_dont_score_victim_pays_no_experience() {
     assert_eq!(killer.veterancy_raw.bits(), 0);
 }
 
+/// A garrison's kill promotes an occupant, never the building. A BuildingType
+/// is untrainable by default (constructor `0x0045E42E`), so `Record_The_Kill`
+/// takes its occupied-building arm (`0x00702F98..0x00702FEA`) and pays the
+/// occupant at the building's fire index. FireAt has already moved that
+/// index past the shooter (`0x006FF031..0x006FF085`) when the shot kills, so
+/// with two GIs inside the one next in line is paid for the shooter's kill.
+#[test]
+fn gsi_08_12_a_garrison_kill_pays_the_occupant_next_in_line() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "\
+[InfantryTypes]\n0=E1\n1=E2\n\n\
+[VehicleTypes]\n\n\
+[AircraftTypes]\n\n\
+[BuildingTypes]\n0=CAGAS\n\n\
+[General]\nVeteranRatio=3.0\nVeteranCap=2\n\n\
+[CAGAS]\nStrength=800\nArmor=wood\nCost=500\nCanBeOccupied=yes\nCanOccupyFire=yes\nMaxNumberOccupants=5\n\n\
+[E1]\nStrength=125\nArmor=flak\nSpeed=4\nCost=200\nPrimary=M60\nOccupyWeapon=M60\n\n\
+[E2]\nStrength=1\nArmor=flak\nSpeed=4\nCost=300\n\n\
+[M60]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\n\n\
+[SA]\nVerses=100%,100%,100%,90%,70%,25%,100%,25%,25%,0%,0%\n",
+    ))
+    .expect("garrison kill fixture parses");
+    assert!(!rules.object("CAGAS").unwrap().trainable);
+    let mut store = EntityStore::new();
+    let mut building = make_entity_owned(10, "CAGAS", 5, 5, 800, "Soviet");
+    building.category = EntityCategory::Structure;
+    let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 1);
+    assert!(cargo.board(1, 1));
+    assert!(cargo.board(3, 1));
+    building.passenger_role = crate::sim::passenger::PassengerRole::Transport { cargo };
+    store.insert(building);
+    for id in [1, 3] {
+        let mut occupant = make_infantry_entity(id, "E1", 5, 5, 125);
+        occupant.owner = test_intern("Soviet");
+        occupant.passenger_role = crate::sim::passenger::PassengerRole::Inside { transport_id: 10 };
+        store.insert(occupant);
+    }
+    let mut victim = make_infantry_entity(2, "E2", 8, 5, 1);
+    victim.owner = test_intern("Americans");
+    store.insert(victim);
+    let mut interner = test_interner();
+    issue_attack_command(&mut store, 10, 2, None, &interner);
+    // The occupant at fire index 0 shoots; the one after it is next in line.
+    let (shooter, next) = {
+        let cargo = store.get(10).unwrap().passenger_role.cargo().unwrap();
+        assert_eq!(cargo.garrison_fire_index, 0);
+        (cargo.passengers[0], cargo.passengers[1])
+    };
+    tick_combat(
+        &mut store,
+        &mut OccupancyGrid::new(),
+        &rules,
+        &mut interner,
+        0,
+        100,
+        0,
+        &mut SimRng::new(1),
+    );
+
+    assert_eq!(store.get(2).map_or(0, |victim| victim.health.current), 0);
+    let raw = |id: u64| store.get(id).unwrap().veterancy_raw.bits();
+    assert_eq!(raw(10), 0, "the building never ranks");
+    assert_eq!(raw(shooter), 0, "the shooter is not the one paid");
+    assert_ne!(raw(next), 0, "the occupant next in line is");
+}
+
+/// A garrison's rearm is the NEXT occupant's: FireAt advances the firing
+/// occupant (`0x006FF031..0x006FF085`) before `GetROF` (`0x006FF289`), which
+/// takes the building's weapon through `BuildingClass::GetWeapon @
+/// 0x004526F0` at the new index. A quick shooter followed by a slow one
+/// therefore reloads slowly.
+#[test]
+fn gsi_08_05_a_mixed_garrison_rearms_with_the_next_occupants_weapon() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "\
+[InfantryTypes]\n0=E1\n1=E2\n2=E3\n\n\
+[VehicleTypes]\n\n\
+[AircraftTypes]\n\n\
+[BuildingTypes]\n0=CAGAS\n\n\
+[CAGAS]\nStrength=800\nArmor=wood\nCanBeOccupied=yes\nCanOccupyFire=yes\nMaxNumberOccupants=5\n\n\
+[E1]\nStrength=125\nArmor=flak\nSpeed=4\nPrimary=FastGun\nOccupyWeapon=FastGun\n\n\
+[E2]\nStrength=125\nArmor=flak\nSpeed=4\nPrimary=SlowGun\nOccupyWeapon=SlowGun\n\n\
+[E3]\nStrength=400\nArmor=flak\nSpeed=4\n\n\
+[FastGun]\nDamage=5\nROF=10\nRange=5\nWarhead=SA\n\n\
+[SlowGun]\nDamage=5\nROF=120\nRange=5\nWarhead=SA\n\n\
+[SA]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .expect("mixed garrison fixture parses");
+    let mut store = EntityStore::new();
+    let mut building = make_entity_owned(10, "CAGAS", 5, 5, 800, "Soviet");
+    building.category = EntityCategory::Structure;
+    let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 1);
+    assert!(cargo.board(1, 1));
+    assert!(cargo.board(3, 1));
+    building.passenger_role = crate::sim::passenger::PassengerRole::Transport { cargo };
+    store.insert(building);
+    // Whichever occupant sits at index 0 shoots with the quick gun; the one
+    // after it carries the slow gun.
+    let (shooter, next) = {
+        let cargo = store.get(10).unwrap().passenger_role.cargo().unwrap();
+        (cargo.passengers[0], cargo.passengers[1])
+    };
+    for (id, kind) in [(shooter, "E1"), (next, "E2")] {
+        let mut occupant = make_infantry_entity(id, kind, 5, 5, 125);
+        occupant.owner = test_intern("Soviet");
+        occupant.passenger_role = crate::sim::passenger::PassengerRole::Inside { transport_id: 10 };
+        store.insert(occupant);
+    }
+    let mut victim = make_infantry_entity(2, "E3", 8, 5, 400);
+    victim.owner = test_intern("Americans");
+    store.insert(victim);
+    let mut interner = test_interner();
+    issue_attack_command(&mut store, 10, 2, None, &interner);
+    tick_combat(
+        &mut store,
+        &mut OccupancyGrid::new(),
+        &rules,
+        &mut interner,
+        0,
+        100,
+        0,
+        &mut SimRng::new(1),
+    );
+
+    assert!(
+        store.get(2).unwrap().health.current < 400,
+        "the quick gun fired"
+    );
+    let building = store.get(10).unwrap();
+    assert_eq!(
+        building.passenger_role.cargo().unwrap().garrison_fire_index,
+        1,
+        "the turn passed to the next occupant"
+    );
+    // SlowGun's 120 over two occupants is about 60 frames; FastGun's 10 would
+    // be about 5.
+    let rearm = building.attack_target.as_ref().unwrap().cooldown_ticks;
+    assert!(rearm > 40, "rearm {rearm} follows the slow gun");
+}
+
+/// A base defence never ranks: a BuildingType is untrainable unless its
+/// section says `Trainable=yes` (constructor `0x0045E42E`), so its kills pay
+/// nobody (`Record_The_Kill`, `0x00702EF5..0x00702FF5`).
+#[test]
+fn gsi_08_12_a_base_defence_kill_pays_nobody() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=PILL\n[VehicleTypes]\n0=HTNK\n\
+         [PILL]\nStrength=400\nArmor=concrete\nCost=500\nPrimary=105mm\n\
+         [HTNK]\nStrength=1\nArmor=heavy\nSpeed=4\nCost=900\n\
+         [105mm]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\n\
+         [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [General]\nVeteranRatio=3.0\nVeteranCap=2\n",
+    ))
+    .expect("defence fixture parses");
+    assert!(!rules.object("PILL").unwrap().trainable);
+    let mut store = EntityStore::new();
+    store.insert(make_structure_entity(1, "PILL", 5, 5, 400, 400));
+    let _ = test_intern("HTNK");
+    store.insert(make_entity_owned(2, "HTNK", 8, 5, 1, "Americans"));
+    let mut interner = test_interner();
+    issue_attack_command(&mut store, 1, 2, None, &interner);
+    align_attackers_to_targets(&mut store, &rules, &interner);
+    tick_combat(
+        &mut store,
+        &mut OccupancyGrid::new(),
+        &rules,
+        &mut interner,
+        0,
+        100,
+        0,
+        &mut SimRng::new(1),
+    );
+    assert_eq!(store.get(2).map_or(0, |victim| victim.health.current), 0);
+    assert_eq!(store.get(1).unwrap().veterancy_raw.bits(), 0);
+}
+
 /// The shot leaves the BARREL, not the hull centre.
 ///
 /// `TechnoClass::Fire_At` launches from `GetFLH @ 0x006F3AD0`, and the stock

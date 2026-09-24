@@ -67,12 +67,7 @@ impl Default for RmgOptions {
 /// Encode a description the way the original writes it: each UTF-16 code unit
 /// as lowercase hex followed by a comma, including a trailing one.
 fn encode_description(text: &SeedDescription) -> String {
-    let mut out = String::new();
-    for unit in text.units() {
-        out.push_str(&format!("{unit:x}"));
-        out.push(',');
-    }
-    out
+    crate::rules::ini_value::encode_comma_hex_utf16(text.units())
 }
 
 impl RmgOptions {

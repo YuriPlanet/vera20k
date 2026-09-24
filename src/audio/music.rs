@@ -82,6 +82,27 @@ impl MusicPlayer {
         }
     }
 
+    /// Play_Movie `0x005BED40` blocks and pauses every stream player
+    /// (`0x00408270`) and resumes them afterwards (`0x00408230`), so the
+    /// theme continues from where it stopped rather than restarting.
+    pub fn pause_output(&mut self) {
+        if let Some(player) = self.current_player.as_ref() {
+            player.pause();
+        }
+    }
+
+    pub fn resume_output(&mut self) {
+        if let Some(player) = self.current_player.as_ref() {
+            player.play();
+        }
+    }
+
+    /// The music device mixer, shared by streams that must play alongside
+    /// the theme output (the shell movie soundtrack).
+    pub fn mixer(&self) -> &rodio::mixer::Mixer {
+        self._device.mixer()
+    }
+
     pub(crate) fn discard_finished(&mut self) {
         if self.state() == MusicOutputState::Finished {
             self.current_player = None;

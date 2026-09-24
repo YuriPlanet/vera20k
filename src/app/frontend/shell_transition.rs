@@ -50,6 +50,10 @@ pub(crate) enum ShellSlideKind {
     MainMenu,
     /// Dialog 0x100 — single-player shell (4 owner-draw buttons).
     SinglePlayer,
+    /// Dialog 0x101 — Movies & Credits (4 owner-draw buttons).
+    MoviesAndCredits,
+    /// Dialog 0x129 — movie list (Play Movie and Back).
+    MovieList,
     /// Dialog 0x102 — offline skirmish setup (3 right-panel buttons).
     Skirmish,
 }
@@ -62,6 +66,8 @@ impl ShellSlideKind {
         DialogId(match self {
             ShellSlideKind::MainMenu => 0x00E2,
             ShellSlideKind::SinglePlayer => 0x0100,
+            ShellSlideKind::MoviesAndCredits => 0x0101,
+            ShellSlideKind::MovieList => 0x0129,
             ShellSlideKind::Skirmish => 0x0102,
         })
     }
@@ -84,7 +90,8 @@ enum ShellEntryEffect {
 
 #[derive(Debug)]
 enum ShellWaveCompletion {
-    SinglePlayer,
+    /// Single Player `0x100`, Movies & Credits `0x101` or movie list `0x129`.
+    MenuPage,
     Skirmish,
 }
 
@@ -163,7 +170,9 @@ impl<'a> ShellLifecycleReducer<'a> {
         *self.first_paint_slide = None;
         Some(match kind {
             ShellSlideKind::MainMenu => return None,
-            ShellSlideKind::SinglePlayer => ShellWaveCompletion::SinglePlayer,
+            ShellSlideKind::SinglePlayer
+            | ShellSlideKind::MoviesAndCredits
+            | ShellSlideKind::MovieList => ShellWaveCompletion::MenuPage,
             ShellSlideKind::Skirmish => ShellWaveCompletion::Skirmish,
         })
     }
@@ -302,11 +311,20 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     if state.frontend.screen != GameScreen::MainMenu {
         return None;
     }
+    // Play_Movie and Show_Credits run after their source dialog is destroyed
+    // and before the next one exists: no shell dialog is showing.
+    if state.frontend.fullscreen_movie.is_some() || state.frontend.credits_roll.is_some() {
+        return None;
+    }
     let candidate =
         if state.frontend.shell_route.skirmish() || state.frontend.dev_skirmish_shell_enabled {
             ShellSlideKind::Skirmish
         } else if state.frontend.shell_route.single_player() {
             ShellSlideKind::SinglePlayer
+        } else if state.frontend.shell_route.movies_and_credits() {
+            ShellSlideKind::MoviesAndCredits
+        } else if state.frontend.shell_route.movie_list() {
+            ShellSlideKind::MovieList
         } else if !state.frontend.main_menu_shell_failed {
             ShellSlideKind::MainMenu
         } else {
@@ -450,13 +468,20 @@ pub(crate) fn render_shell_first_paint_slide(
                 .encode_present(encoder, destination);
             true
         }
-        ShellSlideKind::SinglePlayer => matches!(
-            crate::app::frontend::single_player_shell_render::render_single_player_shell(
+        ShellSlideKind::MovieList => {
+            crate::app::frontend::movies_credits_render::render_movie_list(
+                state,
+                encoder,
+                destination,
+            )?
+        }
+        ShellSlideKind::SinglePlayer | ShellSlideKind::MoviesAndCredits => matches!(
+            crate::app::frontend::menu_page_render::render_active_menu_page(
                 state,
                 encoder,
                 destination,
             )?,
-            crate::app::frontend::single_player_shell_render::SinglePlayerShellRenderResult::Rendered
+            crate::app::frontend::menu_page_render::MenuPageRenderResult::Rendered
         ),
         ShellSlideKind::MainMenu => unreachable!("handled above"),
     };
@@ -481,7 +506,7 @@ pub(crate) fn render_shell_first_paint_slide(
                 .frontend.skirmish_shell_state
                 .start_right_panel_static_reveals(&title, &game_type, &map_label, now);
         }
-        Some(ShellWaveCompletion::SinglePlayer) | None => {}
+        Some(ShellWaveCompletion::MenuPage) | None => {}
     }
 
     Ok(ShellFirstPaintRenderResult::Rendered {
@@ -506,11 +531,13 @@ mod tests {
     fn shell_kinds_resolve_data_driven_slot_counts() {
         assert_eq!(ShellSlideKind::MainMenu.slot_count(), 5);
         assert_eq!(ShellSlideKind::SinglePlayer.slot_count(), 4);
+        assert_eq!(ShellSlideKind::MoviesAndCredits.slot_count(), 4);
+        assert_eq!(ShellSlideKind::MovieList.slot_count(), 2);
         assert_eq!(ShellSlideKind::Skirmish.slot_count(), 3);
     }
 
     #[test]
-    fn gsi_13_26_single_player_first_paint_uses_same_presenter_entrypoint() {
+    fn gsi_13_26_menu_page_first_paint_uses_same_presenter_entrypoint() {
         let source = include_str!("shell_transition.rs");
         let production = source
             .split_once("#[cfg(test)]")
@@ -520,13 +547,13 @@ mod tests {
             .find("pub(crate) fn render_shell_first_paint_slide")
             .expect("production first-paint renderer")..];
         let branch = &renderer[renderer
-            .find("ShellSlideKind::SinglePlayer =>")
-            .expect("single-player first-paint branch")..];
+            .find("ShellSlideKind::SinglePlayer | ShellSlideKind::MoviesAndCredits =>")
+            .expect("menu-page first-paint branch")..];
         let branch = branch
             .split_once("ShellSlideKind::MainMenu")
             .map_or(branch, |(branch, _)| branch);
 
-        assert!(branch.contains("render_single_player_shell"));
+        assert!(branch.contains("render_active_menu_page"));
         assert!(branch.contains("destination"));
         assert!(!branch.contains("target"));
     }

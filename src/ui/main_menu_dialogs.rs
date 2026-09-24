@@ -2,13 +2,12 @@
 //!
 //! The native shell (`ui::main_menu_shell`) emits owner-draw button actions on
 //! mouse-up. Four of those actions open modal dialogs that the original game
-//! pops on top of the menu rather than acting immediately:
+//! pops on top of the menu rather than acting immediately (Movies & Credits
+//! is the native page in `ui::movies_credits_shell`):
 //!
 //! - Exit Game -> a confirm message box ("are you sure?") with confirm/cancel.
 //!   The game does NOT quit on the first click; it quits only on confirm.
 //! - Options -> the retained launcher Options parent in `options`.
-//! - Movies & Credits -> a sub-panel with Sneak Preview / Movies / Credits /
-//!   Back (open-level; playback + credits roller not implemented here).
 //! - Single Player -> New Campaign -> a campaign selector (Allied/Soviet +
 //!   difficulty + Back); the side/difficulty -> scenario mapping and the first
 //!   mission launch are not yet decoded.
@@ -114,75 +113,6 @@ pub(crate) fn draw_exit_confirm_modal(
                     }
                 });
                 ui.add_space(8.0);
-            });
-        });
-
-    action
-}
-
-// ---------------------------------------------------------------------------
-// Movies & Credits sub-panel (open-level only)
-// ---------------------------------------------------------------------------
-
-/// State for the Movies & Credits sub-panel (original dialog 0x101).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct MoviesCreditsDialogState;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MoviesCreditsAction {
-    None,
-    /// Sneak Preview pressed (plays RENEGADE.BIK in the original) — TODO.
-    SneakPreview,
-    /// Movies pressed (opens the movie picker in the original) — TODO.
-    Movies,
-    /// Credits pressed (scrolls CREDITSMD.TXT in the original) — TODO.
-    Credits,
-    /// Back pressed — return to the menu.
-    Back,
-}
-
-pub(crate) fn draw_movies_credits_dialog(
-    ctx: &egui::Context,
-    csf: &CsfLookup<'_>,
-) -> MoviesCreditsAction {
-    let palette = client_theme::apply_client_theme(ctx);
-    let mut action = MoviesCreditsAction::None;
-
-    // Tooltip-status CSF keys verified for the 0x101 sub-panel controls; used
-    // here as the visible button labels (display CSF for these controls is not
-    // separately pinned).
-    let sneak = csf("STT:OptionsButtonSneak", "Sneak Preview");
-    let movies = csf("STT:OptionsButtonMovies", "Movies");
-    let credits = csf("STT:OptionsButtonCredits", "Credits");
-    let back = csf("STT:OptionsButtonBack", "Back");
-
-    draw_backdrop(ctx, "movies_credits_backdrop");
-
-    egui::Window::new("")
-        .title_bar(false)
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-        .frame(client_theme::card_frame(palette.panel, palette.line))
-        .min_width(360.0)
-        .show(ctx, |ui| {
-            ui.set_max_width(360.0);
-            ui.vertical_centered_justified(|ui| {
-                client_theme::section_label(ui, "MOVIES & CREDITS", palette);
-                ui.add_space(10.0);
-                if ui.button(&sneak).clicked() {
-                    action = MoviesCreditsAction::SneakPreview;
-                }
-                if ui.button(&movies).clicked() {
-                    action = MoviesCreditsAction::Movies;
-                }
-                if ui.button(&credits).clicked() {
-                    action = MoviesCreditsAction::Credits;
-                }
-                ui.add_space(8.0);
-                if ui.button(&back).clicked() {
-                    action = MoviesCreditsAction::Back;
-                }
             });
         });
 

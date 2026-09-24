@@ -45,7 +45,7 @@ active caller exposes another route; exclude only with recorded evidence.
 | Campaign | Choice/difficulty, launch, active briefing/media checks, progression and return | `src/ui/main_menu_dialogs.rs`, `src/app/shell_main_menu.rs` |
 | Saved games | Single Player Load and in-game Load/Save/Delete; metadata, edit, confirmation/error, restoration and return | `src/app/persistence/save_load_panel.rs` |
 | Launcher options | Parent settings, previews, persistence; Keyboard and Network children; child return | `src/app/shell_main_menu.rs`, `src/ui/main_menu_dialogs.rs` |
-| Movies/credits | Submenu, movie list, playback, credits, cancellation and return | `src/ui/main_menu_dialogs.rs`, `src/app/shell_main_menu.rs` |
+| Movies/credits | Submenu, movie list, playback, credits, cancellation and return | `src/ui/movies_credits_shell/`, `src/app/shell_movies_credits.rs`, `src/app/frontend/{fullscreen_movie,credits_roll,movies_credits_render}.rs`; evidence `docs/research/shell/2026-09-24-movies-and-credits-evidence.md` |
 | LAN/network | Settings/identity, browse/host/join, lobby, map/options/readiness/chat, Start, disconnect/cancel/error and reentry | Main-menu dispatch; active native route inventory still required |
 | Westwood Online | Reachable retail entry/settings/login, connection/error/cancel and subsequent active dialogs | Main-menu dispatch; native local behavior must be separated from external service availability |
 | In-game shell | Resume, Abort/Leave/Restart/Observe by mode, Game Controls, Keyboard, Sound, save children, objectives/mission restatement/diplomacy where active | `src/ui/pause_menu.rs`, `src/app/input/in_game_options.rs`, `dispatch.rs` |
