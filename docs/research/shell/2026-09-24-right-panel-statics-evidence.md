@@ -106,7 +106,7 @@ captures (cnc-ddraw), with `tools/shell_capture_diff.py`:
 | `movies-0x101-steady` | `mc-0x101-settled.png` | cursor, RA2TS movie, `0x71C` window | 0 |
 | `movie-list-0x129-steady` | `list-0x129-settled.png` | cursor, `0x71C` window, status | 0 |
 | `movie-list-0x129-selected` | `list-row-click.png` | cursor, `0x71C` window, status | 0 |
-| `main-menu-0xe2-steady` | `mm3.png` | cursor, RA2TS movie, `0x71C` window | 416, all in the version line `0x71D` (x 669..761, y 586..596) |
+| `main-menu-0xe2-steady` | `mm3.png` | cursor, RA2TS movie, `0x71C` window | 0 (the version line takes the same runtime window correction as the other statics, 163x17 at `(635, 583)`) |
 
 The masked `0x71C` window of every capture equals one SDWRNANM frame (rendered
 through SHELL2.PAL by the asset tool) at `(670, 48)` over the 90x51 interior:
@@ -117,7 +117,7 @@ the same origin.
 
 Not covered: Options `0xD5` has no production capture checkpoint (its monitor
 takes the same window correction); heights other than 480/600/768 have unit
-tests only; the version line's one-pixel offset.
+tests only.
 
 Follow-ups outside this change: score dialog `0x108` carries `0x71C` but draws
 none; `0xD5` is slide-eligible (`0x0060C540`) but has no slide in VERA20k. The

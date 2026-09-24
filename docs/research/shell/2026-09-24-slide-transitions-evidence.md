@@ -171,11 +171,13 @@ Release build, `--shell-capture` with the cursor at (400, 300), compared with
   within one unit in every frame (cursor excepted). The final slide frame's
   right panel is within 9 units: 3651 pixels, mostly 1 unit, in the plates
   between buttons. Retail's own slide and steady captures differ by the same
-  amount there. The version line differs as in steady state.
+  amount there.
 - **Steady checkpoints** are unchanged from the status-line change:
   `movies-0x101-steady` 0, `credits-roll-frame-434` 0, `movie-list-0x129-selected`
-  25 pixels at one unit (explained in the right-panel statics note), and
-  `main-menu-0xe2-steady` only the version line.
+  25 pixels at one unit (explained in the right-panel statics note).
+  `main-menu-0xe2-steady` is now 0: the version line takes the runtime window
+  correction (163x17 at `(635, 583)`), the shared cause the heading, monitor and
+  status line already carried.
 
 ## Evidence levels
 
