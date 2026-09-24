@@ -1,9 +1,14 @@
-//! Aircraft Mission_Attack's admitted state4 release (417FE0/418403).
-//! Shared admission and FireAt remain in the receiver; this caller owns the
-//! synchronous burst, pending-ammo write and successful mission suffix.
+//! Aircraft Mission_Attack's strike states 4..9 (`0x00417FE0`) in the combat
+//! phase, where VERA's FireAt lives: the host [`aircraft::attack_mission`]'s
+//! [`strike_visit`] asks for GetFireError, IsClose, the facings, the state-4
+//! burst and the single shots of states 5..9. The shots reuse the receiver's
+//! emission.
+//!
+//! [`aircraft::attack_mission`]: crate::sim::aircraft::attack_mission
 
 use super::*;
 use crate::sim::aircraft::AircraftMission;
+use crate::sim::aircraft::attack_mission::{self, StrikeFacts, StrikeHost, strike_visit};
 
 #[cfg(test)]
 #[path = "aircraft_release_tests.rs"]
@@ -75,38 +80,44 @@ fn live_shot<'r>(
     Some((burst, shot))
 }
 
-pub(super) fn fire(
+/// One strike visit (states 4..9) for an aircraft whose dispatch asked for it.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn visit(
     world: &mut Simulation,
     run: &mut ReceiverRun,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     snap: &AttackerSnapshot,
     fog: Option<&FogState>,
-    require_playfield_membership: bool,
     binary_frame: u32,
-    tick_ms: u32,
     out: &mut CombatEmit,
     under_attack_events: &mut Vec<UnderAttackEvent>,
 ) {
     let id = snap.stable_id;
     // A phase-local receipt is not permission after an intervening mission change.
-    if !world.substrate.entities.get(id).is_some_and(|entity| {
-        matches!(
-            entity.aircraft_mission,
-            Some(AircraftMission::Attack { sub_state: 4 })
-        )
-    }) {
+    let Some(state) =
+        world
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| match entity.aircraft_mission {
+                Some(AircraftMission::Attack { sub_state }) if (4..=9).contains(&sub_state) => {
+                    Some(sub_state)
+                }
+                _ => None,
+            })
+    else {
         return;
-    }
+    };
     let Some(obj) = rules.object(world.interner.resolve(snap.type_id)) else {
         return;
     };
     // Aircraft FireAt415EEE dispatches DropPayload while passengers remain.
     // Its retained payload counter and6C9 admission history still need migration;
     // keep that required carrier arm blocked rather than firing its gun instead.
-    // RESIDUAL: the blocked carrier stays in Attack{4} and re-requests every
-    // due visit. No stock AircraftType has Passengers=, and PDPLANE's cargo
-    // flies ParaDrop, so this arm is unreachable with retail data.
+    // RESIDUAL: the blocked carrier stays in its strike state and re-requests
+    // every due visit. No stock AircraftType has Passengers=, and PDPLANE's
+    // cargo flies ParaDrop, so this arm is unreachable with retail data.
     if world
         .substrate
         .entities
@@ -116,144 +127,263 @@ pub(super) fn fire(
     {
         return;
     }
-    let mut snap = snap.clone();
-    if !combat_weapon::aircraft_strafes(rules, obj, snap.veterancy) {
-        // State4 setters4182D3..41830C precede GetFireError; Set does not snap.
-        if let Some(desired) = world.substrate.entities.get(id).and_then(|entity| {
-            crate::sim::movement::turret::facing_toward_target(
-                entity,
-                &snap.target,
-                &world.substrate.entities,
-                Some(rules),
-                &world.interner,
-            )
-        }) {
-            if let Some(entity) = world.substrate.entities.get_mut(id) {
-                let initial = u16::from(entity.facing) << 8;
-                let body = entity.body_facing.get_or_insert_with(|| {
-                    crate::sim::movement::FacingClass::new(initial, obj.turret_rot)
-                });
-                body.set(desired, binary_frame);
-                let secondary = entity.barrel_facing.get_or_insert_with(|| {
-                    crate::sim::movement::FacingClass::new(initial, obj.turret_rot)
-                });
-                secondary.set(desired, binary_frame);
-                snap.hull_facing = entity.body_facing;
-                snap.barrel_facing = entity.barrel_facing;
-            }
-        }
-    }
-    let mut boundary = FireCommitBoundary::capture(out);
-    if admit_attacker_fire(
-        world,
-        rules,
-        overlay_registry,
-        &snap,
-        fog,
-        require_playfield_membership,
-        binary_frame,
-        tick_ms,
-        world.active_wave_links.contains_key(&id),
-        out,
-    )
-    .is_none()
-    {
-        boundary.commit(
-            world,
-            run,
-            rules,
-            overlay_registry,
-            out,
-            under_attack_events,
-        );
-        return;
-    }
-    // 41840E precedes the first SelectWeapon and the signed Burst<=0 test.
-    if let Some(ammo) = world
-        .substrate
-        .entities
-        .get_mut(id)
-        .and_then(|e| e.aircraft_ammo.as_mut())
-    {
-        ammo.begin_release();
-    }
-    let mut count = 0i32;
-    while let Some((burst, _)) = live_shot(world, rules, id) {
-        if count >= burst {
-            break;
-        }
-        // Native reselects once for the bound and once before the FireAt call.
-        if let Some((_, Some(shot))) = live_shot(world, rules, id) {
-            out.current_weapon_updates.push((
-                id,
-                shot.selected.index as u8,
-                world.interner.intern(shot.selected.weapon_id),
-            ));
-            emit_admitted_fire(world, rules, overlay_registry, shot, binary_frame, out);
-        }
-        boundary.commit(
-            world,
-            run,
-            rules,
-            overlay_registry,
-            out,
-            under_attack_events,
-        );
-        boundary = FireCommitBoundary::capture(out);
-        count = count.wrapping_add(1);
-    }
-    boundary.commit(
+    let entity = world.substrate.entities.get(id).unwrap();
+    let weapon0 =
+        combat_weapon::primary_for_tier(obj, entity.veterancy).and_then(|name| rules.weapon(name));
+    let facts = StrikeFacts {
+        state,
+        target: attack_mission::aircraft_target_present(
+            entity.attack_target.as_ref(),
+            &world.substrate.entities,
+        ),
+        ammo: entity
+            .aircraft_ammo
+            .as_ref()
+            .map_or(-1, |ammo| ammo.current),
+        strafe: combat_weapon::aircraft_strafes(rules, obj, entity.veterancy),
+        fighter: obj.fighter,
+        curley_shuffle: rules.general.curley_shuffle,
+        weapon0_rof: weapon0.map_or(0, |weapon| weapon.rof),
+        weapon0_range: weapon0.map_or(0, |weapon| weapon.range_leptons),
+        speed: crate::util::fixed_math::ra2_speed_to_leptons_per_frame(obj.speed),
+    };
+    let mut host = CombatStrike {
         world,
         run,
         rules,
         overlay_registry,
+        fog,
+        binary_frame,
         out,
         under_attack_events,
-    );
-    finish_release(world, rules, id, binary_frame);
+        obj,
+        snap: snap.clone(),
+    };
+    let visit = strike_visit(&facts, &mut host);
+    let entity = host.world.substrate.entities.get_mut(id).unwrap();
+    entity.aircraft_mission = Some(AircraftMission::Attack {
+        sub_state: visit.state,
+    });
+    if let Some(latch) = visit.latch
+        && entity.mission_leaf.as_aircraft().is_some()
+    {
+        entity.mission_leaf.set_aircraft_action_latch(latch);
+    }
+    entity
+        .mission
+        .write_dispatch_epilogue(binary_frame as i32, visit.delay);
 }
 
-/// 4184C2..418584: suffix does not depend on FireAt's returned bullet. Native
-/// Cell Scatter481670 between the loop and this suffix remains required:
-/// source=Aircraft+9C, firstFlag=1, dispatchAll=0, ground list. It must reach
-/// source-aware class Scatter; the NullCoord blocker helper is not equivalent.
-fn finish_release(world: &mut Simulation, rules: &RuleSet, id: u64, frame: u32) {
-    let Some(entity) = world.substrate.entities.get(id) else {
-        return;
-    };
-    let Some(obj) = rules.object(world.interner.resolve(entity.type_ref())) else {
-        return;
-    };
-    let strafe = combat_weapon::aircraft_strafes(rules, obj, entity.veterancy);
-    let fighter = obj.fighter;
-    let ammo = entity
-        .aircraft_ammo
-        .as_ref()
-        .map_or(-1, |ammo| ammo.current);
-    let (state, delay, ready) = if strafe || fighter {
-        let Some(weapon) = combat_weapon::primary_for_tier(obj, entity.veterancy)
-            .and_then(|name| rules.weapon(name))
-        else {
+/// The combat phase's side of a strike visit.
+struct CombatStrike<'w, 'r> {
+    world: &'w mut Simulation,
+    run: &'w mut ReceiverRun,
+    rules: &'r RuleSet,
+    overlay_registry: Option<&'w OverlayTypeRegistry>,
+    fog: Option<&'w FogState>,
+    binary_frame: u32,
+    out: &'w mut CombatEmit,
+    under_attack_events: &'w mut Vec<UnderAttackEvent>,
+    obj: &'r ObjectType,
+    snap: AttackerSnapshot,
+}
+
+impl CombatStrike<'_, '_> {
+    fn id(&self) -> u64 {
+        self.snap.stable_id
+    }
+
+    fn target(&self) -> Option<TargetKind> {
+        self.world
+            .substrate
+            .entities
+            .get(self.id())
+            .and_then(|entity| entity.attack_target.as_ref())
+            .map(|attack| attack.target)
+    }
+
+    /// `vt+0x2E4` SelectWeapon(Target) with the live target, and the question
+    /// `ask` puts to GetFireError's owner with that slot.
+    fn with_subject<T>(
+        &self,
+        ask: impl FnOnce(&fire_error_world::FireSubject<'_>) -> T,
+    ) -> Option<T> {
+        let world = &*self.world;
+        let firer = world.substrate.entities.get(self.id())?;
+        let target = self.target()?;
+        let target_facts = match target {
+            TargetKind::Entity(id) => world.substrate.entities.get(id).and_then(|target| {
+                let obj = self
+                    .rules
+                    .object(world.interner.resolve(target.type_ref()))?;
+                Some(combat_weapon::techno_target_facts(
+                    target,
+                    obj,
+                    world.resolved_terrain.as_ref(),
+                    combat_weapon::is_ally_by_object(
+                        Some(&world.house_alliances),
+                        &world.interner,
+                        firer.owner(),
+                        target.owner(),
+                    ),
+                ))
+            }),
+            TargetKind::Cell(rx, ry) => Some(combat_weapon::cell_target_facts(
+                rx,
+                ry,
+                world.resolved_terrain.as_ref(),
+            )),
+        };
+        let weapon_index = combat_weapon::what_weapon_should_i_use(
+            self.rules,
+            self.obj,
+            &combat_weapon::attacker_facts(firer, self.obj),
+            target_facts.as_ref(),
+        );
+        Some(ask(&fire_error_world::FireSubject {
+            world,
+            rules: self.rules,
+            overlay_registry: self.overlay_registry,
+            fog: self.fog,
+            firer,
+            obj: self.obj,
+            target: Some(target),
+            weapon_index,
+            garrison: None,
+        }))
+    }
+
+    /// `vt+0x3CC FireAt(Target, SelectWeapon(Target))` once through the
+    /// shared emission, its inline damage committed after the shot.
+    fn shoot(&mut self) {
+        let id = self.id();
+        let boundary = FireCommitBoundary::capture(self.out);
+        if let Some((_, Some(shot))) = live_shot(self.world, self.rules, id) {
+            self.out.current_weapon_updates.push((
+                id,
+                shot.selected.index as u8,
+                self.world.interner.intern(shot.selected.weapon_id),
+            ));
+            emit_admitted_fire(
+                self.world,
+                self.rules,
+                self.overlay_registry,
+                shot,
+                self.binary_frame,
+                self.out,
+            );
+        }
+        boundary.commit(
+            self.world,
+            self.run,
+            self.rules,
+            self.overlay_registry,
+            self.out,
+            self.under_attack_events,
+        );
+    }
+}
+
+impl StrikeHost for CombatStrike<'_, '_> {
+    fn fire_error(&mut self) -> fire_error::FireError {
+        self.with_subject(|subject| subject.fire_error(true))
+            .unwrap_or(fire_error::FireError::Illegal)
+    }
+
+    fn is_close(&mut self) -> bool {
+        self.with_subject(|subject| subject.in_range())
+            .unwrap_or(false)
+    }
+
+    /// State4 setters4182D3..41830C and state 5's `0x004185AC..0x004185DF`;
+    /// Set does not snap.
+    fn face_target(&mut self) {
+        let id = self.id();
+        let Some(target) = self.target() else {
             return;
         };
-        (
-            if strafe {
-                6
-            } else if ammo > 0 {
-                1
-            } else {
-                10
-            },
-            weapon.rof,
-            true,
-        )
-    } else {
-        (5, 1, false)
-    };
-    let entity = world.substrate.entities.get_mut(id).unwrap();
-    entity.aircraft_mission = Some(AircraftMission::Attack { sub_state: state });
-    if ready && entity.mission_leaf.as_aircraft().is_some() {
-        entity.mission_leaf.set_aircraft_action_latch(true);
+        let world = &mut *self.world;
+        let Some(desired) = world.substrate.entities.get(id).and_then(|entity| {
+            crate::sim::movement::turret::facing_toward_target(
+                entity,
+                &target,
+                &world.substrate.entities,
+                Some(self.rules),
+                &world.interner,
+            )
+        }) else {
+            return;
+        };
+        let (frame, rot) = (self.binary_frame, self.obj.turret_rot);
+        if let Some(entity) = world.substrate.entities.get_mut(id) {
+            let initial = u16::from(entity.facing) << 8;
+            entity
+                .body_facing
+                .get_or_insert_with(|| crate::sim::movement::FacingClass::new(initial, rot))
+                .set(desired, frame);
+            entity
+                .barrel_facing
+                .get_or_insert_with(|| crate::sim::movement::FacingClass::new(initial, rot))
+                .set(desired, frame);
+        }
     }
-    entity.mission.write_dispatch_epilogue(frame as i32, delay);
+
+    /// `0x00418403..0x004184BD`: pending ammo first (`0x0041840E`, before the
+    /// first SelectWeapon and the signed Burst test), then the burst, each
+    /// shot re-reading SelectWeapon's Burst; then the Scatter.
+    fn release(&mut self) {
+        let id = self.id();
+        if let Some(ammo) = self
+            .world
+            .substrate
+            .entities
+            .get_mut(id)
+            .and_then(|e| e.aircraft_ammo.as_mut())
+        {
+            ammo.begin_release();
+        }
+        let mut count = 0i32;
+        while let Some((burst, _)) = live_shot(self.world, self.rules, id) {
+            if count >= burst {
+                break;
+            }
+            self.shoot();
+            count = count.wrapping_add(1);
+        }
+        self.scatter();
+    }
+
+    fn fire_at(&mut self) {
+        self.shoot();
+    }
+
+    /// RESIDUAL (see `aircraft::attack_mission`): the source-aware Cell
+    /// Scatter_Objects is not ported; the NullCoord blocker helper is not
+    /// equivalent.
+    fn scatter(&mut self) {}
+
+    fn assign_target_destination(&mut self) {
+        let id = self.id();
+        if let Some(target) = self.target() {
+            let destination = match target {
+                TargetKind::Entity(id) => crate::sim::components::NavTargetRef::Entity { id },
+                TargetKind::Cell(rx, ry) => crate::sim::components::NavTargetRef::cell(rx, ry),
+            };
+            self.world
+                .assign_aircraft_attack_destination(id, Some(destination), self.rules);
+        }
+    }
+
+    fn uncloak(&mut self) {
+        let sound = sound_enabled(self.world);
+        uncloak_to_fire(self.world, self.rules, self.obj, self.id(), sound);
+    }
+
+    fn epilogue(&mut self) -> i32 {
+        attack_mission::mission_epilogue(
+            self.rules,
+            crate::sim::mission::MissionType::Attack,
+            &mut self.world.scenario_rng,
+        )
+    }
 }

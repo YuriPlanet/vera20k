@@ -1003,16 +1003,52 @@ fn child_ammo(sim: &Simulation, child_id: u64) -> i32 {
         .unwrap_or(i32::MAX)
 }
 
+/// `child.vt+0x3C8 Assign_Target(target)` then `vt+0x1E8 Queue_Mission(Attack,
+/// 0)` (slot states 3 and 4, and the send-out, `0x006B7718`/`0x006B772C`).
+/// Re-issued every manager pass, both are no-ops on a child already attacking
+/// that target: Assign_Target returns on the same target (`0x006FCDCC`) and
+/// Queue_Mission skips the mission already current (`0x005B35E0`). A new
+/// target mid-run is Assign_Target's aircraft arm (`0x006FCE27`).
+///
+/// The queue goes through the mission owner: `AircraftClass::AI` pays a
+/// pending release (`0x0041505E`) whenever the current mission is not Attack,
+/// so a child whose mission owner never saw Attack paid its pass's ammo the
+/// frame after its first bomb and was recalled.
 fn assign_child_attack(sim: &mut Simulation, child_id: u64, target: TargetKind) {
+    let commits = crate::sim::mission::concrete_effects::assign_target_commits(
+        &sim.substrate.entities,
+        Some(target),
+    );
     if let Some(child) = sim.substrate.entities.get_mut(child_id) {
-        child.attack_target = Some(match target {
-            TargetKind::Entity(id) => crate::sim::combat::AttackTarget::new(id),
-            TargetKind::Cell(rx, ry) => crate::sim::combat::AttackTarget::for_cell(rx, ry),
-        });
-        if let Some(mission) = child.aircraft_mission.as_mut() {
-            *mission = crate::sim::aircraft::AircraftMission::Attack { sub_state: 0 };
-        }
+        crate::sim::mission::concrete_effects::represented_assign_target_admitted(
+            child,
+            Some(target),
+            commits,
+        );
     }
+    queue_child_mission(sim, child_id, crate::sim::mission::MissionType::Attack);
+    if let Some(child) = sim.substrate.entities.get_mut(child_id)
+        && let Some(mission) = child.aircraft_mission.as_mut()
+        && !mission.is_attacking()
+    {
+        *mission = crate::sim::aircraft::AircraftMission::Attack { sub_state: 0 };
+    }
+}
+
+/// The manager's `child.vt+0x1E8 Queue_Mission(mission, 0)` through the
+/// child's mission owner (the aircraft override's guards included).
+fn queue_child_mission(
+    sim: &mut Simulation,
+    child_id: u64,
+    mission: crate::sim::mission::MissionType,
+) {
+    let _ = sim.mission_queue_exact(
+        child_id,
+        crate::sim::mission::MissionId::from_known(mission),
+        0,
+        sim.session.binary_frame,
+        &crate::sim::mission::authority::EntityReadyInputProvider,
+    );
 }
 
 /// Native state 3/4 issue `Assign_Destination(target)` + `Assign_Mission(Move)`
@@ -1058,6 +1094,8 @@ fn hold_child_over_owner(
             *mission = crate::sim::aircraft::AircraftMission::Move { sub_state: 0 };
         }
     }
+    // `Queue_Mission(Move, 0)` (`0x006B7608`, `0x006B76D8`).
+    queue_child_mission(sim, child_id, crate::sim::mission::MissionType::Move);
     sim.issue_air_cell_destination(child_id, (rx, ry), speed, Some(rules));
 }
 
@@ -1114,6 +1152,8 @@ fn recall_child_to_owner(sim: &mut Simulation, rules: &RuleSet, owner_id: u64, c
             *mission = crate::sim::aircraft::AircraftMission::Move { sub_state: 0 };
         }
     }
+    // `Queue_Mission(Move, 0)` (`0x006B7687`, `0x006B785C`).
+    queue_child_mission(sim, child_id, crate::sim::mission::MissionType::Move);
     sim.issue_air_cell_destination(child_id, (rx, ry), speed, Some(rules));
 }
 

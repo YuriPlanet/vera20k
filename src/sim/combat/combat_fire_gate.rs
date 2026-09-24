@@ -24,9 +24,11 @@ pub fn collect_fire_blocked_entities(entities: &EntityStore) -> BTreeSet<u64> {
             continue;
         }
 
-        // `AircraftClass::Mission_Attack` state 4 (`0x004182A3`) moves to
-        // state 10 before asking GetFireError when Ammo (`+0x2FC`) is exactly
-        // zero; -1 is unlimited.
+        // An empty aircraft (Ammo `+0x2FC` exactly zero; -1 is unlimited)
+        // outside a Mission_Attack visit: GetFireError's T47 (`0x006FCA0D`)
+        // refuses it anyway, and skipping the routine keeps the generic
+        // retarget from handing it a new target. A visit its dispatch asked
+        // for runs regardless; state 4's prefix (`0x004182A3`) is its own.
         if let Some(ref ammo) = entity.aircraft_ammo
             && ammo.current == 0
         {

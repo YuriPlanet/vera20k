@@ -1,20 +1,32 @@
-//! 11-state attack mission state machine for aircraft.
+//! `AircraftClass::Mission_Attack @ 0x00417FE0` states 4..10: the release,
+//! the follow-up shot, the strafe run and the exit. States 0, 1 and 3 (the
+//! fire-location search and the approach) live in `world::aircraft_attack`.
 //!
-//! Implements the core attack cycle: approach target → check range →
-//! fire weapon → return to base. Native branches and outstanding differences
-//! are documented below; this legacy dispatcher is not complete Mission_Attack parity.
+//! Each state is a pure function over plain facts and a host that performs
+//! every effect where the original performs it, so the order of queries,
+//! shots, destinations and Scenario draws is native:
+//! - [`strike_visit`], states 4..9, runs in the combat phase, where VERA's
+//!   FireAt lives (`combat::aircraft_release`);
+//! - [`exit_visit`], state 10, runs in the aircraft's own dispatch.
 //!
-//! ## State overview
-//! - 0: Init — clear the action latch, validate target
-//! - 1, 3: Fire-location search and approach — owned by world::aircraft_attack
-//! - 4: FireWeapon — request shared admission and synchronous burst emission
-//! - 10: ReturnToBase — consume pending ammo before the return decision
+//! A visit returns Mission+0xBC, the mission delay and the `+0x6D2` release
+//! latch write. The entry prefixes (`0x00418006`/`0x00418031`/`0x004180A1`/
+//! `0x00418BEC`: the latch clear and the pending-ammo consume) run first, in
+//! [`enter_attack_state`].
 //!
-//! ## Dependency rules
-//! - Part of sim/ — depends on sim/components, sim/combat, rules/.
-//! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
+//! Evidence: `tools/spatial_oracle/aircraft_states.py` runs the original
+//! 0x00417FE0 for every state, code, class, Ammo, Target, CurleyShuffle and
+//! IsClose combination, plus the state-9 delay and state 10 in full;
+//! `tests::original_attack_state_rows` replays every combination it covers.
+//!
+//! RESIDUAL: the Cell `Scatter_Objects` (`0x00481670`, source = the
+//! aircraft's coordinates, `1, 0, 0`) after every shot is asked at its native
+//! point and does nothing yet; its recipients' Scatter (`vt+0x174`) belongs
+//! to the source-scatter owner. Trigger: every aircraft shot. Effect: units
+//! in the bombed cell stay put instead of scattering. Frequency: every
+//! bombing pass and missile release.
 
-use crate::sim::aircraft::AircraftMission;
+use crate::sim::combat::fire_error::FireError;
 use crate::sim::combat::{AttackTarget, TargetKind};
 use crate::sim::entity_store::EntityStore;
 
@@ -22,39 +34,20 @@ use crate::sim::entity_store::EntityStore;
 #[path = "approach_range_tests.rs"]
 mod approach_range_tests;
 
-/// Resolved status of an aircraft's current attack target — abstracts over
-/// Entity vs Cell so the state machine doesn't care which kind it is.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct AircraftTargetStatus {
-    /// True if the target is engageable (entity alive, or always-true for cells).
-    pub alive: bool,
-    /// Original `TargetKind` — passed through to the fire signal so the
-    /// projectile pipeline knows whether the destination is an entity or coords.
-    pub kind: TargetKind,
-}
+#[cfg(test)]
+#[path = "attack_mission_tests.rs"]
+mod tests;
 
-/// Look up the aircraft's current target status.
-///
-/// Returns `None` if `attack_target` is `None`. For Entity targets, returns
-/// `None` if the entity has despawned. For Cell targets, always returns `Some`
-/// (cells "always exist"; the player explicitly chose this cell).
-pub(crate) fn aircraft_target_status(
-    at: Option<&AttackTarget>,
-    entities: &EntityStore,
-) -> Option<AircraftTargetStatus> {
-    let at = at?;
-    match at.target {
-        TargetKind::Entity(id) => {
-            let target = entities.get(id)?;
-            Some(AircraftTargetStatus {
-                alive: !target.dying && target.health.current > 0,
-                kind: TargetKind::Entity(id),
-            })
-        }
-        TargetKind::Cell(rx, ry) => Some(AircraftTargetStatus {
-            alive: true,
-            kind: TargetKind::Cell(rx, ry),
-        }),
+/// The native Target pointer (`+0x2B4`) is non-NULL: a cell, or an object
+/// not yet dead. A dying object is detached natively; VERA keeps its id until
+/// the drain.
+pub(crate) fn aircraft_target_present(at: Option<&AttackTarget>, entities: &EntityStore) -> bool {
+    match at.map(|attack| attack.target) {
+        None => false,
+        Some(TargetKind::Cell(..)) => true,
+        Some(TargetKind::Entity(id)) => entities
+            .get(id)
+            .is_some_and(|target| !target.dying && target.health.current > 0),
     }
 }
 
@@ -72,169 +65,295 @@ pub(crate) fn enter_attack_state(entity: &mut crate::sim::game_entity::GameEntit
     }
 }
 
-/// Advance the attack mission state machine for one aircraft entity.
-///
-/// Returns the new mission state (may be the same, or transition to Guard/RTB).
-/// The caller is responsible for writing the returned mission back to the entity.
-pub fn tick_attack_state(
-    entities: &EntityStore,
-    entity_id: u64,
-    sub_state: u8,
-) -> AttackTickResult {
-    let Some(entity) = entities.get(entity_id) else {
-        return AttackTickResult::transition(AircraftMission::Idle);
-    };
+/// One visit's writes: Mission+0xBC, the returned mission delay and, where
+/// the visit writes it, the `+0x6D2` release latch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Visit {
+    pub state: u8,
+    pub delay: i32,
+    pub latch: Option<bool>,
+}
 
-    // Resolve target as Entity-position-or-Cell-coord, with alive flag.
-    // Cell targets always resolve (cells don't despawn); Entity targets resolve
-    // to None if the target has been removed.
-    let target_status = aircraft_target_status(entity.attack_target.as_ref(), entities);
-    let ammo_current = entity.aircraft_ammo.as_ref().map_or(-1, |a| a.current);
-    if sub_state == 4 && ammo_current == 0 {
-        return AttackTickResult::transition(AircraftMission::Attack { sub_state: 10 });
+impl Visit {
+    fn to(state: u8, delay: i32) -> Self {
+        Self {
+            state,
+            delay,
+            latch: None,
+        }
     }
+}
 
-    match sub_state {
-        // ---------------------------------------------------------------
-        // State 4: FIRE_WEAPON
-        // The combat handoff owns the native secondary-facing check and
-        // successful-release suffix; a request alone changes neither state nor ammo.
-        // ---------------------------------------------------------------
+/// The facts a strike visit (states 4..9) reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct StrikeFacts {
+    /// Mission+0xBC.
+    pub state: u8,
+    /// Target `+0x2B4` is non-NULL.
+    pub target: bool,
+    /// Ammo `+0x2FC`; -1 is unlimited.
+    pub ammo: i32,
+    /// IFlyControl `+0x18` (`0x0041B7F0`): weapon 0 fires a projectile with
+    /// `ROT<=1` and no `Inviso=` (`combat_weapon::aircraft_strafes`).
+    pub strafe: bool,
+    /// IFlyControl `+0x1C` (`0x0041B840`): `Fighter=` (AircraftType `+0xE0E`).
+    pub fighter: bool,
+    /// `[General] CurleyShuffle=` (Rules `+0x17E1`).
+    pub curley_shuffle: bool,
+    /// Weapon 0's `ROF=` (`+0xB0`) and `Range=` (`+0xB4`, leptons), read
+    /// through GetWeapon(0) whatever slot fired.
+    pub weapon0_rof: i32,
+    pub weapon0_range: i32,
+    /// TechnoType `+0x678`, the lepton-per-frame speed from `Speed=`.
+    pub speed: i32,
+}
+
+/// What a strike visit asks and does, each where the original does it.
+pub(crate) trait StrikeHost {
+    /// `vt+0x3C0(Target, vt+0x2E4 SelectWeapon(Target), 1)`.
+    fn fire_error(&mut self) -> FireError;
+    /// `vt+0x3AC` (`0x006F7780`): InRange with SelectWeapon's slot.
+    fn is_close(&mut self) -> bool;
+    /// PrimaryFacing `+0x388` and SecondaryFacing `+0x3A0` Set(DirTo(Target)).
+    fn face_target(&mut self);
+    /// State 4's release (`0x00418403..0x004184BD`): `+0x6C8` pending, the
+    /// burst loop re-reading SelectWeapon's Burst, then the Scatter.
+    fn release(&mut self);
+    /// `vt+0x3CC FireAt(Target, SelectWeapon(Target))`, once.
+    fn fire_at(&mut self);
+    /// `CellClass::Scatter_Objects(&Coords, 1, 0, 0)` on the target's cell.
+    fn scatter(&mut self);
+    /// `vt+0x480 Assign_Destination(Target, 1)`.
+    fn assign_target_destination(&mut self);
+    /// `vt+0x45C Uncloak(0)`.
+    fn uncloak(&mut self);
+    /// `0x00418D1D`: `ftol(MissionControl[Mission].Rate * 900)` plus Scenario
+    /// `RandomRanged(0, 2)`.
+    fn epilogue(&mut self) -> i32;
+}
+
+/// `0x00418BC5`: a refused strafe shot polls next frame; at Ammo 0 the run
+/// ends and the latch clears.
+fn strafe_poll(facts: &StrikeFacts) -> Visit {
+    if facts.ammo == 0 {
+        Visit {
+            state: 10,
+            delay: 1,
+            latch: Some(false),
+        }
+    } else {
+        Visit::to(facts.state, 1)
+    }
+}
+
+/// States 4..9 (`0x004182A3`, `0x0041858C`, `0x0041879D`, `0x004188AC`,
+/// `0x004189BB`, `0x00418ACA`). The GetFireError switches are
+/// `0x00418D98`/`0x00418DB8`/`0x00418DD0`/`0x00418DE8`/`0x00418E00`/
+/// `0x00418E14`; a code with no case (4, 7, 10, 11) takes the default arm.
+pub(crate) fn strike_visit(facts: &StrikeFacts, host: &mut impl StrikeHost) -> Visit {
+    use FireError::{Cloaked, Facing, Ok, Range, Rearm};
+    // `0x004182A3`: state 4 also leaves on Ammo 0; 5..9 test Target only.
+    if !facts.target || (facts.state == 4 && facts.ammo == 0) {
+        return Visit::to(10, 1);
+    }
+    match facts.state {
         4 => {
-            let Some(status) = target_status else {
-                return AttackTickResult::transition(AircraftMission::Attack { sub_state: 10 });
-            };
-            if !status.alive {
-                return AttackTickResult::transition(AircraftMission::Attack { sub_state: 10 });
+            // `0x004182D3..0x0041830C`: a strafer does not turn to aim.
+            if !facts.strafe {
+                host.face_target();
             }
-
-            // GetFireError and the native secondary-facing check run at the
-            // shared admission boundary, after the state4 facing writers.
-            AttackTickResult::fire(
-                AircraftMission::Attack {
-                    // The emission caller owns the successful-release suffix.
-                    // Requesting fire cannot advance state or charge ammo.
-                    sub_state: 4,
-                },
-                status.kind,
-            )
-        }
-
-        // RESIDUAL: native417FE0 states5..9 branch on the aircraft GetFireError
-        // code (vtable+3C0), which VERA's fire path does not produce yet.
-        // State5 (non-Fighter, non-strafe) re-faces, FireAts once, Cell-Scatters
-        // and returns to4 (or1 under Rules+17E1); states6/7/8/9 (strafers) each
-        // FireAt once on codes0/2/8/9 (8 first re-assigns the destination),
-        // Cell-Scatter, re-assign the Target destination and advance, state9
-        // ending in3. Trigger: every admitted strafe or non-Fighter release.
-        // Effect: stock strafers HORNET/ASW (projectile ROT<=1) drop only the
-        // state4 burst instead of five bombs per pass, without Cell Scatter.
-        // Frequency: every Carrier/strafe pass. Risk: pass damage and scatter;
-        // Ammo=1 stock strafers still return through state10/Guard, so ammo
-        // and Scenario RNG match for them.
-        5..=9 => AttackTickResult::transition(AircraftMission::Attack { sub_state: 10 }),
-
-        // ---------------------------------------------------------------
-        // State 10: RETURN_TO_BASE
-        // Consume pending ammo (positive counts only) in the entry prefix.
-        // If ammo != 0 and target still valid: re-engage (→ State 1).
-        // Else: transition to Guard (which handles RTB to airfield).
-        // ---------------------------------------------------------------
-        10 => {
-            // Pending ammo was consumed by the entry prefix. Native418C15
-            // tests signed nonzero, not positive, before restarting at state1.
-            if ammo_current != 0 && target_status.is_some_and(|s| s.alive) {
-                AttackTickResult::transition(AircraftMission::Attack { sub_state: 1 })
-            } else {
-                // Residual: native zero-ammo target-clear/return-location and
-                // EnterIdle/queued-Mission suffix418C29..418D1D.
-                AttackTickResult::transition(AircraftMission::Guard)
+            match host.fire_error() {
+                // `0x004184C2`: the suffix after the burst.
+                Ok => {
+                    host.release();
+                    if facts.strafe {
+                        Visit {
+                            state: 6,
+                            delay: facts.weapon0_rof,
+                            latch: Some(true),
+                        }
+                    } else if facts.fighter {
+                        Visit {
+                            state: if facts.ammo > 0 { 1 } else { 10 },
+                            delay: facts.weapon0_rof,
+                            latch: Some(true),
+                        }
+                    } else {
+                        Visit::to(5, 1)
+                    }
+                }
+                // `0x00418368`.
+                Facing => {
+                    if facts.ammo == 0 {
+                        return Visit::to(10, 1);
+                    }
+                    let state = if !host.is_close() || facts.strafe {
+                        1
+                    } else if facts.fighter || !facts.curley_shuffle {
+                        4
+                    } else {
+                        1
+                    };
+                    Visit::to(state, if facts.strafe { 45 } else { 1 })
+                }
+                Rearm => Visit::to(4, 1),
+                // `0x0041834C`.
+                Cloaked => {
+                    host.uncloak();
+                    Visit::to(4, 1)
+                }
+                // `0x00418544`.
+                _ => {
+                    if facts.ammo == 0 {
+                        Visit::to(10, 1)
+                    } else if facts.strafe {
+                        Visit::to(4, 1)
+                    } else {
+                        Visit::to(5, 1)
+                    }
+                }
             }
         }
-
-        // States0/1/3 require live world effects and are dispatched through
-        // world::aircraft_attack before this read-only legacy handler.
-        0 | 1 | 3 => unreachable!("aircraft navigation states require the world transaction"),
-
-        // ---------------------------------------------------------------
-        // Other unported states retain the legacy Guard fallback.
-        // ---------------------------------------------------------------
-        _ => AttackTickResult::transition(AircraftMission::Guard),
+        // The follow-up shot of an aircraft that does not strafe.
+        5 => {
+            host.face_target();
+            let shuffle = if facts.curley_shuffle { 1 } else { 4 };
+            match host.fire_error() {
+                // `0x004186B6`: no pending ammo, so the shot is free.
+                Ok => {
+                    host.fire_at();
+                    host.scatter();
+                    let state = if facts.ammo == 0 { 10 } else { shuffle };
+                    Visit::to(state, host.epilogue())
+                }
+                // `0x00418634`.
+                Facing => {
+                    if facts.ammo == 0 {
+                        return Visit::to(10, host.epilogue());
+                    }
+                    let state = if host.is_close() && !facts.strafe {
+                        shuffle
+                    } else {
+                        1
+                    };
+                    if facts.strafe {
+                        Visit::to(state, 45)
+                    } else {
+                        Visit::to(state, host.epilogue())
+                    }
+                }
+                Rearm => Visit::to(5, host.epilogue()),
+                // `0x00418623`.
+                Cloaked => {
+                    host.uncloak();
+                    Visit::to(5, host.epilogue())
+                }
+                // `0x0041874E`.
+                _ => {
+                    if facts.ammo == 0 {
+                        return Visit::to(10, host.epilogue());
+                    }
+                    let state = if host.is_close() { shuffle } else { 1 };
+                    Visit::to(state, host.epilogue())
+                }
+            }
+        }
+        // The strafe run: one bomb each, flying on through the target.
+        6..=8 => {
+            match host.fire_error() {
+                Ok | Facing | Cloaked => {}
+                Range => host.assign_target_destination(),
+                _ => return strafe_poll(facts),
+            }
+            host.fire_at();
+            host.scatter();
+            host.assign_target_destination();
+            Visit::to(facts.state + 1, facts.weapon0_rof)
+        }
+        // `0x00418B1F`: the last bomb; state 3 consumes the pass's ammo.
+        9 => match host.fire_error() {
+            Ok | Facing | Range | Cloaked => {
+                host.fire_at();
+                host.scatter();
+                Visit::to(3, state9_delay(facts.weapon0_range, facts.speed))
+            }
+            _ => strafe_poll(facts),
+        },
+        _ => unreachable!("strike_visit runs states 4..9"),
     }
 }
 
-/// Result of one tick of the attack state machine.
-pub struct AttackTickResult {
-    /// New mission state to write back.
-    pub new_mission: AircraftMission,
-    /// If Some, the combat system should fire at this target this tick.
-    /// Carries `TargetKind` so the projectile pipeline knows whether the
-    /// destination is an entity or a ground cell (force-fire on terrain).
-    pub fire_at: Option<TargetKind>,
+/// `0x00418B8A`: `(Range + 0x400) / Type+0x678`, CDQ and signed IDIV, the
+/// sum wrapping. RESIDUAL: a zero speed, or `INT_MIN / -1`, faults the
+/// original (`0x00418BB4`); no retail aircraft reaches it, and VERA returns
+/// the one-frame delay instead.
+pub(crate) fn state9_delay(range: i32, speed: i32) -> i32 {
+    range.wrapping_add(0x400).checked_div(speed).unwrap_or(1)
 }
 
-impl AttackTickResult {
-    pub(super) fn transition(mission: AircraftMission) -> Self {
-        Self {
-            new_mission: mission,
-            fire_at: None,
-        }
-    }
+/// The facts state 10 reads, after the entry prefix consumed pending ammo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ExitFacts {
+    pub ammo: i32,
+    pub target: bool,
+    /// Techno `+0x3D4`, which `AircraftClass::Unlimbo` sets (`0x004143EB`)
+    /// for a type that is not Selectable, not Landable or whose weapon 0 is a
+    /// Camera.
+    pub leaves_map: bool,
+    /// `HouseClass::IsControlledByHuman @ 0x0050B730`.
+    pub human: bool,
+    /// `+0x294`, an AirstrikeClass (Boris' MiGs): the aircraft leaf's
+    /// `airstrike_manager_present`, which no VERA producer sets.
+    pub airstrike: bool,
+}
 
-    fn fire(mission: AircraftMission, target: TargetKind) -> Self {
-        Self {
-            new_mission: mission,
-            fire_at: Some(target),
-        }
+/// What state 10 does beyond its own writes.
+pub(crate) trait ExitHost {
+    /// `vt+0x3C8 Assign_Target(NULL)` (`0x006FCDB0`).
+    fn clear_target(&mut self);
+    /// `MapClass::PickCellOnEdge` (`0x004AA440`) on the house's own edge
+    /// (`0x0050DA80`), then `Assign_Destination(cell, 1)`.
+    fn assign_edge_destination(&mut self);
+    /// `vt+0x1E8 Queue_Mission(Retreat, 0)`.
+    fn retreat(&mut self);
+    /// `vt+0x484 Enter_Idle_Mode(0, 1)` (`0x004176F0`).
+    fn enter_idle_mode(&mut self);
+}
+
+/// State 10 (`0x00418BEC`), after the prefix.
+pub(crate) fn exit_visit(facts: &ExitFacts, host: &mut impl ExitHost) -> Visit {
+    // `0x00418C15`: ammo left and a target: search again.
+    if facts.ammo != 0 && facts.target {
+        return Visit::to(1, 1);
+    }
+    // `0x00418C21`: only an empty aircraft of a human house (or one that
+    // leaves the map) lets go of its target.
+    if facts.ammo == 0 && (facts.leaves_map || facts.human) {
+        host.clear_target();
+    }
+    // `0x00418C43`.
+    host.assign_edge_destination();
+    if facts.airstrike && facts.ammo > 0 {
+        host.retreat();
+    } else {
+        host.enter_idle_mode();
+    }
+    Visit {
+        state: 10,
+        delay: 1,
+        latch: Some(false),
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::sim::combat::AttackTarget;
-    use crate::sim::docking::aircraft_dock::AircraftAmmo;
-    use crate::sim::entity_store::EntityStore;
-    use crate::sim::game_entity::GameEntity;
-
-    #[test]
-    fn test_state10_no_ammo_goes_to_guard() {
-        let mut store = EntityStore::new();
-        let mut attacker = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
-        attacker.attack_target = Some(AttackTarget::new(2));
-        attacker.aircraft_ammo = Some(AircraftAmmo::new(2));
-        store.insert(attacker);
-        let target = GameEntity::test_default(2, "RHINO", "Soviet", 15, 15);
-        store.insert(target);
-        // Deplete ammo.
-        store
-            .get_mut(1)
-            .unwrap()
-            .aircraft_ammo
-            .as_mut()
-            .unwrap()
-            .current = 0;
-
-        let result = tick_attack_state(&store, 1, 10);
-        // Entry housekeeping never decrements zero ammo in state10.
-        assert!(matches!(result.new_mission, AircraftMission::Guard));
-    }
-
-    #[test]
-    fn test_state10_has_ammo_reengages() {
-        let mut store = EntityStore::new();
-        let mut attacker = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
-        attacker.attack_target = Some(AttackTarget::new(2));
-        attacker.aircraft_ammo = Some(AircraftAmmo::new(2));
-        store.insert(attacker);
-        let target = GameEntity::test_default(2, "RHINO", "Soviet", 15, 15);
-        store.insert(target);
-
-        let result = tick_attack_state(&store, 1, 10);
-        // Nonzero ammo re-engages through native state1.
-        match result.new_mission {
-            AircraftMission::Attack { sub_state: 1, .. } => {}
-            other => panic!("Expected re-engage (state 1), got {:?}", other),
-        }
-    }
+/// `0x00418D1D`, the delay of states 1, 2 and 5:
+/// `ftol(MissionControl[mission].Rate * 900)` plus one Scenario
+/// `RandomRanged(0, 2)`. Mission_Attack runs as the Attack mission's handler,
+/// so its callers pass Attack; the table is indexed by the current mission.
+pub(crate) fn mission_epilogue(
+    rules: &crate::rules::ruleset::RuleSet,
+    mission: crate::sim::mission::MissionType,
+    rng: &mut crate::sim::rng::SimRng,
+) -> i32 {
+    (rules.mission_control.rate_frames(mission) as i32)
+        .wrapping_add(rng.next_range_i32_inclusive(0, 2))
 }

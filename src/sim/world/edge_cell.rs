@@ -25,6 +25,12 @@ pub enum Edge {
 }
 
 impl Edge {
+    /// `HouseClass @ 0x0050DA80`: the house's own edge, `+0x577C`
+    /// (`HouseState::waypoint_edge`) when it is 0..3, else North.
+    pub(crate) fn own_edge(waypoint_edge: u8) -> Self {
+        Self::from_index(waypoint_edge).unwrap_or(Edge::North)
+    }
+
     pub fn from_index(i: u8) -> Option<Self> {
         match i {
             0 => Some(Edge::North),
@@ -56,11 +62,15 @@ pub fn find_passable_at_edge(
 /// Find the paradrop carrier spawn/exit cell along a MapClass edge.
 ///
 /// Active spawner and Approach/Overfly callers pass sentinel references and
-/// criterion `4`. `FUN_004AA440 @ 0x004AA440` first rejects cells that are
-/// inside mode-one playfield geometry, then criterion 4 accepts the first
-/// outside candidate unconditionally. Every edge spends its verified initial
-/// Scenario RandomRanged call; South gathers one outside candidate per local X
-/// and spends a second draw to choose among the full vector.
+/// criterion `4`, as does Aircraft Mission_Attack's state 10 (`0x00418C43`).
+/// `FUN_004AA440 @ 0x004AA440` first rejects cells that are inside mode-one
+/// playfield geometry, then criterion 4 accepts the first outside candidate
+/// unconditionally. Every edge spends its initial Scenario RandomRanged call;
+/// North scans local row 0 (the sentinel arm leaves `param_4` 0), East and
+/// West the local columns `LocalWidth` and 0; South gathers one outside
+/// candidate per local X and spends a second draw to choose among the full
+/// vector. Original rows: `tools/spatial_oracle/aircraft_states.py`
+/// (`state10`, `state10_seeds`: all four edges over a flat map).
 pub fn find_paradrop_edge_cell(
     playfield_bounds: Option<PlayfieldBounds>,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
@@ -82,7 +92,7 @@ pub fn find_paradrop_edge_cell(
         Edge::North => {
             for n in 0..width {
                 let local_u = n.wrapping_add(start) % width;
-                let candidate = local_to_packed_cell(bounds, local_u, -1);
+                let candidate = local_to_packed_cell(bounds, local_u, 0);
                 if candidate_is_outside(candidate, bounds, resolved_terrain) {
                     return Some(pack_cell(candidate));
                 }
@@ -280,8 +290,8 @@ mod tests {
         let mut expected_rng = SimRng::new(0xAA44_0000);
         let start = expected_rng.next_range_u32_inclusive(1, 100) as i32 - 1;
         assert_eq!(start, 36);
-        let expected = pack_cell(local_to_packed_cell(bounds, start, -1));
-        assert_eq!(expected, (36, 63));
+        let expected = pack_cell(local_to_packed_cell(bounds, start, 0));
+        assert_eq!(expected, (36, 64));
         let mut actual_rng = SimRng::new(0xAA44_0000);
         assert_eq!(
             find_paradrop_edge_cell(Some(bounds), None, Edge::North, &mut actual_rng),

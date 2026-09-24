@@ -267,6 +267,13 @@ pub struct GeneralRules {
     /// Receiver-side divisor selected by the rank-specific `STRONGER`
     /// ability (`VeteranArmor=` in `[General]`).
     pub veteran_armor: f64,
+    /// `[General] CurleyShuffle=` — `RulesClass+0x17E1`, read at `0x0066FD4A`
+    /// (ReadBool with the field as its default; the constructor writes 0).
+    /// `AircraftClass::Mission_Attack` reads it in states 4 and 5
+    /// (`0x004183C3`, `0x00418671`, `0x00418733`, `0x00418782`): a helicopter
+    /// that fired or missed goes back to state 1 and picks a new firing spot.
+    /// Retail: yes.
+    pub curley_shuffle: bool,
     /// `[General] RepairRate=` in minutes — `RulesClass+0x16E0`.
     ///
     /// The self-heal pulse (`FUN_0070BE80`) divides the frame counter by
@@ -1175,6 +1182,7 @@ impl Default for GeneralRules {
             veteran_speed: 1.0,
             veteran_rof: 1.0,
             veteran_armor: 1.0,
+            curley_shuffle: false,
             repair_rate_minutes: 0.016,
             veteran_ratio: VETERAN_RATIO_DEFAULT,
             veteran_cap: VETERAN_CAP_DEFAULT,
@@ -1867,6 +1875,9 @@ impl GeneralRules {
                 .get_f64("VeteranROF")
                 .unwrap_or(defaults.veteran_rof),
             veteran_armor: general.get_f64("VeteranArmor").unwrap_or(1.0),
+            curley_shuffle: general
+                .get_bool("CurleyShuffle")
+                .unwrap_or(defaults.curley_shuffle),
             repair_rate_minutes: general
                 .get_f64("RepairRate")
                 .unwrap_or(defaults.repair_rate_minutes),

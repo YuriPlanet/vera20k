@@ -278,3 +278,96 @@ fn aircraft_secondary_arc_ignores_homing_and_omnifire_but_fighter_bypasses_it() 
         }
     }
 }
+
+/// One strafe pass (`0x00417FE0` states 4 and 6..9): the state-4 release and
+/// one bomb each in states 6, 7, 8 and 9, each visit a weapon-0 ROF after the
+/// last (a still-running rearm timer polls a frame at a time, `0x00418BC5`).
+/// State 9 hands off to state 3 after `(Range + 0x400) / speed` frames, and
+/// state 3 pays the pass's one pending ammo. VERA used to drop one bomb.
+#[test]
+fn a_strafer_drops_five_bombs_on_one_pass() {
+    let (mut sim, rules) = fixture(&serde_json::json!({
+        "burst": 1, "fighter": false, "rot": 1, "inviso": false, "ammo": 1
+    }));
+    let mut bombs = Vec::new();
+    let mut states = vec![4u8];
+    for frame in 0..400u32 {
+        sim.session.binary_frame = frame;
+        let fired = dispatch(&mut sim, &rules).consequences.fire_events().len();
+        if fired > 0 {
+            bombs.push((frame, fired));
+        }
+        let Some(AircraftMission::Attack { sub_state }) =
+            sim.substrate.entities.get(1).unwrap().aircraft_mission
+        else {
+            break;
+        };
+        if states.last() != Some(&sub_state) {
+            states.push(sub_state);
+        }
+        if sub_state == 3 {
+            break;
+        }
+    }
+    assert_eq!(bombs.iter().map(|&(_, n)| n).sum::<usize>(), 5, "{bombs:?}");
+    assert_eq!(states, vec![4, 6, 7, 8, 9, 3], "{bombs:?}");
+    for pair in bombs.windows(2) {
+        assert!(
+            pair[1].0 - pair[0].0 >= 20,
+            "a weapon-0 ROF apart: {bombs:?}"
+        );
+    }
+    let entity = sim.substrate.entities.get(1).unwrap();
+    let ammo = entity.aircraft_ammo.as_ref().unwrap();
+    assert!(ammo.release_pending(), "state 3 pays it");
+    assert_eq!(ammo.current, 1);
+    // (Range 20 cells + 0x400) / (Speed 8 -> 20 leptons a frame).
+    assert_eq!(
+        entity.mission.dispatch_timer().delay(),
+        (20 * 256 + 0x400) / 20
+    );
+}
+
+/// A Fighter out of range (`0x00418544` then `0x0041874E`): state 4's
+/// refusal sends it to state 5 on the next frame, and state 5, not close,
+/// back to state 1 after the Attack Rate and one Scenario draw. No shot.
+#[test]
+fn a_fighter_out_of_range_cycles_back_to_its_search() {
+    let (mut sim, rules) = fixture(&serde_json::json!({"burst": 1, "fighter": true}));
+    sim.substrate.entities.get_mut(1).unwrap().attack_target = Some(AttackTarget::for_cell(10, 60));
+    assert!(
+        dispatch(&mut sim, &rules)
+            .consequences
+            .fire_events()
+            .is_empty()
+    );
+    let entity = sim.substrate.entities.get(1).unwrap();
+    assert!(matches!(
+        entity.aircraft_mission,
+        Some(AircraftMission::Attack { sub_state: 5 })
+    ));
+    assert_eq!(entity.mission.dispatch_timer().delay(), 1);
+
+    let before = sim.scenario_rng.clone();
+    sim.session.binary_frame = 1;
+    assert!(
+        dispatch(&mut sim, &rules)
+            .consequences
+            .fire_events()
+            .is_empty()
+    );
+    let entity = sim.substrate.entities.get(1).unwrap();
+    assert!(matches!(
+        entity.aircraft_mission,
+        Some(AircraftMission::Attack { sub_state: 1 })
+    ));
+    let mut expected = before;
+    let rate = rules
+        .mission_control
+        .rate_frames(crate::sim::mission::MissionType::Attack) as i32;
+    assert_eq!(
+        entity.mission.dispatch_timer().delay(),
+        rate + expected.next_range_i32_inclusive(0, 2)
+    );
+    assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
+}

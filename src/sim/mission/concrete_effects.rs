@@ -228,7 +228,29 @@ pub(crate) fn represented_assign_target_admitted(
     if entity.attack_target.as_ref().map(|target| target.target) == requested {
         return;
     }
-    let requested = if commits { requested } else { None };
+    // `0x006FCDEB..0x006FCE46`, the aircraft arm: a spawned aircraft with
+    // ammo, mid-run in Mission_Attack states 5..9, handed another target
+    // drops it and empties its ammo, so its manager recalls it. Type
+    // `Spawned=` (`+0xD54`) without `MissileSpawn=` (`+0xD68`) is VERA's spawn
+    // child (`spawn_owner_id`): the other stock Spawned aircraft never attack
+    // (PDPLANE, SPYP) or have no VERA producer (BPLN's Airstrike).
+    let requested = if requested.is_some()
+        && entity.category == crate::map::entities::EntityCategory::Aircraft
+        && entity.spawn_owner_id.is_some()
+        && matches!(
+            entity.aircraft_mission,
+            Some(crate::sim::aircraft::AircraftMission::Attack { sub_state: 5..=9 })
+        )
+        && let Some(ammo) = entity.aircraft_ammo.as_mut()
+        && ammo.current != 0
+    {
+        ammo.current = 0;
+        None
+    } else if commits {
+        requested
+    } else {
+        None
+    };
 
     // `InfantryClass::Assign_Target @ 0x0051B1F0` returns its receiver to an
     // idle sequence only while the receiver itself is alive (`0x0051B203`).

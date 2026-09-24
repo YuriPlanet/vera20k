@@ -238,69 +238,39 @@ fn mission_step(
     };
 
     match mission {
-        AircraftMission::Idle => {
-            let entity = sim.substrate.entities.get(id)?;
-            let type_str = sim.interner.resolve(entity.type_ref());
-            let obj = rules.object(type_str);
-            // Weapon-array slot 0 (`TechnoTypeClass+0x898`) is the armed
-            // test here rather than `combat_weapon::is_armed`
-            // (`TechnoClass::Is_Armed @ 0x00701120`). The two agree on
-            // every stock aircraft: no aircraft section authors
-            // `TurretCount=`, so the single slot `GetCurrentWeapon` would
-            // read is slot 0. UNCHECKED which predicate the native
-            // idle/return-to-airfield path uses; zero stock frequency
-            // either way.
-            let has_weapon = obj.map_or(false, |o| o.primary.is_some());
-            let airport_bound = obj.map_or(false, |o| o.airport_bound);
-            let is_airborne = entity
-                .locomotor
-                .as_ref()
-                .map_or(false, |l| l.altitude > SIM_ZERO);
-            let ammo = entity.aircraft_ammo.as_ref();
-
-            let nearest = find_nearest_airfield_for(
-                sim,
-                rules,
-                entity.owner(),
-                entity.type_ref(),
-                (entity.position.rx, entity.position.ry),
-            );
-
-            let input = idle_mode::IdleModeInput {
-                ammo_current: ammo.map_or(-1, |a| a.current),
-                ammo_max: ammo.map_or(-1, |a| a.max),
-                has_weapon,
-                has_target: entity.attack_target.is_some(),
-                airport_bound,
-                is_airborne,
-                nearest_airfield: nearest,
-            };
-
-            match idle_mode::enter_idle_mode(&input) {
-                idle_mode::IdleModeResult::Mission(new_m) => {
-                    m.new_mission = new_m;
-                }
-                idle_mode::IdleModeResult::SelfDestruct => {
-                    m.self_destruct = true;
-                }
-            }
-        }
+        AircraftMission::Idle => enter_idle_mode(sim, rules, id, &mut m)?,
 
         AircraftMission::Attack { sub_state } => {
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 attack_mission::enter_attack_state(entity, *sub_state);
             }
-            let result = if *sub_state == 0 {
-                attack_mission::AttackTickResult::transition(sim.aircraft_begin_attack(id))
-            } else if *sub_state == 1 {
-                attack_mission::AttackTickResult::transition(sim.aircraft_reengage(id, rules))
-            } else if *sub_state == 3 {
-                attack_mission::AttackTickResult::transition(sim.aircraft_approach(id, rules))
-            } else {
-                attack_mission::tick_attack_state(&sim.substrate.entities, id, *sub_state)
-            };
-            m.new_mission = result.new_mission;
-            m.fire_at = result.fire_at;
+            match *sub_state {
+                0 => m.new_mission = sim.aircraft_begin_attack(id),
+                1 => m.new_mission = sim.aircraft_reengage(id, rules),
+                3 => m.new_mission = sim.aircraft_approach(id, rules),
+                // The release, the follow-up shot and the strafe run fire, so
+                // they run in the combat phase, where VERA's FireAt lives.
+                4..=9 => match sim.aircraft_strike_target(id, *sub_state) {
+                    Some(target) => m.fire_at = Some(target),
+                    None => m.new_mission = sim.aircraft_attack_visit(id, 10, 1),
+                },
+                10 => {
+                    let (mission, idle) = sim.aircraft_exit(id, rules);
+                    m.new_mission = mission;
+                    if idle {
+                        enter_idle_mode(sim, rules, id, &mut m)?;
+                    }
+                }
+                // State 2 (`0x00418D1D`) is the epilogue alone.
+                state => {
+                    let delay = attack_mission::mission_epilogue(
+                        rules,
+                        crate::sim::mission::MissionType::Attack,
+                        &mut sim.scenario_rng,
+                    );
+                    m.new_mission = sim.aircraft_attack_visit(id, state, delay);
+                }
+            }
 
             // Fly owns height targets. Native4CF3D4..4CF4CF selects
             // destination-relative height, IsDropship approach height or
@@ -608,6 +578,62 @@ fn mission_step(
 }
 
 /// Apply one handler decision. Returns the Mission_Attack fire request.
+/// Enter_Idle_Mode's decision for an aircraft with nothing to do (the Idle
+/// mission, and Mission_Attack state 10's `vt+0x484(0, 1)`).
+fn enter_idle_mode(
+    sim: &Simulation,
+    rules: &RuleSet,
+    id: u64,
+    m: &mut MissionMutation,
+) -> Option<()> {
+    let entity = sim.substrate.entities.get(id)?;
+    let type_str = sim.interner.resolve(entity.type_ref());
+    let obj = rules.object(type_str);
+    // Weapon-array slot 0 (`TechnoTypeClass+0x898`) is the armed
+    // test here rather than `combat_weapon::is_armed`
+    // (`TechnoClass::Is_Armed @ 0x00701120`). The two agree on
+    // every stock aircraft: no aircraft section authors
+    // `TurretCount=`, so the single slot `GetCurrentWeapon` would
+    // read is slot 0. UNCHECKED which predicate the native
+    // idle/return-to-airfield path uses; zero stock frequency
+    // either way.
+    let has_weapon = obj.is_some_and(|o| o.primary.is_some());
+    let airport_bound = obj.is_some_and(|o| o.airport_bound);
+    let is_airborne = entity
+        .locomotor
+        .as_ref()
+        .is_some_and(|l| l.altitude > SIM_ZERO);
+    let ammo = entity.aircraft_ammo.as_ref();
+
+    let nearest = find_nearest_airfield_for(
+        sim,
+        rules,
+        entity.owner(),
+        entity.type_ref(),
+        (entity.position.rx, entity.position.ry),
+    );
+
+    let input = idle_mode::IdleModeInput {
+        ammo_current: ammo.map_or(-1, |a| a.current),
+        ammo_max: ammo.map_or(-1, |a| a.max),
+        has_weapon,
+        has_target: entity.attack_target.is_some(),
+        airport_bound,
+        is_airborne,
+        nearest_airfield: nearest,
+    };
+
+    match idle_mode::enter_idle_mode(&input) {
+        idle_mode::IdleModeResult::Mission(new_m) => {
+            m.new_mission = new_m;
+        }
+        idle_mode::IdleModeResult::SelfDestruct => {
+            m.self_destruct = true;
+        }
+    }
+    Some(())
+}
+
 fn apply_mission_mutation(
     sim: &mut Simulation,
     rules: &RuleSet,
