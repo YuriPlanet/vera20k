@@ -673,6 +673,15 @@ impl Simulation {
             }
 
             // Claim the plant.
+            // RESIDUAL: native's planter then re-arms (`GameEntity::rearm_timer`)
+            // with `GetROF(1)` (`InfantryClass::PerCellProcess
+            // 0x0051A60B..0x0051A65F`), and so does a second planter entering an
+            // already charged building (`0x0051A546..0x0051A5A0`), which VERA's
+            // walk-up leaves hovering outside. GetROF draws on the Scenario RNG
+            // unless weapon slot 1 is empty (then it returns 1 without a draw,
+            // `0x006FCFD4`). Trigger: every C4 plant. Effect: the planter can
+            // fire a reload early, and a draw per plant can be missing. Needs
+            // GetROF as a callable owner.
             if let Some(b) = self.substrate.entities.get_mut(target_id) {
                 b.pending_c4_detonation = Some(PendingC4Detonation {
                     start_frame: self.session.binary_frame as i32,

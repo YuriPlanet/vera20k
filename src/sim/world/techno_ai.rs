@@ -1433,12 +1433,11 @@ fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
 ///
 /// Steps 3 and 4 are merged below. The original drops the pointer and
 /// immediately re-acquires, which lands back on the same value whenever the
-/// same candidate still wins. VERA must not perform that round trip literally:
-/// the weapon's rearm cooldown lives on the target record here, not on the
-/// object, so a no-op drop-and-reinstall would restart ROF on every cadence and
-/// a unit whose ROF exceeds the ~28-frame scan interval would never get a shot
-/// off. Installing the scan result directly is the same observable outcome —
-/// the target setter is a no-op when the pick is unchanged.
+/// same candidate still wins; installing the scan result directly is the same
+/// observable outcome, since the target setter is a no-op when the pick is
+/// unchanged. (The reload is the object's own timer,
+/// [`GameEntity::rearm_timer`](crate::sim::game_entity::GameEntity::rearm_timer),
+/// so neither form touches it.)
 ///
 /// The Area Guard delay branch is written because it belongs to the scanner,
 /// but Area Guard is not one of the three missions that reach here from the AI
@@ -1559,12 +1558,9 @@ fn passive_target_scan(
     // unit that acquires does NOT walk toward what it found.
     //
     // Swinging an existing attack onto a different victim goes through the
-    // shared in-place retarget so the weapon's rearm countdown, burst counter
-    // and inter-shot delay survive. Rebuilding the attack record instead would
-    // zero all three and hand out a free shot on every re-pick — and with a
-    // ~28-frame cadence against stock ROF values that mostly exceed it, a Guard
-    // unit would fire at roughly double its stock rate whenever two enemies
-    // traded places as nearest.
+    // shared in-place retarget, which keeps the attack record. The reload and
+    // burst position are the object's (`rearm_timer`, `weapon_burst`), so a
+    // re-pick cannot hand out a free shot either way.
     let pick_kind = pick.map(crate::sim::combat::TargetKind::Entity);
     let current_kind = sim
         .substrate
@@ -1574,10 +1570,10 @@ fn passive_target_scan(
     match (current_kind, pick) {
         (Some(current), Some(sid)) if current != crate::sim::combat::TargetKind::Entity(sid) => {
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
-                crate::sim::combat::retarget_preserving_rearm(entity, sid);
+                crate::sim::combat::retarget_in_place(entity, sid);
             }
         }
-        // Fresh install, or a clear: no rearm state exists to carry over.
+        // Fresh install, or a clear.
         _ => {
             let _ = sim.set_archive_target_represented(id, pick_kind);
         }
@@ -2267,6 +2263,72 @@ mod tests {
         sim
     }
 
+    /// `FootClass::Mission_Guard 0x004D52A9` in production: a guarding tank
+    /// that has fired is next dispatched when its reload runs out, not on
+    /// `[Guard] Rate` plus a draw. The 50-frame `105mm` reload spans several
+    /// 14-frame Guard dispatches.
+    #[test]
+    fn a_guarding_tank_that_fired_waits_out_its_reload() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nNormalTargetingDelay=27\nGuardAreaTargetingDelay=36\n\n\
+             [Guard]\nRate=.016\n\n\
+             [InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [VehicleTypes]\n0=MTNK\n1=UNARM\n\
+             [MTNK]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             Strength=300\nArmor=heavy\nSpeed=6\nSight=10\nPrimary=105mm\n\n\
+             [UNARM]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             Strength=3000\nArmor=heavy\nSpeed=6\nSight=10\n\n\
+             [105mm]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\n\n\
+             [AP]\nVerses=100%,100%,90%,75%,75%,75%,60%,30%,20%,0%,0%\n",
+        ))
+        .expect("guard reload rules parse");
+        let heights: std::collections::BTreeMap<(u16, u16), u8> = std::collections::BTreeMap::new();
+        let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
+        let mut sim = Simulation::with_seed(0x5CA1_AB1E_0009);
+        let tank = crate::map::entities::MapEntity {
+            mission: Some(MissionType::Guard),
+            ..passive_map_entity("Americans", "MTNK", 20, 20, EntityCategory::Unit)
+        };
+        sim.spawn_from_map(
+            &[
+                tank,
+                passive_map_entity("Soviet", "UNARM", 23, 20, EntityCategory::Unit),
+            ],
+            Some(&rules),
+            &heights,
+        );
+        let mut waits = 0;
+        let mut last_dispatch = None;
+        for _ in 0..400 {
+            let _ = sim.advance_tick(&[], Some(&rules), &heights, Some(&grid), None, 67);
+            let tank = sim.substrate.entities.get(1).expect("tank present");
+            assert_eq!(tank.mission.current().known(), Some(MissionType::Guard));
+            let timer = tank.mission.dispatch_timer();
+            if last_dispatch == Some(timer) {
+                continue;
+            }
+            last_dispatch = Some(timer);
+            // A dispatch after the last shot's rearm was armed saw this timer.
+            let rearm = tank.rearm_timer;
+            if rearm.duration() > 0
+                && rearm.start_frame() < timer.start_frame()
+                && rearm.remaining(timer.start_frame()) != 0
+            {
+                assert_eq!(
+                    timer.delay(),
+                    rearm.remaining(timer.start_frame()),
+                    "dispatch at {}",
+                    timer.start_frame()
+                );
+                waits += 1;
+            }
+        }
+        assert!(
+            waits >= 3,
+            "precondition: dispatches landed inside reloads ({waits})"
+        );
+    }
+
     #[test]
     fn idle_guard_unit_acquires_a_target_with_no_order_at_all() {
         // The headline behavior: a parked tank opens fire on an enemy that is
@@ -2464,9 +2526,8 @@ mod tests {
 
     #[test]
     fn rescan_that_repicks_the_same_target_does_not_reset_the_weapon_cooldown() {
-        // The rearm cooldown lives on the target record here rather than on the
-        // object, so a literal drop-and-reinstall every cadence would restart
-        // ROF and a slow-firing unit would never fire.
+        // The reload is the object's own timer; a re-pick of the same target
+        // must not touch it.
         let rules = passive_rules();
         let heights: std::collections::BTreeMap<(u16, u16), u8> = std::collections::BTreeMap::new();
         let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
@@ -2482,38 +2543,29 @@ mod tests {
             &heights,
         );
         let _ = sim.advance_tick(&[], Some(&rules), &heights, Some(&grid), None, 67);
+        let rearm = crate::sim::timer::CdTimer::started(sim.session.binary_frame as i32, 40);
         {
-            let mut target = AttackTarget::new(2);
-            target.cooldown_ticks = 40;
             let e = sim.substrate.entities.get_mut(1).unwrap();
-            e.attack_target = Some(target);
+            e.attack_target = Some(AttackTarget::new(2));
+            e.rearm_timer = rearm;
             e.passively_acquired_target = true;
             e.passive_scan_timer.clear();
         }
         passive_acquire_step(&mut sim, 1, Some(&rules), ObjectAiCtx::default());
-        let attack = sim
-            .substrate
-            .entities
-            .get(1)
-            .unwrap()
-            .attack_target
-            .as_ref()
-            .expect("target retained");
+        let e = sim.substrate.entities.get(1).unwrap();
+        let attack = e.attack_target.as_ref().expect("target retained");
         assert_eq!(attack.target, TargetKind::Entity(2));
         assert_eq!(
-            attack.cooldown_ticks, 40,
+            e.rearm_timer, rearm,
             "re-picking the same target must leave the ROF cooldown untouched"
         );
     }
 
     #[test]
     fn rescan_that_changes_target_also_preserves_the_weapon_cooldown() {
-        // The sibling of the test above, and the one that matters more: a
-        // CHANGED pick must not restart the weapon either. Rebuilding the attack
-        // record zeroes the rearm countdown, and since the scanner re-picks
-        // nearest-first every ~28 frames while most stock ROF values are longer
-        // than that, every time two enemies trade places as nearest the attacker
-        // would get a free shot.
+        // The sibling of the test above: a CHANGED pick must not restart the
+        // weapon either, or two enemies trading places as nearest every
+        // ~28-frame scan would hand out free shots.
         let rules = passive_rules();
         let heights: std::collections::BTreeMap<(u16, u16), u8> = std::collections::BTreeMap::new();
         let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
@@ -2529,31 +2581,25 @@ mod tests {
             &heights,
         );
         let _ = sim.advance_tick(&[], Some(&rules), &heights, Some(&grid), None, 67);
+        let rearm = crate::sim::timer::CdTimer::started(sim.session.binary_frame as i32, 40);
         {
             // Hold the FARTHER one, mid-reload, so the rescan must swing over.
-            let mut target = AttackTarget::new(2);
-            target.cooldown_ticks = 40;
             let e = sim.substrate.entities.get_mut(1).unwrap();
-            e.attack_target = Some(target);
+            e.attack_target = Some(AttackTarget::new(2));
+            e.rearm_timer = rearm;
             e.passively_acquired_target = true;
             e.passive_scan_timer.clear();
         }
         passive_acquire_step(&mut sim, 1, Some(&rules), ObjectAiCtx::default());
-        let attack = sim
-            .substrate
-            .entities
-            .get(1)
-            .unwrap()
-            .attack_target
-            .as_ref()
-            .expect("target retained");
+        let e = sim.substrate.entities.get(1).unwrap();
+        let attack = e.attack_target.as_ref().expect("target retained");
         assert_eq!(
             attack.target,
             TargetKind::Entity(3),
             "precondition: the rescan swung onto the nearer candidate"
         );
         assert_eq!(
-            attack.cooldown_ticks, 40,
+            e.rearm_timer, rearm,
             "swinging onto a new target must not restart the weapon"
         );
     }
@@ -2631,17 +2677,17 @@ mod tests {
         // acquisition installed the target, so provenance carries over; and the
         // rearm state must survive (covered end-to-end elsewhere, pinned here).
         let mut e = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
-        let mut target = AttackTarget::new(2);
-        target.cooldown_ticks = 33;
+        let rearm = crate::sim::timer::CdTimer::started(0, 33);
+        e.rearm_timer = rearm;
         e.weapon_burst.complete_shot(3);
-        e.attack_target = Some(target);
+        e.attack_target = Some(AttackTarget::new(2));
         e.passively_acquired_target = true;
 
-        crate::sim::combat::retarget_preserving_rearm(&mut e, 7);
+        crate::sim::combat::retarget_in_place(&mut e, 7);
 
         let attack = e.attack_target.as_ref().expect("target retained");
         assert_eq!(attack.target, TargetKind::Entity(7));
-        assert_eq!(attack.cooldown_ticks, 33, "rearm must survive the swing");
+        assert_eq!(e.rearm_timer, rearm, "rearm must survive the swing");
         assert_eq!(e.weapon_burst.index(), 1, "burst must survive the swing");
         assert!(
             e.passively_acquired_target,
@@ -2650,7 +2696,7 @@ mod tests {
 
         // An ordered target stays ordered through the same swing.
         e.passively_acquired_target = false;
-        crate::sim::combat::retarget_preserving_rearm(&mut e, 9);
+        crate::sim::combat::retarget_in_place(&mut e, 9);
         assert!(!e.passively_acquired_target);
     }
 
@@ -3953,6 +3999,50 @@ mod tests {
             MissionDispatchTimer::from_raw(0, 14)
         );
         assert_eq!(sim.scenario_rng.logical_state(), before_rng);
+    }
+
+    /// `FootClass::Mission_Guard 0x004D52A9..0x004D52F4`: while the object's
+    /// rearm timer runs, Guard and Sticky return its remaining frames and draw
+    /// nothing; once it has run out, the handler draws its jitter.
+    #[test]
+    fn guard_handler_waits_out_the_rearm_without_a_draw() {
+        for (category, mission) in [
+            (EntityCategory::Unit, MissionType::Guard),
+            (EntityCategory::Infantry, MissionType::Guard),
+            (EntityCategory::Unit, MissionType::Sticky),
+        ] {
+            // Armed 10 frames ago for 30 (20 left), or 30 frames ago (spent).
+            for (armed_at, delay) in [(-10, Some(20)), (-30, None)] {
+                let mut sim = Simulation::with_seed(0x6A30);
+                let rules = representative_foot_handler_rules();
+                let mut object = entity_of(1, category);
+                object.rearm_timer = crate::sim::timer::CdTimer::started(armed_at, 30);
+                update_mission_test_fixture(&mut object.mission, |fixture| {
+                    fixture.current = MissionId::from_known(mission);
+                    fixture.dispatch_timer = MissionDispatchTimer::at_frame(0);
+                });
+                register_entity(&mut sim, object);
+                let before_rng = sim.scenario_rng.logical_state();
+
+                sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+
+                let timer = sim
+                    .substrate
+                    .entities
+                    .get(1)
+                    .unwrap()
+                    .mission
+                    .dispatch_timer();
+                let case = format!("{category:?} {mission:?} armed at {armed_at}");
+                match delay {
+                    Some(delay) => {
+                        assert_eq!(timer, MissionDispatchTimer::from_raw(0, delay), "{case}");
+                        assert_eq!(sim.scenario_rng.logical_state(), before_rng, "{case}");
+                    }
+                    None => assert_ne!(sim.scenario_rng.logical_state(), before_rng, "{case}"),
+                }
+            }
+        }
     }
 
     #[test]
@@ -6387,8 +6477,6 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
         e.movement_target = Some(MovementTarget::default());
         e.attack_target = Some(AttackTarget {
             target: TargetKind::Entity(99),
-            cooldown_ticks: 0,
-            burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });
         assert_ne!(e.derived_mission().0, MissionType::AttackMove);

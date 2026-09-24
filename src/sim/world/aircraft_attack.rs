@@ -176,7 +176,7 @@ impl Simulation {
                 .object(self.interner.resolve(entity.type_ref()))
                 .unwrap();
             let snap =
-                crate::sim::combat::build_attacker_snapshot(entity, target, 0, 0, None, None, None);
+                crate::sim::combat::build_attacker_snapshot(entity, target, None, None, None);
             let origin = fire_coord::fire_coordinate(
                 self,
                 rules,

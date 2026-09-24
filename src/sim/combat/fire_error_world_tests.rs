@@ -116,11 +116,8 @@ fn a_drained_defence_drops_its_target_and_holds_fire() {
 fn a_building_drops_a_target_out_of_range_but_keeps_it_while_reloading() {
     assert_eq!(coil_shot((20, 10), |_| {}), (300, false));
     assert_eq!(
-        coil_shot((20, 10), |coil| coil
-            .attack_target
-            .as_mut()
-            .unwrap()
-            .cooldown_ticks = 30),
+        coil_shot((20, 10), |coil| coil.rearm_timer =
+            crate::sim::timer::CdTimer::started(0, 30)),
         (300, true)
     );
 }

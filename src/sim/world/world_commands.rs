@@ -1248,6 +1248,11 @@ impl Simulation {
                 }
                 self.undeploy_building(*entity_id, rules)
             }
+            // RESIDUAL: native asks `CanDeploySlashUnload @ 0x00700D50`
+            // (vt+0x314) first, and its infantry arm refuses a deployed
+            // infantryman's undeploy while its rearm timer runs (`0x00700E02`),
+            // so a deployed GI in a firefight stands up only between shots. How
+            // the refused DEPLOY event is dropped or retried is not traced.
             Command::ToggleInfantryDeploy { entity_id } => {
                 if !self.entity_owned_by_id(command_owner, *entity_id) {
                     return false;

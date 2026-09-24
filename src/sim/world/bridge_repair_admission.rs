@@ -624,8 +624,6 @@ mod tests {
         sim.substrate.entities.get_mut(70).unwrap().attack_target =
             Some(crate::sim::combat::AttackTarget {
                 target: crate::sim::combat::TargetKind::Entity(71),
-                cooldown_ticks: 0,
-                burst_delay_ticks: 0,
                 pending_infantry_fire: None,
             });
         // Raw blocker lookup stamps(60,60), then first Building+48 stamps
@@ -758,8 +756,6 @@ mod tests {
             .unwrap()
             .attack_target = Some(crate::sim::combat::AttackTarget {
             target: crate::sim::combat::TargetKind::Entity(hut),
-            cooldown_ticks: 0,
-            burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });
         sim.resolved_terrain

@@ -106,6 +106,11 @@ pub(super) enum HashFeature {
     /// Gattling stage, value and report latch (`TechnoClass+0x140`, `+0x144`,
     /// `+0x4B8`).
     Gattling = 200,
+    /// The object's rearm countdown (`TechnoClass+0x2EC`) replaces the
+    /// AttackTarget cooldown/burst-delay counters and the cloak runtime's
+    /// copy. Earlier schemas fold zero counters on AttackTarget (the bounded
+    /// fixtures had no reload in progress) and the timer in the cloak slot.
+    RearmTimer = 202,
 }
 
 impl HashSchema {
@@ -135,6 +140,7 @@ impl HashSchema {
                     | HashFeature::HouseDefeatTracking
                     | HashFeature::IvanBomb
                     | HashFeature::Gattling
+                    | HashFeature::RearmTimer
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

@@ -733,17 +733,12 @@ pub struct PendingInfantryFire {
 ///
 /// Attached by `issue_attack_command()` (entity targets) or
 /// `issue_attack_cell_command()` (cell targets). The combat system fires the
-/// attacker's weapon at the resolved target each tick. Supports burst firing:
-/// multiple rapid shots per attack cycle, with ROF cooldown only after
-/// the full burst completes.
+/// attacker's weapon at the resolved target each tick. The reload between
+/// shots is the object's own `GameEntity::rearm_timer`, not the target's.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AttackTarget {
     /// What this attacker is firing at: an entity or a ground cell (force-fire).
     pub target: TargetKind,
-    /// Simulation ticks remaining before the next shot (ROF cooldown).
-    pub cooldown_ticks: u16,
-    /// Ticks between individual burst shots (short inter-shot delay).
-    pub burst_delay_ticks: u8,
     /// Infantry-only delayed shot latch. `None` for vehicles/buildings/aircraft.
     #[serde(default)]
     pub pending_infantry_fire: Option<PendingInfantryFire>,
@@ -808,8 +803,6 @@ impl AttackTarget {
     pub fn new(target_stable_id: u64) -> Self {
         Self {
             target: TargetKind::Entity(target_stable_id),
-            cooldown_ticks: 0,
-            burst_delay_ticks: 0,
             pending_infantry_fire: None,
         }
     }
@@ -818,8 +811,6 @@ impl AttackTarget {
     pub fn for_cell(rx: u16, ry: u16) -> Self {
         Self {
             target: TargetKind::Cell(rx, ry),
-            cooldown_ticks: 0,
-            burst_delay_ticks: 0,
             pending_infantry_fire: None,
         }
     }
@@ -1211,16 +1202,12 @@ pub fn issue_attack_command(
     true
 }
 
-/// Swing an existing attack onto a different entity WITHOUT restarting the
-/// weapon.
+/// Swing an existing attack onto a different entity in place.
 ///
-/// The rearm countdown and inter-shot delay still live on
-/// [`AttackTarget`] here, so replacing the whole record — which is what building
-/// a fresh `AttackTarget` does — zeroes them and hands the attacker a free shot
-/// on the spot. The original keeps its rearm timer on the OBJECT and its target
-/// assignment writes nothing but the target pointer and two adjacent fields, so
-/// swinging onto a new victim never shortens the reload. Mutating in place is
-/// how that contract is honoured here.
+/// The weapon's reload is the object's own timer
+/// ([`GameEntity::rearm_timer`], `TechnoClass+0x2EC`) and the burst index is
+/// `weapon_burst`; the original's target assignment writes neither, so no
+/// swing restarts the weapon.
 ///
 /// This is the one owner of that operation: combat's own auto-retarget and the
 /// passive scanner's re-pick both go through it. Only the pending infantry shot
@@ -1244,7 +1231,7 @@ pub fn issue_attack_command(
 /// flag-clearing that the original's target ASSIGNMENT performs lives in the
 /// target setter, which is the assignment's counterpart; this in-place swing has
 /// no counterpart there.
-pub(crate) fn retarget_preserving_rearm(entity: &mut GameEntity, new_target_sid: u64) {
+pub(crate) fn retarget_in_place(entity: &mut GameEntity, new_target_sid: u64) {
     if let Some(ref mut attack) = entity.attack_target {
         attack.target = TargetKind::Entity(new_target_sid);
         attack.pending_infantry_fire = None;
@@ -2636,8 +2623,6 @@ pub(crate) struct CombatEmit {
     pub(crate) retarget_events: Vec<(u64, u64)>,
     pub(crate) fire_events: Vec<SimFireEvent>,
     pub(crate) reveal_events: Vec<RevealEvent>,
-    /// (id, burst_delay, rof_cd)
-    pub(crate) burst_updates: Vec<(u64, u8, u16)>,
     /// aircraft that fired this tick
     pub(crate) ammo_deduct: Vec<u64>,
     pub(crate) pending_infantry_updates: Vec<(u64, Option<PendingInfantryFire>)>,
@@ -2941,8 +2926,6 @@ pub(crate) struct LogicProjectileCommit {
 pub(crate) fn build_attacker_snapshot(
     entity: &GameEntity,
     target: TargetKind,
-    cooldown_ticks: u16,
-    burst_delay_ticks: u8,
     pending_infantry_fire: Option<PendingInfantryFire>,
     pending_building_fire: Option<PendingBuildingFire>,
     garrison: Option<GarrisonSnapshot>,
@@ -2961,7 +2944,6 @@ pub(crate) fn build_attacker_snapshot(
         type_id: entity.type_ref(),
         facing: entity.facing,
         veterancy: entity.veterancy,
-        cooldown_ticks,
         animation_sequence: entity.animation.as_ref().map(|a| a.sequence),
         animation_frame: entity.animation.as_ref().map(|a| a.frame_index),
         is_prone: entity
@@ -2974,7 +2956,6 @@ pub(crate) fn build_attacker_snapshot(
         pending_building_fire,
         barrel_facing: entity.barrel_facing,
         hull_facing: entity.body_facing,
-        burst_delay_ticks,
         weapon_override: entity.weapon_override,
         garrison,
         scan_mission: threat_range::scan_mission_for(entity),
@@ -3330,14 +3311,26 @@ pub(crate) fn is_within_range_leptons(dist_sq_leptons: i64, range_cells: SimFixe
 ///
 /// The `VeteranROF=` arm follows in `veteran_rof_frames`.
 ///
-/// RESIDUAL (GSI-08.05) — two arms of the native function are still absent.
-/// - The per-house difficulty multiplier. Native scales `ROF` by the owning
-///   house's difficulty ROF before the truncation; VERA parses no
-///   `[Easy]/[Normal]/[Difficult] ROF=` and plumbs no per-house difficulty to
-///   this site. Frequency today: zero — every house in VERA is Normal, whose
-///   stock value is `1.0`, and there is no AI opponent to carry another.
-///   It becomes ±20% on every weapon in the game the moment a difficulty other
-///   than Normal can reach a house.
+/// RESIDUAL (GSI-08.05) — arms of the native function still absent:
+/// - Returns with no draw (`0x006FCFA9..0x006FD036`, `0x006FD1FA`): an empty
+///   weapon slot returns 1; a building with more than one Ammo returns 1
+///   (dormant); `IsSonic=`, and a weapon whose spark, fire or railgun particle
+///   system is live on the firer (`+0x308/+0x304/+0x314`, which FireAt creates
+///   before it calls GetROF), return the raw `ROF=` with no draw, no house
+///   multiplier, no `VeteranROF=` and no garrison divide. Triggers: every
+///   Dolphin (`SonicZap`), IFV repair (`RepairBullet`), `FireballLauncher` and
+///   `LtRail` shot. Effect: VERA draws one extra Scenario value per shot and
+///   can apply `VeteranROF=`.
+/// - The per-house difficulty multiplier, `ftol(ROF * House+0x1A8 + r)` with
+///   the draw taken first (`0x006FD09E..0x006FD0CF`; the house value comes
+///   from `HouseClass::SetDifficulty @ 0x004F6EC0`). VERA plumbs no per-house
+///   difficulty to this site, and AI houses now carry one, so every AI shot
+///   is affected.
+/// - The tank-bunker divide (`BunkerROFMultiplier=`, `Rules+0xF50`,
+///   `0x006FD1B1..0x006FD1EF`) for a non-building inside a bunker (`+0x2E4`):
+///   parsed, never applied, so a bunkered unit reloads slower than native.
+/// - The garrison `OccupyROFMultiplier=` divide is fixed-point here, not the
+///   native single (`0x006FD19C`).
 /// - `RadialFireSegments=` (`TechnoTypeClass+0x6A4`) is not parsed. One stock
 ///   author, `[AEGIS]`, which is buildable in an ordinary skirmish: native
 ///   replaces the launch direction with
@@ -3345,8 +3338,8 @@ pub(crate) fn is_within_range_leptons(dist_sq_leptons: i64, range_cells: SimFixe
 ///   `TechnoClass+0x43C`. Player effect: the Aegis Cruiser fires straight at
 ///   one target instead of sweeping its flak arc. Frequency: every Aegis
 ///   engagement in an Allied naval match.
-/// - Downstream risk: both change firing cadence or direction, so each moves
-///   combat-timing fixtures and the pinned replay hash.
+/// - Downstream risk: each changes firing cadence, draws or direction, so each
+///   moves combat-timing fixtures and the pinned replay hashes.
 fn rof_to_cooldown_frames(rof_frames: i32, scenario_rng: &mut SimRng) -> u16 {
     let jitter = scenario_rng.next_range_u32_inclusive(0, 2) as i32;
     rof_frames.saturating_add(jitter).clamp(1, u16::MAX as i32) as u16

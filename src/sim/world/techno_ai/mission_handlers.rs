@@ -412,6 +412,10 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
         //   takes it — committing the draw alone would be wrong on the other.
         //   Trigger: a deployed Desolator. Player effect: cadence and stream.
         //   Frequency: continuous wherever a Soviet player deploys one.
+        // In VERA both excluded arms fall to the Foot body: on Guard or Sticky
+        // that is `evaluate_foot_guard_cadence` (the rearm wait while the
+        // reload runs, else `Rate + (0, 2)`), which native's shim never reaches
+        // for them.
         (
             EntityCategory::Infantry,
             Some(MissionType::Guard | MissionType::Sticky | MissionType::AreaGuard),
@@ -490,11 +494,17 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
             } else if input.unit_deploy_reverse_active {
                 MissionHandlerEvaluation::queue(1, MissionType::Unload)
             } else {
-                evaluate_foot_guard_cadence(sim, rules, MissionType::Guard, input.bunker_delegate)
+                evaluate_foot_guard_cadence(
+                    sim,
+                    rules,
+                    id,
+                    MissionType::Guard,
+                    input.bunker_delegate,
+                )
             }
         }
         (EntityCategory::Infantry, Some(MissionType::Guard)) => {
-            evaluate_foot_guard_cadence(sim, rules, MissionType::Guard, input.bunker_delegate)
+            evaluate_foot_guard_cadence(sim, rules, id, MissionType::Guard, input.bunker_delegate)
         }
         // Sticky dispatches through the SAME slot as Guard — one handler, two
         // selectors — so it runs the Guard body. The cadence still comes from
@@ -503,7 +513,7 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
         // Rate=.016` is 14 frames against Guard's 26. Stock skirmish maps park
         // neutral civilian traffic on this.
         (EntityCategory::Unit | EntityCategory::Infantry, Some(MissionType::Sticky)) => {
-            evaluate_foot_guard_cadence(sim, rules, MissionType::Sticky, input.bunker_delegate)
+            evaluate_foot_guard_cadence(sim, rules, id, MissionType::Sticky, input.bunker_delegate)
         }
         // Area Guard is NOT a Guard alias — it has its own slot and its own
         // handler, and that handler owns its acquisition. The common Techno AI
@@ -1471,8 +1481,14 @@ fn evaluate_foot_area_guard(
 /// slot is `+0x39C` (0x00709820), which this handler never calls, so a guarding
 /// object acquires solely through the common AI body's block. VERA matches.
 ///
-/// **Cadence.** Bunker delegation returns the base cadence with no draw; the
-/// ordinary path is `[Rate] + RandomRanged(0, 2)` (0x004D532F).
+/// **Cadence.** Bunker delegation returns the base cadence with no draw. Past
+/// it, while the object's rearm timer runs (`+0x2EC`, which FireAt arms with
+/// GetROF each shot:
+/// [`GameEntity::rearm_timer`](crate::sim::game_entity::GameEntity::rearm_timer)),
+/// the handler returns its remaining frames and draws nothing
+/// (0x004D52A9..0x004D52F4): a guarding object that just fired next wakes when
+/// it can fire again. Otherwise it is `[Rate] + RandomRanged(0, 2)`
+/// (0x004D532F).
 ///
 /// Deliberately NOT represented, recorded:
 /// - **the whole target-present arm** (0x004D51E0-0x004D5225). With `[this+0x2B4]`
@@ -1528,14 +1544,8 @@ fn evaluate_foot_area_guard(
 ///   captured. Downstream risk: none; `bunker_link` already exists, but the two
 ///   gating flags (`+0x158` on the warhead, `+0x1575` on the building type) are
 ///   UNCHECKED and would have to be resolved to INI keys first.
-/// - **the two cadence-tail short-circuits ahead of the jitter draw**
-///   (0x004D52A9-0x004D5341). First, a three-dword object timer at `+0x2EC`
-///   (start) / `+0x2F4` (delay): while it is live the handler returns its own
-///   remaining frames and draws NO RNG. `TechnoClass::Constructor` 0x006F2E86
-///   leaves it start=now, delay=0 — already expired — so the gate is inert
-///   until something arms it; the one arming site found is 0x007464AB, in code
-///   Ghidra has not bounded into a function, and the timer's role is UNCHECKED.
-///   Second, past that gate, `GetTechnoType()->[+0x6B0]` — the **`DistributedFire`**
+/// - **the second cadence-tail short-circuit ahead of the jitter draw**
+///   (past the rearm return). `GetTechnoType()->[+0x6B0]` — the **`DistributedFire`**
 ///   bool, key string 0x00843A64, read by `TechnoTypeClass::ReadINI` at
 ///   0x00714850/0x00714864 — combined with the object counter `+0x468 > 0`
 ///   returns **0**, re-dispatching on the next frame and again drawing nothing.
@@ -1548,14 +1558,22 @@ fn evaluate_foot_area_guard(
 fn evaluate_foot_guard_cadence(
     sim: &mut Simulation,
     rules: &RuleSet,
+    id: u64,
     mission: MissionType,
     bunker_delegate: bool,
 ) -> MissionHandlerEvaluation {
     if bunker_delegate {
-        MissionHandlerEvaluation::cadence(mission_cadence(rules, mission))
-    } else {
-        MissionHandlerEvaluation::cadence(jittered_mission_cadence(sim, rules, mission))
+        return MissionHandlerEvaluation::cadence(mission_cadence(rules, mission));
     }
+    let rearm = sim.substrate.entities.get(id).map_or(0, |entity| {
+        entity
+            .rearm_timer
+            .remaining(sim.session.binary_frame as i32)
+    });
+    if rearm != 0 {
+        return MissionHandlerEvaluation::cadence(rearm);
+    }
+    MissionHandlerEvaluation::cadence(jittered_mission_cadence(sim, rules, mission))
 }
 
 /// The harvester arms of `UnitClass::Mission_Guard @ 0x00740810` (decompiled
@@ -1977,7 +1995,7 @@ fn infantry_deployed_attack_reacquire(
             // shot on every re-pick.
             (Some(held), Some(sid)) if held != crate::sim::combat::TargetKind::Entity(sid) => {
                 if let Some(entity) = sim.substrate.entities.get_mut(id) {
-                    crate::sim::combat::retarget_preserving_rearm(entity, sid);
+                    crate::sim::combat::retarget_in_place(entity, sid);
                 }
             }
             _ => {
@@ -2329,5 +2347,49 @@ mod harvester_guard_override_tests {
         assert_eq!(queued(&sim), None);
         let entity = sim.substrate.entities.get(MINER_ID).expect("miner");
         assert_eq!(entity.mission.current().known(), Some(MissionType::Guard));
+    }
+}
+
+#[cfg(test)]
+mod guard_rearm_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::game_entity::GameEntity;
+
+    /// `FootClass::Mission_Guard 0x004D52A9`: for every timer state the oracle
+    /// ran, the handler returns what native returns and draws only where
+    /// native falls through to its jitter (`tools/spatial_oracle/rearm_timer.py`,
+    /// `guard` rows: paused, running, spent, and wrapping differences).
+    #[test]
+    fn guard_rearm_return_matches_the_original() {
+        let vectors: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../tools/spatial_oracle/rearm_timer.json"
+        ))
+        .unwrap();
+        let rules = RuleSet::from_ini(&IniFile::from_str("[General]\n\n[Guard]\nRate=.016\n"))
+            .expect("guard rate rules");
+        let rows = vectors["guard"].as_array().unwrap();
+        assert_eq!(rows.len(), 96);
+        for row in rows {
+            let field = |name: &str| row["input"][name].as_i64().unwrap() as i32;
+            let mut sim = Simulation::with_seed(1);
+            sim.session.binary_frame = field("frame") as u32;
+            let mut entity = GameEntity::test_default(1, "TEST", "Americans", 5, 5);
+            entity.rearm_timer =
+                crate::sim::timer::CdTimer::from_raw(field("start"), field("duration"));
+            sim.substrate.entities.insert(entity);
+            let before = sim.scenario_rng.logical_state();
+
+            let evaluation =
+                evaluate_foot_guard_cadence(&mut sim, &rules, 1, MissionType::Guard, false);
+
+            match row["returns"].as_i64() {
+                Some(returned) => {
+                    assert_eq!(evaluation.delay, returned as i32, "{row}");
+                    assert_eq!(sim.scenario_rng.logical_state(), before, "{row}");
+                }
+                None => assert_ne!(sim.scenario_rng.logical_state(), before, "{row}"),
+            }
+        }
     }
 }

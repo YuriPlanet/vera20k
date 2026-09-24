@@ -170,7 +170,6 @@ impl FireSubject<'_> {
             Some(id) if Some(id) == target_id => Link::Target,
             Some(_) => Link::Other,
         };
-        let attack = firer.attack_target.as_ref();
         let transport = firer
             .passenger_role
             .inside_transport_id()
@@ -231,8 +230,11 @@ impl FireSubject<'_> {
             // `session.tick` by `techno_ai`'s common post step (`0` none,
             // `u64::MAX` held).
             spark_particles_live: self.world.session.tick < firer.damage_particle_live_until,
-            rearming: attack
-                .is_some_and(|attack| attack.cooldown_ticks > 0 || attack.burst_delay_ticks > 0),
+            // T45: the object's own rearm countdown (`+0x2EC`).
+            rearming: firer
+                .rearm_timer
+                .remaining(self.world.session.binary_frame as i32)
+                != 0,
             ammo: firer.aircraft_ammo.as_ref().map_or(-1, |ammo| ammo.current),
             cloak_state: firer.cloak.as_ref().map_or(0, |cloak| cloak.state),
             current_weapon: combat_weapon::attacker_facts(firer, obj).current_weapon_number,

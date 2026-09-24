@@ -72,16 +72,29 @@ constructing each death object at its native call.
 
 Checkpoint (2026-09-24): a whole-combat audit (six read-only lanes, archived outside the repo
 at `Documents/vera20k-handoff/2026-09-24-combat-audit`) ranks the remaining gaps. Landed from it:
-DetonateAtCoord's special chain for Inviso shots as #496 (`2e787283`), and FireAt's launch geometry
+DetonateAtCoord's special chain for Inviso shots as #496 (`2e787283`); FireAt's launch geometry
 (the `WeaponTypeClass::GetSpeed` launch speed, without which no retail Grizzly/Rhino shell ever
 launched past one cell; `Dropping=`, not `Arcing=`, as the only source swap; the moving-target lead
 `70BCB0`; the homing fuse on the unled target; oracle `projectile_oracle/fireat_speed`) as #497
-(`96b6c137`), and the damage numbers (`Fire_At`'s damage build `6FE306..6FE45C` and
-`ReceiveDamage`'s defence divides `701939..7019E3` through x87, with difficulty and country
-`Armor=` removed because `House+0x1A0` has no damage reader; oracle `spatial_oracle/damage_build`).
-Next, in order: `Apply_area_damage`'s dispatch gates (double deaths in cascades), kill credit
-(buildings are not Trainable), retaliation gates and the object-owned rearm timer, then the
-remaining lanes' ranked rows.
+(`96b6c137`); `Apply_area_damage`'s dispatch gates as #498; the damage numbers (`Fire_At`'s damage
+build `6FE306..6FE45C` and `ReceiveDamage`'s defence divides `701939..7019E3` through x87, with
+difficulty and country `Armor=` removed because `House+0x1A0` has no damage reader; oracle
+`spatial_oracle/damage_build`) as #499; kill credit for garrisons and untrainable buildings as
+#501; `ShouldRetaliate` and ReceiveDamage's reach gate as #502; and the object-owned rearm timer
+(`TechnoClass+0x2EC`: every writer and reader, the berserk halving, the failed-launch skip and
+Mission_Guard's rearm wait; oracle `spatial_oracle/rearm_timer`).
+
+Scope amendment (user, 2026-09-24): after these, combat proceeds one bounded chain at a time, end
+to end, chosen by the audit's visibility x frequency ranking; for example, one common unit
+attacking a target until it dies: order, acquisition, approach, weapon selection, reload/ROF,
+FireAt, projectile flight, impact/detonation, damage, death and destruction effects, kill credit
+and experience, then retarget or idle. Everything missing or wrong along the chain is ported,
+prerequisites in other subsystems included, through their owners; a residual is left only for a
+large separate mechanism, and the user is told. No stacked or parallel implementation branches;
+worktrees are removed once their PRs merge. First chain candidates: a rifle infantryman's Inviso
+shot (audit-C #8: the detonation in the bullet's own Logic slot, which also puts GetROF's draw
+before the detonation's draws) and a tank's cannon shell (audit-C #5: a new bullet's same-pass
+first AI), each with ReceiveDamage's scatter tail.
 
 ## Landed mechanisms
 

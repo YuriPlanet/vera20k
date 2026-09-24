@@ -82,14 +82,13 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
     let snap = build_attacker_snapshot(
         entities.get(1).expect("Dolphin"),
         TargetKind::Entity(999),
-        0,
-        0,
         None,
         None,
         None,
     );
     let mut rng = SimRng::new(0x50_4e_49_43);
     let rng_before = rng.logical_state();
+    let rearm_before = entities.get(1).unwrap().rearm_timer;
     let mut hooks: Option<&mut FixtureTrace> = None;
     let mut emit = CombatEmit::default();
 
@@ -121,7 +120,7 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
     assert!(emit.damage_events.is_empty());
     assert!(emit.projectile_spawns.is_empty());
     assert!(emit.current_weapon_updates.is_empty());
-    assert!(emit.burst_updates.is_empty());
+    assert_eq!(entities.get(1).unwrap().rearm_timer, rearm_before);
     assert!(emit.retarget_events.is_empty());
     assert!(emit.remove_attack.is_empty());
     assert_eq!(rng.logical_state(), rng_before);
@@ -1300,6 +1299,10 @@ fn test_issue_attack_command() {
     let mut store = EntityStore::new();
     store.insert(make_entity(1, "MTNK", 5, 5, 300));
     store.insert(make_entity(2, "MTNK", 8, 5, 300));
+    // Mid-reload: the reload is the object's (`TechnoClass+0x2EC`), and
+    // `Assign_Target @ 0x006FCDB0` never touches it.
+    let rearm = crate::sim::timer::CdTimer::started(0, 40);
+    store.get_mut(1).unwrap().rearm_timer = rearm;
 
     let result: bool = issue_attack_command(&mut store, 1, 2, None, &test_interner());
     assert!(result, "Should succeed for valid entities");
@@ -1309,7 +1312,11 @@ fn test_issue_attack_command() {
         attack.target,
         crate::sim::combat::TargetKind::Entity(2)
     ));
-    assert_eq!(attack.cooldown_ticks, 0, "Initial cooldown should be 0");
+    assert_eq!(
+        store.get(1).unwrap().rearm_timer,
+        rearm,
+        "a new attack order does not reload the weapon"
+    );
 }
 
 #[test]
@@ -4560,44 +4567,40 @@ fn gsi_08_05_tick_combat_respects_the_jittered_cooldown() {
     issue_attack_command(&mut store, 1, 2, None, &interner);
     let mut main_rng = SimRng::new(1);
 
-    let mut fire_once =
-        |store: &mut EntityStore, interner: &mut StringInterner, rng: &mut SimRng| {
+    // One call per frame: the rearm countdown is frame-anchored.
+    let mut fire_at =
+        |frame: u32, store: &mut EntityStore, interner: &mut StringInterner, rng: &mut SimRng| {
             align_attackers_to_targets(store, &rules, interner);
             tick_combat(
                 store,
                 &mut OccupancyGrid::new(),
                 &rules,
                 interner,
-                0u64,
+                u64::from(frame),
                 100,
-                0u32,
+                frame,
                 rng,
             );
         };
 
-    // First shot fires immediately (cooldown=0).
-    fire_once(&mut store, &mut interner, &mut main_rng);
+    // First shot fires immediately (no reload running).
+    fire_at(0, &mut store, &mut interner, &mut main_rng);
     let h1: i32 = store.get(2).unwrap().health.current;
+    assert!(h1 < 300, "the first shot lands at once");
 
     // `TechnoClass::GetROF @ 0x006FCFA0` returns `ROF + RandomRanged(0, 2)`,
     // so a `ROF=50` weapon reloads in 50, 51 or 52 frames — the exact value is
-    // drawn, which is why this test counts the countdown instead of hardcoding
-    // a frame number.
-    let cooldown = store
-        .get(1)
-        .unwrap()
-        .attack_target
-        .as_ref()
-        .unwrap()
-        .cooldown_ticks;
+    // drawn, which is why this test reads the armed countdown instead of
+    // hardcoding a frame number.
+    let cooldown = store.get(1).unwrap().rearm_timer.duration() as u32;
     assert!(
         (50..=52).contains(&cooldown),
         "ROF=50 must reload in 50..=52 frames, got {cooldown}"
     );
 
-    // Every frame up to the last one leaves the target untouched.
-    for _ in 0..cooldown - 1 {
-        fire_once(&mut store, &mut interner, &mut main_rng);
+    // Every frame before the countdown ends leaves the target untouched.
+    for frame in 1..cooldown {
+        fire_at(frame, &mut store, &mut interner, &mut main_rng);
     }
     assert_eq!(
         store.get(2).unwrap().health.current,
@@ -4608,15 +4611,13 @@ fn gsi_08_05_tick_combat_respects_the_jittered_cooldown() {
         store
             .get(1)
             .unwrap()
-            .attack_target
-            .as_ref()
-            .unwrap()
-            .cooldown_ticks,
+            .rearm_timer
+            .remaining(cooldown as i32 - 1),
         1
     );
 
-    // The next update decrements 1 -> 0 before the fire decision.
-    fire_once(&mut store, &mut interner, &mut main_rng);
+    // The countdown's last frame fires.
+    fire_at(cooldown, &mut store, &mut interner, &mut main_rng);
     assert!(
         store.get(2).unwrap().health.current < h1,
         "the shot lands on the frame the countdown clears"
@@ -9251,10 +9252,9 @@ fn gsi_08_12_a_grizzly_promotes_through_the_damage_path() {
     for victim_id in 2..=6u64 {
         store.insert(make_entity_owned(victim_id, "HTNK", 8, 5, 1, "Americans"));
         issue_attack_command(&mut store, 1, victim_id, None, &interner);
+        // Each victim is a fresh shot: clear the reload the last kill armed.
         if let Some(attacker) = store.get_mut(1) {
-            if let Some(target) = attacker.attack_target.as_mut() {
-                target.cooldown_ticks = 0;
-            }
+            attacker.rearm_timer = crate::sim::timer::CdTimer::default();
         }
         align_attackers_to_targets(&mut store, &rules, &interner);
         tick_combat(
@@ -9303,12 +9303,6 @@ fn gsi_08_05_elite_rof_and_firepower_abilities_reach_the_fire_path() {
         store.insert(make_entity_owned(2, "HTNK", 8, 5, 400, "Americans"));
         let mut interner = test_interner();
         issue_attack_command(&mut store, 1, 2, None, &interner);
-        if let Some(target) = store
-            .get_mut(1)
-            .and_then(|attacker| attacker.attack_target.as_mut())
-        {
-            target.cooldown_ticks = 0;
-        }
         align_attackers_to_targets(&mut store, &rules, &interner);
         tick_combat(
             &mut store,
@@ -9323,8 +9317,7 @@ fn gsi_08_05_elite_rof_and_firepower_abilities_reach_the_fire_path() {
         let dealt = 400 - store.get(2).expect("target").health.current;
         let reload = store
             .get(1)
-            .and_then(|attacker| attacker.attack_target.as_ref())
-            .map(|target| target.cooldown_ticks)
+            .map(|attacker| attacker.rearm_timer.duration() as u16)
             .expect("the shot armed a reload");
         (dealt, reload)
     };
@@ -9589,10 +9582,9 @@ fn gsi_08_12_a_dont_score_victim_pays_no_experience() {
         victim.dont_score = true;
         store.insert(victim);
         issue_attack_command(&mut store, 1, victim_id, None, &interner);
-        if let Some(attacker) = store.get_mut(1)
-            && let Some(target) = attacker.attack_target.as_mut()
-        {
-            target.cooldown_ticks = 0;
+        // Each victim is a fresh shot: clear the reload the last kill armed.
+        if let Some(attacker) = store.get_mut(1) {
+            attacker.rearm_timer = crate::sim::timer::CdTimer::default();
         }
         tick_combat(
             &mut store,
@@ -9748,7 +9740,7 @@ fn gsi_08_05_a_mixed_garrison_rearms_with_the_next_occupants_weapon() {
     );
     // SlowGun's 120 over two occupants is about 60 frames; FastGun's 10 would
     // be about 5.
-    let rearm = building.attack_target.as_ref().unwrap().cooldown_ticks;
+    let rearm = building.rearm_timer.duration();
     assert!(rearm > 40, "rearm {rearm} follows the slow gun");
 }
 
@@ -9953,6 +9945,127 @@ fn gsi_08_06_homing_launch_uses_one_lepton_and_stores_speed_as_the_ceiling() {
         "the ProximityDetector reference is frozen on the launch-time target"
     );
     assert_eq!(spawn.velocity, ProjectileVelocity::new(1, 0, 0));
+}
+
+/// A launch with no ballistic solution skips the rest of the shot. Under
+/// `Gravity=200` an `Arcing=` shell one cell out has none: the speed FireAt
+/// clamps to half the distance (128) is far short of an arc. The bullet is
+/// deleted (`0x006FF000` -> `0x006FF93C`) and FireAt resumes at `0x006FF749`,
+/// past the burst step, GetROF, the rearm and the `+0x120` store, so the tank
+/// may try again next frame. The same shell with `Arcing=no` launches.
+#[test]
+fn gsi_08_06_a_failed_arc_launch_skips_the_rest_of_the_shot() {
+    let shoot = |arcing: &str| {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\nFixtureOnly=1\n[AudioVisual]\nGravity=200\n\
+             [VehicleTypes]\n0=ARTY\n1=HTNK\n\
+             [ARTY]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=Shell\n\
+             [HTNK]\nStrength=2000\nArmor=heavy\nSpeed=4\n\
+             [Shell]\nDamage=65\nROF=50\nBurst=2\nRange=6\nSpeed=200\nProjectile=Lob\nWarhead=AP\n\
+             [Lob]\nArcing={arcing}\n\
+             [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        )))
+        .expect("failed launch fixture parses");
+        let mut store = EntityStore::new();
+        let mut shooter = make_entity_owned(1, "ARTY", 5, 5, 300, "Soviet");
+        shooter.facing = 64;
+        store.insert(shooter);
+        let _ = test_intern("HTNK");
+        store.insert(make_entity_owned(2, "HTNK", 6, 5, 2000, "Americans"));
+        let mut interner = test_interner();
+        issue_attack_command(&mut store, 1, 2, None, &interner);
+        let before = store.get(1).unwrap().clone();
+        let mut rng = SimRng::new(3);
+        let rng_before = rng.logical_state();
+        let result = tick_combat(
+            &mut store,
+            &mut OccupancyGrid::new(),
+            &rules,
+            &mut interner,
+            0,
+            100,
+            0,
+            &mut rng,
+        );
+        let shooter = store.get(1).unwrap();
+        (
+            result.projectile_spawns.len(),
+            result.consequences.fire_events().len(),
+            rng.logical_state() != rng_before,
+            shooter.rearm_timer != before.rearm_timer,
+            shooter.weapon_burst.index() != before.weapon_burst.index(),
+            shooter.last_fire_frame != before.last_fire_frame,
+        )
+    };
+    assert_eq!(
+        shoot("no"),
+        (1, 1, true, true, true, true),
+        "the control launches"
+    );
+    assert_eq!(
+        shoot("yes"),
+        (0, 0, false, false, false, false),
+        "no bullet, no report or anim, no GetROF draw, no rearm, no burst step, no \
+         last-fire store"
+    );
+}
+
+/// `TechnoClass::FireAt 0x006FF28F..0x006FF2BE`: the duration stored from
+/// every GetROF value the oracle ran (`tools/spatial_oracle/rearm_timer.py`,
+/// `fire` rows, int32 extremes included) is `fireat_rearm_frames` of it,
+/// halved toward zero for a berserk firer. (The rows also record the start
+/// frame and the `+0x2F8` copy, which VERA does not keep.)
+#[test]
+fn gsi_08_05_rearm_frames_match_the_original() {
+    let vectors: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/rearm_timer.json"
+    ))
+    .unwrap();
+    let rows = vectors["fire"].as_array().unwrap();
+    assert_eq!(rows.len(), 89);
+    for row in rows {
+        let field = |name: &str| row["input"][name].as_i64().unwrap() as i32;
+        assert_eq!(
+            i64::from(super::world_receiver::fireat_rearm_frames(
+                field("rof"),
+                field("berserk") != 0
+            )),
+            row["duration"].as_i64().unwrap(),
+            "{row}"
+        );
+    }
+}
+
+/// `TechnoClass::FireAt 0x006FF28F..0x006FF29C`: a berserk firer (`+0x298`,
+/// set by a `Psychedelic=` warhead) re-arms with half of GetROF's value,
+/// signed and toward zero.
+#[test]
+fn gsi_08_05_a_berserk_firer_rearms_at_half_its_rof() {
+    let rearm = |berserk: bool| {
+        let rules = test_rules();
+        let mut store = EntityStore::new();
+        let mut tank = make_entity_owned(1, "MTNK", 5, 5, 300, "Soviet");
+        tank.berserk.active = berserk;
+        store.insert(tank);
+        store.insert(make_entity_owned(2, "MTNK", 7, 5, 300, "Americans"));
+        let mut interner = test_interner();
+        issue_attack_command(&mut store, 1, 2, None, &interner);
+        align_attackers_to_targets(&mut store, &rules, &interner);
+        tick_combat(
+            &mut store,
+            &mut OccupancyGrid::new(),
+            &rules,
+            &mut interner,
+            0,
+            100,
+            0,
+            &mut SimRng::new(7),
+        );
+        store.get(1).unwrap().rearm_timer.duration()
+    };
+    let (normal, berserk) = (rearm(false), rearm(true));
+    assert!(normal > 1, "precondition: the tank fired ({normal})");
+    assert_eq!(berserk, normal / 2);
 }
 
 /// `TechnoClass::FireAt 0x006FE9FE`: EVERY launch speed is clamped to half the

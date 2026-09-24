@@ -2898,8 +2898,6 @@ fn pointer_expiry_clears_live_target_and_navigation_refs() {
     let listener = sim.substrate.entities.get_mut(1).unwrap();
     listener.attack_target = Some(AttackTarget {
         target: TargetKind::Entity(2),
-        cooldown_ticks: 0,
-        burst_delay_ticks: 0,
         pending_infantry_fire: None,
     });
     listener.suspended_attack_target = Some(TargetKind::Entity(2));
@@ -3059,8 +3057,6 @@ fn infantry_target_expiry_clears_firing_action_before_target() {
     let listener = sim.substrate.entities.get_mut(1).unwrap();
     listener.attack_target = Some(AttackTarget {
         target: TargetKind::Entity(2),
-        cooldown_ticks: 9,
-        burst_delay_ticks: 2,
         pending_infantry_fire: Some(PendingInfantryFire {
             sequence: SequenceKind::Attack,
             fire_frame: 4,
@@ -6001,8 +5997,6 @@ fn gsi_01_05_terminal_wave_damages_once_before_single_current_removal() {
         .unwrap()
         .attack_target = Some(AttackTarget {
         target: TargetKind::Entity(victim_id),
-        cooldown_ticks: 0,
-        burst_delay_ticks: 0,
         pending_infantry_fire: None,
     });
     let mut wave = Wave::new_owned(
@@ -6087,8 +6081,6 @@ fn terminal_type_zero_wave_with_empty_recorded_vector_has_no_damage_area_tail() 
         firer.type_ref = sim.interner.intern("FIRER");
         firer.attack_target = Some(AttackTarget {
             target: TargetKind::Cell(4, 5),
-            cooldown_ticks: 0,
-            burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });
     }
@@ -6170,8 +6162,6 @@ fn wave_elite_ambient_damage_carries_within_cell_and_resets_on_next_cell() {
         firer.veterancy = 200;
         firer.attack_target = Some(AttackTarget {
             target: TargetKind::Entity(next_id),
-            cooldown_ticks: 0,
-            burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });
     }
@@ -6303,8 +6293,6 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
             firer.type_ref = sim.interner.intern("FIRER");
             firer.attack_target = Some(AttackTarget {
                 target: TargetKind::Entity(building_id),
-                cooldown_ticks: 0,
-                burst_delay_ticks: 0,
                 pending_infantry_fire: None,
             });
         }
@@ -6391,8 +6379,6 @@ fn wave_tail_consumes_wall_roll_before_mandatory_cliff_chance_roll() {
         firer.type_ref = sim.interner.intern("FIRER");
         firer.attack_target = Some(AttackTarget {
             target: TargetKind::Cell(4, 1),
-            cooldown_ticks: 0,
-            burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });
     }
@@ -6605,8 +6591,6 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         firer.type_ref = sim.interner.intern("FIRER");
         firer.attack_target = Some(AttackTarget {
             target: TargetKind::Cell(4, 1),
-            cooldown_ticks: 0,
-            burst_delay_ticks: 0,
             pending_infantry_fire: None,
         });
     }
@@ -6918,8 +6902,6 @@ fn gsi_01_05_wave_reselects_live_cell_list_after_fatal_receiver_unmark() {
         .unwrap()
         .attack_target = Some(AttackTarget {
         target: TargetKind::Entity(building_id),
-        cooldown_ticks: 0,
-        burst_delay_ticks: 0,
         pending_infantry_fire: None,
     });
     let mut wave = Wave::new_owned(

@@ -133,11 +133,11 @@ fn infantry_refused_or_reloading_does_not_snap() {
     let rules = infantry_fire_frame_rules();
     for out_of_range in [false, true] {
         let mut store = pair();
-        let mut attack = AttackTarget::new(2);
+        let attack = AttackTarget::new(2);
         if out_of_range {
             store.get_mut(2).unwrap().position.rx = 50;
         } else {
-            attack.cooldown_ticks = 20;
+            store.get_mut(1).unwrap().rearm_timer = crate::sim::timer::CdTimer::started(100, 20);
         }
         store.get_mut(1).unwrap().attack_target = Some(attack);
         assert!(

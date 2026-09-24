@@ -1875,7 +1875,6 @@ pub(crate) fn commit_projectiles(
     debug_assert!(emit.retarget_events.is_empty());
     debug_assert!(emit.fire_events.is_empty());
     debug_assert!(emit.reveal_events.is_empty());
-    debug_assert!(emit.burst_updates.is_empty());
     debug_assert!(emit.ammo_deduct.is_empty());
     debug_assert!(emit.pending_infantry_updates.is_empty());
     debug_assert!(emit.animation_switches.is_empty());
@@ -3198,8 +3197,7 @@ fn emit_admitted_fire(
     let warhead = selected.warhead;
     let base_damage = fireat_damage(world, rules, snap, obj, weapon, is_garrison);
     let persistent_delivery = classify_projectile_delivery(weapon, rules);
-    // A failed launch (`0x006FF000`/`0x006FF01E` -> `0x006FF749`) skips the
-    // occupant advance below; an immediate (Inviso) delivery always launches.
+    // An immediate (Inviso) delivery always launches.
     let mut launched = true;
     if let ProjectileDelivery::Persistent {
         arm_frames,
@@ -3432,9 +3430,9 @@ fn emit_admitted_fire(
                 building_pitch_height,
             })
         };
-        // 6FF000/6FF93C destroys a failed launch, then rejoins the remaining
-        // FireAt effects at6FF749. Do not manufacture a stationary projectile
-        // or return before the common fire-event/burst bookkeeping below.
+        // A launch with no ballistic solution deletes its bullet
+        // (`0x006FF000` -> `0x006FF93C`, or `0x006FF01E` when
+        // `BulletClass::Fire` refuses) and resumes at `0x006FF749`.
         launched = launch.is_some();
         if let Some(FireAtLaunchResult {
             velocity,
@@ -3631,6 +3629,18 @@ fn emit_admitted_fire(
         );
     }
 
+    // A failed launch resumes at `0x006FF749`, past the rest of the shot
+    // (`0x006FF031..0x006FF743`): the occupant advance, recoil, particle
+    // systems, the burst step, GetROF and its draws, the rearm, the muzzle
+    // anim, Report, the laser/bolt/wave, DecreaseAmmo (`0x006FF656`), the
+    // `+0x3BC` 15-frame timer (`0x006FF4B0`), RevealOnFire and the `+0x120`
+    // store, so the firer may try again next frame. The tail from
+    // `0x006FF749` still runs.
+    if !launched {
+        fireat_tail(world, rules, snap, weapon);
+        return;
+    }
+
     // `TechnoClass::Fire` plays the per-shot `Report=` only for a type that is
     // not `IsGattling=` (`0x006FF349..0x006FF38F`, every class); a gattling's
     // report is its stage loop (`combat::gattling`).
@@ -3692,7 +3702,6 @@ fn emit_admitted_fire(
     // Inviso bullet detonates later in its own AI (VERA's inline commit after
     // this emission).
     if is_garrison
-        && launched
         && let Some(cargo) = world
             .substrate
             .entities
@@ -3719,9 +3728,9 @@ fn emit_admitted_fire(
 
     let next_index = burst.next_index();
     let mid_burst = next_index < rof_weapon.burst;
-    if mid_burst {
-        // gamemd-derived: `TechnoClass::GetROF @ 0x006FCFA0`, mid-burst branch.
-        // The gap between shots inside a burst is drawn, not fixed.
+    // `TechnoClass::GetROF @ 0x006FCFA0` (`CALL [EDX+0x318]` at `0x006FF289`).
+    let rof = if mid_burst {
+        // Mid-burst, the gap between shots is drawn, not fixed.
         //
         // RESIDUAL (GSI-08.05) — the Unit override ahead of the draw is not
         // modelled. Native checks UnitType's per-burst delays
@@ -3733,8 +3742,8 @@ fn emit_admitted_fire(
         let burst_delay = world.scenario_rng.next_range_u32_inclusive(
             BURST_INTER_SHOT_DELAY_MIN as u32,
             BURST_INTER_SHOT_DELAY_MAX as u32,
-        ) as u8;
-        out.burst_updates.push((snap.stable_id, burst_delay, 0));
+        );
+        burst_delay as i32
     } else {
         let mut rof_ticks = rof_to_cooldown_frames(rof_weapon.rof, &mut world.scenario_rng);
         // `GetROF @ 0x006FCFA0`, `0x006FD0E2..0x006FD14C`: a ROF-ability
@@ -3759,13 +3768,31 @@ fn emit_admitted_fire(
             }
             rof_ticks = rof_ticks.max(1);
         }
-        out.burst_updates.push((snap.stable_id, 0, rof_ticks));
-    }
+        i32::from(rof_ticks)
+    };
 
-    // Aircraft ammo deduction: one ammo per burst completion (not per shot).
+    // `0x006FF274..0x006FF2CB`, all on the firer: the burst step around GetROF,
+    // then the rearm (`+0x2EC`) with GetROF's value, which a berserk firer
+    // (`+0x298`) halves, signed and toward zero (`0x006FF28F..0x006FF29C`).
+    // `0x006FF743` stores the frame in `+0x120`, the since-my-last-shot mark
+    // `UnitClass::Facing_Update`'s idle dwell reads (the constructor at
+    // `0x006F2B9C` is its only other writer).
+    // The remainder (`0x006FF2C5`) divides by the Burst of the weapon fired,
+    // where GetROF's mid-burst test read the (next) weapon GetWeapon answers.
+    // A DiskLaser weapon's own path stores GetROF's value unhalved
+    // (`0x006FE4A4..0x006FE4C5`); the rest of that path (the disk laser fires
+    // and FireAt returns) is the unported DiskLaser delivery.
     if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
-        entity.weapon_burst.complete_shot(rof_weapon.burst.max(1));
+        let rearm = if weapon.disk_laser {
+            rof
+        } else {
+            fireat_rearm_frames(rof, entity.berserk.active)
+        };
+        entity.rearm_timer.start(binary_frame as i32, rearm);
+        entity.weapon_burst.complete_shot(weapon.burst.max(1));
+        entity.last_fire_frame = i64::from(binary_frame);
     }
+    // Aircraft ammo deduction: one ammo per burst completion (not per shot).
     if !mid_burst
         && !world
             .substrate
@@ -3777,18 +3804,46 @@ fn emit_admitted_fire(
         out.ammo_deduct.push(snap.stable_id);
     }
 
-    // `TechnoClass::Fire @ 0x006FF749..0x006FF872` runs after the bullet
-    // launch, rearm, Report and weapon Anim.
+    fireat_tail(world, rules, snap, weapon);
+}
+
+/// `TechnoClass::FireAt 0x006FF749..0x006FF939`, which runs after a launched
+/// and a failed shot alike: a `LimboLaunch=` weapon takes the firer off the
+/// map (`0x006FF7F3`). Its `Parasite=` arm hands the bullet the firer
+/// (`0x006FF825`, the tail's one bullet dereference), so a parasite shot is
+/// never a failed launch.
+///
+/// RESIDUAL, pre-existing and not ported:
+/// - FireOnce (`WeaponType+0x135`, `0x006FF8F1..0x006FF929`): a team member
+///   steps its team (`0x006E9050`), then the firer drops its target
+///   (Assign_Target(NULL)). Triggers: every mind-control, Psi wave, Ivan bomb,
+///   disguise kit, disc drain and defuse kit shot. Effect: VERA's firer keeps
+///   the target where native's lets go at once.
+/// - DistributedFire (TechnoType `+0x6B0`, `0x006FF872..0x006FF8EB`): the
+///   target is remembered at `+0x470`, then dropped. Trigger: the Aegis
+///   Cruiser. Effect: VERA's Aegis keeps its target.
+fn fireat_tail(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    snap: &AttackerSnapshot,
+    weapon: &WeaponType,
+) {
     if weapon.limbo_launch {
         world.parasite_limbo_launch(snap.stable_id, snap.target, weapon, rules);
     }
 }
 
+/// The rearm duration FireAt stores from GetROF's value: a berserk firer
+/// (`TechnoClass+0x298`) halves it, signed and toward zero
+/// (`0x006FF28F..0x006FF29C`). Native execution:
+/// `tools/spatial_oracle/rearm_timer.py` (`fire` rows).
+pub(crate) fn fireat_rearm_frames(get_rof: i32, berserk: bool) -> i32 {
+    if berserk { get_rof / 2 } else { get_rof }
+}
+
 fn commit_fire_bookkeeping(world: &mut Simulation, rules: &RuleSet, emit: &mut CombatEmit) {
-    let binary_frame = world.session.binary_frame;
     let spawn_target_updates = std::mem::take(&mut emit.spawn_target_updates);
     let drain_links = std::mem::take(&mut emit.drain_links);
-    let burst_updates = std::mem::take(&mut emit.burst_updates);
     // Spawner weapons: hand the fire target to the parent's spawn manager.
     // `SpawnManagerClass::SetTarget` only queues a target that differs from the
     // live one; the manager's own AI pass promotes it.
@@ -3826,46 +3881,6 @@ fn commit_fire_bookkeeping(world: &mut Simulation, rules: &RuleSet, emit: &mut C
             represented_assign_target(drainer, None);
             if let Some(manager) = drainer.spawn_manager.as_mut() {
                 manager.set_target(None);
-            }
-        }
-    }
-
-    for &(attacker_id, burst_delay, rof_cd) in &burst_updates {
-        if let Some(entity) = world.substrate.entities.get_mut(attacker_id) {
-            // gamemd-derived: `TechnoClass::Fire_At @ 0x006FF743` stores
-            // `g_CurrentFrameCounter` into `+0x120` once the shot is committed.
-            // With the constructor at `0x006F2B9C` that is the ONLY writer of
-            // that field on a TechnoClass in the image, which is what makes
-            // `UnitClass::Facing_Update`'s idle dwell a since-my-last-shot
-            // timer rather than a since-target-loss one. `burst_updates` carries
-            // exactly one entry per committed shot, so this is that store.
-            entity.last_fire_frame = i64::from(binary_frame);
-            if let Some(ref mut attack) = entity.attack_target {
-                attack.burst_delay_ticks = burst_delay;
-                attack.cooldown_ticks = rof_cd;
-            }
-            // `TechnoClass::Fire_At @ 0x006FDD50` writes the SAME rearm
-            // countdown into `TechnoClass+0x2EC/+0x2F4` (stores at 0x006FE4B0
-            // and 0x006FF2AA), and `CanAutoCloak @ 0x006FBDC0` reads that timer
-            // as its first gate after the `CloakState == 2` early-out
-            // (`param_1[0xbb]`/`[0xbd]`). VERA keeps the rearm counter on the
-            // attack record instead of the object, so the cloak runtime carries
-            // its own copy of the same value; without it a Typhoon that
-            // surfaced to fire could re-dive on the very next tick.
-            //
-            // The duration native stores is `CALL [EDX+0x318]` at 0x006FE49E
-            // — `TechnoClass::GetROF @ 0x006FCFA0` (vtable slot read at
-            // 0x007F4C78) — whose MID-BURST branch returns the inter-shot gap,
-            // not zero. Native keeps one timer; VERA splits it into
-            // `cooldown_ticks` (armed on the burst's last shot) and
-            // `burst_delay_ticks` (armed between burst shots). The two
-            // decrement together and the fire gate is their union, so the
-            // native `+0x2F4` value is whichever of the two this shot armed.
-            // With `[BoomerTorpedo] Burst=2` on a `Cloakable=yes` BSUB, taking
-            // the union is what stops a re-dive between the two torpedoes.
-            let rearm_gate_frames = i32::from(rof_cd).max(i32::from(burst_delay));
-            if let Some(cloak) = entity.cloak.as_mut() {
-                cloak.arm_rearm_gate(binary_frame as i32, rearm_gate_frames);
             }
         }
     }
@@ -4254,7 +4269,7 @@ pub(crate) fn tick_combat(
         }
     }
 
-    // Phase 1: snapshot all attackers and advance cooldowns / burst delays.
+    // Phase 1: snapshot all attackers.
     let mut snapshots: Vec<AttackerSnapshot> = Vec::new();
     for &id in &keys {
         // TubeMovement owns this object's complete AI turn.  The active state
@@ -4263,17 +4278,10 @@ pub(crate) fn tick_combat(
         if fire_suppressed.contains(&id) {
             continue;
         }
-        // Mutable borrow: tick cooldowns and capture the per-attacker scalars +
-        // garrison cargo info. Entity field-reads move into `build_attacker_snapshot`
-        // (pure) below, after this borrow releases.
-        let (
-            attack_target,
-            cooldown_ticks,
-            burst_delay_ticks,
-            pending_infantry_fire,
-            pending_building_fire,
-            garrison_cargo,
-        ) = {
+        // Mutable borrow: capture the per-attacker scalars and garrison cargo
+        // info. Entity field-reads move into `build_attacker_snapshot` (pure)
+        // below, after this borrow releases.
+        let (attack_target, pending_infantry_fire, pending_building_fire, garrison_cargo) = {
             let entity = match world.substrate.entities.get_mut(id) {
                 Some(e) => e,
                 None => continue,
@@ -4287,16 +4295,10 @@ pub(crate) fn tick_combat(
                 // once the object is dead.
                 continue;
             }
-            let attack_state = entity.attack_target.as_mut().map(|attack| {
-                attack.cooldown_ticks = attack.cooldown_ticks.saturating_sub(1);
-                attack.burst_delay_ticks = attack.burst_delay_ticks.saturating_sub(1);
-                (
-                    attack.target,
-                    attack.cooldown_ticks,
-                    attack.burst_delay_ticks,
-                    attack.pending_infantry_fire,
-                )
-            });
+            let attack_state = entity
+                .attack_target
+                .as_ref()
+                .map(|attack| (attack.target, attack.pending_infantry_fire));
 
             // gamemd-derived: BuildingClass::Update @ 0x0043FB20 invokes
             // ProcessDelayedFire @ 0x004503F0 after mission dispatch. The
@@ -4310,9 +4312,7 @@ pub(crate) fn tick_combat(
                 // GetFireError @ 0x00447F10 blocks ordinary fire while armed.
                 continue;
             }
-            let Some((attack_target, cooldown_ticks, burst_delay_ticks, pending_infantry_fire)) =
-                attack_state
-            else {
+            let Some((attack_target, pending_infantry_fire)) = attack_state else {
                 // Expiry reads only the live target. A missing target clears
                 // the latch and does not acquire or drop another target.
                 if pending_building_fire.is_some() {
@@ -4320,7 +4320,7 @@ pub(crate) fn tick_combat(
                 }
                 continue;
             };
-            // Skip snapshot for entities blocked by locomotor state (cooldowns still tick).
+            // Skip snapshot for entities blocked by locomotor state.
             // An aircraft's Mission_Attack visit runs whenever its dispatch asked
             // for it; the visit opens with its own prefix.
             let requested = aircraft_fire_requests.contains(&id);
@@ -4357,8 +4357,6 @@ pub(crate) fn tick_combat(
 
             (
                 attack_target,
-                cooldown_ticks,
-                burst_delay_ticks,
                 pending_infantry_fire,
                 pending_building_fire,
                 garrison_cargo,
@@ -4392,8 +4390,6 @@ pub(crate) fn tick_combat(
         snapshots.push(build_attacker_snapshot(
             entity,
             attack_target,
-            cooldown_ticks,
-            burst_delay_ticks,
             pending_infantry_fire,
             pending_building_fire,
             garrison,
@@ -4487,8 +4483,6 @@ pub(crate) fn tick_combat(
                 entity.attack_target.as_ref().map(|attack| {
                     (
                         attack.target,
-                        attack.cooldown_ticks,
-                        attack.burst_delay_ticks,
                         attack.pending_infantry_fire,
                         entity.pending_building_fire,
                     )
@@ -4508,10 +4502,8 @@ pub(crate) fn tick_combat(
         };
         let mut live_snap = snap.clone();
         live_snap.target = live_attack.0;
-        live_snap.cooldown_ticks = live_attack.1;
-        live_snap.burst_delay_ticks = live_attack.2;
-        live_snap.pending_infantry_fire = live_attack.3;
-        live_snap.pending_building_fire = live_attack.4;
+        live_snap.pending_infantry_fire = live_attack.1;
+        live_snap.pending_building_fire = live_attack.2;
 
         let n_retarget = emit.retarget_events.len();
         let n_remove = emit.remove_attack.len();
@@ -4692,7 +4684,6 @@ pub(crate) fn tick_combat(
         retarget_events,
         fire_events,
         reveal_events,
-        burst_updates: _,
         ammo_deduct,
         pending_infantry_updates,
         animation_switches,
@@ -4702,12 +4693,13 @@ pub(crate) fn tick_combat(
         drain_links: _,
     } = emit;
 
-    // Phase 3: apply retargets. Burst and rearm writes already happened in
-    // each attacker's `commit_fire_bookkeeping` boundary. Auto-retargets only ever produce Entity targets (acquire_best_target
-    // scans hostile entities), so this wraps the u64 in TargetKind::Entity.
+    // Phase 3: apply retargets. The burst step and rearm were written in each
+    // shot's FireAt emission. Auto-retargets only ever produce Entity targets
+    // (acquire_best_target scans hostile entities), so this wraps the u64 in
+    // TargetKind::Entity.
     for &(attacker_id, new_target_sid) in &retarget_events {
         if let Some(entity) = world.substrate.entities.get_mut(attacker_id) {
-            retarget_preserving_rearm(entity, new_target_sid);
+            retarget_in_place(entity, new_target_sid);
         }
     }
     for &(attacker_id, sequence) in &animation_switches {

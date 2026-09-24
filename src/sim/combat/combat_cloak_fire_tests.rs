@@ -55,8 +55,6 @@ fn resolve_once(
     let snap = build_attacker_snapshot(
         attacker,
         attack.target,
-        attack.cooldown_ticks,
-        attack.burst_delay_ticks,
         attack.pending_infantry_fire,
         None,
         None,
@@ -92,6 +90,7 @@ fn resolve_once(
 fn bsub_cruise_launcher_uncloaks_without_same_tick_fire_then_retry_fires() {
     let rules = boomer_rules();
     let mut entities = entities("TGTWOOD");
+    let rearm_before = entities.get(1).unwrap().rearm_timer;
     let mut interner = test_interner();
     let mut sounds = Vec::new();
     let mut blocked = CombatEmit::default();
@@ -116,8 +115,9 @@ fn bsub_cruise_launcher_uncloaks_without_same_tick_fire_then_retry_fires() {
     assert!(blocked.fire_events.is_empty());
     assert!(blocked.damage_events.is_empty());
     assert!(blocked.projectile_spawns.is_empty());
-    assert!(
-        blocked.burst_updates.is_empty(),
+    assert_eq!(
+        entities.get(1).unwrap().rearm_timer,
+        rearm_before,
         "no ROF/burst write on the surfacing visit"
     );
     assert!(matches!(
@@ -176,7 +176,7 @@ fn bsub_cruise_launcher_uncloaks_without_same_tick_fire_then_retry_fires() {
     );
     assert_eq!(retry.fire_events[0].weapon_slot, WeaponSlot::Secondary);
     assert!(
-        !retry.burst_updates.is_empty(),
+        entities.get(1).unwrap().rearm_timer.duration() > 0,
         "normal retry owns rearm state"
     );
     assert_eq!(

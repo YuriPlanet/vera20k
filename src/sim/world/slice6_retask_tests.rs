@@ -464,7 +464,13 @@ const SLICE6_BASELINE_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 0x547F_9DE4_688E_CD0
 // the legacy inline lane, not the Find_Path owner. The pins move with that
 // state; the RNG stream pins, per-tick replay equality and route tripwires in
 // this file are unchanged. The old values are in the commit that moved them.
-const SLICE6_BASELINE_HASH: u64 = 0x15C5_1074_40D5_B61C;
+// Schema202 folds the object's rearm timer (TechnoClass+0x2EC, started at the
+// construction frame as the constructor does) in place of the AttackTarget
+// cooldown/burst-delay counters and the cloak copy: composition only.
+// Before(202) reproduces the v201 pin; per-tick replay, the RNG stream pins and
+// the route tripwires are unchanged.
+const SLICE6_BASELINE_HASH: u64 = 0xEB8D_DF71_A3B1_6D82;
+const SLICE6_BASELINE_HASH_PRE_REARM_TIMER_V202: u64 = 0x15C5_1074_40D5_B61C;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -759,6 +765,11 @@ fn replay_hash_stable_through_slice6() {
         sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
         9622823342381034997,
         "v190 changes only the Foot neighbor-history hash composition in this fixture"
+    );
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(202)),
+        SLICE6_BASELINE_HASH_PRE_REARM_TIMER_V202,
+        "v202 only folds the object's rearm timer in place of the target's counters"
     );
     assert_eq!(
         hash, SLICE6_BASELINE_HASH,
