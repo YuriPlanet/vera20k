@@ -1042,7 +1042,7 @@ impl Simulation {
                 }
                 None => false,
             };
-            let _ = attacker_id; // hut survives — no last_attacker_id update
+            let _ = attacker_id; // the hut survives: nothing is credited
             return C4DamageOutcome {
                 killed_building: false,
                 bridge_state_changed,

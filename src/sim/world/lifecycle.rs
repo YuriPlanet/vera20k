@@ -3374,10 +3374,6 @@ impl Simulation {
         {
             pending.source_entity_id = None;
         }
-
-        // Deliberately retain last_attacker_id. Native retaliation reads the
-        // dying object through the deferred-delete window; it is not one of
-        // the proactively-cleared target roles above.
     }
 
     /// ObjectClass::Detach_From_All_Lists represented listener broadcast.

@@ -583,7 +583,9 @@ use crate::sim::world::Simulation;
 // 199 -> 200: Gattling: an entity keeps its stage and value (`+0x140`,
 // `+0x144`) and the turret animation counter `+0x148`; the report latch is not
 // saved (`TechnoClass::Load` clears it, `0x0070C20E`). A 199 save has none.
-const SNAPSHOT_VERSION: u32 = 200;
+// 200 -> 201: an entity no longer keeps `last_attacker_id` (retaliation is the
+// receiver's inline ShouldRetaliate), and a TeamType keeps `Suicide=`.
+const SNAPSHOT_VERSION: u32 = 201;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3531,7 +3533,8 @@ mod tests {
         // 197 -> 198: the house defeat counts.
         // 198 -> 199: the Crazy Ivan bomb on its carrier.
         // 199 -> 200: the Gattling stage, value and turret animation counter.
-        assert_eq!(super::SNAPSHOT_VERSION, 200);
+        // 200 -> 201: no `last_attacker_id`; TeamType `Suicide=`.
+        assert_eq!(super::SNAPSHOT_VERSION, 201);
     }
 
     #[test]
@@ -6369,6 +6372,11 @@ mod tests {
         let mut entity = GameEntity::test_default(entity_id, "MTNK", "AMERICANS", 5, 6);
         entity.owner = owner;
         entity.type_ref = type_ref;
+        entity.pending_c4_detonation = Some(crate::sim::components::PendingC4Detonation {
+            start_frame: -1,
+            duration_frames: 0,
+            source_entity_id: Some(999),
+        });
         sim.substrate.entities.insert(entity);
         sim.add_entity_occupancy(entity_id);
 
@@ -6426,6 +6434,17 @@ mod tests {
                 .substrate
                 .occupancy
                 .contains_entity(5, 6, entity_id)
+        );
+        assert_eq!(
+            restored
+                .substrate
+                .entities
+                .get(entity_id)
+                .expect("entity")
+                .pending_c4_detonation
+                .and_then(|pending| pending.source_entity_id),
+            None,
+            "a successful restore cleans a dangling weak reference"
         );
         let system = restored
             .substrate

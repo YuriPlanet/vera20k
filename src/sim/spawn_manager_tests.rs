@@ -894,8 +894,7 @@ fn v3_attack_order_damages_the_target_through_the_spawned_rocket() {
         "a V3 Launcher with an attack order must land its rocket and destroy the target"
     );
     // Kill credit rides the combat damage event, which carries the launcher as
-    // the attacker; the retaliation phase consumes `last_attacker_id` later in
-    // the same tick, so it is not re-asserted here.
+    // the attacker.
 }
 
 #[test]

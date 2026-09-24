@@ -318,25 +318,22 @@ fn elite_weapon_at(obj: &ObjectType, index: usize) -> Option<&str> {
         .and_then(|slot| slot.as_deref())
 }
 
-/// `TechnoClass::GetWeaponDamageValue(-1) @ 0x006F3970`: `Damage=` plus
-/// `AmbientDamage=` of the current weapon for a `TurretCount` type that is not
-/// Gattling, otherwise the truncated average over the non-empty slots 0 and 1
-/// (the rank-selected weapons). Callers test its sign: `ShouldRetaliate`
-/// (`0x007088A7`) and the bridge-repair occupant probe.
+/// [`fire_error::weapon_damage_value`](super::fire_error::weapon_damage_value)
+/// (`0x006F3970(-1)`) over the object's own weapon slots at its rank. Not for
+/// a garrisoned building, whose GetWeapon answers the occupant's weapon; that
+/// goes through `FireSubject::weapon_damage_value`. Read by the bridge-repair
+/// infantry entry probe.
 pub(crate) fn weapon_damage_value(entity: &GameEntity, obj: &ObjectType, rules: &RuleSet) -> i32 {
-    let value = |slot: i32| {
-        weapon_for_index(obj, entity.veterancy, slot)
-            .and_then(|(name, _)| rules.weapon(name))
-            .map(|weapon| weapon.damage.wrapping_add(weapon.ambient_damage))
-    };
-    if obj.turret_count > 0 && !obj.is_gattling {
-        return value(attacker_facts(entity, obj).current_weapon_number).unwrap_or(0);
-    }
-    let values: Vec<i32> = [0, 1].into_iter().filter_map(value).collect();
-    match values.len() {
-        0 => 0,
-        count => values.iter().fold(0i32, |sum, v| sum.wrapping_add(*v)) / count as i32,
-    }
+    super::fire_error::weapon_damage_value(
+        obj.turret_count,
+        obj.is_gattling,
+        attacker_facts(entity, obj).current_weapon_number,
+        |slot| {
+            weapon_for_index(obj, entity.veterancy, slot)
+                .and_then(|(name, _)| rules.weapon(name))
+                .map(|weapon| weapon.damage.wrapping_add(weapon.ambient_damage))
+        },
+    )
 }
 
 /// `TechnoClass::GetWeapon @ 0x0070E140`: `-1` → no weapon; elite objects use
@@ -1049,13 +1046,12 @@ fn targeting_fire_error_blocks(
 /// the substitution only on the fire path (`select_garrison_weapon`) and in the
 /// dedicated garrison auto-acquire scan (`combat::tick_combat`, the
 /// `can_be_occupied && can_occupy_fire` block); `resolve_index` here reads the
-/// building's own slot 0. *Trigger:* a garrisoned building reached through
-/// `can_retaliate` or `calculate_ai_threat_score`. *Player effect:* a garrisoned
-/// civilian building (no `Primary=` of its own) resolves to no weapon, so it
-/// does not retaliate in the same tick it is shot and scores no AI threat; the
-/// auto-acquire scan still picks the shooter up on a later tick, so the shot
-/// itself is not lost. *Frequency:* every garrisoned building on a city map that
-/// takes fire. *Downstream:* AI threat ranking only; no deterministic state.
+/// building's own slot 0. (Retaliation reads the occupant's weapon through
+/// `FireSubject`.) *Trigger:* a garrisoned building reached through
+/// `calculate_ai_threat_score`. *Player effect:* a garrisoned civilian building
+/// (no `Primary=` of its own) resolves to no weapon, so it scores no AI threat.
+/// *Frequency:* every garrisoned building on a city map that an AI weighs.
+/// *Downstream:* AI threat ranking only.
 fn resolve_index<'a>(
     rules: &'a RuleSet,
     obj: &'a ObjectType,

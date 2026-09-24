@@ -6222,8 +6222,7 @@ impl Simulation {
             // is applied here so combat-pre conditions (invulnerability, dying)
             // are honored before tick_combat runs.
             // PRODUCES: damage, deaths, bridge damage, fire events. Ordered
-            // ReceiveDamage retaliation is committed inline; only legacy
-            // precomputed damage producers can still write last_attacker_id.
+            // ReceiveDamage retaliation is committed inline.
             // Adjacent idle engineers receive an enter-cell order here.
             // Repair and consumption occur synchronously at Walk's completed
             // step in the object pass. The capture system excludes repair huts.

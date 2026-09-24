@@ -3,14 +3,16 @@
 //! Handles two responsibilities:
 //! 1. **Target acquisition** — finding the best hostile target for an idle or
 //!    attack-moving unit within its guard/weapon range.
-//! 2. **Retaliation** — idle units automatically attack the entity that hit them.
+//! 2. **Retaliation** — [`should_retaliate`], `TechnoClass::ShouldRetaliate`'s
+//!    gate list, which ReceiveDamage asks before turning a damaged object on
+//!    its attacker.
 //!
 //! ## Target priority
 //! `TechnoClass::Greatest_Threat @ 0x006F8DF0` scores every candidate the walk
 //! reaches and keeps the maximum, ties going to whatever the walk saw first.
 //! The walk, the score and the candidate gates live in
 //! [`super::greatest_threat`]; this module owns the snapshot the scan runs on
-//! and the retaliation pass.
+//! and the retaliation gate.
 //!
 //! ## Scan radius
 //! How far the scan reaches is a property of the attacker and of the threat
@@ -37,8 +39,11 @@ use super::threat_range::ScanMission;
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
+use crate::rules::weapon_type::WeaponType;
 use crate::sim::entity_store::EntityStore;
+use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::vision::FogState;
 use crate::util::fixed_math::SimFixed;
@@ -243,7 +248,7 @@ pub(crate) fn acquire_best_target(
     rules: &RuleSet,
     interner: &StringInterner,
     attacker: &AttackerSnapshot,
-    attacker_obj: &crate::rules::object_type::ObjectType,
+    attacker_obj: &ObjectType,
     fog: Option<&FogState>,
     scan_range_override: Option<SimFixed>,
     terrain: Option<&ResolvedTerrainGrid>,
@@ -314,6 +319,40 @@ pub(crate) fn calculate_ai_threat_score(
     )
 }
 
+/// SelectWeapon (vt+0x2E4) of `victim` against `source`, as ShouldRetaliate
+/// (`0x007088DB`) and ReceiveDamage's reach gate (`0x00702A5D`) each call it.
+/// Every slot of an occupied building answers its occupant's weapon
+/// (`BuildingClass::GetWeapon @ 0x004526F0`), so its choice cannot change the
+/// weapon read; slot 0 stands for it.
+pub(crate) fn retaliation_weapon_index(
+    world: &crate::sim::world::Simulation,
+    rules: &RuleSet,
+    victim: &GameEntity,
+    victim_type: &ObjectType,
+    source: &GameEntity,
+    source_type: &ObjectType,
+    garrison: Option<(&WeaponType, SimFixed)>,
+) -> Option<i32> {
+    if garrison.is_some() {
+        return Some(0);
+    }
+    let allied = is_ally_by_object(
+        Some(&world.house_alliances),
+        &world.interner,
+        victim.owner(),
+        source.owner(),
+    );
+    let source_as_target =
+        techno_target_facts(source, source_type, world.resolved_terrain.as_ref(), allied);
+    select_weapon_for_target(
+        rules,
+        victim_type,
+        &attacker_facts(victim, victim_type),
+        &source_as_target,
+    )
+    .map(|selected| selected.index)
+}
+
 /// `TechnoClass::ShouldRetaliate @ 0x007087C0`, whose only caller is
 /// `TechnoClass::ReceiveDamage @ 0x00702A43`: whether the damaged `victim`
 /// turns on `source`. Every gate is a pure read (no RNG), taken in native
@@ -350,6 +389,10 @@ pub(crate) fn should_retaliate(
         house.is_some_and(|house| house.is_controlled_by_human(world.session.game_mode_nonzero));
     // `0x007087DD` CanRetaliate; `0x007087EB` a slave (SlaveOwner `+0x2DC`);
     // `0x007087F9` a slaver (SlaveManager `+0x2D8`).
+    // RESIDUAL: `slave_harvester`, VERA's SlaveOwner, is never cleared.
+    // Liberation (`0x006B0AE0`, SlaveOwner = 0 at `0x006B0B73`) is not ported,
+    // so a slave freed by its master's death, armed with `SHOVEL`, never
+    // retaliates, where native's does.
     if !victim_type.can_retaliate
         || victim.slave_harvester.is_some()
         || victim_type
@@ -401,27 +444,13 @@ pub(crate) fn should_retaliate(
     {
         return false;
     }
-    // `0x007088A7` GetWeaponDamageValue(-1) > 0 (a healer never retaliates);
-    // `0x007088BC` Is_Armed.
-    if super::combat_weapon::weapon_damage_value(victim, victim_type, rules) <= 0
-        || !super::combat_weapon::is_armed(victim, victim_type)
-    {
-        return false;
-    }
-    // `0x007088CA..0x007088FF`: SelectWeapon(source), then GetFireError
-    // without the range test (vt+0x3BC); Illegal or Cant refuses.
-    let source_as_target =
-        techno_target_facts(source, source_type, world.resolved_terrain.as_ref(), allied);
-    let Some(selected) = select_weapon_for_target(
-        rules,
-        victim_type,
-        &attacker_facts(victim, victim_type),
-        &source_as_target,
-    ) else {
-        return false;
-    };
+    // Every weapon read below goes through GetWeapon (vt+0x3F8), which for an
+    // occupied building answers its firing occupant's weapon for every slot
+    // (`BuildingClass::GetWeapon @ 0x004526F0`).
     let target = super::TargetKind::Entity(source_id);
-    let fire_error = super::fire_error_world::FireSubject {
+    let garrison =
+        super::fire_error_world::garrison_weapon(world, rules, victim, victim_type, target);
+    let mut subject = super::fire_error_world::FireSubject {
         world,
         rules,
         overlay_registry: None,
@@ -429,18 +458,31 @@ pub(crate) fn should_retaliate(
         firer: victim,
         obj: victim_type,
         target: Some(target),
-        weapon_index: selected.index,
-        garrison: super::fire_error_world::garrison_weapon(
-            world,
-            rules,
-            victim,
-            victim_type,
-            target,
-        ),
+        weapon_index: 0,
+        garrison,
+    };
+    // `0x007088A7` GetWeaponDamageValue(-1) > 0 (a healer never retaliates);
+    // `0x007088BC` Is_Armed (`BuildingClass::Is_Armed @ 0x00458DB0` answers
+    // true for an occupied building).
+    if subject.weapon_damage_value() <= 0 || !super::combat_weapon::is_armed(victim, victim_type) {
+        return false;
     }
-    .fire_error(false);
+    // `0x007088CA..0x007088FF`: SelectWeapon(source), then GetFireError
+    // without the range test (vt+0x3BC); Illegal or Cant refuses.
+    let Some(weapon_index) = retaliation_weapon_index(
+        world,
+        rules,
+        victim,
+        victim_type,
+        source,
+        source_type,
+        garrison,
+    ) else {
+        return false;
+    };
+    subject.weapon_index = weapon_index;
     if matches!(
-        fire_error,
+        subject.fire_error(false),
         super::fire_error::FireError::Illegal | super::fire_error::FireError::Cant
     ) {
         return false;
@@ -490,8 +532,9 @@ pub(crate) fn should_retaliate(
     {
         return false;
     }
-    // `0x00708A5A..0x00708AA8`: a computer house keeps a current Techno
-    // target whose raw float10 threat score is strictly greater.
+    // `0x00708A5A..0x00708AA8`: a computer house keeps a current object
+    // target (the `+0x14` Object flag, `0x00708A73`) whose raw float10 threat
+    // score is strictly greater.
     if !human
         && let Some(super::TargetKind::Entity(current_id)) =
             victim.attack_target.as_ref().map(|target| target.target)
@@ -523,17 +566,22 @@ pub(crate) fn should_retaliate(
     if victim.parasite_eating_me == Some(source_id) {
         return false;
     }
-    // `0x00708AF7..0x00708B09`: the weapon's Verses against the source's
-    // armour must exceed the single 0.01 (`0x007F4E34`), so a 1% warhead does
-    // retaliate and 0% (or NaN) does not.
-    selected.warhead.verses_f64[super::armor_index(&source_type.armor)] > f64::from(0.01_f32)
+    // `0x00708AC5..0x00708B09`: the selected weapon's Verses against the
+    // source's armour must exceed the single 0.01 (`0x007F4E34`), so a 1%
+    // warhead does retaliate and 0% (or NaN) does not. A missing weapon or
+    // warhead skips the test and retaliates (`0x00708AD4`, `0x00708ADE`).
+    subject
+        .weapon_at(subject.weapon_index)
+        .and_then(|weapon| super::combat_weapon::warhead_of(rules, weapon))
+        .is_none_or(|warhead| {
+            warhead.verses_f64[super::armor_index(&source_type.armor)] > f64::from(0.01_f32)
+        })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
-    use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::test_interner;
 
     /// Stock key shape for the two `TurretCount>0` types that carry NO live

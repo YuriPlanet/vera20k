@@ -2037,6 +2037,10 @@ struct RetaliationCase {
     human: bool,
     mission: MissionType,
     source_cells: u16,
+    /// The source's lepton offset inside its cell (128 is the centre).
+    source_sub_x: i32,
+    /// The source's health, of Strength=200.
+    source_health: i32,
     range_cells: &'static str,
     sight: i32,
     damage: i32,
@@ -2050,6 +2054,8 @@ impl Default for RetaliationCase {
             human: true,
             mission: MissionType::Guard,
             source_cells: 2,
+            source_sub_x: 128,
+            source_health: 200,
             range_cells: "8",
             sight: 8,
             damage: 1,
@@ -2088,9 +2094,10 @@ fn retaliates(case: RetaliationCase) -> bool {
     let (source_rx, victim_rx) = (20 - case.source_cells, 20);
 
     let mut entities = EntityStore::new();
-    let mut source = make_entity(1, "SOURCE", source_rx, 5, 200);
+    let mut source = make_entity(1, "SOURCE", source_rx, 5, case.source_health);
     source.owner = source_owner;
     source.type_ref = interner.intern("SOURCE");
+    source.position.sub_x = crate::util::fixed_math::SimFixed::from_num(case.source_sub_x);
     source.lifecycle.cell_marked = true;
     entities.insert(source);
     let mut victim = make_entity(2, "VICTIM", victim_rx, 5, 100);
@@ -2234,6 +2241,33 @@ fn gsi_04_07_a_human_unit_does_not_charge_an_unseen_shooter() {
     assert!(retaliates(far(true, 2)));
     assert!(!retaliates(far(true, 4)));
     assert!(retaliates(far(false, 4)));
+    // The compare is inclusive and reads the ftol'd Sqrt_Approx distance: a
+    // source whose distance comes out at exactly 896 is seen, 897 is not. Walk
+    // raw offsets across the boundary from the victim's centre, x = 20 * 256
+    // + 128; both sides must occur.
+    let victim_x = 20 * 256 + 128;
+    let mut distances = Vec::new();
+    for offset in 896..=900 {
+        let source_x = victim_x - offset;
+        let distance = crate::util::native_x87::distance_3d_leptons(
+            [source_x, 5 * 256 + 128, 0],
+            [victim_x, 5 * 256 + 128, 0],
+        );
+        let case = RetaliationCase {
+            source_sub_x: source_x % 256,
+            ..far(true, (20 - source_x / 256) as u16)
+        };
+        assert_eq!(
+            retaliates(case),
+            distance <= 896,
+            "offset {offset}, distance {distance}"
+        );
+        distances.push(distance);
+    }
+    assert!(
+        distances.contains(&896) && distances.contains(&897),
+        "{distances:?}"
+    );
     // In range needs no sight.
     assert!(retaliates(RetaliationCase {
         source_cells: 4,
@@ -2244,9 +2278,12 @@ fn gsi_04_07_a_human_unit_does_not_charge_an_unseen_shooter() {
 }
 
 /// `ShouldRetaliate 0x00708AF7..0x00708B09` refuses only Verses at or below
-/// the single `0.01`: a 1% warhead still retaliates, 0% does not. And a
-/// weapon whose `Damage + AmbientDamage` is not positive never does
-/// (`0x007088A7`, a healer).
+/// the single `0.01`: a 1% warhead still retaliates, a bare `0.005` (which
+/// GetFireError's zero-Verses test lets through; `0.5%` would parse to 0) and
+/// 0% do not. And a weapon whose
+/// `Damage + AmbientDamage` is not positive never does (`0x007088A7`): zero
+/// damage, or a healer even against a damaged source, which GetFireError's
+/// heal test would allow.
 #[test]
 fn gsi_04_07_retaliation_verses_and_healer_gates() {
     assert!(retaliates(RetaliationCase {
@@ -2254,13 +2291,304 @@ fn gsi_04_07_retaliation_verses_and_healer_gates() {
         ..Default::default()
     }));
     assert!(!retaliates(RetaliationCase {
+        verses: "0.005",
+        ..Default::default()
+    }));
+    assert!(!retaliates(RetaliationCase {
         verses: "0%",
         ..Default::default()
     }));
     assert!(!retaliates(RetaliationCase {
-        damage: -5,
+        damage: 0,
         ..Default::default()
     }));
+    for source_health in [200, 100] {
+        assert!(
+            !retaliates(RetaliationCase {
+                damage: -5,
+                source_health,
+                ..Default::default()
+            }),
+            "{source_health}"
+        );
+    }
+}
+
+const GATE_SOURCE: u64 = 1;
+const GATE_VICTIM: u64 = 2;
+
+/// A world for [`combat_targeting::should_retaliate`] alone: `source_type`
+/// (house Source, a computer) two cells west of `victim_type` (house Victim,
+/// on Guard).
+fn retaliation_gate_world(
+    victim_type: &str,
+    victim_category: EntityCategory,
+    source_type: &str,
+    source_category: EntityCategory,
+    human: bool,
+) -> (crate::sim::world::Simulation, RuleSet) {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=C4GUY\n1=E1\n\
+         [VehicleTypes]\n0=SOURCE\n1=VICTIM\n\
+         [AircraftTypes]\n\
+         [BuildingTypes]\n0=SRCBLDG\n1=EMPBLDG\n2=CAGAS\n\
+         [Warheads]\n0=ReturnWH\n\
+         [General]\nFixtureOnly=1\n\
+         [SOURCE]\nStrength=200\nArmor=heavy\n\
+         [SRCBLDG]\nStrength=200\nArmor=concrete\n\
+         [VICTIM]\nStrength=100\nArmor=heavy\nSpeed=6\nSight=8\nPrimary=ReturnGun\n\
+         [C4GUY]\nStrength=100\nArmor=none\nSpeed=4\nSight=8\nPrimary=ReturnGun\nC4=yes\n\
+         [E1]\nStrength=125\nArmor=flak\nSpeed=4\nPrimary=ReturnGun\nOccupyWeapon=ReturnGun\n\
+         [EMPBLDG]\nStrength=100\nArmor=concrete\nPrimary=ReturnGun\nEMPulseCannon=yes\n\
+         [CAGAS]\nStrength=800\nArmor=wood\nCanBeOccupied=yes\nCanOccupyFire=yes\nMaxNumberOccupants=5\n\
+         [ReturnGun]\nDamage=1\nROF=50\nRange=8\nWarhead=ReturnWH\n\
+         [ReturnWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .expect("retaliation gate fixture");
+    let mut sim = crate::sim::world::Simulation::new();
+    let victim_owner = sim.interner.intern("Victim");
+    let source_owner = sim.interner.intern("Source");
+    sim.houses.insert(
+        victim_owner,
+        HouseState::new(victim_owner, 0, None, human, 0, 10),
+    );
+    sim.houses.insert(
+        source_owner,
+        HouseState::new(source_owner, 1, None, false, 0, 10),
+    );
+    for (id, type_name, category, owner, rx, health) in [
+        (
+            GATE_SOURCE,
+            source_type,
+            source_category,
+            source_owner,
+            18,
+            200,
+        ),
+        (
+            GATE_VICTIM,
+            victim_type,
+            victim_category,
+            victim_owner,
+            20,
+            100,
+        ),
+    ] {
+        let mut entity = GameEntity::test_default(id, type_name, "Test", rx, 5);
+        entity.owner = owner;
+        entity.type_ref = sim.interner.intern(type_name);
+        entity.category = category;
+        entity.health.current = health;
+        entity.lifecycle.in_limbo = false;
+        entity.lifecycle.cell_marked = true;
+        entity.mission.apply_test_fixture(MissionTestFixture {
+            current: MissionId::from_known(MissionType::Guard),
+            suspended: MissionId::NONE,
+            queued: MissionId::NONE,
+            movement_bypass_latch: 0,
+            handler_state: 0,
+            mission_start_frame: 0,
+            ai_counter: 0,
+            dispatch_timer: MissionDispatchTimer::at_frame(0),
+        });
+        sim.substrate.entities.insert(entity);
+    }
+    (sim, rules)
+}
+
+/// Puts `member` in a one-member team whose TeamType has `Suicide=suicide`.
+fn join_retaliation_team(sim: &mut crate::sim::world::Simulation, member: u64, suicide: bool) {
+    use crate::rules::object_type::ObjectCategory;
+    use crate::rules::team_ai_ini::TeamAiDefinitionSource;
+    use crate::sim::team_script_vm::{
+        TeamMemberTypeIdentity, TeamScriptDefinition, TeamScriptMember, TeamTaskForceDefinition,
+        TeamTaskForceEntry, TeamTypeDefinition,
+    };
+    let owner = sim.substrate.entities.get(member).unwrap().owner();
+    let member_type = TeamMemberTypeIdentity {
+        category: ObjectCategory::Vehicle,
+        id: sim.substrate.entities.get(member).unwrap().type_ref(),
+    };
+    let script_id = sim.interner.intern("GATE_SCRIPT");
+    let task_force_id = sim.interner.intern("GATE_TASK_FORCE");
+    let team_type_id = sim.interner.intern("GATE_TEAM");
+    let teams = &mut sim.team_script_vm;
+    teams.register_script(TeamScriptDefinition {
+        id: script_id,
+        source: TeamAiDefinitionSource::FixedAimd,
+        actions: Vec::new(),
+    });
+    teams.register_task_force(TeamTaskForceDefinition {
+        id: task_force_id,
+        source: TeamAiDefinitionSource::FixedAimd,
+        group: -1,
+        entries: vec![TeamTaskForceEntry {
+            member_type,
+            count: 1,
+        }],
+    });
+    teams.register_team_type(TeamTypeDefinition {
+        id: team_type_id,
+        script_id,
+        task_force_id,
+        priority: 0,
+        is_base_defense: false,
+        suicide,
+        combined_movement_zone: crate::rules::locomotor_type::MovementZone::Normal,
+        base_zone_relation_enforced: true,
+        transport_crossing_required: false,
+    });
+    teams.create_team_from_type(
+        owner,
+        team_type_id,
+        &[TeamScriptMember {
+            entity_id: member,
+            member_type,
+        }],
+        None,
+        0,
+    );
+}
+
+/// `ShouldRetaliate @ 0x007087C0`'s refusals that read world state. Each case
+/// changes one fact of a world whose baseline retaliates.
+#[test]
+fn gsi_04_07_should_retaliate_world_refusals() {
+    use combat_targeting::should_retaliate;
+    let tank = |human| {
+        retaliation_gate_world(
+            "VICTIM",
+            EntityCategory::Unit,
+            "SOURCE",
+            EntityCategory::Unit,
+            human,
+        )
+    };
+    for human in [false, true] {
+        let (sim, rules) = tank(human);
+        assert!(
+            should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE),
+            "baseline, human {human}"
+        );
+    }
+    // `0x00708807..0x0070881F`: a draining object refuses only for a house
+    // that is not human (`House+0x1EC`).
+    for human in [false, true] {
+        let (mut sim, rules) = tank(human);
+        sim.substrate
+            .entities
+            .get_mut(GATE_VICTIM)
+            .unwrap()
+            .drain_target = Some(9);
+        assert_eq!(
+            should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE),
+            human,
+            "draining, human {human}"
+        );
+    }
+    // `0x007087EB`: a slave (SlaveOwner `+0x2DC`). GetFireError's T2
+    // refuses a slave as well, so this outcome does not isolate the gate.
+    let (mut sim, rules) = tank(false);
+    sim.substrate
+        .entities
+        .get_mut(GATE_VICTIM)
+        .unwrap()
+        .slave_harvester = Some(crate::sim::slave_miner::SlaveHarvester::new(9, 4));
+    assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE));
+    // `0x00708899`: the source is disguised to the victim's house as one of
+    // its own (vt+0xC8).
+    let (mut sim, rules) = tank(false);
+    let victim_owner = sim.interner.intern("Victim");
+    sim.substrate
+        .entities
+        .get_mut(GATE_SOURCE)
+        .unwrap()
+        .disguise = Some(crate::sim::cloak_disguise::DisguiseRuntime {
+        disguised: true,
+        disguised_as_house: Some(victim_owner),
+        ..Default::default()
+    });
+    assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE));
+    // `0x00708905..0x007089A5`: a human's C4 infantryman leaves a building
+    // alone; a computer's does not.
+    for human in [false, true] {
+        let (sim, rules) = retaliation_gate_world(
+            "C4GUY",
+            EntityCategory::Infantry,
+            "SRCBLDG",
+            EntityCategory::Structure,
+            human,
+        );
+        assert_eq!(
+            should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE),
+            !human,
+            "C4 against a building, human {human}"
+        );
+    }
+    // `0x00708A2C..0x00708A54`: a member of a `Suicide=` team.
+    for suicide in [false, true] {
+        let (mut sim, rules) = tank(false);
+        join_retaliation_team(&mut sim, GATE_VICTIM, suicide);
+        assert_eq!(
+            should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE),
+            !suicide,
+            "Suicide={suicide}"
+        );
+    }
+    // `0x007088FC`: GetFireError Cant, from an `EMPulseCannon=` building
+    // (`BuildingClass::GetFireError` B3 `0x00447F54`).
+    let (sim, rules) = retaliation_gate_world(
+        "EMPBLDG",
+        EntityCategory::Structure,
+        "SOURCE",
+        EntityCategory::Unit,
+        false,
+    );
+    assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE));
+}
+
+/// A garrisoned building fights back with its occupant's weapon: GetWeapon
+/// (`BuildingClass::GetWeapon @ 0x004526F0`) answers the occupant's
+/// `OccupyWeapon=` for every slot, so `GetWeaponDamageValue(-1)`, SelectWeapon,
+/// GetFireError and the Verses test all read it. An empty civilian building
+/// has no weapon and does not.
+#[test]
+fn gsi_04_07_a_garrison_retaliates_with_its_occupants_weapon() {
+    let (mut sim, rules) = retaliation_gate_world(
+        "CAGAS",
+        EntityCategory::Structure,
+        "SOURCE",
+        EntityCategory::Unit,
+        false,
+    );
+    assert!(!combat_targeting::should_retaliate(
+        &sim,
+        &rules,
+        GATE_VICTIM,
+        GATE_SOURCE
+    ));
+    let occupant_id = 3;
+    let mut occupant = GameEntity::test_default(occupant_id, "E1", "Test", 20, 5);
+    occupant.owner = sim.substrate.entities.get(GATE_VICTIM).unwrap().owner();
+    occupant.type_ref = sim.interner.intern("E1");
+    occupant.category = EntityCategory::Infantry;
+    occupant.passenger_role = crate::sim::passenger::PassengerRole::Inside {
+        transport_id: GATE_VICTIM,
+    };
+    sim.substrate.entities.insert(occupant);
+    let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 1);
+    assert!(cargo.board(occupant_id, 1));
+    sim.substrate
+        .entities
+        .get_mut(GATE_VICTIM)
+        .unwrap()
+        .passenger_role = crate::sim::passenger::PassengerRole::Transport { cargo };
+    assert!(combat_targeting::should_retaliate(
+        &sim,
+        &rules,
+        GATE_VICTIM,
+        GATE_SOURCE
+    ));
 }
 
 #[test]

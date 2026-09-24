@@ -621,8 +621,8 @@ pub enum TargetKind {
 }
 
 /// Sentinel attacker id for sourceless damage (the radiation field). Stable
-/// entity ids start at 1, so 0 is never a live attacker; retaliation treats
-/// it as "attacker gone" and the last-attacker bookkeeping skips it.
+/// entity ids start at 1, so 0 is never a live attacker; the receiver asks no
+/// retaliation for it.
 pub(crate) const RAD_NO_ATTACKER: u64 = 0;
 
 /// The two receiver booleans carried by one native concrete `ReceiveDamage`

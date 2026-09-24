@@ -868,6 +868,16 @@ pub(crate) fn commit_entities(
             {
                 world.override_mission_on_damage_response(target_id, attacker_id, rules);
             }
+            // RESIDUAL — ReceiveDamage's scatter tail (`0x00702B47..0x00702D0B`)
+            // is not ported. Past the Override, a Foot with no Target and no
+            // NavCom scatters when `[CombatDamage] PlayerScatter=`
+            // (`Rules+0x17ED`) is set or its rank holds the SCATTER ability; the
+            // refused arm (`0x00702BFE`) has its own gate on the mission's
+            // `Scatter=`. Scatter (vt+0x174, `InfantryClass::Scatter @
+            // 0x0051D0D0`) draws `RandomRanged` on the Scenario RNG
+            // (`0x0051D2BA`). Effect: native steps a hit infantryman aside and
+            // makes one Scenario draw VERA does not make, so the RNG stream
+            // diverges from the first such hit. The next combat increment.
         }
 
         if entered_techno_death {
@@ -2829,26 +2839,20 @@ fn retaliation_reaches(
     ) else {
         return false;
     };
-    let source_as_target = combat_weapon::techno_target_facts(
+    let target = TargetKind::Entity(source_id);
+    let garrison =
+        super::fire_error_world::garrison_weapon(world, rules, victim, victim_type, target);
+    let Some(weapon_index) = combat_targeting::retaliation_weapon_index(
+        world,
+        rules,
+        victim,
+        victim_type,
         source,
         source_type,
-        world.resolved_terrain.as_ref(),
-        combat_weapon::is_ally_by_object(
-            Some(&world.house_alliances),
-            &world.interner,
-            victim.owner(),
-            source.owner(),
-        ),
-    );
-    let Some(selected) = combat_weapon::select_weapon_for_target(
-        rules,
-        victim_type,
-        &combat_weapon::attacker_facts(victim, victim_type),
-        &source_as_target,
+        garrison,
     ) else {
         return false;
     };
-    let target = TargetKind::Entity(source_id);
     let in_range = super::fire_error_world::FireSubject {
         world,
         rules,
@@ -2857,14 +2861,8 @@ fn retaliation_reaches(
         firer: victim,
         obj: victim_type,
         target: Some(target),
-        weapon_index: selected.index,
-        garrison: super::fire_error_world::garrison_weapon(
-            world,
-            rules,
-            victim,
-            victim_type,
-            target,
-        ),
+        weapon_index,
+        garrison,
     }
     .in_range();
     let human = world
