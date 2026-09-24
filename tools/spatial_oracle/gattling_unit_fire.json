@@ -1,0 +1,3291 @@
+{
+  "defaults": {
+    "can_fire_at": false,
+    "code": 0,
+    "damage": 25,
+    "deploy_fire": false,
+    "direction": 8192,
+    "locomotor_moving": false,
+    "slot0": true,
+    "target": {
+      "health": 100,
+      "kind": "unit",
+      "strength": 100
+    },
+    "type": {
+      "is_gattling": 1,
+      "turret": 1
+    },
+    "unit": {
+      "firing_flag": 1,
+      "has_target": true,
+      "latch": 1,
+      "navcom": false,
+      "spawn_manager": false,
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "veterancy": 0.0
+    },
+    "weapon_index": 0
+  },
+  "rows": [
+    {
+      "arm": null,
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": -1,
+        "expect": "update",
+        "name": "gattling.code_-1"
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": null,
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": -1,
+        "expect": "none",
+        "name": "non_gattling.code_-1",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": ""
+    },
+    {
+      "arm": "0 ok",
+      "audio": "stop b, stop a, stop a, play",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [],
+          "call": "deploy_fire"
+        },
+        {
+          "args": [
+            "target",
+            0
+          ],
+          "call": "fire"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_increase"
+        }
+      ],
+      "draws": [
+        4240461297
+      ],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 0,
+      "gattling": {
+        "call": "increase",
+        "site": "0x0073708A",
+        "ticks": 1
+      },
+      "input": {
+        "code": 0,
+        "expect": "increase",
+        "name": "gattling.code_0"
+      },
+      "latch": 1,
+      "plays": [
+        {
+          "coord": [
+            5248,
+            4736,
+            104
+          ],
+          "sound": 5
+        }
+      ],
+      "stage": 2,
+      "turret_anim": 8,
+      "value": 401,
+      "writes": "0x140 0x144 0x148 0x4AC 0x4B8 0x4C8 0x4D4 0x68D"
+    },
+    {
+      "arm": "0 ok",
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [],
+          "call": "deploy_fire"
+        },
+        {
+          "args": [
+            "target",
+            0
+          ],
+          "call": "fire"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 0,
+      "gattling": null,
+      "input": {
+        "code": 0,
+        "expect": "none",
+        "name": "non_gattling.code_0",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 400,
+      "writes": "0x148 0x68D"
+    },
+    {
+      "arm": null,
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 1,
+        "expect": "update",
+        "name": "gattling.code_1"
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": null,
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 1,
+        "expect": "none",
+        "name": "non_gattling.code_1",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": ""
+    },
+    {
+      "arm": "2 facing",
+      "audio": "stop b, stop a, stop a, play",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [],
+          "call": "deploy_fire"
+        },
+        {
+          "args": [
+            "target"
+          ],
+          "call": "direction"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_increase"
+        }
+      ],
+      "draws": [
+        4240461297
+      ],
+      "facings": {
+        "body": 16384,
+        "turret": 8192
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "increase",
+        "site": "0x0073708A",
+        "ticks": 1
+      },
+      "input": {
+        "code": 2,
+        "expect": "increase",
+        "name": "gattling.code_2"
+      },
+      "latch": 1,
+      "plays": [
+        {
+          "coord": [
+            5248,
+            4736,
+            104
+          ],
+          "sound": 5
+        }
+      ],
+      "stage": 2,
+      "turret_anim": 8,
+      "value": 401,
+      "writes": "0x140 0x144 0x148 0x3A0 0x4AC 0x4B8 0x4C8 0x4D4"
+    },
+    {
+      "arm": "2 facing",
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [],
+          "call": "deploy_fire"
+        },
+        {
+          "args": [
+            "target"
+          ],
+          "call": "direction"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 8192
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 2,
+        "expect": "none",
+        "name": "non_gattling.code_2",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": "0x3A0"
+    },
+    {
+      "arm": null,
+      "audio": "stop b, stop a, stop a, play",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_increase"
+        }
+      ],
+      "draws": [
+        4240461297
+      ],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "increase",
+        "site": "0x0073708A",
+        "ticks": 1
+      },
+      "input": {
+        "code": 3,
+        "expect": "increase",
+        "name": "gattling.code_3"
+      },
+      "latch": 1,
+      "plays": [
+        {
+          "coord": [
+            5248,
+            4736,
+            104
+          ],
+          "sound": 5
+        }
+      ],
+      "stage": 2,
+      "turret_anim": 8,
+      "value": 401,
+      "writes": "0x140 0x144 0x148 0x4AC 0x4B8 0x4C8 0x4D4"
+    },
+    {
+      "arm": null,
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 3,
+        "expect": "none",
+        "name": "non_gattling.code_3",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 400,
+      "writes": "0x148"
+    },
+    {
+      "arm": null,
+      "audio": "stop b, stop a, stop a, play",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_increase"
+        }
+      ],
+      "draws": [
+        4240461297
+      ],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "increase",
+        "site": "0x0073708A",
+        "ticks": 1
+      },
+      "input": {
+        "code": 4,
+        "expect": "increase",
+        "name": "gattling.code_4"
+      },
+      "latch": 1,
+      "plays": [
+        {
+          "coord": [
+            5248,
+            4736,
+            104
+          ],
+          "sound": 5
+        }
+      ],
+      "stage": 2,
+      "turret_anim": 8,
+      "value": 401,
+      "writes": "0x140 0x144 0x148 0x4AC 0x4B8 0x4C8 0x4D4"
+    },
+    {
+      "arm": null,
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 4,
+        "expect": "none",
+        "name": "non_gattling.code_4",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": ""
+    },
+    {
+      "arm": "5 illegal",
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            0
+          ],
+          "call": "damage"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 5,
+        "expect": "update",
+        "name": "gattling.code_5"
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": "5 illegal",
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            0
+          ],
+          "call": "damage"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 5,
+        "expect": "none",
+        "name": "non_gattling.code_5",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": ""
+    },
+    {
+      "arm": "6 cant",
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 6,
+        "expect": "update",
+        "name": "gattling.code_6"
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": "6 cant",
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 6,
+        "expect": "none",
+        "name": "non_gattling.code_6",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": ""
+    },
+    {
+      "arm": null,
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 7,
+        "expect": "update",
+        "name": "gattling.code_7"
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": null,
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 7,
+        "expect": "none",
+        "name": "non_gattling.code_7",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": ""
+    },
+    {
+      "arm": "8/11 range",
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 0,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 8,
+        "expect": "update",
+        "name": "gattling.code_8"
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8 0x68D"
+    },
+    {
+      "arm": "8/11 range",
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 0,
+      "gattling": null,
+      "input": {
+        "code": 8,
+        "expect": "none",
+        "name": "non_gattling.code_8",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": "0x68D"
+    },
+    {
+      "arm": "9 cloaked",
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            "target",
+            0
+          ],
+          "call": "can_fire_at"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 0,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 9,
+        "expect": "update",
+        "name": "gattling.code_9"
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8 0x68D"
+    },
+    {
+      "arm": "9 cloaked",
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            "target",
+            0
+          ],
+          "call": "can_fire_at"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 0,
+      "gattling": null,
+      "input": {
+        "code": 9,
+        "expect": "none",
+        "name": "non_gattling.code_9",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": "0x68D"
+    },
+    {
+      "arm": null,
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 10,
+        "expect": "update",
+        "name": "gattling.code_10"
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": null,
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 10,
+        "expect": "none",
+        "name": "non_gattling.code_10",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": ""
+    },
+    {
+      "arm": "8/11 range",
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 0,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 11,
+        "expect": "update",
+        "name": "gattling.code_11"
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8 0x68D"
+    },
+    {
+      "arm": "8/11 range",
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 0,
+      "gattling": null,
+      "input": {
+        "code": 11,
+        "expect": "none",
+        "name": "non_gattling.code_11",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": "0x68D"
+    },
+    {
+      "arm": null,
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 12,
+        "expect": "update",
+        "name": "gattling.code_12"
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": null,
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 12,
+        "expect": "none",
+        "name": "non_gattling.code_12",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": ""
+    },
+    {
+      "arm": null,
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 2147483647,
+        "expect": "update",
+        "name": "gattling.code_2147483647"
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": null,
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 2147483647,
+        "expect": "none",
+        "name": "non_gattling.code_2147483647",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": ""
+    },
+    {
+      "arm": "0 ok",
+      "audio": "stop b, stop a, stop a, play",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            3,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [],
+          "call": "deploy_fire"
+        },
+        {
+          "args": [
+            "target",
+            3
+          ],
+          "call": "fire"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_increase"
+        }
+      ],
+      "draws": [
+        4240461297
+      ],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 0,
+      "gattling": {
+        "call": "increase",
+        "site": "0x0073708A",
+        "ticks": 1
+      },
+      "input": {
+        "code": 0,
+        "expect": "increase",
+        "name": "gattling.ok_fires_stage_index_then_charges",
+        "unit": {
+          "latch": 1,
+          "stage": 1,
+          "value": 400
+        },
+        "weapon_index": 3
+      },
+      "latch": 1,
+      "plays": [
+        {
+          "coord": [
+            5248,
+            4736,
+            104
+          ],
+          "sound": 5
+        }
+      ],
+      "stage": 2,
+      "turret_anim": 8,
+      "value": 401,
+      "writes": "0x140 0x144 0x148 0x4AC 0x4B8 0x4C8 0x4D4 0x68D"
+    },
+    {
+      "arm": "0 ok",
+      "audio": "stop b, stop a, play",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [],
+          "call": "deploy_fire"
+        },
+        {
+          "args": [
+            "target",
+            0
+          ],
+          "call": "fire"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_increase"
+        }
+      ],
+      "draws": [
+        4240461297
+      ],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 0,
+      "gattling": {
+        "call": "increase",
+        "site": "0x0073708A",
+        "ticks": 1
+      },
+      "input": {
+        "code": 0,
+        "expect": "increase",
+        "name": "gattling.ok_latch_clear_draws",
+        "unit": {
+          "latch": 0,
+          "stage": 0,
+          "value": 10
+        }
+      },
+      "latch": 1,
+      "plays": [
+        {
+          "coord": [
+            5248,
+            4736,
+            104
+          ],
+          "sound": 1
+        }
+      ],
+      "stage": 0,
+      "turret_anim": 8,
+      "value": 11,
+      "writes": "0x144 0x148 0x4AC 0x4B8 0x4C8 0x4D4 0x68D"
+    },
+    {
+      "arm": "0 ok",
+      "audio": "stop b, stop a, stop a, play",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [],
+          "call": "deploy_fire"
+        },
+        {
+          "args": [
+            "target",
+            0
+          ],
+          "call": "fire"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_increase"
+        }
+      ],
+      "draws": [
+        4240461297
+      ],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 0,
+      "gattling": {
+        "call": "increase",
+        "site": "0x0073708A",
+        "ticks": 1
+      },
+      "input": {
+        "code": 0,
+        "expect": "increase",
+        "name": "gattling.ok_elite",
+        "unit": {
+          "latch": 1,
+          "stage": 1,
+          "value": 200,
+          "veterancy": 2.0
+        }
+      },
+      "latch": 1,
+      "plays": [
+        {
+          "coord": [
+            5248,
+            4736,
+            104
+          ],
+          "sound": 105
+        }
+      ],
+      "stage": 2,
+      "turret_anim": 8,
+      "value": 201,
+      "writes": "0x140 0x144 0x148 0x4AC 0x4B8 0x4C8 0x4D4 0x68D"
+    },
+    {
+      "arm": "8/11 range",
+      "audio": "release a, stop b",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 0,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 8,
+        "expect": "update",
+        "name": "gattling.range_decays_stage_down",
+        "unit": {
+          "latch": 1,
+          "stage": 1,
+          "value": 210
+        }
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 0,
+      "turret_anim": 8,
+      "value": 160,
+      "writes": "0x140 0x144 0x148 0x4AC 0x4B8 0x4C8 0x4D4 0x68D"
+    },
+    {
+      "arm": "8/11 range",
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 0,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 8,
+        "expect": "update",
+        "name": "gattling.range_value_to_zero_no_anim",
+        "unit": {
+          "latch": 1,
+          "stage": 0,
+          "value": 30
+        }
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 0,
+      "turret_anim": 7,
+      "value": 0,
+      "writes": "0x144 0x4AC 0x4B8 0x68D"
+    },
+    {
+      "arm": null,
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update_no_target"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update_no_target",
+        "site": "0x00737116",
+        "ticks": 1
+      },
+      "input": {
+        "expect": "update_no_target",
+        "name": "no_target.gattling_decays",
+        "unit": {
+          "has_target": false
+        }
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": null,
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update_no_target"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update_no_target",
+        "site": "0x00737116",
+        "ticks": 1
+      },
+      "input": {
+        "expect": "update_no_target",
+        "name": "no_target.gattling_value_to_zero",
+        "unit": {
+          "has_target": false,
+          "stage": 0,
+          "value": 50
+        }
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 0,
+      "turret_anim": 7,
+      "value": 0,
+      "writes": "0x144 0x4AC 0x4B8"
+    },
+    {
+      "arm": null,
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update_no_target"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update_no_target",
+        "site": "0x00737116",
+        "ticks": 1
+      },
+      "input": {
+        "expect": "update_no_target",
+        "name": "no_target.gattling_value_zero_stays",
+        "unit": {
+          "has_target": false,
+          "stage": 0,
+          "value": 0
+        }
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 0,
+      "turret_anim": 7,
+      "value": 0,
+      "writes": "0x144 0x4AC 0x4B8"
+    },
+    {
+      "arm": null,
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update_no_target"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update_no_target",
+        "site": "0x00737116",
+        "ticks": 1
+      },
+      "input": {
+        "expect": "update_no_target",
+        "name": "no_target.gattling_value_positive_after",
+        "unit": {
+          "has_target": false,
+          "stage": 0,
+          "value": 51
+        }
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 0,
+      "turret_anim": 8,
+      "value": 1,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": null,
+      "audio": "",
+      "calls": [],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "expect": "none",
+        "name": "no_target.non_gattling",
+        "type": {
+          "is_gattling": 0
+        },
+        "unit": {
+          "has_target": false
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": ""
+    },
+    {
+      "arm": null,
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update_no_target"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update_no_target",
+        "site": "0x00737116",
+        "ticks": 1
+      },
+      "input": {
+        "code": 0,
+        "expect": "update_no_target",
+        "name": "null_slot0.gattling_decays",
+        "slot0": false
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": null,
+      "audio": "",
+      "calls": [],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 0,
+        "expect": "none",
+        "name": "null_slot0.non_gattling",
+        "slot0": false,
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": ""
+    },
+    {
+      "arm": null,
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update_no_target"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update_no_target",
+        "site": "0x00737116",
+        "ticks": 1
+      },
+      "input": {
+        "expect": "update_no_target",
+        "name": "null_slot0.no_target",
+        "slot0": false,
+        "unit": {
+          "has_target": false
+        }
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": null,
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [],
+          "call": "deploy_fire"
+        },
+        {
+          "args": [
+            16,
+            0
+          ],
+          "call": "queue_mission"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 0,
+        "deploy_fire": true,
+        "expect": "none",
+        "name": "deploy_fire.code_0"
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": ""
+    },
+    {
+      "arm": null,
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [],
+          "call": "deploy_fire"
+        },
+        {
+          "args": [
+            16,
+            0
+          ],
+          "call": "queue_mission"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 0,
+        "deploy_fire": true,
+        "expect": "none",
+        "name": "deploy_fire.non_gattling.code_0",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": ""
+    },
+    {
+      "arm": null,
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [],
+          "call": "deploy_fire"
+        },
+        {
+          "args": [
+            16,
+            0
+          ],
+          "call": "queue_mission"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 2,
+        "deploy_fire": true,
+        "expect": "none",
+        "name": "deploy_fire.code_2"
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": ""
+    },
+    {
+      "arm": null,
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [],
+          "call": "deploy_fire"
+        },
+        {
+          "args": [
+            16,
+            0
+          ],
+          "call": "queue_mission"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 2,
+        "deploy_fire": true,
+        "expect": "none",
+        "name": "deploy_fire.non_gattling.code_2",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": ""
+    },
+    {
+      "arm": null,
+      "audio": "stop b, stop a, stop a, play",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_increase"
+        }
+      ],
+      "draws": [
+        4240461297
+      ],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "increase",
+        "site": "0x0073708A",
+        "ticks": 1
+      },
+      "input": {
+        "code": 3,
+        "deploy_fire": true,
+        "expect": "increase",
+        "name": "deploy_fire.code_3"
+      },
+      "latch": 1,
+      "plays": [
+        {
+          "coord": [
+            5248,
+            4736,
+            104
+          ],
+          "sound": 5
+        }
+      ],
+      "stage": 2,
+      "turret_anim": 8,
+      "value": 401,
+      "writes": "0x140 0x144 0x148 0x4AC 0x4B8 0x4C8 0x4D4"
+    },
+    {
+      "arm": null,
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 3,
+        "deploy_fire": true,
+        "expect": "none",
+        "name": "deploy_fire.non_gattling.code_3",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 400,
+      "writes": "0x148"
+    },
+    {
+      "arm": null,
+      "audio": "stop b, stop a, stop a, play",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_increase"
+        }
+      ],
+      "draws": [
+        4240461297
+      ],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "increase",
+        "site": "0x0073708A",
+        "ticks": 1
+      },
+      "input": {
+        "code": 4,
+        "deploy_fire": true,
+        "expect": "increase",
+        "name": "deploy_fire.code_4"
+      },
+      "latch": 1,
+      "plays": [
+        {
+          "coord": [
+            5248,
+            4736,
+            104
+          ],
+          "sound": 5
+        }
+      ],
+      "stage": 2,
+      "turret_anim": 8,
+      "value": 401,
+      "writes": "0x140 0x144 0x148 0x4AC 0x4B8 0x4C8 0x4D4"
+    },
+    {
+      "arm": null,
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 4,
+        "deploy_fire": true,
+        "expect": "none",
+        "name": "deploy_fire.non_gattling.code_4",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": ""
+    },
+    {
+      "arm": "8/11 range",
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 0,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 8,
+        "deploy_fire": true,
+        "expect": "update",
+        "name": "deploy_fire.code_8"
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8 0x68D"
+    },
+    {
+      "arm": "8/11 range",
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 0,
+      "gattling": null,
+      "input": {
+        "code": 8,
+        "deploy_fire": true,
+        "expect": "none",
+        "name": "deploy_fire.non_gattling.code_8",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": "0x68D"
+    },
+    {
+      "arm": "5 illegal",
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            0
+          ],
+          "call": "damage"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 5,
+        "damage": 1,
+        "expect": "update",
+        "name": "arm5.damage_positive_keeps_target"
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": "5 illegal",
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            0
+          ],
+          "call": "damage"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 5,
+        "damage": 0,
+        "expect": "update",
+        "name": "arm5.damage_zero_keeps_target"
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": "5 illegal",
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            0
+          ],
+          "call": "damage"
+        },
+        {
+          "args": [
+            null
+          ],
+          "call": "set_target"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 5,
+        "damage": -1,
+        "expect": "update",
+        "name": "arm5.healer_vs_infantry_drops_target",
+        "target": {
+          "kind": "infantry"
+        }
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": "5 illegal",
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            0
+          ],
+          "call": "damage"
+        },
+        {
+          "args": [
+            null
+          ],
+          "call": "set_target"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 5,
+        "damage": -1,
+        "expect": "update",
+        "name": "arm5.healer_vs_full_unit_drops_target"
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": "5 illegal",
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            0
+          ],
+          "call": "damage"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 5,
+        "damage": -1,
+        "expect": "update",
+        "name": "arm5.healer_vs_damaged_unit_keeps_target",
+        "target": {
+          "health": 50
+        }
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": "6 cant",
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [],
+          "call": "spawn_clear"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "code": 6,
+        "expect": "update",
+        "name": "arm6.spawn_manager_cleared",
+        "unit": {
+          "spawn_manager": true
+        }
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8"
+    },
+    {
+      "arm": "9 cloaked",
+      "audio": "release a",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [
+            "target",
+            0
+          ],
+          "call": "can_fire_at"
+        },
+        {
+          "args": [
+            0
+          ],
+          "call": "start_uncloaking"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_update"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 0,
+      "gattling": {
+        "call": "update",
+        "site": "0x007370A9",
+        "ticks": 1
+      },
+      "input": {
+        "can_fire_at": true,
+        "code": 9,
+        "expect": "update",
+        "name": "arm9.can_fire_at_uncloaks"
+      },
+      "latch": 0,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 8,
+      "value": 350,
+      "writes": "0x144 0x148 0x4AC 0x4B8 0x68D"
+    },
+    {
+      "arm": "2 facing",
+      "audio": "stop b, stop a, stop a, play",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [],
+          "call": "deploy_fire"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_increase"
+        }
+      ],
+      "draws": [
+        4240461297
+      ],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "increase",
+        "site": "0x0073708A",
+        "ticks": 1
+      },
+      "input": {
+        "code": 2,
+        "expect": "increase",
+        "name": "arm2.turretless_navcom",
+        "type": {
+          "turret": 0
+        },
+        "unit": {
+          "navcom": true
+        }
+      },
+      "latch": 1,
+      "plays": [
+        {
+          "coord": [
+            5248,
+            4736,
+            104
+          ],
+          "sound": 5
+        }
+      ],
+      "stage": 2,
+      "turret_anim": 8,
+      "value": 401,
+      "writes": "0x140 0x144 0x148 0x4AC 0x4B8 0x4C8 0x4D4"
+    },
+    {
+      "arm": "2 facing",
+      "audio": "stop b, stop a, stop a, play",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [],
+          "call": "deploy_fire"
+        },
+        {
+          "args": [],
+          "call": "locomotor_moving"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_increase"
+        }
+      ],
+      "draws": [
+        4240461297
+      ],
+      "facings": {
+        "body": 16384,
+        "turret": 16384
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "increase",
+        "site": "0x0073708A",
+        "ticks": 1
+      },
+      "input": {
+        "code": 2,
+        "expect": "increase",
+        "locomotor_moving": true,
+        "name": "arm2.turretless_moving",
+        "type": {
+          "turret": 0
+        }
+      },
+      "latch": 1,
+      "plays": [
+        {
+          "coord": [
+            5248,
+            4736,
+            104
+          ],
+          "sound": 5
+        }
+      ],
+      "stage": 2,
+      "turret_anim": 8,
+      "value": 401,
+      "writes": "0x140 0x144 0x148 0x4AC 0x4B8 0x4C8 0x4D4"
+    },
+    {
+      "arm": "2 facing",
+      "audio": "stop b, stop a, stop a, play",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [],
+          "call": "deploy_fire"
+        },
+        {
+          "args": [],
+          "call": "locomotor_moving"
+        },
+        {
+          "args": [
+            "target"
+          ],
+          "call": "direction"
+        },
+        {
+          "args": [
+            1
+          ],
+          "call": "gattling_increase"
+        }
+      ],
+      "draws": [
+        4240461297
+      ],
+      "facings": {
+        "body": 24576,
+        "turret": 24576
+      },
+      "firing_flag": 1,
+      "gattling": {
+        "call": "increase",
+        "site": "0x0073708A",
+        "ticks": 1
+      },
+      "input": {
+        "code": 2,
+        "direction": 24576,
+        "expect": "increase",
+        "name": "arm2.turretless_still_turns_body",
+        "type": {
+          "turret": 0
+        }
+      },
+      "latch": 1,
+      "plays": [
+        {
+          "coord": [
+            5248,
+            4736,
+            104
+          ],
+          "sound": 5
+        }
+      ],
+      "stage": 2,
+      "turret_anim": 8,
+      "value": 401,
+      "writes": "0x140 0x144 0x148 0x388 0x3A0 0x4AC 0x4B8 0x4C8 0x4D4"
+    },
+    {
+      "arm": "2 facing",
+      "audio": "",
+      "calls": [
+        {
+          "args": [
+            "target"
+          ],
+          "call": "weapon_index"
+        },
+        {
+          "args": [
+            "target",
+            0,
+            1
+          ],
+          "call": "fire_error"
+        },
+        {
+          "args": [],
+          "call": "deploy_fire"
+        },
+        {
+          "args": [
+            "target"
+          ],
+          "call": "direction"
+        }
+      ],
+      "draws": [],
+      "facings": {
+        "body": 16384,
+        "turret": 24576
+      },
+      "firing_flag": 1,
+      "gattling": null,
+      "input": {
+        "code": 2,
+        "direction": 24576,
+        "expect": "none",
+        "name": "arm2.non_gattling_turret_turns",
+        "type": {
+          "is_gattling": 0
+        }
+      },
+      "latch": 1,
+      "plays": [],
+      "stage": 1,
+      "turret_anim": 7,
+      "value": 400,
+      "writes": "0x3A0"
+    }
+  ],
+  "type_tables": {
+    "elite_stage": [
+      100,
+      200,
+      300,
+      0,
+      0,
+      0
+    ],
+    "rate_down": 50,
+    "rate_up": 1,
+    "stage": [
+      200,
+      400,
+      600,
+      0,
+      0,
+      0
+    ]
+  }
+}

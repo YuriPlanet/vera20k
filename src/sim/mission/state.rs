@@ -182,6 +182,13 @@ impl MissionCom {
         self.ai_counter = self.ai_counter.wrapping_add(1);
     }
 
+    /// `+0xC4 = 0` outside an assignment: Unit and Infantry PerCellProcess
+    /// zero it as the object enters a transport or building (`0x0073A6FC`,
+    /// `0x0073A29E`, `0x0051A40E`, `0x0051A2B0`).
+    pub(crate) fn clear_ai_counter(&mut self) {
+        self.ai_counter = 0;
+    }
+
     pub(crate) fn write_dispatch_epilogue(&mut self, start_frame: i32, delay: i32) {
         self.dispatch_timer = MissionDispatchTimer::from_raw(start_frame, delay);
     }

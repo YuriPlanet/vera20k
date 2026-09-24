@@ -1,0 +1,2733 @@
+{
+  "defaults": {
+    "class": "unit",
+    "current_weapon": 0,
+    "deployed": 0,
+    "elite_slot0": {
+      "present": true
+    },
+    "elite_slot1": {
+      "aa": 1,
+      "never_use": 0,
+      "present": true
+    },
+    "occupants": 0,
+    "open_topped": 0,
+    "slot0": {
+      "present": true
+    },
+    "slot1": {
+      "aa": 1,
+      "never_use": 0,
+      "present": true
+    },
+    "stage": 0,
+    "target": {
+      "high_flying": true,
+      "kind": "aircraft"
+    },
+    "type": {
+      "can_be_occupied": 0,
+      "can_occupy_fire": 0,
+      "deploy_fire": 0,
+      "deploy_fire_weapon": 7,
+      "is_gattling": 1,
+      "open_transport_weapon": -1,
+      "turret_count": 1
+    },
+    "veterancy": 0.0
+  },
+  "rows": [
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "unit.stage_0.aa_0.high_0.elite_0.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "unit.stage_0.aa_0.high_0.elite_0.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "unit.stage_0.aa_0.high_0.elite_1.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "unit.stage_0.aa_0.high_0.elite_1.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "unit.stage_0.aa_0.high_1.elite_0.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "unit.stage_0.aa_0.high_1.elite_0.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "unit.stage_0.aa_0.high_1.elite_1.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "unit.stage_0.aa_0.high_1.elite_1.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "unit.stage_0.aa_1.high_0.elite_0.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "unit.stage_0.aa_1.high_0.elite_0.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "unit.stage_0.aa_1.high_0.elite_1.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "unit.stage_0.aa_1.high_0.elite_1.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 1,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "unit.stage_0.aa_1.high_1.elite_0.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "unit.stage_0.aa_1.high_1.elite_0.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 1,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "unit.stage_0.aa_1.high_1.elite_1.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "unit.stage_0.aa_1.high_1.elite_1.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 2,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "unit.stage_1.aa_0.high_0.elite_0.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "unit.stage_1.aa_0.high_0.elite_0.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 2,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "unit.stage_1.aa_0.high_0.elite_1.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "unit.stage_1.aa_0.high_0.elite_1.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 2,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "unit.stage_1.aa_0.high_1.elite_0.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "unit.stage_1.aa_0.high_1.elite_0.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 2,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "unit.stage_1.aa_0.high_1.elite_1.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "unit.stage_1.aa_0.high_1.elite_1.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 2,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "unit.stage_1.aa_1.high_0.elite_0.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "unit.stage_1.aa_1.high_0.elite_0.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 2,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "unit.stage_1.aa_1.high_0.elite_1.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "unit.stage_1.aa_1.high_0.elite_1.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 3,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "unit.stage_1.aa_1.high_1.elite_0.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "unit.stage_1.aa_1.high_1.elite_0.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 3,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "unit.stage_1.aa_1.high_1.elite_1.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "unit.stage_1.aa_1.high_1.elite_1.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 4,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "unit.stage_2.aa_0.high_0.elite_0.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "unit.stage_2.aa_0.high_0.elite_0.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 4,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "unit.stage_2.aa_0.high_0.elite_1.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "unit.stage_2.aa_0.high_0.elite_1.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 4,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "unit.stage_2.aa_0.high_1.elite_0.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "unit.stage_2.aa_0.high_1.elite_0.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 4,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "unit.stage_2.aa_0.high_1.elite_1.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "unit.stage_2.aa_0.high_1.elite_1.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 4,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "unit.stage_2.aa_1.high_0.elite_0.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "unit.stage_2.aa_1.high_0.elite_0.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 4,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "unit.stage_2.aa_1.high_0.elite_1.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "unit.stage_2.aa_1.high_0.elite_1.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 5,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "unit.stage_2.aa_1.high_1.elite_0.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "unit.stage_2.aa_1.high_1.elite_0.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 5,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "unit.stage_2.aa_1.high_1.elite_1.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "unit.stage_2.aa_1.high_1.elite_1.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "building.stage_0.aa_0.high_0.elite_0.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "building.stage_0.aa_0.high_0.elite_0.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "building.stage_0.aa_0.high_0.elite_1.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "building.stage_0.aa_0.high_0.elite_1.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "building.stage_0.aa_0.high_1.elite_0.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "building.stage_0.aa_0.high_1.elite_0.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "building.stage_0.aa_0.high_1.elite_1.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "building.stage_0.aa_0.high_1.elite_1.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "building.stage_0.aa_1.high_0.elite_0.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "building.stage_0.aa_1.high_0.elite_0.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "building.stage_0.aa_1.high_0.elite_1.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "building.stage_0.aa_1.high_0.elite_1.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 1,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "building.stage_0.aa_1.high_1.elite_0.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "building.stage_0.aa_1.high_1.elite_0.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 1,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "building.stage_0.aa_1.high_1.elite_1.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "building.stage_0.aa_1.high_1.elite_1.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 0,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 2,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "building.stage_1.aa_0.high_0.elite_0.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "building.stage_1.aa_0.high_0.elite_0.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 2,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "building.stage_1.aa_0.high_0.elite_1.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "building.stage_1.aa_0.high_0.elite_1.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 2,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "building.stage_1.aa_0.high_1.elite_0.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "building.stage_1.aa_0.high_1.elite_0.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 2,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "building.stage_1.aa_0.high_1.elite_1.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "building.stage_1.aa_0.high_1.elite_1.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 2,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "building.stage_1.aa_1.high_0.elite_0.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "building.stage_1.aa_1.high_0.elite_0.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 2,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "building.stage_1.aa_1.high_0.elite_1.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "building.stage_1.aa_1.high_0.elite_1.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 3,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "building.stage_1.aa_1.high_1.elite_0.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "building.stage_1.aa_1.high_1.elite_0.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 3,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "building.stage_1.aa_1.high_1.elite_1.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "building.stage_1.aa_1.high_1.elite_1.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 1,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 4,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "building.stage_2.aa_0.high_0.elite_0.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "building.stage_2.aa_0.high_0.elite_0.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 4,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "building.stage_2.aa_0.high_0.elite_1.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "building.stage_2.aa_0.high_0.elite_1.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 4,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "building.stage_2.aa_0.high_1.elite_0.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "building.stage_2.aa_0.high_1.elite_0.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 4,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "name": "building.stage_2.aa_0.high_1.elite_1.never_0",
+        "slot1": {
+          "aa": 0,
+          "never_use": 0
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "name": "building.stage_2.aa_0.high_1.elite_1.never_1",
+        "slot1": {
+          "aa": 0,
+          "never_use": 1
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 4,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "building.stage_2.aa_1.high_0.elite_0.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "building.stage_2.aa_1.high_0.elite_0.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 4,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "building.stage_2.aa_1.high_0.elite_1.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "building.stage_2.aa_1.high_0.elite_1.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": false
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 5,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "building.stage_2.aa_1.high_1.elite_0.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "building.stage_2.aa_1.high_1.elite_0.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 0.0
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 5,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "name": "building.stage_2.aa_1.high_1.elite_1.never_0",
+        "slot1": {
+          "aa": 1,
+          "never_use": 0
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "elite_slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "name": "building.stage_2.aa_1.high_1.elite_1.never_1",
+        "slot1": {
+          "aa": 1,
+          "never_use": 1
+        },
+        "stage": 2,
+        "target": {
+          "high_flying": true
+        },
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "name": "unit.stage_0.null_target",
+        "stage": 0,
+        "target": {
+          "kind": "none"
+        }
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "name": "unit.stage_1.null_target",
+        "stage": 1,
+        "target": {
+          "kind": "none"
+        }
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "unit",
+        "name": "unit.stage_2.null_target",
+        "stage": 2,
+        "target": {
+          "kind": "none"
+        }
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "name": "building.stage_0.null_target",
+        "stage": 0,
+        "target": {
+          "kind": "none"
+        }
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "name": "building.stage_1.null_target",
+        "stage": 1,
+        "target": {
+          "kind": "none"
+        }
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "name": "building.stage_2.null_target",
+        "stage": 2,
+        "target": {
+          "kind": "none"
+        }
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 2,
+      "input": {
+        "elite_slot1": {
+          "aa": 0
+        },
+        "name": "elite.reads_elite_slot1_aa_off",
+        "slot1": {
+          "aa": 1
+        },
+        "stage": 1,
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 3,
+      "input": {
+        "elite_slot1": {
+          "aa": 1
+        },
+        "name": "elite.reads_elite_slot1_aa_on",
+        "slot1": {
+          "aa": 0
+        },
+        "stage": 1,
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "elite_slot1": {
+          "never_use": 1
+        },
+        "name": "elite.reads_elite_slot1_never_use",
+        "slot1": {
+          "never_use": 0
+        },
+        "stage": 1,
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 3,
+      "input": {
+        "elite_slot1": {
+          "never_use": 0
+        },
+        "name": "elite.base_never_use_ignored",
+        "slot1": {
+          "never_use": 1
+        },
+        "stage": 1,
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 3,
+      "input": {
+        "elite_slot1": {
+          "present": false
+        },
+        "name": "elite.missing_elite_slot1_falls_back",
+        "slot1": {
+          "aa": 1
+        },
+        "stage": 1,
+        "veterancy": 2.0
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 2,
+      "input": {
+        "elite_slot1": {
+          "aa": 1
+        },
+        "name": "veteran_is_not_elite",
+        "slot1": {
+          "aa": 0
+        },
+        "stage": 1,
+        "veterancy": 1.0
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 3,
+      "input": {
+        "name": "target.unit.high_flying",
+        "stage": 1,
+        "target": {
+          "high_flying": true,
+          "kind": "unit"
+        }
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 3,
+      "input": {
+        "name": "target.building.high_flying",
+        "stage": 1,
+        "target": {
+          "high_flying": true,
+          "kind": "building"
+        }
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 2,
+      "input": {
+        "name": "target.terrain.high_flying",
+        "stage": 1,
+        "target": {
+          "high_flying": true,
+          "kind": "terrain"
+        }
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [],
+      "index": 2,
+      "input": {
+        "name": "target.cell.high_flying",
+        "stage": 1,
+        "target": {
+          "high_flying": true,
+          "kind": "cell"
+        }
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 7,
+      "input": {
+        "name": "stage_unclamped.3.air",
+        "stage": 3
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 6,
+      "input": {
+        "name": "stage_unclamped.3.ground",
+        "stage": 3,
+        "target": {
+          "high_flying": false
+        }
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 11,
+      "input": {
+        "name": "stage_unclamped.5.air",
+        "stage": 5
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 10,
+      "input": {
+        "name": "stage_unclamped.5.ground",
+        "stage": 5,
+        "target": {
+          "high_flying": false
+        }
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": -1,
+      "input": {
+        "name": "stage_unclamped.-1.air",
+        "stage": -1
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [
+        "high_flying"
+      ],
+      "index": -2,
+      "input": {
+        "name": "stage_unclamped.-1.ground",
+        "stage": -1,
+        "target": {
+          "high_flying": false
+        }
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": -2147483647,
+      "input": {
+        "name": "stage_unclamped.1073741824.air",
+        "stage": 1073741824
+      }
+    },
+    {
+      "arm": "H even",
+      "calls": [
+        "high_flying"
+      ],
+      "index": -2147483648,
+      "input": {
+        "name": "stage_unclamped.1073741824.ground",
+        "stage": 1073741824,
+        "target": {
+          "high_flying": false
+        }
+      }
+    },
+    {
+      "arm": "A",
+      "calls": [],
+      "index": 3,
+      "input": {
+        "current_weapon": 3,
+        "name": "arm_a.turret_count_not_gattling",
+        "type": {
+          "is_gattling": 0,
+          "turret_count": 1
+        }
+      }
+    },
+    {
+      "arm": "A",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "current_weapon": -1,
+        "name": "arm_a.turret_count_not_gattling_current_minus_1",
+        "type": {
+          "is_gattling": 0,
+          "turret_count": 1
+        }
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 5,
+      "input": {
+        "name": "arm_a.gattling_turret_count_0",
+        "stage": 2,
+        "type": {
+          "turret_count": 0
+        }
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 5,
+      "input": {
+        "current_weapon": 5,
+        "name": "arm_a.gattling_turret_count_2",
+        "stage": 2,
+        "type": {
+          "turret_count": 2
+        }
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "class": "building",
+        "name": "arm_b.building_occupants_firing",
+        "occupants": 1,
+        "stage": 2,
+        "type": {
+          "can_be_occupied": 1,
+          "can_occupy_fire": 1
+        }
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 5,
+      "input": {
+        "class": "building",
+        "name": "arm_b.building_occupiable_empty",
+        "occupants": 0,
+        "stage": 2,
+        "type": {
+          "can_be_occupied": 1,
+          "can_occupy_fire": 1
+        }
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "elite_slot1": {
+          "present": false
+        },
+        "name": "arm_c.slot1_missing",
+        "slot1": {
+          "present": false
+        },
+        "stage": 2
+      }
+    },
+    {
+      "arm": "0",
+      "calls": [],
+      "index": 0,
+      "input": {
+        "elite_slot0": {
+          "present": false
+        },
+        "name": "arm_d.slot0_missing",
+        "slot0": {
+          "present": false
+        },
+        "stage": 2
+      }
+    },
+    {
+      "arm": "G",
+      "calls": [],
+      "index": 1,
+      "input": {
+        "name": "arm_g.open_topped_transport_weapon",
+        "open_topped": 1,
+        "stage": 2,
+        "type": {
+          "open_transport_weapon": 1
+        }
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 5,
+      "input": {
+        "name": "arm_g.open_topped_no_transport_weapon",
+        "open_topped": 1,
+        "stage": 2
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 5,
+      "input": {
+        "name": "arm_g.transport_weapon_not_open_topped",
+        "stage": 2,
+        "type": {
+          "open_transport_weapon": 1
+        }
+      }
+    },
+    {
+      "arm": "deploy fire",
+      "calls": [],
+      "index": 7,
+      "input": {
+        "deployed": 1,
+        "name": "unit_override.deployed_deploy_fire",
+        "stage": 2,
+        "type": {
+          "deploy_fire": 1
+        }
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 5,
+      "input": {
+        "deployed": 1,
+        "name": "unit_override.deployed_no_deploy_fire",
+        "stage": 2
+      }
+    },
+    {
+      "arm": "H odd",
+      "calls": [
+        "high_flying"
+      ],
+      "index": 5,
+      "input": {
+        "name": "unit_override.deploy_fire_not_deployed",
+        "stage": 2,
+        "type": {
+          "deploy_fire": 1
+        }
+      }
+    }
+  ]
+}

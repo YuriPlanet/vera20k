@@ -688,6 +688,20 @@ pub struct GameEntity {
     /// hash does fold.
     #[serde(default = "default_last_fire_frame")]
     pub last_fire_frame: i64,
+    /// Gattling stage, value and report latch (`TechnoClass+0x140`,
+    /// `+0x144`, `+0x4B8`), owned by `combat::gattling`.
+    #[serde(default)]
+    pub gattling: crate::sim::combat::gattling::GattlingState,
+    /// `TechnoClass+0x148`, the voxel turret's animation counter. The
+    /// constructor zeroes it (`0x006F2BE2`); the unit firing update
+    /// (`0x007370D5`, `0x007370F2`, `0x0073713A`) and the building's attack
+    /// and update advance it. Only the draw reads it
+    /// (`UnitClass::DrawVoxelBody @ 0x0073B500`: while the body's HVA frame is
+    /// 0 the turret's frame is this modulo its frame count).
+    ///
+    /// Not folded into `world_hash`: its one reader is presentation.
+    #[serde(default)]
+    pub turret_anim_frame: i32,
     /// Techno+3B8 survives target replacement and mission changes.
     #[serde(default)]
     pub weapon_burst: crate::sim::combat::burst::WeaponBurst,
@@ -1412,6 +1426,8 @@ impl GameEntity {
             barrel_facing: None,
             turret_rotation_latch: false,
             last_fire_frame: NATIVE_LAST_FIRE_FRAME_INIT,
+            gattling: Default::default(),
+            turret_anim_frame: 0,
             weapon_burst: Default::default(),
             building_up: None,
             building_down: None,

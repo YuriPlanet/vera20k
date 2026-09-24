@@ -74,6 +74,25 @@ pub(super) fn dispatch_sim_sound_events(
                 stop_sound_id: stop_sound_id.map(|id| sim.interner.resolve(id).to_string()),
                 source: Some(anim_world_sound_source(world)),
             },
+            // The techno's `+0x4A4` handle: an owner loop, keyed apart from
+            // every anim and object id (`combat::gattling`).
+            SimSoundEvent::GattlingLoop {
+                owner,
+                sound_id,
+                world,
+            } => GameSoundEvent::AnimationStarted {
+                anim_id: owner,
+                sound_id: sim.interner.resolve(sound_id).to_string(),
+                source: Some(anim_world_sound_source(world)),
+            },
+            SimSoundEvent::GattlingLoopStop { owner } => GameSoundEvent::AnimationStopped {
+                anim_id: owner,
+                stop_sound_id: None,
+                source: None,
+            },
+            SimSoundEvent::GattlingLoopRelease { owner } => {
+                GameSoundEvent::AnimationReleased { anim_id: owner }
+            }
             SimSoundEvent::AircraftPhase { sound_id, world } => GameSoundEvent::AircraftPhase {
                 sound_id: sim.interner.resolve(sound_id).to_string(),
                 source: Some(anim_world_sound_source(world)),

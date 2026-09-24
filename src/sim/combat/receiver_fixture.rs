@@ -579,7 +579,7 @@ pub(crate) fn resolve_attacker_fire(
                 _tick_ms,
                 has_active_wave,
                 out,
-            )
+            );
         },
     )
 }

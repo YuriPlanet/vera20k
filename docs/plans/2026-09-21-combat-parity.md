@@ -45,14 +45,20 @@ Chrono Legionnaire's erase (TemporalClass) as #474 (`80f4494a`), the house defea
 counts, the gate, Blowup_All) as #476 (`3783b0ee`), the Crazy Ivan bomb (BombClass, its clock,
 sounds, cursors and clicks) as #488 (`7d4b970c`), the launch scatter, shrapnel and cluster trig
 through the native tables as #489 (`a97226a9`), GetFireError with its scan probe (C20) and the
-pursuit range stop as #490 (`a854028c`). The aircraft attack loop (states 4..10, the Carrier
-wing's re-issue, SetTarget's aircraft arm) is on `feature/combat-aircraft-attack`, and the Fly
-target speed (Process's slowdown, which left two of the Carrier wing's three Hornets standing at
-their hold) on `feature/carrier-hornet-wing`. Research lanes finished 2026-09-24 (scratchpad, not tracked):
-the aircraft attack loop, Prism forwarding, Gattling spin-up and native GetFireError. Native
-oracles built 2026-09-24: `aircraft_states` (in `tools/`) and four Gattling stems (scratchpad,
-not yet moved: stage, Unit fire, building attack, selection). Next, by player visibility:
-Gattling, the source Scatter the aircraft shots and the infantry Incoming tail call, the
+pursuit range stop as #490 (`a854028c`), the aircraft attack loop (states 4..10, the Carrier
+wing's re-issue, SetTarget's aircraft arm, idle mode's airfield) as #491 (`d900a2bb`). Gattling
+stages for units are on `feature/combat-gattling` (section below), and the Fly target speed
+(Process's slowdown, which left two of the Carrier wing's three Hornets standing at their hold)
+on `feature/carrier-hornet-wing`. The research lanes, designs and critic reports of this goal are
+archived outside the repo (not tracked):
+`Documents/vera20k-handoff/2026-09-24-combat-lanes` (every lane, among them the aircraft attack
+loop, Prism forwarding and native GetFireError) and `.../2026-09-24-combat-gattling-building`
+(the Gattling and building attack lanes with their oracles). Native oracles: `aircraft_states`
+and the unit-side Gattling stems (stage, Unit fire, selection) are in `tools/spatial_oracle/`;
+the building attack stem and the six building-mission oracles (Mission_Guard, Mission_Attack,
+the dispatch, SetTarget, the BuildingClass::AI blocks, the retaliation gate) pass `--check` from
+the second folder and move with the building mechanism. Next, by player visibility: the building attack mission (with the Gattling
+Cannon's hooks), the source Scatter the aircraft shots and the infantry Incoming tail call, the
 remaining GetFireError consumers (weapon selection without legality, C19's auto-target drop,
 retaliation, base-defence and cursor peeks), Prism forwarding, the Slave Miner's
 slave release at its death (`6B0AE0`), the other special warhead bodies (Magnetron and the rest),
@@ -493,7 +499,7 @@ Temporal, PR #474 (merge `80f4494a`; snapshot 197, hash feature 197), owner `tem
   survivors), release on a move order, snapshot and hash round trip. Everything outside the native
   corpora is Rust regression only.
 - Residuals (module doc): the teleport writer's sparkle, frozen AI and phase gates; `+27C`;
-  gattling spin-down; Mark and building anim pause (presentation); house `+1FC`; the online-latch
+  Mark and building anim pause (presentation); house `+1FC`; the online-latch
   readers not wired (FindFactory `5F7900`'s online argument, so production is not suspended; the
   upgrade-prerequisite scan; AI_ManageProduction; CheckDockArrayOccupancy; PowerCheck_Upgrade;
   vt+0x4E0 `4456D0`); the building erase's occupant kill order; slave release; ReceiveGunner's
@@ -875,6 +881,39 @@ Fly target speed (`feature/carrier-hornet-wing`, no schema change), owner `movem
   destination, as native: the test fixtures' non-Landable, armed Hornet circles its hold. A
   cruising aircraft that neither strafes nor fights (PDPLANE, CARGOPLANE) still slows.
 
+Gattling stages, units (`feature/combat-gattling`, snapshot 200), owner `sim/combat/gattling.rs`
+(`GattlingState`: `+140` stage, `+144` value, `+4B8` report latch; the tables in
+`rules/gattling_type.rs`, `TechnoType+CD8..+D10`):
+- Before: the stage was pinned 0, so a Gattling Tank fired its stage-0 pair forever (against heavy
+  armour a quarter of stage 2's damage, against buildings a seventh to a tenth, AA at about a third
+  of its stage-2 rate), played its loop's first sample as a per-shot report, and its turret never
+  spun. `WeaponStages=`/`Stage%d=`/`EliteStage%d=`/`RateUp=`/`RateDown=` were unparsed.
+- Now: IncreaseGattlingStage `70DE70` and UpdateGattlingStage `70E000` (cap before the add, the
+  pre-add stage test, one stage a call, the zero snap, the latch-gated report with one `g_MainRng`
+  draw) and the accessors; the unit's firing update tail (`736DF0`: codes 0/2/3/4 charge, others
+  and no target decay, `+148` while the value is positive) for every unit that reaches it, in live
+  order; InitiateWarp's victim decay (`71B10B`); the transport and building entry reset
+  (`73A6FC`, `51A40E`, `+C4` too); Limbo's latch clear and loop release; the stage in
+  `attacker_facts` and arm H (`2s` wraps, `6F345C`); no per-shot report for a gattling type
+  (`6FF349`); the loop's start, hard stop and release on the techno's `+4A4` owner handle
+  (`SoundEvent::Release 406060` in the arbiter); the turret HVA frame from `+148` (`73B500`).
+- Native execution: `tools/spatial_oracle/gattling_stage.py` (68 histories, 3,586 calls, 77
+  draws, 2 faults), `gattling_unit_fire.py` (64 rows of the whole `736DF0`) and
+  `gattling_select.py` (134 rows of `6F3330`). `gattling_tests::original_stage_histories` replays
+  every call (value, stage, latch, draws, the sound picked, the stage paths);
+  `original_unit_fire_update_rows` runs 54 unit rows through the production tail (the RNG, the
+  loop event, `+148`); `combat_weapon::tests::original_weapon_selection_rows` every selection row.
+- Production regressions: `a_gattling_tank_spins_up_while_it_fights` (201/401, cap 600, G0/G2/G4,
+  the loop and hard stops, no per-shot report), `a_gattling_tank_winds_down_without_a_target`
+  (stage 1 on frame 5, 0 on frame 9, empty on 12, one release),
+  `a_gattling_tank_boards_with_its_spin_reset`, `gattling_state_round_trips_and_is_hashed`,
+  `retail_gattling_tables`.
+- Residuals: the Gattling Cannon does not spin (its calls sit in Building Mission_Attack `44ACF0`,
+  Mission_Guard's head `4496DA` and BuildingClass::Update's idle decay `43FEE9..43FF67`, handlers
+  VERA does not have; the building attack mission is next); the vt+0x4E4 return (`736D50`, dormant
+  for retail gattling types); `Report=` tokens that name no sound; a Stage block past RateDown
+  (WeaponStages above 8); the native fault on a NULL stage weapon (`70DF8A`); Unit `+68D`.
+
 ## Native evidence inventory
 
 Run `python -m tools.spatial_oracle.<stem> --check` (`flat_art`: `tools/projectile_oracle`).
@@ -1146,7 +1185,10 @@ Whole-combat gaps (plan list plus review coverage top 10):
   buildings, death specials, the sale crew, passenger escape from dying transports.
 - Homing launch/steering non-native (VERA-built BAM tables, a cosine sidewinder where native uses sine);
   the projectile SHP frame and MagBeam edges still use host trig.
-- Gattling stage pinned 0 (`combat_weapon.rs:1070`); Prism forwarding absent; Tesla overpower.
+- The Gattling Cannon's stages (the building attack mission first: Mission_Attack `44ACF0` and
+  Mission_Guard `4496B0` as dispatched handlers, the Guard->Attack flip, BuildingClass::Update's
+  idle decay; `gattling_building_attack.py` executes Mission_Attack's normal path); Prism
+  forwarding absent; Tesla overpower.
 - Legacy `tick_retaliation` beside `7087C0`; 2-D in_range twin (-512); retarget skips sequence reset.
 - FLH slope/building arms; vehicle click (+6E0, `692640`/`692666`, `5F4578`); the remaining
   GetFireError consumers (see its section).

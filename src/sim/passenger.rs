@@ -573,6 +573,15 @@ fn process_boarding_passenger(sim: &mut Simulation, rules: &RuleSet, pax_id: u64
         .is_some_and(|cargo| cargo.can_accept(pax_size));
 
     if can_board {
+        // PerCellProcess zeroes the mission tick count and the gattling spin
+        // first (`+0xC4 = 0`, `SetValue(0)`, `SetStage(0)`: Unit
+        // `0x0073A6FC..0x0073A70F` and `0x0073A29E..0x0073A2B1`, Infantry
+        // `0x0051A40E..0x0051A41C` and `0x0051A2B0..0x0051A2BE`).
+        if let Some(pax) = sim.substrate.entities.get_mut(pax_id) {
+            pax.mission.clear_ai_counter();
+            pax.gattling.set_value(0);
+            pax.gattling.set_stage(0);
+        }
         // PerCellProcess releases a captive before it enters (`0x0051A2DA`,
         // `0x0051A438`, `0x0073A2CD`, `0x0073A72B`); the transport radio gates
         // leave only absorbing buildings to reach this.

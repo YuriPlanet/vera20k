@@ -748,11 +748,12 @@ fn techno_what_weapon_should_i_use(
     // H @ 0x006F3422: gattling stage pair. Note the AA test reads
     // `GetWeapon(1)`'s projectile regardless of the current stage.
     if obj.is_gattling {
+        // `LEA` at `0x006F345C`/`0x006F346A`: no clamp, and `2s` wraps.
         let stage = attacker.gattling_stage;
         if secondary_aa && techno.is_some_and(TargetFacts::is_high_flying) {
-            return stage * 2 + 1;
+            return stage.wrapping_mul(2).wrapping_add(1);
         }
-        return stage * 2;
+        return stage.wrapping_mul(2);
     }
     // I @ 0x006F3477: Airstrike secondary — only against a C4-able building
     // that is not BOTH a resource gatherer and a resource destination.
@@ -1174,12 +1175,6 @@ fn current_weapon_number_from_override(weapon_override: Option<WeaponOverride>) 
 ///
 /// RESIDUAL (GSI-08.02, row 122) — inputs whose native state VERA does not
 /// yet represent are pinned at their constructor value:
-/// - `gattling_stage` = 0 (`TechnoClass+0x140`, stepped by
-///   `TechnoClass::UpdateGattlingStage @ 0x0070E000` — row 123). Trigger:
-///   every Gattling Cannon/Tank shot after spin-up; player effect: the
-///   stage-0 weapon pair (AGGattling/AAGattCann) is always used, so the
-///   later-stage damage/ROF never arrives; frequency: continuous in any Yuri
-///   match; downstream: none beyond row 123.
 /// - `drain_target_active` = false (`TechnoClass+0x1CC`, written by the
 ///   drain link @ `0x0070FD70`). Trigger: a Floating Disc already draining
 ///   one building being ordered onto a second Drainable one; effect: the
@@ -1191,8 +1186,7 @@ fn current_weapon_number_from_override(weapon_override: Option<WeaponOverride>) 
 ///   model. Trigger: a player deliberately parking three Tesla Troopers on an
 ///   `Overpowerable=true` building (stock: TESLA, CAEAST01/02, CAPARS01), or
 ///   one while the house is at full power ratio; effect: the coil never fires
-///   `OPCoilBolt`; frequency: only that micro, which is far rarer than the
-///   gattling residual above.
+///   `OPCoilBolt`; frequency: only that micro.
 /// - `aircraft_spawn_collision` = false (`AircraftClass+0x6CA`, writer
 ///   `SpawnRetreat__Push 0x0054E47D`). Trigger: Hornet/ASW pushed to
 ///   retreat; effect: the collision secondary is never chosen; frequency:
@@ -1222,7 +1216,7 @@ pub(crate) fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerF
         veterancy: entity.veterancy,
         current_weapon_number: current_weapon_number_from_override(entity.weapon_override),
         open_transport_weapon: open_transport_weapon_from_override(entity.weapon_override),
-        gattling_stage: 0,
+        gattling_stage: entity.gattling.stage(),
         deploy_fire_active,
         is_occupied_building,
         // `TechnoClass+0x1CC DrainTarget`, the live drain link (GSI-09.01).
@@ -1236,9 +1230,9 @@ pub(crate) fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerF
 }
 
 /// Attacker facts from a combat snapshot, for scan paths that hold no entity
-/// borrow. The snapshot carries no mission, so the AreaFire/Unload arm reads
-/// false here; every production caller prefers `attacker_facts` when the
-/// entity is resolvable.
+/// borrow. The snapshot carries no mission and no gattling stage, so the
+/// AreaFire/Unload arm reads false and the stage 0 here; every production
+/// caller prefers `attacker_facts` when the entity is resolvable.
 pub(crate) fn attacker_facts_from_snapshot(
     snap: &AttackerSnapshot,
     obj: &ObjectType,
@@ -2507,6 +2501,193 @@ IsLocomotor=yes
         gat.veterancy = 200;
         assert_eq!(selected(&rules, "YTNK", &gat, &ground), Some("AGGattlingE"));
         assert_eq!(selected(&rules, "YTNK", &gat, &air), Some("AAGattlingE"));
+    }
+
+    /// Every row of the original `What_Weapon_Should_I_Use`
+    /// (`tools/spatial_oracle/gattling_select.py`: `0x006F3330` through the
+    /// Unit `0x00746CD0` and Building vtables), through
+    /// `what_weapon_should_i_use`: the gattling stage pair over stage x slot-1
+    /// AA x high flier x elite x NeverUse, the arms ahead of it, the target
+    /// kinds and the unclamped stages (`2s` wraps).
+    #[test]
+    fn original_weapon_selection_rows() {
+        let payload: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/gattling_select.json"
+        ))
+        .unwrap();
+        let defaults = &payload["defaults"];
+        let rows = payload["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 134);
+        for row in rows {
+            let input = &row["input"];
+            let name = input["name"].as_str().unwrap();
+            let group = |key: &str, field: &str| -> serde_json::Value {
+                input
+                    .get(key)
+                    .and_then(|group| group.get(field))
+                    .unwrap_or(&defaults[key][field])
+                    .clone()
+            };
+            let scalar = |key: &str| input.get(key).unwrap_or(&defaults[key]).clone();
+            let flag = |value: serde_json::Value| {
+                value
+                    .as_bool()
+                    .unwrap_or_else(|| value.as_i64().unwrap() != 0)
+            };
+            let int = |value: serde_json::Value| value.as_i64().unwrap();
+            let building = scalar("class").as_str().unwrap() == "building";
+            let turret_count = int(group("type", "turret_count"));
+            // Slot 1's AA sits on its projectile, NeverUse on the weapon;
+            // `present: false` leaves the slot empty.
+            let weapon = |name: &str, key: &str| -> Option<String> {
+                flag(group(key, "present")).then(|| {
+                    format!(
+                        "[{name}]\nDamage=10\nWarhead=WH\nProjectile={}\nNeverUse={}\n",
+                        if key.ends_with('1') && flag(group(key, "aa")) {
+                            "AAP"
+                        } else {
+                            "AGP"
+                        },
+                        if key.ends_with('1') && flag(group(key, "never_use")) {
+                            "yes"
+                        } else {
+                            "no"
+                        },
+                    )
+                })
+            };
+            let slots = [
+                ("W0", "slot0"),
+                ("W1", "slot1"),
+                ("E0", "elite_slot0"),
+                ("E1", "elite_slot1"),
+            ]
+            .map(|(name, key)| weapon(name, key));
+            let mut section = format!(
+                "[GAT]\nStrength=100\nArmor=none\nIsGattling={}\nTurretCount={turret_count}\n\
+                 WeaponCount=2\nDeployFire={}\nDeployFireWeapon={}\nOpenTransportWeapon={}\n\
+                 CanBeOccupied={}\nCanOccupyFire={}\n",
+                if flag(group("type", "is_gattling")) {
+                    "yes"
+                } else {
+                    "no"
+                },
+                if flag(group("type", "deploy_fire")) {
+                    "yes"
+                } else {
+                    "no"
+                },
+                int(group("type", "deploy_fire_weapon")),
+                int(group("type", "open_transport_weapon")),
+                if flag(group("type", "can_be_occupied")) {
+                    "yes"
+                } else {
+                    "no"
+                },
+                if flag(group("type", "can_occupy_fire")) {
+                    "yes"
+                } else {
+                    "no"
+                },
+            );
+            let keys = if turret_count > 0 {
+                ["Weapon1", "Weapon2", "EliteWeapon1", "EliteWeapon2"]
+            } else {
+                ["Primary", "Secondary", "ElitePrimary", "EliteSecondary"]
+            };
+            for (key, (weapon, slot)) in keys
+                .iter()
+                .zip(["W0", "W1", "E0", "E1"].iter().zip(slots.iter()))
+            {
+                if slot.is_some() {
+                    section.push_str(&format!("{key}={weapon}\n"));
+                }
+            }
+            let text = format!(
+                "[{}]\n0=GAT\n1=TGT\n[AircraftTypes]\n0=AIR\n\
+                 [InfantryTypes]\n[{}]\n0=TBLD\n{section}\
+                 [TGT]\nStrength=100\nArmor=none\n[AIR]\nStrength=100\nArmor=none\n\
+                 [TBLD]\nStrength=100\nArmor=none\n\
+                 [AAP]\nAA=yes\nAG=yes\n[AGP]\nAA=no\nAG=yes\n\
+                 [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n{}",
+                if building {
+                    "BuildingTypes"
+                } else {
+                    "VehicleTypes"
+                },
+                if building {
+                    "VehicleTypes"
+                } else {
+                    "BuildingTypes"
+                },
+                slots.iter().flatten().cloned().collect::<String>(),
+            );
+            let rules = RuleSet::from_ini(&IniFile::from_str(&text)).unwrap();
+            let gat = rules.object("GAT").unwrap();
+            let mut attacker = facts(if building {
+                TechnoKind::Building
+            } else {
+                TechnoKind::Unit
+            });
+            let veterancy = scalar("veterancy").as_f64().unwrap();
+            attacker.veterancy = if veterancy >= 2.0 {
+                200
+            } else if veterancy >= 1.0 {
+                100
+            } else {
+                0
+            };
+            attacker.current_weapon_number = int(scalar("current_weapon")) as i32;
+            attacker.gattling_stage = int(scalar("stage")) as i32;
+            attacker.deploy_fire_active = !building && flag(scalar("deployed"));
+            attacker.is_occupied_building = building
+                && int(scalar("occupants")) > 0
+                && gat.can_be_occupied
+                && gat.can_occupy_fire;
+            let open_transport_weapon = int(group("type", "open_transport_weapon"));
+            attacker.open_transport_weapon = (flag(scalar("open_topped"))
+                && open_transport_weapon != -1)
+                .then_some(open_transport_weapon as i32);
+            let high_flying = group("target", "high_flying").as_bool().unwrap_or(false);
+            let (tgt, air, tbld) = (
+                rules.object("TGT").unwrap(),
+                rules.object("AIR").unwrap(),
+                rules.object("TBLD").unwrap(),
+            );
+            let target = match group("target", "kind").as_str().unwrap() {
+                "none" => None,
+                "cell" => Some(TargetFacts::Cell {
+                    land_type: 0,
+                    tile_in_water_set: false,
+                    bridge_flag: false,
+                }),
+                "terrain" => Some(TargetFacts::Terrain),
+                kind => {
+                    let (obj, kind) = match kind {
+                        "aircraft" => (air, TechnoKind::Aircraft),
+                        "unit" => (tgt, TechnoKind::Unit),
+                        "building" => (tbld, TechnoKind::Building),
+                        other => panic!("{name}: target kind {other}"),
+                    };
+                    let target = techno(obj, kind);
+                    Some(if high_flying {
+                        self::high_flying(target)
+                    } else {
+                        target
+                    })
+                }
+            };
+            assert_eq!(
+                i64::from(what_weapon_should_i_use(
+                    &rules,
+                    gat,
+                    &attacker,
+                    target.as_ref()
+                )),
+                row["index"].as_i64().unwrap(),
+                "{name}"
+            );
+        }
     }
 
     #[test]

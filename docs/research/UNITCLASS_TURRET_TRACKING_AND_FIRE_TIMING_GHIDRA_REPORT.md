@@ -354,7 +354,7 @@ The wrapper that calls `TechnoClass::Fire_At` from `UnitClass::AI` (§3m of [UNI
 ```c
 if (this->Target == NULL) {
     // GATTLING DECAY PATH (no target)
-    if (Type+0xCD5) TechnoClass::UpdateGattlingStage(0);   // stage decay
+    if (Type+0xCD5) TechnoClass::UpdateGattlingStage(1);   // stage decay (native pushes 1; corrected 2026-09-24)
     if (gattling_value > 0) this->field_0x148++;            // accumulate
     return;
 }
@@ -524,7 +524,7 @@ if (Type+0xCD5 != 0) {
 }
 ```
 
-`Type+0xCD5` is the **IsGattling** flag on TechnoTypeClass (existing [GATTLING_WEAPON_STAGE_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GATTLING_WEAPON_STAGE_SYSTEM_GHIDRA_REPORT.md) confirms). Gattling weapons spin up while firing and decay while idle. The accumulator `field_0x148` is the current spin level.
+`Type+0xCD5` is the **IsGattling** flag on TechnoTypeClass (existing [GATTLING_WEAPON_STAGE_SYSTEM_GHIDRA_REPORT.md](https://github.com/YuriPlanet/vera20k/blob/108924bc237d14342b68b8bb78f2bba0400d2443/docs/research/GATTLING_WEAPON_STAGE_SYSTEM_GHIDRA_REPORT.md) confirms). Gattling weapons spin up while firing and decay while idle. `field_0x148` is the turret animation counter (the voxel turret's HVA frame), not the spin level; the spin is GattlingValue `+0x144` (corrected 2026-09-24).
 
 ---
 

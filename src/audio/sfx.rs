@@ -1157,32 +1157,81 @@ impl SfxPlayer {
         true
     }
 
-    /// Re-drive one owner's live loop with its current positional gain, the
-    /// way `AnimClass::UpdateLoopingSound` runs on every owner update.
+    /// Re-drive one owner's loop with its current positional gain, the way
+    /// `AnimClass::UpdateLoopingSound @ 0x00750D40` runs on every owner
+    /// update. A live event takes the new volume and pan; at zero volume it
+    /// stops and the handle keeps its sound (`SetLoopHandle(handle, 0, voc)`,
+    /// `0x00750E0C..0x00750E11`). With no live event, a loopable sound the
+    /// handle kept is allocated again once the owner is audible
+    /// (`0x00750D8C..0x00750DB3`: IsLoopable, the pool, MarkStarted), which is
+    /// how a loop resumes after the camera comes back or a `Limit=` kill.
     ///
-    /// Returns false when the owner holds no live event.
-    pub fn update_looping_sound(&mut self, anim_id: u64, gain: Option<SpatialGain>) -> bool {
-        let Some(event) = self.arbiter.validate_loop_handle(anim_id) else {
-            return false;
-        };
-        match gain {
-            Some(gain) => {
-                let now = self.now_ms;
-                self.arbiter
-                    .set_volume(event, gain.volume_linear().min(VOLUME_SCALE), now);
-                self.arbiter.set_pan(event, gain.pan, now);
-                if let Some(queue) = self.loops.get_mut(&event) {
-                    queue.pan = gain.pan;
-                }
-                true
-            }
-            None => {
+    /// Returns whether the owner holds a live event afterwards.
+    pub fn update_looping_sound(
+        &mut self,
+        anim_id: u64,
+        gain: Option<SpatialGain>,
+        registry: &SoundRegistry,
+        assets: &AssetManager,
+        audio_indices: &[crate::assets::audio_bag::AudioIndex],
+    ) -> bool {
+        if let Some(event) = self.arbiter.validate_loop_handle(anim_id) {
+            let Some(gain) = gain else {
                 // `if (0.0 < fVar3) {...} else { SoundEvent__Stop; }` then
                 // `SetLoopHandle(handle, 0, voc)`.
-                self.stop_animation_sound(anim_id);
-                false
+                let key = self.arbiter.loop_handle_key(anim_id).map(str::to_owned);
+                self.arbiter.stop(event);
+                self.release_output(event);
+                match key {
+                    Some(key) => {
+                        let loopable = entry_facts(&key, registry).is_loopable();
+                        self.arbiter.keep_loop_sound(anim_id, &key, loopable);
+                    }
+                    None => self.arbiter.clear_loop_handle(anim_id),
+                }
+                return false;
+            };
+            let now = self.now_ms;
+            self.arbiter
+                .set_volume(event, gain.volume_linear().min(VOLUME_SCALE), now);
+            self.arbiter.set_pan(event, gain.pan, now);
+            if let Some(queue) = self.loops.get_mut(&event) {
+                queue.pan = gain.pan;
             }
+            return true;
         }
+        let (Some(gain), Some(key)) =
+            (gain, self.arbiter.kept_loop_key(anim_id).map(str::to_owned))
+        else {
+            return false;
+        };
+        self.play_animation_sound_spatial(anim_id, &key, gain, registry, assets, audio_indices)
+    }
+
+    /// `VocClass::PlayAt @ 0x007509E0` with a handle while the owner is out of
+    /// earshot: nothing plays, the handle's old event stops, and the handle
+    /// names the new sound anyway (`SetLoopHandle` runs whenever a handle is
+    /// passed), so the owner's update starts the loop once it is audible.
+    pub fn bind_inaudible_animation_sound(
+        &mut self,
+        anim_id: u64,
+        sound_id: &str,
+        registry: &SoundRegistry,
+    ) {
+        self.stop_animation_sound(anim_id);
+        let loopable = entry_facts(sound_id, registry).is_loopable();
+        self.arbiter
+            .keep_loop_sound(anim_id, &registry_key(sound_id), loopable);
+    }
+
+    /// `SoundEvent::Release @ 0x00406060` on one owner's handle: a looping
+    /// cue stops repeating and plays out, and the handle is cleared.
+    /// Idempotent.
+    pub fn release_animation_sound(&mut self, anim_id: u64) {
+        if let Some(event) = self.arbiter.validate_loop_handle(anim_id) {
+            self.arbiter.release(event);
+        }
+        self.arbiter.clear_loop_handle(anim_id);
     }
 
     /// Release only the handle owned by `anim_id`. Idempotent.
@@ -1846,9 +1895,10 @@ impl SfxPlayer {
         self.voice_volume
     }
 
-    /// Owners that currently hold a live loop handle, so the app can re-drive
-    /// each one with its object's current coordinate the way native's owner
-    /// calls `AnimClass::UpdateLoopingSound @ 0x00750D40` on every update.
+    /// Owners whose handle holds a live loop or keeps a loopable sound, so
+    /// the app can re-drive each one with its object's current coordinate the
+    /// way native's owner calls `AnimClass::UpdateLoopingSound @ 0x00750D40`
+    /// on every update.
     pub fn looping_owners(&mut self) -> Vec<u64> {
         self.arbiter.loop_handle_owners()
     }
@@ -1856,6 +1906,11 @@ impl SfxPlayer {
     /// The `[SoundList]` identity one owner's live loop handle names.
     pub fn loop_handle_sound_id(&self, owner: u64) -> Option<String> {
         self.arbiter.loop_handle_key(owner).map(str::to_owned)
+    }
+
+    /// The identity one owner's handle names, live or kept.
+    pub fn handle_sound_id(&self, owner: u64) -> Option<String> {
+        self.arbiter.handle_sound_key(owner).map(str::to_owned)
     }
 
     /// Number of live sound events — native `g_LiveSoundEventCount @

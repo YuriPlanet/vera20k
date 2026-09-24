@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "TechnoClass IncreaseGattlingStage 0x0070DE70 and UpdateGattlingStage 0x0070E000 with GetStage/SetStage/GetValue/SetValue/DecreaseValue, as retained histories on one object: value, stage, report latch +0x4B8, dead latch +0x4D4, g_MainRng draws, PlayAt arguments, audio-helper order and object writes per call. Retail YTNK/YAGGUN charge and decay to the cap and back, veterancy flips, WeaponStages 0/1/2/3/6, RateUp/RateDown 0/1/50/-1/0x7FFFFFFF, ticks 0/1/2/37, out-of-range stages, Report count 0/1/3/-1, latches. Not the callers, weapon selection or audio playback.",
+  "assumptions": [
+    "One emulator; per history the scratch region is zeroed and the object, type and weapons rebuilt; ops run in order on the same object; FPCW 0x0E7F, empty x87 stack and zeroed general registers per native call.",
+    "g_MainRng 0x00886B88 is seeded per history by RandomClass seed routine 0x0065C6D0 (ECX = 0x00886B88, the history's seed); Init_Random_Number_System builds the same state on the stack (0x0052FE3E, 0x0052FE8D) and copies 0xFD dwords into 0x00886B88 (0x0052FE51, 0x0052FEAB).",
+    "Image globals asserted: [0x0087E2A0] = 0 (audio helpers take their early exits), [0x007E37B4] = 2.0f; [0x008464AC] = 1 in the image and written 0 by the fixture so PlayAt 0x007509E0 returns at 0x007509EF; reaching 0x007509F2 fails.",
+    "Object: original Unit 0x007F5C70 or Building 0x007E3EBC vtable; type pointer +0x6C4 / +0x520; Location +0x9C = (0x1480, 0x1280, 0x68); veterancy float +0x150; audio controllers +0x4A4 and +0x4C0 zeroed. Building +0x702 = 0 and type +0x157B = 0, so Building GetWeapon 0x004526F0 resolves through 0x0070E140.",
+    "Writes allowed: stack; object +0x140, +0x144, +0x4B8, +0x4D4; controller +8 words +0x4AC/+0x4C8 only with 0 (the audio helpers' early-exit stores 0x00405E71, 0x004060E7); g_MainRng only inside a Next call. Anything else fails.",
+    "Report sound indices are fixture placeholders naming the weapon slot.",
+    "Faulting inputs are verified and listed under `faults`, not used in histories."
+  ],
+  "substitutions": [
+    "[0x008464AC] = 0 (fixture global; no code replaced). No stubs."
+  ],
+  "entry_points": {
+    "increase_gattling_stage": "0x0070DE70",
+    "update_gattling_stage": "0x0070E000",
+    "get_stage": "0x0070DDC0",
+    "set_stage": "0x0070DDD0",
+    "get_value": "0x0070DDF0",
+    "set_value": "0x0070DE00",
+    "decrease_value": "0x0070DE40",
+    "rng_seed": "0x0065C6D0",
+    "rng_next": "0x0065C780",
+    "is_elite": "0x00750010",
+    "play_at": "0x007509E0",
+    "audio_stop": "0x00405D40",
+    "audio_release": "0x00406060",
+    "unit_get_weapon": "0x0070E140",
+    "building_get_weapon": "0x004526F0"
+  },
+  "payload_sha256": "b499ad3d168a0d39a8da666c01971cc289ca303e51024231852443c815a6ca6a"
+}
