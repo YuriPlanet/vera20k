@@ -1,6 +1,7 @@
-//! Production-only Movies & Credits capture routes. Route actions go through
-//! the ordinary main-menu, `0x101` and `0x129` handlers after a presented
-//! frame; no shell state or renderer is cloned.
+//! Production-only main-menu family capture routes (Movies & Credits and the
+//! Exit confirmation). Route actions go through the ordinary main-menu,
+//! `0x101` and `0x129` handlers after a presented frame; no shell state or
+//! renderer is cloned.
 
 use super::*;
 use crate::app::App;
@@ -30,6 +31,14 @@ pub(super) enum MoviesTarget {
     SneakPeek {
         frame: usize,
     },
+    /// Exit Game through the production teardown slide, then state 6.
+    ExitConfirm,
+    /// A teardown slide held at `tick`: Exit Game on `0xE2` or Back on
+    /// `0x129`.
+    SlideOut {
+        kind: ShellSlideKind,
+        tick: u32,
+    },
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +49,8 @@ enum Phase {
     List,
     Credits,
     Movie,
+    Exit,
+    SlideOut,
     Settling(u32),
 }
 
@@ -85,6 +96,27 @@ impl MoviesCapture {
         match (self.phase, rendered) {
             (Phase::MainMenu, PresentedShell::MainMenu) => {
                 if steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))? {
+                    let exit_phase = match self.target {
+                        MoviesTarget::ExitConfirm => Some(Phase::Exit),
+                        MoviesTarget::SlideOut {
+                            kind: ShellSlideKind::MainMenu,
+                            ..
+                        } => Some(Phase::SlideOut),
+                        _ => None,
+                    };
+                    if let Some(next) = exit_phase {
+                        self.route
+                            .push(json!({"dialog": 0xe2, "frame": frame, "action": "ExitGame"}));
+                        App::leave_shell_dialog(
+                            state,
+                            ShellSlideKind::MainMenu,
+                            crate::app::frontend::shell_transition::ShellExitThen::MainMenu(
+                                crate::ui::main_menu_shell::MainMenuShellAction::ExitGame,
+                            ),
+                        );
+                        self.phase = next;
+                        return Ok(());
+                    }
                     self.route.push(
                         json!({"dialog": 0xe2, "frame": frame, "action": "MoviesAndCredits"}),
                     );
@@ -102,7 +134,12 @@ impl MoviesCapture {
                             self.phase = Phase::Settling(SETTLE_FRAMES);
                             return Ok(());
                         }
-                        MoviesTarget::List0x129 | MoviesTarget::List0x129Selected => {
+                        MoviesTarget::List0x129
+                        | MoviesTarget::List0x129Selected
+                        | MoviesTarget::SlideOut {
+                            kind: ShellSlideKind::MovieList,
+                            ..
+                        } => {
                             self.phase = Phase::List;
                             crate::ui::movies_credits_shell::MoviesCreditsAction::PlayMovies
                         }
@@ -124,6 +161,9 @@ impl MoviesCapture {
                         MoviesTarget::SneakPeek { .. } => {
                             self.phase = Phase::Movie;
                             crate::ui::movies_credits_shell::MoviesCreditsAction::SneakPeeks
+                        }
+                        MoviesTarget::ExitConfirm | MoviesTarget::SlideOut { .. } => {
+                            bail!("{:?} capture reached the 0x101 page", self.target)
                         }
                     };
                     self.route.push(
@@ -160,6 +200,45 @@ impl MoviesCapture {
                     self.route.push(
                         json!({"dialog": 0x129, "frame": frame, "action": "pointer at neutral"}),
                     );
+                    if let MoviesTarget::SlideOut { .. } = self.target {
+                        // Back (0x686) through the production teardown.
+                        App::leave_shell_dialog(
+                            state,
+                            ShellSlideKind::MovieList,
+                            crate::app::frontend::shell_transition::ShellExitThen::MovieListBack,
+                        );
+                        ensure!(
+                            state.frontend.shell_exit.is_some(),
+                            "movie list Back did not start its teardown slide"
+                        );
+                        self.route
+                            .push(json!({"dialog": 0x129, "frame": frame, "action": "Back"}));
+                        self.phase = Phase::SlideOut;
+                        return Ok(());
+                    }
+                    self.phase = Phase::Settling(SETTLE_FRAMES);
+                }
+            }
+            (Phase::SlideOut, PresentedShell::MainMenu | PresentedShell::MovieList) => {
+                let MoviesTarget::SlideOut { kind, tick: target } = self.target else {
+                    bail!("slide-out phase without a slide-out target");
+                };
+                let exit = state
+                    .frontend
+                    .shell_exit
+                    .as_mut()
+                    .filter(|exit| exit.kind == kind)
+                    .context("teardown slide ended before capture")?;
+                let tick = exit
+                    .wave
+                    .compatibility_tick()
+                    .context("teardown slide without a tick clock")?;
+                ensure!(tick <= target, "teardown slide passed tick {target}");
+                if tick == target {
+                    exit.wave.hold_for_capture();
+                    self.route
+                        .push(json!({"dialog": kind.dialog_id().0, "frame": frame,
+                        "action": "hold teardown slide", "tick": tick}));
                     self.phase = Phase::Settling(SETTLE_FRAMES);
                 }
             }
@@ -203,6 +282,15 @@ impl MoviesCapture {
                 );
                 self.phase = Phase::Settling(SETTLE_FRAMES);
             }
+            (Phase::Exit, PresentedShell::MainMenu) => {
+                if state.frontend.exit_confirm_modal.is_some()
+                    && state.frontend.shell_exit.is_none()
+                {
+                    self.route
+                        .push(json!({"state": 6, "frame": frame, "action": "confirmation shown"}));
+                    self.phase = Phase::Settling(SETTLE_FRAMES);
+                }
+            }
             (Phase::Settling(remaining), _) if remaining > 0 => {
                 self.phase = Phase::Settling(remaining - 1);
             }
@@ -225,7 +313,10 @@ impl MoviesCapture {
                 state.frontend.shell_page_title.is_terminal()
                     && state.frontend.shell_status_line.is_terminal()
             }
-            MoviesTarget::Credits { .. } | MoviesTarget::SneakPeek { .. } => true,
+            MoviesTarget::Credits { .. }
+            | MoviesTarget::SneakPeek { .. }
+            | MoviesTarget::ExitConfirm
+            | MoviesTarget::SlideOut { .. } => true,
         };
         if !heading_settled {
             return Ok(false);
@@ -239,6 +330,12 @@ impl MoviesCapture {
             }
             MoviesTarget::Credits { .. } => state.frontend.credits_roll.is_some(),
             MoviesTarget::SneakPeek { .. } => state.frontend.fullscreen_movie.is_some(),
+            MoviesTarget::ExitConfirm => state.frontend.exit_confirm_modal.is_some(),
+            MoviesTarget::SlideOut { kind, tick } => {
+                crate::app::frontend::shell_transition::shell_exit_wave(state, kind)
+                    .and_then(|wave| wave.compatibility_tick())
+                    == Some(tick)
+            }
         };
         ensure!(expected, "movies capture route changed before readback");
         Ok(true)

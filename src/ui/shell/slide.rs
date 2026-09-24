@@ -72,10 +72,8 @@ pub(crate) const GROUP_B_OUT: WaveFrames = WaveFrames {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WaveDirection {
     SlideIn,
-    /// Slide-OUT (close) ramp. Modeled for completeness — the OUT frame
-    /// constants are part of the faithful schedule — but the first-paint driver
-    /// only ever runs slide-IN, so no consumer constructs this yet.
-    #[allow(dead_code)]
+    /// Slide-OUT (close) ramp run by the teardown slide (`0x00608070` ->
+    /// `0x006071E0` with `DL = 0`): the same schedule with the OUT frames.
     SlideOut,
 }
 
@@ -306,6 +304,15 @@ impl ShellFrameWave {
         }
     }
 
+    /// The teardown slide of a shown dialog (`0x00608070`): the same schedule
+    /// and loop bound as the entry slide, frames counting up to the empty slot.
+    pub(crate) fn new_slide_out(slot_count: u32, now: Instant) -> Self {
+        Self {
+            direction: WaveDirection::SlideOut,
+            ..Self::new_first_paint_slide(slot_count, now)
+        }
+    }
+
     pub(crate) fn new_presented_main_menu(generation: u64) -> Self {
         assert_ne!(generation, 0, "main-menu wave generation must be nonzero");
         Self {
@@ -345,6 +352,22 @@ impl ShellFrameWave {
         }
     }
 
+    /// Current tick of a compatibility-clock wave.
+    pub(crate) fn compatibility_tick(&self) -> Option<u32> {
+        match self.clock {
+            WaveClock::Compatibility { tick, .. } => Some(tick),
+            WaveClock::PresentedMainMenu { .. } => None,
+        }
+    }
+
+    /// Shell capture only: keep a compatibility-clock wave at its current
+    /// tick (the next step never becomes due).
+    pub(crate) fn hold_for_capture(&mut self) {
+        if let WaveClock::Compatibility { last_step_at, .. } = &mut self.clock {
+            *last_step_at = Instant::now() + Duration::from_secs(3600);
+        }
+    }
+
     /// Advance at most ONE tick per call, only once >= 30 ms has elapsed.
     /// Never collapses multiple indices (faithful to one-frame-per-Sleep).
     pub(crate) fn advance(&mut self, now: Instant) {
@@ -366,6 +389,28 @@ impl ShellFrameWave {
             panic!("slot-index frame lookup is invalid for a presented main-menu wave");
         };
         frame_for_tick(tick as i32, Self::entry_tick(slot), group, self.direction)
+    }
+
+    /// Frame of a main-menu `0xE2` button (by resource id) on a
+    /// compatibility-clock wave, with the 0xE2 schedule (Exit shares Options'
+    /// entry tick).
+    pub(crate) fn main_menu_sdbtnanm_frame(
+        &self,
+        resource_id: u16,
+        group: ButtonGroup,
+    ) -> Option<usize> {
+        let WaveClock::Compatibility { tick, .. } = self.clock else {
+            return None;
+        };
+        let entry_tick = MAIN_MENU_GROUP_A_ENTRY_TICKS
+            .iter()
+            .find_map(|&(id, tick)| (id == resource_id).then_some(tick))?;
+        Some(frame_for_tick(
+            tick as i32,
+            entry_tick,
+            group,
+            self.direction,
+        ))
     }
 
     pub(crate) fn activate_after_acquire(&mut self) -> bool {
@@ -547,6 +592,54 @@ mod tests {
         let w = ShellFrameWave::new_first_paint_slide(5, Instant::now());
         assert_eq!(w.total_ticks, 5 + 3 + WAVE_TAIL_TICKS);
         assert_eq!(w.total_ticks, 5 + 9);
+    }
+
+    #[test]
+    fn slide_out_ramps_every_button_up_to_the_empty_slot() {
+        // 0x006071E0 with DL = 0: before the ramp frame 1, then 5..10, then 10;
+        // same stagger (slot s enters at tick s + 1) and loop bound as SHOW.
+        let t0 = Instant::now();
+        let mut out = ShellFrameWave::new_slide_out(4, t0);
+        assert_eq!(out.total_ticks, 13);
+        let mut frames = Vec::new();
+        for tick in 0..=13u64 {
+            out.advance(t0 + Duration::from_millis(30 * tick));
+            frames.push((
+                out.sdbtnanm_frame(0, ButtonGroup::A),
+                out.sdbtnanm_frame(3, ButtonGroup::A),
+            ));
+        }
+        assert_eq!(frames[0], (1, 1));
+        assert_eq!(frames[1], (5, 1));
+        assert_eq!(frames[4], (8, 5));
+        assert_eq!(frames[6], (10, 7));
+        assert_eq!(frames[10], (10, 10));
+        assert!(out.is_complete());
+    }
+
+    #[test]
+    fn main_menu_slide_out_uses_the_0xe2_schedule() {
+        let t0 = Instant::now();
+        let mut out = ShellFrameWave::new_slide_out(5, t0);
+        assert_eq!(out.total_ticks, u32::from(MAIN_MENU_ENTRY_FRAME_COUNT));
+        for tick in 1..=5u64 {
+            out.advance(t0 + Duration::from_millis(30 * tick));
+        }
+        // Tick 5: Single Player (entry 1) ramped 4 steps, Options and Exit
+        // (entry 5) just started.
+        assert_eq!(
+            out.main_menu_sdbtnanm_frame(0x0683, ButtonGroup::A),
+            Some(9)
+        );
+        assert_eq!(
+            out.main_menu_sdbtnanm_frame(0x055C, ButtonGroup::A),
+            Some(5)
+        );
+        assert_eq!(
+            out.main_menu_sdbtnanm_frame(0x03EE, ButtonGroup::A),
+            Some(5)
+        );
+        assert_eq!(out.main_menu_sdbtnanm_frame(0x1234, ButtonGroup::A), None);
     }
 
     #[test]

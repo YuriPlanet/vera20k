@@ -256,6 +256,9 @@ impl App {
                 }
             }
             GameScreen::MainMenu => {
+                // A finished teardown slide commits its route before this
+                // frame picks the dialog to paint.
+                Self::drive_shell_exit(state);
                 if let crate::app::frontend::shell_transition::ShellFirstPaintRenderResult::Rendered {
                     main_menu_entry_token,
                 } = crate::app::frontend::shell_transition::render_shell_first_paint_slide(

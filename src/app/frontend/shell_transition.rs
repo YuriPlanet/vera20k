@@ -81,6 +81,88 @@ impl ShellSlideKind {
     }
 }
 
+/// What a family dialog's teardown leads to once its slide-out has run: the
+/// dialog proc's result, dispatched to the state that owns it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ShellExitThen {
+    MainMenu(crate::ui::main_menu_shell::MainMenuShellAction),
+    SinglePlayer(crate::ui::single_player_shell::SinglePlayerShellAction),
+    MoviesCredits(crate::ui::movies_credits_shell::MoviesCreditsAction),
+    /// Movie list Play Movie with a selected row.
+    PlayMovie,
+    /// Movie list Back (state `0xE` result -1).
+    MovieListBack,
+}
+
+/// A shown family dialog's teardown slide (`0x00622720 -> 0x00608070`): the
+/// buttons ramp out on the entry schedule while input is blocked, then the
+/// dialog is destroyed and `then` runs.
+#[derive(Debug, Clone)]
+pub(crate) struct ShellExit {
+    pub(crate) kind: ShellSlideKind,
+    pub(crate) wave: ShellFrameWave,
+    pub(crate) then: ShellExitThen,
+}
+
+/// Begin the teardown slide of the showing family dialog `kind`, or `None`
+/// when that dialog is not the one showing steady (no slide then runs, as
+/// `0x00608070` requires the dialog to be shown); the caller then commits at
+/// once.
+pub(crate) fn begin_shell_exit(
+    state: &mut AppState,
+    kind: ShellSlideKind,
+    then: ShellExitThen,
+) -> bool {
+    let showing = current_shell_slide_target(state) == Some(kind)
+        && state.frontend.shell_slide_active_shell == Some(kind)
+        && state.frontend.shell_first_paint_slide.is_none()
+        && state.frontend.shell_exit.is_none();
+    if !showing {
+        return false;
+    }
+    state.frontend.shell_exit = Some(ShellExit {
+        kind,
+        wave: ShellFrameWave::new_slide_out(kind.slot_count(), Instant::now()),
+        then,
+    });
+    true
+}
+
+impl ShellExit {
+    /// Advance one 30 ms tick when due; true once every tick has been shown
+    /// (`0x006071E0` draws ticks `0..bound`, then the teardown continues).
+    fn advance(&mut self, now: Instant) -> bool {
+        self.wave.advance(now);
+        self.wave.is_complete()
+    }
+}
+
+/// Advance the running teardown slide; returns its continuation once the last
+/// tick has been shown.
+pub(crate) fn advance_shell_exit(state: &mut AppState, now: Instant) -> Option<ShellExitThen> {
+    if !state.frontend.shell_exit.as_mut()?.advance(now) {
+        return None;
+    }
+    state.frontend.shell_exit.take().map(|exit| exit.then)
+}
+
+/// The teardown slide of `kind` while it runs.
+pub(crate) fn shell_exit_wave(state: &AppState, kind: ShellSlideKind) -> Option<&ShellFrameWave> {
+    state
+        .frontend
+        .shell_exit
+        .as_ref()
+        .filter(|exit| exit.kind == kind)
+        .map(|exit| &exit.wave)
+}
+
+/// Either slide of the showing family dialog runs: the slide engine draws
+/// only the button frames (no captions), the RA2TS static shows no movie and
+/// no static timer is delivered (`0x006071E0` sleeps without dispatching).
+pub(crate) fn shell_slide_running(state: &AppState) -> bool {
+    state.frontend.shell_first_paint_slide.is_some() || state.frontend.shell_exit.is_some()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ShellEntryEffect {
     Unchanged,
@@ -303,6 +385,7 @@ pub(crate) fn blocks_shell_input(state: &AppState) -> bool {
     // no input during its blocking teardown), so a stray click can't re-enter the
     // menu mid-fade.
     state.frontend.quit_cascade.is_some()
+        || state.frontend.shell_exit.is_some()
         || transition_blocks_shell_input(state.frontend.shell_first_paint_slide.as_ref())
 }
 
@@ -342,7 +425,13 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     }
     // Options `0xD5` (and its Keyboard child) runs after `0xE2` is destroyed
     // (state 5); state 0x12 builds a new `0xE2` when it closes (`0x0052DDAB`).
-    if state.frontend.options_dialog.is_some() || state.frontend.keyboard_dialog.is_some() {
+    // The Exit confirmation and the quit that follows it (states 6 and 7)
+    // show only the empty shell backdrop.
+    if state.frontend.options_dialog.is_some()
+        || state.frontend.keyboard_dialog.is_some()
+        || state.frontend.exit_confirm_modal.is_some()
+        || state.frontend.quit_cascade.is_some()
+    {
         return None;
     }
     let candidate =
@@ -558,6 +647,27 @@ mod tests {
     use super::*;
     use crate::ui::shell::static_reveal::{Kind1PaintWindow, Kind1StaticReveal};
     use std::time::Duration;
+
+    #[test]
+    fn a_teardown_slide_shows_every_tick_before_its_result() {
+        // Movie list 0x129: two buttons, 2 + 9 = 11 ticks of 30 ms.
+        let t0 = Instant::now();
+        let mut exit = ShellExit {
+            kind: ShellSlideKind::MovieList,
+            wave: ShellFrameWave::new_slide_out(ShellSlideKind::MovieList.slot_count(), t0),
+            then: ShellExitThen::MovieListBack,
+        };
+        for tick in 1..=10u64 {
+            assert!(
+                !exit.advance(t0 + Duration::from_millis(30 * tick)),
+                "tick {tick}"
+            );
+        }
+        // The last button frame reached its empty slot on tick 10.
+        assert_eq!(exit.wave.sdbtnanm_frame(1, ButtonGroup::A), 10);
+        assert!(exit.advance(t0 + Duration::from_millis(330)));
+        assert_eq!(exit.then, ShellExitThen::MovieListBack);
+    }
 
     #[test]
     fn shell_kinds_map_to_their_dialog_ids() {

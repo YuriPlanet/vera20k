@@ -341,9 +341,17 @@ fn movie_list_composition<'a>(
         shell_paint::paint_warning_monitor(atlas, layout.page.warning_monitor, frame)
     }));
 
-    let list = state.frontend.movie_list.as_ref();
+    let exit_wave = crate::app::frontend::shell_transition::shell_exit_wave(
+        state,
+        crate::app::frontend::shell_transition::ShellSlideKind::MovieList,
+    );
+    // The teardown slide covers every child with the dialog's own repaint
+    // (`0x00622C4F`), and nothing repaints them before the dialog is gone:
+    // the list box and the prompt stay blank.
+    let leaving = exit_wave.is_some();
+    let list = state.frontend.movie_list.as_ref().filter(|_| !leaving);
     let interior = list_interior(layout.list);
-    if let Some(entry) = darkened {
+    if let Some(entry) = darkened.filter(|_| !leaving) {
         push_entry_crop(
             &mut sprites,
             entry,
@@ -352,7 +360,9 @@ fn movie_list_composition<'a>(
             LIST_FILL_DEPTH + 0.00001,
         );
     }
-    push_list_frame(&mut sprites, atlas, layout.list);
+    if !leaving {
+        push_list_frame(&mut sprites, atlas, layout.list);
+    }
     let mut labels = Vec::new();
     if let Some(list) = list {
         let geometry = list.geometry(layout.list);
@@ -399,7 +409,7 @@ fn movie_list_composition<'a>(
     let active = controller.top_id() == Some(MOVIE_LIST_PAGE.dialog);
     let pressed = active.then(|| controller.pressed()).flatten();
     let hovered = active.then(|| controller.hovered()).flatten();
-    let wave = state.frontend.shell_first_paint_slide.as_ref();
+    let wave = exit_wave.or(state.frontend.shell_first_paint_slide.as_ref());
     let buttons: Vec<PaintButton> = layout
         .page
         .buttons
@@ -420,7 +430,9 @@ fn movie_list_composition<'a>(
         std::time::Instant::now(),
         None,
     );
-    for button in &layout.page.buttons {
+    // The slide engine draws the button frames only; captions return with
+    // the first ordinary paint after the entry slide.
+    for button in layout.page.buttons.iter().filter(|_| wave.is_none()) {
         let Some(spec) = MOVIE_LIST_PAGE.button(button.id) else {
             continue;
         };
@@ -443,13 +455,15 @@ fn movie_list_composition<'a>(
             ),
         });
     }
-    labels.push(PaintLabel {
-        text: resolve_csf(state, MOVIE_LIST_PROMPT_KEY),
-        rect: layout.prompt,
-        align: ShellAlign::H_CENTER,
-        rgb: SHELL_TEXT_RGB_ENABLED,
-        path_a_reveal: None,
-    });
+    if !leaving {
+        labels.push(PaintLabel {
+            text: resolve_csf(state, MOVIE_LIST_PROMPT_KEY),
+            rect: layout.prompt,
+            align: ShellAlign::H_CENTER,
+            rgb: SHELL_TEXT_RGB_ENABLED,
+            path_a_reveal: None,
+        });
+    }
     (sprites, button_sprites, labels)
 }
 
@@ -474,23 +488,40 @@ pub(crate) fn render_movie_list(
     if state.frontend.main_menu_shell_chrome.is_none() {
         return Ok(false);
     }
-    let monitor_frame = crate::app::frontend::menu_page_render::paint_shell_monitor(state);
-    let title_window = state
-        .frontend
-        .shell_page_title
-        .paint(std::time::Instant::now());
     let layout = compute_movie_list_layout(
         state.renderer.gpu.config.width,
         state.renderer.gpu.config.height,
     );
-    let status_text = movie_list_status_key(state)
-        .map(|key| resolve_csf(state, key).into_owned())
-        .unwrap_or_default();
-    let status_label = crate::app::frontend::menu_page_render::paint_shell_status_line(
+    // The teardown slide starts with a full dialog repaint (`0x00622C4F`)
+    // and pumps no messages until it ends: the statics stay blank and the
+    // monitor window shows the right panel's own art.
+    let leaving = crate::app::frontend::shell_transition::shell_exit_wave(
         state,
-        status_text,
-        layout.page.status_help,
-    );
+        crate::app::frontend::shell_transition::ShellSlideKind::MovieList,
+    )
+    .is_some();
+    let monitor_frame = if leaving {
+        None
+    } else {
+        crate::app::frontend::menu_page_render::paint_shell_monitor(state)
+    };
+    let (title_window, status_label) = if leaving {
+        (None, None)
+    } else {
+        let title_window = state
+            .frontend
+            .shell_page_title
+            .paint(std::time::Instant::now());
+        let status_text = movie_list_status_key(state)
+            .map(|key| resolve_csf(state, key).into_owned())
+            .unwrap_or_default();
+        let status_label = crate::app::frontend::menu_page_render::paint_shell_status_line(
+            state,
+            status_text,
+            layout.page.status_help,
+        );
+        (title_window, status_label)
+    };
     let Some(atlas) = state.frontend.main_menu_shell_chrome.as_ref() else {
         return Ok(false);
     };

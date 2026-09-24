@@ -119,10 +119,10 @@ Not covered: Options `0xD5` has no production capture checkpoint (its monitor
 takes the same window correction); heights other than 480/600/768 have unit
 tests only; the version line's one-pixel offset.
 
-Follow-ups outside this change: the RA2TS static `0x71A` timer (`0x65`) is
-equally frozen during a slide but VERA20k steps the movie; score dialog `0x108`
-carries `0x71C` but draws none; `0xD5` is slide-eligible (`0x0060C540`) but has
-no first-paint slide in VERA20k.
+Follow-ups outside this change: score dialog `0x108` carries `0x71C` but draws
+none; `0xD5` is slide-eligible (`0x0060C540`) but has no slide in VERA20k. The
+RA2TS movie during slides is covered by the
+[slide transitions note](2026-09-24-slide-transitions-evidence.md).
 
 ## Status line `0x695`
 

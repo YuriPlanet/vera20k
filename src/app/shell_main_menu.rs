@@ -717,7 +717,21 @@ impl App {
             .and_then(crate::ui::main_menu_shell::MainMenuControlId::from_resource_id)
             .map(crate::ui::main_menu_shell::action_for_control)
         {
-            Self::handle_main_menu_shell_action(state, action);
+            use crate::app::frontend::shell_transition::{ShellExitThen, ShellSlideKind};
+            use crate::ui::main_menu_shell::MainMenuShellAction;
+            match action {
+                // These results destroy 0xE2 (Exit's confirmation is state 6,
+                // shown over the empty shell backdrop).
+                MainMenuShellAction::SinglePlayer
+                | MainMenuShellAction::MoviesAndCredits
+                | MainMenuShellAction::Options
+                | MainMenuShellAction::ExitGame => Self::leave_shell_dialog(
+                    state,
+                    ShellSlideKind::MainMenu,
+                    ShellExitThen::MainMenu(action),
+                ),
+                _ => Self::handle_main_menu_shell_action(state, action),
+            }
         }
     }
 
@@ -855,21 +869,39 @@ impl App {
         let Some(activated) = state.frontend.shell_controller.on_pointer_up(x, y, &feed) else {
             return;
         };
+        use crate::app::frontend::shell_transition::{ShellExitThen, ShellSlideKind};
         match page {
             ActiveMenuPage::SinglePlayer => {
+                use crate::ui::single_player_shell::SinglePlayerShellAction;
                 if let Some(action) =
                     crate::ui::single_player_shell::SinglePlayerControlId::from_resource_id(
                         activated,
                     )
                     .map(crate::ui::single_player_shell::action_for_control)
                 {
-                    Self::handle_single_player_shell_action(state, action);
+                    match action {
+                        // States 0x12 and 0xB destroy 0x100. New Campaign and
+                        // Load Saved Game still open substitute panels over the
+                        // page, so they keep it.
+                        SinglePlayerShellAction::MainMenu | SinglePlayerShellAction::Skirmish => {
+                            Self::leave_shell_dialog(
+                                state,
+                                ShellSlideKind::SinglePlayer,
+                                ShellExitThen::SinglePlayer(action),
+                            );
+                        }
+                        _ => Self::handle_single_player_shell_action(state, action),
+                    }
                 }
             }
             ActiveMenuPage::MoviesAndCredits => {
                 if let Some(action) = crate::ui::movies_credits_shell::action_for_control(activated)
                 {
-                    Self::handle_movies_credits_action(state, action);
+                    Self::leave_shell_dialog(
+                        state,
+                        ShellSlideKind::MoviesAndCredits,
+                        ShellExitThen::MoviesCredits(action),
+                    );
                 }
             }
         }
@@ -892,6 +924,59 @@ impl App {
             .and_then(|rules| rules.general.gui_move_in_sound.as_deref())
             .map(str::to_string);
         Self::play_shell_ui_sound_by_id(state, sound_id.as_deref());
+    }
+
+    /// Play the shell teardown slide-out cue ([AudioVisual] GUIMoveOutSound,
+    /// stock `MenuSlideOut`) as `0x00608070` starts. A no-op when unset.
+    fn play_shell_slide_out_sound(state: &mut AppState) {
+        let sound_id = state
+            .rules()
+            .and_then(|rules| rules.general.gui_move_out_sound.as_deref())
+            .map(str::to_string);
+        Self::play_shell_ui_sound_by_id(state, sound_id.as_deref());
+    }
+
+    /// Leave the showing family dialog with the result `then`: its teardown
+    /// (`0x00622720`) slides the buttons out first (`0x00608070`), and the
+    /// result runs when the slide has ended. A dialog that is not showing
+    /// steady commits at once.
+    pub(super) fn leave_shell_dialog(
+        state: &mut AppState,
+        kind: crate::app::frontend::shell_transition::ShellSlideKind,
+        then: crate::app::frontend::shell_transition::ShellExitThen,
+    ) {
+        if crate::app::frontend::shell_transition::begin_shell_exit(state, kind, then) {
+            Self::play_shell_slide_out_sound(state);
+        } else {
+            Self::commit_shell_exit(state, then);
+        }
+    }
+
+    /// Run a finished teardown slide's result.
+    pub(super) fn drive_shell_exit(state: &mut AppState) {
+        if let Some(then) =
+            crate::app::frontend::shell_transition::advance_shell_exit(state, Instant::now())
+        {
+            Self::commit_shell_exit(state, then);
+        }
+    }
+
+    fn commit_shell_exit(
+        state: &mut AppState,
+        then: crate::app::frontend::shell_transition::ShellExitThen,
+    ) {
+        use crate::app::frontend::shell_transition::ShellExitThen;
+        match then {
+            ShellExitThen::MainMenu(action) => Self::handle_main_menu_shell_action(state, action),
+            ShellExitThen::SinglePlayer(action) => {
+                Self::handle_single_player_shell_action(state, action)
+            }
+            ShellExitThen::MoviesCredits(action) => {
+                Self::handle_movies_credits_action(state, action)
+            }
+            ShellExitThen::PlayMovie => Self::play_selected_movie(state),
+            ShellExitThen::MovieListBack => Self::open_movies_credits_page(state),
+        }
     }
 
     /// Active-retail `ShellButtonSlideSound` completion hook. The stock key is
@@ -1004,6 +1089,11 @@ impl App {
 
     /// Open the Exit-Game confirm message box, resolving its labels from CSF.
     fn open_exit_confirm_modal(state: &mut AppState) {
+        // State 6 runs after 0xE2 is destroyed: it paints the empty shell
+        // backdrop (`0x0052FEC0`) and asks; Cancel builds a new 0xE2 (state
+        // 0x12, `0x0052DE39..0x0052DE42`).
+        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
+        crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
         let csf = |key: &str, fallback: &str| Self::csf_label(state, key, fallback);
         let modal = crate::ui::main_menu_dialogs::ExitConfirmModalState::open(&csf);
         // The SHP modal sources PUDLGBGN/MNBTTN from the skirmish chrome atlas; load

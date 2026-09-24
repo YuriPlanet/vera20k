@@ -204,6 +204,32 @@ pub fn paint_chrome(
     out
 }
 
+/// `RightPanel__Draw` (`0x0072E450`) with its overlay flag clear, as the empty
+/// shell backdrop (`0x0072E820(0)`, painted by `0x0052FEC0` between dialogs)
+/// draws it: SDBTNANM frame 10, the closed shutter, right-aligned over every
+/// tile.
+pub fn paint_shuttered_tiles(
+    atlas: &MainMenuShellChromeAtlas,
+    panel: RightPanelRects,
+) -> Vec<SpriteInstance> {
+    let Some(entry) = atlas.button_wave_frames.get(10).copied().flatten() else {
+        return Vec::new();
+    };
+    let w = entry.pixel_size[0].round() as i32;
+    let h = entry.pixel_size[1].round() as i32;
+    let mut out = Vec::new();
+    for row in 0..panel.tile_count {
+        let rect = RectPx::new(
+            panel.tile.x + panel.tile.w - w,
+            panel.tile.y + row * h,
+            w,
+            h,
+        );
+        push_entry_rect(&mut out, entry, rect, CHROME_DEPTH);
+    }
+    out
+}
+
 /// Static `0x71C`: SDWRNANM `frame` in the static's window. Kind-4 paint
 /// (`0x0061595E..0x0061597E`) centers the shape only along an axis where the
 /// window is larger, and the window clips it.

@@ -179,12 +179,30 @@ impl App {
             .filter(|control| control.id != crate::ui::movies_credits_shell::MOVIE_LIST_CONTROL)
             .collect();
         let (x, y) = Self::shell_cursor(state);
+        use crate::app::frontend::shell_transition::{ShellExitThen, ShellSlideKind};
         match state.frontend.shell_controller.on_pointer_up(x, y, &feed) {
-            Some(crate::ui::movies_credits_shell::PLAY_MOVIE_CONTROL) => {
-                Self::play_selected_movie(state);
+            // With no selection Play Movie keeps the dialog.
+            Some(crate::ui::movies_credits_shell::PLAY_MOVIE_CONTROL)
+                if state
+                    .frontend
+                    .movie_list
+                    .as_ref()
+                    .is_some_and(|list| list.selected.is_some()) =>
+            {
+                Self::leave_shell_dialog(
+                    state,
+                    ShellSlideKind::MovieList,
+                    ShellExitThen::PlayMovie,
+                );
             }
             // Back writes -1: state 4 recreates Movies & Credits.
-            Some(0x0686) => Self::open_movies_credits_page(state),
+            Some(0x0686) => {
+                Self::leave_shell_dialog(
+                    state,
+                    ShellSlideKind::MovieList,
+                    ShellExitThen::MovieListBack,
+                );
+            }
             _ => {}
         }
     }
@@ -206,7 +224,7 @@ impl App {
 
     /// Play Movie (`0x0052D960..0x0052D98D`): the current selection is saved
     /// to `DAT_00825C80`; no selection plays nothing and keeps the dialog.
-    fn play_selected_movie(state: &mut AppState) {
+    pub(super) fn play_selected_movie(state: &mut AppState) {
         let Some(list) = state.frontend.movie_list.as_ref() else {
             return;
         };
