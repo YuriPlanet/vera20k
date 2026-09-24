@@ -645,6 +645,10 @@ impl App {
         let submission = state.renderer.gpu.queue.submit(std::iter::once(encoder.finish()));
         output.present();
         state.renderer.retail_screenshot_frame_cache.commit_presented();
+        // A family renderer that drew a timer-driven 0x71C frame this pass
+        // advances it now that the frame reached the screen.
+        state.frontend.shell_monitor.commit_presented();
+        state.frontend.shell_page_title.commit_presented();
         if let Some(token) = pending_main_menu_entry_token.take() {
             crate::app::frontend::shell_transition::record_main_menu_entry_presented(state, token)?;
         }

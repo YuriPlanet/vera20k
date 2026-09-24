@@ -38,6 +38,8 @@ use crate::ui::shell::geom::{RectPx, RightPanelRects};
 pub const PARENT_BACKGROUND_DEPTH: f32 = 0.00098;
 pub const MOVIE_DEPTH: f32 = 0.00095;
 pub const CHROME_DEPTH: f32 = 0.00085;
+/// Image statics drawn over the right-panel chrome (the `0x71C` monitor).
+pub const STATIC_IMAGE_DEPTH: f32 = 0.00083;
 pub const BUTTON_DEPTH: f32 = 0.00080;
 pub const TEXT_DEPTH: f32 = 0.00070;
 /// The software cursor draws on top of everything else (smallest depth). The
@@ -200,6 +202,49 @@ pub fn paint_chrome(
         }
     }
     out
+}
+
+/// Static `0x71C`: SDWRNANM `frame` in the static's window. Kind-4 paint
+/// (`0x0061595E..0x0061597E`) centers the shape only along an axis where the
+/// window is larger, and the window clips it.
+pub fn paint_warning_monitor(
+    atlas: &MainMenuShellChromeAtlas,
+    monitor: RectPx,
+    frame: usize,
+) -> Option<SpriteInstance> {
+    let entry = *atlas.warning_monitor_frames.get(frame)?;
+    let shape_w = entry.pixel_size[0].round() as i32;
+    let shape_h = entry.pixel_size[1].round() as i32;
+    if shape_w <= 0 || shape_h <= 0 {
+        return None;
+    }
+    let x = monitor.x
+        + if monitor.w > shape_w {
+            (monitor.w - shape_w) / 2
+        } else {
+            0
+        };
+    let y = monitor.y
+        + if monitor.h > shape_h {
+            (monitor.h - shape_h) / 2
+        } else {
+            0
+        };
+    let draw_w = shape_w.min(monitor.w);
+    let draw_h = shape_h.min(monitor.h);
+    Some(SpriteInstance {
+        position: [x as f32, y as f32],
+        size: [draw_w as f32, draw_h as f32],
+        uv_origin: entry.uv_origin,
+        uv_size: [
+            entry.uv_size[0] * draw_w as f32 / shape_w as f32,
+            entry.uv_size[1] * draw_h as f32 / shape_h as f32,
+        ],
+        depth: STATIC_IMAGE_DEPTH,
+        tint: [1.0, 1.0, 1.0],
+        alpha: 1.0,
+        ..Default::default()
+    })
 }
 
 /// Which steady SDBTNANM frame a button shows (when it is not mid-slide).

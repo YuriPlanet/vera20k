@@ -13,7 +13,6 @@ pub enum MainMenuControlId {
     MoviesAndCredits0x686,
     Options0x55c,
     ExitGame0x3ee,
-    YuriWebsite0x71b,
 }
 
 impl MainMenuControlId {
@@ -27,7 +26,6 @@ impl MainMenuControlId {
             Self::MoviesAndCredits0x686 => 0x0686,
             Self::Options0x55c => 0x055C,
             Self::ExitGame0x3ee => 0x03EE,
-            Self::YuriWebsite0x71b => 0x071B,
         }
     }
 
@@ -40,7 +38,6 @@ impl MainMenuControlId {
             0x0686 => Self::MoviesAndCredits0x686,
             0x055C => Self::Options0x55c,
             0x03EE => Self::ExitGame0x3ee,
-            0x071B => Self::YuriWebsite0x71b,
             _ => return None,
         })
     }
@@ -55,7 +52,6 @@ pub enum MainMenuShellAction {
     MoviesAndCredits,
     Options,
     ExitGame,
-    YuriWebsite,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -79,7 +75,6 @@ pub fn action_for_control(id: MainMenuControlId) -> MainMenuShellAction {
         MainMenuControlId::MoviesAndCredits0x686 => MainMenuShellAction::MoviesAndCredits,
         MainMenuControlId::Options0x55c => MainMenuShellAction::Options,
         MainMenuControlId::ExitGame0x3ee => MainMenuShellAction::ExitGame,
-        MainMenuControlId::YuriWebsite0x71b => MainMenuShellAction::YuriWebsite,
     }
 }
 
@@ -92,7 +87,6 @@ pub fn return_code_for_action(action: MainMenuShellAction) -> Option<i32> {
         MainMenuShellAction::MoviesAndCredits => Some(4),
         MainMenuShellAction::Options => Some(5),
         MainMenuShellAction::ExitGame => Some(6),
-        MainMenuShellAction::YuriWebsite => None,
     }
 }
 
@@ -104,7 +98,6 @@ pub fn csf_key_for_control(id: MainMenuControlId) -> &'static str {
         MainMenuControlId::MoviesAndCredits0x686 => "GUI:MoviesAndCredits",
         MainMenuControlId::Options0x55c => "GUI:Options",
         MainMenuControlId::ExitGame0x3ee => "GUI:ExitGame",
-        MainMenuControlId::YuriWebsite0x71b => "TXT_YURI_WEBSITE",
     }
 }
 
@@ -118,7 +111,6 @@ pub fn tooltip_csf_key_for_control(id: MainMenuControlId) -> &'static str {
         MainMenuControlId::MoviesAndCredits0x686 => "STT:MainButtonMovies",
         MainMenuControlId::Options0x55c => "STT:MainButtonOptions",
         MainMenuControlId::ExitGame0x3ee => "STT:MainButtonExitGamemd",
-        MainMenuControlId::YuriWebsite0x71b => "STT:MainButtonYuriWebSite",
     }
 }
 
@@ -177,7 +169,7 @@ mod tests {
         // Real layout geometry routed through the shared controller. SinglePlayer
         // cell (644,199,156,42); Exit cell (644,535,156,42). The flush-right cell's
         // exclusive right edge (x=800), the 632..644 gutter, and above-top all miss;
-        // statics are never fed, so the website/title never register as hits.
+        // statics are never fed, so the title and monitor never register as hits.
         let layout = compute_layout(800, 600);
         let feed = button_feed(&layout);
         let mut c = DialogController::default();

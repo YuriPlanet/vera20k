@@ -21,6 +21,7 @@ pub mod menu_page;
 pub mod modal;
 pub mod slide;
 pub mod static_reveal;
+pub mod warning_monitor;
 pub mod abort;
 pub mod button;
 

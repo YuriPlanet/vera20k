@@ -6,7 +6,7 @@ use std::time::Instant;
 use anyhow::Result;
 
 use crate::app::AppState;
-use crate::app::frontend::main_menu_shell_render::Ra2tsDialogOwner;
+use crate::app::frontend::main_menu_shell_render::{Ra2tsDialogOwner, main_menu_title_path_a};
 use crate::app::frontend::shell_pass::{
     ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
     software_cursor,
@@ -19,6 +19,7 @@ use crate::render::shell_paint::{
 };
 use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::menu_page::{MenuPageLayout, MenuPageSpec, compute_layout};
+use crate::ui::shell::static_reveal::Kind1RevealWindow;
 
 /// Menu pages paint the native 156x42 SDBTNANM frame at the control origin.
 /// Mouse hover updates static 0x695 but does not select frame 3. Press selects
@@ -105,6 +106,7 @@ fn paint_labels<'a>(
     view: &MenuPageView<'_>,
     layout: &MenuPageLayout,
     input: PageInput,
+    title_window: Option<Kind1RevealWindow>,
 ) -> Vec<PaintLabel<'a>> {
     let mut out = Vec::with_capacity(layout.buttons.len() + 2);
     for button in &layout.buttons {
@@ -125,13 +127,15 @@ fn paint_labels<'a>(
             path_a_reveal: None,
         });
     }
-    out.push(PaintLabel {
-        text: resolve_csf(state, view.spec.title_key),
-        rect: layout.title,
-        align: ShellAlign::H_CENTER,
-        rgb: SHELL_TEXT_RGB_ENABLED,
-        path_a_reveal: None,
-    });
+    if let Some(window) = title_window {
+        out.push(PaintLabel {
+            text: resolve_csf(state, view.spec.title_key),
+            rect: layout.title,
+            align: ShellAlign::H_CENTER,
+            rgb: SHELL_TEXT_RGB_ENABLED,
+            path_a_reveal: Some(main_menu_title_path_a(window)),
+        });
+    }
     if let Some(key) = status_csf_key(view.spec, input.hovered) {
         out.push(PaintLabel {
             text: resolve_csf(state, key),
@@ -155,6 +159,41 @@ fn movie_instance(layout: &MenuPageLayout) -> SpriteInstance {
         alpha: 1.0,
         ..Default::default()
     }
+}
+
+/// Advance the showing family dialog's `0x71C` for this recomposition; the
+/// frame loop commits it after present. No timer reaches the static while the
+/// dialog's first-paint slide runs.
+pub(crate) fn paint_shell_monitor(state: &mut AppState) -> Option<usize> {
+    let frames = state
+        .frontend
+        .main_menu_shell_chrome
+        .as_ref()
+        .map_or(0, |chrome| chrome.warning_monitor_frames.len());
+    let timers = state.frontend.shell_first_paint_slide.is_none();
+    state
+        .frontend
+        .shell_monitor
+        .paint(Instant::now(), frames, timers)
+}
+
+/// Heading text of the menu page a first-paint slide belongs to.
+pub(crate) fn active_page_title_text(
+    state: &AppState,
+    kind: crate::app::frontend::shell_transition::ShellSlideKind,
+) -> String {
+    use crate::app::frontend::shell_transition::ShellSlideKind;
+    let key = match kind {
+        ShellSlideKind::SinglePlayer => {
+            crate::ui::single_player_shell::SINGLE_PLAYER_PAGE.title_key
+        }
+        ShellSlideKind::MoviesAndCredits => {
+            crate::ui::movies_credits_shell::MOVIES_CREDITS_PAGE.title_key
+        }
+        ShellSlideKind::MovieList => crate::ui::movies_credits_shell::MOVIE_LIST_PAGE.title_key,
+        ShellSlideKind::MainMenu | ShellSlideKind::Skirmish => return String::new(),
+    };
+    resolve_csf(state, key).into_owned()
 }
 
 /// Which menu page owns the `MainMenu` screen, if any.
@@ -274,6 +313,8 @@ pub(crate) fn render_menu_page(
     // While a first-paint slide is live the buttons animate through their
     // SDBTNANM ramp frames; off-slide this is None and they paint steady-state.
     let wave = state.frontend.shell_first_paint_slide.clone();
+    let monitor_frame = paint_shell_monitor(state);
+    let title_window = state.frontend.shell_page_title.paint(Instant::now());
     let chrome = state
         .frontend
         .main_menu_shell_chrome
@@ -287,12 +328,15 @@ pub(crate) fn render_menu_page(
         .expect("movie loaded before render");
 
     // Menu pages have NO parent background; the movie is submitted first.
-    let chrome_instances = shell_paint::paint_chrome(
+    let mut chrome_instances = shell_paint::paint_chrome(
         chrome,
         layout.right_panel,
         Some(layout.lower_strip),
         layout.screen.w,
     );
+    chrome_instances.extend(monitor_frame.and_then(|frame| {
+        shell_paint::paint_warning_monitor(chrome, layout.warning_monitor, frame)
+    }));
     let buttons = paint_buttons(&layout, input, view.disabled, wave.as_ref());
     let button_instances = shell_paint::paint_buttons(
         chrome,
@@ -301,7 +345,7 @@ pub(crate) fn render_menu_page(
         Instant::now(),
         None,
     );
-    let labels = paint_labels(state, &view, &layout, input);
+    let labels = paint_labels(state, &view, &layout, input, title_window);
     let text = shell_paint::paint_labels(&state.renderer.bit_font, &labels);
     let draws = [
         TexturedDraw {

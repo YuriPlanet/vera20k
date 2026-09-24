@@ -7,16 +7,16 @@
 //! labels and dialog-proc results differ, so each page is a `MenuPageSpec`
 //! table over this one layout.
 
-use super::descriptor::DialogId;
+use super::descriptor::{DialogId, HEADING_ANCHOR, MONITOR_ANCHOR};
 use super::geom::{
     RectPx, RightPanelRects, SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW, center_offset, dlu_rect,
     lower_strip_rect, right_panel_rects, snap_button_biased_truncate,
 };
+use super::layout::anchor_rect;
 use crate::ui::main_menu_shell::{MainMenuMovieBase, movie_base_for_screen_width};
 
 const SHELL_BASE_W: i32 = 800;
 const SHELL_BASE_H: i32 = 600;
-const RIGHT_PANEL_WIDTH: i32 = super::geom::RIGHT_PANEL_WIDTH;
 const RIGHT_PANEL_TILE_H: i32 = super::geom::RIGHT_PANEL_TILE_H;
 const STATUS_HELP_W: i32 = 456;
 const STATUS_HELP_H: i32 = 21;
@@ -77,7 +77,10 @@ pub struct MenuPageLayout {
     pub screen: RectPx,
     pub movie_base: MainMenuMovieBase,
     pub movie: RectPx,
+    /// Heading static `0x694` paint rect.
     pub title: RectPx,
+    /// Static `0x71C` window rect (the SDWRNANM monitor).
+    pub warning_monitor: RectPx,
     pub status_help: RectPx,
     /// Stacked buttons in spec order, then Back.
     pub buttons: Vec<MenuPageButtonRect>,
@@ -89,18 +92,6 @@ fn movie_origin(screen_w: i32, screen_h: i32) -> (i32, i32) {
     (
         center_offset(screen_w, SHELL_BASE_W),
         center_offset(screen_h, SHELL_BASE_H),
-    )
-}
-
-fn right_anchor(screen_w: i32, screen_h: i32, original: RectPx) -> RectPx {
-    let offset_x = center_offset(screen_w, SHELL_BASE_W);
-    let offset_y = center_offset(screen_h, SHELL_BASE_H);
-    let inset = (RIGHT_PANEL_WIDTH - original.w) / 2;
-    RectPx::new(
-        screen_w - offset_x - original.w - inset,
-        original.y + offset_y,
-        original.w,
-        original.h,
     )
 }
 
@@ -135,7 +126,20 @@ pub fn compute_layout(spec: &MenuPageSpec, screen_w: u32, screen_h: u32) -> Menu
         MainMenuMovieBase::Ra2tsL => (RA2TS_L_W, RA2TS_L_H),
     };
     let panel = right_panel_rects(screen_w, screen_h);
-    let title = right_anchor(screen_w, screen_h, dlu_rect(425, 1, 108, 10));
+    // Both statics sit at the same template rects as in main menu 0xE2 (the
+    // right-panel anchor reads only their size, not the DLU x).
+    let title = anchor_rect(
+        HEADING_ANCHOR,
+        RectPx::new(425, 1, 108, 10),
+        screen_w,
+        screen_h,
+    );
+    let warning_monitor = anchor_rect(
+        MONITOR_ANCHOR,
+        RectPx::new(447, 29, 61, 33),
+        screen_w,
+        screen_h,
+    );
     let mut buttons: Vec<MenuPageButtonRect> = spec
         .stacked
         .iter()
@@ -159,7 +163,8 @@ pub fn compute_layout(spec: &MenuPageSpec, screen_w: u32, screen_h: u32) -> Menu
         screen: RectPx::new(0, 0, screen_w, screen_h),
         movie_base,
         movie: RectPx::new(movie_x, movie_y, movie_w, movie_h),
-        title: RectPx::new(title.x, title.y + 1, title.w, title.h),
+        title,
+        warning_monitor,
         status_help: status_help_rect(screen_w, screen_h),
         buttons,
         right_panel: panel,
