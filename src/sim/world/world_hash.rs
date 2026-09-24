@@ -2207,6 +2207,14 @@ impl Simulation {
                 0x38_u32.hash(hasher);
                 bomb.hash(hasher);
             }
+            // Gattling stage, value and report latch (+140, +144, +4B8); an
+            // object that never spun folds nothing.
+            if schema.includes(HashFeature::Gattling)
+                && entity.gattling != crate::sim::combat::gattling::GattlingState::default()
+            {
+                0x140_u32.hash(hasher);
+                entity.gattling.hash(hasher);
+            }
             // Homing missile flight state. `HomingState` has a manual `Hash`
             // impl that excludes the render-only `pitch: f32` field — see
             // sim::movement::homing_movement.

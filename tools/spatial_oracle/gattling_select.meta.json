@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "TechnoClass::What_Weapon_Should_I_Use 0x006F3330 through Unit vt+0x2E4 0x00746CD0 and Building vt+0x2E4 for IsGattling types: the returned weapon index over stage 0..2 x slot-1 AA x target high-flying x elite x NeverUse (unit and building), null target, elite vs base slot-1 reads, target AbstractFlags kinds, unclamped stages, and the arms ahead of H (A, B, C/D, G, the Unit deploy-fire override). Not the non-gattling selection path (0x006F3477 onwards; rows reaching it fail).",
+  "assumptions": [
+    "One emulator; per row the scratch region and stack are rewritten, general registers zeroed, FPCW 0x0E7F, empty x87 stack.",
+    "Firer: original Unit 0x007F5C70 or Building 0x007E3EBC vtable (vt+0x2E4 asserted 0x00746CD0 / 0x006F3330); flags +0x14 = 7 / 3; type +0x6C4 / +0x520; Building +0x702 = 0 (no upgrades).",
+    "Type: weapon slots 0/1 and elite 0/1 each with their own WeaponType and Projectile; only +0x136 (NeverUse), +0xA0 (Projectile) and Projectile +0x2A4 (AA) are set.",
+    "Target: a clone of its class's original vtable with vt+0x54 replaced; AbstractFlags +0x14 = 7 aircraft/unit, 3 building, 2 TerrainClass, 0 CellClass.",
+    "No write outside the stack is allowed."
+  ],
+  "substitutions": [
+    "Target vt+0x54 (label IsHighFlying) returns the row's verdict, logged."
+  ],
+  "entry_points": {
+    "what_weapon_should_i_use": "0x006F3330",
+    "unit_vt_2e4": "0x00746CD0",
+    "get_weapon": "0x0070E140",
+    "building_get_weapon": "0x004526F0",
+    "has_turrets": "0x00717880"
+  },
+  "payload_sha256": "cfcf670fcff4097bb575d9a5eee38f1ae06ac59002cbf9faa6cb5a99736919e1"
+}

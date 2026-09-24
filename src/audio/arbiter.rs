@@ -223,6 +223,9 @@ mod event_flags {
     /// `0x20` — no-replay: suppresses the body and loop branches of
     /// `SoundEvent::AdvancePlaylist @ 0x004047B0`.
     pub const NO_REPLAY: u32 = 0x20;
+    /// `0x40` — set beside NO_REPLAY by `SoundEvent::Release @ 0x00406060`.
+    /// VERA reads nothing from it.
+    pub const RELEASED: u32 = 0x40;
 }
 
 /// `SoundEvent+0x1C`, the switch at `0x004059D0`.
@@ -341,6 +344,9 @@ struct VocHandle {
     event: Option<EventId>,
     serial: u32,
     entry: u32,
+    /// The named sound is a loop `AnimClass::UpdateLoopingSound` allocates
+    /// again (`AudioEventClass::IsLoopable`), so the handle outlives its event.
+    loopable: bool,
 }
 
 /// The registry facts the arbiter needs, copied at submit time the way native
@@ -566,6 +572,12 @@ impl SoundArbiter {
         self.names.get(handle.entry as usize).map(String::as_str)
     }
 
+    /// The identity an owner's handle names, with or without a live event.
+    pub fn handle_sound_key(&self, owner: u64) -> Option<&str> {
+        let handle = self.handles.get(&owner)?;
+        self.names.get(handle.entry as usize).map(String::as_str)
+    }
+
     fn event(&self, id: EventId) -> Option<&EventRec> {
         self.events.get(id.0 as usize)?.as_ref()
     }
@@ -650,15 +662,18 @@ impl SoundArbiter {
     /// longer names it.
     pub fn set_loop_handle(&mut self, owner: u64, event: Option<EventId>, key: &str) {
         let entry = self.entry_index(key);
-        let serial = event
-            .and_then(|id| self.event(id))
-            .map_or(0, |event| event.serial);
+        let record = event.and_then(|id| self.event(id));
+        let serial = record.map_or(0, |event| event.serial);
+        let loopable = record
+            .and_then(|event| self.entries[event.entry as usize].facts)
+            .is_some_and(|facts| facts.is_loopable());
         self.handles.insert(
             owner,
             VocHandle {
                 event,
                 serial,
                 entry,
+                loopable,
             },
         );
         if let Some(id) = event
@@ -668,24 +683,82 @@ impl SoundArbiter {
         }
     }
 
+    /// `SoundEvent::SetLoopHandle(handle, 0, voc)`: the handle names `key`
+    /// with no event (`VocHandle+8` keeps the sound id), as `VocClass::PlayAt
+    /// @ 0x007509E0` leaves it when the first play is inaudible and
+    /// `AnimClass::UpdateLoopingSound` when the volume falls to zero
+    /// (`0x00750E0C..0x00750E11`). Only Release and StopAndClear clear it.
+    pub fn keep_loop_sound(&mut self, owner: u64, key: &str, loopable: bool) {
+        let entry = self.entry_index(key);
+        self.handles.insert(
+            owner,
+            VocHandle {
+                event: None,
+                serial: 0,
+                entry,
+                loopable,
+            },
+        );
+    }
+
+    /// The loopable sound an owner's handle keeps without a live event: what
+    /// `AnimClass::UpdateLoopingSound` allocates again once the owner is
+    /// audible (`0x00750D8C..0x00750DB3`).
+    pub fn kept_loop_key(&mut self, owner: u64) -> Option<&str> {
+        if self.validate_loop_handle(owner).is_some() {
+            return None;
+        }
+        let handle = self.handles.get(&owner).filter(|handle| handle.loopable)?;
+        self.names.get(handle.entry as usize).map(String::as_str)
+    }
+
     /// Drop an owner's handle entirely (the owner object is gone).
     pub fn clear_loop_handle(&mut self, owner: u64) {
         self.handles.remove(&owner);
     }
 
-    /// Owners that still name a live event. Handles whose event is gone are
-    /// dropped, which is the bookkeeping half of `VocHandle::ValidateOrClear`.
+    /// Owners to re-drive: those whose handle names a live event, and those
+    /// whose handle keeps a loopable sound after its event ended (inaudible,
+    /// or killed by `Limit=`), which native's owner update allocates again.
+    /// Any other handle whose event is gone is dropped, the bookkeeping half
+    /// of `VocHandle::ValidateOrClear`.
     pub fn loop_handle_owners(&mut self) -> Vec<u64> {
         let owners: Vec<u64> = self.handles.keys().copied().collect();
         let mut live = Vec::new();
         for owner in owners {
-            if self.validate_loop_handle(owner).is_some() {
+            if self.validate_loop_handle(owner).is_some()
+                || self
+                    .handles
+                    .get(&owner)
+                    .is_some_and(|handle| handle.loopable)
+            {
                 live.push(owner);
             } else {
                 self.handles.remove(&owner);
             }
         }
         live
+    }
+
+    /// `SoundEvent::Release @ 0x00406060`'s event half: a live looping event
+    /// whose entry has no `Loop=` count and is not already released stops
+    /// repeating (`flags |= 0x60`) and plays out its current pass.
+    pub fn release(&mut self, id: EventId) {
+        let Some(event) = self.event(id) else {
+            return;
+        };
+        if event.is_dead() || event.flags & event_flags::NO_REPLAY != 0 {
+            return;
+        }
+        let Some(facts) = self.entries[event.entry as usize].facts else {
+            return;
+        };
+        if facts.control & control::LOOP == 0 || facts.loop_count != 0 {
+            return;
+        }
+        if let Some(event) = self.event_mut(id) {
+            event.flags |= event_flags::NO_REPLAY | event_flags::RELEASED;
+        }
     }
 
     /// `SoundEvent::MarkStarted @ 0x004052E0` — `flags |= 8`. The only native
@@ -1707,6 +1780,79 @@ mod tests {
         arbiter.set_loop_handle(1234, None, "ROCKETEERMOVELOOP");
         let actions = arbiter.update_tick(1000);
         assert_eq!(stopped(&actions), vec![event]);
+    }
+
+    /// `SoundEvent::Release @ 0x00406060`: a live owner-driven loop stops
+    /// repeating and plays out (`flags |= 0x60`), so the leash spares it once
+    /// the owner lets go of its handle; a one-shot and a `Loop=`-counted
+    /// entry are left alone.
+    #[test]
+    fn release_lets_an_owner_loop_play_out_and_spares_other_entries() {
+        let mut arbiter = SoundArbiter::new(0);
+        let mut loop_facts = facts(1, 0);
+        loop_facts.control = control::LOOP;
+        let mut counted_facts = loop_facts;
+        counted_facts.loop_count = 3;
+        let looped = arbiter
+            .submit(&request("SPINLOOP", loop_facts, VOLUME_SCALE), 0)
+            .expect("pool slot");
+        let counted = arbiter
+            .submit(&request("COUNTED", counted_facts, VOLUME_SCALE), 0)
+            .expect("pool slot");
+        let one_shot = arbiter
+            .submit(&request("SHOT", facts(1, 0), VOLUME_SCALE), 0)
+            .expect("pool slot");
+        arbiter.set_loop_handle(1, Some(looped), "SPINLOOP");
+        arbiter.update_tick(100);
+        for id in [looped, counted, one_shot] {
+            arbiter.release(id);
+        }
+        let released = |arbiter: &SoundArbiter, id: EventId| {
+            arbiter.event(id).map(|event| {
+                event.flags & (event_flags::NO_REPLAY | event_flags::RELEASED)
+                    == event_flags::NO_REPLAY | event_flags::RELEASED
+            })
+        };
+        assert_eq!(released(&arbiter, looped), Some(true));
+        assert_eq!(released(&arbiter, counted), Some(false));
+        assert_eq!(released(&arbiter, one_shot), Some(false));
+        arbiter.clear_loop_handle(1);
+        let actions = arbiter.update_tick(200);
+        assert!(
+            !stopped(&actions).contains(&looped),
+            "a released loop plays out its pass"
+        );
+    }
+
+    /// `AnimClass::UpdateLoopingSound`'s re-allocation needs the handle to
+    /// outlive its event: after the event ends (a stop at zero volume or a
+    /// `Limit=` kill) a loopable sound stays named and its owner stays in the
+    /// re-drive list, while a one-shot's handle is dropped. `keep_loop_sound`
+    /// is an inaudible first play; clearing the handle ends it for good.
+    #[test]
+    fn a_loopable_handle_outlives_its_event_for_the_re_drive() {
+        let mut arbiter = SoundArbiter::new(0);
+        let mut loop_facts = facts(1, 0);
+        loop_facts.control = control::LOOP;
+        let looped = arbiter
+            .submit(&request("SPINLOOP", loop_facts, VOLUME_SCALE), 0)
+            .expect("pool slot");
+        let one_shot = arbiter
+            .submit(&request("SHOT", facts(1, 0), VOLUME_SCALE), 0)
+            .expect("pool slot");
+        arbiter.set_loop_handle(1, Some(looped), "SPINLOOP");
+        arbiter.set_loop_handle(2, Some(one_shot), "SHOT");
+        arbiter.keep_loop_sound(3, "SPINLOOP", true);
+        arbiter.update_tick(100);
+        arbiter.stop(looped);
+        arbiter.stop(one_shot);
+        arbiter.update_tick(200);
+        assert_eq!(arbiter.loop_handle_owners(), vec![1, 3]);
+        assert_eq!(arbiter.kept_loop_key(1), Some("SPINLOOP"));
+        assert_eq!(arbiter.kept_loop_key(3), Some("SPINLOOP"));
+        assert_eq!(arbiter.kept_loop_key(2), None);
+        arbiter.clear_loop_handle(1);
+        assert_eq!(arbiter.loop_handle_owners(), vec![3]);
     }
 
     /// A looping event with no owner at all is killed on its first serviced

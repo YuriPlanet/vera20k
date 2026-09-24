@@ -2117,7 +2117,7 @@ For units warped by the Chronosphere superweapon, the visual process IS gradual:
 | 0x70C5C0 | TechnoClass__IsBeingWarped |
 | 0x70C5F0 | TechnoClass__IsNotWarping |
 | 0x70C610 | TechnoClass__SetGhostCell |
-| 0x70E000 | TechnoClass__ApplyTemporalDamage |
+| 0x70E000 | TechnoClass__UpdateGattlingStage (corrected 2026-09-24; not ApplyTemporalDamage) |
 | 0x70E380 | TechnoClass__ScaleByTemporalVisualPhase |
 | 0x70E4B0 | TechnoClass__ScaleByWarpInVisualPhase |
 | 0x70E5A0 | TechnoClass__UpdateTemporalVisual |

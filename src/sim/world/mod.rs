@@ -295,6 +295,21 @@ pub enum SimSoundEvent {
         stop_sound_id: Option<InternedId>,
         world: crate::sim::anim_class::AnimWorldCoord,
     },
+    /// `IncreaseGattlingStage`'s report (`VocClass::PlayAt @ 0x0070DFDD` on
+    /// the techno's `+0x4A4` handle): start the stage weapon's loop, stopping
+    /// any loop the handle held. `owner` is `combat::gattling::
+    /// gattling_sound_owner(techno)`.
+    GattlingLoop {
+        owner: u64,
+        sound_id: InternedId,
+        world: crate::sim::anim_class::AnimWorldCoord,
+    },
+    /// A stage-up's hard stop of that loop (`VocHandle::StopAndClear @
+    /// 0x00405D40`).
+    GattlingLoopStop { owner: u64 },
+    /// A decay's or Limbo's release of that loop (`SoundEvent::Release @
+    /// 0x00406060`): it stops repeating and plays out.
+    GattlingLoopRelease { owner: u64 },
     /// Native Fly AuxSound1/AuxSound2 at the phase callback world coordinate.
     AircraftPhase {
         sound_id: InternedId,
@@ -3203,6 +3218,15 @@ impl Simulation {
     ) -> Option<crate::sim::anim_class::AnimWorldCoord> {
         if let Some(carrier) = crate::sim::bomb::ticking_sound_carrier(id) {
             return self.bomb_ticking_coord(carrier);
+        }
+        // `TechnoClass::AI_Update` re-drives a gattling type's loop at its
+        // Location every frame (`0x006F9E76..0x006F9EA8`).
+        if let Some(techno) = crate::sim::combat::gattling::gattling_sound_techno(id) {
+            return self
+                .substrate
+                .entities
+                .get(techno)
+                .map(Self::movement_sound_world);
         }
         if let Some(coord) = self.anim_absolute_coord(id) {
             return Some(coord);

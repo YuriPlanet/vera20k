@@ -103,6 +103,9 @@ pub(super) enum HashFeature {
     HouseDefeatTracking = 198,
     /// A carried Crazy Ivan bomb (`ObjectClass+0x38` and its `BombClass`).
     IvanBomb = 199,
+    /// Gattling stage, value and report latch (`TechnoClass+0x140`, `+0x144`,
+    /// `+0x4B8`).
+    Gattling = 200,
 }
 
 impl HashSchema {
@@ -131,6 +134,7 @@ impl HashSchema {
                     | HashFeature::Temporal
                     | HashFeature::HouseDefeatTracking
                     | HashFeature::IvanBomb
+                    | HashFeature::Gattling
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

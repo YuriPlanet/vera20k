@@ -1252,6 +1252,9 @@ pub struct ObjectType {
 
     /// `IsGattling=` (`TechnoTypeClass+0xCD5`, ReadINI `0x0071402A`).
     pub is_gattling: bool,
+    /// `WeaponStages=`, `Stage%d=`, `EliteStage%d=`, `RateUp=`, `RateDown=`
+    /// (`TechnoTypeClass+0xCD8..+0xD10`, ReadINI `0x00714030..0x0071410F`).
+    pub gattling_stages: crate::rules::gattling_type::GattlingStages,
 
     /// `TurretCount=` (`TechnoTypeClass+0x808`, ReadINI `0x0071285E`, ctor
     /// default 0 @ `0x0071136F`). `> 0` short-circuits weapon selection to
@@ -1677,6 +1680,8 @@ impl ObjectType {
     /// The `id` is the section name, and `category` comes from which
     /// type registry listed this object.
     pub fn from_ini_section(id: &str, section: &IniSection, category: ObjectCategory) -> Self {
+        // `IsGattling=` gates the Stage loop read beside it (`0x0071407E`).
+        let is_gattling = section.get_bool("IsGattling").unwrap_or(false);
         let owner: Vec<String> = section
             .get_list("Owner")
             .unwrap_or_default()
@@ -2267,7 +2272,11 @@ impl ObjectType {
                 && section.get_bool("JumpJetTurn").unwrap_or(false),
             emp_pulse_cannon: category == ObjectCategory::Building
                 && section.get_bool("EMPulseCannon").unwrap_or(false),
-            is_gattling: section.get_bool("IsGattling").unwrap_or(false),
+            is_gattling,
+            gattling_stages: crate::rules::gattling_type::GattlingStages::read(
+                section,
+                is_gattling,
+            ),
             turret_count: section.get_i32("TurretCount").unwrap_or(0),
             drainable: section.get_bool("Drainable").unwrap_or(false),
             // Constructor defaults UNCHECKED; stock authors write all three

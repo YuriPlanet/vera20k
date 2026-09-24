@@ -80,6 +80,9 @@ pub enum GameSoundEvent {
         stop_sound_id: Option<String>,
         source: Option<SoundSource>,
     },
+    /// `SoundEvent::Release @ 0x00406060` on one owner's handle: its loop
+    /// stops repeating and plays out.
+    AnimationReleased { anim_id: u64 },
     /// A weapon fired — play the weapon's Report= sound.
     WeaponFired {
         /// sound.ini ID from the weapon's Report= field.
@@ -407,6 +410,7 @@ impl GameSoundEvent {
             | Self::LightningStrike { sound_id, .. }
             | Self::SuperWeaponActivated { sound_id, .. } => sound_id,
             Self::AnimationStopped { stop_sound_id, .. } => stop_sound_id.as_deref().unwrap_or(""),
+            Self::AnimationReleased { .. } => "",
             // The event name, not a sample: the sample is a per-side column
             // the `VoxClass` consumer resolves.
             Self::Eva { event, .. } => event,
