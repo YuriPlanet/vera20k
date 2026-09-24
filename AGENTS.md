@@ -39,6 +39,9 @@ leads, not proof. Confirm active-YR reachability; unreachable claims need a brea
 flag-to-leaf trace. Never invent offsets, identities or behavior.
 
 Priority follows player visibility and frequency; it does not establish equivalence.
+Differences a player cannot see, such as 1–2 px offsets or small color deltas, get a
+one-line residual, not investigation; when a visual detail matters, port the drawing
+code instead of fitting captures.
 Missing or unproven required behavior keeps an exhaustive task open.
 
 Distinguish and cite:
@@ -130,10 +133,15 @@ and use integration evidence appropriate to the change, including runtime reprod
 when needed. Reassess worsening fixes.
 Design/plan artifacts are optional; implementation authority includes design choices.
 
-Port one bounded gameplay mechanism at a time, tracing its native call chains from
-trigger through all required effects across class boundaries. Migrate affected
-consumers and delete superseded paths in the same change. Shared dependencies still
-used by other mechanisms remain with their existing owner.
+Work one complete chain at a time: a player-visible mechanism traced through its
+native call chains from trigger through prerequisites, admission, effects, downstream
+consumers and cleanup, across class and subsystem boundaries. Bound each chain to one
+common path (unit, weapon or screen route) so it stays reviewable; other paths are
+later chains. Pick the next chain by player visibility and frequency. Research may
+range wider; implementation stays on the current chain. In the same change, migrate
+affected consumers, delete superseded paths, and remove duplicates and dead code in
+the code the chain touches. Shared dependencies still used by other mechanisms remain
+with their existing owner.
 
 Record the RNG draws, timer writes and detach calls the chain passes in its residuals
 or ledger row, even when they are not ported. Behavior invented where a native body
@@ -143,10 +151,13 @@ Follow native dependencies across subsystem and class boundaries wherever the se
 behavior requires them. Newly discovered prerequisite state, lifecycle transitions and
 call chains are in scope. Establish their initialization, updates, ordering and cleanup
 through the proper owners, and revise the implementation plan when evidence demands it.
+Fix missing or wrong prerequisites in the same change; leave a residual only for a large
+separate mechanism, and tell the user.
 Preserve explicit user exclusions and stop instructions; record unrelated findings as
 follow-ups.
 
-Choose branch/PR boundaries to keep dependencies coherent and reviewable.
+One chain is one PR: don't split a chain into several PRs or open one per gap, and
+don't stack unmerged implementation branches (researching ahead is fine).
 Residuals name trigger, effect, frequency and downstream risk; deferring required loop or
 determinism/authority/lifecycle work cannot close that loop.
 
