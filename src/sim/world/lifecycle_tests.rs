@@ -2889,7 +2889,7 @@ fn uninit_pointer_expiry_walks_global_object_order_before_break_and_conceal() {
 }
 
 #[test]
-fn pointer_expiry_clears_live_refs_and_preserves_retaliation_attacker() {
+fn pointer_expiry_clears_live_target_and_navigation_refs() {
     let mut sim = Simulation::new();
     insert_entity(&mut sim, 1, EntityCategory::Unit);
     insert_entity(&mut sim, 2, EntityCategory::Unit);
@@ -2915,7 +2915,6 @@ fn pointer_expiry_clears_live_refs_and_preserves_retaliation_attacker() {
     listener.c4_plant = Some(C4PlantState {
         target_building_id: 2,
     });
-    listener.last_attacker_id = Some(2);
 
     sim.uninit(2);
 
@@ -2931,7 +2930,6 @@ fn pointer_expiry_clears_live_refs_and_preserves_retaliation_attacker() {
     );
     assert!(listener.capture_target.is_none());
     assert!(listener.c4_plant.is_none());
-    assert_eq!(listener.last_attacker_id, Some(2));
 }
 
 #[test]
@@ -3775,10 +3773,9 @@ fn score_stats_credit_the_killer_and_charge_the_victim_once() {
 }
 
 #[test]
-fn score_stats_survive_the_retaliation_pass_clearing_last_attacker() {
-    // Dying infantry linger in the logic vector, so the retaliation pass wipes
-    // `last_attacker_id` before they are removed. The kill record is captured at
-    // the instant of destruction and must not depend on that field.
+fn score_stats_come_from_the_kill_record_captured_at_destruction() {
+    // Dying infantry linger in the logic vector before they are removed. The
+    // kill record is captured at the instant of destruction.
     let mut sim = Simulation::new();
     let victim_owner = sim.interner.intern("Americans");
     let killer_owner = sim.interner.intern("Russians");
@@ -3796,7 +3793,6 @@ fn score_stats_survive_the_retaliation_pass_clearing_last_attacker() {
     victim.killed_by = Some(killer_owner);
     // A stock GI (E1) is Cost=200.
     victim.kill_award_points = 200;
-    victim.last_attacker_id = None;
 
     sim.uninit(1);
 

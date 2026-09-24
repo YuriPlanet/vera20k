@@ -1822,12 +1822,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
         listener.health.current, 193,
         "wood Verses scales 214 to 107"
     );
-    assert_eq!(
-        listener.last_attacker_id, None,
-        "authoritative receiver retaliation no longer arms the deferred Phase-6 latch"
-    );
     let nested_fatal = fatal.substrate.entities.get(31).unwrap();
-    assert_eq!(nested_fatal.last_attacker_id, None);
     assert_eq!(
         fatal.interner.resolve(nested_fatal.killed_by.unwrap()),
         "Soviet"
@@ -1893,7 +1888,6 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
     for id in [30, 31] {
         let listener = boundary.substrate.entities.get(id).unwrap();
         assert_eq!(listener.health.current, if id == 30 { 300 } else { 107 });
-        assert_eq!(listener.last_attacker_id, None);
     }
     assert!(
         boundary_result

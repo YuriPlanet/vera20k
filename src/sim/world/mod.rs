@@ -117,7 +117,6 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::ai::{self, AiPlayerState};
 use crate::sim::animation;
 use crate::sim::bridge_state::{BridgeRuntimeState, DamageState};
-use crate::sim::combat;
 use crate::sim::combat::combat_weapon::WeaponSlot;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::components::{AnimClassSpawnDescriptor, Position};
@@ -6223,8 +6222,7 @@ impl Simulation {
             // is applied here so combat-pre conditions (invulnerability, dying)
             // are honored before tick_combat runs.
             // PRODUCES: damage, deaths, bridge damage, fire events. Ordered
-            // ReceiveDamage retaliation is committed inline; only legacy
-            // precomputed damage producers can still write last_attacker_id.
+            // ReceiveDamage retaliation is committed inline.
             // Adjacent idle engineers receive an enter-cell order here.
             // Repair and consumption occur synchronously at Walk's completed
             // step in the object pass. The capture system excludes repair huts.
@@ -6343,20 +6341,10 @@ impl Simulation {
             // repairs, retaliation, miner, aircraft) are dying-gated. Combat
             // post-processing above still reads the dead ids while resolvable
             // (count decrement, owner snapshot) — that runs before this point.
-            // --- Phase 6: Legacy retaliation + Passengers ---
-            // DEPENDS ON: non-receiver damage producers that still use the
-            // transitional last_attacker_id handoff. Ordered area/direct
-            // receiver hits already completed Mission Override inline.
+            // --- Phase 6: Passengers ---
+            // Retaliation is not a phase: every receiver issues its Mission
+            // Override inline (`TechnoClass::ReceiveDamage 0x00702A43`).
             let phase_six_path_grid = post_terrain_path_grid;
-            let logic_order = self.live_object_order_snapshot();
-            combat::tick_retaliation(
-                &mut self.substrate.entities,
-                rules,
-                &self.interner,
-                &logic_order,
-                self.resolved_terrain.as_ref(),
-                Some(&self.house_alliances),
-            );
             passenger_ownership_changed = passenger::tick_passenger_system(self, rules);
             self.tick_order_intents_post_combat_with_overlay_registry(
                 phase_six_path_grid,

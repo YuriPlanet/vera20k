@@ -28,9 +28,9 @@ fn visit(store: &mut EntityStore, rules: &RuleSet, frame: u32) -> CombatTickResu
 }
 
 #[test]
-fn infantry_orders_and_retaliation_leave_facing_to_fire_start() {
+fn infantry_orders_leave_facing_to_fire_start() {
     let rules = infantry_fire_frame_rules();
-    for order in 0..3 {
+    for order in 0..2 {
         let mut store = pair();
         let interner = test_interner();
         match order {
@@ -41,7 +41,7 @@ fn infantry_orders_and_retaliation_leave_facing_to_fire_start() {
                 Some(&rules),
                 &interner
             )),
-            1 => assert!(issue_attack_cell_command(
+            _ => assert!(issue_attack_cell_command(
                 &mut store,
                 1,
                 8,
@@ -49,18 +49,6 @@ fn infantry_orders_and_retaliation_leave_facing_to_fire_start() {
                 Some(&rules),
                 &interner
             )),
-            _ => {
-                store.get_mut(1).unwrap().last_attacker_id = Some(2);
-                combat_targeting::tick_retaliation(
-                    &mut store,
-                    &rules,
-                    &interner,
-                    &[1, 2],
-                    None,
-                    None,
-                );
-                assert!(store.get(1).unwrap().attack_target.is_some());
-            }
         }
         let entity = store.get(1).unwrap();
         assert_eq!(entity.facing, 0x81, "order {order}");

@@ -1121,19 +1121,39 @@ fn effect_live(weapon: &WeaponFacts, firer: &FirerFacts) -> bool {
         || (weapon.is_sonic && firer.wave_live)
 }
 
-/// `0x006F3970` with -1: Damage + AmbientDamage of the current weapon for a
-/// `TurretCount` type that is not Gattling, else the truncated average over
-/// the non-empty slots 0 and 1.
-fn weapon_value(facts: &FireFacts, query: &mut impl FireQuery) -> i32 {
-    let value = |weapon: WeaponFacts| weapon.damage.wrapping_add(weapon.ambient_damage);
-    if facts.firer_type.turret_count > 0 && !facts.firer_type.is_gattling {
-        return query.weapon(facts.firer.current_weapon).map_or(0, value);
+/// `0x006F3970` with -1, through GetFireError's weapon query (a garrison
+/// answers its occupant's weapon).
+pub(crate) fn weapon_value(facts: &FireFacts, query: &mut impl FireQuery) -> i32 {
+    weapon_damage_value(
+        facts.firer_type.turret_count,
+        facts.firer_type.is_gattling,
+        facts.firer.current_weapon,
+        |slot| {
+            query
+                .weapon(slot)
+                .map(|weapon| weapon.damage.wrapping_add(weapon.ambient_damage))
+        },
+    )
+}
+
+/// `TechnoClass::GetWeaponDamageValue(-1) @ 0x006F3970`: Damage + AmbientDamage
+/// of the current weapon for a `TurretCount` type that is not Gattling, else
+/// the truncated average over the non-empty slots 0 and 1. `value` answers
+/// GetWeapon (vt+0x3F8) of a slot as that weapon's Damage + AmbientDamage.
+pub(crate) fn weapon_damage_value(
+    turret_count: i32,
+    is_gattling: bool,
+    current_weapon: i32,
+    mut value: impl FnMut(i32) -> Option<i32>,
+) -> i32 {
+    if turret_count > 0 && !is_gattling {
+        return value(current_weapon).unwrap_or(0);
     }
     let mut total = 0i32;
     let mut count = 0i32;
     for slot in 0..2 {
-        if let Some(weapon) = query.weapon(slot) {
-            total = total.wrapping_add(value(weapon));
+        if let Some(slot_value) = value(slot) {
+            total = total.wrapping_add(slot_value);
             count += 1;
         }
     }

@@ -54,6 +54,12 @@ impl FireSubject<'_> {
         WorldQuery { subject: self }.in_range()
     }
 
+    /// `GetWeaponDamageValue(-1) @ 0x006F3970` through this subject's
+    /// GetWeapon, so a garrison reads its occupant's weapon.
+    pub(crate) fn weapon_damage_value(&self) -> i32 {
+        super::fire_error::weapon_value(&self.facts(), &mut WorldQuery { subject: self })
+    }
+
     fn target_entity(&self) -> Option<&GameEntity> {
         match self.target {
             Some(TargetKind::Entity(id)) => self.world.substrate.entities.get(id),
@@ -76,9 +82,9 @@ impl FireSubject<'_> {
         self.world.session.binary_frame
     }
 
-    /// The weapon at a GetWeapon index, with its warhead read against the
-    /// target's armor.
-    fn weapon_at(&self, index: i32) -> Option<&WeaponType> {
+    /// GetWeapon (vt+0x3F8) at an index: a garrison's occupant weapon for
+    /// every slot (`0x004526F0`), else the rank-selected slot.
+    pub(crate) fn weapon_at(&self, index: i32) -> Option<&WeaponType> {
         if let Some((weapon, _)) = self.garrison {
             return (index >= 0).then_some(weapon);
         }

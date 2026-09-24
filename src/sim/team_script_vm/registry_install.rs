@@ -114,6 +114,7 @@ impl TeamScriptVm {
                 task_force_id,
                 priority: team_type.read_int("Priority", 7),
                 is_base_defense: team_type.read_bool("IsBaseDefense", false),
+                suicide: team_type.read_bool("Suicide", false),
                 combined_movement_zone: MovementZone::Fly,
                 base_zone_relation_enforced: true,
                 transport_crossing_required: false,
@@ -473,10 +474,7 @@ fn derive_team_type_zone_fields(vm: &mut TeamScriptVm, interner: &StringInterner
     }
 }
 
-fn same_install_issue(
-    left: &TeamAiInstallDiagnostic,
-    right: &TeamAiInstallDiagnostic,
-) -> bool {
+fn same_install_issue(left: &TeamAiInstallDiagnostic, right: &TeamAiInstallDiagnostic) -> bool {
     match (left, right) {
         (
             TeamAiInstallDiagnostic::UnknownTaskForceMember {

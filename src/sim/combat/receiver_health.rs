@@ -68,9 +68,6 @@ pub(super) fn commit_receiver_health(
         {
             // Damage fully nullified by IronCurtain/ForceShield.
             // Flash-effect spawn deferred (see design doc Open Questions).
-            if attacker_id != RAD_NO_ATTACKER {
-                target.last_attacker_id = Some(attacker_id);
-            }
             return None;
         }
 

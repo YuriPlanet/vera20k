@@ -857,28 +857,6 @@ mod tests {
     }
 }
 
-/// Original6F3970(-1) averages Damage+AmbientDamage, despite the historical
-/// GetWeaponRange name. Weapon ReadINI7722D4/7720B2 identify+A4/+98.
-fn damage_aggregate(live: &LivePublication<'_>, e: &GameEntity, obj: &ObjectType) -> i32 {
-    let current = combat_weapon::attacker_facts(e, obj).current_weapon_number;
-    let slots = if obj.turret_count > 0 && !obj.is_gattling {
-        [current, -1]
-    } else {
-        [0, 1]
-    };
-    let mut count = 0;
-    let mut sum = 0i32;
-    for slot in slots {
-        if let Some((name, _)) = combat_weapon::weapon_for_index(obj, e.veterancy, slot)
-            && let Some(weapon) = live.rules.weapon(name)
-        {
-            sum = sum.wrapping_add(weapon.damage.wrapping_add(weapon.ambient_damage));
-            count += 1;
-        }
-    }
-    if count == 0 { 0 } else { sum / count }
-}
-
 fn moving(e: &GameEntity) -> bool {
     if let Some(moving) = crate::sim::movement::motion_query::is_moving(e) {
         return moving;
@@ -1454,7 +1432,7 @@ fn foot_entry(
                 continue;
             }
             if if infantry {
-                damage_aggregate(live, e, obj) <= 0
+                crate::sim::combat::combat_weapon::weapon_damage_value(e, obj, live.rules) <= 0
             } else {
                 weapon0.is_none()
             } {
@@ -1529,7 +1507,7 @@ fn foot_entry(
                     entry_result = if stationary_infantry == 3 { 6 } else { 2 };
                 }
             } else {
-                if damage_aggregate(live, e, obj) <= 0 {
+                if crate::sim::combat::combat_weapon::weapon_damage_value(e, obj, live.rules) <= 0 {
                     return Ok(7);
                 }
                 entry_result = entry_result.max(5);
