@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use crate::assets::fnt_file::{FntFile, FntGlyph};
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::gpu::GpuContext;
-use crate::render::shell_text_reveal::{PathAReveal, encoded_srgb_to_linear, encoded_unit_rgb};
+use crate::render::shell_text_reveal::{PathAReveal, encoded_unit_rgb};
 
 /// Hardcoded inter-glyph spacing.
 pub const CHAR_SPACING: u32 = 1;
@@ -274,7 +274,9 @@ impl BitFont {
                 _ => {}
             }
 
-            let tint = encoded_srgb_to_linear(encoded_rgb);
+            // UI tints multiply the encoded texel (`palette_light`), so the
+            // encoded COLORREF bytes are the tint.
+            let tint = encoded_rgb.map(|channel| f32::from(channel) / 255.0);
             let missing_tint = Self::missing_color_xor(tint);
             let (entry, use_missing_tint) = match self.glyphs.get(&code_unit) {
                 Some(glyph) => (Some(*glyph), false),
@@ -821,6 +823,21 @@ pub(crate) mod tests {
         assert!((xored[0] - 21.0 / 31.0).abs() < 0.01, "R = {}", xored[0]);
         assert!((xored[1] - 21.0 / 63.0).abs() < 0.01, "G = {}", xored[1]);
         assert!((xored[2] - 10.0 / 31.0).abs() < 0.01, "B = {}", xored[2]);
+    }
+
+    #[test]
+    fn path_a_tint_is_the_encoded_colorref() {
+        // UI tints multiply the encoded texel (`palette_light`): the terminal
+        // highlight unit's (255, 255, 30) must reach the surface as blue 30.
+        let font = make_test_font(&[(b'a' as u16, 6)], 4);
+        let reveal = PathAReveal {
+            count: 9,
+            range: 8,
+            base_rgb: [255, 255, 0],
+            highlight_rgb: [255, 255, 255],
+        };
+        let (instances, _) = font.build_text_path_a("a", 0.0, 0.0, 1.0, 0.5, [0.0; 2], 0, reveal);
+        assert_eq!(instances[0].tint, [1.0, 1.0, 30.0 / 255.0]);
     }
 
     #[test]

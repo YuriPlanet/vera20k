@@ -35,7 +35,7 @@ pub fn layout_pass(desc: &DialogDescriptor, screen_w: i32, screen_h: i32) -> Vec
         .map(|c| {
             let rect = match desc.reposition_policy {
                 RepositionPolicy::IncludeSetReanchor => {
-                    apply_anchor(c.anchor, c.dlu_rect, screen_w, panel)
+                    apply_anchor(c.anchor, c.dlu_rect, screen_w, screen_h, panel)
                 }
                 // Modal-centered dialogs keep their DLU-derived client rect; the
                 // caller positions the modal panel (no fullscreen re-anchor).
@@ -135,10 +135,28 @@ pub fn layout_pass_in_game_options(
         .collect()
 }
 
+/// Resolve one include-set control outside a descriptor table, with the same
+/// per-control rule `layout_pass` applies.
+pub fn anchor_rect(rule: AnchorRule, dlu: RectPx, screen_w: i32, screen_h: i32) -> RectPx {
+    apply_anchor(
+        rule,
+        dlu,
+        screen_w,
+        screen_h,
+        geom::right_panel_rects(screen_w, screen_h),
+    )
+}
+
 /// Resolve one control's pixel rect by re-anchor rule. `dlu` is the raw DLU
 /// resource rect; the snapped owner-draw rule consumes only `dlu.y`, while the
 /// bottom-row rule is derived entirely from the resolved panel geometry.
-fn apply_anchor(rule: AnchorRule, dlu: RectPx, screen_w: i32, panel: RightPanelRects) -> RectPx {
+fn apply_anchor(
+    rule: AnchorRule,
+    dlu: RectPx,
+    screen_w: i32,
+    screen_h: i32,
+    panel: RightPanelRects,
+) -> RectPx {
     match rule {
         AnchorRule::OwnerDrawButtonSnap { cell_w } => {
             geom::snap_button_round_half_up(dlu.y, panel, cell_w)
@@ -148,9 +166,11 @@ fn apply_anchor(rule: AnchorRule, dlu: RectPx, screen_w: i32, panel: RightPanelR
             let x = panel.top.x + (geom::RIGHT_PANEL_WIDTH - cell_w);
             RectPx::new(x, y, cell_w, geom::SDBTNANM_CELL_H)
         }
-        AnchorRule::RightAnchor => {
-            right_anchor(screen_w, panel, geom::dlu_rect(dlu.x, dlu.y, dlu.w, dlu.h))
-        }
+        AnchorRule::RightAnchor => right_anchor(
+            screen_w,
+            screen_h,
+            geom::dlu_rect(dlu.x, dlu.y, dlu.w, dlu.h),
+        ),
         AnchorRule::RightAnchorRuntimeAdjust {
             resource_dw,
             resource_dh,
@@ -164,21 +184,23 @@ fn apply_anchor(rule: AnchorRule, dlu: RectPx, screen_w: i32, panel: RightPanelR
                 resource.w + resource_dw,
                 resource.h + resource_dh,
             );
-            let a = right_anchor(screen_w, panel, adjusted);
+            let a = right_anchor(screen_w, screen_h, adjusted);
             RectPx::new(a.x, a.y + dy, a.w, a.h + dh)
         }
     }
 }
 
-/// Right-panel child anchor: sidebar-inset + oversized-screen horizontal
-/// compensation, anchored to `panel.top.y + rect.y`. Port of the per-shell
-/// `right_anchor` helper; `rect` is the already-DLU->pixel-converted client rect.
-fn right_anchor(screen_w: i32, panel: RightPanelRects, rect: RectPx) -> RectPx {
+/// Right-panel static anchor (`0x0060B1D0`, no network session): inset
+/// `(168 - w) / 2` from the right edge, less the horizontal half of the
+/// screen beyond 800; `y` is the resource `y` plus the vertical half beyond
+/// 600. Both halves clamp at 0. `rect` is the converted client rect.
+fn right_anchor(screen_w: i32, screen_h: i32, rect: RectPx) -> RectPx {
     let inset = (geom::RIGHT_PANEL_WIDTH - rect.w) / 2;
     let delta_x = geom::center_offset(screen_w, SHELL_BASE_W);
+    let delta_y = geom::center_offset(screen_h, SHELL_BASE_H);
     RectPx::new(
         screen_w - inset - rect.w - delta_x,
-        panel.top.y + rect.y,
+        rect.y + delta_y,
         rect.w,
         rect.h,
     )
@@ -248,10 +270,10 @@ mod tests {
                     },
                 ),
                 ctrl(
-                    0x071B,
+                    0x071C,
                     ControlKind::Static,
                     RectPx::new(447, 29, 61, 33),
-                    AnchorRule::RightAnchor,
+                    crate::ui::shell::descriptor::MONITOR_ANCHOR,
                 ),
             ],
         };
@@ -263,8 +285,30 @@ mod tests {
         // Title: compatibility +1w/+1h, right-anchor (635,2,163,17),
         // then the title finalizer adds +7y/+1h.
         assert_eq!(rect_for(&laid, 0x0694), RectPx::new(635, 9, 163, 18));
-        // Website static: right-anchor of (671,47,92,54) -> x=800-38-92.
-        assert_eq!(rect_for(&laid, 0x071B), RectPx::new(670, 47, 92, 54));
+        // 0x71C monitor window: +1w/+1h, x = 800 - 37 - 93.
+        assert_eq!(rect_for(&laid, 0x071C), RectPx::new(670, 47, 93, 55));
+    }
+
+    #[test]
+    fn right_panel_statics_take_the_vertical_half_beyond_600() {
+        // 0x0060B1D0: y = resource y + max(0, (H - 600) / 2), independent of
+        // the panel art, which only moves from height 768.
+        for (screen_h, heading_y, monitor_y) in [(480, 9, 47), (700, 59, 97), (720, 69, 107)] {
+            let heading = anchor_rect(
+                crate::ui::shell::descriptor::HEADING_ANCHOR,
+                RectPx::new(425, 1, 108, 10),
+                800,
+                screen_h,
+            );
+            let monitor = anchor_rect(
+                crate::ui::shell::descriptor::MONITOR_ANCHOR,
+                RectPx::new(447, 29, 61, 33),
+                800,
+                screen_h,
+            );
+            assert_eq!(heading, RectPx::new(635, heading_y, 163, 18), "{screen_h}");
+            assert_eq!(monitor, RectPx::new(670, monitor_y, 93, 55), "{screen_h}");
+        }
     }
 
     #[test]

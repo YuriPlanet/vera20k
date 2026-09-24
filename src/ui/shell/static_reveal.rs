@@ -213,6 +213,52 @@ impl Kind1StaticReveal {
     }
 }
 
+/// A kind-1 static whose dirty paint is committed by the frame loop once the
+/// recomposition that drew it has been presented.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct PresentedKind1Static {
+    reveal: Kind1StaticReveal,
+    pending: Option<Kind1RevealReceipt>,
+}
+
+impl PresentedKind1Static {
+    /// The shell SHOW completion starts the reveal once (`0x4EC -> 0x4EE`).
+    pub(crate) fn start(&mut self, text: &str, now: Instant) -> bool {
+        self.reveal.start(text, now)
+    }
+
+    /// Reveal window for this recomposition, `None` while the child is hidden.
+    pub(crate) fn paint(&mut self, now: Instant) -> Option<Kind1RevealWindow> {
+        self.reveal.poll_timer(now);
+        match self.reveal.paint_window() {
+            Kind1PaintWindow::Hidden => {
+                self.pending = None;
+                None
+            }
+            Kind1PaintWindow::Retained(window) => {
+                self.pending = None;
+                Some(window)
+            }
+            Kind1PaintWindow::Due { window, receipt } => {
+                self.pending = Some(receipt);
+                Some(window)
+            }
+        }
+    }
+
+    /// The latest recomposition was presented.
+    pub(crate) fn commit_presented(&mut self) {
+        if let Some(receipt) = self.pending.take() {
+            self.reveal.record_presented(receipt);
+        }
+    }
+
+    /// The reveal ran to completion and its final paint is on screen.
+    pub(crate) fn is_terminal(&self) -> bool {
+        self.pending.is_none() && self.reveal.is_terminal_persistent()
+    }
+}
+
 fn next_deadline_after(deadline: Instant, now: Instant) -> Instant {
     let overdue = now.duration_since(deadline);
     let intervals = overdue.as_nanos() / KIND1_TIMER_INTERVAL.as_nanos() + 1;
@@ -225,7 +271,7 @@ fn next_deadline_after(deadline: Instant, now: Instant) -> Instant {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn due(reveal: &Kind1StaticReveal) -> (Kind1RevealWindow, Kind1RevealReceipt) {
@@ -242,6 +288,40 @@ mod tests {
         assert_eq!(reveal.paint_window(), Kind1PaintWindow::Hidden);
         assert!(!reveal.poll_timer(now + Duration::from_secs(1)));
         assert!(!reveal.is_terminal_persistent());
+    }
+
+    /// Native getters executed under Unicorn by
+    /// `tools/storage_oracle/shell_static_timers.py`.
+    pub(crate) fn native_static_timer_cases() -> Vec<serde_json::Value> {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/storage_oracle/shell_static_timers.json"
+        ))
+        .unwrap();
+        fixture["cases"].as_array().unwrap().clone()
+    }
+
+    #[test]
+    fn heading_reveal_parameters_match_the_native_getters() {
+        // Heading 0x694 of the right-panel dialogs: kind 1 (0x00602490),
+        // interval 0x00600CA0, step 0x006015E0 (the reveal advances by one),
+        // range 0x00601D20.
+        let cases = native_static_timer_cases();
+        for dialog in [0xE2, 0x100, 0x101, 0x129, 0xD5] {
+            let case = cases
+                .iter()
+                .find(|case| case["dialog_id"] == dialog && case["control_id"] == 0x694)
+                .expect("heading case");
+            assert_eq!(case["kind1"], 1, "dialog {dialog:#x}");
+            assert_eq!(
+                case["interval_ms"].as_u64(),
+                Some(KIND1_TIMER_INTERVAL.as_millis() as u64)
+            );
+            assert_eq!(case["step"], 1);
+            assert_eq!(
+                case["range"].as_u64(),
+                Some(u64::from(KIND1_HIGHLIGHT_RANGE))
+            );
+        }
     }
 
     #[test]

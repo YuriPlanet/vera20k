@@ -168,7 +168,9 @@ fn main_menu_status_csf_key(hovered_button: Option<MainMenuControlId>) -> Option
     hovered_button.map(tooltip_csf_key_for_control)
 }
 
-fn main_menu_title_path_a(window: Kind1RevealWindow) -> PathAReveal {
+/// Path-A tint for a right-panel heading reveal: yellow text with a white
+/// highlight trail.
+pub(crate) fn main_menu_title_path_a(window: Kind1RevealWindow) -> PathAReveal {
     PathAReveal {
         count: window.count,
         range: window.range,
@@ -490,6 +492,7 @@ fn render_main_menu_shell_to_target_inner(
     }
 
     let layout = compute_layout(state.renderer.gpu.config.width, state.renderer.gpu.config.height);
+    let monitor_frame = crate::app::frontend::menu_page_render::paint_shell_monitor(state);
     let chrome = state
         .frontend.main_menu_shell_chrome
         .as_ref()
@@ -503,12 +506,15 @@ fn render_main_menu_shell_to_target_inner(
     // 0xE2-only MNSCRN parent background, submitted FIRST (no analog on 0x100).
     let background_instances = build_parent_background_instances(chrome, &layout);
     let movie_instances = build_movie_instances(&layout);
-    let chrome_instances = shell_paint::paint_chrome(
+    let mut chrome_instances = shell_paint::paint_chrome(
         chrome,
         layout.right_panel,
         Some(layout.lower_strip),
         layout.screen.w,
     );
+    chrome_instances.extend(monitor_frame.and_then(|frame| {
+        shell_paint::paint_warning_monitor(chrome, layout.warning_monitor, frame)
+    }));
     let buttons = main_menu_paint_buttons(
         &layout,
         state.frontend.main_menu_shell_state.pressed_owner_draw_button,

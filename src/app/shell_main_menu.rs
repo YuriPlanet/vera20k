@@ -600,7 +600,7 @@ impl App {
     }
 
     /// Adapt the laid-out main-menu buttons into the shared controller's
-    /// button-only input feed. Statics (title/website) are deliberately excluded,
+    /// button-only input feed. Statics (title/monitor) are deliberately excluded,
     /// so the controller never hit-tests or hover-tracks them.
     fn main_menu_shell_button_feed(
         layout: &crate::ui::main_menu_shell::MainMenuShellLayout,
@@ -667,8 +667,8 @@ impl App {
         let pressed = state.frontend.shell_controller.pressed().is_some();
         Self::mirror_shell_controller_to_main_menu(state);
         // The original plays the button sound on mouse-DOWN over a button (not on
-        // release); `pressed` is button-only by construction, so the website static
-        // never triggers it.
+        // release); `pressed` is button-only by construction, so a static never
+        // triggers it.
         if pressed {
             Self::play_main_menu_button_sound(state);
         }
@@ -985,9 +985,7 @@ impl App {
             MainMenuShellAction::MoviesAndCredits => {
                 Self::open_movies_credits_page(state);
             }
-            MainMenuShellAction::WwOnline
-            | MainMenuShellAction::Network
-            | MainMenuShellAction::YuriWebsite => {
+            MainMenuShellAction::WwOnline | MainMenuShellAction::Network => {
                 log::info!(
                     "Main-menu shell action {:?} is preserved but downstream dialog is not implemented yet",
                     action

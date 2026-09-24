@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Complete original kind-1 classifier/interval/step/range getters and the kind-4 startup timer for 0x694/0x695/0x71C in seven shell dialogs",
+  "assumptions": [
+    "Pre-match shell: the network-session predicate 69BBE0 returns false",
+    "The parent dialog's record is found by the original lookup loop in a supplied one-bucket table; record fields other than HWND, next and dialog id stay zero",
+    "Values are the getters' returns; which statics a dialog creates, their painting and message order are established separately by instruction reading"
+  ],
+  "substitutions": [
+    "Record-table hash function pointer [AC1B18] returns bucket 0",
+    "GetDlgCtrlID IAT pointer returns the fixture control id",
+    "69BBE0 returns false (no network session)"
+  ],
+  "entry_points": {
+    "kind1": "0x00602490",
+    "interval_ms": "0x00600CA0",
+    "step": "0x006015E0",
+    "range": "0x00601D20",
+    "kind4_startup_ms": "0x00603240",
+    "show_completion_enum": "0x0060AA60",
+    "kind4_init": "0x0060A9E2"
+  },
+  "payload_sha256": "b27d99758044f29320ad7561e791a7f29c505f3990515c5729bc4156b60b98b2"
+}

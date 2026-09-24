@@ -45,7 +45,9 @@ impl LauncherOptionsLayout {
         let dlu = |x, y, w, h| px(dlu_rect(x, y, w, h));
         Self {
             title: px(RectPx::new(635, 9, 162, 17)),
-            warning: px(RectPx::new(670, 47, 92, 54)),
+            // 0x71C window: +1w/+1h like the family's monitor, so the 92x53
+            // frame centers at (670, 48).
+            warning: px(RectPx::new(670, 47, 93, 55)),
             resolution: px(RectPx::new(351, 86, 180, COMBO_FACE_H)),
             trackbars: [
                 (LauncherTrackbarId::Detail, dlu(89, 53, 120, 13)),

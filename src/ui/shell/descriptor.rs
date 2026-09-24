@@ -44,12 +44,9 @@ pub enum AnchorRule {
     /// right-panel bottom cap, flush-right at `cell_w`. The resource top is not
     /// consumed. (0xE2 Exit.)
     OwnerDrawButtonBottomRow { cell_w: i32 },
-    /// Right-panel child: sidebar-inset, oversized-screen compensated, anchored
-    /// to `panel.top.y + dlu_top`. (0xE2 Yuri-website static.) This is the main
-    /// menu's convention specifically; single-player and skirmish anchor Y to
-    /// `center_offset(screen_h, 600)` instead, so they will need their own
-    /// variant when they migrate. Do NOT collapse this to one convention — that
-    /// would silently shift the shipped 0xE2 title/website pixels.
+    /// Right-panel static (`0x0060B1D0`): sidebar inset and the half of the
+    /// screen beyond 800x600 on each axis (heading and `0x71C` monitor of 0xE2
+    /// and the menu pages 0x100/0x101/0x129).
     RightAnchor,
     /// Apply a runtime size correction to the converted resource rect before
     /// right-anchoring it, then apply the final `(dy, dh)` adjustment.
@@ -61,6 +58,29 @@ pub enum AnchorRule {
         dh: i32,
     },
 }
+
+/// Right-panel heading static `0x694`: the runtime window is one pixel wider
+/// and taller than the resource conversion (the compatibility correction the
+/// 0xE2 heading already carried), then the fix-up pass adds `+7` y / `+1` h
+/// for the right-panel shells (`0x0060BD17`).
+pub const HEADING_ANCHOR: AnchorRule = AnchorRule::RightAnchorRuntimeAdjust {
+    resource_dw: 1,
+    resource_dh: 1,
+    dy: 7,
+    dh: 1,
+};
+
+/// Monitor static `0x71C`: the same one-pixel window correction as the
+/// heading. Its inset override 37 (`0x0060AC99..0x0060AD16`) equals
+/// `(168 - 93) / 2`, so the plain right-panel inset lands it at x 670 at
+/// 800x600 with the 93x55 window, and the 92x53 SDWRNANM frame centers at
+/// `(670, 48)`.
+pub const MONITOR_ANCHOR: AnchorRule = AnchorRule::RightAnchorRuntimeAdjust {
+    resource_dw: 1,
+    resource_dh: 1,
+    dy: 0,
+    dh: 0,
+};
 
 /// Background composition mode (study §C8): mode-1 right-panel shells vs mode-2
 /// SHP modal. Only `RightPanelShell` is exercised this slice.

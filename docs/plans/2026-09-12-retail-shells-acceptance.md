@@ -41,7 +41,7 @@ active caller exposes another route; exclude only with recorded evidence.
 | Family | Required journey and children | Current implementation entry points |
 | --- | --- | --- |
 | Skirmish first | Main menu → Single Player → setup; roster/name/country/color/team/AI, settings, map/mode chooser, cooperative selection, validation, RMG and saved-seed children; Back/reentry; Start → loading → first tactical frame | `src/app/shell_skirmish.rs`, `shell_random_map.rs`, `src/ui/skirmish_shell/`, `src/app/frontend/skirmish_shell_render.rs` |
-| Startup/main menu | Startup presentation, main menu, Single Player, navigation/help, website action, exit confirmation/shutdown | `src/app/shell_main_menu.rs`, `src/ui/main_menu_shell/`, `single_player_shell/` |
+| Startup/main menu | Startup presentation, main menu, Single Player, navigation/help, right-panel statics (heading, `0x71C` monitor, status line), exit confirmation/shutdown. Retail `0xE2` has no website control (template scan). | `src/app/shell_main_menu.rs`, `src/ui/main_menu_shell/`, `single_player_shell/`, `src/ui/shell/{menu_page,warning_monitor,static_reveal}.rs`; evidence `docs/research/shell/2026-09-24-right-panel-statics-evidence.md` |
 | Campaign | Choice/difficulty, launch, active briefing/media checks, progression and return | `src/ui/main_menu_dialogs.rs`, `src/app/shell_main_menu.rs` |
 | Saved games | Single Player Load and in-game Load/Save/Delete; metadata, edit, confirmation/error, restoration and return | `src/app/persistence/save_load_panel.rs` |
 | Launcher options | Parent settings, previews, persistence; Keyboard and Network children; child return | `src/app/shell_main_menu.rs`, `src/ui/main_menu_dialogs.rs` |

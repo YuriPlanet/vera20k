@@ -60,7 +60,7 @@ research are `baseX=6`, `baseY=13`, so `533x369` DLU maps to `800x600` px.
 | `0x694` | Static | `425,1,108,10` | `638,2,162,16` | `GUI:MainMenu` | Centered yellow heading text |
 | `0x695` | Static | `2,355,303,12` | `3,577,455,20` | `GUI:Blank` | Common hover tooltip/status text sink |
 | `0x71A` | Static | `0,0,304,266` | template `0,0,456,432`; runtime movie size | none | RA2TS Bink movie panel |
-| `0x71C` | Static | `447,29,61,33` | `671,47,92,54` | none | Blank/transparent in verified `0xE2` path |
+| `0x71C` | Static | `447,29,61,33` | `671,47,92,54` | none | Animated SDWRNANM monitor (corrected, see below) |
 | `0x71D` | Static | `425,357,108,10` | `638,580,162,16` | `GUI:Blank` | Bottom-right version/status text |
 | `0x683` | Button | `425,125,108,23` | `638,203,162,37` | `GUI:SinglePlayer` | Owner-draw PCX button |
 | `0x684` | Button | `425,152,108,23` | `638,247,162,37` | `GUI:WWOnline` | Owner-draw PCX button |
@@ -298,6 +298,12 @@ horizontally inside its rect, with the same default yellow text color unless a
 later `0x498` overrides it. No such override was found on the `0xE2` path.
 
 ### `0x71C` blank/transparent static
+
+> **Corrected 2026-09-24.** `0x71C` is the animated SDWRNANM warning monitor
+> (static kind 4, set up by `0x0060A5B0`, image `0x006038C7`, SHELL2 palette
+> `0x00603776`); retail captures of `0xE2` show its frames at `(670, 48)`.
+> The conclusion below is superseded; see
+> `docs/research/shell/2026-09-24-right-panel-statics-evidence.md`.
 
 Resource `0x71C` is class `Static`, rect `447,29,61,33`, style `0x50000007`,
 empty title.

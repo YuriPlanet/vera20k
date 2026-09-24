@@ -60,6 +60,9 @@ pub struct MainMenuShellChromeAtlas {
     /// composited exactly before the rows are drawn over it.
     pub parent_background_640_mnscrns_list: Option<MainMenuShellChromeEntry>,
     pub parent_background_large_mnscrnl_list: Option<MainMenuShellChromeEntry>,
+    /// Static `0x71C` SDWRNANM frames in order (SHELL2 palette); empty when
+    /// the SHP is missing.
+    pub warning_monitor_frames: Vec<MainMenuShellChromeEntry>,
     /// Opaque white texel block for solid fills (list frames, selection).
     pub white_pixel: Option<MainMenuShellChromeEntry>,
     /// Owner-draw list scrollbar art (`0x0061C690`): 18x22 arrows, released
@@ -155,8 +158,11 @@ pub fn build_main_menu_shell_chrome_atlas(
     }
     if let Some(pal) = shell2_palette.as_ref() {
         push_optional_shp(&mut rendered, assets, "SDBTNBKGD.SHP", pal, 0);
+        // Static 0x71C: every SDWRNANM frame through the SHELL2 path
+        // (0x00603776), in frame order.
+        rendered.extend(render_shp_frames(assets, "SDWRNANM.SHP", pal, "monitor"));
     } else {
-        log::warn!("Missing SHELL2.PAL; skipping main-menu right-panel tile SHP");
+        log::warn!("Missing SHELL2.PAL; skipping main-menu right-panel tile and monitor SHPs");
     }
 
     for name in [
@@ -218,6 +224,13 @@ pub fn build_main_menu_shell_chrome_atlas(
             grip_mid: by_label.get("sbgripm.pcx").copied(),
             grip_bottom: by_label.get("sbgripb.pcx").copied(),
         },
+        warning_monitor_frames: (0..)
+            .map_while(|frame| {
+                by_label
+                    .get(&format!("sdwrnanm.shp:monitor#{frame}"))
+                    .copied()
+            })
+            .collect(),
         white_pixel: by_label.get("white").copied().map(|mut entry| {
             // Sample only the block's center so filtering never reaches padding.
             entry.uv_origin[0] += entry.uv_size[0] * 0.25;
@@ -267,6 +280,44 @@ fn render_shp_entry(
 ) -> Option<RenderedChromeEntry> {
     let load = assets.load_file_from_mix(file_name)?;
     let shp = ShpFile::from_bytes(&load.bytes).ok()?;
+    shp_frame_entry(&shp, file_name, palette, frame, tag)
+}
+
+/// Every frame of one SHP, parsed once, labelled `<file>:<prefix>#<frame>`.
+fn render_shp_frames(
+    assets: &AssetManager,
+    file_name: &str,
+    palette: &Palette,
+    tag_prefix: &str,
+) -> Vec<RenderedChromeEntry> {
+    let Some(load) = assets.load_file_from_mix(file_name) else {
+        return Vec::new();
+    };
+    let Ok(shp) = ShpFile::from_bytes(&load.bytes) else {
+        log::warn!("Could not parse {file_name}");
+        return Vec::new();
+    };
+    (0..shp.frames.len())
+        .map_while(|frame| {
+            shp_frame_entry(
+                &shp,
+                file_name,
+                palette,
+                frame,
+                Some(&format!("{tag_prefix}#{frame}")),
+            )
+        })
+        .collect()
+}
+
+/// One frame placed on its full SHP canvas.
+fn shp_frame_entry(
+    shp: &ShpFile,
+    file_name: &str,
+    palette: &Palette,
+    frame: usize,
+    tag: Option<&str>,
+) -> Option<RenderedChromeEntry> {
     if frame >= shp.frames.len() {
         return None;
     }
