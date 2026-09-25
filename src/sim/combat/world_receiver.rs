@@ -2722,17 +2722,27 @@ fn admit_attacker_fire<'r>(
 /// A unit whose turn still reaches the firing update: alive, and not warped
 /// out. `UnitClass::AI` returns first on vt+0x1D4, BeingWarpedOut `+0x270`
 /// (`0x007362FB..0x0073635A`), which a Temporal chain and the teleport's
-/// warp-out both set.
-///
-/// Native gates the update on IsAlive (`+0x90`, `0x007365BB`), so a crashing
-/// Unit's wreck still reaches it; here Health does (recorded residual at the
-/// Techno bracket's Guard B, `world::techno_ai`).
+/// warp-out both set, and gates the update on IsAlive (`+0x90`,
+/// `0x007365BB`), so a crashing Unit's wreck still reaches it at Health 0.
 fn unit_reaches_fire_update(world: &Simulation, id: u64) -> bool {
     world
         .substrate
         .entities
         .get(id)
-        .is_some_and(|entity| entity.is_alive() && !entity.dying && !entity.is_warped_out())
+        .is_some_and(|entity| entity.is_active() && !entity.is_warped_out())
+}
+
+/// Whether an attacker's own AI still reaches its fire this frame. A Unit's
+/// does while IsAlive (`UnitClass::AI 0x007365BB`), which a crashing wreck
+/// keeps at Health 0; a Building's `ProcessDelayedFire` and an Infantry's fire
+/// read Health here, and an Aircraft fires only when its mission (which a
+/// Health-0 wreck does not run) asks.
+fn attacker_reaches_fire(entity: &crate::sim::game_entity::GameEntity) -> bool {
+    if entity.category == EntityCategory::Unit {
+        entity.is_active()
+    } else {
+        entity.is_alive() && !entity.dying
+    }
 }
 
 /// The gattling units whose AI reaches the firing update this frame without
@@ -2754,8 +2764,7 @@ fn idle_unit_fire_updates(
         !fire_suppressed.contains(&id)
             && world.substrate.entities.get(id).is_some_and(|entity| {
                 entity.category == EntityCategory::Unit
-                    && entity.is_alive()
-                    && !entity.dying
+                    && entity.is_active()
                     && !entity.lifecycle.in_limbo
                     && !entity.passenger_role.is_inside_transport()
                     && !entity.is_warped_out()
@@ -4367,7 +4376,7 @@ pub(crate) fn tick_combat(
             if entity.passenger_role.is_inside_transport() {
                 continue;
             }
-            if entity.dying || !entity.is_alive() {
+            if !attacker_reaches_fire(entity) {
                 // BuildingClass::Update no longer reaches ProcessDelayedFire
                 // once the object is dead.
                 continue;
@@ -4553,7 +4562,7 @@ pub(crate) fn tick_combat(
             .substrate
             .entities
             .get(snap.stable_id)
-            .filter(|entity| entity.is_alive() && !entity.dying)
+            .filter(|entity| attacker_reaches_fire(entity))
             .and_then(|entity| {
                 entity.attack_target.as_ref().map(|attack| {
                     (

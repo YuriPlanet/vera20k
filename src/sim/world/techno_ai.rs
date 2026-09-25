@@ -564,7 +564,9 @@ fn techno_ai_shell(
             }
             clear_passive_target_off_mission(sim, id);
             mission_common_step(sim, id, rules);
-            if let Some(rules) = rules {
+            if let Some(rules) = rules
+                && mission_handlers_run(sim, id)
+            {
                 dispatch_supported_foot_mission_cadence(sim, id, rules, ctx);
             }
             passive_acquire_step(sim, id, rules, ctx);
@@ -646,7 +648,9 @@ fn techno_ai_shell(
             mission_counter_step(sim, id);
             // The Aircraft Unload slot `0x004151E0` (vtable `+0x23C`), the one
             // aircraft mission handler absorbed so far; timer-gated inside.
-            if let Some(rules) = rules {
+            if let Some(rules) = rules
+                && mission_handlers_run(sim, id)
+            {
                 crate::sim::transport_unload::dispatch_aircraft_unload(
                     sim,
                     id,
@@ -883,6 +887,30 @@ fn mission_common_step(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
 // the handler-body execution remains with legacy per-system phases except for
 // the timer-only Move reschedule below and the absorbed Harvest handler.
 
+/// `ObjectClass+0x90` IsAlive, which `TechnoClass::AI_Update` tests after its
+/// early blocks (`0x006FA23C`) and again after the bomb and the managers
+/// (`0x006FA735`), and `UnitClass::AI` before its fire update (`0x007365BB`).
+/// A crashing wreck keeps it at Health 0 until its impact, so it keeps running
+/// that AI while it falls; an object native has UnInit is VERA's `dying` one.
+pub(crate) fn ai_alive(sim: &Simulation, id: u64) -> bool {
+    sim.substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| entity.is_active())
+}
+
+/// `MissionClass::AI @ 0x005B3060`'s last gate before a mission handler: Health
+/// above zero (`0x005B30A7`, signed). A crashing wreck is alive at Health 0, so
+/// its Techno AI runs but no handler does and its dispatch timer is not
+/// rewritten. VERA's handler stand-ins (the order intents, the attack pursuit)
+/// share it.
+pub(crate) fn mission_handlers_run(sim: &Simulation, id: u64) -> bool {
+    sim.substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| entity.health.current > 0)
+}
+
 /// S4a pre-mission common block (the `TechnoClass::AI_Update` head: one-shot
 /// flag clear, turret-anim loop sound, cloak tick, health smoothing, target
 /// validation, …). The stock cloak producer now executes at the verified head;
@@ -917,7 +945,7 @@ fn techno_common_steps(
     allied_target_drop_step(sim, id, rules);
     illegal_target_drop_step(sim, id, rules);
     sim.capture_manager_update(id, rules, overlay_registry);
-    if !sim.substrate.entities.get(id).is_some_and(|e| e.is_alive()) {
+    if !ai_alive(sim, id) {
         return false;
     }
     self_heal_step(sim, id, rules);
@@ -1108,7 +1136,7 @@ fn bomb_fuse_slot(
     if let Some(rules) = rules {
         sim.bomb_fuse_step(id, rules, overlay_registry);
     }
-    sim.substrate.entities.get(id).is_some_and(|e| e.is_alive())
+    ai_alive(sim, id)
 }
 
 fn techno_common_pre(
@@ -1333,23 +1361,12 @@ fn unit_techno_bracket(
     ctx: ObjectAiCtx<'_>,
 ) -> BracketReach {
     techno_common_pre(sim, id, rules, ctx.overlay_registry);
-    // Guard B (post-pre IsAlive): a health-0 Unit runs no mission work.
-    //
-    // RESIDUAL: native tests IsAlive (`+0x90`, `0x006FA23C`; Guard E
-    // `0x006FA735`), not Health; only `MissionClass::AI` skips a Health-0
-    // object's handler (`0x005B30A7`). A crashing Unit (Health 0, alive until
-    // its impact) therefore still runs, natively, the AI counter and
-    // promotion, the passive block (`0x006FA65A`: on Move, Guard or Harvest
-    // the gate and the scan with its Scenario draws, which can acquire a
-    // target that `UnitClass::Fire_At_Target` then fires at, `0x007365E1`)
-    // and the post block (the self-heal pulse `0x006FA747` among them); here
-    // it runs none of them. Trigger: every Unit wreck while it falls, and the
-    // Fly wrecks' `AircraftClass::AI` likewise. Effect: no passive-scan draws
-    // during a fall, so the Scenario stream shifts from the first crash of a
-    // moving or guarding unit, and a wreck never acquires or fires. Frequency:
-    // every Jumpjet crash. It is the next combat chain: the alive Health-0
-    // object's AI for both.
-    if !sim.substrate.entities.get(id).is_some_and(|e| e.is_alive()) {
+    // Guard B (IsAlive, `0x006FA23C`). A crashing wreck is alive at Health 0,
+    // so it runs on: the counter and promotion, the passive block (on Move,
+    // Guard or Harvest the gate and the scan with its Scenario draws, which
+    // can acquire a target its fire update then shoots), the bomb and the
+    // managers, and the post block; only the handlers are skipped.
+    if !ai_alive(sim, id) {
         return BracketReach::DiedInPre;
     }
     // The off-mission passive-target clear runs BEFORE the +0xC4 counter.
@@ -1359,18 +1376,20 @@ fn unit_techno_bracket(
     // timer-gated, ending with the verified post-handler epilogue write
     // (start = current frame, delay = handler return). Harvest (the miner
     // FSM) is the first absorbed handler; Move/Guard are Track A2.
-    if let (Some(rules), Some(config)) = (rules, ctx.miner_config) {
-        crate::sim::miner::dispatch_harvest_for_object(
-            sim,
-            rules,
-            config,
-            ctx.path_grid,
-            ctx.overlay_registry,
-            id,
-        );
-    }
-    if let Some(rules) = rules {
-        dispatch_supported_foot_mission_cadence(sim, id, rules, ctx);
+    if mission_handlers_run(sim, id) {
+        if let (Some(rules), Some(config)) = (rules, ctx.miner_config) {
+            crate::sim::miner::dispatch_harvest_for_object(
+                sim,
+                rules,
+                config,
+                ctx.path_grid,
+                ctx.overlay_registry,
+                id,
+            );
+        }
+        if let Some(rules) = rules {
+            dispatch_supported_foot_mission_cadence(sim, id, rules, ctx);
+        }
     }
     // A transport turning in place for its Unload reads its hull
     // `PrimaryFacing.Current()` every frame; the movement tick only turns
@@ -1387,10 +1406,10 @@ fn unit_techno_bracket(
     passive_acquire_step(sim, id, rules, ctx);
     bomb_fuse_slot(sim, id, rules, ctx.overlay_registry);
     slave_manager_slot(sim, id, rules, ctx.overlay_registry);
-    // Guard E (post-dispatch IsAlive): the dispatched handler, or the bomb it
+    // Guard E (IsAlive, `0x006FA735`): the dispatched handler, or the bomb it
     // carried, may have destroyed the Unit; a dead Unit runs no post-mission
     // block.
-    if !sim.substrate.entities.get(id).is_some_and(|e| e.is_alive()) {
+    if !ai_alive(sim, id) {
         return BracketReach::Dispatched;
     }
     techno_common_post(sim, id, rules);
@@ -1860,10 +1879,11 @@ mod tests {
     fn bracket_pre_guard_short_circuits_dead_unit() {
         let mut sim = Simulation::new();
         let mut e = entity_of(1, EntityCategory::Unit);
-        e.health.current = 0; // not alive
+        e.health.current = 0;
+        e.lifecycle.object_alive = false; // its UnInit cleared IsAlive
         sim.substrate.entities.insert(e);
-        // Guard B fires after the (empty) pre-block: a health-0 Unit runs no
-        // mission work (counter stays 0).
+        // Guard B (IsAlive) fires after the (empty) pre-block: a dead Unit runs
+        // no mission work (counter stays 0).
         assert_eq!(
             unit_techno_bracket(&mut sim, 1, None, ObjectAiCtx::default()),
             BracketReach::DiedInPre
@@ -1871,6 +1891,25 @@ mod tests {
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().mission.ai_counter(),
             0
+        );
+    }
+
+    /// A crashing wreck is alive at Health 0 until its impact, so Guard B lets
+    /// it through: the counter ticks as for a live Unit.
+    #[test]
+    fn bracket_runs_on_for_a_health_zero_wreck() {
+        let mut sim = Simulation::new();
+        let mut e = entity_of(1, EntityCategory::Unit);
+        e.health.current = 0;
+        e.crashing = true;
+        sim.substrate.entities.insert(e);
+        assert_eq!(
+            unit_techno_bracket(&mut sim, 1, None, ObjectAiCtx::default()),
+            BracketReach::Dispatched
+        );
+        assert_eq!(
+            sim.substrate.entities.get(1).unwrap().mission.ai_counter(),
+            1
         );
     }
 
@@ -2043,6 +2082,70 @@ mod tests {
         assert!(
             waits >= 3,
             "precondition: dispatches landed inside reloads ({waits})"
+        );
+    }
+
+    /// A crashing wreck (Health 0, alive until its impact) keeps its Techno
+    /// and Unit AI while it falls: on Guard the passive block's scan picks up
+    /// an enemy in range and its fire update shoots it (`TechnoClass::
+    /// AI_Update`'s IsAlive gates `0x006FA23C`/`0x006FA735`, `UnitClass::AI
+    /// 0x007365BB`), but `MissionClass::AI` runs no Guard handler for it
+    /// (`0x005B30A7`), so its dispatch timer stands.
+    #[test]
+    fn a_falling_wreck_on_guard_acquires_and_fires_but_runs_no_handler() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nNormalTargetingDelay=27\nGuardAreaTargetingDelay=36\n\n\
+             [Guard]\nRate=.016\n\n\
+             [InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [VehicleTypes]\n0=MTNK\n1=UNARM\n\
+             [MTNK]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             Strength=300\nArmor=heavy\nSpeed=6\nSight=10\nPrimary=105mm\n\n\
+             [UNARM]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             Strength=3000\nArmor=heavy\nSpeed=6\nSight=10\n\n\
+             [105mm]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\n\n\
+             [AP]\nVerses=100%,100%,90%,75%,75%,75%,60%,30%,20%,0%,0%\n",
+        ))
+        .expect("wreck rules parse");
+        let heights: std::collections::BTreeMap<(u16, u16), u8> = std::collections::BTreeMap::new();
+        let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
+        let mut sim = Simulation::with_seed(0x5CA1_AB1E_0009);
+        let tank = crate::map::entities::MapEntity {
+            mission: Some(MissionType::Guard),
+            ..passive_map_entity("Americans", "MTNK", 20, 20, EntityCategory::Unit)
+        };
+        sim.spawn_from_map(
+            &[
+                tank,
+                passive_map_entity("Soviet", "UNARM", 23, 20, EntityCategory::Unit),
+            ],
+            Some(&rules),
+            &heights,
+        );
+        let timer = {
+            let wreck = sim.substrate.entities.get_mut(1).expect("tank present");
+            wreck.health.current = 0;
+            wreck.crashing = true;
+            wreck.mission.dispatch_timer()
+        };
+        let mut acquired = false;
+        for _ in 0..200 {
+            let _ = sim.advance_tick(&[], Some(&rules), &heights, Some(&grid), None, 67);
+            let wreck = sim.substrate.entities.get(1).expect("the wreck stays");
+            assert_eq!(wreck.health.current, 0, "a wreck does not heal");
+            assert_eq!(
+                wreck.mission.dispatch_timer(),
+                timer,
+                "no Guard handler ran, so its epilogue never wrote the timer"
+            );
+            acquired |= wreck.attack_target.is_some() && wreck.passively_acquired_target;
+            if sim.substrate.entities.get(2).unwrap().health.current < 3000 {
+                break;
+            }
+        }
+        assert!(acquired, "the passive scan picked the enemy up");
+        assert!(
+            sim.substrate.entities.get(2).unwrap().health.current < 3000,
+            "the wreck's fire update shot it"
         );
     }
 

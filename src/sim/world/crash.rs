@@ -17,6 +17,12 @@
 //! (`movement::jumpjet_flight`) and its impact notice finishes it
 //! ([`Simulation::jumpjet_crash_impact`]).
 //!
+//! While it falls a wreck keeps the AI its native IsAlive (`+0x90`) gates: the
+//! Techno body with its passive scan, and a Unit's fire update, so a guarding
+//! wreck can pick up a target and shoot on the way down. Its Health of 0 stops
+//! only the mission handlers (`MissionClass::AI @ 0x005B30A7`) and its self-heal
+//! (`world::techno_ai`).
+//!
 //! Native evidence: `tools/spatial_oracle/aircraft_crash.{py,json}` runs Crash,
 //! the per-frame fall to the impact, the crashing RockingUpdate and the smoke
 //! block on the original executable; `jumpjet_crash.{py,json}` runs the
