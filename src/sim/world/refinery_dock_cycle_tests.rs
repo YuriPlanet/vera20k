@@ -3,7 +3,8 @@
 //! the hull turn, Mission_Unload's dumps and the departure, on the oracle
 //! replay's scene (a single-dock refinery at NW (6, 9), pad (9, 10)).
 
-use super::refinery_dock_oracle_tests::{Scene, scene};
+use super::refinery_dock_oracle_tests::{Scene, scene, scene_with};
+use crate::rules::ruleset::RuleSet;
 use crate::sim::miner::{CargoBale, MinerState, ResourceType};
 use crate::sim::mission::{MissionId, MissionType};
 use std::collections::BTreeMap;
@@ -94,24 +95,28 @@ fn spawn_returning_miner(s: &mut Scene, cell: (u16, u16)) -> u64 {
     id
 }
 
-fn returning_scene() -> Scene {
-    scene(&serde_json::json!({
+fn returning_input() -> serde_json::Value {
+    serde_json::json!({
         "name": "cycle",
         "linked": false,
         "mission": "harvest",
         "status": 2,
         "miner_cell": [14, 12],
         "storage": [40.0, 0.0],
-    }))
+    })
 }
 
-#[test]
-fn war_miner_docks_unloads_and_leaves_through_the_production_frame() {
-    let mut s = returning_scene();
+fn returning_scene() -> Scene {
+    scene(&returning_input())
+}
+
+/// One whole visit: tethered on the pad, east before the first dump, 1000
+/// credits for 40 ore, and the refinery's slot free again afterwards.
+fn assert_whole_visit(s: &mut Scene) {
     let mut samples = Vec::new();
     for _ in 0..1500 {
-        let paid = frame(&mut s);
-        samples.push((sample(&s, s.miner), paid));
+        let paid = frame(s);
+        samples.push((sample(s, s.miner), paid));
     }
     let (docked, _) = samples
         .iter()
@@ -140,6 +145,32 @@ fn war_miner_docks_unloads_and_leaves_through_the_production_frame() {
     let refinery = s.sim.substrate.entities.get(s.refinery).unwrap();
     assert!(refinery.radio_contacts.is_empty(), "the slot is free again");
     assert_eq!(refinery.dock_entered_with, None);
+}
+
+#[test]
+fn war_miner_docks_unloads_and_leaves_through_the_production_frame() {
+    assert_whole_visit(&mut returning_scene());
+}
+
+/// The same visit on retail RULESMD.INI and ARTMD.INI through the production
+/// readers: HARV (`Dock=NAREFN,GAREFN`, `Storage=40`, `Turret=yes`), GAREFN
+/// (`DockUnload=yes`, `NumberImpassableRows=3`, art `QueueingCell=4,1`) and
+/// the constructor `HarvesterDumpRate` the retail rules leave unset.
+#[test]
+fn war_miner_visit_on_retail_rules() {
+    let Some((rules_ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art()
+    else {
+        return;
+    };
+    let mut rules = RuleSet::from_ini(&rules_ini).unwrap();
+    rules.merge_art_data(&crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
+    let refinery = rules.object("GAREFN").unwrap();
+    assert!(refinery.dock_unload && refinery.refinery);
+    assert_eq!(refinery.queueing_cell, [4, 1]);
+    assert_eq!(refinery.number_impassable_rows, 3);
+    assert_eq!(rules.general.harvester_dump_frames, 15);
+    assert_eq!(rules.general.harvester_too_far_distance, 5);
+    assert_whole_visit(&mut scene_with(&returning_input(), rules, &rules_ini));
 }
 
 /// Two full miners, one dock: the second's HELLO is refused while the first

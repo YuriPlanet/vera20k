@@ -841,7 +841,10 @@ pub struct GeneralRules {
     /// is integer-stepped, the first crossing is exactly `ceil(rate × 900)`, so
     /// storing the ceiling (not a tenths-quantized value) reproduces gamemd's
     /// crossing bit-for-bit with no float in the sim gate.
-    /// Default 15 (from ceil(0.016 × 900) = ceil(14.4) = 15 frames per gate).
+    /// Default 15 (from ceil(0.016 × 900) = ceil(14.4) = 15 frames per gate):
+    /// the RulesClass constructor stores the double 0.016 at Rules+0x1528
+    /// (`0x006673CD..0x006673DC`) and ReadDouble at `0x00670CD4` keeps it when
+    /// the key is absent, as it is in retail RULESMD.INI.
     pub harvester_dump_frames: u16,
 
     // -- Chrono warp delay constants --

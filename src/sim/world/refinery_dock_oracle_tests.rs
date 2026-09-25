@@ -191,7 +191,12 @@ pub(super) fn scene(input: &Value) -> Scene {
     rules.merge_art_data(&crate::rules::art_data::ArtRegistry::from_ini(
         &IniFile::from_str("[GAREFN]\nFoundation=4x3\nQueueingCell=4,1\n[GAREFX]\nFoundation=4x3\nQueueingCell=4,1\n"),
     ));
-    let mut sim = world(&rules, &ini);
+    scene_with(input, rules, &ini)
+}
+
+/// The scene on caller-built rules; `ini` supplies the land types.
+pub(super) fn scene_with(input: &Value, rules: RuleSet, ini: &IniFile) -> Scene {
+    let mut sim = world(&rules, ini);
     let owner = sim.interner.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10);
     house.is_human = input["human"].as_bool().unwrap_or(true);
