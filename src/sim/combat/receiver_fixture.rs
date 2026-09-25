@@ -27,6 +27,12 @@ pub(crate) struct FixturePolicy {
     pub(crate) terrain_collection: bool,
     pub(crate) trace: FixtureTrace,
     pub(crate) deferred_tiberium: Vec<TiberiumReductionRequest>,
+    /// Bullet detonations the same frame's tail committed, held for the
+    /// fixture's result instead of the world's consequence commit.
+    pub(crate) tail_effects: Vec<(crate::sim::combat::DeathEffects, Vec<UnderAttackEvent>)>,
+    /// The launch record of every bullet the fixture's shots admit, with its
+    /// id and whether it is Inviso.
+    pub(crate) admitted_spawns: Vec<(u64, bool, crate::sim::projectile::ProjectileSpawn)>,
 }
 
 /// Adapters preserve the old phase's supplied state, without bootstrapping a
@@ -66,6 +72,15 @@ fn with_world<R>(
         }
     }
     world.substrate.occupancy = std::mem::take(occupancy);
+    // Bullets and anims a fixture shot creates take ids past its hand-placed
+    // objects, as `ScenarioClass::NextUniqueID` would give them.
+    world.substrate.next_stable_object_id = world
+        .substrate
+        .entities
+        .keys_sorted()
+        .last()
+        .map_or(1, |&id| id + 1)
+        .max(world.substrate.next_stable_object_id);
     world.interner = std::mem::take(interner);
     if let Some(houses) = houses.as_deref_mut() {
         world.houses = std::mem::take(houses);
@@ -99,6 +114,8 @@ fn with_world<R>(
         terrain_collection: terrain_area.is_some(),
         trace: FixtureTrace::default(),
         deferred_tiberium: Vec::new(),
+        tail_effects: Vec::new(),
+        admitted_spawns: Vec::new(),
     });
 
     let result = configure_and_run(&mut world, &mut run);
@@ -519,7 +536,7 @@ pub(crate) fn emit_projectile_detonations(
         None,
         None,
         inline_hooks.as_deref_mut(),
-        |world, _run| {
+        |world, run| {
             world.rule_handles = handles;
             world.session.no_damage = scenario_no_damage;
             world.receiver_fixture.as_mut().unwrap().terrain_collection = terrain_objects.is_some();
@@ -529,12 +546,14 @@ pub(crate) fn emit_projectile_detonations(
             }
             world.house_alliances = house_alliances.clone();
             world.bridge_state = bridge_state.cloned();
-            world_receiver::emit_projectile_detonations(
+            world_receiver::commit_projectile_detonations_inline(
                 world,
+                run,
                 rules,
                 overlay_registry,
                 detonations,
                 out,
+                &mut Vec::new(),
             )
         },
     )
@@ -674,7 +693,8 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
             if let Some(radiation) = radiation.as_deref() {
                 world.radiation = radiation.clone();
             }
-            let result = world_receiver::tick_combat(
+            let first_tail_id = world.substrate.next_stable_object_id;
+            let mut result = world_receiver::tick_combat(
                 world,
                 run,
                 rules,
@@ -685,6 +705,53 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
                 &BTreeSet::new(),
                 projectile_detonations,
                 wave_damage_events,
+            );
+            // The same frame's tail: the shots' bullets take their first AI
+            // (an Inviso one detonates). Bullets still in flight are handed
+            // back as their admission records.
+            world.visit_combat_tail(first_tail_id, rules, overlay_registry);
+            for (mut effects, under_attack_events) in
+                std::mem::take(&mut world.receiver_fixture.as_mut().unwrap().tail_effects)
+            {
+                if world.receiver_fixture.as_ref().unwrap().sound_enabled {
+                    for (die_sound_id, rx, ry) in effects.death_sounds.drain(..) {
+                        world.sound_events.push(SimSoundEvent::EntityDied {
+                            die_sound_id,
+                            rx,
+                            ry,
+                        });
+                    }
+                }
+                // The world's consequence commit arms the tail's radiation
+                // sites; the fixture keeps its field here.
+                if world.receiver_fixture.as_ref().unwrap().radiation_enabled {
+                    for detonation in effects.rad_detonations.drain(..) {
+                        world.radiation.apply_detonation(
+                            detonation,
+                            binary_frame,
+                            &rules.radiation,
+                            world.resolved_terrain.as_ref(),
+                        );
+                    }
+                }
+                result
+                    .consequences
+                    .append_tail_for_test(effects, under_attack_events);
+            }
+            // Every launch, less the Inviso bullets the tail already detonated.
+            let admitted =
+                std::mem::take(&mut world.receiver_fixture.as_mut().unwrap().admitted_spawns);
+            result.projectile_spawns.extend(
+                admitted
+                    .into_iter()
+                    .filter(|&(id, inviso, _)| {
+                        !inviso
+                            || world
+                                .projectiles
+                                .get(id)
+                                .is_some_and(|projectile| projectile.in_logic_vector)
+                    })
+                    .map(|(_, _, spawn)| spawn),
             );
             if let Some(radiation) = radiation {
                 *radiation = std::mem::take(&mut world.radiation);

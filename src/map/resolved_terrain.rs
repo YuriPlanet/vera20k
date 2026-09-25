@@ -6772,7 +6772,6 @@ mod tests {
                         base_damage: 0,
                         warhead: key,
                         weapon: key,
-                        owner: key,
                     },
                     speed_leptons_per_frame: 16,
                     velocity: ProjectileVelocity::new(16, 0, 0),

@@ -1608,24 +1608,26 @@ fn run_special_detonation_arm(
     }
 }
 
-fn emit_one_projectile_detonation(
+/// `BulletClass::DetonateAtCoord @ 0x004690B0` up to its receivers: the
+/// radiation site, then the special-warhead chain or, in its final else, the
+/// shrapnel (`0x00469A51`) and `Apply_area_damage` (`0x00489280`) records,
+/// then bridge damage. The receivers commit before the anim tail
+/// ([`emit_detonation_anim`]), as native's area damage returns before
+/// `LAB_00469AA4`.
+///
+/// The area damage's house (`0x00469A5C..0x00469A75`) is the live bullet
+/// owner's: a bullet whose firer has expired (`BulletClass::PointerExpired
+/// @ 0x004684E0` nulled `+0xB0`) damages with no house.
+fn emit_detonation_receivers(
     world: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     detonation: &ProjectileDetonation,
+    warhead: &WarheadType,
     out: &mut CombatEmit,
 ) {
     let handles = world.rule_handles;
     let scenario_no_damage = world.session.no_damage;
-
-    let Some(warhead) = rules.warhead(world.interner.resolve(detonation.payload.warhead)) else {
-        log::warn!(
-            "Projectile {} dropped: missing serialized warhead {}",
-            detonation.projectile_id,
-            detonation.payload.warhead
-        );
-        return;
-    };
     let (impact_rx, impact_ry, impact_sub_x, impact_sub_y, world_z_leptons) =
         projectile_impact_cell(detonation.impact);
     let impact_z = world_z_leptons.div_euclid(LEPTONS_PER_LEVEL as i32);
@@ -1699,6 +1701,13 @@ fn emit_one_projectile_detonation(
                 impact_ry,
             )
             .is_some_and(|flags| warhead_damages_wall(warhead, flags));
+            // `0x00469A69..0x00469A75`: the bullet's live Owner's house, or
+            // none once the owner is gone (`BulletClass+0xB0` is detached).
+            let source_house = world
+                .substrate
+                .entities
+                .get(detonation.source_id)
+                .map(|source| source.owner());
             let aoe = {
                 let collected = collect_area(
                     world,
@@ -1709,7 +1718,7 @@ fn emit_one_projectile_detonation(
                     warhead,
                     (
                         detonation.source_id,
-                        Some(detonation.payload.owner),
+                        source_house,
                         detonation.payload.warhead,
                     ),
                     air_impact,
@@ -1755,15 +1764,40 @@ fn emit_one_projectile_detonation(
             run_special_detonation_arm(world, rules, claimed, detonation.source_id, target);
         }
     }
+}
 
-    // `LAB_00469AA4` — reached by the ordinary arm and by every special arm.
+/// `LAB_00469AA4`, reached by the ordinary arm and every special arm after
+/// their receivers: an `Inviso=` bullet first scatters the anim coordinate
+/// by one raw Scenario draw (`0x0049F420`, radius 0x20; the damage keeps the
+/// impact), then the AnimList anim and its smudge.
+fn emit_detonation_anim(
+    world: &mut Simulation,
+    detonation: &ProjectileDetonation,
+    warhead: &WarheadType,
+    inviso: bool,
+    out: &mut CombatEmit,
+) {
+    let (impact_rx, impact_ry, impact_sub_x, impact_sub_y, world_z_leptons) =
+        projectile_impact_cell(detonation.impact);
+    let impact_z = world_z_leptons.div_euclid(LEPTONS_PER_LEVEL as i32);
+    let (rx, ry, sub_x, sub_y) = if inviso {
+        inviso_scatter::scatter_inviso_effect_coord(
+            &mut world.scenario_rng,
+            impact_rx,
+            impact_ry,
+            impact_sub_x,
+            impact_sub_y,
+        )
+    } else {
+        (impact_rx, impact_ry, impact_sub_x, impact_sub_y)
+    };
     emit_warhead_detonation_effects(
         warhead,
         detonation.payload.base_damage,
-        impact_rx,
-        impact_ry,
-        impact_sub_x,
-        impact_sub_y,
+        rx,
+        ry,
+        sub_x,
+        sub_y,
         impact_z_byte(impact_z),
         world_z_leptons,
         &mut world.interner,
@@ -1772,42 +1806,17 @@ fn emit_one_projectile_detonation(
     );
 }
 
-pub(super) fn emit_projectile_detonations(
-    world: &mut Simulation,
-    rules: &RuleSet,
-    overlay_registry: Option<&OverlayTypeRegistry>,
-    detonations: &[ProjectileDetonation],
-    out: &mut CombatEmit,
-) {
-    for detonation in detonations {
-        let projectile_type = rules
-            .weapon(world.interner.resolve(detonation.payload.weapon))
-            .and_then(|weapon| weapon.projectile.as_deref())
-            .and_then(|projectile| rules.projectile(projectile));
-        let Some(projectile_type) = projectile_type else {
-            emit_one_projectile_detonation(world, rules, overlay_registry, detonation, out);
-            continue;
-        };
-
-        let airburst = projectile_type.airburst;
-        let cluster = projectile_type.cluster;
-        if airburst {
-            emit_one_projectile_detonation(world, rules, overlay_registry, detonation, out);
-            continue;
-        }
-
-        // Every cluster after the first lands around the impact (the copy at
-        // `0x00469008`), not around the previous cluster.
-        let mut coordinate = detonation.impact;
-        for _ in 0..cluster.max(0) {
-            let mut clustered = *detonation;
-            clustered.impact = coordinate;
-            emit_one_projectile_detonation(world, rules, overlay_registry, &clustered, out);
-            coordinate = projectile_next_cluster_coord(detonation.impact, &mut world.scenario_rng);
-        }
-    }
-}
-
+/// One bullet's detonation, `BulletClass::DetonateAtCoord` then its cluster
+/// loop (`0x00469020..0x00469091`): per cluster the receivers commit, the anim
+/// tail runs, and every cluster (the last included) draws its successor
+/// around the impact, `RandomRanged(0x100, 0x200)` plus one raw draw. An
+/// `Airburst=` bullet detonates once and draws nothing, and so (VERA-internal,
+/// never in retail) does one whose weapon names no BulletType.
+///
+/// RESIDUAL: the anims and smudges are admitted when the caller commits the
+/// detonation's effects, after the cluster draws, where native constructs them
+/// in the anim tail. Only a `RandomRate=` AnimList anim draws at construction
+/// (none of the small-arms `PIFF`/`PIFFPIFF`); for it the draw order differs.
 pub(crate) fn commit_projectile_detonations_inline(
     world: &mut Simulation,
     run: &mut ReceiverRun,
@@ -1818,37 +1827,64 @@ pub(crate) fn commit_projectile_detonations_inline(
     under_attack_events: &mut Vec<UnderAttackEvent>,
 ) {
     for detonation in projectile_detonations {
-        let damage_start = emit.damage_events.len();
-        let explosion_start = emit.effects.explosion_effects.len();
-        let smudge_start = emit.effects.smudge_spawn_requests.len();
-        emit_projectile_detonations(
-            world,
-            rules,
-            overlay_registry,
-            std::slice::from_ref(detonation),
-            emit,
-        );
-        let outer_explosion_effects = emit.effects.explosion_effects.split_off(explosion_start);
-        let outer_anim_requests = emit.effects.smudge_spawn_requests.split_off(smudge_start);
-        let (inline_death, mut pings) = commit_area(
-            world,
-            run,
-            &emit.damage_events[damage_start..],
-            rules,
-            overlay_registry,
-        );
-        emit.effects.append(inline_death);
-        emit.effects
-            .explosion_effects
-            .extend(outer_explosion_effects);
-        commit_smudges(
-            world,
-            rules,
-            overlay_registry,
-            outer_anim_requests,
-            &mut emit.effects.smudge_spawn_requests,
-        );
-        under_attack_events.append(&mut pings);
+        let Some(warhead) = rules.warhead(world.interner.resolve(detonation.payload.warhead))
+        else {
+            log::warn!(
+                "Projectile {} dropped: missing serialized warhead {}",
+                detonation.projectile_id,
+                detonation.payload.warhead
+            );
+            continue;
+        };
+        let projectile_type = rules
+            .weapon(world.interner.resolve(detonation.payload.weapon))
+            .and_then(|weapon| weapon.projectile.as_deref())
+            .and_then(|projectile| rules.projectile(projectile));
+        let inviso = projectile_type.is_some_and(|projectile| projectile.inviso);
+        let (clusters, cluster_draws) = match projectile_type {
+            Some(projectile) if !projectile.airburst => (projectile.cluster.max(0), true),
+            _ => (1, false),
+        };
+        let mut coordinate = detonation.impact;
+        for _ in 0..clusters {
+            let clustered = ProjectileDetonation {
+                impact: coordinate,
+                ..*detonation
+            };
+            let damage_start = emit.damage_events.len();
+            let explosion_start = emit.effects.explosion_effects.len();
+            let smudge_start = emit.effects.smudge_spawn_requests.len();
+            emit_detonation_receivers(world, rules, overlay_registry, &clustered, warhead, emit);
+            let outer_explosion_effects = emit.effects.explosion_effects.split_off(explosion_start);
+            let outer_anim_requests = emit.effects.smudge_spawn_requests.split_off(smudge_start);
+            let (inline_death, mut pings) = commit_area(
+                world,
+                run,
+                &emit.damage_events[damage_start..],
+                rules,
+                overlay_registry,
+            );
+            emit.effects.append(inline_death);
+            emit.effects
+                .explosion_effects
+                .extend(outer_explosion_effects);
+            under_attack_events.append(&mut pings);
+            let anim_start = emit.effects.smudge_spawn_requests.len();
+            emit_detonation_anim(world, &clustered, warhead, inviso, emit);
+            let mut anim_requests = outer_anim_requests;
+            anim_requests.extend(emit.effects.smudge_spawn_requests.split_off(anim_start));
+            commit_smudges(
+                world,
+                rules,
+                overlay_registry,
+                anim_requests,
+                &mut emit.effects.smudge_spawn_requests,
+            );
+            if cluster_draws {
+                coordinate =
+                    projectile_next_cluster_coord(detonation.impact, &mut world.scenario_rng);
+            }
+        }
     }
 }
 
@@ -1988,7 +2024,7 @@ pub(super) fn resolve_attacker_fire(
         &mut fire_error,
         out,
     ) {
-        emit_admitted_fire(world, rules, overlay_registry, shot, binary_frame, out);
+        emit_admitted_fire(world, rules, shot, binary_frame, out);
     }
     fire_error
 }
@@ -3074,7 +3110,6 @@ fn reveal_on_fire(world: &mut Simulation, rules: &RuleSet, firer_id: u64, target
 fn emit_admitted_fire(
     world: &mut Simulation,
     rules: &RuleSet,
-    overlay_registry: Option<&OverlayTypeRegistry>,
     shot: AdmittedFire<'_>,
     binary_frame: u32,
     out: &mut CombatEmit,
@@ -3089,8 +3124,6 @@ fn emit_admitted_fire(
     } = shot;
     let snap = &snap;
     let weapon = selected.weapon;
-    let handles = world.rule_handles;
-    let scenario_no_damage = world.session.no_damage;
     if weapon.is_sonic && world.active_wave_links.contains_key(&snap.stable_id) {
         return;
     }
@@ -3165,10 +3198,7 @@ fn emit_admitted_fire(
     let launch_source = fireat_launch_source(world, rules, snap, &fire, weapon);
     let warhead = selected.warhead;
     let base_damage = fireat_damage(world, rules, snap, obj, weapon, is_garrison);
-    let persistent_delivery = classify_projectile_delivery(weapon, rules);
-    // An immediate (Inviso) delivery always launches.
-    let mut launched = true;
-    if let ProjectileDelivery::Persistent {
+    let ProjectileDelivery {
         arm_frames,
         tracks_target,
         collision,
@@ -3177,8 +3207,13 @@ fn emit_admitted_fire(
         acceleration,
         launch_scatter_is_flak,
         mut guidance,
-    } = persistent_delivery
-    {
+        inviso,
+    } = classify_projectile_delivery(weapon, rules);
+    // `CreateBullet @ 0x0046B050` (called at `0x006FE55D`) takes the bullet's
+    // unique id (`0x00410230`) before the launch math, so a launch that then
+    // fails has still spent one.
+    let bullet_id = world.allocate_stable_id();
+    let launched = {
         let impact_world_z_leptons = attack_world_z_leptons(
             snap.target,
             target_rx,
@@ -3409,7 +3444,7 @@ fn emit_admitted_fire(
         // A launch with no ballistic solution deletes its bullet
         // (`0x006FF000` -> `0x006FF93C`, or `0x006FF01E` when
         // `BulletClass::Fire` refuses) and resumes at `0x006FF749`.
-        launched = launch.is_some();
+        let launched = launch.is_some();
         if let Some(FireAtLaunchResult {
             velocity,
             speed: launch_speed,
@@ -3424,18 +3459,22 @@ fn emit_admitted_fire(
                     )
                 })
                 .unwrap_or_else(|| ProjectileVisualState::new(0, 0, 0));
-            out.projectile_spawns.push(ProjectileSpawn {
+            // `BulletClass::Fire` (`0x006FF014`) Unlimbos the bullet at the
+            // launch source, which appends it to the Logic vector
+            // (`0x005F5040`): it takes its first AI later in this frame's pass.
+            let payload = ProjectilePayload {
+                base_damage,
+                warhead: world.interner.intern(&warhead.id),
+                weapon: world.interner.intern(selected.weapon_id),
+            };
+            let arm_frames = projectile_arm_delay(arm_frames, target, &world.substrate.entities);
+            let spawn = ProjectileSpawn {
                 flat: projectile_type.is_some_and(|projectile| projectile.flat),
                 source_id: snap.stable_id,
                 origin,
                 target,
                 initial_target_position: frozen_target_position,
-                payload: ProjectilePayload {
-                    base_damage,
-                    warhead: world.interner.intern(&warhead.id),
-                    weapon: world.interner.intern(selected.weapon_id),
-                    owner: snap.owner,
-                },
+                payload,
                 speed_leptons_per_frame: launch_speed.clamp(0, i32::from(u16::MAX)) as u16,
                 velocity,
                 trajectory: match vertical {
@@ -3449,7 +3488,7 @@ fn emit_admitted_fire(
                 },
                 guidance,
                 visual,
-                arm_frames: projectile_arm_delay(arm_frames, target, &mut world.substrate.entities),
+                arm_frames,
                 fuse_frames: None,
                 // AI 467C0C calls Check for ROT>0 or Ranged even when
                 // Dropping later suppresses detector-only admission.
@@ -3458,152 +3497,28 @@ fn emit_admitted_fire(
                 tracks_target,
                 target_expiry: TargetExpiryPolicy::DetonateAtLastKnown,
                 collision,
-            });
-        }
-    } else {
-        let impact_z = attack_impact_z(
-            snap.target,
-            &mut world.substrate.entities,
-            world.resolved_terrain.as_ref(),
-        );
-        let air_impact = attack_air_impact(
-            snap.target,
-            target_rx,
-            target_ry,
-            target_sub_x,
-            target_sub_y,
-            &mut world.substrate.entities,
-            world.resolved_terrain.as_ref(),
-        );
-        let world_z_leptons = attack_world_z_leptons(
-            snap.target,
-            target_rx,
-            target_ry,
-            target_sub_x,
-            target_sub_y,
-            &mut world.substrate.entities,
-            world.resolved_terrain.as_ref(),
-        );
-        // An Inviso shot detonates here, so it runs `BulletClass::
-        // DetonateAtCoord`'s whole special chain: the arm the warhead selects
-        // claims the impact (no shrapnel, no area damage) whether or not VERA
-        // has ported its body, exactly as a visible bullet's detonation does.
-        let special_action = projectile_special_detonation_action(
-            SpecialDetonationFlags::of(warhead),
-            SpecialDetonationTarget {
-                is_unit: matches!(snap.target, TargetKind::Entity(id)
-                if world.substrate.entities.get(id).is_some_and(|entity| {
-                    entity.category == EntityCategory::Unit
-                })),
-            },
-        );
-        if special_action.suppresses_ordinary_damage() {
-            let target = match snap.target {
-                TargetKind::Entity(id) => SpecialArmTarget::Object(id),
-                TargetKind::Cell(..) => SpecialArmTarget::Cell,
             };
-            run_special_detonation_arm(world, rules, special_action, snap.stable_id, target);
-        } else {
-            let routed_wall = wall_overlay_flags_at(
-                world.overlay_grid.as_ref(),
-                overlay_registry,
-                target_rx,
-                target_ry,
-            )
-            .is_some_and(|flags| warhead_damages_wall(warhead, flags));
-            let wh_iid = world.interner.intern(&warhead.id);
-            let aoe = {
-                let collected = collect_area(
-                    world,
-                    rules,
-                    overlay_registry,
-                    (target_rx, target_ry),
-                    base_damage,
-                    warhead,
-                    (snap.stable_id, Some(snap.owner), wh_iid),
-                    air_impact,
-                    impact_z,
-                );
-                append_fixture_tiberium(world, &mut out.effects.tiberium_reduction_requests);
-                collected
-            };
+            world.admit_projectile(bullet_id, spawn);
             #[cfg(test)]
-            out.effects.wall_mutations.extend(aoe.wall_mutations);
-
-            #[cfg(test)]
-            out.effects
-                .cell_target_detaches
-                .extend(aoe.cell_target_detaches);
-
-            out.damage_events.extend(aoe.receivers);
-            if !scenario_no_damage && base_damage > 0 && !routed_wall && warhead.wall {
-                let wh_iid = world.interner.intern(&warhead.id);
-                out.effects.bridge_damage_events.push(BridgeDamageEvent {
-                    rx: target_rx,
-                    ry: target_ry,
-                    damage: base_damage.min(i32::from(u16::MAX)) as u16,
-                    warhead_ref: wh_iid,
-                    is_ion_cannon: wh_iid
-                        == handles
-                            .expect("Simulation::resolve_type_handles must run before combat")
-                            .ion_cannon,
-                    impact_z,
-                });
+            if let Some(fixture) = world.receiver_fixture.as_mut() {
+                fixture.admitted_spawns.push((bullet_id, inviso, spawn));
+            }
+            if inviso {
+                let on_bridge = match snap.target {
+                    TargetKind::Entity(id) => world
+                        .substrate
+                        .entities
+                        .get(id)
+                        .is_some_and(|target| target.on_bridge),
+                    TargetKind::Cell(..) => false,
+                };
+                world
+                    .projectiles
+                    .fire_inviso(bullet_id, frozen_target_position, on_bridge);
             }
         }
-        // Radiation-emitting detonation: one site request per shot at the impact
-        // cell. Spread is the warhead's CellSpread truncated to whole cells.
-        if weapon.rad_level > 0 {
-            out.effects
-                .rad_detonations
-                .push(crate::sim::radiation::RadDetonation {
-                    rx: target_rx,
-                    ry: target_ry,
-                    rad_level: weapon.rad_level,
-                    spread: warhead.cell_spread.to_num::<i32>(),
-                });
-        }
-
-        // One impact coordinate: the original engine hands the SAME resolved
-        // coord to the area-damage call and to the AnimList placement, so the
-        // animation height is the impact height that fed the damage above,
-        // never a separately derived value. (Only the smudge dispatcher
-        // re-derives a ground reference of its own; the animation is drawn at
-        // this z.)
-        let effect_z: u8 = impact_z_byte(impact_z);
-        // BulletClass::Detonate randomizes only the visible CoordStruct for an
-        // Inviso projectile. The draw happens before AnimList selection, so this
-        // must run even when the warhead has no animation to emit.
-        let (effect_rx, effect_ry, effect_sub_x, effect_sub_y) = if weapon
-            .projectile
-            .as_deref()
-            .and_then(|projectile_id| rules.projectile(projectile_id))
-            .is_some_and(|projectile| projectile.inviso)
-        {
-            inviso_scatter::scatter_inviso_effect_coord(
-                &mut world.scenario_rng,
-                target_rx,
-                target_ry,
-                target_sub_x,
-                target_sub_y,
-            )
-        } else {
-            (target_rx, target_ry, target_sub_x, target_sub_y)
-        };
-        emit_warhead_detonation_effects(
-            warhead,
-            base_damage,
-            effect_rx,
-            effect_ry,
-            effect_sub_x,
-            effect_sub_y,
-            effect_z,
-            world_z_leptons,
-            &mut world.interner,
-            &mut out.effects.explosion_effects,
-            &mut out.effects.smudge_spawn_requests,
-        );
-    }
+        launched
+    };
 
     // A failed launch resumes at `0x006FF749`, past the rest of the shot
     // (`0x006FF031..0x006FF743`): the occupant advance, recoil, particle
@@ -3613,7 +3528,7 @@ fn emit_admitted_fire(
     // store, so the firer may try again next frame. The tail from
     // `0x006FF749` still runs.
     if !launched {
-        fireat_tail(world, rules, snap, weapon);
+        fireat_tail(world, rules, snap, weapon, None);
         return;
     }
 
@@ -3770,6 +3685,11 @@ fn emit_admitted_fire(
         entity.weapon_burst.complete_shot(weapon.burst.max(1));
         entity.last_fire_frame = i64::from(binary_frame);
     }
+    // `0x006FF394..0x006FF43F`, after GetROF: the muzzle anim, appended to the
+    // Logic vector behind this shot's bullet.
+    if let Some(event) = out.fire_events.last().cloned() {
+        crate::sim::world::damage_consequences::admit_muzzle_anim(world, rules, &event);
+    }
     // Aircraft ammo deduction: one ammo per burst completion (not per shot).
     if !mid_burst
         && !world
@@ -3782,14 +3702,14 @@ fn emit_admitted_fire(
         out.ammo_deduct.push(snap.stable_id);
     }
 
-    fireat_tail(world, rules, snap, weapon);
+    fireat_tail(world, rules, snap, weapon, Some(bullet_id));
 }
 
 /// `TechnoClass::FireAt 0x006FF749..0x006FF939`, which runs after a launched
 /// and a failed shot alike: a `LimboLaunch=` weapon takes the firer off the
-/// map (`0x006FF7F3`). Its `Parasite=` arm hands the bullet the firer
-/// (`0x006FF825`, the tail's one bullet dereference), so a parasite shot is
-/// never a failed launch.
+/// map (`0x006FF7F3`). Its `Parasite=` arm re-fires the launched `bullet`
+/// with the firer as its Owner (`0x006FF825`, the tail's one bullet
+/// dereference), so a parasite shot is never a failed launch.
 ///
 /// RESIDUAL, pre-existing and not ported:
 /// - FireOnce (`WeaponType+0x135`, `0x006FF8F1..0x006FF929`): a team member
@@ -3805,9 +3725,10 @@ fn fireat_tail(
     rules: &RuleSet,
     snap: &AttackerSnapshot,
     weapon: &WeaponType,
+    bullet: Option<u64>,
 ) {
     if weapon.limbo_launch {
-        world.parasite_limbo_launch(snap.stable_id, snap.target, weapon, rules);
+        world.parasite_limbo_launch(snap.stable_id, snap.target, weapon, bullet, rules);
     }
 }
 
@@ -4385,10 +4306,8 @@ pub(crate) fn tick_combat(
 
     // UnitClass Facing_Update runs immediately after this object's Fire_At_Target,
     // before any bullet created by the fire reaches its later LogicVector slot.
-    // Capture that read window for every Unit up front: VERA's unsupported-
-    // projectile immediate path may enter fatal lifecycle synchronously below,
-    // but that approximation must not make this frame's barrel destination
-    // observe a target loss native Facing_Update cannot yet see.
+    // Capture that read window for every Unit up front, so nothing a later
+    // shot commits below changes this frame's barrel destination.
     for snap in &snapshots {
         let Some(entity) = world
             .substrate

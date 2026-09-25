@@ -190,41 +190,45 @@ fn projectile_arm_delay(arm: i32, target: ProjectileTarget, entities: &EntitySto
     }
 }
 
-/// Explicitly classified delivery decision at weapon fire.
-///
-/// Unsupported projectile behaviors intentionally remain on the established
-/// immediate path until their own native trajectory contracts are ported.
+/// The BulletType facts FireAt and `BulletClass::Fire` read for one shot.
+/// Every shot is a bullet; an `Inviso=` one is placed at its target and
+/// detonates on its first AI visit (`Projectile` `fire_inviso`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProjectileDelivery {
-    Persistent {
-        arm_frames: i32,
-        tracks_target: bool,
-        collision: ProjectileCollisionPolicy,
-        ballistic: bool,
-        /// `Vertical=` (`BulletTypeClass+0x2C0`) selects the third
-        /// `BulletClass::AI` arm. Carries `DetonationAltitude=` (`+0x2BC`).
-        vertical: Option<i32>,
-        /// `BulletTypeClass::Acceleration` (`+0x2D0`), constructor default 3.
-        acceleration: i32,
-        /// `Inaccurate= && Arcing=` — the launch-time scatter gate at
-        /// `TechnoClass::FireAt 0x006FE67D`/`0x006FE68B`. `Some(true)` takes
-        /// the range-scaled flak arm, `Some(false)` the plain arm.
-        launch_scatter_is_flak: Option<bool>,
-        guidance: Option<ProjectileGuidance>,
-    },
-    Immediate(ImmediateProjectileReason),
+struct ProjectileDelivery {
+    arm_frames: i32,
+    tracks_target: bool,
+    collision: ProjectileCollisionPolicy,
+    ballistic: bool,
+    /// `Vertical=` (`BulletTypeClass+0x2C0`) selects the third
+    /// `BulletClass::AI` arm. Carries `DetonationAltitude=` (`+0x2BC`).
+    vertical: Option<i32>,
+    /// `BulletTypeClass::Acceleration` (`+0x2D0`), constructor default 3.
+    acceleration: i32,
+    /// `Inaccurate= && Arcing=` — the launch-time scatter gate at
+    /// `TechnoClass::FireAt 0x006FE67D`/`0x006FE68B`. `Some(true)` takes
+    /// the range-scaled flak arm, `Some(false)` the plain arm.
+    launch_scatter_is_flak: Option<bool>,
+    guidance: Option<ProjectileGuidance>,
+    /// `Inviso=` (`+0x29E`): `BulletClass::Fire` places the bullet on its
+    /// target with no speed (`0x004688B7..0x00468A39`).
+    inviso: bool,
 }
 
-/// The bounded lifecycle never silently treats an unsupported bullet as a
-/// straight ordinary shot.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ImmediateProjectileReason {
-    NoProjectile,
-    MissingProjectileType,
-    Invisible,
+/// VERA-internal: a weapon naming no BulletType, or one that does not
+/// resolve, never occurs in retail rules (native would dereference NULL at
+/// `0x006FE55D`). Such a shot is fired as a default BulletType with
+/// `Inviso=yes`, so fixtures land in the firing frame like the small-arms shots
+/// they stand for; its detonation takes no scatter or cluster draws.
+fn missing_projectile_fallback() -> crate::rules::projectile_type::ProjectileType {
+    let ini = crate::rules::ini_parser::IniFile::from_str("[MissingBulletType]\nInviso=yes\n");
+    crate::rules::projectile_type::ProjectileType::from_ini_section(
+        "MissingBulletType",
+        ini.section("MissingBulletType").expect("fallback section"),
+        None,
+    )
 }
 
-/// Which delivery path a weapon's shot takes.
+/// The BulletType facts a weapon's shot is fired with, and its flight arm.
 ///
 /// gamemd-derived: `BulletClass::AI @ 0x004666E0` has exactly two branches,
 /// keyed on `ROT < 1`; the non-homing arm then splits on `Vertical` (`+0x2C0`).
@@ -257,35 +261,22 @@ enum ImmediateProjectileReason {
 /// - `Elasticity=` (`+0x2C8`) is live in the ARM B reflection block but has
 ///   zero stock projectile users (the `[PIECE]`/`[TIRE]` hits are VoxelAnims).
 ///
-/// RESIDUAL (GSI-08.07) — the second scatter site is not modelled, because one
-/// of its operands is unidentified. `BulletClass::Fire @ 0x004687B4` offsets an
-/// `Inviso && FlakScatter` bullet's already-resolved target coordinate, drawing
-/// `Random__RandomRanged(0, RulesClass+0x1734 << 1)` for the magnitude and
-/// `Random__RandomRanged(0, 0x7FFFFFFE)` for the angle. **The blocker is the
-/// divisor.** The magnitude is `(roll * ftol(dist)) / *(*(Bullet+0x130) + 0xB4)`
-/// — `0x004687D9 IMUL ESI,EAX`, `0x004687DC MOV ECX,[EBX+0x130]`,
-/// `0x004687E5 IDIV dword ptr [ECX+0xB4]` — and neither `Bullet+0x130`'s
-/// referent nor its `+0xB4` field has been identified, so the offset cannot be
-/// computed at all today. It is NOT the weapon `Range=`; an earlier note here
-/// said so and was wrong.
-///
-/// Two facts for whoever implements it. First, the site OFFSETS, walked in
-/// assembly this session: `0x00468884 CALL Math__CosFromTable / 0x00468889 FMUL
-/// <mag> / 0x00468890 FIADD dword ptr [ESP+0x44]` and `0x00468864 CALL
-/// Math__SinFromTable / 0x00468869 FMUL <mag> / 0x0046886D FSUBR double ptr
-/// [ESP+0x38]` — `x += cos(theta)*mag`, `y -= sin(theta)*mag`, the same shape as
-/// the verified launch site at `0x006FE7E5`/`0x006FE7C0`. The decompiler renders
-/// it as a plain assignment (the dropped-`FIADD` artifact that made the mapping
-/// ledger wrong at the launch site); do not follow that rendering. Second, VERA
-/// resolves an `Inviso` shot on the immediate path, where the impact coordinate
-/// feeds area damage, wall routing, bridge damage, radiation and animation
-/// placement, so wiring the offset in touches all of those consumers.
+/// RESIDUAL (GSI-08.07) — the second scatter site is not ported.
+/// `BulletClass::Fire @ 0x0046874E..0x004688A9` offsets an
+/// `Inviso && FlakScatter` bullet's placement before the Inviso body
+/// ([`crate::sim::projectile::ProjectileStore::fire_inviso`]): magnitude
+/// `(RandomRanged(0, RulesClass+0x1734 << 1) * ftol(dist)) / Range`, angle
+/// `RandomRanged(0, 0x7FFFFFFE)`, then `x += cos*mag`, `y -= sin*mag`
+/// (`0x00468864..0x00468890`, the launch site's shape at
+/// `0x006FE7E5`/`0x006FE7C0`; the decompiler drops the `FIADD`). The divisor
+/// is the weapon's `Range=` in leptons: `Bullet+0x130` is the WeaponType
+/// FireAt installs through `SetWeaponType @ 0x0046B260` (`0x006FE573`), and
+/// WeaponType `+0xB4` is `Range=` (`ReadRange` at `0x00772336`). The x87
+/// distance, magnitude and angle conversion want a native oracle first.
 ///
 /// Trigger: every Flak Cannon / Flak Track shot at an aircraft (`[FlakProj]`,
-/// 6 weapons). Player effect: flak never misses — the miss distance itself is
-/// not yet derivable. Frequency: any skirmish with air units. Downstream risk:
-/// two Scenario RNG draws are missing from that path, so the draw sequence
-/// differs from native for those six weapons.
+/// 6 weapons). Player effect: flak never misses. Frequency: any skirmish with
+/// air units. Downstream risk: two Scenario RNG draws are missing per shot.
 ///
 /// Ordinary `ROT < 1, Vertical = no` AI subtracts gravity every visit
 /// (467402..467429), independently of `Arcing`. Production gives all such
@@ -296,20 +287,24 @@ fn classify_projectile_delivery(
     weapon: &crate::rules::weapon_type::WeaponType,
     rules: &RuleSet,
 ) -> ProjectileDelivery {
-    let Some(projectile_id) = weapon.projectile.as_deref() else {
-        return ProjectileDelivery::Immediate(ImmediateProjectileReason::NoProjectile);
+    let fallback;
+    let projectile = match weapon
+        .projectile
+        .as_deref()
+        .and_then(|projectile_id| rules.projectile(projectile_id))
+    {
+        Some(projectile) => projectile,
+        None => {
+            fallback = missing_projectile_fallback();
+            &fallback
+        }
     };
-    let Some(projectile) = rules.projectile(projectile_id) else {
-        return ProjectileDelivery::Immediate(ImmediateProjectileReason::MissingProjectileType);
-    };
-    if projectile.inviso {
-        return ProjectileDelivery::Immediate(ImmediateProjectileReason::Invisible);
-    }
     // `BulletClass::AI @ 0x004666E0` selects an arm exactly twice: `ROT < 1` at
     // `0x004668D1`, then `Vertical` (`+0x2C0`) at `0x004671D0`. Nothing else
     // participates.
     let ballistic = projectile.arcing;
-    ProjectileDelivery::Persistent {
+    ProjectileDelivery {
+        inviso: projectile.inviso,
         arm_frames: projectile.arm,
         tracks_target: projectile.rot > 0,
         collision: ProjectileCollisionPolicy {
@@ -382,7 +377,7 @@ mod projectile_delivery_tests {
             assert!(
                 matches!(
                     classify_projectile_delivery(weapon, &rules),
-                    ProjectileDelivery::Persistent { .. }
+                    ProjectileDelivery { .. }
                 ),
                 "{weapon_name} must stay on the tracked path"
             );
@@ -399,7 +394,8 @@ mod projectile_delivery_tests {
 
         assert_eq!(
             classify_projectile_delivery(weapon, &rules),
-            ProjectileDelivery::Persistent {
+            ProjectileDelivery {
+                inviso: false,
                 arm_frames: 0,
                 tracks_target: false,
                 collision: ProjectileCollisionPolicy {
@@ -444,7 +440,7 @@ mod projectile_delivery_tests {
             assert!(
                 matches!(
                     classify_projectile_delivery(weapon, &rules),
-                    ProjectileDelivery::Persistent { .. }
+                    ProjectileDelivery { .. }
                 ),
                 "{weapon_name} must stay on the tracked path"
             );
@@ -453,7 +449,7 @@ mod projectile_delivery_tests {
         let flak = rules.weapon("W2").expect("weapon");
         assert!(matches!(
             classify_projectile_delivery(flak, &rules),
-            ProjectileDelivery::Persistent {
+            ProjectileDelivery {
                 launch_scatter_is_flak: Some(true),
                 ..
             }
@@ -462,7 +458,7 @@ mod projectile_delivery_tests {
         let bouncy = rules.weapon("W0").expect("weapon");
         assert!(matches!(
             classify_projectile_delivery(bouncy, &rules),
-            ProjectileDelivery::Persistent {
+            ProjectileDelivery {
                 ballistic: true,
                 launch_scatter_is_flak: None,
                 ..
@@ -484,7 +480,7 @@ mod projectile_delivery_tests {
         let weapon = rules.weapon("NUKE").expect("weapon");
         assert!(matches!(
             classify_projectile_delivery(weapon, &rules),
-            ProjectileDelivery::Persistent {
+            ProjectileDelivery {
                 vertical: Some(20000),
                 acceleration: 1,
                 arm_frames: 2,
@@ -1786,30 +1782,6 @@ pub(crate) fn attack_impact_z(
     }
 }
 
-fn attack_air_impact(
-    target: TargetKind,
-    impact_rx: u16,
-    impact_ry: u16,
-    impact_sub_x: SimFixed,
-    impact_sub_y: SimFixed,
-    entities: &EntityStore,
-    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-) -> Option<combat_aoe::AoEAirImpact> {
-    match target {
-        TargetKind::Entity(entity_id) => {
-            combat_aoe::air_impact_from_entity(entities.get(entity_id)?, terrain)
-        }
-        TargetKind::Cell(_, _) => combat_aoe::air_impact_from_layer_z(
-            terrain,
-            impact_rx,
-            impact_ry,
-            impact_sub_x,
-            impact_sub_y,
-            attack_impact_z(target, entities, terrain),
-        ),
-    }
-}
-
 fn attack_world_z_leptons(
     target: TargetKind,
     impact_rx: u16,
@@ -2889,7 +2861,6 @@ fn emit_projectile_shrapnel(
                 base_damage: child_weapon.damage,
                 warhead: interner.intern(child_warhead_name),
                 weapon: interner.intern(child_weapon_name),
-                owner: detonation.payload.owner,
             },
             speed_leptons_per_frame: child_weapon.speed.clamp(1, i32::from(u16::MAX)) as u16,
             velocity: crate::sim::projectile::launch::shrapnel_launch_velocity(

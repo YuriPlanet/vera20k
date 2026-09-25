@@ -42,6 +42,17 @@ impl DamageConsequences {
         &self.effects
     }
 
+    /// Fold a combat fixture's tail detonations into this frame's effects.
+    #[cfg(test)]
+    pub(crate) fn append_tail_for_test(
+        &mut self,
+        mut effects: DeathEffects,
+        under_attack_events: Vec<UnderAttackEvent>,
+    ) {
+        effects.under_attack_events = under_attack_events;
+        self.effects.append(effects);
+    }
+
     #[cfg(test)]
     pub(crate) fn fire_events(&self) -> &[SimFireEvent] {
         match &self.delivery {
@@ -96,15 +107,6 @@ impl DamageConsequences {
             delivery,
         } = self;
         let ordinary = matches!(&delivery, DamageDelivery::Ordinary { .. });
-        // Muzzle animations first: `Fire_At` constructs them when the shot
-        // leaves, before anything the pass killed is torn down. A firer that
-        // died in the same pass is still stored here, so its flash attaches
-        // and the teardown below expires it through the ordinary pointer
-        // notification; constructed after the teardown it would keep a
-        // reference nothing will ever clear.
-        if let DamageDelivery::Ordinary { fire_events, .. } = &delivery {
-            admit_muzzle_anims(world, rules, fire_events);
-        }
         // Capture owner/category now: ordinary delivery follows SpawnManager,
         // while immediate delivery finishes before its caller's next live cursor.
         let dead_infos: Vec<(InternedId, EntityCategory)> = effects
@@ -238,7 +240,7 @@ impl DamageConsequences {
 /// `AnimClass` draw flags of a muzzle animation (`PUSH 0x600`, `0x006FF3B1`).
 const MUZZLE_ANIM_DRAW_FLAGS: u32 = 0x600;
 
-/// Construct each shot's muzzle animation.
+/// Construct one shot's muzzle animation, inside FireAt after GetROF.
 ///
 /// gamemd-derived, the tail of `TechnoClass::Fire_At` (`0x006FF394..0x006FF43F`):
 /// `AnimClass(type, &fireCoord, delay 0, loopCount 1, drawFlags 0x600,
@@ -251,52 +253,44 @@ const MUZZLE_ANIM_DRAW_FLAGS: u32 = 0x600;
 ///
 /// An art type that never bound constructs nothing, as elsewhere in the store.
 ///
-/// RESIDUAL: VERA collects a tick's shots and constructs their animations
-/// here, after the whole combat pass, so two firers' flashes take their ids,
-/// and a `RandomRate=` type its scenario-RNG draw, after both shots' other
-/// objects and draws rather than interleaved shot by shot. Player effect:
-/// none. Downstream risk: id and draw order differ from native's within one
-/// frame, which matters only to a cross-engine comparison.
-fn admit_muzzle_anims(world: &mut Simulation, rules: &RuleSet, fire_events: &[SimFireEvent]) {
-    for event in fire_events {
-        let Some(type_name) = event.muzzle_anim else {
-            continue;
-        };
-        let coord = crate::sim::anim_class::AnimWorldCoord {
-            x: event.fire_coord.x,
-            y: event.fire_coord.y,
-            z: event.fire_coord.z,
-        };
-        let is_building = event.firer_category == EntityCategory::Structure;
-        let (rx, ry, sub_x, sub_y, level) = coord.to_cell_sub_z();
-        let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
-            delay: 0,
-            loop_count: 1,
-            draw_flags: MUZZLE_ANIM_DRAW_FLAGS,
-            z_adjust: if is_building {
-                crate::sim::combat::fire_coord::building_muzzle_z_adjust(
-                    event.fire_offset_y,
-                    event.occupied_building,
-                )
-            } else {
-                0
-            },
-            reverse: false,
-            ..crate::sim::components::AnimClassSpawnDescriptor::new(
-                type_name, rx, ry, sub_x, sub_y, level,
+pub(crate) fn admit_muzzle_anim(world: &mut Simulation, rules: &RuleSet, event: &SimFireEvent) {
+    let Some(type_name) = event.muzzle_anim else {
+        return;
+    };
+    let coord = crate::sim::anim_class::AnimWorldCoord {
+        x: event.fire_coord.x,
+        y: event.fire_coord.y,
+        z: event.fire_coord.z,
+    };
+    let is_building = event.firer_category == EntityCategory::Structure;
+    let (rx, ry, sub_x, sub_y, level) = coord.to_cell_sub_z();
+    let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
+        delay: 0,
+        loop_count: 1,
+        draw_flags: MUZZLE_ANIM_DRAW_FLAGS,
+        z_adjust: if is_building {
+            crate::sim::combat::fire_coord::building_muzzle_z_adjust(
+                event.fire_offset_y,
+                event.occupied_building,
             )
-        };
-        match world.spawn_anim_at_world(rules, descriptor, coord) {
-            Ok(anim_id) => {
-                if !is_building {
-                    world.set_anim_owner_object(anim_id, Some(event.attacker_id), rules);
-                }
+        } else {
+            0
+        },
+        reverse: false,
+        ..crate::sim::components::AnimClassSpawnDescriptor::new(
+            type_name, rx, ry, sub_x, sub_y, level,
+        )
+    };
+    match world.spawn_anim_at_world(rules, descriptor, coord) {
+        Ok(anim_id) => {
+            if !is_building {
+                world.set_anim_owner_object(anim_id, Some(event.attacker_id), rules);
             }
-            Err(error) => log::debug!(
-                "muzzle anim [{}] did not construct: {error}",
-                world.interner.resolve(type_name)
-            ),
         }
+        Err(error) => log::debug!(
+            "muzzle anim [{}] did not construct: {error}",
+            world.interner.resolve(type_name)
+        ),
     }
 }
 
@@ -443,7 +437,7 @@ mod muzzle_anim_tests {
     fn a_units_muzzle_anim_is_built_at_the_fire_coordinate_and_rides_the_firer() {
         let (mut sim, rules, tank) = fixture(EntityCategory::Unit);
         let event = shot(&mut sim, tank, EntityCategory::Unit);
-        admit_muzzle_anims(&mut sim, &rules, &[event]);
+        admit_muzzle_anim(&mut sim, &rules, &event);
 
         let (id, anim) = sim.substrate.anims.iter().next().expect("one muzzle anim");
         let id = *id;
@@ -483,7 +477,9 @@ mod muzzle_anim_tests {
         own_weapon.fire_offset_y = 130;
         let mut occupants = own_weapon.clone();
         occupants.occupied_building = true;
-        admit_muzzle_anims(&mut sim, &rules, &[own_weapon, occupants]);
+        for event in [own_weapon, occupants] {
+            admit_muzzle_anim(&mut sim, &rules, &event);
+        }
 
         let anims: Vec<_> = sim.substrate.anims.iter().map(|(_, anim)| anim).collect();
         assert_eq!(anims.len(), 2);
@@ -501,7 +497,7 @@ mod muzzle_anim_tests {
         let (mut sim, rules, tank) = fixture(EntityCategory::Unit);
         sim.reveal(tank);
         let event = shot(&mut sim, tank, EntityCategory::Unit);
-        admit_muzzle_anims(&mut sim, &rules, &[event]);
+        admit_muzzle_anim(&mut sim, &rules, &event);
         let id = *sim.substrate.anims.iter().next().expect("muzzle anim").0;
         let relative = sim.anim(id).unwrap().world_coord;
 
@@ -518,27 +514,6 @@ mod muzzle_anim_tests {
         assert_eq!(sim.substrate.display.layer_of(id), None);
     }
 
-    /// The same, through `commit`: the flash is constructed before the
-    /// teardown loop. Constructed after it, the attach would still succeed (the
-    /// torn-down firer stays stored until the frame's tail) and leave an owner
-    /// id that no later notification clears.
-    #[test]
-    fn commit_builds_the_flash_before_it_tears_the_firer_down() {
-        let (mut sim, rules, tank) = fixture(EntityCategory::Unit);
-        sim.reveal(tank);
-        let event = shot(&mut sim, tank, EntityCategory::Unit);
-        let effects = DeathEffects {
-            immediate_uninit_ids: vec![tank],
-            ..DeathEffects::default()
-        };
-        DamageConsequences::ordinary(effects, Vec::new(), Vec::new(), vec![event])
-            .commit(&mut sim, &rules, None, None);
-
-        let (_, anim) = sim.substrate.anims.iter().next().expect("muzzle anim");
-        assert_eq!(anim.owner_entity, None);
-        assert!(anim.runtime.inactive);
-    }
-
     #[test]
     fn a_shot_without_a_bound_muzzle_type_constructs_nothing() {
         let (mut sim, rules, tank) = fixture(EntityCategory::Unit);
@@ -546,7 +521,9 @@ mod muzzle_anim_tests {
         unbound.muzzle_anim = Some(sim.interner.intern("NOSUCHANIM"));
         let mut none = unbound.clone();
         none.muzzle_anim = None;
-        admit_muzzle_anims(&mut sim, &rules, &[unbound, none]);
+        for event in [unbound, none] {
+            admit_muzzle_anim(&mut sim, &rules, &event);
+        }
         assert_eq!(sim.substrate.anims.iter().count(), 0);
     }
 }

@@ -973,7 +973,6 @@ impl Simulation {
             projectile.payload.base_damage.hash(hasher);
             projectile.payload.warhead.index().hash(hasher);
             projectile.payload.weapon.index().hash(hasher);
-            projectile.payload.owner.index().hash(hasher);
             projectile.speed_leptons_per_frame.hash(hasher);
             projectile.velocity.hash(hasher);
             projectile.trajectory.hash(hasher);

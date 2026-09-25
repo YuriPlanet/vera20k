@@ -1791,7 +1791,6 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
                 base_damage: 10,
                 warhead: sim.interner.intern("KillWH"),
                 weapon: sim.interner.intern("Gun"),
-                owner,
             },
             reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
         };
@@ -1978,7 +1977,6 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
             base_damage: 100,
             warhead: sim.interner.intern("OREWH"),
             weapon: sim.interner.intern("TestWeapon"),
-            owner,
         },
         reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
     };
@@ -3014,8 +3012,9 @@ fn sonic_wave_test_rules() -> RuleSet {
         "[VehicleTypes]\n0=DLPH\n1=TARGET\n\n\
          [DLPH]\nStrength=200\nArmor=light\nSpeed=8\nPrimary=SonicZap\nElitePrimary=SonicZapE\n\n\
          [TARGET]\nStrength=100\nArmor=wood\n\n\
-         [SonicZap]\nDamage=4\nAmbientDamage=10\nROF=20\nRange=6\nWarhead=SonicWH\nIsSonic=yes\n\n\
-         [SonicZapE]\nDamage=8\nAmbientDamage=15\nROF=20\nRange=6\nWarhead=SonicWH\nIsSonic=yes\n\n\
+         [SonicZap]\nDamage=4\nAmbientDamage=10\nROF=20\nRange=6\nProjectile=Sonic\nSpeed=100\nWarhead=SonicWH\nIsSonic=yes\n\n\
+         [SonicZapE]\nDamage=8\nAmbientDamage=15\nROF=20\nRange=6\nProjectile=Sonic\nSpeed=100\nWarhead=SonicWH\nIsSonic=yes\n\n\
+         [Sonic]\nLevel=yes\n\n\
          [SonicWH]\nWood=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n",
     ))
     .expect("Sonic Wave fixture")
@@ -3027,8 +3026,9 @@ fn sonic_tail_order_test_rules() -> RuleSet {
          [DLPH]\nStrength=200\nArmor=light\nSpeed=8\nSight=8\nPrimary=SonicZap\n\n\
          [LATER]\nStrength=200\nArmor=light\nSpeed=8\nSight=8\nPrimary=LaterGun\n\n\
          [TARGET]\nStrength=100\nArmor=none\nSpeed=1\n\n\
-         [SonicZap]\nDamage=4\nAmbientDamage=10\nROF=20\nRange=6\nWarhead=SonicWH\nIsSonic=yes\n\n\
+         [SonicZap]\nDamage=4\nAmbientDamage=10\nROF=20\nRange=6\nProjectile=Sonic\nSpeed=100\nWarhead=SonicWH\nIsSonic=yes\n\n\
          [LaterGun]\nDamage=7\nROF=20\nRange=6\nWarhead=LaterWH\n\n\
+         [Sonic]\nLevel=yes\n\n\
          [SonicWH]\nWood=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n\n\
          [LaterWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n",
     ))
@@ -3145,7 +3145,7 @@ fn sonic_constructor_at_240_registers_then_runs_at_same_pass_tail() {
     assert!(wave.in_logic_vector);
     assert_eq!(wave.lifetime, 100, "FireAt only registers the Logic tail");
 
-    sim.visit_combat_appended_wave_tail(&BTreeSet::new(), &rules, None);
+    sim.visit_combat_tail(0, &rules, None);
 
     let wave = sim.waves.get(wave_id).expect("Wave survives first tail AI");
     assert_eq!(wave.lifetime, 99, "first AI belongs to the firing pass");
@@ -3214,7 +3214,7 @@ fn sonic_cell_target_uses_persistent_dummy_gettargetcoords_on_create_and_refresh
         "coordinate restamps preserve the dummy's live non-coordinate fields",
     );
 
-    sim.visit_combat_appended_wave_tail(&BTreeSet::new(), &rules, None);
+    sim.visit_combat_tail(0, &rules, None);
     let wave = sim.waves.get(wave_id).expect("Wave survives first live AI");
     assert_eq!(wave.lifetime, 99);
     assert_eq!(wave.target.z, 674);
@@ -3365,7 +3365,7 @@ fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai()
 }
 
 #[test]
-fn sonic_cell_fire_same_frame_wave_damage_selects_level_two_bridge_plane() {
+fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
     let rules = sonic_wave_test_rules();
     let mut sim = Simulation::with_seed(0x5EED_6240);
     sim.input_delay_ticks = 0;
@@ -3422,17 +3422,23 @@ fn sonic_cell_fire_same_frame_wave_damage_selects_level_two_bridge_plane() {
         .advance_frame(&[], 67, TickLane::Ordinary)
         .expect("fixture frame must complete");
     assert!(output.tick.frame_committed);
-    let sim = &runtime.simulation;
-
-    let wave_id = *sim
+    let wave_id = *runtime
+        .simulation
         .active_wave_links
         .get(&dolphin_id)
         .expect("cell FireAt registered its Wave");
-    let wave = sim.waves.get(wave_id).expect("same-frame Wave survives");
-    assert_eq!(
-        wave.lifetime, 99,
-        "the appended tail ran in the firing pass"
-    );
+    // The Sonic bullet, Logic-appended just ahead of its Wave, strikes the
+    // deck on its first AI in the same tail. Its removal shifts the Wave into
+    // the visited slot (`0x0055B608..0x0055B619`), so the Wave's first AI is
+    // the next frame's.
+    assert_eq!(runtime.simulation.waves.get(wave_id).unwrap().lifetime, 100);
+    let output = runtime
+        .advance_frame(&[], 67, TickLane::Ordinary)
+        .expect("fixture frame must complete");
+    assert!(output.tick.frame_committed);
+    let sim = &runtime.simulation;
+    let wave = sim.waves.get(wave_id).expect("Wave survives its first AI");
+    assert_eq!(wave.lifetime, 99);
     assert_eq!(
         wave.target.z, 674,
         "level 2 CellClass target is 2*104 + structural 416 + Sonic 50",

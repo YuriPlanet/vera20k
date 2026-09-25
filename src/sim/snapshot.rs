@@ -6557,7 +6557,6 @@ mod tests {
                 base_damage: 1,
                 warhead: InternedId::from_index(0),
                 weapon: InternedId::from_index(0),
-                owner: InternedId::from_index(0),
             },
             speed_leptons_per_frame: 64,
             velocity: ProjectileVelocity::new(64, 0, 0),

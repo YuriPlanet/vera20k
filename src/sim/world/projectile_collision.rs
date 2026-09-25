@@ -443,6 +443,13 @@ mod tests {
         }
     }
 
+    /// Admit `shot` as bullet 100, already in flight: the allocator moves
+    /// past it, so the frame's combat tail does not take it for a new shot.
+    fn admit_existing(sim: &mut Simulation, shot: crate::sim::projectile::ProjectileSpawn) {
+        sim.substrate.next_stable_object_id = sim.substrate.next_stable_object_id.max(101);
+        sim.admit_projectile(100, shot);
+    }
+
     fn install_native_size_terrain(sim: &mut Simulation, width: u16, height: u16) {
         let header = crate::map::map_file::MapHeader {
             theater: "TEMPERATE".into(),
@@ -517,9 +524,8 @@ mod tests {
                 base_damage: 1,
                 warhead: sim.interner.intern("WALLWH"),
                 weapon: sim.interner.intern("MISSING"),
-                owner: sim.interner.intern("Americans"),
             };
-            sim.admit_projectile(100, shot);
+            admit_existing(&mut sim, shot);
             let mut runtime = SimRuntime::from_simulation(sim);
             runtime.resources.rules = RuleSet::from_ini(&ini).unwrap();
             runtime.resources.overlay_registry =
@@ -1090,7 +1096,7 @@ mod tests {
             acceleration: 10,
             max_speed: 100,
         };
-        sim.admit_projectile(100, shot);
+        admit_existing(&mut sim, shot);
         let mut runtime = SimRuntime::from_simulation(sim);
         // Original successive visits preserve the binary64 ramp, including
         // the approximate normalization's fractional bits after the first visit.
@@ -1173,9 +1179,8 @@ mod tests {
             base_damage: 1,
             warhead: sim.interner.intern("WALLWH"),
             weapon: sim.interner.intern("MISSING"),
-            owner: sim.interner.intern("Americans"),
         };
-        sim.admit_projectile(100, shot);
+        admit_existing(&mut sim, shot);
         let mut runtime = SimRuntime::from_simulation(sim);
         runtime.resources.rules = RuleSet::from_ini(&ini).unwrap();
         runtime.resources.overlay_registry =
@@ -1224,9 +1229,8 @@ mod tests {
             base_damage: 1,
             warhead: sim.interner.intern("WALLWH"),
             weapon: sim.interner.intern("MISSING"),
-            owner: sim.interner.intern("Americans"),
         };
-        sim.admit_projectile(100, shot);
+        admit_existing(&mut sim, shot);
         let mut runtime = SimRuntime::from_simulation(sim);
         runtime.resources.rules = RuleSet::from_ini(&ini).unwrap();
         assert_eq!(runtime.resources.rules.general.gravity, 0);
@@ -1651,11 +1655,18 @@ impl ProjectileCollisionWorld<'_> {
         );
         let same_cell =
             ((candidate.x / 256) as i16, (candidate.y / 256) as i16) == target_cell_coord;
+        // `ObjectClass::GetHeight @ 0x005F5F40` on the pre-move coordinate,
+        // from the bridge deck for an OnBridge bullet.
         let old_height = || {
             projectile
                 .position
                 .z
                 .wrapping_sub(self.ground(projectile.position))
+                .wrapping_sub(if projectile.on_bridge {
+                    crate::util::lepton::BRIDGE_HEIGHT_DELTA_LEPTONS as i32
+                } else {
+                    0
+                })
         };
         if !vertical && same_cell && old_height() < 208 {
             impact = true;

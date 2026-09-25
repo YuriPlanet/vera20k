@@ -838,7 +838,6 @@ fn gsi_04_10_projectile_inert_suppresses_bridge_ore_and_collector_rng() {
             base_damage: 100,
             warhead,
             weapon,
-            owner,
         },
         reason: ProjectileDetonationReason::ReachedTarget,
     };
@@ -1675,7 +1674,7 @@ fn gsi_04_07_damage_wad_precedes_wall_and_wood_armor_routing() {
 }
 
 #[test]
-fn gsi_04_07_damage_live_order_second_attacker_reads_restored_target() {
+fn gsi_04_07_damage_wall_dies_in_the_tail_after_both_attackers_fire() {
     let ini = IniFile::from_str(
         "[InfantryTypes]\n\
          [VehicleTypes]\n0=MTNK\n\
@@ -1692,11 +1691,10 @@ fn gsi_04_07_damage_live_order_second_attacker_reads_restored_target() {
     let registry = OverlayTypeRegistry::from_ini(&ini, None);
     let mut entities = EntityStore::new();
     entities.insert(make_entity(10, "MTNK", 5, 5, 300));
-    // The second attacker sits WEST of both the wall cell and the target it
-    // will have restored mid-tick, so one hull heading serves both. Under the
-    // turretless body gate (`UnitClass::GetFireError @ 0x00740FD0` step 17) a
-    // restored target behind the hull would simply be refused for facing, and
-    // the tick would consume one reload jitter instead of two.
+    // Both tanks fire at the wall cell in the object pass. Their (Inviso)
+    // bullets detonate in the same frame's Logic tail, where the first one
+    // razes the wall and its detach restores the second tank's suspended
+    // target (`0x0070D4A0`) for its next AI.
     let mut second = make_entity(20, "MTNK", 4, 5, 300);
     second.mission.apply_test_fixture(MissionTestFixture {
         current: MissionId::from_known(MissionType::Attack),
@@ -1773,8 +1771,8 @@ fn gsi_04_07_damage_live_order_second_attacker_reads_restored_target() {
             .iter()
             .map(|event| (event.attacker_id, event.target))
             .collect::<Vec<_>>(),
-        vec![(10, TargetKind::Cell(8, 5)), (20, TargetKind::Entity(10))],
-        "second live-order attacker must not fire its stale cell snapshot"
+        vec![(10, TargetKind::Cell(8, 5)), (20, TargetKind::Cell(8, 5))],
+        "both shots are Inviso bullets, so the wall stands until the tail"
     );
     assert_eq!(
         result
@@ -1865,7 +1863,6 @@ fn gsi_04_07_damage_prior_projectile_fatal_death_weapon_is_inline() {
                 base_damage: 10,
                 warhead: interner.intern("NoWallWH"),
                 weapon: interner.intern("Gun"),
-                owner: interner.intern("Test"),
             },
             reason: ProjectileDetonationReason::ReachedTarget,
         };
@@ -2106,7 +2103,6 @@ fn retaliates(case: RetaliationCase) -> bool {
             base_damage: 10,
             warhead: incoming_wh,
             weapon: incoming_weapon,
-            owner: source_owner,
         },
         reason: ProjectileDetonationReason::ReachedTarget,
     };
@@ -2614,7 +2610,6 @@ fn gsi_04_07_damage_retaliation_is_receiver_synchronous_and_uses_mission_overrid
                 base_damage: 10,
                 warhead: incoming_wh,
                 weapon: incoming_weapon,
-                owner: source_owner,
             },
             reason: ProjectileDetonationReason::ReachedTarget,
         };
@@ -3647,7 +3642,6 @@ fn gsi_04_07_damage_repair_bullet_cellspread_zero_keeps_signed_area_record() {
             base_damage: weapon.damage,
             warhead: warhead_ref,
             weapon: weapon_ref,
-            owner: interner.intern("Test"),
         },
         reason: ProjectileDetonationReason::ReachedTarget,
     };
@@ -3675,8 +3669,9 @@ fn gsi_04_07_damage_repair_bullet_cellspread_zero_keeps_signed_area_record() {
         &mut inline_hooks,
         &mut emitted,
     );
-    let mut expected =
-        EntityDamageEvent::area(10, -50, 0, 77, Some(interner.intern("Test")), warhead_ref);
+    // Firer 77 is gone, so the bullet has no Owner and DamageArea takes no
+    // source house (`0x00469A69..0x00469A75`).
+    let mut expected = EntityDamageEvent::area(10, -50, 0, 77, None, warhead_ref);
     expected.near_center_ic_isolation_eligible = true;
     assert_eq!(
         emitted.damage_events,
@@ -3684,34 +3679,8 @@ fn gsi_04_07_damage_repair_bullet_cellspread_zero_keeps_signed_area_record() {
         "CellSpread=0 still enters the center receiver scan with raw signed damage"
     );
 
-    let mut main_rng = SimRng::new(3);
-    let mut handled_deaths = Vec::new();
-    let mut houses = BTreeMap::new();
-    let mut fatal_lifecycle = None;
-    let mut sound_sink = None;
-    let (death, pings) = commit_area_damage_receivers(
-        &emitted.damage_events,
-        &mut entities,
-        &mut occupancy,
-        &rules,
-        &mut interner,
-        &mut houses,
-        &[],
-        &HouseAllianceMap::new(),
-        &mut main_rng,
-        &mut scenario_rng,
-        &mut handled_deaths,
-        None,
-        None,
-        None,
-        None,
-        0,
-        &mut fatal_lifecycle,
-        &mut sound_sink,
-    );
+    // The detonation commits its receivers inline: one heal of 50.
     assert_eq!(entities.get(10).unwrap().health.current, 150);
-    assert!(death.despawned_ids.is_empty());
-    assert!(pings.is_empty());
 }
 
 /// `Apply_area_damage`'s dispatch skips an `InvisibleInGame=` building
@@ -5064,7 +5033,7 @@ fn fatal_sound_selection_uses_human_voice_then_die_sound_main_draws() {
     assert_eq!(
         scenario_rng.state(),
         scenario_before,
-        "death-sound choices must not consume Scenario RNG beyond the reload jitter"
+        "death-sound choices must not consume Scenario RNG beyond the shot's own draws"
     );
     let mut two_draw_reference = SimRng::new(1);
     two_draw_reference.next_u32();
@@ -6894,7 +6863,7 @@ fn persistent_projectile_delays_damage_across_save_load_continuation() {
     let rules = persistent_projectile_rules();
     assert!(matches!(
         classify_projectile_delivery(rules.weapon("GUN").unwrap(), &rules),
-        ProjectileDelivery::Persistent { .. }
+        ProjectileDelivery { .. }
     ));
     let mut entities = EntityStore::new();
     entities.insert(make_entity(1, "SHOOTER", 5, 5, 300));
@@ -6999,6 +6968,20 @@ fn persistent_projectile_delays_damage_across_save_load_continuation() {
     assert_eq!(entities.get(2).unwrap().health.current, 490);
 }
 
+/// One Inviso bullet's detonation draws in the frame's tail: the anim
+/// scatter (one raw draw), then the cluster successor
+/// (`RandomRanged(0x100, 0x200)` and one raw draw, `0x00469057`).
+fn inviso_detonation_draws(
+    rng: &mut SimRng,
+    coord: (u16, u16, SimFixed, SimFixed),
+) -> (u16, u16, SimFixed, SimFixed) {
+    let effect =
+        inviso_scatter::scatter_inviso_effect_coord(rng, coord.0, coord.1, coord.2, coord.3);
+    let _ =
+        crate::sim::projectile::projectile_next_cluster_coord(ProjectileCoord::new(0, 0, 0), rng);
+    effect
+}
+
 fn explosion_coord(effect: &ExplosionEffect) -> (u16, u16, SimFixed, SimFixed) {
     (effect.rx, effect.ry, effect.sub_x, effect.sub_y)
 }
@@ -7020,17 +7003,10 @@ fn inviso_scatter_uses_scenario_rng_only_for_effect_and_paired_smudge() {
 
     let mut scenario_rng = SimRng::new(1);
     let mut expected_rng = scenario_rng.clone();
-    let expected_effect = inviso_scatter::scatter_inviso_effect_coord(
-        &mut expected_rng,
-        target_coord.0,
-        target_coord.1,
-        target_coord.2,
-        target_coord.3,
-    );
-    // `TechnoClass::GetROF @ 0x006FCFA0` draws its `RandomRanged(0, 2)` reload
-    // jitter after the shot, on this same instance (`[0x00A8B230] + 0x218` —
-    // the one `FootClass::Mission_Attack @ 0x004D4DC0` also uses).
+    // FireAt's `GetROF @ 0x006FCFA0` jitter, then the bullet's detonation in
+    // the same frame's tail.
     expected_rng.next_range_u32_inclusive(0, 2);
+    let expected_effect = inviso_detonation_draws(&mut expected_rng, target_coord);
     align_attackers_to_targets(&mut store, &rules, &interner);
     let result = tick_combat(
         &mut store,
@@ -7082,9 +7058,12 @@ fn inviso_empty_animlist_still_consumes_one_draw() {
 
     let mut scenario_rng = SimRng::new(1);
     let mut expected_rng = scenario_rng.clone();
-    expected_rng.next_u32();
-    // Plus the end-of-burst reload jitter, `GetROF @ 0x006FCFA0`.
+    // GetROF in FireAt, then the tail's scatter and cluster draws.
     expected_rng.next_range_u32_inclusive(0, 2);
+    let _ = inviso_detonation_draws(
+        &mut expected_rng,
+        (8, 5, SimFixed::from_num(128), SimFixed::from_num(128)),
+    );
     align_attackers_to_targets(&mut store, &rules, &interner);
     let result = tick_combat(
         &mut store,
@@ -7157,8 +7136,13 @@ fn gsi_08_05_non_inviso_projectile_advances_scenario_rng_by_the_reload_jitter() 
     );
 }
 
+/// Both shots' FireAt draws come first, in live order; then the tail visits
+/// the bullets in the order FireAt appended them. The first bullet's
+/// detonation removes it from the Logic vector, which shifts the second into
+/// its slot, and the cursor moves past it (`0x0055B613`): the second bullet
+/// detonates next frame.
 #[test]
-fn two_inviso_attackers_consume_consecutive_draws_in_live_order() {
+fn two_inviso_attackers_fire_in_live_order_and_the_second_bullet_waits_a_frame() {
     let rules = inviso_weapon_rules(true, true);
     let mut store = EntityStore::new();
     store.insert(make_entity(1, "SHOOTER", 5, 5, 300));
@@ -7177,23 +7161,9 @@ fn two_inviso_attackers_consume_consecutive_draws_in_live_order() {
 
     let mut scenario_rng = SimRng::new(1);
     let mut expected_rng = scenario_rng.clone();
-    // Per attacker, in live order: the inviso scatter draws, then that
-    // attacker's own `GetROF` reload jitter.
-    let mut expected_shot = |rng: &mut SimRng| {
-        let coord = inviso_scatter::scatter_inviso_effect_coord(
-            rng,
-            target_coord.0,
-            target_coord.1,
-            target_coord.2,
-            target_coord.3,
-        );
-        rng.next_range_u32_inclusive(0, 2);
-        coord
-    };
-    let expected = [
-        expected_shot(&mut expected_rng),
-        expected_shot(&mut expected_rng),
-    ];
+    expected_rng.next_range_u32_inclusive(0, 2);
+    expected_rng.next_range_u32_inclusive(0, 2);
+    let expected = inviso_detonation_draws(&mut expected_rng, target_coord);
     align_attackers_to_targets(&mut store, &rules, &interner);
     let result = tick_combat_with_fog(
         &mut store,
@@ -7224,15 +7194,17 @@ fn two_inviso_attackers_consume_consecutive_draws_in_live_order() {
         vec![2, 1]
     );
     assert_eq!(scenario_rng.logical_state(), expected_rng.logical_state());
-    assert_eq!(result.consequences.effects().explosion_effects.len(), 2);
+    assert_eq!(result.consequences.effects().explosion_effects.len(), 1);
     assert_eq!(
         explosion_coord(&result.consequences.effects().explosion_effects[0]),
-        expected[0]
+        expected
     );
     assert_eq!(
-        explosion_coord(&result.consequences.effects().explosion_effects[1]),
-        expected[1]
+        result.projectile_spawns.len(),
+        1,
+        "attacker 1's bullet was skipped"
     );
+    assert_eq!(result.projectile_spawns[0].source_id, 1);
 }
 
 /// `inviso_weapon_rules(true, true)` with one special warhead key added.
@@ -7287,14 +7259,8 @@ fn inviso_special_arms_claim_the_impact_and_keep_the_shared_tail() {
         );
         let mut scenario_rng = SimRng::new(1);
         let mut expected_rng = scenario_rng.clone();
-        let expected_effect = inviso_scatter::scatter_inviso_effect_coord(
-            &mut expected_rng,
-            target_coord.0,
-            target_coord.1,
-            target_coord.2,
-            target_coord.3,
-        );
         expected_rng.next_range_u32_inclusive(0, 2);
+        let expected_effect = inviso_detonation_draws(&mut expected_rng, target_coord);
         align_attackers_to_targets(&mut store, &rules, &interner);
         let result = tick_combat(
             &mut store,
@@ -7320,7 +7286,7 @@ fn inviso_special_arms_claim_the_impact_and_keep_the_shared_tail() {
         assert_eq!(
             scenario_rng.logical_state(),
             expected_rng.logical_state(),
-            "{special_key}: the tail's Inviso draw and the reload jitter, nothing else"
+            "{special_key}: the reload jitter, then the tail's scatter and cluster draws"
         );
         let effects = result.consequences.effects();
         assert_eq!(effects.explosion_effects.len(), 1, "{special_key}");
@@ -7421,9 +7387,8 @@ fn retail_special_inviso_weapons_claim_their_impact() {
         );
         assert_eq!(action, expected, "{weapon_id}");
         assert!(action.suppresses_ordinary_damage(), "{weapon_id}");
-        assert_eq!(
-            classify_projectile_delivery(weapon, &rules),
-            ProjectileDelivery::Immediate(ImmediateProjectileReason::Invisible),
+        assert!(
+            classify_projectile_delivery(weapon, &rules).inviso,
             "{weapon_id} is an Inviso shot"
         );
     }
@@ -7572,10 +7537,11 @@ fn emit_warhead_detonation_effects_animlist_index_is_damage_div_25_clamped() {
 
 #[test]
 fn combat_resolves_in_live_object_order_not_stable_id() {
-    // Two attackers A (stable_id 1) and B (stable_id 2), same owner, both able to
-    // lethally hit a shared enemy target T (stable_id 3) this tick. T has 50 HP, so
-    // the single 58-damage 105mm shot (65 * 90% AP-vs-heavy) from the FIRST-resolved
-    // attacker drops it to 0 and records the despawn.
+    // Two attackers A (stable_id 1) and B (stable_id 2), same owner, both fire
+    // at a shared enemy target T (stable_id 3) this tick. Each 105mm shot deals
+    // 48 (65 * 75% AP-vs-heavy) to T's 50 HP. The first-resolved attacker's
+    // bullet leads the Logic tail and lands this frame; the second is skipped
+    // past when the first leaves the vector, so T survives on 2.
     //
     // Phase 4 of tick_combat_with_fog applies damage_events in resolution order;
     // damage_events is built in Phase 2 by walking the snapshots in their sorted
@@ -7625,10 +7591,10 @@ fn combat_resolves_in_live_object_order_not_stable_id() {
             2,
             "live order [2,1]: B (live-order-first) must fire first"
         );
-        assert!(
-            result.consequences.effects().despawned_ids.contains(&3),
-            "target must die this tick"
-        );
+        // B's bullet leads the Logic tail and lands; A's is skipped this frame.
+        assert_eq!(store.get(3).unwrap().health.current, 2);
+        assert_eq!(result.projectile_spawns.len(), 1);
+        assert_eq!(result.projectile_spawns[0].source_id, 1);
     }
 
     // Run 2: empty live order falls back to stable-id order [A(1), B(2)]. A now
@@ -7660,10 +7626,9 @@ fn combat_resolves_in_live_object_order_not_stable_id() {
             1,
             "empty live order: stable-id fallback fires A first"
         );
-        assert!(
-            result.consequences.effects().despawned_ids.contains(&3),
-            "target must die this tick"
-        );
+        assert_eq!(store.get(3).unwrap().health.current, 2);
+        assert_eq!(result.projectile_spawns.len(), 1);
+        assert_eq!(result.projectile_spawns[0].source_id, 2);
     }
 }
 
@@ -8468,7 +8433,6 @@ fn projectile_shrapnel_targets_hostile_head_before_random_cell_child() {
             base_damage: 20,
             warhead: interner.intern("WH"),
             weapon: interner.intern("PARENT"),
-            owner: interner.intern("SOVIET"),
         },
         reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
     };
@@ -8552,7 +8516,6 @@ fn projectile_shrapnel_aims_at_a_building_foundation_center() {
             base_damage: 20,
             warhead: interner.intern("WH"),
             weapon: interner.intern("PARENT"),
-            owner: interner.intern("SOVIET"),
         },
         reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
     };
@@ -8638,7 +8601,6 @@ fn gsi_04_01_projectile_shrapnel_captures_each_shared_dummy_lookup() {
             base_damage: 20,
             warhead: interner.intern("WH"),
             weapon: interner.intern("PARENT"),
-            owner: interner.intern("SOVIET"),
         },
         reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
     };
@@ -10375,7 +10337,6 @@ fn gsi_08_08_special_arm_suppresses_damage_but_keeps_the_detonation_tail() {
                 base_damage: 50,
                 warhead: warhead_ref,
                 weapon: interner.intern("MissingWeapon"),
-                owner: interner.intern("Test"),
             },
             reason: ProjectileDetonationReason::ReachedTarget,
         };
@@ -10482,7 +10443,6 @@ fn clusters_scatter_around_the_impact() {
             base_damage: 10,
             warhead: interner.intern("Blast"),
             weapon: interner.intern("ClusterGun"),
-            owner: interner.intern("Test"),
         },
         reason: ProjectileDetonationReason::ReachedTarget,
     };
@@ -10576,7 +10536,6 @@ fn gsi_08_33_direct_rocker_only_claims_a_vehicle_target() {
                 base_damage: 50,
                 warhead: interner.intern("Rocker"),
                 weapon: interner.intern("MissingWeapon"),
-                owner: interner.intern("Test"),
             },
             reason: ProjectileDetonationReason::ReachedTarget,
         };
