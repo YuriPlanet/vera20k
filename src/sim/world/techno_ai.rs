@@ -16,8 +16,8 @@
 
 mod mission_handlers;
 mod target_scan;
+pub(crate) use mission_handlers::foot_unlimbo_idle_mode;
 pub(crate) use mission_handlers::harvester_enter_idle_mode_selector;
-pub(crate) use mission_handlers::infantry_unlimbo_idle_mode;
 pub(crate) use mission_handlers::queue_foot_enter_idle_mode;
 
 use mission_handlers::*;
@@ -2826,6 +2826,24 @@ mod tests {
         let id = sim
             .spawn_object("GI", "Americans", 10, 10, 0, &rules, &heights)
             .expect("GI spawns");
+        let entity = sim.substrate.entities.get(id).unwrap();
+        assert_eq!(
+            entity.mission.current(),
+            MissionId::from_known(MissionType::Guard)
+        );
+        assert_eq!(entity.mission.queued(), MissionId::NONE);
+    }
+
+    /// `UnitClass::Enter_Idle_Mode @ 0x00738970`'s armed arm: a fresh tank
+    /// with nowhere to go takes Guard at Unlimbo, as a factory-built one must.
+    #[test]
+    fn a_produced_tank_enters_the_map_on_guard() {
+        let rules = passive_rules();
+        let heights: std::collections::BTreeMap<(u16, u16), u8> = std::collections::BTreeMap::new();
+        let mut sim = Simulation::new();
+        let id = sim
+            .spawn_object("MTNK", "Americans", 10, 10, 0, &rules, &heights)
+            .expect("tank spawns");
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(
             entity.mission.current(),

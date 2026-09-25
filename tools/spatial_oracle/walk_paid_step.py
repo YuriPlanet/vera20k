@@ -107,12 +107,14 @@ def generate():
                              initial_facing=0x3FFF, initial_previous=0,
                              initial_start=FRAME, initial_duration=1, rot=32)))
     # Accepted production head from replay_hash_stable_through_slice6, before
-    # frame12. Carry native outputs forward for its five paid steps. Only the
-    # speed integer is supplied, just as in the other comparisons.
-    current, facing = [1408, 1408, 0], 8315
+    # frame12 (re-read 2026-09-25: the map tanks now start on Guard, whose
+    # cadence draws move the infantryman's sub-cell pick). Carry native outputs
+    # forward for its five paid steps. Only the speed integer is supplied, just
+    # as in the other comparisons.
+    current, facing = [1408, 1408, 0], 10855
     for step in range(1, 6):
         row = execute(dict(base, name=f'slice6_paid_step_{step}',
-                           current=current, head=[1728, 1088, 0], speed=10,
+                           current=current, head=[1728, 1216, 0], speed=10,
                            initial_facing=facing, initial_previous=facing, rot=0))
         rows.append(row)
         current, facing = row['proposed'], row['facing']

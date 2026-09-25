@@ -948,34 +948,55 @@ pub(crate) fn queue_foot_enter_idle_mode(sim: &mut Simulation, id: u64, rules: &
     }
 }
 
-/// `TechnoClass::Unlimbo @ 0x006F6E2A..0x006F6E4F` for an infantryman:
-/// `Enter_Idle_Mode(1, 1)` (`InfantryClass::Enter_Idle_Mode @ 0x0051CBA0`),
-/// then Ready_To_Commence and Commence, so the mission it picks is current at
-/// once. A fresh infantryman with nowhere to go takes Guard; a map placement
-/// then assigns its authored mission over it.
+/// `TechnoClass::Unlimbo @ 0x006F6E2A..0x006F6E4F` for a Foot on the
+/// ground: `Enter_Idle_Mode(1, 1)` (`InfantryClass::Enter_Idle_Mode @
+/// 0x0051CBA0`, `UnitClass::Enter_Idle_Mode @ 0x00738970`), then
+/// Ready_To_Commence and Commence, so the mission it picks is current at once.
+/// A fresh object with nowhere to go takes Guard; a map placement then assigns
+/// its authored mission over it. A factory-built vehicle used to keep no
+/// mission at all, so its dispatch took the missionless 450-frame arm instead
+/// of Mission_Guard's cadence.
 ///
 /// RESIDUALS, beside those on [`foot_enter_idle_mode_selection`]:
-/// - the Area Guard arm (a computer infantryman outside a team whose house IQ
-///   reaches `[IQ] GuardArea=`, or a `DefaultToGuardArea=`/GUARD_AREA type) is
-///   committed as Guard: VERA's `Mission_AreaGuard` lacks the guard post, the
-///   leash and the approach. Trigger: every computer-built infantryman and
-///   every dog. Effect: they hold their ground instead of covering an area.
-/// - Units, buildings and aircraft keep VERA's mission bridge
+/// - the Area Guard arm (a computer object outside a team, or with a slave
+///   link, whose house IQ reaches `[IQ] GuardArea=`, or a
+///   `DefaultToGuardArea=`/GUARD_AREA type) is committed as Guard: VERA's
+///   `Mission_AreaGuard` lacks the guard post, the leash and the approach.
+///   Trigger: every computer-built infantryman and vehicle, and every dog.
+///   Effect: they hold their ground instead of covering an area.
+/// - a Harvester or Weeder vehicle takes its own arm (`0x00738BD8`,
+///   [`harvester_enter_idle_mode_selector`]).
+/// - an unarmed vehicle's Unload arm (`0x00738A7C..0x00738AAF`: `+0x3D4`,
+///   `Passengers=` and cargo, outside a team) is not taken; it gets Guard.
+///   Trigger: an unarmed transport leaving the factory loaded. Effect: it
+///   keeps its cargo aboard.
+/// - buildings and aircraft keep VERA's mission bridge
 ///   (`GameEntity::passive_acquire_mission`) until their own leaves are ported.
-pub(crate) fn infantry_unlimbo_idle_mode(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+pub(crate) fn foot_unlimbo_idle_mode(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
-    if entity.category != EntityCategory::Infantry {
+    let vehicle = entity.category == EntityCategory::Unit;
+    if !vehicle && entity.category != EntityCategory::Infantry {
         return;
     }
-    let selection = foot_enter_idle_mode_selection(
-        rules,
-        entity.category,
-        entity.mission.current().known(),
-        entity.navigation.nav_com.is_some(),
-        entity.mission.effective().known(),
-    );
+    let miner = vehicle
+        && sim
+            .object_type(entity.type_ref(), rules)
+            .is_some_and(|kind| kind.harvester || kind.weeder);
+    // `0x00738A34`: a NavCom wins before either arm.
+    let selection = if miner && entity.navigation.nav_com.is_none() {
+        // Unlimbo's first argument is 1, so a miner skips the human land check.
+        harvester_enter_idle_mode_selector(sim, id, rules, true)
+    } else {
+        foot_enter_idle_mode_selection(
+            rules,
+            entity.category,
+            entity.mission.current().known(),
+            entity.navigation.nav_com.is_some(),
+            entity.mission.effective().known(),
+        )
+    };
     if let Some(mission) = selection {
         let now = sim.session.binary_frame;
         let _ = sim.mission_assign_exact(id, MissionId::from_known(mission), now);
