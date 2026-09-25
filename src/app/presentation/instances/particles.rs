@@ -8,8 +8,8 @@
 //! that slip through.
 //!
 //! Output pages match the sprite atlas page layout — particle pass uses its
-//! own pool keys ("particle_p0".."particle_p3") drawn after bridge railings
-//! and before debug overlays.
+//! own pool stream ("particle_page", one buffer per atlas page) drawn after
+//! bridge railings and before debug overlays.
 //!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.

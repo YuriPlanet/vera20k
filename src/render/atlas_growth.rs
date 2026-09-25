@@ -71,6 +71,77 @@ impl ShelfCursor {
     }
 }
 
+/// The page an atlas appends to, and its shelf.
+pub(crate) struct GrowthShelf {
+    pub(crate) page: usize,
+    pub(crate) shelf: ShelfCursor,
+}
+
+/// One refresh's sprites on one page. Their rows hold no earlier sprite, so
+/// each texture of the page takes them in a single [`write_band`].
+pub(crate) struct PagePlacements<T> {
+    pub(crate) page: usize,
+    pub(crate) sprites: Vec<([u32; 2], T)>,
+}
+
+/// Place one refresh's sprites, tallest first, on the current growth page,
+/// opening a page with `open_page` whenever it is full. `open_page` gets the
+/// size the page must at least have and returns the new page's index and
+/// size. The refresh starts on a fresh shelf, so the rows it fills hold no
+/// resident sprite. Sprites wider or taller than `max_dim` are returned
+/// unplaced.
+pub(crate) fn place_on_growth_pages<T>(
+    growth: &mut Option<GrowthShelf>,
+    mut sprites: Vec<T>,
+    size: impl Fn(&T) -> [u32; 2],
+    max_dim: u32,
+    mut open_page: impl FnMut([u32; 2]) -> (usize, [u32; 2]),
+) -> (Vec<PagePlacements<T>>, Vec<T>) {
+    let mut placed: Vec<PagePlacements<T>> = Vec::new();
+    let mut unplaced = Vec::new();
+    if sprites.is_empty() {
+        return (placed, unplaced);
+    }
+    sprites.sort_by_key(|sprite| std::cmp::Reverse(size(sprite)[1]));
+    if let Some(growth) = growth.as_mut() {
+        growth.shelf.start_new_shelf();
+    }
+    for sprite in sprites {
+        let [width, height] = size(&sprite);
+        if width > max_dim || height > max_dim {
+            unplaced.push(sprite);
+            continue;
+        }
+        let spot = growth
+            .as_mut()
+            .and_then(|growth| Some((growth.page, growth.shelf.place(width, height)?)));
+        let (page, origin) = match spot {
+            Some(spot) => spot,
+            None => {
+                let (page, [page_width, page_height]) = open_page([width, height]);
+                let mut shelf = ShelfCursor::new(page_width, page_height);
+                let origin = shelf.place(width, height);
+                *growth = Some(GrowthShelf { page, shelf });
+                match origin {
+                    Some(origin) => (page, origin),
+                    None => {
+                        unplaced.push(sprite);
+                        continue;
+                    }
+                }
+            }
+        };
+        match placed.last_mut() {
+            Some(group) if group.page == page => group.sprites.push((origin, sprite)),
+            _ => placed.push(PagePlacements {
+                page,
+                sprites: vec![(origin, sprite)],
+            }),
+        }
+    }
+    (placed, unplaced)
+}
+
 /// Rectangles `(origin, size, texels)` gathered into the band of rows they
 /// span, from column 0 to the rightmost texel: returns the band's origin, size
 /// and tightly packed texels. Texels no rectangle covers are zero.
@@ -214,5 +285,81 @@ mod tests {
             5, 6, 0, 0, 0, 0,
         ]);
         assert!(gather_band(&[], 4).is_none());
+    }
+
+    fn bottom(placed: &[PagePlacements<[u32; 2]>]) -> u32 {
+        placed
+            .iter()
+            .flat_map(|group| &group.sprites)
+            .map(|(origin, size)| origin[1] + size[1])
+            .max()
+            .unwrap_or(0)
+    }
+
+    #[test]
+    fn a_refresh_band_never_reaches_rows_an_earlier_refresh_filled() {
+        let mut growth = None;
+        let mut opened = Vec::new();
+        let mut open_page = |needed: [u32; 2]| {
+            opened.push(needed);
+            (opened.len() + 1, [16, 16])
+        };
+        let (first, unplaced) = place_on_growth_pages(
+            &mut growth,
+            vec![[5, 2], [3, 4]],
+            |s| *s,
+            64,
+            &mut open_page,
+        );
+        assert!(unplaced.is_empty());
+        assert_eq!(first.len(), 1, "one page");
+        // The earlier shelf still has room for a 3x1 sprite at x = 10; a
+        // refresh must not use it, since its band would zero those rows.
+        let (second, _) =
+            place_on_growth_pages(&mut growth, vec![[3, 1]], |s| *s, 64, &mut open_page);
+        let top = second[0]
+            .sprites
+            .iter()
+            .map(|(origin, _)| origin[1])
+            .min()
+            .unwrap();
+        assert!(
+            top >= bottom(&first),
+            "band top {top} below {}",
+            bottom(&first)
+        );
+        assert_eq!(second[0].page, first[0].page);
+        assert_eq!(
+            opened,
+            vec![[3, 4]],
+            "the first refresh opened the only page"
+        );
+    }
+
+    #[test]
+    fn a_full_page_opens_the_next_and_oversized_sprites_stay_unplaced() {
+        let mut growth = None;
+        let mut pages = 0;
+        let (placed, unplaced) = place_on_growth_pages(
+            &mut growth,
+            vec![[8, 8], [8, 8], [20, 1]],
+            |s| *s,
+            16,
+            |_| {
+                pages += 1;
+                (pages, [8, 8])
+            },
+        );
+        assert_eq!(unplaced, vec![[20, 1]]);
+        let pages_used: Vec<usize> = placed.iter().map(|group| group.page).collect();
+        assert_eq!(pages_used, vec![1, 2], "the second 8x8 needs its own page");
+        let (none, unplaced) = place_on_growth_pages(
+            &mut growth,
+            Vec::<[u32; 2]>::new(),
+            |s| *s,
+            16,
+            |_| unreachable!(),
+        );
+        assert!(none.is_empty() && unplaced.is_empty());
     }
 }

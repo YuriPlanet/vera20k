@@ -242,7 +242,9 @@ fn refresh_failure_returns_the_prior_atlas_unchanged() {
     prior.unrenderable.insert(make_shp_key("EMPTY", 0));
     prior
         .covered_objects
-        .insert(("PRIOR".to_string(), HouseColorIndex(1)));
+        .entry("PRIOR".to_string())
+        .or_default()
+        .insert(HouseColorIndex(1));
 
     let restored =
         abort_sprite_atlas_refresh(Some(prior), "required refresh sprite failed".to_string())
@@ -253,16 +255,31 @@ fn refresh_failure_returns_the_prior_atlas_unchanged() {
     assert_eq!(restored.make_frame_counts["PRIOR"], 3);
     assert_eq!(restored.active_anim_frame_counts["PRIOR"], 4);
     assert!(restored.unrenderable.contains(&make_shp_key("EMPTY", 0)));
-    assert!(restored.covers(
-        &HashSet::from([("PRIOR".to_string(), HouseColorIndex(1))]),
-        &HashSet::new()
-    ));
+    assert!(restored.covers_object("PRIOR", HouseColorIndex(1)));
 }
 
 #[test]
 #[should_panic(expected = "required initial sprite failed")]
 fn required_initial_build_failure_remains_fail_fast() {
     let _ = abort_sprite_atlas_refresh(None, "required initial sprite failed".to_string());
+}
+
+/// One placed object of `type_id` owned by "Americans", and the interner
+/// that resolves it.
+fn one_object_world(
+    type_id: &str,
+    category: EntityCategory,
+) -> (
+    crate::sim::entity_store::EntityStore,
+    crate::sim::intern::StringInterner,
+) {
+    let mut entity =
+        crate::sim::game_entity::GameEntity::test_default(1, type_id, "Americans", 5, 5);
+    entity.category = category;
+    entity.is_voxel = false;
+    let mut store = crate::sim::entity_store::EntityStore::new();
+    store.insert(entity);
+    (store, crate::sim::intern::test_interner())
 }
 
 #[test]
@@ -273,32 +290,34 @@ fn deploy_targets_get_the_same_keys_as_placed_structures() {
              [CAHOSP]\nCanBeOccupied=yes\n\n[GACNST]\nStrength=1000\n",
         ))
         .expect("rules");
-    let mut occupied = HashSet::new();
-    insert_object_keys(
-        &mut occupied,
-        "CAHOSP",
-        EntityCategory::Structure,
-        HouseColorIndex(2),
-        Some(&rules),
-    );
-    let frames: HashSet<u16> = occupied.iter().map(|key| key.frame).collect();
-    assert_eq!(frames, HashSet::from([0, 1, 2, 3]), "occupancy frame swap");
+    // Only an infantryman is placed; the two buildings arrive as deploy
+    // targets, which have no placed object to take a category from.
+    let (world, interner) = one_object_world("E1", EntityCategory::Infantry);
+    let color = HouseColorIndex(2);
+    let pairs: HashSet<(String, HouseColorIndex)> = ["E1", "CAHOSP", "GACNST"]
+        .into_iter()
+        .map(|type_id| (type_id.to_string(), color))
+        .collect();
+    let mut needed = HashSet::new();
+    insert_new_object_keys(&mut needed, &pairs, &world, Some(&interner), Some(&rules));
 
-    let mut plain = HashSet::new();
-    insert_object_keys(
-        &mut plain,
-        "GACNST",
-        EntityCategory::Structure,
-        HouseColorIndex(2),
-        Some(&rules),
-    );
+    let frames = |type_id: &str| -> HashSet<u16> {
+        needed
+            .iter()
+            .filter(|key| key.type_id == type_id && key.house_color == color)
+            .map(|key| key.frame)
+            .collect()
+    };
     assert_eq!(
-        plain,
-        HashSet::from([{
-            let mut key = make_shp_key("GACNST", 0);
-            key.house_color = HouseColorIndex(2);
-            key
-        }])
+        frames("CAHOSP"),
+        HashSet::from([0, 1, 2, 3]),
+        "occupancy frame swap"
+    );
+    assert_eq!(frames("GACNST"), HashSet::from([0]), "a structure body");
+    assert_eq!(
+        frames("E1").len(),
+        56,
+        "an infantryman's default stand and walk layout"
     );
 }
 
@@ -506,15 +525,19 @@ fn cell_anim_remap_registration_covers_every_bound_frame_for_its_color() {
         ("CRATE_SPARK".to_string(), HouseColorIndex(1)),
         ("OTHER".to_string(), HouseColorIndex(2)),
     ]);
+    let mut effects = EffectRegistry::default();
+    effects
+        .frames
+        .insert("CRATE_SPARK".to_string(), ("Crate_Spark".to_string(), 3));
     let mut needed = HashSet::new();
 
-    insert_anim_remap_frame_keys(&mut needed, "CRATE_SPARK", 3, &remaps);
+    insert_anim_remap_frame_keys(&mut needed, &effects, &remaps);
 
-    assert_eq!(needed.len(), 3);
+    assert_eq!(needed.len(), 3, "OTHER is no registered effect");
     for frame in 0..3 {
         assert!(needed.contains(&ShpSpriteKey {
             palette_context: crate::render::sprite_atlas::ShpPaletteContext::SelectedScheme,
-            type_id: "CRATE_SPARK".to_string(),
+            type_id: "Crate_Spark".to_string(),
             facing: 0,
             frame,
             house_color: HouseColorIndex(1),
@@ -786,24 +809,60 @@ fn palette_context_preserves_simultaneous_global_cell_and_attached_sprite_keys()
 }
 
 #[test]
-fn palette_context_refresh_coverage_preserves_loaded_remaps_and_detects_missing_ones() {
-    let pair = HashSet::from([("CRATE_SPARK".to_string(), HouseColorIndex(3))]);
+fn object_and_remap_coverage_are_separate_and_follow_the_world() {
+    let (world, interner) = one_object_world("CRATE_SPARK", EntityCategory::Structure);
+    let colors = HouseColorMap::from([("Americans".to_string(), HouseColorIndex(3))]);
+    let remap = HashSet::from([("CRATE_SPARK".to_string(), HouseColorIndex(3))]);
     let none = HashSet::new();
-    let mut atlas = SpriteAtlas::new(Vec::new(), HashMap::new());
-    atlas.covered_objects.extend(pair.iter().cloned());
-    assert!(atlas.covers(&pair, &none));
+    let covers = |atlas: Option<&SpriteAtlas>, remaps| {
+        atlas_covers_world(atlas, &world, &colors, &[], remaps, Some(&interner))
+    };
     assert!(
-        !atlas.covers(&none, &pair),
+        !covers(None, &none),
+        "no atlas yet, and the world draws a sprite"
+    );
+
+    let mut atlas = SpriteAtlas::new(Vec::new(), HashMap::new());
+    assert!(!covers(Some(&atlas), &none));
+    atlas
+        .covered_objects
+        .entry("CRATE_SPARK".to_string())
+        .or_default()
+        .insert(HouseColorIndex(3));
+    assert!(covers(Some(&atlas), &none));
+    assert!(
+        !covers(Some(&atlas), &remap),
         "a coincident entity must not suppress animation preload"
     );
-    atlas.covered_anim_remaps.extend(pair.iter().cloned());
+    atlas.covered_anim_remaps.extend(remap.iter().cloned());
     assert!(
-        atlas.covers(&pair, &pair),
+        covers(Some(&atlas), &remap),
         "loaded animation must not force repeated atlas uploads"
     );
-    atlas.covered_objects.clear();
-    assert!(atlas.covers(&none, &pair));
-    assert!(!atlas.covers(&pair, &none));
+
+    let recoloured = HouseColorMap::from([("Americans".to_string(), HouseColorIndex(4))]);
+    assert!(
+        !atlas_covers_world(
+            Some(&atlas),
+            &world,
+            &recoloured,
+            &[],
+            &remap,
+            Some(&interner)
+        ),
+        "a new house colour is a new pair"
+    );
+    assert!(
+        !atlas_covers_world(
+            Some(&atlas),
+            &world,
+            &colors,
+            &["GACNST"],
+            &remap,
+            Some(&interner)
+        ),
+        "deploy targets are pairs in every house colour"
+    );
 }
 
 #[test]
@@ -811,12 +870,27 @@ fn a_collected_pair_is_covered_even_when_nothing_of_it_is_drawable() {
     // A type whose frame 0 is empty or whose SHP is missing has no atlas entry
     // at all. Coverage by collected pairs keeps it from forcing a refresh on
     // every spawn, death or Limbo, as a frame-0 entry probe would.
-    let pair = HashSet::from([("NOSHAPE".to_string(), HouseColorIndex(1))]);
+    let (world, interner) = one_object_world("NOSHAPE", EntityCategory::Structure);
+    let colors = HouseColorMap::from([("Americans".to_string(), HouseColorIndex(1))]);
     let mut atlas = SpriteAtlas::new(Vec::new(), HashMap::new());
+    let covers = |atlas: &SpriteAtlas| {
+        atlas_covers_world(
+            Some(atlas),
+            &world,
+            &colors,
+            &[],
+            &HashSet::new(),
+            Some(&interner),
+        )
+    };
     atlas.unrenderable.insert(make_shp_key("NOSHAPE", 0));
-    assert!(!atlas.covers(&pair, &HashSet::new()));
-    atlas.covered_objects.extend(pair.iter().cloned());
-    assert!(atlas.covers(&pair, &HashSet::new()));
+    assert!(!covers(&atlas));
+    atlas
+        .covered_objects
+        .entry("NOSHAPE".to_string())
+        .or_default()
+        .insert(HouseColorIndex(1));
+    assert!(covers(&atlas));
     assert!(atlas.get(&make_shp_key("NOSHAPE", 0)).is_none());
 }
 
@@ -868,7 +942,7 @@ fn refreshed_sprites_upload_to_a_growth_page_and_leave_resident_ones_in_place() 
     );
     let growth = atlas.growth.as_ref().expect("growth page");
     let page = &atlas.pages[growth.page].texture;
-    let indices = growth.source_indices.create_view(&Default::default());
+    let indices = atlas.growth_indices[&growth.page].create_view(&Default::default());
     for (type_id, index, size, origin) in [
         // Tallest first: TALL opens the shelf, WIDE follows after 1px padding.
         ("TALL", 9u8, [2u32, 5u32], [0u32, 0u32]),

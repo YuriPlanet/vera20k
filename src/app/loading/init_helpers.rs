@@ -684,8 +684,7 @@ pub(crate) fn build_entity_atlases(
         None
     };
     // Pre-load building types that can be spawned at runtime (e.g., ConYards from MCV deploy).
-    let extra_buildings: Vec<&str> =
-        deployable_building_types(sim.entities(), rules, Some(&sim.interner));
+    let extra_buildings: Vec<&str> = deployable_building_types(rules);
     let mut anim_remap_keys = sprite_atlas::collect_anim_remap_base_keys(sim);
     if let Some(rules) = rules {
         anim_remap_keys.extend(startup_crate_anim_remap_keys(rules, overlay_registry));

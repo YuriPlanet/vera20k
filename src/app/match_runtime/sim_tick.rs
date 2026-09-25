@@ -1127,31 +1127,26 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
     };
 
     // Check if the unit atlas lacks a voxel model the world now draws.
-    let unit_demand =
-        unit_atlas::UnitAtlasDemand::of_world(sim.entities(), bound_rules, Some(&sim.interner));
-    let unit_rebuild: bool = match &state.match_state.match_presentation.unit_atlas {
-        Some(atlas) => !atlas.covers(&unit_demand),
-        None => !unit_demand.is_empty(),
-    };
-
-    // Check if the sprite atlas lacks an object (type, house colour) or an
-    // AnimClass colour remap the world now draws.
-    let extra_buildings: Vec<&str> = crate::app::frontend::skirmish::deployable_building_types(
+    let unit_rebuild = !unit_atlas::atlas_covers_world(
+        state.match_state.match_presentation.unit_atlas.as_ref(),
         sim.entities(),
         bound_rules,
         Some(&sim.interner),
     );
-    let sprite_base_keys = sprite_atlas::collect_needed_base_keys(
+
+    // Check if the sprite atlas lacks an object (type, house colour), an
+    // AnimClass colour remap or the harvest overlay the world now draws.
+    let extra_buildings: Vec<&str> =
+        crate::app::frontend::skirmish::deployable_building_types(bound_rules);
+    let anim_remap_keys = sprite_atlas::collect_anim_remap_base_keys(sim);
+    let sprite_rebuild = !sprite_atlas::atlas_covers_world(
+        state.match_state.match_presentation.sprite_atlas.as_ref(),
         sim.entities(),
         &state.match_state.match_presentation.house_color_map,
         &extra_buildings,
+        &anim_remap_keys,
         Some(&sim.interner),
     );
-    let anim_remap_keys = sprite_atlas::collect_anim_remap_base_keys(sim);
-    let sprite_rebuild: bool = match &state.match_state.match_presentation.sprite_atlas {
-        Some(atlas) => !atlas.covers(&sprite_base_keys, &anim_remap_keys),
-        None => !sprite_base_keys.is_empty() || !anim_remap_keys.is_empty(),
-    };
 
     if !unit_rebuild && !sprite_rebuild {
         return;

@@ -361,11 +361,12 @@ struct PooledBuffer {
 /// 1. Call `upload()` for each named buffer (mutably borrows pool).
 /// 2. Call `get()` during the render pass to retrieve buffer refs (immutably borrows pool).
 pub struct InstanceBufferPool {
-    /// Named buffers keyed by a static string (e.g., "terrain", "units").
-    buffers: HashMap<&'static str, PooledBuffer>,
+    /// Named buffers keyed by a static string (e.g., "terrain", "units") and,
+    /// for streams split per atlas page, the page (0 for unpaged streams).
+    buffers: HashMap<(&'static str, usize), PooledBuffer>,
     /// Instance counts for each buffer written this frame.
     /// Stored separately so `get()` can return count without needing the data.
-    counts: HashMap<&'static str, u32>,
+    counts: HashMap<(&'static str, usize), u32>,
 }
 
 /// Minimum buffer capacity in elements. Avoids tiny buffers that immediately
@@ -393,11 +394,33 @@ impl InstanceBufferPool {
         self.upload_on_device(&gpu.device, &gpu.queue, key, instances);
     }
 
+    /// Upload one page of a stream split per atlas page. Atlases grow pages
+    /// mid-match, so the page index is unbounded.
+    pub fn upload_page(
+        &mut self,
+        gpu: &GpuContext,
+        key: &'static str,
+        page: usize,
+        instances: &[SpriteInstance],
+    ) {
+        self.upload_keyed(&gpu.device, &gpu.queue, (key, page), instances);
+    }
+
     pub(crate) fn upload_on_device(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         key: &'static str,
+        instances: &[SpriteInstance],
+    ) {
+        self.upload_keyed(device, queue, (key, 0), instances);
+    }
+
+    fn upload_keyed(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        key: (&'static str, usize),
         instances: &[SpriteInstance],
     ) {
         let needed: usize = instances.len();
@@ -409,7 +432,7 @@ impl InstanceBufferPool {
         let entry: &mut PooledBuffer = self.buffers.entry(key).or_insert_with(|| {
             let cap: usize = needed.max(MIN_POOL_CAPACITY);
             PooledBuffer {
-                buffer: Self::alloc_buffer(device, key, cap),
+                buffer: Self::alloc_buffer(device, key.0, cap),
                 capacity: cap,
             }
         });
@@ -417,7 +440,7 @@ impl InstanceBufferPool {
         // Grow if the current buffer is too small.
         if needed > entry.capacity {
             let new_cap: usize = (entry.capacity * 2).max(needed);
-            entry.buffer = Self::alloc_buffer(device, key, new_cap);
+            entry.buffer = Self::alloc_buffer(device, key.0, new_cap);
             entry.capacity = new_cap;
         }
 
@@ -431,11 +454,16 @@ impl InstanceBufferPool {
     /// Returns None if the key was never uploaded or had 0 instances.
     /// Safe to call from the render pass — only borrows &self.
     pub fn get(&self, key: &'static str) -> Option<(&wgpu::Buffer, u32)> {
-        let count: u32 = *self.counts.get(key)?;
+        self.get_page(key, 0)
+    }
+
+    /// Get one page of a stream uploaded with [`Self::upload_page`].
+    pub fn get_page(&self, key: &'static str, page: usize) -> Option<(&wgpu::Buffer, u32)> {
+        let count: u32 = *self.counts.get(&(key, page))?;
         if count == 0 {
             return None;
         }
-        let entry: &PooledBuffer = self.buffers.get(key)?;
+        let entry: &PooledBuffer = self.buffers.get(&(key, page))?;
         Some((&entry.buffer, count))
     }
 

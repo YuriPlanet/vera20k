@@ -26,7 +26,7 @@ use crate::assets::asset_manager::AssetManager;
 use crate::assets::hva_file::HvaFile;
 use crate::assets::vpl_file::VplFile;
 use crate::assets::vxl_file::VxlFile;
-use crate::render::atlas_growth::{self, SPRITE_PADDING, ShelfCursor};
+use crate::render::atlas_growth::{self, GrowthShelf, SPRITE_PADDING};
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::vxl_raster::{self, VxlRenderParams, VxlSlopeBlend, VxlSprite};
 use crate::rules::art_data::{self, ArtRegistry};
@@ -139,13 +139,7 @@ pub struct UnitAtlas {
     /// a model, so coverage is checked per model, never per key.
     covered: UnitAtlasDemand,
     /// Page refreshes append to; created when the first refresh needs room.
-    growth: Option<GrowthPage>,
-}
-
-/// The page refreshes append to.
-struct GrowthPage {
-    page: usize,
-    shelf: ShelfCursor,
+    growth: Option<GrowthShelf>,
 }
 
 /// The voxel models a world can draw: vehicle types seeded as ground units
@@ -159,6 +153,59 @@ pub struct UnitAtlasDemand {
     turrets: BTreeSet<String>,
 }
 
+/// One voxel model an object draws with.
+#[derive(Clone, Copy)]
+enum VoxelModel<'a> {
+    Ground(&'a str),
+    Air(&'a str),
+    Turret(&'a str),
+}
+
+/// The voxel model of every object in the world, one per object: vehicles
+/// and aircraft by type, and SHP buildings with TurretAnimIsVoxel=true by
+/// their turret VXL (e.g., SAM.VXL for NASAM), drawn on top of the SHP body.
+fn world_voxel_models<'a>(
+    entities: &'a crate::sim::entity_store::EntityStore,
+    rules: Option<&'a RuleSet>,
+    interner: Option<&'a crate::sim::intern::StringInterner>,
+) -> impl Iterator<Item = VoxelModel<'a>> + 'a {
+    use crate::map::entities::EntityCategory;
+    entities.values().filter_map(move |entity| {
+        let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
+        if entity.is_voxel {
+            return Some(if entity.category == EntityCategory::Aircraft {
+                VoxelModel::Air(type_str)
+            } else {
+                VoxelModel::Ground(type_str)
+            });
+        }
+        if entity.category != EntityCategory::Structure {
+            return None;
+        }
+        let obj = rules?.object(type_str)?;
+        obj.turret_anim_is_voxel
+            .then_some(obj.turret_anim.as_deref()?)
+            .map(VoxelModel::Turret)
+    })
+}
+
+/// Whether `atlas` — None while no unit atlas exists — already holds every
+/// voxel model the world draws, so no refresh is needed. This runs on every
+/// tick with a spawn, death or Limbo, so it allocates nothing and stops at
+/// the first miss.
+pub fn atlas_covers_world(
+    atlas: Option<&UnitAtlas>,
+    entities: &crate::sim::entity_store::EntityStore,
+    rules: Option<&RuleSet>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+) -> bool {
+    let mut models = world_voxel_models(entities, rules, interner);
+    match atlas {
+        Some(atlas) => models.all(|model| atlas.covered.contains(model)),
+        None => models.next().is_none(),
+    }
+}
+
 impl UnitAtlasDemand {
     /// Every voxel model the world's objects draw with.
     pub fn of_world(
@@ -166,31 +213,26 @@ impl UnitAtlasDemand {
         rules: Option<&RuleSet>,
         interner: Option<&crate::sim::intern::StringInterner>,
     ) -> Self {
-        use crate::map::entities::EntityCategory;
         let mut demand = Self::default();
-        for entity in entities.values() {
-            let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
-            if entity.is_voxel {
-                let set = if entity.category == EntityCategory::Aircraft {
-                    &mut demand.air
-                } else {
-                    &mut demand.ground
+        for model in world_voxel_models(entities, rules, interner) {
+            if !demand.contains(model) {
+                let (set, type_id) = match model {
+                    VoxelModel::Ground(type_id) => (&mut demand.ground, type_id),
+                    VoxelModel::Air(type_id) => (&mut demand.air, type_id),
+                    VoxelModel::Turret(type_id) => (&mut demand.turrets, type_id),
                 };
-                if !set.contains(type_str) {
-                    set.insert(type_str.to_string());
-                }
-            } else if entity.category == EntityCategory::Structure
-                // Building turret VXLs: SHP buildings with TurretAnimIsVoxel=true
-                // (e.g., SAM.VXL for NASAM) draw a voxel on top of the SHP body.
-                && let Some(obj) = rules.and_then(|r| r.object(type_str))
-                && obj.turret_anim_is_voxel
-                && let Some(turret_id) = &obj.turret_anim
-                && !demand.turrets.contains(turret_id)
-            {
-                demand.turrets.insert(turret_id.clone());
+                set.insert(type_id.to_string());
             }
         }
         demand
+    }
+
+    fn contains(&self, model: VoxelModel<'_>) -> bool {
+        match model {
+            VoxelModel::Ground(type_id) => self.ground.contains(type_id),
+            VoxelModel::Air(type_id) => self.air.contains(type_id),
+            VoxelModel::Turret(type_id) => self.turrets.contains(type_id),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -199,12 +241,6 @@ impl UnitAtlasDemand {
 
     fn len(&self) -> usize {
         self.ground.len() + self.air.len() + self.turrets.len()
-    }
-
-    fn is_subset(&self, other: &Self) -> bool {
-        self.ground.is_subset(&other.ground)
-            && self.air.is_subset(&other.air)
-            && self.turrets.is_subset(&other.turrets)
     }
 
     /// The models in `self` that `covered` does not hold.
@@ -252,12 +288,6 @@ impl UnitAtlas {
         self.page(page).map(|atlas_page| &atlas_page.texture)
     }
 
-    /// Whether every voxel model in `demand` has been collected, so no
-    /// refresh is needed.
-    pub fn covers(&self, demand: &UnitAtlasDemand) -> bool {
-        demand.is_subset(&self.covered)
-    }
-
     fn new(pages: Vec<UnitAtlasPage>, entries: HashMap<UnitSpriteKey, UnitSpriteEntry>) -> Self {
         Self {
             pages,
@@ -278,77 +308,64 @@ impl UnitAtlas {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
-        mut sprites: Vec<CachedUnitSprite>,
+        sprites: Vec<CachedUnitSprite>,
     ) {
-        // Tallest first keeps each shelf tight.
-        sprites.sort_by_key(|sprite| std::cmp::Reverse(sprite.height));
+        let (sprites, malformed): (Vec<_>, Vec<_>) = sprites
+            .into_iter()
+            .partition(|sprite| sprite.pixels.len() == (sprite.width * sprite.height) as usize);
+        for sprite in malformed {
+            log::warn!(
+                "{} VXL sprite has {} pixels for {}x{}",
+                sprite.key.type_id,
+                sprite.pixels.len(),
+                sprite.width,
+                sprite.height,
+            );
+        }
         let max_dim = device.limits().max_texture_dimension_2d;
-        // A fresh shelf keeps resident sprites out of the rows uploaded below.
-        if let Some(growth) = self.growth.as_mut() {
-            growth.shelf.start_new_shelf();
+        let pages = &mut self.pages;
+        let (placed, unplaced) = atlas_growth::place_on_growth_pages(
+            &mut self.growth,
+            sprites,
+            |sprite| [sprite.width, sprite.height],
+            max_dim,
+            |[width, height]| {
+                let size = [width, height].map(|side| GROWTH_PAGE_SIZE.max(side).min(max_dim));
+                let texture = batch.create_blank_unit_atlas_texture(device, size[0], size[1]);
+                pages.push(UnitAtlasPage { texture });
+                let page = pages.len() - 1;
+                log::info!("Unit atlas growth page {page} ({}x{})", size[0], size[1]);
+                (page, size)
+            },
+        );
+        for group in placed {
+            let texture = &self.pages[group.page].texture;
+            let rects: Vec<_> = group
+                .sprites
+                .iter()
+                .map(|(origin, sprite)| {
+                    (
+                        *origin,
+                        [sprite.width, sprite.height],
+                        sprite.pixels.as_slice(),
+                    )
+                })
+                .collect();
+            atlas_growth::write_band(queue, texture.view.texture(), 1, &rects);
+            let page_size = [texture.width, texture.height];
+            for (origin, sprite) in group.sprites {
+                let entry = unit_entry(&sprite, origin, group.page, page_size);
+                self.entries.insert(sprite.key.clone(), entry);
+                self.rendered_cache.push(sprite);
+            }
         }
-        let mut band: Vec<([u32; 2], CachedUnitSprite)> = Vec::new();
-        for sprite in sprites {
-            let [width, height] = [sprite.width, sprite.height];
-            let placed = self
-                .growth
-                .as_mut()
-                .and_then(|growth| growth.shelf.place(width, height));
-            let origin = match placed {
-                Some(origin) => origin,
-                None => {
-                    self.upload_band(queue, std::mem::take(&mut band));
-                    let page_width = GROWTH_PAGE_SIZE.max(width).min(max_dim);
-                    let page_height = GROWTH_PAGE_SIZE.max(height).min(max_dim);
-                    let texture =
-                        batch.create_blank_unit_atlas_texture(device, page_width, page_height);
-                    self.pages.push(UnitAtlasPage { texture });
-                    let page = self.pages.len() - 1;
-                    log::info!("Unit atlas growth page {page} ({page_width}x{page_height})");
-                    let growth = self.growth.insert(GrowthPage {
-                        page,
-                        shelf: ShelfCursor::new(page_width, page_height),
-                    });
-                    match growth.shelf.place(width, height) {
-                        Some(origin) => origin,
-                        None => {
-                            log::warn!(
-                                "{} VXL sprite ({width}x{height}) exceeds the texture limit {max_dim}",
-                                sprite.key.type_id,
-                            );
-                            continue;
-                        }
-                    }
-                }
-            };
-            band.push((origin, sprite));
-        }
-        self.upload_band(queue, band);
-    }
-
-    /// Upload sprites placed on the current growth page and record them.
-    fn upload_band(&mut self, queue: &wgpu::Queue, band: Vec<([u32; 2], CachedUnitSprite)>) {
-        let Some(growth) = self.growth.as_ref() else {
-            return;
-        };
-        let texture = &self.pages[growth.page].texture;
-        let rects: Vec<_> = band
-            .iter()
-            .map(|(origin, sprite)| {
-                (
-                    *origin,
-                    [sprite.width, sprite.height],
-                    sprite.pixels.as_slice(),
-                )
-            })
-            .collect();
-        atlas_growth::write_band(queue, texture.view.texture(), 1, &rects);
-        let page = growth.page;
-        let page_size = [texture.width, texture.height];
-        for (origin, sprite) in band {
-            let entry = unit_entry(&sprite, origin, page, page_size);
-            self.entries.insert(sprite.key.clone(), entry);
-            self.rendered_cache.push(sprite);
+        for sprite in unplaced {
+            log::warn!(
+                "{} VXL sprite ({}x{}) exceeds the texture limit {max_dim}",
+                sprite.key.type_id,
+                sprite.width,
+                sprite.height,
+            );
         }
     }
 }

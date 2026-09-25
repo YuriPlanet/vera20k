@@ -75,7 +75,8 @@ pub(crate) fn render_game(
 ) -> Result<GameRenderOutput> {
     // RadarClass::Draw 653100 uses wall-clock buckets, not simulation ticks.
     let wall_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
-        state, std::time::Instant::now(),
+        state,
+        std::time::Instant::now(),
     );
     if let Some(radar) = state.match_state.match_presentation.radar_anim.as_mut() {
         radar.tick(&state.renderer.gpu, wall_ms);
@@ -160,7 +161,10 @@ pub(crate) fn render_game(
     // Shader row coordinates are unscaled world pixels; scissor uses target
     // pixels. Native zoom1 is exact, and scaled views preserve that unit frame.
     let native_z_origin_y = tactical_y as f32 / state.match_state.input.zoom_level;
-    state.renderer.batch_renderer.update_native_z_origin(&state.renderer.gpu.queue, native_z_origin_y);
+    state
+        .renderer
+        .batch_renderer
+        .update_native_z_origin(&state.renderer.gpu.queue, native_z_origin_y);
     state.renderer.terrain_draw_renderer.prepare(
         &state.renderer.gpu.device,
         state.renderer.combat_light_renderer.composition_texture(),
@@ -252,22 +256,11 @@ fn upload_to_gpu(
 
     // Entities (VXL + SHP)
     pool.upload(&state.renderer.gpu, "unit", &world.unit);
-    const UNIT_TRANSITION_KEYS: [&str; 4] = [
-        "unit_transition_p0",
-        "unit_transition_p1",
-        "unit_transition_p2",
-        "unit_transition_p3",
-    ];
-    for (i, page_inst) in world.unit_transition_paged.iter().enumerate() {
-        if let Some(key) = UNIT_TRANSITION_KEYS.get(i) {
-            pool.upload(&state.renderer.gpu, key, page_inst);
-        }
+    for (page, page_inst) in world.unit_transition_paged.iter().enumerate() {
+        pool.upload_page(&state.renderer.gpu, "unit_transition", page, page_inst);
     }
-    const SHP_PAGE_KEYS: [&str; 4] = ["shp_p0", "shp_p1", "shp_p2", "shp_p3"];
-    for (i, page_inst) in world.shp_paged.iter().enumerate() {
-        if i < SHP_PAGE_KEYS.len() {
-            pool.upload(&state.renderer.gpu, SHP_PAGE_KEYS[i], page_inst);
-        }
+    for (page, page_inst) in world.shp_paged.iter().enumerate() {
+        pool.upload_page(&state.renderer.gpu, "shp_page", page, page_inst);
     }
     // The band above Ground (gamemd layers 3 and 4) — drawn after every ground
     // object. Voxel bodies and SHP bodies keep separate streams because they
@@ -285,11 +278,8 @@ fn upload_to_gpu(
         "spotlight_type16",
         &world.spotlight_type16,
     );
-    const PARTICLE_KEYS: [&str; 4] = ["particle_p0", "particle_p1", "particle_p2", "particle_p3"];
-    for (i, page_inst) in world.particle_paged.iter().enumerate() {
-        if i < PARTICLE_KEYS.len() {
-            pool.upload(&state.renderer.gpu, PARTICLE_KEYS[i], page_inst);
-        }
+    for (page, page_inst) in world.particle_paged.iter().enumerate() {
+        pool.upload_page(&state.renderer.gpu, "particle_page", page, page_inst);
     }
 
     // UI overlays
