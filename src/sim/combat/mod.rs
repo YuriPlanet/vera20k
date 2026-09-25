@@ -1382,21 +1382,26 @@ pub struct ExplosionEffect {
     pub death: Option<destruction_effects::DeathAnimSpawn>,
 }
 
-/// One transient combat-light request emitted when active IronCurtain or
-/// ForceShield rejects a positive receiver call. `FUN_0048A620` creates an
-/// unowned screen-space light, not an AnimClass/ParticleSystem, so this record
-/// retains the exact call inputs without inventing an attachment or house.
+/// One transient combat-light request, the inputs of one `FUN_0048A620` call.
+/// It creates an unowned screen-space light, not an AnimClass/ParticleSystem,
+/// so this record keeps the exact call inputs without inventing an attachment
+/// or house. Two callers:
+/// - an active IronCurtain or ForceShield rejecting a positive receiver call
+///   (the damage shifted left once; flags IC=1, ForceShield=6);
+/// - a `Bright=` bullet's detonation (`BulletClass::DetonateAtCoord
+///   0x00469BD6..0x00469C41`: the bullet's damage `+0x6C`, flags from the
+///   warhead's `CLDisableRed/Green/Blue=` as 2/4/8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvulnerabilityImpactEffect {
+pub struct CombatLightRequest {
     /// Receiver provenance only; this is not native effect ownership.
-    pub target_id: u64,
-    /// Post-defender-transform damage shifted left once before the helper call.
-    pub doubled_damage: i32,
+    pub target_id: Option<u64>,
+    /// The damage the helper sizes the light from.
+    pub damage: i32,
     pub warhead_ref: InternedId,
     pub coord: ProjectileCoord,
-    /// Native helper force/create argument (literal true on this callsite).
+    /// Native helper force/create argument (literal true on both callsites).
     pub force_create: bool,
-    /// Native raw draw flags: IC=1, ForceShield=6.
+    /// Native raw draw flags.
     pub flags: u32,
 }
 
@@ -1912,7 +1917,7 @@ pub(crate) struct DeathEffects {
     /// world consequence boundary. The live receiver has allocator access;
     /// deferred admission preserves the existing allocation and Logic order.
     pub(crate) voxel_debris: Vec<crate::sim::voxel_anim::VoxelDebrisSpawn>,
-    pub(crate) invulnerability_impact_effects: Vec<InvulnerabilityImpactEffect>,
+    pub(crate) combat_light_requests: Vec<CombatLightRequest>,
     pub(crate) bridge_damage_events: Vec<BridgeDamageEvent>,
     #[cfg(test)]
     pub(crate) wall_mutations: Vec<WallMutation>,
@@ -1987,8 +1992,8 @@ impl DeathEffects {
         self.structure_destroyed |= other.structure_destroyed;
         self.explosion_effects.append(&mut other.explosion_effects);
         self.voxel_debris.append(&mut other.voxel_debris);
-        self.invulnerability_impact_effects
-            .append(&mut other.invulnerability_impact_effects);
+        self.combat_light_requests
+            .append(&mut other.combat_light_requests);
         self.bridge_damage_events
             .append(&mut other.bridge_damage_events);
         #[cfg(test)]
@@ -2209,7 +2214,7 @@ enum ConcreteDeathSmudgePlan {
 #[derive(Debug, Clone, Copy)]
 struct ResolvedReceiveDamage {
     outcome: damage::DamageOutcome,
-    invulnerability_impact: Option<InvulnerabilityImpactEffect>,
+    invulnerability_impact: Option<CombatLightRequest>,
 }
 
 fn receiver_effect_coord(
@@ -2419,7 +2424,7 @@ fn resolve_receive_damage(
         scenario_no_damage,
         rules.combat_damage.max_damage,
     );
-    let invulnerability_impact = outcome.invulnerability_impact_damage.map(|doubled_damage| {
+    let invulnerability_impact = outcome.invulnerability_impact_damage.map(|damage| {
         let flags = match active_invulnerability
             .expect("receiver gate retained active state")
             .kind
@@ -2427,9 +2432,9 @@ fn resolve_receive_damage(
             crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain => 1,
             crate::sim::superweapon::invulnerability::InvulnKind::ForceShield => 6,
         };
-        InvulnerabilityImpactEffect {
-            target_id: target.stable_id(),
-            doubled_damage,
+        CombatLightRequest {
+            target_id: Some(target.stable_id()),
+            damage,
             warhead_ref: event.warhead_ref,
             coord: receiver_effect_coord(target, terrain),
             force_create: true,

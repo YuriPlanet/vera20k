@@ -142,6 +142,14 @@ pub struct WarheadType {
     /// `WarheadTypeClass::ReadINI` @ `0x0075d60c` from the key string at
     /// `0x00847dd0`.
     pub bright: bool,
+    /// `CLDisableRed=` / `CLDisableGreen=` / `CLDisableBlue=`
+    /// (`WarheadTypeClass+0x151..+0x153`, `ReadBool` at `0x0075D621`,
+    /// `0x0075D63B`, `0x0075D655`; the constructor zeroes all three at
+    /// `0x0075CFA1..0x0075CFAD`): a Bright detonation's light drops that
+    /// channel (flags 2 / 4 / 8).
+    pub cl_disable_red: bool,
+    pub cl_disable_green: bool,
+    pub cl_disable_blue: bool,
     /// Positive values override the damage-derived transient combat-light size.
     /// Parsed through native `ReadDouble`, whose input is f32-first and whose
     /// percent form therefore stores a fraction (`40%` -> widened f32 `0.4`).
@@ -391,6 +399,9 @@ impl WarheadType {
             direct_rocker: section.get_bool("DirectRocker").unwrap_or(false),
             tiberium: section.get_bool("Tiberium").unwrap_or(false),
             bright: section.get_bool("Bright").unwrap_or(false),
+            cl_disable_red: section.get_bool("CLDisableRed").unwrap_or(false),
+            cl_disable_green: section.get_bool("CLDisableGreen").unwrap_or(false),
+            cl_disable_blue: section.get_bool("CLDisableBlue").unwrap_or(false),
             combat_light_size_f64: section.read_double("CombatLightSize", 0.0),
             prone_damage_f64: section.read_double("ProneDamage", 1.0),
             prone_damage_basis_points: parse_prone_damage_basis_points(section),

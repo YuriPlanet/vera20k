@@ -477,7 +477,7 @@ pub(crate) fn commit_entities(
             .flatten()
             .and_then(|resolved| resolved.invulnerability_impact)
         {
-            death.invulnerability_impact_effects.push(effect);
+            death.combat_light_requests.push(effect);
         }
         let Some(receiver_health::ReceiverHealthCommit {
             building_entry_frame,
@@ -990,7 +990,7 @@ pub(crate) fn handle_death(
     let mut immediate_uninit_ids: Vec<u64> = Vec::new();
     let mut explosion_effects: Vec<ExplosionEffect> = Vec::new();
     let mut voxel_debris: Vec<crate::sim::voxel_anim::VoxelDebrisSpawn> = Vec::new();
-    let mut invulnerability_impact_effects: Vec<InvulnerabilityImpactEffect> = Vec::new();
+    let mut combat_light_requests: Vec<CombatLightRequest> = Vec::new();
     let mut bridge_damage_events: Vec<BridgeDamageEvent> = Vec::new();
     #[cfg(test)]
     let mut wall_mutations: Vec<WallMutation> = Vec::new();
@@ -1248,7 +1248,7 @@ pub(crate) fn handle_death(
             structure_destroyed |= nested.structure_destroyed;
             explosion_effects.append(&mut nested.explosion_effects);
             voxel_debris.append(&mut nested.voxel_debris);
-            invulnerability_impact_effects.append(&mut nested.invulnerability_impact_effects);
+            combat_light_requests.append(&mut nested.combat_light_requests);
             bridge_damage_events.append(&mut nested.bridge_damage_events);
             #[cfg(test)]
             wall_mutations.append(&mut nested.wall_mutations);
@@ -1303,7 +1303,7 @@ pub(crate) fn handle_death(
         structure_destroyed,
         explosion_effects,
         voxel_debris,
-        invulnerability_impact_effects,
+        combat_light_requests,
         bridge_damage_events,
         #[cfg(test)]
         wall_mutations,
@@ -1775,6 +1775,7 @@ fn emit_detonation_anim(
     detonation: &ProjectileDetonation,
     warhead: &WarheadType,
     inviso: bool,
+    bright: bool,
     out: &mut CombatEmit,
 ) {
     let (impact_rx, impact_ry, impact_sub_x, impact_sub_y, world_z_leptons) =
@@ -1791,6 +1792,28 @@ fn emit_detonation_anim(
     } else {
         (impact_rx, impact_ry, impact_sub_x, impact_sub_y)
     };
+    // `0x00469BD6..0x00469C41`: a Bright bullet (`+0xE0`, the weapon's
+    // `Bright=`) lights the anim coordinate with its damage (`+0x6C`),
+    // force 1, and the warhead's CLDisable channels. The Rules alternate
+    // warhead arm (Apply_area_damage returning 2) skips it; that arm is not
+    // modelled.
+    if bright {
+        let flags = (u32::from(warhead.cl_disable_red) << 1)
+            | (u32::from(warhead.cl_disable_green) << 2)
+            | (u32::from(warhead.cl_disable_blue) << 3);
+        out.effects.combat_light_requests.push(CombatLightRequest {
+            target_id: None,
+            damage: detonation.payload.base_damage,
+            warhead_ref: detonation.payload.warhead,
+            coord: ProjectileCoord::new(
+                i32::from(rx) * 256 + sub_x.to_num::<i32>(),
+                i32::from(ry) * 256 + sub_y.to_num::<i32>(),
+                world_z_leptons,
+            ),
+            force_create: true,
+            flags,
+        });
+    }
     emit_warhead_detonation_effects(
         warhead,
         detonation.payload.base_damage,
@@ -1841,6 +1864,10 @@ pub(crate) fn commit_projectile_detonations_inline(
             .and_then(|weapon| weapon.projectile.as_deref())
             .and_then(|projectile| rules.projectile(projectile));
         let inviso = projectile_type.is_some_and(|projectile| projectile.inviso);
+        // `CreateBullet` hands the bullet the weapon's `Bright=` (`+0x12F`).
+        let bright = rules
+            .weapon(world.interner.resolve(detonation.payload.weapon))
+            .is_some_and(|weapon| weapon.bright);
         let (clusters, cluster_draws) = match projectile_type {
             Some(projectile) if !projectile.airburst => (projectile.cluster.max(0), true),
             _ => (1, false),
@@ -1870,7 +1897,7 @@ pub(crate) fn commit_projectile_detonations_inline(
                 .extend(outer_explosion_effects);
             under_attack_events.append(&mut pings);
             let anim_start = emit.effects.smudge_spawn_requests.len();
-            emit_detonation_anim(world, &clustered, warhead, inviso, emit);
+            emit_detonation_anim(world, &clustered, warhead, inviso, bright, emit);
             let mut anim_requests = outer_anim_requests;
             anim_requests.extend(emit.effects.smudge_spawn_requests.split_off(anim_start));
             commit_smudges(

@@ -199,8 +199,8 @@ impl DamageConsequences {
             admit_electric_sparks(world, rules, fire_events);
         }
         world
-            .invulnerability_impact_effects
-            .append(&mut effects.invulnerability_impact_effects);
+            .combat_light_requests
+            .append(&mut effects.combat_light_requests);
         // RevealOnFire only lifts the shooter's shroud above. gamemd reaches
         // `CreateRadarEvent @ 0x0065FA70` from no weapon-fire path: its 24
         // constant-type call sites never pass type 0 (the 25th,

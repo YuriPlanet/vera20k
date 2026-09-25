@@ -2936,12 +2936,12 @@ fn gsi_04_07_damage_invulnerability_impact_precedes_warping_and_postlude() {
         "ignoreDefenses bypasses IC without an impact"
     );
 
-    let effects = &sim.invulnerability_impact_effects;
+    let effects = &sim.combat_light_requests;
     assert_eq!(effects.len(), 3);
     assert_eq!(
         effects
             .iter()
-            .map(|effect| effect.target_id)
+            .filter_map(|effect| effect.target_id)
             .collect::<Vec<_>>(),
         protected,
         "the dedicated combat-light handoff preserves receiver order"
@@ -2949,7 +2949,7 @@ fn gsi_04_07_damage_invulnerability_impact_precedes_warping_and_postlude() {
     assert_eq!(
         effects
             .iter()
-            .map(|effect| effect.doubled_damage)
+            .map(|effect| effect.damage)
             .collect::<Vec<_>>(),
         vec![20, 40, 60]
     );
@@ -5188,6 +5188,52 @@ fn a_shot_debits_its_targets_estimate_unless_inaccurate() {
             if inaccurate { before } else { before - 15 },
             "Inaccurate={inaccurate}"
         );
+    }
+}
+
+/// `BulletClass::DetonateAtCoord 0x00469BD6..0x00469C41`: a `Bright=` weapon's
+/// bullet lights its detonation with its damage, force 1 and the warhead's
+/// CLDisable channels; a dim one lights nothing.
+#[test]
+fn a_bright_shot_lights_its_detonation() {
+    for bright in [true, false] {
+        let ini = format!(
+            "[InfantryTypes]\n\n[VehicleTypes]\n0=SHOOTER\n1=TARGET\n\n[AircraftTypes]\n\n[BuildingTypes]\n\n\
+             [SHOOTER]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=GUN\n\n\
+             [TARGET]\nStrength=500\nArmor=heavy\nSpeed=6\n\n\
+             [GUN]\nDamage=90\nROF=20\nRange=10\nProjectile=Shot\nWarhead=WH\nBright={}\n\n\
+             [Shot]\nInviso=yes\n\n\
+             [WH]\nCLDisableGreen=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+            if bright { "yes" } else { "no" }
+        );
+        let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
+        let mut store = EntityStore::new();
+        store.insert(make_entity(1, "SHOOTER", 5, 5, 300));
+        store.insert(make_entity(2, "TARGET", 8, 5, 500));
+        let mut interner = test_interner();
+        issue_attack_command(&mut store, 1, 2, None, &interner);
+        align_attackers_to_targets(&mut store, &rules, &interner);
+        let result = tick_combat(
+            &mut store,
+            &mut OccupancyGrid::new(),
+            &rules,
+            &mut interner,
+            0,
+            100,
+            0,
+            &mut SimRng::new(1),
+        );
+        assert_eq!(result.consequences.fire_events().len(), 1);
+        let lights = &result.consequences.effects().combat_light_requests;
+        if bright {
+            assert_eq!(lights.len(), 1);
+            assert_eq!(lights[0].damage, 90);
+            assert_eq!(lights[0].flags, 4, "CLDisableGreen");
+            assert!(lights[0].force_create);
+            assert_eq!(lights[0].target_id, None);
+        } else {
+            assert!(lights.is_empty());
+        }
     }
 }
 

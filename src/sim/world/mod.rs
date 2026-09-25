@@ -214,7 +214,7 @@ pub(crate) struct SimFrameOutput {
     pub overlay_removals: Vec<(u16, u16)>,
     pub sound_events: Vec<SimSoundEvent>,
     pub fire_events: Vec<SimFireEvent>,
-    pub invulnerability_impacts: Vec<crate::sim::combat::InvulnerabilityImpactEffect>,
+    pub combat_lights: Vec<crate::sim::combat::CombatLightRequest>,
     pub(crate) lighting_events: Vec<crate::sim::light_sources::LightingEvent>,
 }
 
@@ -1051,7 +1051,7 @@ pub struct Simulation {
     /// and is distinct from AnimClass/ParticleSystemClass, so this remains a
     /// dedicated presentation handoff rather than fabricated world state.
     #[serde(skip)]
-    pub(crate) invulnerability_impact_effects: Vec<crate::sim::combat::InvulnerabilityImpactEffect>,
+    pub(crate) combat_light_requests: Vec<crate::sim::combat::CombatLightRequest>,
     /// Persistent ordinary shots. This is authoritative save/hash state, not
     /// the render-side fire-event approximation.
     #[serde(default)]
@@ -2924,7 +2924,7 @@ impl Simulation {
             sound_events: Vec::new(),
             lighting_sources: crate::sim::light_sources::LightingSources::default(),
             fire_events: Vec::new(),
-            invulnerability_impact_effects: Vec::new(),
+            combat_light_requests: Vec::new(),
             projectiles: crate::sim::projectile::ProjectileStore::new(),
             waves: crate::sim::wave::WaveStore::new(),
             active_wave_links: BTreeMap::new(),
@@ -5970,8 +5970,8 @@ impl Simulation {
         // Preserve the established terminal-frame gate: these are committed
         // light-vector facts and the next admitted frame clears the producer
         // buffer before combat runs.
-        let invulnerability_impacts = if tick.frame_committed {
-            std::mem::take(&mut self.invulnerability_impact_effects)
+        let combat_lights = if tick.frame_committed {
+            std::mem::take(&mut self.combat_light_requests)
         } else {
             Vec::new()
         };
@@ -5988,7 +5988,7 @@ impl Simulation {
             overlay_removals,
             sound_events,
             fire_events,
-            invulnerability_impacts,
+            combat_lights,
             lighting_events,
         }
     }
@@ -6011,7 +6011,7 @@ impl Simulation {
         lane: TickLane,
         trigger_inputs: Option<TriggerInputs<'_>>,
     ) -> Result<TickResult, FrameAdvanceError> {
-        self.invulnerability_impact_effects.clear();
+        self.combat_light_requests.clear();
         self.pending_projectile_detonations.clear();
         self.pending_wave_damage_requests.clear();
         let animation_sequences = rules.map(RuleSet::animation_sequences);
