@@ -47,8 +47,6 @@ Thumbs.db
 /replays/
 
 tools/vendor-eval/
-# research-index code is tracked so it works in worktrees; the built index is not
-tools/research_index/.cache/
 
 /*.md
 !/README.md

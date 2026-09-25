@@ -4,11 +4,9 @@ An MCP server that exposes the `asset` CLI — the headless browser for retail
 RA2/YR assets — so Claude Code and Codex can call it as tools.
 
 The implementation is Rust, in `src/asset_tools/` behind `src/bin/asset.rs`.
-Unlike `tools/research_index/mcp_server.py`, which imports its library
-in-process, this server has nothing importable to reach for: every tool
-`subprocess.run`s the compiled binary and returns its stdout, which is JSON by
-contract. The CLI prints JSON on stdout even when it fails, so a caller parsing
-stdout always gets JSON.
+The server has nothing importable to reach for: every tool `subprocess.run`s the
+compiled binary and returns its stdout, which is JSON by contract. The CLI prints
+JSON on stdout even when it fails, so a caller parsing stdout always gets JSON.
 
 Read-only against the retail install. The only files it writes are PNGs, WAVs and
 extracted bytes under `target/asset`, which is gitignored.
@@ -32,8 +30,7 @@ appears in discovery.
 
 ## Registration
 
-Claude Code, in the repo-local `.mcp.json` — repo-relative path, no `cwd` key
-(this matches how `research-index` is registered):
+Claude Code, in the repo-local `.mcp.json` — repo-relative path, no `cwd` key:
 
 ```json
 {

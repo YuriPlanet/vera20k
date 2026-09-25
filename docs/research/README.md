@@ -57,16 +57,9 @@ Both revisions are in this repository's history; a
 shallow clone may need to fetch that revision first. There is no need to copy
 the historical corpus back into the active checkout to investigate one finding.
 
-## Search scope
-
-The [research index](../../tools/research_index/README.md) searches retained
-research and local retail INIs by default. Its guide documents explicit plan
-search and a separate workspace/database for archive searches. An existing index
-must be rebuilt with the new default roots after updating this checkout:
-
-```powershell
-python tools/research_index/index.py
-```
-
-Do not treat an inferred `verified` filename status as native proof or parity.
-Use current source, saved native evidence and actual validation results.
+Older plans and reports cite commands and results from the retired research
+index tool. Its last version is preserved at source commit
+`89d68023b6cea0a6cde9ee53dab52fa080f5529a`:
+[tools/research_index](https://github.com/YuriPlanet/vera20k/tree/89d68023b6cea0a6cde9ee53dab52fa080f5529a/tools/research_index).
+A checkout that built its index keeps an untracked `tools/research_index/.cache/`
+after updating; delete it.

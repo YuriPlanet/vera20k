@@ -7,8 +7,7 @@
 """
 asset_browser MCP Server — exposes the compiled `asset` CLI as MCP tools.
 
-Unlike tools/research_index/mcp_server.py, which imports its library in-process,
-this server has no importable library: the asset browser is Rust, living in
+This server has no importable library: the asset browser is Rust, living in
 `src/asset_tools/` behind `src/bin/asset.rs`. Every tool therefore shells out to
 the compiled binary and returns its stdout, which is JSON by contract — the CLI
 prints JSON even when it fails, so a caller parsing stdout always gets JSON.
@@ -36,8 +35,7 @@ _SERVER_DIR = Path(__file__).resolve().parent
 # Repo root is two parents up from this file's directory.
 WORKSPACE = _SERVER_DIR.parents[1]
 
-# Reconfigure stdout to UTF-8 (matches research_index; CSF strings and archive
-# names contain non-ASCII).
+# Reconfigure stdout to UTF-8; CSF strings and archive names contain non-ASCII.
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
