@@ -286,7 +286,9 @@ impl Simulation {
     /// (`0x004DAD1F CALL 0x0050B6F0`) and `CrashingSound=` plays on the
     /// handle, following the object. The previous value is then kept.
     ///
-    /// The latch never falls: only the constructor clears it.
+    /// Nothing on the Fly path lowers the latch; besides the constructor only
+    /// the Jumpjet Descend touchdown clears it (`0x0054CA12`, a Magnetron drop
+    /// that lands).
     pub(crate) fn crash_edge_sounds(&mut self, id: u64, rules: &RuleSet) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;

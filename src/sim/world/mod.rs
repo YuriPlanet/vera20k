@@ -4412,12 +4412,17 @@ impl Simulation {
 
         // `TechnoClass::ChangeOwner` calls `SpawnManagerClass::Kill_All_Spawns`
         // before the house swap: a mind-controlled V3/Dreadnought/Boomer loses
-        // the pool it built for its old owner. Run first so the children are
-        // destroyed while still attributed to the previous house. The owner is
-        // still alive here, so the slots re-arm with a zero regen wait and the
-        // new owner's pool is rebuilt on the next manager pass.
+        // the pool it built for its old owner, and a Carrier's airborne
+        // Hornets crash. Run first so the children are destroyed while still
+        // attributed to the previous house. The owner is still alive here, so
+        // the slots re-arm with a zero regen wait and the new owner's pool is
+        // rebuilt on the next manager pass.
         if has_spawn_manager {
-            crate::sim::spawn_manager::kill_all_spawns(self, stable_id);
+            crate::sim::spawn_manager::kill_all_spawns_with_context(
+                self,
+                stable_id,
+                rules.map_or_else(UninitContext::default, UninitContext::with_rules),
+            );
         }
         // `BuildingClass::ChangeOwner @ 0x004482AA..0x004482F9`, still on the
         // OLD owner: a `MultiplayPassive` old owner and a non-zero

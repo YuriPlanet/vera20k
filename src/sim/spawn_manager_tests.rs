@@ -1371,6 +1371,82 @@ fn hornets_hold_over_the_carrier_until_the_whole_wing_is_up() {
     );
 }
 
+/// `Kill_All_Spawns`' aircraft arm (`0x006B71A2..0x006B71C2`) hands a
+/// launched Hornet to `SpawnRetreat__Push @ 0x0054E3B0`, which crashes any
+/// child that is not `MissileSpawn=` (`Crash(0)`, `0x0054E3D2`). When its
+/// Carrier dies, an airborne Hornet falls instead of flying on, and its slot
+/// is regenerating.
+#[test]
+fn a_dead_carriers_airborne_hornet_crashes() {
+    let rules = make_spawner_rules();
+    let mut sim = flat_sim();
+    let hm = empty_height_map();
+    let carrier = sim
+        .spawn_object("CARRIER", "Americans", 10, 10, 0, &rules, &hm)
+        .expect("spawn CARRIER");
+    let target = sim
+        .spawn_object("TARGET", "Yuri", 30, 10, 0, &rules, &hm)
+        .expect("spawn TARGET");
+    for _ in 0..2 {
+        if let Some(manager) = sim
+            .substrate
+            .entities
+            .get_mut(carrier)
+            .and_then(|e| e.spawn_manager.as_mut())
+        {
+            manager.set_target(Some(TargetKind::Entity(target)));
+            manager.update_timer = SpawnTimer::ready();
+        }
+        tick_spawn_managers(&mut sim, &rules, &[carrier], None);
+    }
+    let (slot, hornet) = sim
+        .substrate
+        .entities
+        .get(carrier)
+        .and_then(|e| e.spawn_manager.as_ref())
+        .and_then(|m| {
+            m.slots
+                .iter()
+                .position(|s| s.state == SpawnSlotState::InFlight)
+                .map(|index| (index, m.slots[index].spawn.expect("launched child")))
+        })
+        .expect("a Hornet is off the deck");
+    // Airborne over the flat level-0 map.
+    let entity = sim.substrate.entities.get_mut(hornet).unwrap();
+    entity.position.exact_z_leptons = Some(600);
+    if let Some(locomotor) = entity.locomotor.as_mut() {
+        locomotor.altitude = SimFixed::from_num(600);
+    }
+
+    sim.uninit_with_rules(carrier, &rules);
+
+    let hornet = sim
+        .substrate
+        .entities
+        .get(hornet)
+        .expect("a crashing Hornet stays represented until its impact");
+    assert!(hornet.crashing && hornet.lifecycle.object_alive);
+    assert_eq!(hornet.health.current, 0);
+    assert_eq!(hornet.spawn_owner_id, None);
+    assert!(
+        hornet
+            .rocking
+            .as_ref()
+            .is_some_and(|rocking| rocking.vel_sideways != SimFixed::ZERO),
+        "Crash drew the spin"
+    );
+    let manager_slot = sim
+        .substrate
+        .entities
+        .get(carrier)
+        .and_then(|e| e.spawn_manager.as_ref())
+        .map(|m| (m.slots[slot].spawn, m.slots[slot].state));
+    assert!(
+        manager_slot
+            .is_none_or(|(spawn, state)| spawn.is_none() && state == SpawnSlotState::Regenerating)
+    );
+}
+
 /// A Hornet landing on its Carrier keeps its slot through the dock. The Limbo
 /// that docks it broadcasts its expiry (`ObjectClass::Limbo 0x005F4D61`), but
 /// the manager's slot arm frees a slot only for a dead child, one on the

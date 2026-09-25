@@ -962,10 +962,12 @@ pub struct GameEntity {
     /// Remaining stopped AI visits before an active MoveSound is released.
     #[serde(default)]
     pub move_sound_countdown: u8,
-    /// `FootClass+0x425`, the crash latch: set only by `FootClass::Crash @
-    /// 0x004DEBB0` (`0x004DEC7F`) and cleared by the constructor
-    /// (`0x006F2FF9`). A crashing object is alive (Object+90) with Health 0
-    /// and falls under its locomotor until the impact UnInits it. Owner:
+    /// `FootClass+0x425`, the crash latch: set by `FootClass::Crash @
+    /// 0x004DEBB0` (`0x004DEC7F`) and by a Magnetron dropping an airborne
+    /// object (`0x0070FF25`); cleared by the constructor (`0x006F2FF9`) and a
+    /// Jumpjet Descend touchdown (`0x0054CA12`). A crashing object is alive
+    /// (Object+90) with Health 0 and falls under its locomotor until the
+    /// impact UnInits it. VERA ports no Magnetron, so its one writer is
     /// `Simulation::foot_crash` (`sim::world::crash`).
     #[serde(default)]
     pub crashing: bool,

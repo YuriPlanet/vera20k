@@ -638,11 +638,15 @@ pub(crate) const POSE_PAGE: usize = usize::MAX;
 /// A crashing Fly body's roll and pitch (`TechnoClass+0x328`/`+0x32C`), which
 /// Fly Draw_Matrix applies while the body is airborne (`0x004CF6A3`): every
 /// airborne Fly body is in the Top band (`In_Which_Layer @ 0x004CFCF0`).
+/// Other locomotors' Draw_Matrix keep their own crash arms.
 fn crash_body_tilt(
     entity: &crate::sim::game_entity::GameEntity,
     band: EntityDrawBand,
 ) -> Option<[f32; 2]> {
-    if !entity.crashing || band != EntityDrawBand::Top {
+    let fly = entity.locomotor.as_ref().is_some_and(|locomotor| {
+        locomotor.kind == crate::rules::locomotor_type::LocomotorKind::Fly
+    });
+    if !entity.crashing || !fly || band != EntityDrawBand::Top {
         return None;
     }
     let rocking = entity.rocking.as_ref()?;
@@ -699,7 +703,6 @@ fn emit_crash_pose_sprite(
         z_adjust: voxel_adjust,
         z_gradient: pack_voxel_z_gradient(ZGradient::Vertical, split),
         zshape_origin: composite_rect,
-        ..Default::default()
     });
     instance_pages.push(POSE_PAGE);
 }
