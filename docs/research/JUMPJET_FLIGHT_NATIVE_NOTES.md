@@ -199,18 +199,17 @@ Jumpjet cycling takeoff and landing every 102 frames, which the adapter did
 because its idle branch turned `Landed` back into `Ascending` while `should_land`
 turned `Hovering` into `Descending`.
 
-An order arriving on `movement_target` stands in for `Move_To`: it stores the
-destination, sets the moving byte and lifts a descent back to state 1 with
-`+0x80 = JumpjetHeight`. A cruise whose order drops leaves state 3 for a stopped
-hold with both speeds zeroed — native `Stop_Moving` would instead re-target a
-nearby cell through FNPC and keep flying, which stays a recorded residual.
+Orders run the ported `Move_To 0x0054B1C0` and `Stop_Moving 0x0054B4D0`
+(`movement::jumpjet_movement`, combat chain 4): FNPC relocates the ordered cell,
+`0x0054D6D0` places the owner, a descent lifts back to state 1 at
+`JumpjetHeight=`, and a dropped order re-targets the cell under the owner and
+keeps flying. State 5 crash (`0x0054CA90`) and the `+0x425` latch are ported by
+the same chain.
 
 ## Not yet ported
 
-- State 5 crash (`0x0054CA90`) and the `+0x425` crash latch in `Process` that
-  reaches it, including the infantry crush and the damage it deals on impact.
-- `Stop_Moving 0x0054B4D0`'s FNPC re-target, and `Move_To`'s FNPC relocation of
-  an ordered cell that is not passable.
+- State 5's Magnetron arms (`+0x6AD`, `+0x427`), including the crush and the
+  damage a dropped owner deals on impact.
 - `Can_Enter_Cell`'s graded answer: VERA's passability predicate is binary, so
   the native 0 / 2 / above-2 distinction collapses to clear or refused.
 - The owner missions that skip State 4's landing admission (`+0xB4` or the

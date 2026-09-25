@@ -370,8 +370,8 @@ Death anims (`feature/combat-destruction-anims`, snapshot 195), owner
   natively the first crewman follows its death's anims in the live order and here precedes them;
   the frame the last-constructed anim expires skips a different object; routine for crewed
   deaths); the ship sink, the DeathFrames deferral and the water splash; the other
-  `Death_Explosion` callers (a crushed vehicle `7418E5` -> `746D60`, a `Crashable=` crash
-  `7461D1`, the DeathFrames completion); AnimClass::Middle `424F00` (the scorch/crater a
+  `Death_Explosion` callers (a crushed vehicle `7418E5` -> `746D60`, the DeathFrames completion;
+  the `Crashable=` crash `7461D1` since ported by chain 4); AnimClass::Middle `424F00` (the scorch/crater a
   multi-frame explosion leaves at its middle frame); art-less `gtpowexp`/`tstlexp`; DestroyAnim
   palette; `RevealToAll=` (step 5, stock, shroud only); steps 2-4, 9-12, 14 (dead or absent on
   stock); a vehicle's spent ammo. Corrected: the FIRE3 trigger text (a neighbour cell's
@@ -1150,7 +1150,7 @@ Fly flight (owners `FlyRuntime`, `world/fly_orders.rs`, `world/fly_landing.rs`):
   (`4D9672..4D969C`); queued Enter, lift +2AC/+2B0 detach `70FEE0`, +304 cleanup, +6AC.
 - Facing writers `4181BB..4185DF`/Fly steering; body-snap consolidation (`track_host`, `walk_head`,
   `animation`, `infantry`, `jumpjet_cruise`); Fly pitch/roll and slope FLH.
-- `4196B0` Team/missing-slot shroud; Jumpjet crash `54CBD4..54CC0D`; DropIn `5F400E`/`5F4196`.
+- `4196B0` Team/missing-slot shroud; DropIn `5F400E`/`5F4196`.
 
 Locomotors, Scatter, Unit setter:
 - Hover (`514C30`/`514D90`/`516320`) destination lifecycle; Rocket (`661F50`/`6632E0`) owner;
@@ -1211,8 +1211,8 @@ Whole-combat gaps (plan list plus review coverage top 10):
   death anims, InfDeath anims and the death weapon's impact anim inline in the receiver, the
   outer impact anim after its receivers; the fatal prelude after the Techno death arm; verify the
   InfDeath anim's native constructor arguments); the ship sink (`+3CD`, `vt+3A0`, the
-  `UnitClass::AI` sinking); a crushed vehicle's `Death_Explosion` (`746D60`); the `Crashable=`
-  crash; the building NowDead contact loop (`442511`, radio 0x17 and the C4 kill of contacts),
+  `UnitClass::AI` sinking); a crushed vehicle's `Death_Explosion` (`746D60`); the Jumpjet
+  Infantry crash (Rocketeer, Cosmonaut); the building NowDead contact loop (`442511`, radio 0x17 and the C4 kill of contacts),
   AnimClass::Middle for every explosion anim, the deferred death of `Explodes=`/Selling
   buildings, death specials, the sale crew, passenger escape from dying transports.
 - Homing launch/steering non-native (VERA-built BAM tables, a cosine sidewinder where native uses sine);
