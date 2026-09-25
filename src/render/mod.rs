@@ -15,6 +15,8 @@
 //! - render/ NEVER mutates sim state — strictly read-only access
 //! - render/ does NOT depend on: ui/, sidebar/, audio/, net/
 
+#[cfg(test)]
+mod atlas_refresh_retail_tests;
 pub mod batch;
 pub mod bink_movie;
 pub mod bit_font;

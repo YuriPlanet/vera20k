@@ -673,7 +673,8 @@ pub(crate) fn build_entity_atlases(
     // wouldn't work anyway.
     let unit_atlas: Option<UnitAtlas> = if palette.is_some() {
         unit_atlas::build_unit_atlas(
-            gpu,
+            &gpu.device,
+            &gpu.queue,
             batch,
             sim.entities(),
             asset_manager,
@@ -709,7 +710,8 @@ pub(crate) fn build_entity_atlases(
         theater_iso_palette.or_else(|| loaded_iso_palette.as_ref().and_then(Option::as_ref));
     let shp_atlas: Option<SpriteAtlas> = palette.as_ref().and_then(|pal| {
         sprite_atlas::build_sprite_atlas(
-            gpu,
+            &gpu.device,
+            &gpu.queue,
             batch,
             sim.entities(),
             asset_manager,

@@ -23,7 +23,6 @@ use crate::assets::shp_file::ShpFile;
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseColorMap;
 use crate::render::batch::{BatchRenderer, BatchTexture};
-use crate::render::gpu::GpuContext;
 use crate::rules::art_data::{self, ArtRegistry};
 use crate::rules::effect_asset_catalog::available_effect_anim_frame_count;
 use crate::rules::house_colors::{HouseColorIndex, HouseColorRamps};
@@ -561,7 +560,8 @@ fn sprite_palette_for_key(
 /// instead of `{TYPE_ID}.SHP`. A supplied prior atlas is returned unchanged
 /// when no replacement sprite can be produced.
 pub fn build_sprite_atlas(
-    gpu: &GpuContext,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
     batch: &BatchRenderer,
     entities: &crate::sim::entity_store::EntityStore,
     asset_manager: &AssetManager,
@@ -1196,7 +1196,7 @@ pub fn build_sprite_atlas(
     );
 
     // Step 3: Shelf-pack all sprites (cached + newly rendered) into atlas.
-    let mut atlas: SpriteAtlas = pack_sprites(gpu, batch, &cached);
+    let mut atlas: SpriteAtlas = pack_sprites(device, queue, batch, &cached);
     atlas.make_frame_counts = make_frame_counts;
     atlas.active_anim_frame_counts = active_anim_frame_counts;
     atlas.building_bounds = compute_building_bounds(&atlas, entities, art, rules, interner);
@@ -1644,7 +1644,8 @@ fn blit_sprite_pixels(
 pub(crate) use tests::native_palette_probe_page;
 
 fn pack_sprites(
-    gpu: &GpuContext,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
     batch: &BatchRenderer,
     sprites: &[RenderedShpSprite],
 ) -> SpriteAtlas {
@@ -1660,7 +1661,7 @@ fn pack_sprites(
         })
         .sum();
     let estimated_side: u32 = (total_area as f64).sqrt().ceil() as u32;
-    let max_texture_dim: u32 = gpu.device.limits().max_texture_dimension_2d;
+    let max_texture_dim: u32 = device.limits().max_texture_dimension_2d;
     let mut atlas_width: u32 = estimated_side.clamp(64, max_texture_dim);
 
     // Try widening atlas to fit everything in a single page.
@@ -1766,8 +1767,9 @@ fn pack_sprites(
             );
         }
 
-        let texture: BatchTexture = batch.create_texture_with_indices(
-            gpu,
+        let texture: BatchTexture = batch.create_texture_on_device(
+            device,
+            queue,
             &rgba,
             atlas_width,
             page_height,

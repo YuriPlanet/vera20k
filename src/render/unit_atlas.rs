@@ -24,7 +24,6 @@ use crate::assets::hva_file::HvaFile;
 use crate::assets::vpl_file::VplFile;
 use crate::assets::vxl_file::VxlFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
-use crate::render::gpu::GpuContext;
 use crate::render::vxl_compute::VxlComputeRenderer;
 use crate::render::vxl_raster::{self, VxlRenderParams, VxlSlopeBlend, VxlSprite};
 use crate::rules::art_data::{self, ArtRegistry};
@@ -357,7 +356,8 @@ pub fn collect_needed_unit_keys(
 /// Returns `None` only when no prior atlas exists and no voxel sprite can be
 /// produced. A supplied prior atlas is returned unchanged on ordinary failure.
 pub fn build_unit_atlas(
-    gpu: &GpuContext,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
     batch: &BatchRenderer,
     entities: &crate::sim::entity_store::EntityStore,
     asset_manager: &AssetManager,
@@ -483,7 +483,8 @@ pub fn build_unit_atlas(
                 art,
                 vpl.as_ref(),
                 compute.as_deref_mut(),
-                gpu,
+                device,
+                queue,
             ) {
                 Some((sprite, used_gpu, native_draw_bounds)) => {
                     if key.layer == VxlLayer::Shadow && native_draw_bounds.is_some() {
@@ -496,7 +497,8 @@ pub fn build_unit_atlas(
                             art,
                             vpl.as_ref(),
                             None,
-                            gpu,
+                            device,
+                            queue,
                         ) {
                             cached.push(CachedUnitSprite::from_rendered(RenderedSprite {
                                 key: fallback_key,
@@ -543,24 +545,25 @@ pub fn build_unit_atlas(
     }
 
     // Step 3: Shelf-pack all sprites (cached + newly rendered) into atlas.
-    let mut atlas: UnitAtlas = match pack_sprites(gpu, batch, &cached, frame_counts) {
-        Ok(atlas) => atlas,
-        Err(err) => {
-            log::error!("Unit atlas packing failed: {err}");
-            if let Some(mut previous) = previous_atlas {
-                cached.truncate(previous_cache_len);
-                previous.rendered_cache = cached;
-                log::error!("Keeping the previous valid unit atlas after packing failure");
-                return Some(previous);
+    let mut atlas: UnitAtlas =
+        match pack_sprites_on_device(device, queue, batch, &cached, frame_counts) {
+            Ok(atlas) => atlas,
+            Err(err) => {
+                log::error!("Unit atlas packing failed: {err}");
+                if let Some(mut previous) = previous_atlas {
+                    cached.truncate(previous_cache_len);
+                    previous.rendered_cache = cached;
+                    log::error!("Keeping the previous valid unit atlas after packing failure");
+                    return Some(previous);
+                }
+                return None;
             }
-            return None;
-        }
-    };
+        };
     atlas.rendered_cache = cached;
     atlas.gpu_rendered = gpu_rendered;
     atlas.cpu_rendered = cpu_rendered;
     if let Some(previous) = previous_atlas.as_ref() {
-        atlas.restore_shadow_masks(&gpu.queue, previous.shadow_masks.borrow().clone());
+        atlas.restore_shadow_masks(queue, previous.shadow_masks.borrow().clone());
     }
     let page_dimensions = atlas
         .pages
@@ -588,9 +591,20 @@ pub(crate) fn render_unit_sprite(
     art: Option<&ArtRegistry>,
     vpl: Option<&VplFile>,
     compute: Option<&mut VxlComputeRenderer>,
-    gpu: &GpuContext,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
 ) -> Option<(VxlSprite, bool, Option<[i32; 4]>)> {
-    render_unit_sprite_with_slope_blend(asset_manager, key, rules, art, vpl, compute, gpu, None)
+    render_unit_sprite_with_slope_blend(
+        asset_manager,
+        key,
+        rules,
+        art,
+        vpl,
+        compute,
+        device,
+        queue,
+        None,
+    )
 }
 
 pub(crate) fn render_unit_sprite_with_slope_blend(
@@ -600,7 +614,8 @@ pub(crate) fn render_unit_sprite_with_slope_blend(
     art: Option<&ArtRegistry>,
     vpl: Option<&VplFile>,
     mut compute: Option<&mut VxlComputeRenderer>,
-    gpu: &GpuContext,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
     slope_blend: Option<VxlSlopeBlend>,
 ) -> Option<(VxlSprite, bool, Option<[i32; 4]>)> {
     // Resolve image name: type_id → rules.ini Image= → art.ini Image= override.
@@ -690,7 +705,7 @@ pub(crate) fn render_unit_sprite_with_slope_blend(
     let gpu_sprite = if key.layer == VxlLayer::Composite && !has_parts {
         compute.as_deref_mut().and_then(|renderer| {
             let draw = vxl_raster::prepare_native_draw(&vxl, hva.as_ref(), &params, vpl)?;
-            renderer.render_native(&gpu.device, &gpu.queue, &draw)
+            renderer.render_native(device, queue, &draw)
         })
     } else {
         None
@@ -1206,15 +1221,6 @@ fn simulate_shelf_height(indices: &[usize], dimensions: &[(u32, u32)], page_widt
 }
 
 /// Shelf-pack cached sprites into lossless GPU texture pages.
-fn pack_sprites(
-    gpu: &GpuContext,
-    batch: &BatchRenderer,
-    sprites: &[CachedUnitSprite],
-    frame_counts: BTreeMap<(String, VxlLayer), u32>,
-) -> Result<UnitAtlas, UnitAtlasPackError> {
-    pack_sprites_on_device(&gpu.device, &gpu.queue, batch, sprites, frame_counts)
-}
-
 fn pack_sprites_on_device(
     device: &wgpu::Device,
     queue: &wgpu::Queue,

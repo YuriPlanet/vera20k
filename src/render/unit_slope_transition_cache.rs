@@ -151,7 +151,8 @@ impl VxlSlopeTransitionCache {
             art,
             vpl.as_ref(),
             None,
-            gpu,
+            &gpu.device,
+            &gpu.queue,
             Some(blend),
         )?;
 

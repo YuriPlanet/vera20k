@@ -27,7 +27,7 @@ use winit::window::Window;
 /// many pre-rendered sprites fit. 16384 is what current desktop GPUs offer; asking for
 /// more would fail on hardware that could otherwise run the game, and the request is
 /// clamped to the adapter's own maximum anyway.
-const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
+pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
 
 /// Borrowed, serialization-ready identity of the adapter selected for this GPU
 /// context. This is observation only: it mirrors the immutable `AdapterInfo`

@@ -1184,7 +1184,8 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
         log::info!("Rebuilding unit atlas: new voxel entity types detected");
         let existing = state.match_state.match_presentation.unit_atlas.take();
         if let Some(new_unit_atlas) = unit_atlas::build_unit_atlas(
-            &state.renderer.gpu,
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
             &state.renderer.batch_renderer,
             sim.entities(),
             asset_manager,
@@ -1213,7 +1214,8 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
             &state.match_state.match_presentation.theater_ext,
         );
         if let Some(new_sprite_atlas) = sprite_atlas::build_sprite_atlas(
-            &state.renderer.gpu,
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
             &state.renderer.batch_renderer,
             sim.entities(),
             asset_manager,
