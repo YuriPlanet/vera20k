@@ -2400,11 +2400,8 @@ fn gsi_04_07_should_retaliate_world_refusals() {
     // `0x007087EB`: a slave (SlaveOwner `+0x2DC`). GetFireError's T2
     // refuses a slave as well, so this outcome does not isolate the gate.
     let (mut sim, rules) = tank(false);
-    sim.substrate
-        .entities
-        .get_mut(GATE_VICTIM)
-        .unwrap()
-        .slave_owner = Some(9);
+    sim.substrate.entities.get_mut(GATE_VICTIM).unwrap().slave =
+        crate::sim::slave_manager::SlaveLink::for_test(Some(9), Vec::new());
     assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE));
     // `0x00708899`: the source is disguised to the victim's house as one of
     // its own (vt+0xC8).
@@ -3410,7 +3407,7 @@ fn gsi_04_07_damage_spawn_and_slave_managers_block_retaliation() {
                 .expect("resolved Enslaves profile creates native SlaveManager");
             victim.slave_manager = Some(crate::sim::slave_manager::SlaveManager::new(
                 interner.intern(slave_type),
-                [],
+                [None; 0],
                 0,
                 0,
                 0,

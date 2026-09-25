@@ -1629,11 +1629,11 @@ impl Simulation {
                     b"slave-manager-v208".hash(hasher);
                     manager.hash(hasher);
                 }
-                if entity.slave_owner.is_some() || !entity.slave_cargo.is_empty() {
+                if entity.slave.owner().is_some() || !entity.slave.cargo().is_empty() {
                     b"slave-v208".hash(hasher);
-                    entity.slave_owner.hash(hasher);
-                    entity.slave_cargo.len().hash(hasher);
-                    for bale in &entity.slave_cargo {
+                    entity.slave.owner().hash(hasher);
+                    entity.slave.cargo().len().hash(hasher);
+                    for bale in entity.slave.cargo() {
                         (bale.resource_type as u8).hash(hasher);
                         bale.value.hash(hasher);
                     }
@@ -1642,7 +1642,7 @@ impl Simulation {
                 && let Some(manager) = entity.slave_manager.as_ref()
             {
                 b"constructor-slave-pool-v1".hash(hasher);
-                manager.nodes().len().hash(hasher);
+                manager.slaves().count().hash(hasher);
                 for slave_id in manager.slaves() {
                     slave_id.hash(hasher);
                 }

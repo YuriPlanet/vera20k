@@ -35,7 +35,7 @@ use crate::sim::miner::{CargoBale, ResourceType};
 use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::rng::SimRng;
-use crate::sim::slave_manager::{ManagerState, SlaveNode, SlaveState};
+use crate::sim::slave_manager::{ManagerState, SlaveLink, SlaveNode, SlaveState};
 use crate::sim::timer::CdTimer;
 use crate::sim::world::{
     PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, UninitContext,
@@ -91,7 +91,6 @@ fn mission(name: &str) -> MissionType {
         "guard" => MissionType::Guard,
         "move" => MissionType::Move,
         "harvest" => MissionType::Harvest,
-        "construction" => MissionType::Construction,
         "selling" => MissionType::Selling,
         other => panic!("unmapped mission {other}"),
     }
@@ -165,7 +164,21 @@ pub(super) fn row_scene(input: &Value) -> SlaveScene {
             &heights,
         )
         .expect("slave refinery");
-    let owner_mission = mission(input["owner_mission"].as_str().unwrap_or("guard"));
+    // VERA publishes neither the Construction mission nor a BState: a
+    // building that builds up carries `building_up`, which stands for both
+    // (`GameEntity::constructing_or_selling`, `slave_manager_step`).
+    let owner_mission = input["owner_mission"].as_str().unwrap_or("guard");
+    if owner_mission == "construction" || input["bstate"].as_i64() == Some(0) {
+        sim.substrate.entities.get_mut(master).unwrap().building_up =
+            Some(crate::sim::components::BuildingUp {
+                elapsed_ticks: 0,
+                total_ticks: 30,
+            });
+    }
+    let owner_mission = match owner_mission {
+        "construction" => MissionType::Guard,
+        other => mission(other),
+    };
     sim.mission_assign_exact(master, MissionId::from_known(owner_mission), frame)
         .unwrap();
     let mut slaves = BTreeMap::new();
@@ -263,8 +276,10 @@ fn place_slave(
         .unwrap();
     }
     let entity = sim.substrate.entities.get_mut(id).unwrap();
-    entity.slave_owner = Some(master);
-    entity.health.current = node["health"].as_i64().unwrap_or(125) as i32;
+    // The oracle writes the row's health to both Strength and EstimatedHealth.
+    let health = node["health"].as_i64().unwrap_or(125) as i32;
+    entity.health.current = health;
+    entity.estimated_health.reset(health);
     if let Some(doing) = node["doing"].as_i64() {
         entity
             .mission_leaf
@@ -275,15 +290,17 @@ fn place_slave(
         entity.navigation.nav_com = Some(NavTargetRef::cell(nx, ny));
     }
     let storage = node["storage"].as_array();
+    let mut cargo = Vec::new();
     for (slot, kind, value) in [(0, ResourceType::Ore, 25), (1, ResourceType::Gem, 50)] {
         let count = storage.map_or(0, |s| s[slot].as_f64().unwrap() as usize);
         for _ in 0..count {
-            entity.slave_cargo.push(CargoBale {
+            cargo.push(CargoBale {
                 resource_type: kind,
                 value,
             });
         }
     }
+    entity.slave = SlaveLink::for_test(Some(master), cargo);
     id
 }
 
@@ -413,7 +430,8 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
         );
         let count = |kind| {
             entity
-                .slave_cargo
+                .slave
+                .cargo()
                 .iter()
                 .filter(|bale| bale.resource_type == kind)
                 .count() as f64
@@ -430,7 +448,12 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
             "{context}: Strength"
         );
         assert_eq!(
-            entity.slave_owner == Some(s.master),
+            i64::from(entity.estimated_health.get()),
+            expected["health"][1].as_i64().unwrap(),
+            "{context}: EstimatedHealth"
+        );
+        assert_eq!(
+            entity.slave.owner() == Some(s.master),
             expected["owner"].as_bool().unwrap(),
             "{context}: SlaveOwner"
         );
@@ -591,6 +614,6 @@ fn replay_covers_every_row() {
         .iter()
         .map(|group| corpus[*group].as_array().unwrap().len())
         .sum();
-    assert_eq!(total, 57);
+    assert_eq!(total, 59);
     assert_eq!(SKIPPED.len(), 2);
 }

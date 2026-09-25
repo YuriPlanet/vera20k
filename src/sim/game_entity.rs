@@ -31,7 +31,7 @@ use crate::sim::deploy::DeployPhase;
 use crate::sim::docking::aircraft_dock::AircraftAmmo;
 use crate::sim::docking::building_dock::DockState;
 use crate::sim::intern::InternedId;
-use crate::sim::miner::{CargoBale, Miner};
+use crate::sim::miner::Miner;
 use crate::sim::mission::{MissionCom, MissionLeafState, MissionTimer, MissionType};
 use crate::sim::movement::drop_pod_movement::DropPodState;
 use crate::sim::movement::locomotor::LocomotorState;
@@ -811,13 +811,11 @@ pub struct GameEntity {
     /// `SlaveManagerClass` of an `Enslaves=` master (`TechnoClass+0x2D8`).
     #[serde(default)]
     pub(crate) slave_manager: Option<crate::sim::slave_manager::SlaveManager>,
-    /// The master whose manager holds this slave (`TechnoClass+0x2DC`).
+    /// The slave side of `SlaveManagerClass`: the master whose manager holds
+    /// this slave (`TechnoClass+0x2DC`) and its Storage (`+0x33C`), written
+    /// only by `sim::slave_manager`.
     #[serde(default)]
-    pub slave_owner: Option<u64>,
-    /// A slave's Storage (`TechnoClass+0x33C`): the levels of ore and gems it
-    /// carries, one bale per level.
-    #[serde(default)]
-    pub slave_cargo: Vec<CargoBale>,
+    pub(crate) slave: crate::sim::slave_manager::SlaveLink,
     /// Persistent high-level order (AttackMove, Guard) that survives transient state changes.
     pub order_intent: Option<OrderIntent>,
     /// Evidence-bounded native cloak transition state and visual producer values.
@@ -1516,8 +1514,7 @@ impl GameEntity {
             harvest_overlay: None,
             miner: None,
             slave_manager: None,
-            slave_owner: None,
-            slave_cargo: Vec::new(),
+            slave: Default::default(),
             order_intent: None,
             cloak: None,
             sensor_deposit: None,
@@ -1814,6 +1811,19 @@ impl GameEntity {
     /// Deployed phase (not transitioning).
     pub fn is_fully_deployed(&self) -> bool {
         matches!(self.deploy_state, Some(DeployPhase::Deployed))
+    }
+
+    /// A building's current mission is Construction (0x12) or Selling
+    /// (0x13). VERA keeps a building's build-up and its build-down (the
+    /// Construction Yard repack) in `building_up`/`building_down` without
+    /// publishing those missions, so either counts.
+    pub(crate) fn constructing_or_selling(&self) -> bool {
+        self.building_up.is_some()
+            || self.building_down.is_some()
+            || matches!(
+                self.mission.current().known(),
+                Some(MissionType::Selling | MissionType::Construction)
+            )
     }
 }
 

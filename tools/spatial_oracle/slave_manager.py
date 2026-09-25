@@ -1,7 +1,7 @@
 """Original SlaveManagerClass over a deployed Yuri slave refinery.
 
 AI_Update's per-slave machine (0x6AF6C0), the manager's own machine
-(0x6AFD60) for a Building owner in states 0, 5 and 6, DeploySlaves (0x6B04C0),
+(0x6AFD60) for a Building owner in states 0, 4, 5 and 6, DeploySlaves (0x6B04C0),
 the slave's InfantryClass::Mission_Harvest (0x522E70) and its deposit
 (0x522D50) run over the original Infantry and Building vtables on the
 harvest_field map fixture (its ore and gem tables, House, Rules and Scenario
@@ -66,9 +66,12 @@ def make_fixture(case):
     u.mem_map(REGION, 0x10000 + SLAVE_SIZE * SLAVE_SLOTS)
     frame = read32(0xA8ED84)
     # PlaceInfantryInCell's spot offsets (0x89E9F0) and its no-spot answer
-    # (0x89E778), filled by static initialisers the fixture does not run.
+    # (0x89E778), and the cell-(0,0) centre DeploySlaves also refuses
+    # (0xB0B618, compared at 0x6B0624; initialiser 0x6AF0E0), filled by
+    # static initialisers the fixture does not run.
     u.mem_write(0x89E778, dwords(0, 0, 0))
     u.mem_write(0x89E9F0, dwords(*(v for spot in SPOT_OFFSETS for v in spot)))
+    u.mem_write(0xB0B618, dwords(0x80, 0x80, 0))
     # [General] SlaveMinerShortScan/SlaveScan/LongScan/ScanCorrection (ReadRange
     # leptons) and SlaveMinerKickFrameDelay: retail 8, 14, 48, 3 cells and 150;
     # ApproachTargetResetMultiplier (ReadInt of retail "1.5").
@@ -80,6 +83,8 @@ def make_fixture(case):
     u.mem_write(YAREFN + 0x520, dwords(YTYPE))
     u.mem_write(YAREFN + 0x6C, dwords(2000))
     u.mem_write(YAREFN + 0xAC, dwords(MISSION[case.get('owner_mission', 'guard')]))
+    # BState (+0x534): 0 is BSTATE_CONSTRUCTION, the build-up.
+    u.mem_write(YAREFN + 0x534, dwords(case.get('bstate', 0)))
     # Place_Down lists it in all four foundation cells (0x5683C0).
     for fy in range(YAREFN_NW[1], YAREFN_NW[1] + 2):
         for fx in range(YAREFN_NW[0], YAREFN_NW[0] + 2):
@@ -310,6 +315,9 @@ def manager_cases():
         dict(name='m0_guard', manager_state=0, owner_mission='guard'),
         dict(name='m0_construction', manager_state=0, owner_mission='construction'),
         dict(name='m0_selling', manager_state=0, owner_mission='selling'),
+        # 4, a refinery just deployed from a Slave Miner: waits for its BState.
+        dict(name='m4_building_up', manager_state=4, bstate=0),
+        dict(name='m4_built', manager_state=4, bstate=1),
         # 5 with ore inside SlaveMinerShortScan of the refinery's centre: deploy.
         dict(name='m5_deploys', manager_state=5, ore=[[16, 13, 0, 0, 5]], nodes=ready),
         dict(name='m5_deploys_mixed', manager_state=5, ore=[[16, 13, 0, 0, 5]], nodes=[

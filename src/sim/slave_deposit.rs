@@ -26,14 +26,16 @@ mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
     use crate::sim::{
-        game_entity::GameEntity, occupancy::CellListInsertion, slave_manager::SlaveManager,
+        game_entity::GameEntity,
+        occupancy::CellListInsertion,
+        slave_manager::{SlaveLink, SlaveManager},
     };
     use crate::util::fixed_math::SimFixed;
 
     fn manager(interner: &mut StringInterner, slaves: &[u64]) -> Option<SlaveManager> {
         Some(SlaveManager::new(
             interner.intern("SLAV"),
-            slaves.iter().copied(),
+            slaves.iter().copied().map(Some),
             0,
             0,
             0,
@@ -59,7 +61,7 @@ mod tests {
                 e.slave_manager = manager(&mut interner, &[2]);
             }
             if id == 2 {
-                e.slave_owner = Some(1);
+                e.slave = SlaveLink::for_test(Some(1), Vec::new());
             }
             if id == 3 {
                 e.position.sub_x = SimFixed::from_num(32);
@@ -130,7 +132,7 @@ mod tests {
         assert_eq!(query!().master(2), Some(1));
         assert!(!query!().walk_priority(2, input));
         entities.get_mut(1).unwrap().slave_manager = manager(&mut interner, &[2]);
-        entities.get_mut(2).unwrap().slave_owner = Some(3);
+        entities.get_mut(2).unwrap().slave = SlaveLink::for_test(Some(3), Vec::new());
         assert!(!query!().walk_priority(2, input));
     }
 
@@ -197,7 +199,7 @@ pub(crate) fn slave_deposit_cells(
     slave: u64,
     foundation: &dyn Fn(&crate::sim::game_entity::GameEntity) -> Option<(u16, u16)>,
 ) -> [Option<(u16, u16)>; 2] {
-    let Some(master) = entities.get(slave).and_then(|entity| entity.slave_owner) else {
+    let Some(master) = entities.get(slave).and_then(|entity| entity.slave.owner()) else {
         return [None, None];
     };
     let Some(owner) = entities.get(master) else {
@@ -210,19 +212,18 @@ pub(crate) fn slave_deposit_cells(
     {
         return [None, None];
     }
-    let coord = ground_pose::position_world_coord(&owner.position);
-    let base = ((coord.x / 256) as i16, (coord.y / 256) as i16);
     let as_cell = |cell: (i16, i16)| (cell.0 as u16, cell.1 as u16);
-    if owner.category != EntityCategory::Structure {
-        return [Some(as_cell(base)), None];
-    }
-    let Some((width, height)) = foundation(owner) else {
+    let building = owner.category == EntityCategory::Structure;
+    let dimensions = if building { foundation(owner) } else { None };
+    let Some(primary) = crate::sim::slave_manager::deploy_center(owner, dimensions) else {
         return [None, None];
     };
-    let primary = (
-        base.0.wrapping_add((i32::from(width) - 1) as i16),
-        base.1.wrapping_add((i32::from(height) / 2) as i16),
-    );
+    let Some((width, height)) = dimensions else {
+        return [Some(as_cell(primary)), None];
+    };
+    // The north Cell's first building is the master exactly when it lies in
+    // the master's rectangular footprint.
+    let base = crate::sim::slave_manager::owner_cell(owner);
     let north = (primary.0, primary.1.wrapping_sub(1));
     let in_footprint = (north.0 - base.0) >= 0
         && i32::from(north.0 - base.0) < i32::from(width)
@@ -235,7 +236,7 @@ impl SlaveDepositQuery<'_> {
     /// The caller tests both child+2DC and master+2D8 before6B0880. An
     /// existing empty manager remains admitted to the geometry/lookup body.
     pub(crate) fn master(&self, slave: u64) -> Option<u64> {
-        let master = self.entities.get(slave)?.slave_owner?;
+        let master = self.entities.get(slave)?.slave.owner()?;
         self.entities
             .get(master)?
             .slave_manager
@@ -262,20 +263,13 @@ impl SlaveDepositQuery<'_> {
         let Some(owner) = self.entities.get(master) else {
             return false;
         };
-        let coord = ground_pose::position_world_coord(&owner.position);
-        let base = ((coord.x / 256) as i16, (coord.y / 256) as i16);
         let building = owner.category == EntityCategory::Structure;
-        let primary = if building {
-            let Some(kind) = self.rules.object(self.interner.resolve(owner.type_ref())) else {
-                return false;
-            };
-            let (width, height) = crate::rules::foundation::foundation_dimensions(&kind.foundation);
-            (
-                base.0.wrapping_add((i32::from(width) - 1) as i16),
-                base.1.wrapping_add((i32::from(height) / 2) as i16),
-            )
-        } else {
-            base
+        let foundation = self
+            .rules
+            .object(self.interner.resolve(owner.type_ref()))
+            .map(|kind| crate::rules::foundation::foundation_dimensions(&kind.foundation));
+        let Some(primary) = crate::sim::slave_manager::deploy_center(owner, foundation) else {
+            return false;
         };
         let secondary = if building {
             //6B0934 recomputes6B0690; no callback changes its inputs here.

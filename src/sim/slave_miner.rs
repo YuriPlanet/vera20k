@@ -203,7 +203,7 @@ mod tests {
         }
         for &slave in &slaves {
             assert_eq!(
-                sim.substrate.entities.get(slave).unwrap().slave_owner,
+                sim.substrate.entities.get(slave).unwrap().slave.owner(),
                 Some(yarefn)
             );
         }
@@ -235,7 +235,7 @@ mod tests {
         }
         for slave in slaves {
             assert_eq!(
-                sim.substrate.entities.get(slave).unwrap().slave_owner,
+                sim.substrate.entities.get(slave).unwrap().slave.owner(),
                 Some(back)
             );
         }

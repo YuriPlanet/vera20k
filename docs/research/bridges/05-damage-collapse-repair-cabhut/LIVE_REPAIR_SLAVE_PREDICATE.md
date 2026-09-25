@@ -104,10 +104,11 @@ YAREFN's art Foundation is 2x2.
 
 The native transfer path `449C30 -> 6AF580` transfers the old manager and rewrites
 surviving slaves' master pointers at `+2DC`. It retires the fresh new owner's
-initial pool, not the old owner's surviving children. The current Rust
-`slave_bindings` and `slave_harvester.master_id` likewise survive SMIN/YAREFN
-transfer. This supports reusing that authority; it does not certify all transfer
-or slave-harvesting behavior.
+initial pool, not the old owner's surviving children. The Rust manager
+(`sim::slave_manager`, `GameEntity::slave_manager` and the slave's
+`SlaveLink::owner`) likewise survives SMIN/YAREFN transfer
+(`transfer_slave_manager`). This supports reusing that authority; it does not
+certify all transfer or slave-harvesting behavior.
 
 Stock type existence and manager transfer alone do not prove that every proposed
 master/deposit arrangement can occur inside a bridge-repair callback. In

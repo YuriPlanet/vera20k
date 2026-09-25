@@ -196,7 +196,7 @@ mod tests {
         master.category = EntityCategory::Structure;
         let slav = interner.intern("SLAV");
         // An existing manager that does not hold the slave refuses it.
-        master.slave_manager = Some(SlaveManager::new(slav, [], 0, 0, 0));
+        master.slave_manager = Some(SlaveManager::new(slav, [None; 0], 0, 0, 0));
         entities.insert(master);
         let mut slave = GameEntity::test_default(2, "SLAV", "Owner", 3, 4);
         slave.owner = owner;
@@ -210,7 +210,7 @@ mod tests {
             next_index: 1,
             ..Default::default()
         });
-        slave.slave_owner = Some(1);
+        slave.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(1), Vec::new());
         let current = super::super::ground_pose::position_world_coord(&slave.position);
         entities.insert(slave);
         let terrain = ResolvedTerrainGrid::from_cells(
@@ -254,7 +254,8 @@ mod tests {
             4,
             "failed selection restores the cleared current slot"
         );
-        entities.get_mut(1).unwrap().slave_manager = Some(SlaveManager::new(slav, [2], 0, 0, 0));
+        entities.get_mut(1).unwrap().slave_manager =
+            Some(SlaveManager::new(slav, [Some(2)], 0, 0, 0));
         assert!(prepare_step_head(
             &mut entities,
             2,

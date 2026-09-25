@@ -346,7 +346,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                             .map(|slot| slot.spawn)
                             .collect::<Vec<_>>()
                     }),
-                    entity.slave_owner,
+                    entity.slave.owner(),
                     entity.slave_manager.clone(),
                 )
             })
@@ -394,7 +394,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                         .iter()
                         .map(|slot| slot.spawn)
                         .collect::<Vec<_>>()),
-                    entity.slave_owner,
+                    entity.slave.owner(),
                     entity.slave_manager.clone(),
                 ))
                 .collect::<Vec<_>>(),

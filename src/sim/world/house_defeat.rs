@@ -44,8 +44,12 @@
 //! - Slave release: a Slave Miner killed with no attacker hands its slaves on
 //!   the map to the Civilian-side house and UnInits those in limbo (the
 //!   ReceiveDamage death arm's `0x006B0AE0` call at `0x00702065`,
-//!   `sim::slave_manager`); the sweep reaches the miner before its slaves and
-//!   then skips them, as they no longer belong to the defeated house.
+//!   `sim::slave_manager`). A master constructed before its slaves (its own
+//!   constructor builds them) is reached first, and the sweep then skips
+//!   them, as they no longer belong to the defeated house; a refinery
+//!   deployed from a Slave Miner comes after the slaves it took over, so the
+//!   sweep kills those first as the defeated house's own, in the same
+//!   TechnoClass::Array order.
 //! - The IsToDie path (`Flag_To_Die @ 0x004FC980`: DESTRUCT, REMOVEPLAYER, a
 //!   last human's EXIT) has no VERA producer; offline skirmish cannot reach
 //!   it.

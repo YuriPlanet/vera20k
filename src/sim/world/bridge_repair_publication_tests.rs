@@ -165,7 +165,7 @@ fn slave_master_admission_reaches_head_selection_in_the_same_object_turn() {
         )
         .unwrap();
         let e = sim.substrate.entities.get_mut(slave).unwrap();
-        e.slave_owner = Some(master);
+        e.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(master), Vec::new());
         e.navigation.nav_com = Some(NavTargetRef::Cell { rx: 16, ry: 15 });
         e.locomotor
             .as_mut()
@@ -182,7 +182,7 @@ fn slave_master_admission_reaches_head_selection_in_the_same_object_turn() {
             .unwrap()
             .slave_manager = Some(crate::sim::slave_manager::SlaveManager::new(
             slav,
-            [slave],
+            [Some(slave)],
             0,
             0,
             0,

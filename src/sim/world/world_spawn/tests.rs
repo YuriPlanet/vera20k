@@ -1285,7 +1285,7 @@ fn techno_constructor_slave_manager_pool_draws_parent_then_children_and_cancels_
     for (index, slave_id) in slave_ids.iter().copied().enumerate() {
         let slave = sim.substrate.entities.get(slave_id).expect("slave child");
         assert_eq!(slave.techno_ctor_random_word, words[index + 1]);
-        assert_eq!(slave.slave_owner, Some(parent_id));
+        assert_eq!(slave.slave.owner(), Some(parent_id));
         assert!(slave.lifecycle.in_limbo && !slave.lifecycle.cell_marked);
     }
     assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());

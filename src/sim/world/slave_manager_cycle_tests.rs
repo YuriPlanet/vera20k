@@ -10,6 +10,7 @@ use super::harvest_field_oracle_tests::registry;
 use super::slave_manager_oracle_tests::{SlaveScene, row_scene};
 use crate::sim::animation::SequenceKind;
 use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
+use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::mission::MissionType;
 use crate::sim::ore_growth::OreGrowthConfig;
 use crate::sim::slave_manager::{ManagerState, SlaveState};
@@ -18,8 +19,9 @@ use std::collections::BTreeMap;
 
 fn frame(s: &mut SlaveScene) {
     let grid = s.scene.sim.path_grid_snapshot();
+    let commands = s.scene.sim.take_due_commands();
     s.scene.sim.advance_tick(
-        &[],
+        &commands,
         Some(&s.scene.rules),
         &BTreeMap::new(),
         grid.as_deref(),
@@ -63,6 +65,19 @@ fn node_states(s: &SlaveScene) -> Vec<SlaveState> {
         .collect()
 }
 
+fn manager_state(s: &SlaveScene) -> ManagerState {
+    s.scene
+        .sim
+        .substrate
+        .entities
+        .get(s.master)
+        .unwrap()
+        .slave_manager
+        .as_ref()
+        .unwrap()
+        .state()
+}
+
 fn credits(s: &SlaveScene) -> i32 {
     let owner = s.scene.sim.interner.get("Americans").unwrap();
     s.scene.sim.houses[&owner].economy.credits
@@ -77,18 +92,6 @@ fn credits(s: &SlaveScene) -> i32 {
 fn slave_refinery_deploys_digs_carries_home_pays_and_goes_out_again() {
     let mut s = refinery_with_slaves(3);
     let slaves: Vec<u64> = s.slaves.values().copied().collect();
-    let manager_state = |s: &SlaveScene| {
-        s.scene
-            .sim
-            .substrate
-            .entities
-            .get(s.master)
-            .unwrap()
-            .slave_manager
-            .as_ref()
-            .unwrap()
-            .state()
-    };
     for _ in 0..11 {
         frame(&mut s);
     }
@@ -118,7 +121,7 @@ fn slave_refinery_deploys_digs_carries_home_pays_and_goes_out_again() {
         frame(&mut s);
         for &slave in &slaves {
             let entity = s.scene.sim.substrate.entities.get(slave).unwrap();
-            dug |= !entity.slave_cargo.is_empty();
+            dug |= !entity.slave.cargo().is_empty();
             shovel_shown |= entity
                 .animation
                 .as_ref()
@@ -145,6 +148,53 @@ fn slave_refinery_deploys_digs_carries_home_pays_and_goes_out_again() {
             .iter()
             .any(|state| matches!(state, SlaveState::Scanning | SlaveState::Moving)),
         "back out after the reload (paid at {paid_at}): {:?}",
+        node_states(&s)
+    );
+}
+
+/// A refinery still building up keeps its slaves inside: VERA's
+/// `building_up` stands for the Construction mission state 0 waits out
+/// (`0x006AFD95..0x006AFDA7`). The first visit after the build-up lets them
+/// out.
+#[test]
+fn a_refinery_building_up_keeps_its_slaves_inside() {
+    let mut s = refinery_with_slaves(3);
+    s.scene
+        .sim
+        .substrate
+        .entities
+        .get_mut(s.master)
+        .unwrap()
+        .building_up = Some(crate::sim::components::BuildingUp {
+        elapsed_ticks: 0,
+        total_ticks: 30,
+    });
+    let mut frames = 0;
+    while s
+        .scene
+        .sim
+        .substrate
+        .entities
+        .get(s.master)
+        .unwrap()
+        .building_up
+        .is_some()
+    {
+        assert!(frames < 40, "the build-up ends");
+        frame(&mut s);
+        frames += 1;
+        assert_eq!(manager_state(&s), ManagerState::Ready);
+        assert_eq!(node_states(&s), vec![SlaveState::Ready; 3]);
+    }
+    for _ in 0..21 {
+        frame(&mut s);
+    }
+    assert_eq!(manager_state(&s), ManagerState::Working);
+    assert!(
+        node_states(&s)
+            .iter()
+            .all(|state| matches!(state, SlaveState::Scanning | SlaveState::Moving)),
+        "let out: {:?}",
         node_states(&s)
     );
 }
@@ -188,7 +238,8 @@ fn kill(s: &mut SlaveScene, target: u64, attacker: Option<u64>) {
 
 /// The death arm frees the refinery's slaves (`0x006B0AE0`): the two outside
 /// pass to the killer's house, reset to Guard and cheer, and `SlavesFreeSound`
-/// plays at the first; the one reloading inside dies with the refinery.
+/// plays at the first; the one reloading inside dies with the refinery. Once
+/// the cheer has played, an order the new owner gave meanwhile commences.
 #[test]
 fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
     let mut s = row_scene(&serde_json::json!({
@@ -235,7 +286,7 @@ fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
     for index in [0, 1] {
         let slave = sim.substrate.entities.get(s.slaves[&index]).unwrap();
         assert_eq!(slave.owner(), russians, "slave {index} joins the killer");
-        assert_eq!(slave.slave_owner, None);
+        assert_eq!(slave.slave.owner(), None);
         assert_eq!(slave.mission.current().known(), Some(MissionType::Guard));
         assert_eq!(
             slave.mission_leaf.as_infantry().unwrap().doing(),
@@ -255,6 +306,74 @@ fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
         SimSoundEvent::VocAt { sound_id, rx, ry, .. }
             if sound_id == "SlavesFreed" && (*rx, *ry) == (freed.position.rx, freed.position.ry)
     )));
+
+    // The Cheer cannot be interrupted: a Move order given during it walks the
+    // slave off at once, but its mission waits in the queue
+    // (Ready_To_Commence). The Cheer's end, `InfantryClass::DoType_Sequencer`'s
+    // default arm, forces Ready on a standing slave and clears a walking one's
+    // action, and the queued Move commences.
+    let ordered = s.slaves[&1];
+    let tick = s.scene.sim.session.tick;
+    s.scene.sim.queue_command(CommandEnvelope::new(
+        russians,
+        tick + 1,
+        Command::Move {
+            entity_id: ordered,
+            target_rx: 18,
+            target_ry: 17,
+            queue: false,
+            group_id: None,
+        },
+    ));
+    let doing = |s: &SlaveScene, id: u64| {
+        s.scene
+            .sim
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .mission_leaf
+            .as_infantry()
+            .unwrap()
+            .doing()
+    };
+    let mission = |s: &SlaveScene, id: u64| {
+        s.scene
+            .sim
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .mission
+            .current()
+            .known()
+    };
+    let mut cheered = 0;
+    while doing(&s, s.slaves[&0]) == 32 {
+        assert!(cheered < 60, "the cheer ends");
+        assert_eq!(
+            mission(&s, ordered),
+            Some(MissionType::Guard),
+            "the Move waits for the cheer"
+        );
+        frame(&mut s);
+        cheered += 1;
+    }
+    assert!(cheered >= 20, "the cheer plays its 8 frames: {cheered}");
+    assert_eq!(
+        doing(&s, s.slaves[&0]),
+        0,
+        "a standing slave returns to Ready"
+    );
+    assert_eq!(doing(&s, ordered), -1, "a walking slave's action clears");
+    for _ in 0..3 {
+        frame(&mut s);
+    }
+    assert_eq!(
+        mission(&s, ordered),
+        Some(MissionType::Move),
+        "the queued Move commences"
+    );
 }
 
 /// A slave that dies leaves its node (RemoveSlave `0x006B0A20`): lost for
@@ -304,7 +423,8 @@ fn a_dead_slave_is_regrown_after_the_regen_rate_and_goes_out_again() {
             .entities
             .get(regrown)
             .unwrap()
-            .slave_owner,
+            .slave
+            .owner(),
         Some(s.master)
     );
     assert!(

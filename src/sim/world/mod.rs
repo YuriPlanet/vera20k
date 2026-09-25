@@ -6495,7 +6495,7 @@ impl Simulation {
         if frame_committed && let Some(animation_sequences) = animation_sequences {
             let game_options = self.session.game_options.clone();
             let binary_frame = self.session.binary_frame;
-            {
+            let completed_actions = {
                 let (entities, interner) = self.entities_mut_and_interner();
                 animation::tick_non_dying_animations(
                     entities,
@@ -6504,7 +6504,12 @@ impl Simulation {
                     &game_options,
                     interner,
                     binary_frame,
-                );
+                )
+            };
+            if let Some(rules) = rules {
+                for (id, action) in completed_actions {
+                    self.infantry_action_completed(id, action, rules);
+                }
             }
             animation::tick_voxel_animations(self.entities_mut());
             animation::tick_harvest_overlays(self.entities_mut());

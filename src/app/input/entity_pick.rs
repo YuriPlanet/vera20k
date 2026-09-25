@@ -1029,15 +1029,15 @@ fn entities_in_rect(
 /// refused the moment it drives clear of the factory footprint, exactly as the
 /// native cell lookup behaves.
 ///
-/// Two native clauses are approximated rather than reproduced, because VERA has
-/// no matching state:
-/// * The native enslaved test reads a slave-owner pointer that every slave
-///   carries. VERA's nearest state is the slave-harvester component, which only
-///   the Slave Miner's slaves own; a mind-controlled unit is a different field
-///   in the original and is deliberately not tested here.
-/// * The native bunker test reads one link field. VERA splits the link into an
-///   approach marker and an installed link, and only the installed link is
-///   treated as linked.
+/// The enslaved test reads the slave-owner pointer (`TechnoClass+0x2DC`,
+/// `SlaveLink::owner`), which a freed slave no longer carries; a
+/// mind-controlled unit is a different field in the original and is
+/// deliberately not tested here.
+///
+/// One native clause is approximated rather than reproduced, because VERA has
+/// no matching state: the native bunker test reads one link field. VERA splits
+/// the link into an approach marker and an installed link, and only the
+/// installed link is treated as linked.
 ///
 /// The powered-down clause reads byte `+0x1C8`, and it is NOT a deploy-transition
 /// flag. An exhaustive instruction search finds exactly three writers —
@@ -1064,7 +1064,7 @@ fn can_be_selected_now(
     if entity.category == EntityCategory::Structure {
         return false;
     }
-    if entity.slave_owner.is_some() {
+    if entity.slave.owner().is_some() {
         return false;
     }
     if entity.bunker_link.installed_in().is_some() {

@@ -798,12 +798,13 @@ mod tests {
                 &Default::default(),
             )
             .unwrap();
-        sim.substrate.entities.get_mut(slave).unwrap().slave_owner = Some(hut);
+        sim.substrate.entities.get_mut(slave).unwrap().slave =
+            crate::sim::slave_manager::SlaveLink::for_test(Some(hut), Vec::new());
         let slav = sim.intern("SLAV");
         let manager = |slaves: &[u64]| {
             Some(crate::sim::slave_manager::SlaveManager::new(
                 slav,
-                slaves.iter().copied(),
+                slaves.iter().copied().map(Some),
                 0,
                 0,
                 0,
@@ -1279,7 +1280,7 @@ fn foot_entry(
             .rules
             .object(live.sim.interner.resolve(b.type_ref()))
             .ok_or("repair list missing blocker type")?;
-        if infantry && e.slave_owner == Some(blocker_id) {
+        if infantry && e.slave.owner() == Some(blocker_id) {
             let query = crate::sim::slave_deposit::SlaveDepositQuery {
                 entities: &live.sim.substrate.entities,
                 occupancy: &live.sim.substrate.occupancy,

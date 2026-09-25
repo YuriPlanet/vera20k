@@ -17,7 +17,11 @@
 //! - A building owner leaves state 0 once it is neither building up nor being
 //!   sold, and from then on lets its idle slaves out on every visit
 //!   (DeploySlaves `0x006B04C0`: an infantry spot in the drop cell, Unlimbo,
-//!   Scatter away from the building).
+//!   Scatter away from the building). A refinery deployed from a Slave Miner
+//!   (state 4) waits for its BState (`+0x534`), 0 while it builds up. VERA
+//!   keeps a building's build-up and build-down in `building_up` and
+//!   `building_down` without publishing the Construction mission or a
+//!   BState, so both gates read them.
 //! - A slave looks for ore within `SlaveMinerSlaveScan` (the Foot
 //!   Scan_For_Tiberium), walks there, digs one level per `HarvestRate` frames
 //!   (`InfantryClass::Mission_Harvest @ 0x00522E70`), carries its full load to
@@ -44,13 +48,16 @@
 //!   Effect: the refinery stays put and its slaves walk farther. Frequency:
 //!   every Yuri game past the early field. Downstream: the Selling/undeploy
 //!   chain is not entered.
-//! - State 4 reads the building's BState (`+0x534`, zero while it builds up);
-//!   VERA has no BState owner and reads "its mission is not Construction".
-//! - The slave's Doing is not advanced by an InfantryClass::AI sequencer: a
-//!   digging slave keeps Doing 38 while it walks home (retail: Walk), and a
-//!   freed slave keeps 32 after its cheer. The shown sequence follows the
-//!   animation cascade (`animation.rs`). A loaded slave's Carry walk (Doing
-//!   39) is not represented.
+//! - Of `InfantryClass::DoType_Sequencer` (`0x00520AE0`) VERA runs only the
+//!   Cheer's end (`Simulation::infantry_action_completed`). A digging slave
+//!   keeps Doing 38 once its mission leaves Harvest, where retail's case 0x26
+//!   forces Ready after the Shovel sequence has played, and it walks home
+//!   without the Carry action (39, Do_Action's remap of Walk for a loaded
+//!   slave, `0x0051D739..0x0051D773`). Trigger: every slave carrying a load
+//!   home. Effect: the Doing value and the walk sequence shown; 0, 3, 38 and
+//!   39 are all interruptible, so readiness, Scatter and the fire error
+//!   answer alike. Frequency: every trip. Downstream: none beyond the Doing
+//!   hash.
 //! - FreeSlaves callers other than the death arm (`0x00702065`), the Temporal
 //!   erase (`0x0071AAA7`) and the destructor (`0x006F4571`): the Teleport
 //!   post-warp (`0x00718998`, `0x00718AEF`) and the Jumpjet crash
@@ -65,6 +72,7 @@ use crate::map::entities::EntityCategory;
 use crate::map::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
+use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::miner::{CargoBale, MinerConfig, ResourceType};
 use crate::sim::mission::authority::queue_entity_mission_deferred;
@@ -150,11 +158,14 @@ pub(crate) struct SlaveManager {
 }
 
 impl SlaveManager {
-    /// The constructor (`0x006AF1A0`) at `now`: a node per created slave, in
-    /// state 0 with its timer at `now` for 0, and the AI timer at `now` for 10.
+    /// The constructor (`0x006AF1A0`) at `now`: a node per slave it tried to
+    /// create, in state 0 with its timer at `now` for 0, and the AI timer at
+    /// `now` for 10. A refused CreateObject still appends its node
+    /// (`0x006AF258..0x006AF2C5`), which AI_Update then loses (state 6); the
+    /// heap leaves that node's state unwritten, and 0 stands for it.
     pub(crate) fn new(
         slave_type: InternedId,
-        slaves: impl IntoIterator<Item = u64>,
+        slaves: impl IntoIterator<Item = Option<u64>>,
         regen_rate: i32,
         reload_rate: i32,
         now: i32,
@@ -166,7 +177,7 @@ impl SlaveManager {
             nodes: slaves
                 .into_iter()
                 .map(|slave| SlaveNode {
-                    slave: Some(slave),
+                    slave,
                     state: SlaveState::Ready,
                     timer: CdTimer::started(now, 0),
                 })
@@ -186,6 +197,7 @@ impl SlaveManager {
         self.frame
     }
 
+    #[cfg(test)]
     pub(crate) fn nodes(&self) -> &[SlaveNode] {
         &self.nodes
     }
@@ -221,6 +233,63 @@ impl SlaveManager {
         self.nodes = nodes;
         self.ai_timer = ai_timer;
     }
+}
+
+/// The slave side, on the slave itself: SlaveOwner (`TechnoClass+0x2DC`),
+/// the master whose manager holds it, and its Storage (`+0x33C`), one bale
+/// per level of ore or gems. Only this module writes it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SlaveLink {
+    owner: Option<u64>,
+    cargo: Vec<CargoBale>,
+}
+
+impl SlaveLink {
+    /// SlaveOwner: the master whose manager holds this slave.
+    pub(crate) fn owner(&self) -> Option<u64> {
+        self.owner
+    }
+
+    /// The Storage levels the slave carries, in the order it cut them.
+    pub(crate) fn cargo(&self) -> &[CargoBale] {
+        &self.cargo
+    }
+
+    /// A slave of `master` carrying `cargo`, for fixtures.
+    #[cfg(test)]
+    pub(crate) fn for_test(master: Option<u64>, cargo: Vec<CargoBale>) -> Self {
+        Self {
+            owner: master,
+            cargo,
+        }
+    }
+}
+
+/// The manager's owner's cell (`vt+0x1B8`): its coordinate's cell.
+pub(crate) fn owner_cell(owner: &GameEntity) -> (i16, i16) {
+    let coord = crate::sim::movement::ground_pose::position_world_coord(&owner.position);
+    ((coord.x / 256) as i16, (coord.y / 256) as i16)
+}
+
+/// `SlaveManagerClass::GetDeployCenter @ 0x006B0690` for the manager's
+/// owner: its cell ([`owner_cell`]) plus `(FoundationWidth - 1,
+/// FoundationHeight / 2)` for a building, whose type's `foundation` the
+/// caller supplies, else the owner's own cell. CellStruct shorts; the height
+/// halves with `CDQ; SUB EAX,EDX; SAR 1`. `None` for a building whose
+/// foundation is unknown.
+pub(crate) fn deploy_center(
+    owner: &GameEntity,
+    foundation: Option<(u16, u16)>,
+) -> Option<(i16, i16)> {
+    let cell = owner_cell(owner);
+    if owner.category != EntityCategory::Structure {
+        return Some(cell);
+    }
+    let (width, height) = foundation?;
+    Some((
+        cell.0.wrapping_add((i32::from(width) - 1) as i16),
+        cell.1.wrapping_add((i32::from(height) / 2) as i16),
+    ))
 }
 
 /// `0x006B1A70`: `ftol(Sqrt_Approx(dx*dx + dy*dy))` over a cell difference,
@@ -285,7 +354,7 @@ impl Simulation {
         };
         let mut slaves = Vec::with_capacity(count as usize);
         for _ in 0..count {
-            let Some(slave) = self.construct_object_limbo_at_height(
+            let slave = self.construct_object_limbo_at_height(
                 &slave_type,
                 &owner,
                 cell.0,
@@ -293,11 +362,9 @@ impl Simulation {
                 facing,
                 z,
                 rules,
-            ) else {
-                continue;
-            };
-            if let Some(entity) = self.substrate.entities.get_mut(slave) {
-                entity.slave_owner = Some(master);
+            );
+            if let Some(entity) = slave.and_then(|slave| self.substrate.entities.get_mut(slave)) {
+                entity.slave.owner = Some(master);
             }
             slaves.push(slave);
         }
@@ -413,7 +480,9 @@ impl Simulation {
                     return;
                 };
                 let cell = (entity.position.rx, entity.position.ry);
-                let harvesting = entity.mission.current().known() == Some(MissionType::Harvest);
+                // 0x00522FC0: Get_Mission (vt+0x184 = 0x005B3040, the current
+                // mission, else the queued one) is Harvest.
+                let harvesting = entity.mission.effective().known() == Some(MissionType::Harvest);
                 if self.slave_is_full(slave, rules) {
                     // 0x006AF8F3: archive its cell and carry the load home.
                     if let Some(entity) = self.substrate.entities.get_mut(slave) {
@@ -441,7 +510,8 @@ impl Simulation {
                 if !node.timer.expired(now) {
                     return;
                 }
-                // 0x006AFCE6: back to the type's Strength, then ready.
+                // 0x006AFCDF..0x006AFCF4: Strength and EstimatedHealth back to
+                // the type's Strength, then ready.
                 if let Some(slave) = node.slave {
                     let strength = self
                         .substrate
@@ -453,6 +523,7 @@ impl Simulation {
                         (strength, self.substrate.entities.get_mut(slave))
                     {
                         entity.health.current = strength;
+                        entity.estimated_health.reset(strength);
                     }
                 }
                 node.state = SlaveState::Ready;
@@ -526,25 +597,24 @@ impl Simulation {
         };
         let building = owner.category == EntityCategory::Structure;
         let unit = owner.category == EntityCategory::Unit;
-        let mission = owner.mission.current().known();
+        let constructing_or_selling = owner.constructing_or_selling();
+        // BState (`+0x534`) is 0, BSTATE_CONSTRUCTION, while the building
+        // plays its build-up or build-down.
+        let built = owner.building_up.is_none() && owner.building_down.is_none();
         let Some(state) = self.slave_manager(master).map(SlaveManager::state) else {
             return;
         };
         match state {
             ManagerState::Ready => {
-                // 0x006AFD7A: a building that is neither building up nor sold.
-                if building
-                    && !matches!(
-                        mission,
-                        Some(MissionType::Selling) | Some(MissionType::Construction)
-                    )
-                {
+                // 0x006AFD7A..0x006AFDA7: a building whose mission is neither
+                // Selling nor Construction.
+                if building && !constructing_or_selling {
                     self.set_manager_state(master, ManagerState::Working, i32::MAX);
                 }
             }
             ManagerState::Deployed => {
-                // 0x006AFF8E: the refinery has built up (BState, module residual).
-                if building && mission != Some(MissionType::Construction) {
+                // 0x006AFF8E..0x006AFFC0: a building whose BState is not 0.
+                if building && built {
                     self.set_manager_state(master, ManagerState::Working, i32::MAX);
                 }
             }
@@ -572,24 +642,14 @@ impl Simulation {
         }
     }
 
-    /// `SlaveManagerClass::GetDeployCenter @ 0x006B0690`: a building's cell
-    /// plus `(FoundationWidth - 1, FoundationHeight / 2)`, else the owner's
-    /// own cell.
+    /// The master's drop cell ([`deploy_center`]).
     pub(crate) fn slave_drop_cell(&self, master: u64, rules: &RuleSet) -> Option<(u16, u16)> {
         let owner = self.substrate.entities.get(master)?;
-        let cell = (owner.position.rx, owner.position.ry);
-        if owner.category != EntityCategory::Structure {
-            return Some(cell);
-        }
-        let object = self.object_type(owner.type_ref(), rules)?;
-        let (width, height) = crate::rules::foundation::foundation_dimensions(&object.foundation);
-        // CellStruct shorts; the height halves with CDQ; SUB EAX,EDX; SAR 1.
-        let dx = (i32::from(width) - 1) as i16;
-        let dy = (i32::from(height) / 2) as i16;
-        Some((
-            (cell.0 as i16).wrapping_add(dx) as u16,
-            (cell.1 as i16).wrapping_add(dy) as u16,
-        ))
+        let foundation = self
+            .object_type(owner.type_ref(), rules)
+            .map(|object| crate::rules::foundation::foundation_dimensions(&object.foundation));
+        let (x, y) = deploy_center(owner, foundation)?;
+        Some((x as u16, y as u16))
     }
 
     /// The slave's class setter `vt+0x480(cell, 1)` then
@@ -634,7 +694,7 @@ impl Simulation {
         let storage = self
             .object_type(entity.type_ref(), rules)
             .map_or(0, |object| object.storage);
-        storage > 0 && entity.slave_cargo.len() as i64 == i64::from(storage)
+        storage > 0 && entity.slave.cargo.len() as i64 == i64::from(storage)
     }
 
     /// DeploySlaves (`0x006B04C0`): every node in state 0, last first. The
@@ -796,7 +856,7 @@ impl Simulation {
         };
         self.limbo_slave(slave, rules);
         if let Some(entity) = self.substrate.entities.get_mut(slave) {
-            entity.slave_owner = Some(master);
+            entity.slave.owner = Some(master);
         }
         node.state = SlaveState::Ready;
         node.timer.start(self.now_frame(), 0);
@@ -838,7 +898,7 @@ impl Simulation {
                 crate::sim::miner::extract_bale(self, rules, registry, cell, &config)
                 && let Some(entity) = self.substrate.entities.get_mut(slave)
             {
-                entity.slave_cargo.push(bale);
+                entity.slave.cargo.push(bale);
             }
             return (harvest_rate, false);
         }
@@ -847,7 +907,9 @@ impl Simulation {
     }
 
     fn slave_do_action(&mut self, slave: u64, action: i32, rules: &RuleSet) {
-        if let Err(cause) = self.infantry_do_action(slave, action, rules) {
+        // Mission_Harvest (`0x00522E87`, `0x00522EEB`, `0x00522F90`) and the
+        // cheer (`0x00522C19`) push force 0.
+        if let Err(cause) = self.infantry_do_action(slave, action, false, rules) {
             log::debug!("slave {slave} Do_Action({action}): {cause}");
         }
     }
@@ -862,7 +924,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(slave)
-            .map(|entity| std::mem::take(&mut entity.slave_cargo))
+            .map(|entity| std::mem::take(&mut entity.slave.cargo))
         else {
             return;
         };
@@ -898,7 +960,7 @@ impl Simulation {
             .substrate
             .entities
             .get(slave)
-            .and_then(|entity| entity.slave_owner)
+            .and_then(|entity| entity.slave.owner)
         else {
             return;
         };
@@ -915,7 +977,7 @@ impl Simulation {
             node.timer.start(now, manager.regen_rate);
         }
         if let Some(entity) = self.substrate.entities.get_mut(slave) {
-            entity.slave_owner = None;
+            entity.slave.owner = None;
         }
     }
 
@@ -923,7 +985,9 @@ impl Simulation {
     /// InfantryClass destructor leaves its node (RemoveSlave at
     /// `0x00517E22`), and a master still holding its manager frees its
     /// slaves with no killer and no house (TechnoClass destructor
-    /// `0x006F4571`). A rules-less drain (test fixtures) only drops the links.
+    /// `0x006F4571`). A rules-less drain (test fixtures) has no house to hand
+    /// the ones outside to: they only lose their link, and the ones inside
+    /// are UnInit.
     pub(crate) fn release_slave_links_at_destruction(
         &mut self,
         id: u64,
@@ -942,9 +1006,13 @@ impl Simulation {
                 else {
                     return;
                 };
-                for slave in manager.slaves() {
-                    if let Some(entity) = self.substrate.entities.get_mut(slave) {
-                        entity.slave_owner = None;
+                for slave in manager.nodes.iter().rev().filter_map(|node| node.slave) {
+                    let Some(entity) = self.substrate.entities.get_mut(slave) else {
+                        continue;
+                    };
+                    entity.slave.owner = None;
+                    if entity.lifecycle.in_limbo {
+                        self.uninit_with_context(slave, UninitContext::default());
                     }
                 }
             }
@@ -985,7 +1053,7 @@ impl Simulation {
             let Some(entity) = self.substrate.entities.get_mut(slave) else {
                 continue;
             };
-            entity.slave_owner = None;
+            entity.slave.owner = None;
             if entity.lifecycle.in_limbo {
                 self.slave_dies_inside(slave, killer, rules);
                 continue;
@@ -1133,7 +1201,7 @@ impl Simulation {
         self.free_slaves(to, None, None, rules, registry);
         for slave in manager.slaves() {
             if let Some(entity) = self.substrate.entities.get_mut(slave) {
-                entity.slave_owner = Some(to);
+                entity.slave.owner = Some(to);
             }
         }
         if let Some(entity) = self.substrate.entities.get_mut(to) {

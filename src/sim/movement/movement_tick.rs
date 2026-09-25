@@ -135,7 +135,7 @@ pub(super) fn snapshot_mover(
             .as_ref()
             .and_then(|nav| nav_target_object_cell(entities, nav)),
         allow_zone_hierarchy: playfield_bounds.is_none() || e.in_playfield,
-        slave_deposit_cells: if e.slave_owner.is_some() {
+        slave_deposit_cells: if e.slave.owner().is_some() {
             crate::sim::slave_deposit::slave_deposit_cells(entities, entity_id, &|owner| {
                 type_handles
                     .zip(rules)
@@ -537,6 +537,22 @@ fn process_pending_drive_arrivals(
         return;
     };
     for &entity_id in entity_order {
+        // A slave's search admits its master's deposit Cells here too
+        // (`AStar_main_loop 0x00429A90` asks each neighbour's Can_Enter_Cell).
+        let deposit_cells = entities
+            .get(entity_id)
+            .filter(|entity| {
+                entity.navigation.pending_arrival_clear && entity.slave.owner().is_some()
+            })
+            .map_or([None, None], |_| {
+                crate::sim::slave_deposit::slave_deposit_cells(entities, entity_id, &|owner| {
+                    rules
+                        .and_then(|rules| rules.object(interner.resolve(owner.type_ref())))
+                        .map(|kind| {
+                            crate::rules::foundation::foundation_dimensions(&kind.foundation)
+                        })
+                })
+            });
         let Some(entity) = entities.get_mut(entity_id) else {
             continue;
         };
@@ -622,7 +638,10 @@ fn process_pending_drive_arrivals(
             entity.too_big_to_fit_under_bridge,
             entity_block_map,
             // No `MoverSnapshot` on this path; see the constructor's note.
-            super::MoverPathFacts::from_entity_without_wall_arm(entity, 0),
+            super::MoverPathFacts {
+                slave_deposit_cells: deposit_cells,
+                ..super::MoverPathFacts::from_entity_without_wall_arm(entity, 0)
+            },
             ctx.playfield_bounds.is_none() || entity.in_playfield,
         ) else {
             // VERA-internal retry policy: pathfinding failed, so re-arm the

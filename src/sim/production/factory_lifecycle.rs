@@ -645,7 +645,7 @@ pub(crate) fn validate_restored_factory_state(
                 "constructed identity has the wrong concrete category",
             ));
         }
-        if entity.spawn_owner_id.is_some() || entity.slave_owner.is_some() {
+        if entity.spawn_owner_id.is_some() || entity.slave.owner().is_some() {
             return Err(fail(owner, "factory root is itself a manager child"));
         }
         // Factory admission validates retained identity and membership, without

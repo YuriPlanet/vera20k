@@ -97,7 +97,7 @@ pub(super) fn children(sim: &Simulation, parent: u64) -> Vec<u64> {
             .get(id)
             .expect("held manager child remains represented");
         assert!(child.lifecycle.in_limbo && !child.lifecycle.cell_marked);
-        assert!(child.spawn_owner_id == Some(parent) || child.slave_owner == Some(parent));
+        assert!(child.spawn_owner_id == Some(parent) || child.slave.owner() == Some(parent));
     }
     ids
 }

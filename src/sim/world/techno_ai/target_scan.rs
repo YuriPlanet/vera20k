@@ -290,7 +290,7 @@ pub(super) fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> 
     if entity.temporal.is_warping_someone() {
         return false;
     }
-    if entity.slave_owner.is_some() {
+    if entity.slave.owner().is_some() {
         return false;
     }
     let Some(obj) = rules.object(sim.interner.resolve(entity.type_ref())) else {

@@ -18,6 +18,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::world::Simulation;
+use crate::util::fixed_math::SimFixed;
 
 /// Infantry 0x51DAF6..0x51DB44: the action the failed-path receiver requests
 /// from `Do_Action` before it tests the current cell.
@@ -160,6 +161,7 @@ impl Simulation {
             id,
             doing,
             requested,
+            false,
             &type_id,
             movement_zone,
             on_bridge,
@@ -207,13 +209,14 @@ impl Simulation {
         Ok(())
     }
 
-    /// `InfantryClass::Do_Action` 0x0051D6F0 with force and random-frame
-    /// arguments 0 for `requested`, as the class's own receivers request it
-    /// (see [`Self::apply_infantry_do_action`]).
+    /// `InfantryClass::Do_Action` 0x0051D6F0 for `requested` with the
+    /// caller's `force` and a random-frame argument 0, as the class's own
+    /// receivers request it (see [`Self::apply_infantry_do_action`]).
     pub(crate) fn infantry_do_action(
         &mut self,
         id: u64,
         requested: i32,
+        force: bool,
         rules: &RuleSet,
     ) -> Result<(), String> {
         let actor = self
@@ -236,6 +239,7 @@ impl Simulation {
             id,
             doing,
             requested,
+            force,
             &type_id,
             movement_zone,
             on_bridge,
@@ -243,10 +247,66 @@ impl Simulation {
         )
     }
 
+    /// `InfantryClass::DoType_Sequencer @ 0x00520AE0` for an Infantry whose
+    /// Doing `action` has played its sequence to the end: VERA's animation
+    /// clock (`sim::animation`) stands for the stage (`+0xF8`, `+0x100..`)
+    /// that Do_Action arms, and reports the end. VERA runs the arm for the
+    /// Cheer (32) alone; the other actions it installs hold (Ready, Prone,
+    /// Deployed), end in their own owners (the death sequences) or stay a
+    /// residual (Shovel, `sim::slave_manager`).
+    ///
+    /// The Cheer takes the default arm (`0x00520CEB..0x00520E4A`), a forced
+    /// Do_Action: standing (locomotor `Is_Moving` false, or its speed
+    /// fraction `+0x578` at most 0.1), Prone (2) when prone (`+0x6DB`), else
+    /// Ready (0); moving, Crawl (6) or Walk (3). VERA's Do_Action represents
+    /// neither walking action, and the walk's end clears both
+    /// (`0x00521B20`), so a moving cheerer's Doing is cleared at once. The
+    /// completion facing is the animation clock's.
+    pub(crate) fn infantry_action_completed(&mut self, id: u64, action: i32, rules: &RuleSet) {
+        const DO_CHEER: i32 = 32;
+        if action != DO_CHEER {
+            return;
+        }
+        let frame = self.session.binary_frame;
+        let Some(actor) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if actor.mission_leaf.as_infantry().map(|leaf| leaf.doing()) != Some(DO_CHEER) {
+            return;
+        }
+        // 0.1 lies between SimFixed raw 6553 and 6554, as the fire error reads
+        // it (`fire_error_world.rs`).
+        let moving = super::ready_producer::is_moving_now_for(actor, frame)
+            && actor.foot_speed.applied_fraction > SimFixed::ONE / SimFixed::from_num(10);
+        let prone = actor
+            .infantry
+            .as_ref()
+            .is_some_and(|infantry| infantry.is_prone);
+        let result = if moving {
+            self.substrate
+                .entities
+                .get_mut(id)
+                .ok_or_else(|| "retired Do_Action receiver".to_string())
+                .and_then(|actor| {
+                    actor
+                        .mission_leaf
+                        .set_infantry_doing_verified(-1)
+                        .map_err(|error| format!("{error:?}"))
+                })
+        } else {
+            self.infantry_do_action(id, if prone { 2 } else { 0 }, true, rules)
+        };
+        if let Err(cause) = result {
+            log::debug!("infantry {id} Cheer completion: {cause}");
+        }
+    }
+
     /// Bounded `InfantryClass::Do_Action` 0x0051D6F0 for requests 0 (Ready),
-    /// 2 (Prone), 28 (Deployed), 32 (Cheer) and 38 (Shovel) with force and
-    /// random-frame arguments 0. The requested-sequence count gate (Type+E3C record)
-    /// precedes everything.
+    /// 2 (Prone), 28 (Deployed), 32 (Cheer) and 38 (Shovel) with a
+    /// random-frame argument 0. The requested-sequence count gate (Type+E3C
+    /// record) precedes everything. An unchanged action always refuses
+    /// (`0x0051D90B`); an established action that is not interruptible
+    /// refuses unless `force` (`0x0051D919..0x0051D92E`).
     /// Two remaps change the written action and carry side effects Rust does
     /// not own (the +6E8 wet reclassification with its sound request at
     /// 0x51D842..0x51D8B8, and the airborne Hover remap through vtable+0x54):
@@ -262,6 +322,7 @@ impl Simulation {
         id: u64,
         current: i32,
         requested: i32,
+        force: bool,
         type_id: &str,
         movement_zone: MovementZone,
         on_bridge: bool,
@@ -304,7 +365,12 @@ impl Simulation {
                 return Ok(());
             }
         }
-        if !failed_path_do_action_admits(current, requested) {
+        let admitted = if force {
+            requested != current
+        } else {
+            failed_path_do_action_admits(current, requested)
+        };
+        if !admitted {
             return Ok(());
         }
         let actor = self

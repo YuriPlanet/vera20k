@@ -303,26 +303,13 @@ impl CaptureVictimFacts {
                     frame,
                 )
             })
-            || constructing_or_selling(target);
+            // CanCapture's gate 9 (`0x00471D1E..0x00471D2C`).
+            || target.constructing_or_selling();
         Self {
             owner: target.owner(),
             capturable: !refused,
         }
     }
-}
-
-/// CanCapture's gate 9 (`0x00471D1E..0x00471D2C`) and the reset's skip: the
-/// current mission is Construction (0x12) or Selling (0x13). VERA keeps a
-/// building's build-up and its build-down (the Construction Yard repack) in
-/// `building_up`/`building_down` without publishing those missions, as
-/// `building_operational_state` also reads.
-fn constructing_or_selling(target: &GameEntity) -> bool {
-    target.building_up.is_some()
-        || target.building_down.is_some()
-        || matches!(
-            target.mission.current().known(),
-            Some(MissionType::Selling | MissionType::Construction)
-        )
 }
 
 /// CanCapture's manager side: the controller's house and whether its
@@ -512,7 +499,7 @@ impl Simulation {
             && self
                 .object_type(target.type_ref(), rules)
                 .is_some_and(|object| object.is_simple_deployer);
-        if simple_deployer_unloading || constructing_or_selling(target) {
+        if simple_deployer_unloading || target.constructing_or_selling() {
             return;
         }
         self.reset_orders_to_guard(target_id, rules);

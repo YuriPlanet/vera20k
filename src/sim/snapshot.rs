@@ -1506,12 +1506,12 @@ fn restore_object_references(
                 target_id,
             )?;
         }
-        if let Some(master_id) = entity.slave_owner {
+        if let Some(master_id) = entity.slave.owner() {
             require_resolved_reference(
                 entity_ids.contains(&master_id),
                 "EntityStore",
                 entity_id,
-                "slave_owner",
+                "slave.owner",
                 "EntityStore",
                 master_id,
             )?;
@@ -4051,7 +4051,7 @@ mod tests {
             crate::sim::game_entity::GameEntity::test_default(1, "SMIN", "Americans", 4, 5);
         parent.techno_ctor_random_word = 0x1111;
         let slav = sim.intern("SLAV");
-        parent.slave_manager = Some(SlaveManager::new(slav, [2, 3], 500, 25, 7));
+        parent.slave_manager = Some(SlaveManager::new(slav, [Some(2), Some(3)], 500, 25, 7));
         sim.substrate.entities.insert(parent);
         for (stable_id, word) in [(2, 0x2222), (3, 0x3333)] {
             let mut slave = crate::sim::game_entity::GameEntity::test_default(
@@ -4062,18 +4062,17 @@ mod tests {
                 5,
             );
             slave.techno_ctor_random_word = word;
-            slave.slave_owner = Some(1);
+            // Slave 3 carries one level of gems.
+            let cargo = (stable_id == 3)
+                .then_some(crate::sim::miner::CargoBale {
+                    resource_type: crate::sim::miner::ResourceType::Gem,
+                    value: 50,
+                })
+                .into_iter()
+                .collect();
+            slave.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(1), cargo);
             sim.substrate.entities.insert(slave);
         }
-        sim.substrate
-            .entities
-            .get_mut(3)
-            .unwrap()
-            .slave_cargo
-            .push(crate::sim::miner::CargoBale {
-                resource_type: crate::sim::miner::ResourceType::Gem,
-                value: 50,
-            });
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let source_rng = sim.scenario_rng.logical_state();
         let source_hash = sim.state_hash();
@@ -4088,7 +4087,7 @@ mod tests {
         for (stable_id, word) in [(2, 0x2222), (3, 0x3333)] {
             let slave = restored.substrate.entities.get(stable_id).unwrap();
             assert_eq!(slave.techno_ctor_random_word, word);
-            assert_eq!(slave.slave_owner, Some(1));
+            assert_eq!(slave.slave.owner(), Some(1));
         }
         assert_eq!(
             restored
@@ -4096,7 +4095,8 @@ mod tests {
                 .entities
                 .get(3)
                 .unwrap()
-                .slave_cargo
+                .slave
+                .cargo()
                 .len(),
             1
         );
@@ -4133,12 +4133,8 @@ mod tests {
         assert_ne!(changed_order.state_hash(), source_hash);
 
         let mut changed_owner = restored;
-        changed_owner
-            .substrate
-            .entities
-            .get_mut(2)
-            .unwrap()
-            .slave_owner = Some(3);
+        changed_owner.substrate.entities.get_mut(2).unwrap().slave =
+            crate::sim::slave_manager::SlaveLink::for_test(Some(3), Vec::new());
         assert_ne!(changed_owner.state_hash(), source_hash);
     }
 

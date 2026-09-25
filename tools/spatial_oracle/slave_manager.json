@@ -33375,6 +33375,98 @@
       }
     },
     {
+      "events": [],
+      "input": {
+        "bstate": 0,
+        "manager_state": 4,
+        "name": "m4_building_up"
+      },
+      "state": {
+        "balance": 0,
+        "cells": {},
+        "frame": 200,
+        "manager_frame": 0,
+        "manager_state": 4,
+        "nodes": [],
+        "random_indices": [
+          0,
+          103
+        ],
+        "slaves": {
+          "7": {
+            "archive": null,
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "events": [],
+      "input": {
+        "bstate": 1,
+        "manager_state": 4,
+        "name": "m4_built"
+      },
+      "state": {
+        "balance": 0,
+        "cells": {},
+        "frame": 200,
+        "manager_frame": 2147483647,
+        "manager_state": 5,
+        "nodes": [],
+        "random_indices": [
+          0,
+          103
+        ],
+        "slaves": {
+          "7": {
+            "archive": null,
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      }
+    },
+    {
       "events": [
         [
           "random",
