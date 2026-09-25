@@ -1903,42 +1903,67 @@ impl Simulation {
                 {
                     return false;
                 }
-                let Some(e) = self.substrate.entities.get_mut(*entity_id) else {
+                if self
+                    .substrate
+                    .entities
+                    .get(*entity_id)
+                    .is_none_or(|e| e.miner.is_none())
+                {
                     return false;
-                };
-                let Some(ref mut miner) = e.miner else {
-                    return false;
-                };
-                miner.target_ore_cell = Some((*target_rx, *target_ry));
-                // Clear in-progress movement so the miner re-paths to the new target.
-                e.movement_target = None;
+                }
                 // A harvest order is a MEGAMISSION like any other: it ends a
                 // refinery handshake in progress (`miner_dock::break_for_retask`).
-                // This arm assigns the mission below instead of queueing it, so
-                // an unload in progress is abandoned here rather than by the
-                // Unload mission's contact gate.
+                // An unload in progress is abandoned here rather than by the
+                // Unload mission's contact gate (`0x0073DEE0`).
                 crate::sim::miner::miner_dock::break_for_retask(self, *entity_id, rules);
                 crate::sim::miner::clear_unload_latch(self, *entity_id);
-                // Commit the Harvest mission and the MoveToOre cursor of
-                // record. Native (EventClass::Execute MEGAMISSION,
-                // disassembled 2026-09-05): the client's mission byte passes
-                // through `FootClass 0x004DF0E0` (vtable `+0x4A4`, unchanged
-                // unless 0x1D) into `Queue_Mission(mission, 0)` at
-                // `0x004C73B9`, then clears SuspendedNavCom/SuspendedTarCom.
-                // VERA assigns instead of queueing — the miner therefore
-                // leaves Guard on this frame rather than at the host's next
-                // Ready-to-Commence step (a one-frame shape difference,
-                // VERA-internal). This is the production path that returns a
-                // war miner parked on Guard by the Harvest idle tail to work.
+                // Native (EventClass::Execute MEGAMISSION, disassembled
+                // 2026-09-05/-25): the client's mission byte passes through
+                // `FootClass 0x004DF0E0` (vtable `+0x4A4`, unchanged unless
+                // 0x1D) into `Queue_Mission(mission, 0)` at `0x004C73B9`,
+                // clears SuspendedNavCom/SuspendedTarCom, clears the
+                // ArchiveTarget (`0x004C7448`) and hands the clicked cell to
+                // the class setter (`vt+0x480(cell, 1)`, `0x004C747C`).
+                // Queue_Mission (`0x005B35E0`) leaves a miner already on
+                // Harvest alone (`0x005B3601..0x005B3612`): its state, stage
+                // and Unit+0x6D2 carry on, so state 1 waits out the drive as
+                // a hop and cuts where it ends. Any other mission queues
+                // Harvest for the host's next Ready/Commence, and state 0
+                // cuts where the drive ends. VERA's ForcedReturn cursor
+                // stands for the return order's Enter mission, which Queue
+                // replaces, so that miner restarts at state 0 here.
+                // RESIDUAL: `0x004DA1C0` after the archive clear and the
+                // Assign_Target of the event's target are not represented.
                 let now = self.session.binary_frame;
-                let _ = self.mission_assign_exact(
-                    *entity_id,
-                    crate::sim::mission::MissionId::from_known(MissionType::Harvest),
-                    now,
-                );
+                let harvest = crate::sim::mission::MissionId::from_known(MissionType::Harvest);
+                let forced_return = self.substrate.entities.get(*entity_id).is_some_and(|e| {
+                    e.miner_state() == Some(crate::sim::miner::MinerState::ForcedReturn)
+                });
+                if forced_return {
+                    let _ = self.mission_assign_exact(*entity_id, harvest, now);
+                } else {
+                    let _ = self.mission_queue_exact(
+                        *entity_id,
+                        harvest,
+                        0,
+                        now,
+                        &crate::sim::mission::authority::EntityReadyInputProvider,
+                    );
+                }
                 if let Some(e) = self.substrate.entities.get_mut(*entity_id) {
-                    e.mission
-                        .set_handler_state(crate::sim::miner::MinerState::MoveToOre.cursor());
+                    e.set_archive_target(None);
+                    // Clear in-progress movement so the miner re-paths.
+                    e.movement_target = None;
+                }
+                if let (Some(rules), Some(grid)) = (rules, path_grid) {
+                    let _ = crate::sim::miner::miner_system::issue_stock_miner_drive_move_with_overlay_registry(
+                        self,
+                        rules,
+                        grid,
+                        *entity_id,
+                        (*target_rx, *target_ry),
+                        overlay_registry,
+                    );
                 }
                 true
             }
@@ -3661,7 +3686,7 @@ mod tests {
             entity.display_type_override = Some(sim.interner.intern("HORV"));
             let miner = entity.miner.as_mut().unwrap();
             miner.unload_active = true;
-            miner.unload_cluster_repeat = 1;
+            miner.stage_rate = 1;
         }
 
         let applied = sim.apply_command(

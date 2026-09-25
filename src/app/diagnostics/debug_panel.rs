@@ -425,9 +425,6 @@ pub(crate) fn draw_debug_panel(ctx: &egui::Context, state: &AppState) {
                         crate::sim::miner::MinerState::Harvest => {
                             egui::Color32::from_rgb(20, 120, 20)
                         }
-                        crate::sim::miner::MinerState::MoveToOre => {
-                            egui::Color32::from_rgb(160, 120, 0)
-                        }
                         crate::sim::miner::MinerState::SearchOre => {
                             egui::Color32::from_rgb(0, 90, 160)
                         }
@@ -448,12 +445,10 @@ pub(crate) fn draw_debug_panel(ctx: &egui::Context, state: &AppState) {
                         miner.cargo.len(),
                         miner.capacity_bales
                     ));
-                    ui.label(format!("Harvest timer: {:?}", miner.harvest_timer));
-                    if let Some(ore) = miner.target_ore_cell {
-                        ui.label(format!("Target ore: ({},{})", ore.0, ore.1));
-                    } else {
-                        ui.label("Target ore: (none)");
-                    }
+                    ui.label(format!(
+                        "Stage: {} (rate {}) harvesting: {}",
+                        miner.stage_value, miner.stage_rate, miner.harvesting
+                    ));
                     if let Some(ref_id) = miner.reserved_refinery {
                         let ref_type = sim
                             .entities()
@@ -462,8 +457,10 @@ pub(crate) fn draw_debug_panel(ctx: &egui::Context, state: &AppState) {
                             .unwrap_or("?");
                         ui.label(format!("Refinery: {} (id={})", ref_type, ref_id));
                     }
-                    if let Some(last) = miner.last_harvest_cell {
-                        ui.label(format!("Last harvest: ({},{})", last.0, last.1));
+                    if let Some(crate::sim::combat::TargetKind::Cell(x, y)) =
+                        entity.archive_target()
+                    {
+                        ui.label(format!("Archived ore: ({x},{y})"));
                     }
                     let has_mt = entity.movement_target.is_some();
                     let has_tp = entity.teleport_state.is_some();

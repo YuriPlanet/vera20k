@@ -375,7 +375,7 @@ pub(crate) fn respond_to_base_attack(
     let victim_is_self_anchor = context
         .entities
         .get(victim_id)
-        .and_then(|victim| victim.base_defense_response.archive_target)
+        .and_then(|victim| victim.archive_target())
         == Some(TargetKind::Entity(victim_id));
     let candidate_ids = context.entities.keys_sorted();
 
@@ -502,9 +502,7 @@ pub(crate) fn respond_to_base_attack(
             continue;
         };
         queue_entity_mission_deferred(responder_entity, MissionId::from_known(mission));
-        responder_entity
-            .base_defense_response
-            .set_archive_target(Some(TargetKind::Entity(victim_id)));
+        responder_entity.set_archive_target(Some(TargetKind::Entity(victim_id)));
         represented_assign_target_admitted(
             responder_entity,
             Some(TargetKind::Entity(attacker_id)),

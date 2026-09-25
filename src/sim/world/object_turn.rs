@@ -824,6 +824,8 @@ impl Simulation {
         if let Some(rules) = rules {
             sim.crash_edge_sounds(stable_id, rules);
         }
+        // UnitClass::AI after FootClass::AI, before its second Ready/Commence.
+        crate::sim::miner::miner_system::unit_ai_clear_harvesting(sim, stable_id);
         sim.object_ai_post_movement_promote_one(stable_id, rules);
         if let Some(rules) = rules {
             sim.aircraft_crash_smoke(stable_id, rules);

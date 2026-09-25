@@ -2135,11 +2135,22 @@ impl Simulation {
                     None::<u64>.hash(hasher);
                 }
                 miner.reserved_refinery.hash(hasher);
-                miner.target_ore_cell.hash(hasher);
-                // harvest_timer is now a MissionTimer (start_frame + duration)
-                // — intended one-time re-baseline. unload_timer was deleted.
-                miner.harvest_timer.hash(hasher);
+                let native_ore_field = schema.includes(HashFeature::NativeOreField);
+                if !native_ore_field {
+                    // The retired target_ore_cell (None) and harvest_timer
+                    // (unarmed).
+                    None::<(u16, u16)>.hash(hasher);
+                    crate::sim::mission::MissionTimer::default().hash(hasher);
+                }
                 miner.forced_return.hash(hasher);
+                if native_ore_field {
+                    // Unit+0x6D1/+0x6D2 and the +0xF8 StageClass.
+                    miner.unload_active.hash(hasher);
+                    miner.harvesting.hash(hasher);
+                    miner.stage_value.hash(hasher);
+                    miner.stage_timer.hash(hasher);
+                    miner.stage_rate.hash(hasher);
+                }
                 if retired_dock_fold {
                     // dock_queued false, dock_phase Approach (discriminant 0),
                     // dock_pivot_facing None.
@@ -3868,8 +3879,7 @@ mod rally_hash_tests {
         let mut changed = Simulation::new();
         let mut entity = entity;
         entity.base_defense_response.recruitable_b = false;
-        entity.base_defense_response.archive_target =
-            Some(crate::sim::combat::TargetKind::Entity(7));
+        entity.set_archive_target(Some(crate::sim::combat::TargetKind::Entity(7)));
         entity.base_defense_response.cooldown_start_frame = 12;
         entity.base_defense_response.cooldown_duration_frames = 225;
         changed.substrate.entities.insert(entity);

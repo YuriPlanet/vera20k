@@ -596,30 +596,38 @@ pub(crate) fn build_unit_instances(
         // Emit harvest overlay (oregath.shp) if the miner is actively harvesting.
         // OREGATH is an SHP sprite from sprite_atlas, but remains an owned piece
         // of its harvester's Ground slot so atlas identity cannot re-sort it.
-        if let Some(ref ho) = entity.harvest_overlay {
-            if ho.visible {
-                if let Some((page, instance)) = emit_harvest_overlay(
-                    state,
-                    entity,
-                    entity.facing,
-                    ho,
-                    center_x,
-                    center_y,
-                    pos.z,
-                    tint,
-                    palette_light.brightness(),
-                    draw_state,
-                ) {
-                    if collect_ground {
-                        ground_pieces.push(GroundPieceInstance {
-                            target: GroundTexture::ShpPage(page),
-                            render_z: RenderZPolicy::ReadOnly,
-                            instance,
-                        });
-                    } else if let Some(bucket) = shp_paged.get_mut(page) {
-                        bucket.push(instance);
-                    }
-                }
+        // `UnitClass::DrawExtras @ 0x0073CEC0` draws it from Unit+0x6D2 only
+        // while the locomotor is not moving now (`[loco+0x80]` at
+        // `0x0073D114`: Drive `0x004AFC20`, rotating or moving with speed),
+        // so a miner hopping to its next ore cell shows none. RESIDUAL:
+        // native frames it from `(Unit+0x538 + frame) % 15`; this overlay
+        // keeps its own counter.
+        let moving =
+            crate::sim::movement::ready_producer::is_moving_now_for(entity, display_binary_frame);
+        if let Some(ref ho) = entity.harvest_overlay
+            && ho.visible
+            && !moving
+            && let Some((page, instance)) = emit_harvest_overlay(
+                state,
+                entity,
+                entity.facing,
+                ho,
+                center_x,
+                center_y,
+                pos.z,
+                tint,
+                palette_light.brightness(),
+                draw_state,
+            )
+        {
+            if collect_ground {
+                ground_pieces.push(GroundPieceInstance {
+                    target: GroundTexture::ShpPage(page),
+                    render_z: RenderZPolicy::ReadOnly,
+                    instance,
+                });
+            } else if let Some(bucket) = shp_paged.get_mut(page) {
+                bucket.push(instance);
             }
         }
 

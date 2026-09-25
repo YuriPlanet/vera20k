@@ -522,7 +522,7 @@ impl Simulation {
         if let Some(target) = self.substrate.entities.get_mut(target_id) {
             target.movement_target = None;
             crate::sim::mission::concrete_effects::represented_assign_target(target, None);
-            target.base_defense_response.set_archive_target(None);
+            target.set_archive_target(None);
         }
         let _ =
             self.mission_assign_exact(target_id, MissionId::from_known(MissionType::Guard), now);

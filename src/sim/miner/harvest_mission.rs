@@ -14,11 +14,13 @@
 //! `MinerSnapshot::state`, runs the FSM step, and commits the cursor + the
 //! dispatch delay back through the mission component.
 //!
-//! Cadence (verified against the native handler): the harvesting and dock
-//! states plus the productive search paths return `DISPATCH_NEXT_FRAME`
-//! (per-frame); the return/finding-home state, the idle state, the search
-//! state's archive-consume and still-driving returns, and every cursor
-//! outside the native switch exit through the default epilogue
+//! Cadence (native rows: tools/spatial_oracle/harvest_field.json and
+//! refinery_dock.json): the harvesting and dock states, the full search
+//! state and the search that finds the miner's own cell return
+//! `DISPATCH_NEXT_FRAME` (per-frame); the return/finding-home state, the
+//! idle state, the search state's archive and scan-hit drives and its
+//! still-driving returns, and every cursor outside the native switch exit
+//! through the default epilogue
 //! (`ftol([Harvest] Rate × 900)` + `RandomRanged(0,2)` on the scenario
 //! stream, ~14-16 frames stock); the no-ore transition into idle returns the
 //! fixed 105-frame wait with no RNG draw. The Mission_Deploy state-4 dock

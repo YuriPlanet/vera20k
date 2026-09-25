@@ -96,9 +96,11 @@ def make_cmin_fixture(case):
     if 'miner_coord' in case:
         u.mem_write(ACTOR + 0x9C, dwords(*case['miner_coord']))
     if case.get('pad_unit'):
-        # A second Unit listed first in the pad cell (0x47EBA0 finds it).
+        # A second Unit listed first in the pad cell (0x47EBA0 finds it), ahead
+        # of the refinery: Occupy_Down (0x47E8A0) prepends a non-building.
         u.mem_write(PAD_UNIT, dwords(0x7F5C70))
         u.mem_write(PAD_UNIT + 0x14, dwords(5))
+        u.mem_write(PAD_UNIT + 0x30, dwords(read32(cell(*PAD) + 0xE4)))
         u.mem_write(cell(*PAD) + 0xE4, dwords(PAD_UNIT))
     for x, y in case.get('reserved', []):
         u.mem_write(cell(x, y) + 0x124, dwords(0x20))
@@ -139,6 +141,8 @@ def observe(u, read32, case):
     """refinery_dock's observers plus the CMIN hooks; returns (events, unused)."""
     events, unused = dock.observe_dock(u, read32, case)
     ore = list(case.get('ore', []))
+    # harvest_field runs the original Search_For_Tiberium_And_Move instead.
+    native_search = case.get('native_search', False)
     drives, pending, returns = list(DRIVES), [], {}
 
     def ret(cleanup, value=0):
@@ -219,7 +223,7 @@ def observe(u, read32, case):
             args = [read32(sp + i * 4) for i in range(15)]
             args[5] &= 0xFF  # a bool pushed as the whole [esp+10] dword
             events.append(['teleport_fnpc_args', cell_arg(args[1]), args[2:12]])
-        elif address == SEARCH_ORE:
+        elif address == SEARCH_ORE and not native_search:
             assert ore, ('unsupplied Search_For_Tiberium', case)
             answer = ore.pop(0)
             events.append(['search_for_tiberium', read32(sp + 4), read32(sp + 8) & 0xFF,

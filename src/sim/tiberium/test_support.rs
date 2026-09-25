@@ -131,6 +131,45 @@ pub(crate) fn place_tiberium(
     grid.place_overlay(rx, ry, overlay_id, bales.clamp(1, 11));
 }
 
+/// [`overlay_registry`] with every stock land row admitting Foot, Track and
+/// Wheel at 100%, so a recalculated ore cell carries a passable `[Tiberium]`
+/// speed row.
+pub(crate) fn overlay_registry_with_land() -> &'static OverlayTypeRegistry {
+    static REGISTRY: OnceLock<OverlayTypeRegistry> = OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        let mut text = tiberium_rules_text();
+        for land in crate::rules::terrain_rules::LandType::ALL {
+            text.push_str(&format!(
+                "[{}]\nFoot=100%\nTrack=100%\nWheel=100%\n",
+                land.section_name()
+            ));
+        }
+        OverlayTypeRegistry::from_ini(&IniFile::from_str(&text), None)
+    })
+}
+
+/// [`place_tiberium`] on a fixture with map cells: the overlay, then the
+/// cell's recalculation through the production path (`CellClass::
+/// RecalcAttributes @ 0x0047D2B0` writes LandType 5 and its speed row), as
+/// an ore cell reads to the harvest scan's Is_Cell_Harvestable.
+pub(crate) fn place_tiberium_on_map(
+    sim: &mut Simulation,
+    cell: (u16, u16),
+    resource: ResourceType,
+    bales: u8,
+) {
+    place_tiberium(sim, cell.0, cell.1, resource, bales);
+    if let (Some(grid), Some(terrain)) = (sim.overlay_grid.as_mut(), sim.resolved_terrain.as_mut())
+    {
+        grid.recalculate_runtime_cell(
+            terrain,
+            overlay_registry_with_land(),
+            cell,
+            crate::sim::overlay_grid::NavigationPublication::FrameBoundary,
+        );
+    }
+}
+
 /// Bales left on a cell (its density byte), or 0 when it holds no tiberium.
 pub(crate) fn bales_at(sim: &Simulation, rx: u16, ry: u16) -> u8 {
     let Some(grid) = sim.overlay_grid.as_ref() else {
@@ -173,10 +212,20 @@ pub(crate) fn has_tiberium(sim: &Simulation, cell: (u16, u16)) -> bool {
         .is_some_and(is_tiberium)
 }
 
-/// Remove whatever overlay the cell holds.
+/// Remove whatever overlay the cell holds; on a fixture with map cells the
+/// cell is recalculated as RecalcAttributes does (LandType back to the
+/// ground's).
 pub(crate) fn clear_tiberium(sim: &mut Simulation, cell: (u16, u16)) {
     if let Some(grid) = sim.overlay_grid.as_mut() {
         grid.clear_overlay(cell.0, cell.1);
+        if let Some(terrain) = sim.resolved_terrain.as_mut() {
+            grid.recalculate_runtime_cell(
+                terrain,
+                overlay_registry_with_land(),
+                cell,
+                crate::sim::overlay_grid::NavigationPublication::FrameBoundary,
+            );
+        }
     }
 }
 

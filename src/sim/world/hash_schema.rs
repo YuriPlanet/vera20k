@@ -125,10 +125,15 @@ pub(super) enum HashFeature {
     /// tag. Earlier schemas fold the constructor defaults in their place,
     /// which every miner outside the retired Chrono phases held.
     RetiredRefineryDockPhase = 206,
+    /// Mission_Harvest states 0/1 on the native StageClass: removes the
+    /// retired target-ore cell and harvest timer (earlier schemas fold their
+    /// defaults) and adds the harvester's Unit+0x6D1/+0x6D2 bytes and its
+    /// +0xF8 StageClass (value, timer, rate).
+    NativeOreField = 207,
     /// The crash latch and its AI edge (`FootClass+0x425`/`+0x426`) and the
     /// Fly fall counter (`FlyLocomotionClass+0x58`). Earlier schemas fold
     /// nothing: no object crashed before, so every latch and counter was zero.
-    AircraftCrash = 207,
+    AircraftCrash = 208,
 }
 
 impl HashSchema {
@@ -162,6 +167,7 @@ impl HashSchema {
                     | HashFeature::InvisoBullet
                     | HashFeature::BouncingDebris
                     | HashFeature::RetiredRefineryDockPhase
+                    | HashFeature::NativeOreField
                     | HashFeature::AircraftCrash
             ),
             #[cfg(test)]

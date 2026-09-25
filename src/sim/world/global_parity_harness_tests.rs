@@ -8,8 +8,8 @@
 //! desync tripwire for the whole mission/radio substrate migration.
 //!
 //! Coverage: two hostile houses; an Allied war factory + refinery + harvester
-//! over a seeded ore patch (the harvester gets a `Miner` component at spawn and
-//! the miner system acquires an ore target — that state folds into the hash);
+//! over a seeded ore patch (the harvester gets a `Miner` component at spawn,
+//! reaches the patch and cuts — that state folds into the hash);
 //! tanks + infantry under scripted Move/AttackMove/Stop, with the two sides
 //! closing to combat range (exercises mission retask, movement, targeting/
 //! retaliation, and the RNG streams). The harvester carries the real
@@ -157,7 +157,10 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
     // 2026-09-25 combat chain 1: Mission_Guard cadence draws from frame 0 and
     // the tank duel from tick 281 (see GLOBAL_HARNESS_FINAL_HASH).
     // 2026-09-25 combat chain 2: vehicle Guard cadence draws from frame 0.
-    0x526D_C44A_4C20_4BAB,
+    // 2026-09-25 ore-field chain: the fixture's playfield and the harvester's
+    // native ore field (see GLOBAL_HARNESS_FINAL_HASH).
+    // 2026-09-25 ore-field review: the fixture's map cells (same place).
+    0xCA99_BA6D_18DC_11B1,
     0x39F3_258B_A550_EB7C,
     0x1CE8_1848_7043_6163,
 );
@@ -662,7 +665,7 @@ const GLOBAL_PRE_SUSTAINED_SIGHT_V142_HASH: u64 = 0x4E6E_0CFE_23A8_03A7;
 
 // Schema171: fresh-turn admission/residual clearing and retained-owner hashes.
 // See TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md, PR415 causal attribution.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 1251167382382790085;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 7799745594523431133;
 // Schema174 removes folds instead of adding them: OreGrowthState's node-era
 // scanner cursor, candidate lists and sample counters, and ProductionState's
 // fallback ore overlay id. The pre-174 projection folds the values those fields
@@ -671,10 +674,10 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 125116738
 // id. It is not a general reconstruction; a scenario finalized by the map
 // loader held Some(first TIB* id). The projection must still equal the previous
 // current pin, asserted below. Rust hash-composition ratchet, not a native golden.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 3390742988134478757;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 3562761094360173403;
 // v181 adds the default Foot+580 factor to every entity's hash. The pre-181
 // assertion below retains the previous entire fixture state/RNG ratchet.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xF311_9067_82CA_C64A;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xB9B4_2173_0C3C_B00A;
 // Snapshot182 adds ordered display vectors. The pre-182 projection below
 // must reproduce the previous whole-fixture hash, including all RNG/state.
 // Schema186 removes the always-None release-tail byte from each entity. This
@@ -727,15 +730,40 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xF311_9067_82CA_
 // Techno+0x1F8, which no object here raises: composition only. Before(206)
 // reproduces the v205 pin; the three RNG stream pins, per-tick replay and the
 // miner-engagement tripwire are unchanged.
-// Schema207 folds every object's crash latch and its AI edge (Foot+0x425/
-// +0x426) and a Fly's fall counter: composition only (nothing here flies or
-// crashes). Before(207) reproduces the v206 pin; the three RNG stream pins,
-// per-tick replay and the miner-engagement tripwire are unchanged.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0xD0FD_376B_B263_8710;
-const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_CRASH_V207: u64 = 0x5F0A_B8C9_C3CC_2870;
-const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_DOCK_PHASE_V206: u64 = 0x448B_03D8_7937_09AA;
-const GLOBAL_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0x00B4_EF53_9135_6C1D;
-const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 7203384866521846607;
+// 2026-09-25 ore-field chain (behavior, snapshot 207), two causes:
+// 1. The fixture now installs the map's playfield, as map load does: the
+//    native ore scan (`Is_Cell_Harvestable`) admits only playfield cells.
+//    On origin/main 474a71ca with only that change the harvester cuts 20
+//    bales by tick 599 and the duel ends with tank 4 alive at 12 HP and tank
+//    6 at 12 HP (final 0xFE28_0F62_91CC_4516; Scenario stream
+//    0x59F4_735D_FB94_7D28; main and mapgen unchanged).
+// 2. Mission_Harvest states 0/1 run natively: the harvester reaches its
+//    field, cuts one bale per StageClass gate and hops without a fresh wait,
+//    21 bales by tick 599; its Rate epilogue draws and a mined-out cell's
+//    spread-queue draws move the Scenario stream only. The duel is as in 1.
+// Schema 207 drops the retired target-cell and harvest-timer folds and adds
+// the StageClass and Unit+0x6D1/+0x6D2; Before(207) pins that projection.
+// Every older projection moves with the behavior. Old values: the moving commit.
+// 2026-09-25 ore-field review (fixture): the scenario stands on flat map
+// cells with its playfield installed before placement and a [Tiberium] land
+// row, as a map load leaves them. Unlimbo's Unit Can_Enter_Cell and the
+// harvester's ore scan (`Is_Cell_Harvestable` through the native-compared
+// `foot_can_enter`) read them; without map cells no ore cell is harvestable.
+// The harvester still reaches its field and cuts 21 bales by tick 599; the
+// duel's timing shifts and tank 4 takes its seventh hit and dies at tick
+// 586..590 (tank 6 ends at 12 HP). Only the Scenario stream moves. Every
+// projection moves with the scenario. Old values: the moving commit.
+// 2026-09-25 combat chain 3 (snapshot 208): schema 208 folds every object's
+// crash latch and its AI edge (Foot+0x425/+0x426) and a Fly's fall counter,
+// composition only (nothing here flies or crashes): Before(208) reproduces the
+// ore-field pin, and the RNG stream pins, per-tick replay and every older
+// projection are unchanged.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x3145_96E2_22E1_1ACE;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_CRASH_V208: u64 = 0x3D39_36E9_B57B_E3C2;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_NATIVE_ORE_FIELD_V207: u64 = 0xE6BB_5A84_AF8A_DF6D;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_DOCK_PHASE_V206: u64 = 0xEDDB_A0A6_FE66_6D17;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0x9511_CDAA_E7A1_E538;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 17021100359844975026;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -777,6 +805,7 @@ fn harness_ini() -> IniFile {
          [Tiberiums]\n0=Riparius\n\n\
          [Riparius]\nImage=1\nValue=25\n\n\
          [TIB01]\nTiberium=yes\n\n\
+         [Tiberium]\nFoot=100%\nTrack=100%\nWheel=100%\n\n\
          [E1]\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\nStrength=125\nArmor=flak\nSpeed=4\nPrimary=M60\n\n\
          [MTNK]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=105mm\n\n\
          [HARV]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\nStrength=600\nArmor=heavy\nSpeed=5\nHarvester=yes\nStorage=28\nDock=GAREFN\n\n\
@@ -826,6 +855,18 @@ fn seed_scenario(
     heights: &BTreeMap<(u16, u16), u8>,
     overlays: &OverlayTypeRegistry,
 ) {
+    // Flat map cells and the playfield, as a map load installs them before
+    // placing objects: Unlimbo's Unit `Can_Enter_Cell` reads both, and the
+    // harvester's ore scan (`FootClass::Is_Cell_Harvestable @ 0x004DCE80`)
+    // admits only playfield cells of LandType 5.
+    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_flat_ground_grid(64));
+    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+        base: 0,
+        off_fc: -64,
+        off_100: -1,
+        off_104: 128,
+        off_108: 65,
+    });
     sim.spawn_from_map(
         &[
             unit("Americans", "GAWEAP", 3, 3, EntityCategory::Structure), // 1
@@ -842,8 +883,16 @@ fn seed_scenario(
     // Seed the native CellClass overlay authority near the harvester.
     let tib01 = overlays.id_for_name("TIB01").expect("harness TIB01");
     let mut overlay_grid = OverlayGrid::new(64, 64);
+    let terrain = sim.resolved_terrain.as_mut().expect("installed above");
     for (rx, ry) in [(12, 13), (13, 13), (12, 14), (13, 14)] {
         overlay_grid.place_overlay(rx, ry, tib01, 11);
+        // RecalcAttributes: LandType 5 and its [Tiberium] speed row.
+        overlay_grid.recalculate_runtime_cell(
+            terrain,
+            overlays,
+            (rx, ry),
+            crate::sim::overlay_grid::NavigationPublication::FrameBoundary,
+        );
     }
     overlay_grid.take_dirty_cells();
     sim.overlay_grid = Some(overlay_grid);
@@ -925,11 +974,10 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         rules_hash: 0,
     });
     // Coverage tripwire: the harvester (id 3) must be picked up by the miner
-    // system — it acquires an ore target via the SearchOre path. (Physical
-    // movement to ore and the full dock handshake need movement world-setup
-    // beyond this generic harness; the dedicated miner-dock suite owns that
-    // coverage. This guards that miner-component creation + the acquisition
-    // path stay wired and contribute to the hash.)
+    // system — it acquires an ore target via the SearchOre path, drives to its
+    // field and cuts. (The full dock handshake is the dedicated miner-dock
+    // suites' coverage.) This guards that miner-component creation + the
+    // acquisition path stay wired and contribute to the hash.
     let mut miner_engaged = false;
     // AT-8 stream pins: per-stream cursor fingerprints captured at checkpoint
     // ticks during record, re-asserted in replay. Total-hash equality can mask
@@ -952,13 +1000,9 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
             first_uncommitted_frame.get_or_insert(tick);
         }
 
-        if rec
-            .substrate
-            .entities
-            .get(3)
-            .and_then(|h| h.miner.as_ref())
-            .is_some_and(|m| m.target_ore_cell.is_some())
-        {
+        if rec.substrate.entities.get(3).is_some_and(|h| {
+            h.miner.as_ref().is_some_and(|m| m.harvesting) || h.navigation.nav_com.is_some()
+        }) {
             miner_engaged = true;
         }
         log.record_tick(tick, due, result.state_hash);
@@ -992,8 +1036,8 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     );
     assert!(
         miner_engaged,
-        "the miner system must engage the harvester (acquire an ore target) — \
-         else miner-component creation or the SearchOre path regressed"
+        "the miner system must engage the harvester (head for or cut ore) — \
+         else miner-component creation or Mission_Harvest state 0 regressed"
     );
 
     // ---- Replay pass: fresh sim, real ReplayRunner, assert tick-by-tick.
@@ -1063,9 +1107,14 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         *recorded_streams.last().expect("final checkpoint recorded");
     let final_hash = *replayed.last().expect("at least one tick recorded");
     assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(208)),
+        GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_CRASH_V208,
+        "v208 only folds the crash latch, its AI edge and the Fly fall counter"
+    );
+    assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(207)),
-        GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_CRASH_V207,
-        "v207 only folds the crash latch, its AI edge and the Fly fall counter"
+        GLOBAL_HARNESS_FINAL_HASH_PRE_NATIVE_ORE_FIELD_V207,
+        "the pre-207 ore-field composition moved"
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(206)),
@@ -1079,17 +1128,17 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
-        0x1AFB_B1F8_D862_C4C9,
+        0xC631_0D2F_286E_93C3,
         "v190 changes only the Foot neighbor-history hash composition in this fixture"
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
-        0x5BEE_57CB_172B_9D55,
+        0x165A_1994_1B5F_325A,
         "v189 adds only the retained Techno+3D4 hash fold"
     );
     let before_burst_hash = rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(187));
     assert_eq!(
-        before_burst_hash, 0xA30E_9AD5_61AD_9C4F,
+        before_burst_hash, 0x2327_8E64_D24E_19BD,
         "schema187 only replaces zero remaining-shot fields with the retained index in this fixture"
     );
     let before_release_hash =
@@ -1146,8 +1195,10 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     );
     // 2026-09-23: moved by the Drive/Ship order and first-Process behavior
     // change (see GLOBAL_HARNESS_FINAL_HASH), not by a hash owner.
+    // 2026-09-25: moved by the ore-field chain's two causes (same place).
+    // 2026-09-25: moved by the ore-field review's map cells (same place).
     assert_eq!(
-        before_power_hash, 16967402887069896679,
+        before_power_hash, 12756010399710111234,
         "full08 projection moved: investigate behavior or another hash owner; do not rebaseline"
     );
 
@@ -1214,12 +1265,18 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     // Tank 4's attack-move acquires Soviet tank 6 at tick 281 and fires; tank 6
     // retaliates. After the Stop (300) and the Move home (320) a hit from tank
     // 6 turns tank 4 back (ShouldRetaliate 0x007087C0: no Target, and Move
-    // keeps the constructor's Retaliate=yes), and the duel ends with tank 4
-    // dead at tick 590. The same-call track continuation this block used to
-    // follow is covered by track_path_continuation_tests on production rows.
-    assert!(
-        rep.substrate.entities.get(4).is_none(),
-        "the retasked tank loses its duel"
+    // keeps the constructor's Retaliate=yes). On the fixture's map cells
+    // (2026-09-25; see GLOBAL_HARNESS_FINAL_HASH) tank 4 takes its seventh hit
+    // and dies at tick 586..590. The same-call track continuation this block
+    // used to follow is covered by track_path_continuation_tests on
+    // production rows.
+    assert_eq!(
+        rep.substrate
+            .entities
+            .get(4)
+            .map(|tank| tank.health.current),
+        None,
+        "the retasked tank dies in its duel"
     );
     assert_eq!(
         rep.substrate

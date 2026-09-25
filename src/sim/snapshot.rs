@@ -597,9 +597,12 @@ use crate::sim::world::Simulation;
 // 205 -> 206: a miner no longer keeps the Chrono Miner's retired dock phases
 // (home refinery, dock-queued byte, dock phase, pivot facing, enter/approach/
 // deploy timers, exit cell); an entity keeps Techno+0x1F8.
-// 206 -> 207: an entity keeps the crash latch and its AI edge (Foot+0x425/
+// 206 -> 207: a miner keeps Unit+0x6D2 and one +0xF8 StageClass (the unload
+// counter renamed) instead of its target-ore cell, harvest timer, rescan
+// cooldown and archive copy (the archive is Techno+0x218).
+// 207 -> 208: an entity keeps the crash latch and its AI edge (Foot+0x425/
 // +0x426) and a Fly its fall counter (+0x58).
-const SNAPSHOT_VERSION: u32 = 207;
+const SNAPSHOT_VERSION: u32 = 208;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3546,8 +3549,9 @@ mod tests {
         // `Aggressive=`.
         // 204 -> 205: bullet `Arcing=`; an anim's bounce body.
         // 205 -> 206: the retired Chrono dock phases; Techno+0x1F8.
-        // 206 -> 207: the crash latch and edge; the Fly fall counter.
-        assert_eq!(super::SNAPSHOT_VERSION, 207);
+        // 206 -> 207: the native ore field (Unit+0x6D2, the StageClass).
+        // 207 -> 208: the crash latch and edge; the Fly fall counter.
+        assert_eq!(super::SNAPSHOT_VERSION, 208);
     }
 
     #[test]
@@ -4368,8 +4372,7 @@ mod tests {
             crate::sim::game_entity::GameEntity::test_default(1, "E1", "Computer1", 4, 5);
         responder.base_defense_response.recruitable_a = false;
         responder.base_defense_response.recruitable_b = true;
-        responder.base_defense_response.archive_target =
-            Some(crate::sim::combat::TargetKind::Entity(9));
+        responder.set_archive_target(Some(crate::sim::combat::TargetKind::Entity(9)));
         responder.base_defense_response.cooldown_start_frame = -11;
         responder.base_defense_response.cooldown_duration_frames = 225;
         sim.substrate.entities.insert(responder);
@@ -4471,16 +4474,12 @@ mod tests {
         assert!(emergency.all_to_hunt_bias());
         assert_eq!(emergency.last_building_attack_frame(), -17);
         assert_eq!(emergency.last_attacker_house_index(), 3);
-        let response = restored
-            .substrate
-            .entities
-            .get(1)
-            .unwrap()
-            .base_defense_response;
+        let restored_responder = restored.substrate.entities.get(1).unwrap();
+        let response = restored_responder.base_defense_response;
         assert!(!response.recruitable_a);
         assert!(response.recruitable_b);
         assert_eq!(
-            response.archive_target,
+            restored_responder.archive_target(),
             Some(crate::sim::combat::TargetKind::Entity(9))
         );
         assert_eq!(response.cooldown_start_frame, -11);

@@ -509,8 +509,9 @@ pub(super) const DISPATCH_NEXT_FRAME: i32 = 1;
 /// `ftol([Harvest] Rate × 900)` plus one `RandomRanged(0, 2)` drawn on the
 /// scenario stream ([`Simulation::mission_rate_epilogue_for`]). Paths that
 /// take it: the return/finding-home state on every dispatch, the idle state
-/// on every dispatch, the search state's archive-consume and still-driving
-/// returns, and any cursor outside the native handler's switch.
+/// on every dispatch, the search state whenever the miner is left driving
+/// (an archive or scan-hit destination, or one it already held), and any
+/// cursor outside the native handler's switch.
 pub(super) fn arm_rate_epilogue(sim: &mut Simulation, rules: &RuleSet, snap: &mut MinerSnapshot) {
     snap.dispatch_delay = sim.mission_rate_epilogue_for(
         rules,
@@ -610,9 +611,16 @@ pub(super) fn commit_miner_snapshot(sim: &mut Simulation, snap: &MinerSnapshot, 
             },
         );
     }
-    // Drive VoxelAnimation + HarvestOverlay (oregath.shp) from the Harvest
-    // cursor — render-side flags, never hashed.
-    let is_harvesting: bool = snap.state == MinerState::Harvest;
+    sync_harvest_visuals(entity);
+}
+
+/// The render-side flags that follow Unit+0x6D2 (never hashed): the
+/// HarvestOverlay (oregath.shp), which `UnitClass::DrawExtras @ 0x0073CEC0`
+/// draws only with the locomotor at rest (presentation), and the voxel
+/// harvest cycle. RESIDUAL: the voxel HVA cycle keyed on this byte has no
+/// native source established (UNCHECKED).
+fn sync_harvest_visuals(entity: &mut crate::sim::game_entity::GameEntity) {
+    let is_harvesting = entity.miner.as_ref().is_some_and(|miner| miner.harvesting);
     if let Some(ref mut va) = entity.voxel_animation {
         va.playing = is_harvesting;
         if !is_harvesting {
@@ -631,6 +639,35 @@ pub(super) fn commit_miner_snapshot(sim: &mut Simulation, snap: &MinerSnapshot, 
             ho.elapsed_frames = 0;
         }
     }
+}
+
+/// Whether the unit's native mission is Harvest. VERA's ForcedReturn cursor
+/// stands for the Enter mission a player return order gives, so it is not.
+pub(crate) fn native_mission_is_harvest(entity: &crate::sim::game_entity::GameEntity) -> bool {
+    entity.mission.current().known() == Some(MissionType::Harvest)
+        && entity.miner_state() != Some(MinerState::ForcedReturn)
+}
+
+/// `UnitClass::AI` once `FootClass::AI` returns (`0x007365BB..0x007365D8`):
+/// a live unit whose mission is not Harvest clears Unit+0x6D2, every frame.
+/// Mission_Move, Mission_Patrol and Mission_Repair also clear it on entry
+/// (`0x00740A99`, `0x00740B1A`, `0x00740F10`); they run inside FootClass::AI
+/// and nothing reads the byte in between, so this clear covers them.
+pub(crate) fn unit_ai_clear_harvesting(sim: &mut Simulation, id: u64) {
+    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+        return;
+    };
+    if entity.dying
+        || entity.category != EntityCategory::Unit
+        || native_mission_is_harvest(entity)
+        || !entity.miner.as_ref().is_some_and(|miner| miner.harvesting)
+    {
+        return;
+    }
+    if let Some(miner) = entity.miner.as_mut() {
+        miner.harvesting = false;
+    }
+    sync_harvest_visuals(entity);
 }
 
 /// Test-only mirror of the production Harvest dispatch walk: the same
@@ -710,14 +747,9 @@ pub(super) fn process_miner(
 
     let state_before = format!("{:?}", snap.state);
     match snap.state {
-        MinerState::SearchOre => {
-            handle_search_ore(sim, rules, config, path_grid, overlay_registry, snap)
-        }
-        MinerState::MoveToOre => {
-            handle_move_to_ore(sim, rules, config, path_grid, overlay_registry, snap)
-        }
+        MinerState::SearchOre => harvest_looking(sim, rules, path_grid, overlay_registry, snap),
         MinerState::Harvest => {
-            handle_harvest(sim, rules, config, path_grid, overlay_registry, snap)
+            harvest_cutting(sim, rules, config, path_grid, overlay_registry, snap)
         }
         // Native return/finding-home state has no per-frame exit: every
         // dispatch leaves through the default Rate epilogue. ForcedReturn is
@@ -728,16 +760,8 @@ pub(super) fn process_miner(
             arm_rate_epilogue(sim, rules, snap);
         }
         MinerState::Dock => handle_handoff(sim, snap),
-        MinerState::Unload => {
-            // Legacy state — production code never enters this path. If we
-            // encounter it (e.g., a save from before the FSM rewrite), fall
-            // through to SearchOre. Outside the native handler's switch, so
-            // it exits through the default epilogue.
-            snap.state = MinerState::SearchOre;
-            arm_rate_epilogue(sim, rules, snap);
-        }
         MinerState::WaitNoOre => {
-            if handle_going_to_idle(sim, rules, config, path_grid, overlay_registry, snap) {
+            if handle_going_to_idle(sim, rules, path_grid, overlay_registry, snap) {
                 // Native state 4 has no `return 1` exit: every dispatch falls
                 // into the default Rate epilogue (`0x0073EF97`).
                 arm_rate_epilogue(sim, rules, snap);
@@ -747,15 +771,14 @@ pub(super) fn process_miner(
     let state_after = format!("{:?}", snap.state);
     if state_before != state_after {
         log::info!(
-            "MINER {} state: {} → {} pos=({},{}) target_ore={:?} cargo={} timer={:?}",
+            "MINER {} state: {} → {} pos=({},{}) cargo={} stage={}",
             snap.entity_id,
             state_before,
             state_after,
             snap.rx,
             snap.ry,
-            snap.miner.target_ore_cell,
             snap.miner.cargo.len(),
-            snap.miner.harvest_timer,
+            snap.miner.stage_value,
         );
         snap.debug_events.push((state_before, state_after));
     }
@@ -763,48 +786,11 @@ pub(super) fn process_miner(
 
 // -- State handlers --
 
-/// Build the combined scan filter — zone reachability AND cell occupancy.
-///
-/// Mirrors gamemd's `FootClass::Is_Cell_Harvestable`, which gates each
-/// ring-1+ candidate cell through a zone-connectivity check plus a
-/// per-cell `Can_Enter_Cell` call (cell occupancy: vehicles, terrain
-/// objects, building footprints).
-///
-/// Returns `None` if no zone grid or anchor is available — caller falls
-/// back to an unfiltered scan for this tick.
-fn build_scan_filter<'a>(
-    sim: &'a Simulation,
-    path_grid: Option<&'a PathGrid>,
-    snap: &MinerSnapshot,
-) -> Option<Box<dyn Fn((u16, u16)) -> bool + 'a>> {
-    let entity = sim.substrate.entities.get(snap.entity_id);
-    let mz = entity
-        .and_then(|e| e.locomotor.as_ref())
-        .map(|loc| loc.movement_zone)
-        .unwrap_or(MovementZone::Normal);
-    let layer = entity
-        .map(|e| e.movement_layer_or_ground())
-        .unwrap_or(MovementLayer::Ground);
-    let zone_grid = sim.zone_grid.as_ref()?;
-    let anchor = effective_zone_cell(zone_grid, mz, snap.rx, snap.ry)?;
-    let occupancy = &sim.substrate.occupancy;
-    let self_id = snap.entity_id;
-
-    Some(Box::new(move |ore_cell: (u16, u16)| {
-        if !ore_reachable(zone_grid, mz, layer, anchor, ore_cell) {
-            return false;
-        }
-        is_cell_path_clear_for_scan(occupancy, path_grid, ore_cell, self_id)
-    }))
-}
-
 /// True if the cell has no static blocker (terrain object, building
 /// footprint set in PathGrid) and no non-self vehicle/structure occupant
-/// (OccupancyGrid). Infantry are not blockers.
-///
-/// Used by ring-1+ scan candidates only — ring 0 is always allowed (the
-/// harvester is allowed to harvest its own cell even if it appears as a
-/// blocker to itself).
+/// (OccupancyGrid). Infantry are not blockers. VERA-internal: only the Slave
+/// Miner's slave scan (`slave_miner::build_slave_scan_filter`) uses it; the
+/// War and Chrono Miners use native `Is_Cell_Harvestable` (`ore_scan`).
 pub(crate) fn is_cell_path_clear_for_scan(
     occupancy: &OccupancyGrid,
     path_grid: Option<&PathGrid>,
@@ -825,157 +811,90 @@ pub(crate) fn is_cell_path_clear_for_scan(
     true
 }
 
-fn handle_search_ore(
+/// `UnitClass::Mission_Harvest @ 0x0073E5E0` state 0 (LOOKING),
+/// `0x0073E6F1..0x0073E92C`. Native evidence:
+/// tools/spatial_oracle/harvest_field.json `harvest` rows `s0_*`.
+///
+/// - A full miner (Storage% >= 1.0, `0x0073E706`) goes home: state 2,
+///   next frame.
+/// - The archived ore cell (Techno+0x218) becomes the destination through
+///   the class setter and the archive clears (`0x0073E72A..0x0073E750`); the
+///   scan's flag argument drops to 0.
+/// - Unit+0x6D2 clears (`0x0073E75B`). An active Teleport holding a NavCom
+///   takes the NULL destination (`0x0073E793..0x0073E83E`).
+/// - `Search_For_Tiberium_And_Move(TiberiumLongScan)` (`0x0073E864`). A
+///   miner already on its best cell harvests: Unit+0x6D2 set, the StageClass
+///   armed at the literal rate 2, state 1, next frame (`0x0073E87D..
+///   0x0073E8BD`).
+/// - A miss with no NavCom and no archive parks (state 4, House+0x242, the
+///   fixed 105 frames, no draw; `0x0073E8EA..0x0073E91C`). A miss with an
+///   archive re-takes it as the destination (`0x0073E8D7`; the clear above
+///   leaves this arm dead). Driving, or just sent off, it leaves through the
+///   Rate epilogue.
+///
+/// RESIDUAL: the Weeder= short search (`0x0073E76C`), dormant (no retail
+/// Weeder=); an archive that is an object (the base-defence responder's
+/// post) is not re-taken as a destination: VERA assigns cell archives only.
+fn harvest_looking(
     sim: &mut Simulation,
     rules: &RuleSet,
-    config: &MinerConfig,
     path_grid: Option<&PathGrid>,
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
 ) {
-    // gamemd's Mission_Harvest state 0 checks full storage before scanning
-    // ore, so a full miner that lost its refinery keeps trying to return.
+    let id = snap.entity_id;
     if snap.miner.is_full() {
-        snap.miner.target_ore_cell = None;
         snap.state = MinerState::ReturnToRefinery;
         return;
     }
-
-    // L10: the post-unload ore search is paced by the Mission_Harvest epilogue's
-    // RandomRanged(0,2) jitter, armed at the state-4 dock exit. Wait it out so the
-    // search resumes at exit_frame + jitter, not immediately. For every other
-    // entry the harvest timer is long-elapsed (always due), so this is a no-op.
-    if !snap.miner.harvest_timer.due(sim.session.binary_frame) {
+    let archive = sim
+        .substrate
+        .entities
+        .get(id)
+        .and_then(|entity| entity.archive_target());
+    if let Some(archive) = archive {
+        assign_archive_destination(sim, rules, path_grid, overlay_registry, id, archive);
+        if let Some(entity) = sim.substrate.entities.get_mut(id) {
+            entity.set_archive_target(None);
+        }
+    }
+    snap.miner.harvesting = false;
+    let teleport_with_nav = sim.substrate.entities.get(id).is_some_and(|entity| {
+        entity.navigation.nav_com.is_some()
+            && entity
+                .locomotor
+                .as_ref()
+                .is_some_and(|loco| loco.active_kind() == LocomotorKind::Teleport)
+    });
+    if teleport_with_nav {
+        sim.set_unit_null_destination(id, Some(rules));
+    }
+    let range = super::ore_scan::scan_cells(rules.general.tiberium_long_scan);
+    if super::ore_scan::search_for_tiberium_and_move(
+        sim,
+        rules,
+        path_grid,
+        overlay_registry,
+        id,
+        range,
+    ) {
+        snap.miner.harvesting = true;
+        arm_stage(&mut snap.miner, sim.session.binary_frame, 2);
+        snap.state = MinerState::Harvest;
         return;
     }
-
-    /// Scan decision, computed under the scan filter's immutable `sim` borrow
-    /// and committed after it drops (the epilogue draw needs `&mut sim`).
-    enum ScanOutcome {
-        /// Ghost-cell archive consumed — the native archive-target return.
-        Archive((u16, u16)),
-        /// Fresh ore target from the bounded scan.
-        Found((u16, u16)),
-        /// No reachable ore inside the scan radius.
-        NoOre,
-    }
-
-    // Archive ghost-cell consumption: if `last_harvest_cell` is set, drive
-    // straight to it and clear. The archive is written by
-    // `save_archive_via_short_scan` when the miner becomes full. Reachability
-    // is re-checked because the patch may have been walled off between the
-    // save and the next cycle.
-    let archive_hit = snap.miner.last_harvest_cell.and_then(|archive| {
-        // Combined scan filter — zone reachability + cell occupancy. None
-        // without a zone grid or anchor: the check falls back to no filter.
-        let scan_filter = build_scan_filter(sim, path_grid, snap);
-        let archive_reachable = scan_filter.as_deref().is_none_or(|f| f(archive));
-        (resource_cell_present(sim, rules, overlay_registry, archive) && archive_reachable)
-            .then_some(ScanOutcome::Archive(archive))
-    });
-    if archive_hit.is_none() {
-        // Stale archive (depleted or unreachable) — drop it so we don't keep
-        // retrying.
-        snap.miner.last_harvest_cell = None;
-        // 0x0073E793..0x0073E83E: an active Teleport locomotor holding a
-        // NavCom takes vt+0x480(NULL, 1) before Search_For_Tiberium. The warp
-        // arrival clears NavCom, so the dock cycle never reaches it.
-        let teleport_with_nav = sim
+    let driving = sim
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| entity.navigation.nav_com.is_some());
+    if !driving {
+        let archive = sim
             .substrate
             .entities
-            .get(snap.entity_id)
-            .is_some_and(|entity| {
-                entity.navigation.nav_com.is_some()
-                    && entity
-                        .locomotor
-                        .as_ref()
-                        .is_some_and(|loco| loco.active_kind() == LocomotorKind::Teleport)
-            });
-        if teleport_with_nav {
-            sim.set_unit_null_destination(snap.entity_id, Some(rules));
-        }
-        // Search_For_Tiberium returns at once for a NavCom (`0x004DCFE7`), and
-        // state 0 then leaves through the Rate epilogue
-        // (`0x0073E8C3..0x0073E92C`): still driving, no scan.
-        if sim
-            .substrate
-            .entities
-            .get(snap.entity_id)
-            .is_some_and(|entity| entity.navigation.nav_com.is_some())
-        {
-            arm_rate_epilogue(sim, rules, snap);
-            return;
-        }
-    }
-
-    let outcome = archive_hit.unwrap_or_else(|| {
-        let scan_filter = build_scan_filter(sim, path_grid, snap);
-        let filter_ref: Option<&dyn Fn((u16, u16)) -> bool> = scan_filter.as_deref();
-        // Long-range bounded scan from the miner's current position
-        // (TiberiumLongScan). Single scan with no separate short-scan
-        // pre-pass — the search expands outward and picks the best cell
-        // within radius. Used for both war miners and chrono miners.
-        //
-        // That radius is the whole search. gamemd's scan is hard-bounded by
-        // it and breaks on the first ring with a hit; there is no second,
-        // wider pass behind it, so a miss is a miss and the miss arm below —
-        // not a cross-map drive — is what a player sees.
-        //
-        // Chrono miners DRIVE to ore, not warp: the Unit setter keeps the
-        // Teleport locomotor only for the refinery pad while in radio contact
-        // with it, which a miner heading out to ore never is, so its
-        // Teleporter arm swaps in a Drive piggyback.
-        search_local_resource(
-            sim,
-            rules,
-            overlay_registry,
-            (snap.rx, snap.ry),
-            config.long_scan_radius,
-            filter_ref,
-        )
-        .map_or(ScanOutcome::NoOre, ScanOutcome::Found)
-    });
-
-    match outcome {
-        ScanOutcome::Archive(cell) => {
-            snap.miner.target_ore_cell = Some(cell);
-            snap.state = MinerState::MoveToOre;
-            snap.miner.last_harvest_cell = None;
-            // The native archive-consume exit goes through the default Rate
-            // epilogue, not the per-frame return.
-            arm_rate_epilogue(sim, rules, snap);
-        }
-        ScanOutcome::Found(cell) => {
-            snap.miner.target_ore_cell = Some(cell);
-            snap.state = MinerState::MoveToOre;
-            // A scan that answers the miner's own cell is gamemd's one
-            // productive return with nothing to drive to: per-frame dispatch,
-            // no epilogue draw. Every other hit sets the destination inside
-            // this same dispatch and then falls through into the default Rate
-            // epilogue — so the drive command and the epilogue's single
-            // RandomRanged(0, 2) both belong to the scan dispatch, not to a
-            // later one.
-            if cell != (snap.rx, snap.ry) {
-                if let Some(grid) = path_grid {
-                    let _ = issue_stock_miner_drive_move_with_overlay_registry(
-                        sim,
-                        rules,
-                        grid,
-                        snap.entity_id,
-                        cell,
-                        overlay_registry,
-                    );
-                }
-                arm_rate_epilogue(sim, rules, snap);
-            }
-        }
-        ScanOutcome::NoOre => {
-            // `0x0073E8EE..0x0073E91C`: no ore, no destination, no archive
-            // writes state 4, `Techno+0x3D0 = 1` and, for a `Harvester=yes`
-            // type, `House+0x242 = 1`, then returns the fixed 105-frame wait
-            // directly — bypassing the Rate epilogue, so no RNG draw. What
-            // runs when the wait expires is `handle_going_to_idle`.
-            //
+            .get(id)
+            .and_then(|entity| entity.archive_target());
+        let Some(archive) = archive else {
             // `+0x3D0` is not carried on the entity: its only in-handler
             // reader is the state-4 RepairBay probe, whose outcome the same
             // dispatch overwrites (see `handle_going_to_idle`), and state 4 is
@@ -983,129 +902,75 @@ fn handle_search_ore(
             // other readers (`BuildingClass::MissionRepairAndProduce`
             // `0x0044C4BC`, AI-house only) are outside this lane.
             snap.state = MinerState::WaitNoOre;
-            // `rescan_cooldown` is no longer read by the idle state (native
-            // state 4 has no internal gate); it stays armed for snapshot/hash
-            // continuity of the persisted `Miner` block.
-            snap.miner.rescan_cooldown.arm(
-                sim.session.binary_frame,
-                u32::from(config.rescan_cooldown_ticks),
-            );
             if let Some(house) = sim.houses.get_mut(&snap.owner) {
                 // `MOV byte ptr [ECX+0x242], 1` at `0x0073E911`, gated on
                 // `UnitType+0xE0E` (`Harvester=yes`) — true for every kind
                 // dispatched here (slave hosts never reach this handler).
                 house.harvester_no_ore = true;
             }
-            snap.dispatch_delay = i32::from(config.rescan_cooldown_ticks);
-        }
+            snap.dispatch_delay = NO_ORE_DELAY;
+            return;
+        };
+        assign_archive_destination(sim, rules, path_grid, overlay_registry, id, archive);
     }
+    arm_rate_epilogue(sim, rules, snap);
 }
 
-fn handle_move_to_ore(
+/// The state-0 no-ore return (`return 0x69` at `0x0073E91C`): frames until
+/// the GOING-TO-IDLE state dispatches. Not an INI value.
+const NO_ORE_DELAY: i32 = 0x69;
+
+/// `vt+0x480(ArchiveTarget, 1)`: the class setter towards an archived cell.
+fn assign_archive_destination(
     sim: &mut Simulation,
     rules: &RuleSet,
-    config: &MinerConfig,
     path_grid: Option<&PathGrid>,
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-    snap: &mut MinerSnapshot,
+    id: u64,
+    archive: crate::sim::combat::TargetKind,
 ) {
-    let has_destination_or_movement =
-        sim.substrate
-            .entities
-            .get(snap.entity_id)
-            .is_some_and(|entity| {
-                entity.navigation.nav_com.is_some() || entity.movement_target.is_some()
-            });
-
-    // Native Search_For_Tiberium_And_Move returns immediately for a non-null
-    // owner NavCom before target validation, arrival, or scan; the handler
-    // then exits through the default Rate epilogue (the still-driving
-    // return). MovementTarget remains Rust's transitional second owner until
-    // the broader Drive host is migrated.
-    if has_destination_or_movement {
-        arm_rate_epilogue(sim, rules, snap);
-        return;
-    }
-
-    let Some(current_target) = snap.miner.target_ore_cell else {
-        snap.state = MinerState::SearchOre;
-        return;
-    };
-
-    // Check if current target has been depleted.
-    let still_has_ore = resource_cell_present(sim, rules, overlay_registry, current_target);
-    if !still_has_ore {
-        snap.miner.target_ore_cell = None;
-        snap.state = MinerState::SearchOre;
-        return;
-    }
-
-    // Rescan on re-entry, NOT per tick. gamemd's Mission_Harvest state 0
-    // wraps its entire body — scan, cell lookup and destination write — in
-    // the "no destination held" guard above; while a destination is held the
-    // state never looks at ore. So this scan runs only on the dispatches that
-    // get past that guard, i.e. after the drive ends (arrival or abort). A
-    // *distant* destination going impassable therefore retargets nothing
-    // until the miner's own movement reaches it. Exactly one candidate
-    // fast-retarget path was checked and ruled out: the destination repair
-    // inside the locomotor's path search, which runs from within a re-path
-    // and nudges the destination by a cell rather than re-running the ore
-    // scan. Whether any *other* mechanism reacts to that trigger is
-    // UNCHECKED — no exhaustive sweep was run. Here the scan re-picks the
-    // best cell from the harvester's current position; it is deterministic
-    // given unchanged inputs, so a world that has not changed returns the
-    // same cell and the assignment is a no-op.
-    let new_target = {
-        let scan_filter = build_scan_filter(sim, path_grid, snap);
-        let filter_ref: Option<&dyn Fn((u16, u16)) -> bool> = scan_filter.as_deref();
-        search_local_resource(
-            sim,
-            rules,
-            overlay_registry,
-            (snap.rx, snap.ry),
-            config.long_scan_radius,
-            filter_ref,
-        )
-    };
-    let target = new_target.unwrap_or(current_target);
-    if target != current_target {
-        snap.miner.target_ore_cell = Some(target);
-    }
-
-    // Arrived?
-    if (snap.rx, snap.ry) == target {
-        snap.state = MinerState::Harvest;
-        // This physical-arrival anchor is legacy Rust behavior; native initializes
-        // the timer when search/move succeeds, a separately tracked acquisition-
-        // timing drift. Retain +1 for the verified mission-before-timer observation.
-        snap.miner.harvest_timer.arm(
-            sim.session.binary_frame,
-            u32::from(config.harvest_tick_interval) + 1,
-        );
-        return;
-    }
-
-    if let Some(grid) = path_grid {
+    if let (crate::sim::combat::TargetKind::Cell(x, y), Some(grid)) = (archive, path_grid) {
         let _ = issue_stock_miner_drive_move_with_overlay_registry(
             sim,
             rules,
             grid,
-            snap.entity_id,
-            target,
+            id,
+            (x, y),
             overlay_registry,
         );
     }
-    // VERA-internal, gamemd equivalent UNCHECKED. This cursor has no native
-    // counterpart at all, and the epilogue is armed here whether or not the
-    // drive command was accepted. What the decompile actually shows is only
-    // the accepted case: a destination that took reaches the default Rate
-    // epilogue, because the handler's next test reads a now-non-null
-    // destination slot. Whether a *refused* destination lands there too is
-    // unchecked — VERA's mover can refuse where the native call cannot.
-    arm_rate_epilogue(sim, rules, snap);
 }
 
-fn handle_harvest(
+/// Arm the Unit+0xF8 StageClass: value 0, timer and rate `rate` from `now`.
+fn arm_stage(miner: &mut Miner, now: u32, rate: u32) {
+    miner.stage_value = 0;
+    miner.stage_rate = rate;
+    miner.stage_timer.arm(now, rate);
+}
+
+/// `HarvesterLoadRate=` as the StageClass rate (Rules+0x1520).
+fn load_rate(rules: &RuleSet) -> u32 {
+    rules.general.harvester_load_rate as u32
+}
+
+/// `UnitClass::Mission_Harvest @ 0x0073E5E0` state 1 (HARVESTING),
+/// `0x0073E931..0x0073EB2B`; every exit is the next frame. Native evidence:
+/// tools/spatial_oracle/harvest_field.json `harvest` rows `s1_*`.
+///
+/// - An unarmed StageClass (rate 0) is armed at `HarvesterLoadRate`
+///   (`0x0073E93B`). Until the stage reaches 9 nothing else runs
+///   (`0x0073E96F`); the TechnoClass::AI stage tick after this dispatch
+///   advances it, so a cut comes `9 * rate + 1` frames after an arming.
+/// - `Harvest_Ore_Tick` ([`harvest_ore_tick`]); success stays here.
+/// - Failure clears Unit+0x6D2. A full harvester (Storage% == 1.0,
+///   `0x0073E9B9`) goes home: state 2, and the archive becomes the best cell
+///   `Scan_For_Tiberium(TiberiumShortScan)` finds, or none (`0x0073E9E4..
+///   0x0073EA7B`).
+/// - Otherwise `Search_For_Tiberium_And_Move(TiberiumShortScan)`: a miss
+///   with no NavCom clears the archive and goes home (`0x0073EAEE`); a hit
+///   stays here with Unit+0x6D2 set (`0x0073EB0E`). The stage is not
+///   re-armed, so a miner that hops to the next cell cuts on arrival.
+fn harvest_cutting(
     sim: &mut Simulation,
     rules: &RuleSet,
     config: &MinerConfig,
@@ -1113,134 +978,141 @@ fn handle_harvest(
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
 ) {
-    // Frame-anchored gate (was a per-tick countdown).
-    if !snap.miner.harvest_timer.due(sim.session.binary_frame) {
+    let now = sim.session.binary_frame;
+    if snap.miner.stage_rate == 0 {
+        arm_stage(&mut snap.miner, now, load_rate(rules));
+    }
+    if snap.miner.stage_value < 9 {
         return;
     }
-
-    if snap.miner.is_full() {
-        // Harvest_Ore_Tick checks full storage before Reduce_Tiberium, resets its
-        // timer, and returns failure. Mission_Harvest then writes return state
-        // before choosing the ghost/archive cell; state-2 work waits for the next
-        // mission dispatch.
-        snap.miner.harvest_timer.reset(sim.session.binary_frame);
+    if harvest_ore_tick(sim, rules, config, overlay_registry, snap) {
+        return;
+    }
+    snap.miner.harvesting = false;
+    let id = snap.entity_id;
+    let range = super::ore_scan::scan_cells(rules.general.tiberium_short_scan);
+    if snap.miner.cargo.len() == usize::from(snap.miner.capacity_bales) {
         snap.state = MinerState::ReturnToRefinery;
-        save_archive_via_short_scan(sim, rules, config, path_grid, overlay_registry, snap);
+        let archive = super::ore_scan::scan_for_tiberium(sim, rules, overlay_registry, id, range)
+            .map(|(x, y)| crate::sim::combat::TargetKind::Cell(x, y));
+        if let Some(entity) = sim.substrate.entities.get_mut(id) {
+            entity.set_archive_target(archive);
+        }
         return;
     }
-
-    let cell = (snap.rx, snap.ry);
-    let empty: u16 = snap
-        .miner
-        .capacity_bales
-        .saturating_sub(snap.miner.cargo.len() as u16);
-
-    // `UnitClass::Harvest_Ore_Tick` @ 0x0073D450 requests ONE density level
-    // per harvest gate, not the free capacity. Disassembly 0x0073D556..
-    // 0x0073D5A1: `FILD [type+0x800]` (Storage), `CALL GetTotalAmount`,
-    // `FSUBR` (Storage - total), `FCOMP [0x007E2AC8]` (1.0f), `TEST AH,0x41` /
-    // `JNZ` keeps the difference only when it is <= 1.0, otherwise
-    // `FLD [0x007E2AC8]` loads 1.0; then `CALL Math__ftol`, `PUSH EAX`,
-    // `CALL Reduce_Tiberium` @ 0x00480A80. So request = ftol(min(1.0,
-    // Storage - total)). With integer cargo the difference is always >= 1 here
-    // (the full check above already returned), so the request is exactly 1.
-    // `FUN_00522E70` (slave harvest tick) uses the same min(1.0, ..) shape.
-    let request: u16 = empty.min(1);
-
-    // Shared CellClass::Reduce_Tiberium boundary: caller owns cargo insertion,
-    // while the helper owns overlay/resource/dirty/queue side effects.
-    let reduction =
-        sim.reduce_tiberium_at_with_native_context(cell, request, Some(rules), overlay_registry);
-
-    if reduction.removed_amount > 0 {
-        let Some(resource_type) = reduction.resource_type else {
-            return;
-        };
-        // RESIDUAL (VERA-internal, gamemd equivalent UNCHECKED beyond the
-        // stock map data): native `StorageClass` (`UnitClass+0x33C`) keeps
-        // four per-`TiberiumType` slots and `Mission_Unload` drains them by
-        // `FindFirstNonEmptySlot` in index order 0..3, each slot valued by
-        // its own type's `Value=`; VERA folds every overlay family into
-        // `ResourceType::{Ore, Gem}` (`TiberiumTypeId` 0 / 1 values above).
-        // Trigger: a map placing TIB2/TIB3 (Vinifera/Aboreus) overlays —
-        // no stock skirmish map does. Effect: those bales are valued as
-        // type 0 (Riparius) and drain in the Ore slot, so the unload runs
-        // one 15-frame slot gate fewer than native. Frequency: zero on stock
-        // maps. Downstream: none for the stock ruleset.
-        let value = match resource_type {
-            ResourceType::Ore => config.ore_bale_value,
-            ResourceType::Gem => config.gem_bale_value,
-        };
-        snap.miner
-            .cargo
-            .extend((0..reduction.removed_amount).map(|_| CargoBale {
-                resource_type,
-                value,
-            }));
-
-        // A positive extraction is success even when it fills storage. Native
-        // Mission_Harvest remains in state 1 and observes fullness only at the
-        // next helper gate: 9 * HarvesterLoadRate + 1 frame numbers under the
-        // verified mission-before-timer order.
-        snap.miner.harvest_timer.arm(
-            sim.session.binary_frame,
-            u32::from(config.harvest_tick_interval) + 1,
-        );
-        return;
-    }
-
-    // No bales extracted while not full. Run the caller-owned short continuation
-    // scan; a hit moves toward the next patch, while a miss begins the existing
-    // no-resource return path.
-
-    // Short scan. The filter's closure captures `&sim`; scope it so the
-    // immutable borrow drops before the cursor writes below.
-    let continuation_target = {
-        let scan_filter = build_scan_filter(sim, path_grid, snap);
-        let filter_ref: Option<&dyn Fn((u16, u16)) -> bool> = scan_filter.as_deref();
-        search_local_resource(
-            sim,
-            rules,
-            overlay_registry,
-            (snap.rx, snap.ry),
-            config.local_continuation_radius,
-            filter_ref,
-        )
-    };
-    if let Some(next_cell) = continuation_target {
-        snap.miner.target_ore_cell = Some(next_cell);
-        snap.state = MinerState::MoveToOre;
-        return;
-    }
-
-    // Scan miss while not full → return to refinery, clear archive. Native
-    // state 1 only writes Status 2 and returns 1 (`0x0073EAEE..0x0073EB0D`).
-    snap.miner.last_harvest_cell = None;
-    snap.state = MinerState::ReturnToRefinery;
-}
-
-/// Save a fresh ghost-cell archive by running a short-radius scan from
-/// the miner's current position. The due full-failure caller invokes this only
-/// after selecting Return, so the next `SearchOre` cycle can return directly to
-/// a nearby still-productive patch. On scan miss, clears the archive.
-fn save_archive_via_short_scan(
-    sim: &Simulation,
-    rules: &RuleSet,
-    config: &MinerConfig,
-    path_grid: Option<&PathGrid>,
-    overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-    snap: &mut MinerSnapshot,
-) {
-    let scan_filter = build_scan_filter(sim, path_grid, snap);
-    let filter_ref: Option<&dyn Fn((u16, u16)) -> bool> = scan_filter.as_deref();
-    snap.miner.last_harvest_cell = search_local_resource(
+    let found = super::ore_scan::search_for_tiberium_and_move(
         sim,
         rules,
+        path_grid,
         overlay_registry,
-        (snap.rx, snap.ry),
-        config.local_continuation_radius,
-        filter_ref,
+        id,
+        range,
     );
+    let driving = sim
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| entity.navigation.nav_com.is_some());
+    if !found && !driving {
+        if let Some(entity) = sim.substrate.entities.get_mut(id) {
+            entity.set_archive_target(None);
+        }
+        snap.state = MinerState::ReturnToRefinery;
+        return;
+    }
+    snap.state = MinerState::Harvest;
+    snap.miner.harvesting = true;
+}
+
+/// [`harvest_ore_tick`] on `id` alone, as the oracle calls it.
+#[cfg(test)]
+pub(crate) fn harvest_ore_tick_for_test(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    id: u64,
+) -> bool {
+    let mut snap = build_miner_snapshot(sim, rules, id).expect("a dispatchable miner");
+    let config = MinerConfig::from_rules(rules);
+    let ok = harvest_ore_tick(sim, rules, &config, overlay_registry, &mut snap);
+    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+        entity.miner = Some(snap.miner);
+    }
+    ok
+}
+
+/// `UnitClass::Harvest_Ore_Tick @ 0x0073D450`. Native evidence:
+/// tools/spatial_oracle/harvest_field.json `ore_tick` rows.
+///
+/// - A mover holding a NavCom answers true and touches nothing.
+/// - Not `Harvester=`, full (Storage% >= 1.0) or off Tiberium land: the
+///   StageClass resets (value 0, rate 0, timer at now for 0) and it answers
+///   false.
+/// - Otherwise it asks `CellClass::Reduce_Tiberium` for
+///   `ftol(min(1.0, Storage - total))` — one level, integer cargo keeping a
+///   whole level free below full — and stores what it removed; a positive
+///   removal re-arms the stage at `HarvesterLoadRate` and answers true. A
+///   density-0 cell clears for nothing: false, stage untouched.
+///
+/// RESIDUAL: the Weeder= branch (`0x0073D4F4`, `HarvesterLoadRate * 3`),
+/// dormant (no retail Weeder=). Cargo is integer bales per Ore/Gem kind where
+/// native keeps float `StorageClass` slots per tiberium type (see the Unload
+/// payout residual).
+fn harvest_ore_tick(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    config: &MinerConfig,
+    overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    snap: &mut MinerSnapshot,
+) -> bool {
+    let id = snap.entity_id;
+    let now = sim.session.binary_frame;
+    if sim
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| entity.navigation.nav_com.is_some())
+    {
+        return true;
+    }
+    let cell = (snap.rx, snap.ry);
+    let harvester = sim
+        .object_type(snap.type_id, rules)
+        .is_some_and(|object| object.harvester);
+    if !harvester
+        || snap.miner.is_full()
+        || !super::ore_scan::cell_is_tiberium_land(sim, overlay_registry, cell)
+    {
+        snap.miner.stage_value = 0;
+        snap.miner.stage_rate = 0;
+        snap.miner.stage_timer.arm(now, 0);
+        return false;
+    }
+    let request = snap
+        .miner
+        .capacity_bales
+        .saturating_sub(snap.miner.cargo.len() as u16)
+        .min(1);
+    let reduction =
+        sim.reduce_tiberium_at_with_native_context(cell, request, Some(rules), overlay_registry);
+    let Some(resource_type) = reduction
+        .resource_type
+        .filter(|_| reduction.removed_amount > 0)
+    else {
+        return false;
+    };
+    let value = match resource_type {
+        ResourceType::Ore => config.ore_bale_value,
+        ResourceType::Gem => config.gem_bale_value,
+    };
+    snap.miner
+        .cargo
+        .extend((0..reduction.removed_amount).map(|_| CargoBale {
+            resource_type,
+            value,
+        }));
+    arm_stage(&mut snap.miner, now, load_rate(rules));
+    true
 }
 
 /// `UnitClass::Mission_Harvest @ 0x0073E5E0` state 2 (FINDING_HOME),
@@ -1470,7 +1342,6 @@ fn handle_handoff(sim: &mut Simulation, snap: &MinerSnapshot) {
 fn handle_going_to_idle(
     sim: &mut Simulation,
     rules: &RuleSet,
-    config: &MinerConfig,
     path_grid: Option<&PathGrid>,
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
@@ -1481,7 +1352,7 @@ fn handle_going_to_idle(
         .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero));
     if !human {
         snap.state = MinerState::SearchOre;
-        handle_search_ore(sim, rules, config, path_grid, overlay_registry, snap);
+        harvest_looking(sim, rules, path_grid, overlay_registry, snap);
         return false;
     }
     if let Some(grid) = path_grid
@@ -1613,7 +1484,7 @@ pub(crate) fn extract_bale(
 ///
 /// This is NOT the harvester's per-gate request: `Harvest_Ore_Tick`
 /// @ 0x0073D450 asks `Reduce_Tiberium` for `ftol(min(1.0, Storage - total))`,
-/// i.e. one density level per gate (see `handle_harvest`). This helper only
+/// i.e. one density level per gate (see `harvest_ore_tick`). This helper only
 /// exercises `Reduce_Tiberium`'s clamp-to-cell-content behaviour for an
 /// arbitrary request, the way area damage or a test fixture might issue one.
 ///
@@ -1865,8 +1736,7 @@ fn refinery_accepts_can_load(
 /// `ZONE_INVALID`, so the probe targets the refinery's dock cell and its 8
 /// neighbours instead of the foundation centre — VERA-internal
 /// approximation, gamemd equivalent UNCHECKED for the exact probed cell.
-/// Without a zone grid or a valid miner anchor the gate is skipped, as the
-/// ore-scan filter does.
+/// Without a zone grid or a valid miner anchor the gate is skipped.
 fn refinery_zone_reachable(
     sim: &Simulation,
     miner: &crate::sim::game_entity::GameEntity,
@@ -1882,7 +1752,7 @@ fn refinery_zone_reachable(
     };
     let layer = miner.movement_layer_or_ground();
     zone_grid.can_reach(mz, anchor, layer, dock, layer)
-        || ore_reachable(zone_grid, mz, layer, anchor, dock)
+        || neighbour_reachable(zone_grid, mz, layer, anchor, dock)
 }
 
 fn refinery_dock_capacity_for_sid(
@@ -1906,7 +1776,7 @@ pub(crate) fn refinery_dock_cell(rx: u16, ry: u16) -> (u16, u16) {
 }
 
 /// 8-neighbor offsets in clockwise order starting from north. Used by the
-/// effective-zone-cell probe and the ore-reachability check.
+/// refinery-dock zone gate's anchor and neighbour probes.
 const ADJACENT_8: [(i32, i32); 8] = [
     (0, -1),
     (1, -1),
@@ -1918,13 +1788,13 @@ const ADJACENT_8: [(i32, i32); 8] = [
     (-1, -1),
 ];
 
-/// Return a cell whose zone serves as the harvester's reachability anchor.
+/// Return a cell whose zone serves as the harvester's anchor for the
+/// refinery-dock zone gate.
 ///
 /// The harvester's own cell may be on Tiberium (impassable in the path grid,
 /// hence `ZONE_INVALID`); when so, probe its 8 neighbors and return the
 /// first cell with a valid zone. Returns `None` if neither the harvester's
-/// cell nor any neighbor has a valid zone — caller falls back to no-filter
-/// behavior for that tick.
+/// cell nor any neighbor has a valid zone — the gate is then skipped.
 fn effective_zone_cell(
     zone_grid: &ZoneGrid,
     mz: MovementZone,
@@ -1949,21 +1819,19 @@ fn effective_zone_cell(
     None
 }
 
-/// True if any 8-neighbor of `ore_cell` is in the harvester's connected zone
-/// component. Ore cells themselves are `ZONE_INVALID` because Tiberium is
-/// blocked in the path grid (so A* doesn't path through ore fields), so we
-/// probe the ore's neighbors instead — mirroring how a harvester actually
-/// approaches an ore patch.
-fn ore_reachable(
+/// True if any 8-neighbor of `cell` is in the harvester's connected zone
+/// component: the refinery-dock gate probes the dock cell's neighbours, as
+/// VERA's zone map marks building footprint cells `ZONE_INVALID`.
+fn neighbour_reachable(
     zone_grid: &ZoneGrid,
     mz: MovementZone,
     layer: MovementLayer,
     harvester_zone_cell: (u16, u16),
-    ore_cell: (u16, u16),
+    cell: (u16, u16),
 ) -> bool {
     for &(dx, dy) in &ADJACENT_8 {
-        let nx = (ore_cell.0 as i32) + dx;
-        let ny = (ore_cell.1 as i32) + dy;
+        let nx = (cell.0 as i32) + dx;
+        let ny = (cell.1 as i32) + dy;
         if nx < 0 || ny < 0 || nx > u16::MAX as i32 || ny > u16::MAX as i32 {
             continue;
         }
@@ -2071,7 +1939,7 @@ pub(crate) fn issue_stock_miner_drive_move(
     issue_stock_miner_drive_move_with_overlay_registry(sim, rules, grid, entity_id, target, None)
 }
 
-fn issue_stock_miner_drive_move_with_overlay_registry(
+pub(crate) fn issue_stock_miner_drive_move_with_overlay_registry(
     sim: &mut Simulation,
     rules: &RuleSet,
     grid: &PathGrid,
@@ -2422,10 +2290,22 @@ mod harvest_scan_dispatch_tests {
         ge.mission.set_handler_state(MinerState::SearchOre.cursor());
         sim.substrate.entities.insert(ge);
         sim.substrate.next_stable_object_id = MINER_ID + 1;
+        // A playfield holding the 64x64 fixture (Is_Cell_Harvestable's first gate).
+        sim.playfield_bounds
+            .get_or_insert(crate::map::playfield::PlayfieldBounds {
+                base: 0,
+                off_fc: -64,
+                off_100: -1,
+                off_104: 128,
+                off_108: 65,
+            });
     }
 
+    /// Six bales on a flat map (the scan reads the ore cell's LandType).
     fn seed_ore(sim: &mut Simulation, cell: (u16, u16)) {
-        crate::sim::tiberium::test_support::place_stock_amount(sim, cell, ResourceType::Ore, 720);
+        sim.resolved_terrain
+            .get_or_insert_with(|| crate::map::resolved_terrain::test_flat_ground_grid(64));
+        crate::sim::tiberium::test_support::place_tiberium_on_map(sim, cell, ResourceType::Ore, 6);
     }
 
     fn ore_authority_rules() -> (RuleSet, OverlayTypeRegistry, u8) {
@@ -2484,8 +2364,8 @@ mod harvest_scan_dispatch_tests {
 
         let entity = sim.substrate.entities.get(MINER_ID).expect("miner");
         assert_eq!(
-            entity.miner.as_ref().expect("miner").target_ore_cell,
-            Some((10, 14))
+            entity.navigation.nav_com,
+            Some(crate::sim::components::NavTargetRef::cell(10, 14))
         );
         assert!(
             entity.movement_target.is_some(),
@@ -2539,7 +2419,7 @@ mod harvest_scan_dispatch_tests {
         // bounded scan can never reach it.
         sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(512, 512));
         seed_ore(&mut sim, (400, 400));
-        assert!(config.long_scan_radius < 300);
+        assert!(rules.general.tiberium_long_scan >> 8 < 300);
 
         let scenario_before = sim.rng_state().scenario;
         tick_miners(&mut sim, &rules, &config, Some(&grid));
@@ -2547,15 +2427,11 @@ mod harvest_scan_dispatch_tests {
         let entity = sim.substrate.entities.get(MINER_ID).expect("miner");
         assert_eq!(entity.miner_state(), Some(MinerState::WaitNoOre));
         assert_eq!(
-            entity.miner.as_ref().expect("miner").target_ore_cell,
-            None,
+            entity.navigation.nav_com, None,
             "no whole-map fallback target"
         );
         assert!(entity.movement_target.is_none(), "no cross-map drive");
-        assert_eq!(
-            entity.mission.dispatch_timer().delay(),
-            i32::from(config.rescan_cooldown_ticks),
-        );
+        assert_eq!(entity.mission.dispatch_timer().delay(), NO_ORE_DELAY);
         assert_eq!(
             sim.rng_state().scenario,
             scenario_before,
@@ -2602,7 +2478,7 @@ mod harvest_scan_dispatch_tests {
             Some(MinerState::WaitNoOre),
             "state 4 re-runs until Guard commences; no return to the scan"
         );
-        assert_eq!(entity.miner.as_ref().expect("miner").target_ore_cell, None);
+        assert_eq!(entity.navigation.nav_com, None);
         assert!(
             entity.movement_target.is_none(),
             "not on a refinery cell: no exit drive"
@@ -2625,7 +2501,7 @@ mod harvest_scan_dispatch_tests {
         tick_miners(&mut sim, &rules, &config, Some(&grid));
         let entity = sim.substrate.entities.get(MINER_ID).expect("miner");
         assert_eq!(entity.mission.current().known(), Some(MissionType::Guard));
-        assert_eq!(entity.miner.as_ref().expect("miner").target_ore_cell, None);
+        assert_eq!(entity.navigation.nav_com, None);
         assert!(entity.movement_target.is_none());
         assert!(
             sim.houses[&owner].harvester_no_ore,
@@ -2677,10 +2553,14 @@ mod harvest_scan_dispatch_tests {
         tick_miners(&mut sim, &rules, &config, Some(&grid));
         let entity = sim.substrate.entities.get(MINER_ID).expect("miner");
         assert_eq!(entity.mission.queued().known(), None);
-        assert_eq!(entity.miner_state(), Some(MinerState::MoveToOre));
         assert_eq!(
-            entity.miner.as_ref().expect("miner").target_ore_cell,
-            Some((10, 14))
+            entity.miner_state(),
+            Some(MinerState::SearchOre),
+            "state 0 holds through the drive"
+        );
+        assert_eq!(
+            entity.navigation.nav_com,
+            Some(crate::sim::components::NavTargetRef::cell(10, 14))
         );
         assert!(
             sim.houses[&owner].harvester_no_ore,
@@ -2707,8 +2587,7 @@ mod harvest_scan_dispatch_tests {
         assert_eq!(entity.mission.queued().known(), Some(MissionType::Guard));
         assert_eq!(entity.mission.dispatch_timer().delay(), DISPATCH_NEXT_FRAME);
         assert_eq!(
-            entity.miner.as_ref().expect("miner").target_ore_cell,
-            None,
+            entity.navigation.nav_com, None,
             "the switch (and its scan) is never entered"
         );
         assert_eq!(
@@ -2754,9 +2633,10 @@ mod harvest_scan_dispatch_tests {
     /// The production re-order path: a war miner parked on Guard goes back to
     /// work only through a player order. `Command::HarvestCell` (the right
     /// click on ore) is the MEGAMISSION Harvest assignment
-    /// (`Queue_Mission(mission, 0)` @ 0x004C73B9 natively; VERA assigns
-    /// Harvest + the MoveToOre cursor), after which the Harvest dispatch gate
-    /// re-engages.
+    /// (`Queue_Mission(mission, 0)` @ 0x004C73B9, promoted at the host's next
+    /// Ready/Commence) with the clicked cell as its destination
+    /// (`0x004C747C`), after which the Harvest dispatch gate re-engages on
+    /// state 0.
     #[test]
     fn player_harvest_order_returns_a_parked_war_miner_to_work() {
         let rules = scan_rules();
@@ -2795,8 +2675,26 @@ mod harvest_scan_dispatch_tests {
         );
         assert!(applied);
         let entity = sim.substrate.entities.get(MINER_ID).expect("miner");
+        assert_eq!(
+            entity.mission.current().known(),
+            Some(MissionType::Guard),
+            "Queue_Mission leaves Guard current"
+        );
+        assert_eq!(
+            entity.mission.queued(),
+            crate::sim::mission::MissionId::from_known(MissionType::Harvest)
+        );
+        assert_eq!(
+            entity.navigation.nav_com,
+            Some(crate::sim::components::NavTargetRef::cell(10, 14)),
+            "the order hands the clicked cell to the class setter"
+        );
+        // The host's next Ready/Commence starts Harvest at state 0.
+        let now = sim.session.binary_frame;
+        sim.mission_host_promote(MINER_ID, now, &rules);
+        let entity = sim.substrate.entities.get(MINER_ID).expect("miner");
         assert_eq!(entity.mission.current().known(), Some(MissionType::Harvest));
-        assert_eq!(entity.miner_state(), Some(MinerState::MoveToOre));
+        assert_eq!(entity.miner_state(), Some(MinerState::SearchOre));
 
         // The Harvest handler dispatches again and drives to the ordered cell.
         sim.session.binary_frame += 1;
@@ -2809,7 +2707,7 @@ mod harvest_scan_dispatch_tests {
                 .as_ref()
                 .and_then(|m| m.final_goal.or_else(|| m.path.last().copied())),
             Some((10, 14)),
-            "the dispatch gate re-engaged and the MoveToOre cursor drove to the order"
+            "the dispatch gate re-engaged and the miner drives to the order"
         );
     }
 
