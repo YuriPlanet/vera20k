@@ -45,7 +45,7 @@ use crate::render::shell_transition_pass::ShellRenderTarget;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::rules::color_scheme::ColorSchemeEntry;
 use crate::ui::main_menu::SkirmishCountry;
-use crate::ui::shell::modal::{BodyOkLayout, body_ok_layout};
+use crate::ui::shell::modal::body_ok_layout;
 #[cfg(test)]
 use crate::ui::skirmish_shell::{
     COMBO_DROPDOWN_ROW_H, SkirmishComboId, combo_dropdown_content_rect, player_name_edit_text_rect,
@@ -202,8 +202,6 @@ fn build_skirmish_shell_instances(
     font: &BitFont,
     layout: &SkirmishShellLayout,
     choose_map_layout: Option<&ChooseMapModalLayout>,
-    validation_layout: Option<&BodyOkLayout>,
-    validation_ok_pressed: bool,
     shell: &SkirmishShellState,
     color_schemes: &[ColorSchemeEntry],
     maps: &[MapMenuEntry],
@@ -233,8 +231,7 @@ fn build_skirmish_shell_instances(
             );
             push_right_panel_base_instances(&mut instances, atlas, layout, false);
             push_lower_strip_instance(&mut instances, atlas, layout);
-            let interior =
-                push_random_map_setup_background_instances(&mut instances, atlas, layout);
+            let interior = push_generic_shell_background_instances(&mut instances, atlas, layout);
             push_steady_optional_chrome_instances(
                 &mut instances,
                 atlas,
@@ -400,16 +397,6 @@ fn build_skirmish_shell_instances(
     }
 
     push_dropdown_instances(&mut instances, atlas, color_schemes, layout, shell, maps);
-    if shell.validation_modal.is_some() {
-        if let Some(validation_layout) = validation_layout {
-            push_validation_modal_instances(
-                &mut instances,
-                atlas,
-                validation_layout,
-                validation_ok_pressed,
-            );
-        }
-    }
     instances
 }
 
@@ -501,6 +488,15 @@ fn render_skirmish_shell_with_atlas(
         .validation_modal
         .as_ref()
         .map(|_| body_ok_layout(state.render_width() as i32, state.render_height() as i32));
+    // `ShellMessageBox__Run` draws the empty backdrop before its box
+    // (`0x005D3514`): while a box is up the dialog behind does not show.
+    let eject_prompt = state
+        .frontend
+        .skirmish_shell_state
+        .choose_map_modal
+        .as_ref()
+        .and_then(|modal| modal.eject_prompt);
+    let message_box_up = validation_layout.is_some() || eject_prompt.is_some();
     let action = SkirmishShellAction::None;
 
     let Some(atlas) = atlas else {
@@ -543,7 +539,7 @@ fn render_skirmish_shell_with_atlas(
     // `0x6B`'s heading and status line are the family kind-1 statics: blank
     // while a slide runs, revealed from the entry slide's end.
     let (chooser_title, chooser_status) = match choose_map_layout.as_ref() {
-        Some(chooser) if chooser_showing && !sliding => {
+        Some(chooser) if chooser_showing && !sliding && !message_box_up => {
             let now = std::time::Instant::now();
             let title = state.frontend.shell_page_title.paint(now);
             let help = state
@@ -594,6 +590,7 @@ fn render_skirmish_shell_with_atlas(
         .unwrap_or_default();
     // The map preview static and its markers sit in the top panel.
     let draw_start_marker_overlays = !sliding
+        && !message_box_up
         && should_draw_start_marker_overlays(
             fitted_preview_rect,
             &projected_start_positions,
@@ -603,7 +600,7 @@ fn render_skirmish_shell_with_atlas(
         .frontend
         .skirmish_preview_texture
         .as_ref()
-        .filter(|_| !sliding)
+        .filter(|_| !sliding && !message_box_up)
         .and_then(|preview| {
             build_preview_surface_instance(preview_rect, preview.width, preview.height)
         });
@@ -628,20 +625,34 @@ fn render_skirmish_shell_with_atlas(
     let validation_ok_pressed = state.frontend.shell_controller.top_id()
         == Some(crate::ui::shell::descriptor::DialogId(0x00CE))
         && state.frontend.shell_controller.pressed() == Some(crate::ui::shell::modal::control::OK);
-    let instances = build_skirmish_shell_instances(
-        atlas,
-        &state.renderer.bit_font,
-        &layout,
-        choose_map_layout.as_ref(),
-        validation_layout.as_ref(),
-        validation_ok_pressed,
-        &state.frontend.skirmish_shell_state,
-        color_schemes,
-        state.frontend.scenario_catalog.shell_maps(),
-        wave.as_ref(),
-        leaving,
-    );
-    let mut instances = instances;
+    let mut instances = if message_box_up {
+        let mut instances = Vec::new();
+        push_message_box_backdrop_instances(&mut instances, atlas, &layout);
+        if let Some(validation_layout) = validation_layout.as_ref() {
+            push_validation_modal_instances(
+                &mut instances,
+                atlas,
+                validation_layout,
+                validation_ok_pressed,
+            );
+        }
+        if let Some(prompt) = eject_prompt {
+            push_eject_box_instances(&mut instances, atlas, layout.screen, prompt);
+        }
+        instances
+    } else {
+        build_skirmish_shell_instances(
+            atlas,
+            &state.renderer.bit_font,
+            &layout,
+            choose_map_layout.as_ref(),
+            &state.frontend.skirmish_shell_state,
+            color_schemes,
+            state.frontend.scenario_catalog.shell_maps(),
+            wave.as_ref(),
+            leaving,
+        )
+    };
     if preview_instance.is_some() {
         push_solid_rect(
             &mut instances,
@@ -651,19 +662,19 @@ fn render_skirmish_shell_with_atlas(
             SHELL_PREVIEW_BACKDROP_DEPTH,
         );
     }
-    let (mut shell_draws, bare_text_instances) = if choose_map_layout.is_some() || leaving {
-        (Vec::new(), Vec::new())
-    } else {
-        build_shell_text_draws(
-            state,
-            &layout,
-            validation_layout.as_ref(),
-            &state.frontend.skirmish_shell_state,
-            state.frontend.scenario_catalog.shell_maps(),
-            sliding,
-        )
-    };
-    if let Some(choose_map_layout) = choose_map_layout.as_ref() {
+    let (mut shell_draws, bare_text_instances) =
+        if message_box_up || choose_map_layout.is_some() || leaving {
+            (Vec::new(), Vec::new())
+        } else {
+            build_shell_text_draws(
+                state,
+                &layout,
+                &state.frontend.skirmish_shell_state,
+                state.frontend.scenario_catalog.shell_maps(),
+                sliding,
+            )
+        };
+    if let Some(choose_map_layout) = choose_map_layout.as_ref().filter(|_| !message_box_up) {
         // Mirrors the sprite pass: the setup dialog replaces the chooser, so
         // only one of the two contributes text.
         if let Some(mode) = state
@@ -699,16 +710,10 @@ fn render_skirmish_shell_with_atlas(
                     SHELL_DROPDOWN_TEXT_DEPTH - 0.0001,
                 ));
             }
-            if let Some(prompt) = state
-                .frontend
-                .skirmish_shell_state
-                .choose_map_modal
-                .as_ref()
-                .and_then(|modal| modal.eject_prompt)
-            {
-                text::push_choose_map_eject_prompt_text(&mut shell_draws, state, &prompt);
-            }
         }
+    }
+    if let Some(prompt) = eject_prompt {
+        text::push_choose_map_eject_prompt_text(&mut shell_draws, state, &prompt);
     }
     if let Some(validation_layout) = validation_layout.as_ref() {
         push_validation_modal_text_draws(

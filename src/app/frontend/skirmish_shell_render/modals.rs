@@ -16,8 +16,9 @@ use crate::ui::skirmish_shell::{
 };
 
 use super::chrome::{
-    common_shell_origin, push_button_30, push_entry_native, push_ownerdraw_two_pixel_bevel_frame,
-    push_rect_outline, push_right_panel_button_shp, push_solid_rect,
+    common_shell_origin, push_button_30, push_entry_native, push_lower_strip_instance,
+    push_ownerdraw_two_pixel_bevel_frame, push_rect_outline, push_right_panel_base_instances,
+    push_right_panel_button_shp, push_solid_rect,
 };
 use super::controls::{ControlPaint, paint_control};
 use super::draw_order::{GenericBackgroundRole, generic_background_role};
@@ -197,34 +198,57 @@ pub(super) fn push_choose_map_modal_control_instances(
         OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
         SHELL_DROPDOWN_DEPTH - 0.00012,
     );
-    if let Some(prompt) = modal.eject_prompt {
-        let screen = layout.screen;
-        let boxed = crate::ui::shell::modal::quit_confirm_layout(screen.w, screen.h);
-        let pressed = |button| prompt.pressed == Some(button);
-        let buttons = [
-            shell_paint::ModalButton {
-                rect: boxed.ok,
-                pressed: pressed(crate::ui::skirmish_shell::EjectPromptButton::Ok),
-                enabled: true,
-            },
-            shell_paint::ModalButton {
-                rect: boxed.cancel,
-                pressed: pressed(crate::ui::skirmish_shell::EjectPromptButton::Cancel),
-                enabled: true,
-            },
-        ];
-        out.extend(shell_paint::paint_modal_sprites(
-            atlas.validation_modal_background_pudlgbgn,
-            super::chrome::type3_button_frames(atlas),
-            boxed.dialog,
-            &buttons,
-            VALIDATION_MODAL_SPRITE_DEPTHS,
-        ));
-    }
 }
 
-/// Generic common-shell background selected for random-map dialog `0x105`.
-pub(super) fn random_map_setup_background_entry(
+/// The empty backdrop `ShellMessageBox__Run` draws before its box
+/// (`0x005D3514` -> `Shell__DrawEmptyBackdrop` `0x0052FEC0` ->
+/// `0x0072E820`): the generic shell background and `RightPanel__Draw(0)`
+/// (`0x0072E450`: top cap, tiles with every slot shuttered by SDBTNANM frame
+/// 10, bottom cap, lower strip). The dialog behind does not show.
+pub(super) fn push_message_box_backdrop_instances(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    layout: &SkirmishShellLayout,
+) {
+    push_generic_shell_background_instances(out, atlas, layout);
+    push_right_panel_base_instances(out, atlas, layout, true);
+    push_lower_strip_instance(out, atlas, layout);
+}
+
+/// Use Map's two-button eject box.
+pub(super) fn push_eject_box_instances(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    screen: RectPx,
+    prompt: crate::ui::skirmish_shell::EjectPrompt,
+) {
+    let boxed = crate::ui::shell::modal::quit_confirm_layout(screen.w, screen.h);
+    let pressed = |button| prompt.pressed == Some(button);
+    let buttons = [
+        shell_paint::ModalButton {
+            rect: boxed.ok,
+            pressed: pressed(crate::ui::skirmish_shell::EjectPromptButton::Ok),
+            enabled: true,
+        },
+        shell_paint::ModalButton {
+            rect: boxed.cancel,
+            pressed: pressed(crate::ui::skirmish_shell::EjectPromptButton::Cancel),
+            enabled: true,
+        },
+    ];
+    out.extend(shell_paint::paint_modal_sprites(
+        atlas.validation_modal_background_pudlgbgn,
+        super::chrome::type3_button_frames(atlas),
+        boxed.dialog,
+        &buttons,
+        VALIDATION_MODAL_SPRITE_DEPTHS,
+    ));
+}
+
+/// The generic shell background (MNSCRNS/MNSCRNL through SHELL.PAL): the
+/// random-map dialog `0x105`'s and the empty backdrop's
+/// (`0x0072AB49..0x0072AB7E`).
+pub(super) fn generic_shell_background_entry(
     atlas: &SkirmishShellChromeAtlas,
     layout: &SkirmishShellLayout,
 ) -> Option<SkirmishShellChromeEntry> {
@@ -234,12 +258,12 @@ pub(super) fn random_map_setup_background_entry(
     }
 }
 
-pub(super) fn push_random_map_setup_background_instances(
+pub(super) fn push_generic_shell_background_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
     layout: &SkirmishShellLayout,
 ) -> BackdropInteriorPaint {
-    let background = random_map_setup_background_entry(atlas, layout);
+    let background = generic_shell_background_entry(atlas, layout);
     let interior = backdrop_interior(background.is_some());
     if let Some(background) = background {
         let (x, y) = common_shell_origin(layout);

@@ -120,10 +120,6 @@ with the same RA2MD.INI, compared in RGB565 units with
 
 ## Residuals
 
-- Message boxes: `ShellMessageBox__Run` `0x005D3490` draws the empty
-  backdrop (`0x005D3514`) before the box, so the eject box shows over the
-  backdrop, not over `0x6B`. VERA20k draws it over the chooser; the
-  backdrop behind shell boxes (also `0xCE` on `0x102`) is the next chain.
 - The empty backdrop presented before `0x6B` exists and at its slide-in end
   (`0x005E68A7`, `0x005E6E2A`) is not drawn; whether either shows a frame is
   unknown.
