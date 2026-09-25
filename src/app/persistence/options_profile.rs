@@ -18,6 +18,7 @@ pub(crate) const RA2MD_INI_FILENAME: &str = "RA2MD.INI";
 const OPTIONS_SECTION: &str = "Options";
 const VIDEO_SECTION: &str = "Video";
 const AUDIO_SECTION: &str = "Audio";
+const WONLINE_SECTION: &str = "WOnline";
 const NETWORK_SECTION: &str = "Network";
 /// `CRCEngine::operator()` @ `0x004A1DE0` over `"Network"`, executed natively
 /// under Unicorn: the scratch value `INIClass__ReadCommaHexUTF16` leaves for a
@@ -81,6 +82,12 @@ pub(crate) struct RetailOptionsProfile {
     // `ReadFromINI` `0x005FABA6..0x005FAC54` and written by `WriteToINI`
     // `0x005FAF9E`; Play_Movie raises it through `0x005FBF80`.
     pub(crate) movie_progress: crate::ui::movies_credits_shell::MovieProgress,
+
+    // [WOnline] LobMusic: read by `WOL_Main`'s settings reader `0x0077DED0`
+    // (`ReadInt`, default 1) from the same RA2MD.INI object into
+    // `[0x00B7690C]`, outside OptionsClass. Read-only here; this route never
+    // writes it back.
+    pub(crate) wol_lobby_music: i32,
 }
 
 /// The two process-start products obtained from one physical `RA2MD.INI`
@@ -127,6 +134,7 @@ impl Default for RetailOptionsProfile {
             sound_latency: 9,
             in_game_music: true,
             movie_progress: crate::ui::movies_credits_shell::MovieProgress::default(),
+            wol_lobby_music: 1,
         }
     }
 }
@@ -317,6 +325,9 @@ impl RetailOptionsProfile {
             ini.section(NETWORK_SECTION)
                 .and_then(|network| network.get("NetID")),
         );
+        if let Some(wonline) = ini.section(WONLINE_SECTION) {
+            self.wol_lobby_music = wonline.read_int("LobMusic", self.wol_lobby_music);
+        }
     }
 
     /// Mutate the early-read live pair through startup fallback and return its

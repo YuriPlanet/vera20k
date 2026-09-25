@@ -136,7 +136,8 @@ impl SlideDialogSpec {
 /// (`0x0052F05C`), and `0x0060A180` counts visible buttons only. `0xB7` from
 /// Single Player: Load (`0x40F`, counted even while disabled), then Back
 /// (`0x686`). `0xD5` (launcher Options): Keyboard (`0x5CE`) and Network
-/// (`0x5CD`), then Main Menu (`0x686`).
+/// (`0x5CD`), then Main Menu (`0x686`). `0x10E` (Westwood Online welcome):
+/// six top buttons, then Main Menu (`0x686`).
 pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
     SlideDialogSpec {
         dialog_id: 0x00E2,
@@ -194,6 +195,13 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         map_button: false,
         top_panel: false,
     },
+    SlideDialogSpec {
+        dialog_id: 0x010E,
+        top_buttons: 6,
+        bottom_button: true,
+        map_button: false,
+        top_panel: false,
+    },
 ];
 
 /// Front-end shell dialog ids that slide on first paint (the eligibility
@@ -210,7 +218,7 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
 /// only place it is rendered as a family page. Message boxes (`0x120`
 /// confirm, `0xCE` body-ok) are not in it.
 pub(crate) const SHELL_SLIDE_ALLOW_LIST: &[u16] = &[
-    0x00E2, 0x0094, 0x006B, 0x00B7, 0x00D5, 0x0100, 0x0101, 0x0102, 0x0129,
+    0x00E2, 0x0094, 0x006B, 0x00B7, 0x00D5, 0x0100, 0x0101, 0x0102, 0x010E, 0x0129,
 ];
 
 /// Whether a dialog plays the first-paint controls-reveal slide.
@@ -307,7 +315,13 @@ impl SlideColumn {
     pub(crate) fn button_draws(self, tick: u32, direction: WaveDirection) -> Vec<ColumnDraw> {
         let tick = tick as i32;
         let first = u32::from(self.map_button);
-        let regular = self.rows.saturating_sub(u32::from(self.bottom_button));
+        // Top buttons claim their rows even where the bottom button already
+        // has the last one: `0x10E`'s six top buttons at 640x480 (six rows)
+        // draw row 5 twice, as the executed engine does.
+        let regular = self
+            .rows
+            .saturating_sub(u32::from(self.bottom_button))
+            .max(self.top_buttons.min(self.rows));
         let mut draws: Vec<ColumnDraw> = (0..regular)
             .map(|c| {
                 let group = if c < self.top_buttons {
@@ -791,7 +805,7 @@ mod tests {
         ))
         .unwrap();
         let cases = fixture["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 42);
+        assert_eq!(cases.len(), 48);
         for case in cases {
             let dialog = case["dialog"].as_str().unwrap();
             let dialog_id = u16::from_str_radix(dialog.trim_start_matches("0x"), 16).unwrap();

@@ -45,6 +45,13 @@ const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-stead
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
 const CHECKPOINT_OPTIONS_0XD5_STEADY: &str = "options-0xd5-steady";
 const CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE: &str = "main-menu-0xe2-network-bounce";
+const CHECKPOINT_WOL_0X10E_STEADY: &str = "wol-0x10e-steady";
+const CHECKPOINT_WOL_0X10E_ENTRY_PREFIX: &str = "wol-0x10e-entry-tick-";
+const CHECKPOINT_WOL_0X10E_HOVER_QUICK_MATCH: &str = "wol-0x10e-hover-quick-match";
+const CHECKPOINT_WOL_0X10E_API_MISSING: &str = "wol-0x10e-api-missing";
+const CHECKPOINT_WOL_0X10E_BACK: &str = "wol-0x10e-back";
+/// Quick Match's centre at 800x600.
+const WOL_QUICK_MATCH_POINT: (i32, i32) = (720, 220);
 const CHECKPOINT_OPTIONS_0XD5_ENTRY_PREFIX: &str = "options-0xd5-entry-tick-";
 /// `options-0xd5-hover-<control>`: the pointer rests on a control (like the
 /// retail helper's hover capture) so the status line shows its help.
@@ -122,6 +129,16 @@ pub enum ShellCaptureCheckpoint {
     /// Network on `0xE2`: after its teardown slide and a new `0xE2`'s entry
     /// slide, the settled main menu.
     MainMenu0xE2NetworkBounce,
+    /// Main Menu -> Internet: `0x10E` settled.
+    Wol0x10ESteady,
+    /// Its entry slide held at one tick (`wol-0x10e-entry-tick-<N>`).
+    Wol0x10EEntry(u32),
+    /// Settled with the pointer on Quick Match.
+    Wol0x10EHoverQuickMatch,
+    /// My Information pressed: the `TXT_APIMISSING` box `0xD0`.
+    Wol0x10EApiMissing,
+    /// Main Menu pressed: the new `0xE2` settled.
+    Wol0x10EBack,
     /// Its entry slide held at one tick (`options-0xd5-entry-tick-<N>`).
     Options0xD5Entry(u32),
     /// Settled with the pointer resting on a control
@@ -196,6 +213,11 @@ impl ShellCaptureCheckpoint {
                 ShellSlideKind::Options,
                 Self::Options0xD5Entry,
             ),
+            (
+                CHECKPOINT_WOL_0X10E_ENTRY_PREFIX,
+                ShellSlideKind::WolWelcome,
+                Self::Wol0x10EEntry,
+            ),
         ] {
             let Some(tick) = value.strip_prefix(prefix) else {
                 continue;
@@ -231,6 +253,10 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY => Ok(Self::LoadSavedGame0xB7Steady),
             CHECKPOINT_OPTIONS_0XD5_STEADY => Ok(Self::Options0xD5Steady),
             CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE => Ok(Self::MainMenu0xE2NetworkBounce),
+            CHECKPOINT_WOL_0X10E_STEADY => Ok(Self::Wol0x10ESteady),
+            CHECKPOINT_WOL_0X10E_HOVER_QUICK_MATCH => Ok(Self::Wol0x10EHoverQuickMatch),
+            CHECKPOINT_WOL_0X10E_API_MISSING => Ok(Self::Wol0x10EApiMissing),
+            CHECKPOINT_WOL_0X10E_BACK => Ok(Self::Wol0x10EBack),
             _ => {
                 if let Some(index) = OPTIONS_0XD5_HOVER_CHECKPOINTS
                     .iter()
@@ -263,6 +289,11 @@ impl ShellCaptureCheckpoint {
             Self::LoadSavedGame0xB7Entry(_) => "load-saved-game-0xb7-entry",
             Self::Options0xD5Steady => CHECKPOINT_OPTIONS_0XD5_STEADY,
             Self::MainMenu0xE2NetworkBounce => CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE,
+            Self::Wol0x10ESteady => CHECKPOINT_WOL_0X10E_STEADY,
+            Self::Wol0x10EEntry(_) => "wol-0x10e-entry",
+            Self::Wol0x10EHoverQuickMatch => CHECKPOINT_WOL_0X10E_HOVER_QUICK_MATCH,
+            Self::Wol0x10EApiMissing => CHECKPOINT_WOL_0X10E_API_MISSING,
+            Self::Wol0x10EBack => CHECKPOINT_WOL_0X10E_BACK,
             Self::Options0xD5Entry(_) => "options-0xd5-entry",
             Self::Options0xD5Hover(index) => OPTIONS_0XD5_HOVER_CHECKPOINTS[index].0,
             Self::CreditsRollFrame(_) => "credits-roll-frame",
@@ -306,6 +337,31 @@ impl ShellCaptureCheckpoint {
                 entry_tick: Some(tick),
             },
             Self::MainMenu0xE2NetworkBounce => movies::MoviesTarget::NetworkBounce,
+            Self::Wol0x10ESteady => movies::MoviesTarget::WolWelcome {
+                entry_tick: None,
+                hover: None,
+                press: movies::WolPress::None,
+            },
+            Self::Wol0x10EEntry(tick) => movies::MoviesTarget::WolWelcome {
+                entry_tick: Some(tick),
+                hover: None,
+                press: movies::WolPress::None,
+            },
+            Self::Wol0x10EHoverQuickMatch => movies::MoviesTarget::WolWelcome {
+                entry_tick: None,
+                hover: Some(WOL_QUICK_MATCH_POINT),
+                press: movies::WolPress::None,
+            },
+            Self::Wol0x10EApiMissing => movies::MoviesTarget::WolWelcome {
+                entry_tick: None,
+                hover: None,
+                press: movies::WolPress::MyInformation,
+            },
+            Self::Wol0x10EBack => movies::MoviesTarget::WolWelcome {
+                entry_tick: None,
+                hover: None,
+                press: movies::WolPress::MainMenu,
+            },
             Self::Options0xD5Steady => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
                 hover: None,
@@ -1454,6 +1510,24 @@ mod tests {
             assert_eq!(checkpoint.as_str(), name);
         }
         assert!(ShellCaptureCheckpoint::parse("options-0xd5-hover-nothing").is_err());
+    }
+
+    #[test]
+    fn wol_checkpoints_round_trip() {
+        for name in [
+            CHECKPOINT_WOL_0X10E_STEADY,
+            CHECKPOINT_WOL_0X10E_HOVER_QUICK_MATCH,
+            CHECKPOINT_WOL_0X10E_API_MISSING,
+            CHECKPOINT_WOL_0X10E_BACK,
+        ] {
+            let checkpoint = ShellCaptureCheckpoint::parse(name).expect("WOL checkpoint");
+            assert_eq!(checkpoint.as_str(), name);
+        }
+        assert_eq!(
+            ShellCaptureCheckpoint::parse("wol-0x10e-entry-tick-17").expect("last tick"),
+            ShellCaptureCheckpoint::Wol0x10EEntry(17)
+        );
+        assert!(ShellCaptureCheckpoint::parse("wol-0x10e-entry-tick-18").is_err());
     }
 
     #[test]

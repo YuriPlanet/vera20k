@@ -757,6 +757,7 @@ impl App {
                 | MainMenuShellAction::MoviesAndCredits
                 | MainMenuShellAction::Options
                 | MainMenuShellAction::Network
+                | MainMenuShellAction::WwOnline
                 | MainMenuShellAction::ExitGame => {
                     Self::leave_shell_dialog(state, ShellExitThen::MainMenu(action))
                 }
@@ -1004,6 +1005,8 @@ impl App {
             ShellExitThen::CampaignBack => Self::commit_campaign_back(state),
             ShellExitThen::LoadSavedGameBack => Self::commit_load_saved_game_back(state),
             ShellExitThen::OptionsBack => Self::commit_launcher_options_back(state),
+            ShellExitThen::WolBack => Self::return_from_wol(state),
+            ShellExitThen::WolApiMissing => Self::commit_wol_api_missing(state),
         }
     }
 
@@ -1025,6 +1028,14 @@ impl App {
         // Show_Credits' Call_Back pumps Theme AI (starting the queued CREDITS
         // song) without the menu loop's Play_Song(INTRO).
         if state.frontend.credits_roll.is_some() {
+            if let Some(assets) = state.process_assets.manager() {
+                state.audio.update_theme(assets, now_ms);
+            }
+            return;
+        }
+        // WOL_Main's loop pumps Theme AI without the menu's Play_Song(INTRO):
+        // the shuffled lobby music plays until WOL returns.
+        if state.frontend.shell_route.wol_welcome() {
             if let Some(assets) = state.process_assets.manager() {
                 state.audio.update_theme(assets, now_ms);
             }
@@ -1100,12 +1111,7 @@ impl App {
                 Self::open_movies_credits_page(state);
             }
             MainMenuShellAction::Network => Self::bounce_network_to_main_menu(state),
-            MainMenuShellAction::WwOnline => {
-                log::info!(
-                    "Main-menu shell action {:?} is preserved but downstream dialog is not implemented yet",
-                    action
-                );
-            }
+            MainMenuShellAction::WwOnline => Self::open_wol_welcome_page(state),
         }
     }
 

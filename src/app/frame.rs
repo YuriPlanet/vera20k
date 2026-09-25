@@ -290,6 +290,16 @@ impl App {
                     } else {
                         Self::render_egui_main_menu_fallback(state, &mut encoder, &view, event_loop)?;
                     }
+                } else if Self::wol_welcome_active(state) {
+                    if crate::app::frontend::wol_welcome_render::render_wol_welcome_page(
+                        state,
+                        &mut encoder,
+                        &output.texture,
+                    )? {
+                        presented_shell = PresentedShell::WolWelcome;
+                    } else {
+                        Self::render_egui_main_menu_fallback(state, &mut encoder, &view, event_loop)?;
+                    }
                 } else if Self::load_saved_game_active(state) {
                     if crate::app::frontend::load_saved_game_render::render_load_saved_game_page(
                         state,

@@ -214,6 +214,23 @@ impl AppAudioRuntime {
         self.apply_theme_action(action);
     }
 
+    /// `WOL_Main` entry: INTRO gives way to the shuffled lobby music
+    /// (`ThemeRuntime::enter_wol_lobby`). Returns the shuffle flag to restore.
+    pub(crate) fn enter_wol_lobby_music(&mut self, lobby_music: bool, wall_ms: u64) -> bool {
+        let gates = self.theme_gates();
+        let physical = self.music_output_state();
+        let (action, saved_shuffle) =
+            self.theme
+                .enter_wol_lobby(lobby_music, gates, physical, wall_ms);
+        self.apply_theme_action(action);
+        saved_shuffle
+    }
+
+    /// `WOL_Main` exit: the saved shuffle flag returns.
+    pub(crate) fn leave_wol_lobby_music(&mut self, saved_shuffle: bool) {
+        self.theme.leave_wol_lobby(saved_shuffle);
+    }
+
     /// `ThemeClass::Stop(fade=0)`.
     pub(crate) fn stop_theme(&mut self) {
         let gates = self.theme_gates();

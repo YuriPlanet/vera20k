@@ -649,6 +649,13 @@ impl ApplicationHandler for App {
                         return;
                     }
 
+                    if Self::wol_welcome_active(state) {
+                        // 0x10E ignores IDOK/IDCANCEL (0x007988C0), and the
+                        // 0xD0 box's loop (0x007759E0) dispatches without
+                        // IsDialogMessage.
+                        return;
+                    }
+
                     if Self::load_saved_game_active(state) {
                         // The message box takes Enter/Escape; the page
                         // ignores IDOK/IDCANCEL (0x00558A30).
@@ -822,6 +829,9 @@ impl ApplicationHandler for App {
                 if !egui_consumed && Self::load_saved_game_active(state) {
                     Self::handle_load_saved_game_mouse_move(state);
                 }
+                if !egui_consumed && Self::wol_welcome_active(state) {
+                    Self::handle_wol_mouse_move(state);
+                }
                 if Self::score_shell_active(state) {
                     Self::handle_score_shell_mouse_move(state);
                 }
@@ -832,6 +842,7 @@ impl ApplicationHandler for App {
                     && !Self::movie_list_active(state)
                     && !Self::campaign_active(state)
                     && !Self::load_saved_game_active(state)
+                    && !Self::wol_welcome_active(state)
                     && state.frontend.fullscreen_movie.is_none()
                     && state.frontend.credits_roll.is_none()
                     && !Self::native_skirmish_shell_active(state)
@@ -895,6 +906,17 @@ impl ApplicationHandler for App {
                     if Self::load_saved_game_active(state) {
                         if button == MouseButton::Left {
                             Self::handle_load_saved_game_mouse(state, btn_state.is_pressed());
+                            state.platform.window.request_redraw();
+                        }
+                        return;
+                    }
+                    if Self::wol_welcome_active(state) {
+                        if button == MouseButton::Left {
+                            if btn_state.is_pressed() {
+                                Self::handle_wol_mouse_down(state);
+                            } else {
+                                Self::handle_wol_mouse_up(state);
+                            }
                             state.platform.window.request_redraw();
                         }
                         return;

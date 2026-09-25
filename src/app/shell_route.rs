@@ -26,6 +26,9 @@ pub(crate) enum ShellRoute {
     Campaign,
     /// Load Saved Game `0xB7`, reached from Single Player.
     LoadSavedGame,
+    /// Westwood Online welcome `0x10E` (and its `TXT_APIMISSING` box),
+    /// reached from Internet.
+    WolWelcome,
     /// The native skirmish shell. `return_to_single_player` is the return
     /// arrow: entered from the single-player shell, Back returns there
     /// instead of the main menu.
@@ -55,6 +58,11 @@ impl ShellRoute {
     /// Load Saved Game `0xB7`.
     pub(crate) fn load_saved_game(self) -> bool {
         matches!(self, Self::LoadSavedGame)
+    }
+
+    /// Westwood Online welcome `0x10E`.
+    pub(crate) fn wol_welcome(self) -> bool {
+        matches!(self, Self::WolWelcome)
     }
 
     pub(crate) fn skirmish(self) -> bool {
@@ -87,6 +95,7 @@ mod tests {
             ShellRoute::MovieList,
             ShellRoute::Campaign,
             ShellRoute::LoadSavedGame,
+            ShellRoute::WolWelcome,
             ShellRoute::Skirmish {
                 return_to_single_player: false,
             },
@@ -101,6 +110,7 @@ mod tests {
                 route.movie_list(),
                 route.campaign(),
                 route.load_saved_game(),
+                route.wol_welcome(),
                 route.skirmish(),
             ];
             assert!(active.iter().filter(|&&on| on).count() <= 1);

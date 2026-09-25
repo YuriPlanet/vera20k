@@ -451,6 +451,43 @@ impl ThemeRuntime {
         }
     }
 
+    /// `WOL_Main` entry (`0x0077B2D7..0x0077B31D`): with INTRO current,
+    /// `Queue(-3)`; the score shuffle flag `[0x00A83D22]` is saved and forced
+    /// on; then the lobby-music rule `0x0077E110`: with `LobMusic`, when no
+    /// stream plays (`Still_Playing` `0x00720FD0`) or INTRO is still current,
+    /// `Stop(0)` and `Queue(-2)` (Theme AI then shuffles the next track);
+    /// without it, `Queue(-3)`. Returns the shuffle flag to restore on leaving.
+    pub(crate) fn enter_wol_lobby(
+        &mut self,
+        lobby_music: bool,
+        gates: ThemeGates,
+        physical: MusicOutputState,
+        wall_ms: u64,
+    ) -> (ThemeAction, bool) {
+        let intro = self.from_name(MENU_THEME_SECTION);
+        let mut action = ThemeAction::default();
+        if self.current_song() == intro {
+            action = action.then(self.queue_song(THEME_HOLD, gates, physical, wall_ms));
+        }
+        let saved_shuffle = std::mem::replace(&mut self.shuffle, true);
+        if lobby_music {
+            if !self.still_playing(physical, wall_ms) || self.current_song() == intro {
+                action = action.then(self.stop(gates, false, physical, wall_ms));
+                action = action.then(self.queue_song(THEME_AUTO, gates, physical, wall_ms));
+            }
+        } else {
+            action = action.then(self.queue_song(THEME_HOLD, gates, physical, wall_ms));
+        }
+        (action, saved_shuffle)
+    }
+
+    /// Every `WOL_Main` exit restores the saved shuffle flag
+    /// (`0x0077B549`, `0x0077B56D`, `0x0077B59C`, ...); the menu then plays
+    /// INTRO again.
+    pub(crate) fn leave_wol_lobby(&mut self, saved_shuffle: bool) {
+        self.shuffle = saved_shuffle;
+    }
+
     /// Fade bookkeeping shared by AI/Queue/Play/Stop: when fading and the
     /// interpolator reached its target (`0x004080D0 == 0`), `StreamPlayer__Stop`.
     fn settle_fade(&mut self, wall_ms: u64) -> ThemeAction {
@@ -883,6 +920,44 @@ mod tests {
             samples: vec![0.0, 0.0],
             sample_rate: 22_050,
         })
+    }
+
+    #[test]
+    fn entering_wol_cuts_intro_and_shuffles_until_leaving() {
+        let mut theme = stock_runtime();
+        let mut ok = |stem: &str| prepared(stem);
+        theme.play_song(0, gates(true), MusicOutputState::Idle, 0, &mut ok);
+        assert_eq!(theme.current_song(), 0, "INTRO plays");
+        let (action, saved) =
+            theme.enter_wol_lobby(true, gates(true), MusicOutputState::Playing, 100);
+        assert!(!saved, "stock IsScoreShuffle is off");
+        // Queue(-3) started a fade on INTRO; Stop(0) then stops the stream
+        // at once and, like native, leaves the fading flag for Play to clear.
+        assert!(
+            action.stop_output,
+            "Stop(0) cuts INTRO without waiting for the fade"
+        );
+        assert_eq!(theme.slots().pending, THEME_AUTO);
+        // Theme AI starts a shuffled normal track, never INTRO.
+        let started = theme.ai(gates(true), MusicOutputState::Idle, 200, &mut ok);
+        let stem = started
+            .start
+            .map(|track| track.stem)
+            .expect("a lobby track");
+        assert_ne!(theme.current_song(), 0, "{stem}");
+        assert!(theme.shuffle);
+        theme.leave_wol_lobby(saved);
+        assert!(!theme.shuffle);
+    }
+
+    #[test]
+    fn wol_without_lobby_music_holds_the_current_song() {
+        let mut theme = stock_runtime();
+        let mut ok = |stem: &str| prepared(stem);
+        theme.play_song(0, gates(true), MusicOutputState::Idle, 0, &mut ok);
+        let (action, _) = theme.enter_wol_lobby(false, gates(true), MusicOutputState::Playing, 100);
+        assert!(!action.stop_output);
+        assert_eq!(theme.slots().pending, THEME_HOLD);
     }
 
     #[test]

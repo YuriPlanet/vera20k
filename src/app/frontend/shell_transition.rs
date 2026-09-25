@@ -63,6 +63,8 @@ pub(crate) enum ShellSlideKind {
     LoadSavedGame,
     /// Dialog 0xD5 — launcher Options.
     Options,
+    /// Dialog 0x10E — Westwood Online welcome.
+    WolWelcome,
 }
 
 impl ShellSlideKind {
@@ -79,6 +81,7 @@ impl ShellSlideKind {
             ShellSlideKind::Campaign => 0x0094,
             ShellSlideKind::LoadSavedGame => 0x00B7,
             ShellSlideKind::Options => 0x00D5,
+            ShellSlideKind::WolWelcome => 0x010E,
         })
     }
 
@@ -123,6 +126,11 @@ pub(crate) enum ShellExitThen {
     /// Options Main Menu (result `0x5CB`): the controls commit, and state
     /// 0x12 recreates `0xE2`.
     OptionsBack,
+    /// Westwood Online Main Menu (result 0): `0xE2` is recreated.
+    WolBack,
+    /// A Westwood Online action: `0x10E` closes before the WOLAPI object
+    /// fails to load and `TXT_APIMISSING` shows.
+    WolApiMissing,
 }
 
 impl ShellExitThen {
@@ -137,6 +145,7 @@ impl ShellExitThen {
             Self::CampaignBack => ShellSlideKind::Campaign,
             Self::LoadSavedGameBack => ShellSlideKind::LoadSavedGame,
             Self::OptionsBack => ShellSlideKind::Options,
+            Self::WolBack | Self::WolApiMissing => ShellSlideKind::WolWelcome,
         }
     }
 }
@@ -394,7 +403,8 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::MovieList
             | ShellSlideKind::Campaign
             | ShellSlideKind::LoadSavedGame
-            | ShellSlideKind::Options => ShellWaveCompletion::MenuPage,
+            | ShellSlideKind::Options
+            | ShellSlideKind::WolWelcome => ShellWaveCompletion::MenuPage,
             ShellSlideKind::Skirmish => ShellWaveCompletion::Skirmish,
         })
     }
@@ -581,6 +591,17 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
             ShellSlideKind::Campaign
         } else if state.frontend.shell_route.load_saved_game() {
             ShellSlideKind::LoadSavedGame
+        } else if state.frontend.shell_route.wol_welcome() {
+            // The TXT_APIMISSING box runs after 0x10E is destroyed.
+            if state
+                .frontend
+                .wol_welcome
+                .as_ref()
+                .is_some_and(|wol| wol.api_missing.is_some())
+            {
+                return None;
+            }
+            ShellSlideKind::WolWelcome
         } else if !state.frontend.main_menu_shell_failed {
             ShellSlideKind::MainMenu
         } else {
@@ -739,6 +760,13 @@ pub(crate) fn render_shell_first_paint_slide(
         }
         ShellSlideKind::LoadSavedGame => {
             crate::app::frontend::load_saved_game_render::render_load_saved_game_page(
+                state,
+                encoder,
+                destination,
+            )?
+        }
+        ShellSlideKind::WolWelcome => {
+            crate::app::frontend::wol_welcome_render::render_wol_welcome_page(
                 state,
                 encoder,
                 destination,

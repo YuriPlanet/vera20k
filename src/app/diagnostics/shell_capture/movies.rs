@@ -64,7 +64,28 @@ pub(super) enum MoviesTarget {
     /// Network on `0xE2`: its teardown slide, then a new `0xE2` with its
     /// own entry slide, captured once settled.
     NetworkBounce,
+    /// Main Menu -> Internet: `0x10E` settled (pointer at `hover` or
+    /// neutral), held at `entry_tick`, or after one of its buttons.
+    WolWelcome {
+        entry_tick: Option<u32>,
+        hover: Option<(i32, i32)>,
+        press: WolPress,
+    },
 }
+
+/// A `0x10E` button the capture presses once the page has settled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WolPress {
+    None,
+    /// My Information: `0x10E` slides out and the `TXT_APIMISSING` box shows.
+    MyInformation,
+    /// Main Menu: `0x10E` slides out and a new `0xE2` settles.
+    MainMenu,
+}
+
+/// Client points of the pressed buttons at 800x600.
+const WOL_MY_INFORMATION_POINT: (i32, i32) = (720, 388);
+const WOL_MAIN_MENU_POINT: (i32, i32) = (720, 556);
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -86,6 +107,9 @@ enum Phase {
     NetworkReturning,
     /// The new `0xE2`'s entry slide was seen: waiting for steady paint.
     NetworkReturned,
+    Wol,
+    /// A `0x10E` button was pressed: waiting for its teardown and result.
+    WolLeaving,
     Settling(u32),
 }
 
@@ -139,6 +163,18 @@ impl MoviesCapture {
                         } => Some(Phase::SlideOut),
                         _ => None,
                     };
+                    if matches!(self.target, MoviesTarget::WolWelcome { .. }) {
+                        self.route
+                            .push(json!({"dialog": 0xe2, "frame": frame, "action": "Internet"}));
+                        App::leave_shell_dialog(
+                            state,
+                            crate::app::frontend::shell_transition::ShellExitThen::MainMenu(
+                                crate::ui::main_menu_shell::MainMenuShellAction::WwOnline,
+                            ),
+                        );
+                        self.phase = Phase::Wol;
+                        return Ok(());
+                    }
                     if self.target == MoviesTarget::NetworkBounce {
                         self.route
                             .push(json!({"dialog": 0xe2, "frame": frame, "action": "Network"}));
@@ -242,7 +278,8 @@ impl MoviesCapture {
                         | MoviesTarget::Campaign0x94 { .. }
                         | MoviesTarget::LoadSavedGame0xB7 { .. }
                         | MoviesTarget::Options0xD5 { .. }
-                        | MoviesTarget::NetworkBounce => {
+                        | MoviesTarget::NetworkBounce
+                        | MoviesTarget::WolWelcome { .. } => {
                             bail!("{:?} capture reached the 0x101 page", self.target)
                         }
                     };
@@ -484,6 +521,108 @@ impl MoviesCapture {
                     self.phase = Phase::Settling(SETTLE_FRAMES);
                 }
             }
+            (Phase::Wol, PresentedShell::Other | PresentedShell::WolWelcome) => {
+                let MoviesTarget::WolWelcome {
+                    entry_tick,
+                    hover,
+                    press,
+                } = self.target
+                else {
+                    bail!("WOL phase without a WOL target");
+                };
+                if let Some(target) = entry_tick {
+                    let tick = state
+                        .frontend
+                        .shell_first_paint_slide
+                        .as_ref()
+                        .filter(|_| {
+                            state.frontend.shell_slide_active_shell
+                                == Some(ShellSlideKind::WolWelcome)
+                        })
+                        .and_then(|wave| wave.compatibility_tick());
+                    if let Some(tick) = tick {
+                        ensure!(tick <= target, "entry slide passed tick {target}");
+                        if tick == target {
+                            if let Some(wave) = state.frontend.shell_first_paint_slide.as_mut() {
+                                wave.hold_for_capture();
+                            }
+                            self.route.push(json!({"dialog": 0x10e, "frame": frame,
+                                "action": "hold entry slide", "tick": tick}));
+                            self.phase = Phase::Settling(SETTLE_FRAMES);
+                        }
+                    }
+                } else if rendered == PresentedShell::WolWelcome
+                    && Self::slide_settled(state, ShellSlideKind::WolWelcome)
+                {
+                    let point = match press {
+                        WolPress::None => None,
+                        WolPress::MyInformation => Some(WOL_MY_INFORMATION_POINT),
+                        WolPress::MainMenu => Some(WOL_MAIN_MENU_POINT),
+                    };
+                    if let Some((x, y)) = point {
+                        state.match_state.input.cursor_x = x as f32;
+                        state.match_state.input.cursor_y = y as f32;
+                        App::handle_wol_mouse_down(state);
+                        App::handle_wol_mouse_up(state);
+                        // The native helper clicks, then recenters the pointer.
+                        Self::restore_neutral_pointer(state);
+                        ensure!(
+                            state.frontend.shell_exit.is_some(),
+                            "the 0x10E button did not start its teardown slide"
+                        );
+                        self.route.push(json!({"dialog": 0x10e, "frame": frame,
+                            "action": format!("press {press:?}"), "point": [x, y]}));
+                        self.phase = Phase::WolLeaving;
+                        return Ok(());
+                    }
+                    Self::restore_neutral_pointer(state);
+                    if let Some((x, y)) = hover {
+                        state.match_state.input.cursor_x = x as f32;
+                        state.match_state.input.cursor_y = y as f32;
+                    }
+                    App::handle_wol_mouse_move(state);
+                    self.route.push(json!({"dialog": 0x10e, "frame": frame,
+                        "action": "pointer rests", "point": [
+                            state.match_state.input.cursor_x, state.match_state.input.cursor_y]}));
+                    self.phase = Phase::Settling(SETTLE_FRAMES);
+                }
+            }
+            (
+                Phase::WolLeaving,
+                PresentedShell::Other | PresentedShell::WolWelcome | PresentedShell::MainMenu,
+            ) => {
+                let MoviesTarget::WolWelcome { press, .. } = self.target else {
+                    bail!("WOL phase without a WOL target");
+                };
+                if state.frontend.shell_exit.is_some() {
+                    return Ok(());
+                }
+                match press {
+                    WolPress::MyInformation => {
+                        ensure!(
+                            state
+                                .frontend
+                                .wol_welcome
+                                .as_ref()
+                                .is_some_and(|wol| wol.api_missing.is_some()),
+                            "the WOL action did not show TXT_APIMISSING"
+                        );
+                        Self::restore_neutral_pointer(state);
+                        App::handle_wol_mouse_move(state);
+                        self.route.push(
+                            json!({"dialog": 0xd0, "frame": frame, "action": "TXT_APIMISSING"}),
+                        );
+                        self.phase = Phase::Settling(SETTLE_FRAMES);
+                    }
+                    WolPress::MainMenu => {
+                        self.route.push(
+                            json!({"dialog": 0x10e, "frame": frame, "action": "teardown ended"}),
+                        );
+                        self.phase = Phase::NetworkReturning;
+                    }
+                    WolPress::None => bail!("WOL leave phase without a press"),
+                }
+            }
             (Phase::NetworkLeaving, PresentedShell::MainMenu | PresentedShell::Other) => {
                 if state.frontend.shell_exit.is_none() {
                     self.route
@@ -624,7 +763,19 @@ impl MoviesCapture {
             | MoviesTarget::ExitConfirm
             | MoviesTarget::SlideOut { .. }
             | MoviesTarget::ListBackFirstFrame
-            | MoviesTarget::NetworkBounce => true,
+            | MoviesTarget::NetworkBounce
+            | MoviesTarget::WolWelcome {
+                entry_tick: Some(_),
+                ..
+            }
+            | MoviesTarget::WolWelcome {
+                press: WolPress::MyInformation | WolPress::MainMenu,
+                ..
+            } => true,
+            MoviesTarget::WolWelcome { .. } => {
+                state.frontend.shell_page_title.is_terminal()
+                    && state.frontend.shell_status_line.is_terminal()
+            }
         };
         if !heading_settled {
             return Ok(false);
@@ -639,10 +790,33 @@ impl MoviesCapture {
             MoviesTarget::Credits { .. } => state.frontend.credits_roll.is_some(),
             MoviesTarget::SneakPeek { .. } => state.frontend.fullscreen_movie.is_some(),
             MoviesTarget::ExitConfirm => state.frontend.exit_confirm_modal.is_some(),
-            MoviesTarget::NetworkBounce => {
+            MoviesTarget::NetworkBounce
+            | MoviesTarget::WolWelcome {
+                press: WolPress::MainMenu,
+                ..
+            } => {
                 state.frontend.shell_exit.is_none()
                     && crate::app::frontend::shell_transition::current_shell_slide_target(state)
                         == Some(ShellSlideKind::MainMenu)
+            }
+            MoviesTarget::WolWelcome {
+                press: WolPress::MyInformation,
+                ..
+            } => state
+                .frontend
+                .wol_welcome
+                .as_ref()
+                .is_some_and(|wol| wol.api_missing.is_some()),
+            MoviesTarget::WolWelcome { entry_tick, .. } => {
+                state.frontend.shell_route.wol_welcome()
+                    && entry_tick.is_none_or(|target| {
+                        state
+                            .frontend
+                            .shell_first_paint_slide
+                            .as_ref()
+                            .and_then(|wave| wave.compatibility_tick())
+                            == Some(target)
+                    })
             }
             MoviesTarget::SlideOut { kind, tick } => {
                 crate::app::frontend::shell_transition::shell_exit_wave(state, kind)

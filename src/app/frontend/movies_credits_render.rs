@@ -163,6 +163,22 @@ fn push_list_frame(out: &mut Vec<SpriteInstance>, atlas: &MainMenuShellChromeAtl
     }
 }
 
+/// A `BS_GROUPBOX` frame (`0x0061E700`, executed in the Westwood Online
+/// research harness): the list's two rings, light over dark, with the top
+/// edge eight pixels below the window top and the rings on the window's last
+/// column and row.
+pub(crate) fn push_group_box(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &MainMenuShellChromeAtlas,
+    window: RectPx,
+) {
+    push_list_frame(
+        out,
+        atlas,
+        RectPx::new(window.x + 1, window.y + 9, window.w - 3, window.h - 11),
+    );
+}
+
 /// List interior (`x+1, y+1, w-1, h-1`) and the rows it holds.
 /// One atlas entry at its native size.
 fn push_entry_native(
