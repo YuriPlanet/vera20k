@@ -809,6 +809,7 @@ fn insert_object_keys(
                     SequenceKind::WetAttack,
                     SequenceKind::WetIdle1,
                     SequenceKind::WetIdle2,
+                    SequenceKind::Shovel,
                 ];
                 for kind in relevant_kinds {
                     if let Some(seq_def) = set.get(kind) {

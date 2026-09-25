@@ -1064,7 +1064,7 @@ fn can_be_selected_now(
     if entity.category == EntityCategory::Structure {
         return false;
     }
-    if entity.slave_harvester.is_some() {
+    if entity.slave_owner.is_some() {
         return false;
     }
     if entity.bunker_link.installed_in().is_some() {

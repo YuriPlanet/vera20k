@@ -1624,30 +1624,27 @@ impl Simulation {
                 entity.techno_ctor_random_word.hash(hasher);
                 entity.structure_upgrade_link.hash(hasher);
             }
-            if schema.includes(HashFeature::TechnoConstructor) {
-                // Constructor-owned SlaveManager identities live in the
-                // transitional ProductionState registry until the manager is
-                // promoted to its own component. Both the ordered pool and
-                // each child's active harvest cursor affect future simulation.
-                if let Some(slave_ids) = self.production.slave_bindings.get(&entity.stable_id()) {
-                    b"constructor-slave-pool-v1".hash(hasher);
-                    slave_ids.len().hash(hasher);
-                    for slave_id in slave_ids {
-                        slave_id.hash(hasher);
-                    }
+            if schema.includes(HashFeature::SlaveManager) {
+                if let Some(manager) = entity.slave_manager.as_ref() {
+                    b"slave-manager-v208".hash(hasher);
+                    manager.hash(hasher);
                 }
-                if let Some(slave) = entity.slave_harvester.as_ref() {
-                    b"slave-harvester-v1".hash(hasher);
-                    slave.master_id.hash(hasher);
-                    (slave.state as u8).hash(hasher);
-                    slave.cargo.len().hash(hasher);
-                    for bale in &slave.cargo {
+                if entity.slave_owner.is_some() || !entity.slave_cargo.is_empty() {
+                    b"slave-v208".hash(hasher);
+                    entity.slave_owner.hash(hasher);
+                    entity.slave_cargo.len().hash(hasher);
+                    for bale in &entity.slave_cargo {
                         (bale.resource_type as u8).hash(hasher);
                         bale.value.hash(hasher);
                     }
-                    slave.capacity.hash(hasher);
-                    slave.harvest_timer.hash(hasher);
-                    slave.target_cell.hash(hasher);
+                }
+            } else if schema.includes(HashFeature::TechnoConstructor)
+                && let Some(manager) = entity.slave_manager.as_ref()
+            {
+                b"constructor-slave-pool-v1".hash(hasher);
+                manager.nodes().len().hash(hasher);
+                for slave_id in manager.slaves() {
+                    slave_id.hash(hasher);
                 }
             }
             entity.occupancy_enter_order.hash(hasher);

@@ -81,10 +81,13 @@ pub(super) fn children(sim: &Simulation, parent: u64) -> Vec<u64> {
             .map(|slot| slot.spawn.unwrap())
             .collect()
     } else {
-        sim.production
-            .slave_bindings
-            .get(&parent)
-            .cloned()
+        sim.substrate
+            .entities
+            .get(parent)
+            .unwrap()
+            .slave_manager
+            .as_ref()
+            .map(|manager| manager.slaves().collect())
             .unwrap_or_default()
     };
     for &id in &ids {
@@ -94,13 +97,7 @@ pub(super) fn children(sim: &Simulation, parent: u64) -> Vec<u64> {
             .get(id)
             .expect("held manager child remains represented");
         assert!(child.lifecycle.in_limbo && !child.lifecycle.cell_marked);
-        assert!(
-            child.spawn_owner_id == Some(parent)
-                || child
-                    .slave_harvester
-                    .as_ref()
-                    .is_some_and(|slave| slave.master_id == parent)
-        );
+        assert!(child.spawn_owner_id == Some(parent) || child.slave_owner == Some(parent));
     }
     ids
 }
@@ -111,7 +108,6 @@ fn counts(sim: &Simulation, owner: InternedId) -> (u32, u32) {
 
 fn assert_gone(sim: &Simulation, parent: u64, child_ids: &[u64]) {
     assert!(!sim.substrate.entities.contains(parent));
-    assert!(!sim.production.slave_bindings.contains_key(&parent));
     for &child in child_ids {
         assert!(!sim.substrate.entities.contains(child));
     }

@@ -1,5 +1,6 @@
 //! Shared SlaveManager6B0880 query used by Infantry51C2BC and Walk75C4B0.
-//! Reads existing master_id/slave_bindings authority; no harvest-state gate.
+//! Reads the slave's SlaveOwner (+2DC) and its master's manager (+2D8); no
+//! harvest-state gate.
 //! Ordered map lookups retain real/dummy Cell identity. This is a spatial
 //! predicate, not a replacement for slave harvesting or manager AI.
 //! Evidence: docs/research/bridges/05-damage-collapse-repair-cabhut/
@@ -11,11 +12,9 @@ use crate::map::{
 use crate::rules::ruleset::RuleSet;
 use crate::sim::movement::{ground_pose, locomotor::MovementLayer};
 use crate::sim::{entity_store::EntityStore, intern::StringInterner, occupancy::OccupancyGrid};
-use std::collections::BTreeMap;
 
 pub(crate) struct SlaveDepositQuery<'a> {
     pub entities: &'a EntityStore,
-    pub bindings: &'a BTreeMap<u64, Vec<u64>>,
     pub occupancy: &'a OccupancyGrid,
     pub terrain: &'a ResolvedTerrainGrid,
     pub rules: &'a RuleSet,
@@ -27,17 +26,21 @@ mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
     use crate::sim::{
-        game_entity::GameEntity, occupancy::CellListInsertion, slave_miner::SlaveHarvester,
+        game_entity::GameEntity, occupancy::CellListInsertion, slave_manager::SlaveManager,
     };
     use crate::util::fixed_math::SimFixed;
 
-    fn setup() -> (
-        EntityStore,
-        StringInterner,
-        RuleSet,
-        OccupancyGrid,
-        BTreeMap<u64, Vec<u64>>,
-    ) {
+    fn manager(interner: &mut StringInterner, slaves: &[u64]) -> Option<SlaveManager> {
+        Some(SlaveManager::new(
+            interner.intern("SLAV"),
+            slaves.iter().copied(),
+            0,
+            0,
+            0,
+        ))
+    }
+
+    fn setup() -> (EntityStore, StringInterner, RuleSet, OccupancyGrid) {
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[BuildingTypes]\n0=MASTER\n[MASTER]\nFoundation=2x2\n[InfantryTypes]\n0=SLAV\n[VehicleTypes]\n0=OTHER\n",
         )).unwrap();
@@ -52,8 +55,11 @@ mod tests {
             e.owner = interner.intern("Owner");
             e.type_ref = interner.intern(name);
             e.category = category;
+            if id == 1 {
+                e.slave_manager = manager(&mut interner, &[2]);
+            }
             if id == 2 {
-                e.slave_harvester = Some(SlaveHarvester::new(1, 4));
+                e.slave_owner = Some(1);
             }
             if id == 3 {
                 e.position.sub_x = SimFixed::from_num(32);
@@ -80,18 +86,12 @@ mod tests {
             None,
             CellListInsertion::PrependNonBuilding,
         );
-        (
-            entities,
-            interner,
-            rules,
-            occupancy,
-            BTreeMap::from([(1, vec![2])]),
-        )
+        (entities, interner, rules, occupancy)
     }
 
     #[test]
     fn slave_deposit_uses_foundation_center_and_live_manager_membership() {
-        let (mut entities, interner, rules, occupancy, mut bindings) = setup();
+        let (mut entities, mut interner, rules, occupancy) = setup();
         let terrain = ResolvedTerrainGrid::from_cells(
             8,
             8,
@@ -107,7 +107,6 @@ mod tests {
             () => {
                 SlaveDepositQuery {
                     entities: &entities,
-                    bindings: &bindings,
                     occupancy: &occupancy,
                     terrain: &terrain,
                     rules: &rules,
@@ -127,31 +126,17 @@ mod tests {
             z: 0,
         };
         assert!(query!().walk_priority(2, input));
-        entities
-            .get_mut(2)
-            .unwrap()
-            .slave_harvester
-            .as_mut()
-            .unwrap()
-            .state = crate::sim::slave_miner::SlaveHarvestState::Idle;
-        assert!(query!().walk_priority(2, input));
-        bindings.get_mut(&1).unwrap().clear();
+        entities.get_mut(1).unwrap().slave_manager = manager(&mut interner, &[]);
         assert_eq!(query!().master(2), Some(1));
         assert!(!query!().walk_priority(2, input));
-        bindings.insert(1, vec![2]);
-        entities
-            .get_mut(2)
-            .unwrap()
-            .slave_harvester
-            .as_mut()
-            .unwrap()
-            .master_id = 3;
+        entities.get_mut(1).unwrap().slave_manager = manager(&mut interner, &[2]);
+        entities.get_mut(2).unwrap().slave_owner = Some(3);
         assert!(!query!().walk_priority(2, input));
     }
 
     #[test]
     fn slave_deposit_keeps_dummy_identity_and_lookup_before_membership() {
-        let (entities, interner, rules, occupancy, mut bindings) = setup();
+        let (mut entities, mut interner, rules, occupancy) = setup();
         let terrain = ResolvedTerrainGrid::from_cells(
             8,
             8,
@@ -165,7 +150,6 @@ mod tests {
             () => {
                 SlaveDepositQuery {
                     entities: &entities,
-                    bindings: &bindings,
                     occupancy: &occupancy,
                     terrain: &terrain,
                     rules: &rules,
@@ -182,7 +166,7 @@ mod tests {
             (5, 5),
             "secondary(5,4) is queried before primary(5,5)"
         );
-        bindings.insert(1, vec![]);
+        entities.get_mut(1).unwrap().slave_manager = manager(&mut interner, &[]);
         terrain.stamp_dummy_cell_requested_coord(7, 7);
         assert!(!query!().admits(2, 1, queried));
         assert_eq!(
@@ -190,7 +174,7 @@ mod tests {
             (5, 5),
             "empty manager still performs geometry"
         );
-        bindings.remove(&1);
+        entities.get_mut(1).unwrap().slave_manager = None;
         terrain.stamp_dummy_cell_requested_coord(7, 7);
         assert!(!query!().admits(2, 1, queried));
         assert_eq!(
@@ -201,17 +185,62 @@ mod tests {
     }
 }
 
+/// The Cells `0x006B0880` admits for `slave` as coordinates: the primary
+/// deposit Cell (a Building master's cell plus `(width - 1, height / 2)`,
+/// else its own cell) and, for a Building, the Cell north of it when that
+/// Cell lies in the master's own footprint, so the master is its first
+/// Building. Empty unless the master's manager holds `slave`. The Walk step
+/// and the path search (`AStar_main_loop 0x00429A90` asks every neighbour's
+/// `Can_Enter_Cell`) admit a slave into them past the master's footprint.
+pub(crate) fn slave_deposit_cells(
+    entities: &EntityStore,
+    slave: u64,
+    foundation: &dyn Fn(&crate::sim::game_entity::GameEntity) -> Option<(u16, u16)>,
+) -> [Option<(u16, u16)>; 2] {
+    let Some(master) = entities.get(slave).and_then(|entity| entity.slave_owner) else {
+        return [None, None];
+    };
+    let Some(owner) = entities.get(master) else {
+        return [None, None];
+    };
+    if !owner
+        .slave_manager
+        .as_ref()
+        .is_some_and(|manager| manager.holds(slave))
+    {
+        return [None, None];
+    }
+    let coord = ground_pose::position_world_coord(&owner.position);
+    let base = ((coord.x / 256) as i16, (coord.y / 256) as i16);
+    let as_cell = |cell: (i16, i16)| (cell.0 as u16, cell.1 as u16);
+    if owner.category != EntityCategory::Structure {
+        return [Some(as_cell(base)), None];
+    }
+    let Some((width, height)) = foundation(owner) else {
+        return [None, None];
+    };
+    let primary = (
+        base.0.wrapping_add((i32::from(width) - 1) as i16),
+        base.1.wrapping_add((i32::from(height) / 2) as i16),
+    );
+    let north = (primary.0, primary.1.wrapping_sub(1));
+    let in_footprint = (north.0 - base.0) >= 0
+        && i32::from(north.0 - base.0) < i32::from(width)
+        && (north.1 - base.1) >= 0
+        && i32::from(north.1 - base.1) < i32::from(height);
+    [Some(as_cell(primary)), in_footprint.then(|| as_cell(north))]
+}
+
 impl SlaveDepositQuery<'_> {
     /// The caller tests both child+2DC and master+2D8 before6B0880. An
     /// existing empty manager remains admitted to the geometry/lookup body.
     pub(crate) fn master(&self, slave: u64) -> Option<u64> {
-        let master = self
-            .entities
-            .get(slave)?
-            .slave_harvester
-            .as_ref()?
-            .master_id;
-        self.bindings.contains_key(&master).then_some(master)
+        let master = self.entities.get(slave)?.slave_owner?;
+        self.entities
+            .get(master)?
+            .slave_manager
+            .is_some()
+            .then_some(master)
     }
 
     fn first_building(&self, cell: Cell) -> Option<u64> {
@@ -263,10 +292,10 @@ impl SlaveDepositQuery<'_> {
                 .is_some_and(|c| self.terrain.native_cell_identity(c) == queried);
         //6B09E0 only touches the manager list after geometry has matched.
         matched
-            && self
-                .bindings
-                .get(&master)
-                .is_some_and(|members| members.iter().rev().any(|&id| id == slave))
+            && owner
+                .slave_manager
+                .as_ref()
+                .is_some_and(|manager| manager.holds(slave))
     }
 
     /// Walk75C46A ->47C3D0(0,0,ground,null), then repeated input lookup at

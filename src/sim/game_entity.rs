@@ -31,7 +31,7 @@ use crate::sim::deploy::DeployPhase;
 use crate::sim::docking::aircraft_dock::AircraftAmmo;
 use crate::sim::docking::building_dock::DockState;
 use crate::sim::intern::InternedId;
-use crate::sim::miner::Miner;
+use crate::sim::miner::{CargoBale, Miner};
 use crate::sim::mission::{MissionCom, MissionLeafState, MissionTimer, MissionType};
 use crate::sim::movement::drop_pod_movement::DropPodState;
 use crate::sim::movement::locomotor::LocomotorState;
@@ -41,7 +41,6 @@ use crate::sim::movement::tube_movement::LowBridgeTubeMovementState;
 use crate::sim::movement::tunnel_movement::TunnelState;
 use crate::sim::passenger::PassengerRole;
 use crate::sim::radio::Contacts;
-use crate::sim::slave_miner::SlaveHarvester;
 use crate::sim::superweapon::invulnerability::InvulnerabilityState;
 use crate::util::native_x87::NativeF64Bits;
 
@@ -809,8 +808,16 @@ pub struct GameEntity {
     pub harvest_overlay: Option<HarvestOverlay>,
     /// Harvester state machine (ore collection, refinery docking, cargo).
     pub miner: Option<Miner>,
-    /// Slave infantry harvest AI (picks up ore, returns to master Slave Miner).
-    pub slave_harvester: Option<SlaveHarvester>,
+    /// `SlaveManagerClass` of an `Enslaves=` master (`TechnoClass+0x2D8`).
+    #[serde(default)]
+    pub(crate) slave_manager: Option<crate::sim::slave_manager::SlaveManager>,
+    /// The master whose manager holds this slave (`TechnoClass+0x2DC`).
+    #[serde(default)]
+    pub slave_owner: Option<u64>,
+    /// A slave's Storage (`TechnoClass+0x33C`): the levels of ore and gems it
+    /// carries, one bale per level.
+    #[serde(default)]
+    pub slave_cargo: Vec<CargoBale>,
     /// Persistent high-level order (AttackMove, Guard) that survives transient state changes.
     pub order_intent: Option<OrderIntent>,
     /// Evidence-bounded native cloak transition state and visual producer values.
@@ -1508,7 +1515,9 @@ impl GameEntity {
             voxel_animation: None,
             harvest_overlay: None,
             miner: None,
-            slave_harvester: None,
+            slave_manager: None,
+            slave_owner: None,
+            slave_cargo: Vec::new(),
             order_intent: None,
             cloak: None,
             sensor_deposit: None,

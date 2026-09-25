@@ -192,7 +192,7 @@ impl FireSubject<'_> {
             facing.map_or(u16::from(fallback) << 8, |facing| facing.current(frame))
         };
         let firer_facts = FirerFacts {
-            enslaved: firer.slave_harvester.is_some(),
+            enslaved: firer.slave_owner.is_some(),
             warped_out: firer.is_warped_out(),
             warping_in: firer.is_warping_in(),
             on_bridge: firer.on_bridge,

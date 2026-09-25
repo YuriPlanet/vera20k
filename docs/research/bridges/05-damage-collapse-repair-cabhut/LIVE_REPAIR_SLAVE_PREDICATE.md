@@ -14,8 +14,8 @@ The consumers are the Infantry repair admission call in
 and fresh Walk head selection in
 [walk_head.rs](../../../../src/sim/movement/walk_head.rs). Both need the same
 manager-membership/deposit-cell predicate, `SlaveManager 6B0880`. Existing
-[slave_miner.rs](../../../../src/sim/slave_miner.rs) owns the represented slave
-bindings; a second harvest-state or cargo authority is not needed for this query.
+[slave_manager.rs](../../../../src/sim/slave_manager.rs) owns the manager and the
+slaves' SlaveOwner links; no harvest-state or cargo authority is needed for this query.
 
 ## Deposit cells, lookup order and membership
 

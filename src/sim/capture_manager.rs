@@ -500,11 +500,9 @@ impl Simulation {
         }
     }
 
-    /// `0x00471E3A..0x00471E73` then `vt+0x3D0` (`0x0070F850`, no class
-    /// override): unless a Simple Deployer is deploying (Unload) or the
-    /// object is Selling or under Construction, the captive drops its
-    /// destination (`vt+0x480(0, 1)` at `0x0070F859`), target and archive and
-    /// is assigned Guard.
+    /// `0x00471E3A..0x00471E73` then `vt+0x3D0`: unless a Simple Deployer
+    /// is deploying (Unload) or the object is Selling or under Construction,
+    /// the captive's orders reset to Guard ([`Simulation::reset_orders_to_guard`]).
     fn reset_captured_orders(&mut self, target_id: u64, rules: &RuleSet) {
         let Some(target) = self.substrate.entities.get(target_id) else {
             return;
@@ -517,15 +515,7 @@ impl Simulation {
         if simple_deployer_unloading || constructing_or_selling(target) {
             return;
         }
-        let now = self.session.binary_frame;
-        self.assign_null_destination(target_id, Some(rules));
-        if let Some(target) = self.substrate.entities.get_mut(target_id) {
-            target.movement_target = None;
-            crate::sim::mission::concrete_effects::represented_assign_target(target, None);
-            target.set_archive_target(None);
-        }
-        let _ =
-            self.mission_assign_exact(target_id, MissionId::from_known(MissionType::Guard), now);
+        self.reset_orders_to_guard(target_id, rules);
     }
 
     /// The ring (`0x00471EB8..0x00471F6D`): `ControlledAnimationType=` at the

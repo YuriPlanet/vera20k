@@ -609,6 +609,48 @@ impl crate::sim::pathfinding::SearchCellCostClassifier for WallSearchCostClassif
     }
 }
 
+/// The Foot `+0x1AC` cost class for a slave: `InfantryClass::Can_Enter_Cell`
+/// (`0x0051C29E..0x0051C2CA`) clears the master Building's occupation on the
+/// slave's own deposit Cells (`SlaveManagerClass 0x006B0880`), so
+/// `AStar_main_loop @ 0x00429A90` can end a path inside the refinery. The
+/// ground Cell's terrain still decides; every other Cell goes to `inner`.
+pub struct SlaveDepositSearchClassifier<'a> {
+    pub cells: [Option<(u16, u16)>; 2],
+    pub inner: Option<&'a dyn crate::sim::pathfinding::SearchCellCostClassifier>,
+    pub path_grid: Option<&'a PathGrid>,
+    pub resolved_terrain: Option<&'a ResolvedTerrainGrid>,
+    pub terrain_costs: Option<&'a TerrainCostGrid>,
+    pub movement_zone: Option<MovementZone>,
+    pub speed_type: Option<SpeedType>,
+}
+
+impl crate::sim::pathfinding::SearchCellCostClassifier for SlaveDepositSearchClassifier<'_> {
+    fn classify(&self, from: (u16, u16), candidate: (u16, u16), bridge: bool) -> u8 {
+        if !bridge && self.cells.contains(&Some(candidate)) {
+            return match evaluate_can_enter_cell(CanEnterCellContext {
+                wall: None,
+                target: candidate,
+                terrain_layer: MovementLayer::Ground,
+                movement_zone: self.movement_zone,
+                speed_type: self.speed_type,
+                path_grid: self.path_grid,
+                resolved_terrain: self.resolved_terrain,
+                terrain_costs: self.terrain_costs,
+                bypass_grid: true,
+                mode: TerrainEntryMode::AStarNeighbor,
+                is_infantry: true,
+                mover_is_crusher: false,
+            }) {
+                CanEnterCellResult::Clear => 0,
+                CanEnterCellResult::WallBlocked { cost_class } => cost_class,
+                CanEnterCellResult::HardBlocked => 7,
+            };
+        }
+        self.inner
+            .map_or(7, |inner| inner.classify(from, candidate, bridge))
+    }
+}
+
 /// Evaluate the shared terrain/layer slice of Can_Enter_Cell.
 ///
 /// `PathGrid` is a coarse structural filter. Final terrain legality must also

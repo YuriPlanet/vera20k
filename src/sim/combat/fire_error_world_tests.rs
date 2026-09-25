@@ -469,7 +469,12 @@ fn a_natural_scanner_passes_over_an_unnatural_candidate() {
         );
         for id in [1, 2] {
             // On the map: the scan walks the cell lists.
-            sim.substrate.entities.get_mut(id).unwrap().lifecycle.cell_marked = true;
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .lifecycle
+                .cell_marked = true;
         }
         sim.interner = test_interner();
         sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);

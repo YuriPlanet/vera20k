@@ -5748,7 +5748,7 @@ impl Simulation {
         // collapse and physically finalize exactly once.
         #[cfg(test)]
         self.trace_master_frame_rung(MasterFrameTestRung::PendingDelete);
-        self.process_pending_delete();
+        self.process_pending_delete_with(rules, overlay_registry);
 
         // Original55DE9F calls725C70 at this admitted late-frame boundary.
         // Stock bridge Overlay objects publish only Cell state; their isolated
@@ -6838,6 +6838,14 @@ mod harvest_field_oracle_tests;
 #[cfg(test)]
 #[path = "harvest_field_cycle_tests.rs"]
 mod harvest_field_cycle_tests;
+
+#[cfg(test)]
+#[path = "slave_manager_oracle_tests.rs"]
+mod slave_manager_oracle_tests;
+
+#[cfg(test)]
+#[path = "slave_manager_cycle_tests.rs"]
+mod slave_manager_cycle_tests;
 
 #[cfg(test)]
 #[path = "refinery_dock_cycle_tests.rs"]

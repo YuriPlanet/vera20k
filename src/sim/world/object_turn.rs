@@ -122,7 +122,6 @@ fn reenter_pending_pass(
         &mut sim.interner,
         rules,
         Some(&sim.type_handles),
-        Some(&sim.production.slave_bindings),
         &mut sim.movement_pass_cache,
         &sim.houses,
     );
@@ -261,7 +260,6 @@ impl Simulation {
                 &mut sim.interner,
                 rules,
                 Some(&sim.type_handles),
-                Some(&sim.production.slave_bindings),
                 &mut sim.movement_pass_cache,
                 &sim.houses,
             )

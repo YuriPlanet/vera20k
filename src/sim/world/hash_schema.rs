@@ -130,6 +130,11 @@ pub(super) enum HashFeature {
     /// defaults) and adds the harvester's Unit+0x6D1/+0x6D2 bytes and its
     /// +0xF8 StageClass (value, timer, rate).
     NativeOreField = 207,
+    /// The SlaveManagerClass on its master (`TechnoClass+0x2D8`), a slave's
+    /// SlaveOwner (`+0x2DC`) and Storage replace the retired constructor
+    /// slave pool and slave harvester cursor. Earlier schemas fold the pool
+    /// from the manager's nodes; the retired cursor has no counterpart.
+    SlaveManager = 208,
 }
 
 impl HashSchema {
@@ -164,6 +169,7 @@ impl HashSchema {
                     | HashFeature::BouncingDebris
                     | HashFeature::RetiredRefineryDockPhase
                     | HashFeature::NativeOreField
+                    | HashFeature::SlaveManager
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

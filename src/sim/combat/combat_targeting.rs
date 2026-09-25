@@ -384,17 +384,9 @@ pub(crate) fn should_retaliate(
     let human =
         house.is_some_and(|house| house.is_controlled_by_human(world.session.game_mode_nonzero));
     // `0x007087DD` CanRetaliate; `0x007087EB` a slave (SlaveOwner `+0x2DC`);
-    // `0x007087F9` a slaver (SlaveManager `+0x2D8`).
-    // RESIDUAL: `slave_harvester`, VERA's SlaveOwner, is never cleared.
-    // Liberation (`0x006B0AE0`, SlaveOwner = 0 at `0x006B0B73`) is not ported,
-    // so a slave freed by its master's death, armed with `SHOVEL`, never
-    // retaliates, where native's does.
-    if !victim_type.can_retaliate
-        || victim.slave_harvester.is_some()
-        || victim_type
-            .enslaves
-            .as_deref()
-            .is_some_and(|slave_type| rules.object_case_insensitive(slave_type).is_some())
+    // `0x007087F9` a slaver (SlaveManager `+0x2D8`). A slave freed by its
+    // master's death (`0x006B0B73`) retaliates again.
+    if !victim_type.can_retaliate || victim.slave_owner.is_some() || victim.slave_manager.is_some()
     {
         return false;
     }

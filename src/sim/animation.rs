@@ -390,6 +390,10 @@ fn tick_animations_impl(
         }
 
         let has_movement: bool = entity.movement_target.is_some();
+        let shoveling = entity
+            .mission_leaf
+            .as_infantry()
+            .is_some_and(|leaf| leaf.doing() == 38);
         let pending_fire_sequence = entity
             .attack_target
             .as_ref()
@@ -435,6 +439,17 @@ fn tick_animations_impl(
                         {
                             anim.switch_to(SequenceKind::Prone);
                         }
+                    }
+                }
+                // A slave digging (Doing 0x26, `InfantryClass::Mission_Harvest @
+                // 0x00522EF3`) shows Shovel until it moves off or its
+                // Do_Action(0) ends the dig; the cascade below then walks it.
+                if !runtime_prone {
+                    if shoveling && !has_movement && anim.sequence == SequenceKind::Stand {
+                        anim.switch_to(SequenceKind::Shovel);
+                    } else if anim.sequence == SequenceKind::Shovel && (has_movement || !shoveling)
+                    {
+                        anim.switch_to(SequenceKind::Stand);
                     }
                 }
                 // Standard cascade for upright entities — preserved verbatim from prior logic.

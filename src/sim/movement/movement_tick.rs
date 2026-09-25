@@ -135,6 +135,20 @@ pub(super) fn snapshot_mover(
             .as_ref()
             .and_then(|nav| nav_target_object_cell(entities, nav)),
         allow_zone_hierarchy: playfield_bounds.is_none() || e.in_playfield,
+        slave_deposit_cells: if e.slave_owner.is_some() {
+            crate::sim::slave_deposit::slave_deposit_cells(entities, entity_id, &|owner| {
+                type_handles
+                    .zip(rules)
+                    .and_then(|(handles, rules)| {
+                        handles
+                            .handle_for(owner.type_ref())
+                            .map(|h| rules.object_by_handle(h))
+                    })
+                    .map(|kind| crate::rules::foundation::foundation_dimensions(&kind.foundation))
+            })
+        } else {
+            [None, None]
+        },
     })
 }
 
@@ -998,7 +1012,6 @@ fn advance_ordinary_mover(
     prepared: &mut PreparedMovementPass,
     effects: &mut MovementPassEffects,
     block_index: &mut OwnerBlockIndex,
-    slave_bindings: Option<&BTreeMap<u64, Vec<u64>>>,
     entry: VisitEntry,
     houses: &BTreeMap<crate::sim::intern::InternedId, crate::sim::house_state::HouseState>,
 ) {
@@ -1465,7 +1478,6 @@ fn advance_ordinary_mover(
                 interner,
                 rules,
                 admission_marker,
-                slave_bindings,
                 houses,
             );
             debug_events.extend(events);
@@ -1488,7 +1500,6 @@ fn advance_ordinary_mover(
             path_grid,
             rules,
             interner,
-            slave_bindings,
             rng,
         ) {
             return;
@@ -2177,7 +2188,6 @@ fn advance_ordinary_mover(
             interner,
             rules,
             deferred_marker,
-            None,
             houses,
         );
         debug_events.extend(occ_evts);
@@ -2945,7 +2955,6 @@ impl PendingMovementPass {
         interner: &mut crate::sim::intern::StringInterner,
         rules: Option<&crate::rules::ruleset::RuleSet>,
         type_handles: Option<&TypeHandleTable>,
-        slave_bindings: Option<&BTreeMap<u64, Vec<u64>>>,
         caches: &mut MovementPassCache,
         houses: &BTreeMap<crate::sim::intern::InternedId, crate::sim::house_state::HouseState>,
     ) {
@@ -3024,7 +3033,6 @@ impl PendingMovementPass {
             &mut self.prepared,
             &mut self.effects,
             block_index,
-            slave_bindings,
             entry,
             houses,
         );
@@ -3121,7 +3129,6 @@ pub(crate) fn begin_movement_with_grids_scoped(
     interner: &mut crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     type_handles: Option<&TypeHandleTable>,
-    slave_bindings: Option<&BTreeMap<u64, Vec<u64>>>,
     caches: &mut MovementPassCache,
     houses: &BTreeMap<crate::sim::intern::InternedId, crate::sim::house_state::HouseState>,
 ) -> Result<PendingMovementPass, String> {
@@ -3235,7 +3242,6 @@ pub(crate) fn begin_movement_with_grids_scoped(
             &mut prepared,
             &mut effects,
             block_index,
-            slave_bindings,
             VisitEntry::Process,
             houses,
         );

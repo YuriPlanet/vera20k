@@ -663,7 +663,6 @@ pub(super) fn handle_deferred_occupancy(
     interner: &crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     deferred_marker: Option<crate::sim::movement::path_markers::DeferredBridgeMarker<'_>>,
-    slave_bindings: Option<&std::collections::BTreeMap<u64, Vec<u64>>>,
     houses: &BTreeMap<crate::sim::intern::InternedId, crate::sim::house_state::HouseState>,
 ) -> (Vec<(u32, DebugEventKind)>, bool) {
     let mut debug_events: Vec<(u32, DebugEventKind)> = Vec::new();
@@ -691,20 +690,19 @@ pub(super) fn handle_deferred_occupancy(
             interner,
         );
     }
-    let slave_query = rules
-        .zip(resolved_terrain)
-        .zip(slave_bindings)
-        .filter(|_| is_infantry)
-        .map(
-            |((rules, terrain), bindings)| crate::sim::slave_deposit::SlaveDepositQuery {
-                entities,
-                bindings,
-                occupancy,
-                terrain,
-                rules,
-                interner,
-            },
-        );
+    let slave_query =
+        rules
+            .zip(resolved_terrain)
+            .filter(|_| is_infantry)
+            .map(
+                |(rules, terrain)| crate::sim::slave_deposit::SlaveDepositQuery {
+                    entities,
+                    occupancy,
+                    terrain,
+                    rules,
+                    interner,
+                },
+            );
     // Buildings are never the mover, so the whole store reads the same as the
     // store with the mover lifted out.
     let ignored_buildings = live_building_entry_skips

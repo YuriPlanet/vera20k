@@ -80,10 +80,34 @@ impl Simulation {
                     .retries_left = super::PATH_STUCK_INIT;
                 Ok(true)
             }
-            FindPathResult::EmptyRoute => Err(
-                "Walk core returned an unclassified zero-cost path; native +4 is cost, not count"
-                    .into(),
-            ),
+            FindPathResult::EmptyRoute => {
+                //A zero-cost route (the goal is the mover's own Cell) copies
+                //no word. 75B2DF..75B2F9 then runs the success arm: the retry
+                //reset, and Infantry vt+4F8 (521EB0) answers false without
+                //JumpJet=. 75B2FF..75B5A7 reads the untouched Foot+5E0
+                //terminator and steps toward (-1 & 7) = octant 7; the queue
+                //head stays -1. Evidence: instruction reading only.
+                let actor = self
+                    .substrate
+                    .entities
+                    .get_mut(id)
+                    .ok_or("retired Walk path requester")?;
+                let current = (actor.position.rx, actor.position.ry);
+                let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[7];
+                let next = (
+                    current.0.wrapping_add_signed(dx as i16),
+                    current.1.wrapping_add_signed(dy as i16),
+                );
+                let layer = if actor.on_bridge {
+                    super::locomotor::MovementLayer::Bridge
+                } else {
+                    super::locomotor::MovementLayer::Ground
+                };
+                request.install_route(actor, vec![current, next], vec![layer, layer]);
+                actor.navigation.path_replay.clear_live_head();
+                actor.navigation.path_runtime.retries_left = super::PATH_STUCK_INIT;
+                Ok(true)
+            }
             FindPathResult::Failed => {
                 //75AFD3: after a precheck refusal (no receiver) or a core
                 //failure (the Infantry receiver already Stopped Walk), the
@@ -132,7 +156,7 @@ impl Simulation {
         //`((facing >> 12) + 1) >> 1 & 7`; the stored 8-bit facing is its high byte.
         let direction = (((i32::from(actor.facing) >> 4) + 1) >> 1) & 7;
         let requested = failed_path_requested_action(doing, prone);
-        self.apply_failed_path_do_action(
+        self.apply_infantry_do_action(
             id,
             doing,
             requested,
@@ -183,9 +207,46 @@ impl Simulation {
         Ok(())
     }
 
-    /// Bounded `InfantryClass::Do_Action` 0x0051D6F0 for the receiver's
-    /// requests 0, 2 and 28 with force and random-frame arguments 0. The
-    /// requested-sequence count gate (Type+E3C record) precedes everything.
+    /// `InfantryClass::Do_Action` 0x0051D6F0 with force and random-frame
+    /// arguments 0 for `requested`, as the class's own receivers request it
+    /// (see [`Self::apply_infantry_do_action`]).
+    pub(crate) fn infantry_do_action(
+        &mut self,
+        id: u64,
+        requested: i32,
+        rules: &RuleSet,
+    ) -> Result<(), String> {
+        let actor = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("retired Do_Action receiver")?;
+        let object = self
+            .object_type(actor.type_ref(), rules)
+            .ok_or("Do_Action requires the Infantry type")?;
+        let type_id = object.id.clone();
+        let movement_zone = object.movement_zone;
+        let doing = actor
+            .mission_leaf
+            .as_infantry()
+            .ok_or("Do_Action requires Infantry Doing")?
+            .doing();
+        let on_bridge = actor.on_bridge;
+        self.apply_infantry_do_action(
+            id,
+            doing,
+            requested,
+            &type_id,
+            movement_zone,
+            on_bridge,
+            rules,
+        )
+    }
+
+    /// Bounded `InfantryClass::Do_Action` 0x0051D6F0 for requests 0 (Ready),
+    /// 2 (Prone), 28 (Deployed), 32 (Cheer) and 38 (Shovel) with force and
+    /// random-frame arguments 0. The requested-sequence count gate (Type+E3C record)
+    /// precedes everything.
     /// Two remaps change the written action and carry side effects Rust does
     /// not own (the +6E8 wet reclassification with its sound request at
     /// 0x51D842..0x51D8B8, and the airborne Hover remap through vtable+0x54):
@@ -196,7 +257,7 @@ impl Simulation {
     /// Frame (+F8), logical timer (+100..+10C) and image frame (+3E) have no
     /// Rust owner and stay a visual residual.
     #[allow(clippy::too_many_arguments)]
-    fn apply_failed_path_do_action(
+    fn apply_infantry_do_action(
         &mut self,
         id: u64,
         current: i32,
@@ -211,9 +272,11 @@ impl Simulation {
             0 => SequenceKind::Stand,
             2 => SequenceKind::Prone,
             28 => SequenceKind::Deployed,
+            32 => SequenceKind::Cheer,
+            38 => SequenceKind::Shovel,
             other => {
                 return Err(format!(
-                    "failed-path receiver requested action {other} outside 0x51DAF6..0x51DB44"
+                    "Do_Action request {other} is not represented (0, 2, 28, 32, 38)"
                 ));
             }
         };
@@ -252,7 +315,7 @@ impl Simulation {
         actor
             .mission_leaf
             .set_infantry_doing_verified(requested)
-            .map_err(|error| format!("failed-path Do_Action wrote an invalid Doing: {error:?}"))?;
+            .map_err(|error| format!("Do_Action wrote an invalid Doing: {error:?}"))?;
         Ok(())
     }
 

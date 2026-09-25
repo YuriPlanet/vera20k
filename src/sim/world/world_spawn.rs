@@ -1090,9 +1090,11 @@ impl Simulation {
             })
             .unwrap_or_default();
         let slave_children = self
-            .production
-            .slave_bindings
-            .remove(&stable_id)
+            .substrate
+            .entities
+            .get(stable_id)
+            .and_then(|entity| entity.slave_manager.as_ref())
+            .map(|manager| manager.slaves().collect::<Vec<_>>())
             .unwrap_or_default();
         self.update_house_tracking(
             stable_id,
@@ -1108,23 +1110,6 @@ impl Simulation {
             if self.substrate.entities.contains(child_id) {
                 let discarded = self.discard_constructed_limbo(child_id);
                 debug_assert!(discarded, "constructor-owned child must remain in limbo");
-            }
-        }
-        true
-    }
-
-    /// Remove only the freshly constructed slave pool owned by `master_id`.
-    /// `PowerUp_Cleanup @ 0x006AF580` uses this while transplanting an older
-    /// SMIN/YAREFN manager into a newly constructed counterpart: the new
-    /// pool's constructor draws remain spent, but none of its children survive.
-    pub(crate) fn discard_constructor_owned_slave_pool(&mut self, master_id: u64) -> bool {
-        let Some(slave_ids) = self.production.slave_bindings.remove(&master_id) else {
-            return false;
-        };
-        for slave_id in slave_ids {
-            if self.substrate.entities.contains(slave_id) {
-                let discarded = self.discard_constructed_limbo(slave_id);
-                debug_assert!(discarded, "fresh slave-manager child must remain in limbo");
             }
         }
         true
@@ -1294,54 +1279,15 @@ impl Simulation {
     fn commit_constructor_owned_techno_children(&mut self, parent_id: u64, rules: &RuleSet) {
         crate::sim::spawn_manager::commit_spawn_manager_pool(self, parent_id, rules);
 
-        if self.production.slave_bindings.contains_key(&parent_id) {
+        if self
+            .substrate
+            .entities
+            .get(parent_id)
+            .is_some_and(|parent| parent.slave_manager.is_some())
+        {
             return;
         }
-        let Some((slave_type, slave_count, owner, rx, ry, z, facing, capacity)) =
-            self.substrate.entities.get(parent_id).and_then(|parent| {
-                let parent_type = self.interner.resolve(parent.type_ref());
-                let object = rules.object_case_insensitive(parent_type)?;
-                let slave_type = object.enslaves.as_deref()?;
-                let slave_object = rules.object_case_insensitive(slave_type)?;
-                if object.slaves_number <= 0 || slave_object.category != ObjectCategory::Infantry {
-                    return None;
-                }
-                Some((
-                    slave_type.to_string(),
-                    object.slaves_number as usize,
-                    self.interner.resolve(parent.owner()).to_string(),
-                    parent.position.rx,
-                    parent.position.ry,
-                    parent.position.z,
-                    parent.facing,
-                    slave_object.storage.max(1) as u16,
-                ))
-            })
-        else {
-            return;
-        };
-
-        let mut slave_ids = Vec::with_capacity(slave_count);
-        for _ in 0..slave_count {
-            let Some(slave_id) = self.construct_object_limbo_at_height(
-                &slave_type,
-                &owner,
-                rx,
-                ry,
-                facing,
-                z,
-                rules,
-            ) else {
-                continue;
-            };
-            if let Some(slave) = self.substrate.entities.get_mut(slave_id) {
-                slave.slave_harvester = Some(crate::sim::slave_miner::SlaveHarvester::new(
-                    parent_id, capacity,
-                ));
-            }
-            slave_ids.push(slave_id);
-        }
-        self.production.slave_bindings.insert(parent_id, slave_ids);
+        self.create_slave_manager(parent_id, rules);
     }
 
     /// Unit/Infantry constructor cloak ability plus UnitClass::Unlimbo's

@@ -569,6 +569,7 @@ fn techno_ai_shell(
             }
             passive_acquire_step(sim, id, rules, ctx);
             bomb_fuse_slot(sim, id, rules, ctx.overlay_registry);
+            slave_manager_slot(sim, id, rules, ctx.overlay_registry);
         }
         EntityCategory::Structure => {
             if let Some(rules) = rules {
@@ -612,6 +613,7 @@ fn techno_ai_shell(
             if !bomb_fuse_slot(sim, id, rules, ctx.overlay_registry) {
                 return;
             }
+            slave_manager_slot(sim, id, rules, ctx.overlay_registry);
             // BuildingClass::Update consumes the shared C4/PostMortem latch at
             // its late tail. Keep the forced receiver inline in this object's
             // LogicVector visit so nested death effects precede the next slot.
@@ -659,6 +661,7 @@ fn techno_ai_shell(
                 }
             }
             bomb_fuse_slot(sim, id, rules, ctx.overlay_registry);
+            slave_manager_slot(sim, id, rules, ctx.overlay_registry);
         }
     }
 }
@@ -1078,6 +1081,20 @@ pub(super) fn dying_infantry_techno_ai(
     passive_acquire_step(sim, id, Some(rules), ctx);
 }
 
+/// `TechnoClass::AI`'s slave manager call (`0x006FA717`), after the passive
+/// block and the bomb and before the CaptureManager: a master runs
+/// `SlaveManagerClass::AI` (`sim::slave_manager`).
+fn slave_manager_slot(
+    sim: &mut Simulation,
+    id: u64,
+    rules: Option<&RuleSet>,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+) {
+    if let Some(rules) = rules {
+        sim.slave_manager_ai(id, rules, overlay_registry);
+    }
+}
+
 /// The bomb fuse's slot in `TechnoClass::AI_Update` (`0x006FA6F5..
 /// 0x006FA717`): after the mission step and passive acquisition, before the
 /// SlaveManager and CaptureManager. A carrier its own blast kills runs no
@@ -1356,6 +1373,7 @@ fn unit_techno_bracket(
     // and the second IsAlive guard, before the object's own locomotion.
     passive_acquire_step(sim, id, rules, ctx);
     bomb_fuse_slot(sim, id, rules, ctx.overlay_registry);
+    slave_manager_slot(sim, id, rules, ctx.overlay_registry);
     // Guard E (post-dispatch IsAlive): the dispatched handler, or the bomb it
     // carried, may have destroyed the Unit; a dead Unit runs no post-mission
     // block.

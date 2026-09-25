@@ -736,7 +736,7 @@ pub(crate) fn commit_entities(
                     queue_entity_mission_deferred(target, MissionId::from_known(MissionType::Move));
                 }
                 let walk = world
-                    .assign_damage_scatter_walk_destination(
+                    .assign_infantry_walk_cell_destination(
                         target_id,
                         scatter,
                         rules,
@@ -1046,6 +1046,16 @@ pub(crate) fn handle_death(
             current_weapon_ref,
         )) = dead_info
         {
+            // `0x00702050..0x00702065`: the death arm first frees a master's
+            // slaves to the killing hit's source (FreeSlaves, no house).
+            if callbacks_enabled(world) {
+                let killer = damage_events
+                    .iter()
+                    .rfind(|event| event.target_id == dead_id)
+                    .map(|event| event.attacker_id)
+                    .filter(|&attacker| attacker != RAD_NO_ATTACKER);
+                world.free_slaves(dead_id, killer, None, rules, overlay_registry);
+            }
             // `0x00702112`: the death arm frees a controller's captives before
             // its death sounds (their fate draws precede the debris draws).
             if callbacks_enabled(world) {
@@ -1440,6 +1450,9 @@ fn finish_concrete_death(
 
     let inf_death = killing_warhead.as_ref().map_or(1, |(wh, _)| wh.inf_death);
     if category == EntityCategory::Infantry {
+        // `InfantryClass::ReceiveDamage` on result 4 (`0x00518077..0x0051808E`):
+        // a dying slave leaves its master's node (RemoveSlave).
+        world.remove_slave(dead_id);
         let postlude = world.begin_infantry_receiver_death(
             dead_id,
             inf_death,

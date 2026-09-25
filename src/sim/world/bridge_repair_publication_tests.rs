@@ -165,7 +165,7 @@ fn slave_master_admission_reaches_head_selection_in_the_same_object_turn() {
         )
         .unwrap();
         let e = sim.substrate.entities.get_mut(slave).unwrap();
-        e.slave_harvester = Some(crate::sim::slave_miner::SlaveHarvester::new(master, 4));
+        e.slave_owner = Some(master);
         e.navigation.nav_com = Some(NavTargetRef::Cell { rx: 16, ry: 15 });
         e.locomotor
             .as_mut()
@@ -175,7 +175,18 @@ fn slave_master_admission_reaches_head_selection_in_the_same_object_turn() {
         // is bypassed for the admitted last leg; live objects still decide.
         e.movement_target.as_mut().unwrap().bypass_grid = true;
         let before = ground_pose::position_world_coord(&e.position);
-        sim.production.slave_bindings.insert(master, vec![slave]);
+        let slav = sim.intern("SLAV");
+        sim.substrate
+            .entities
+            .get_mut(master)
+            .unwrap()
+            .slave_manager = Some(crate::sim::slave_manager::SlaveManager::new(
+            slav,
+            [slave],
+            0,
+            0,
+            0,
+        ));
         if later_blocker {
             let mut b = crate::sim::game_entity::GameEntity::test_default(
                 100,
