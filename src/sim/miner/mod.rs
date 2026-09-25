@@ -12,6 +12,7 @@ mod exit_cell_search;
 mod harvest_mission;
 pub mod miner_dock;
 pub(crate) mod miner_system;
+pub(crate) mod ore_scan;
 mod refinery_dock;
 
 #[cfg(test)]
@@ -28,7 +29,7 @@ pub(crate) use self::harvest_mission::dispatch_harvest_for_object;
 pub(crate) use self::miner_system::extract_bale;
 pub(crate) use self::refinery_dock::{
     clear_unload_latch, mission_enter, mission_unload, native_dock_miner, per_cell_dock_now,
-    per_cell_release_dock_contact, tick_unload_stage,
+    per_cell_release_dock_contact, tick_stage,
 };
 
 use crate::rules::object_type::ObjectType;
@@ -59,9 +60,8 @@ pub enum MinerKind {
 
 /// State machine for the miner harvest loop.
 ///
-/// Since the substate-authority flip this is the *decoded vocabulary* of the
-/// Harvest mission cursor: the value of record lives in
-/// `MissionCom::handler_state` and round-trips through
+/// The decoded vocabulary of the Harvest mission cursor: the value of record
+/// lives in `MissionCom::handler_state` and round-trips through
 /// [`MinerState::cursor`] / [`MinerState::from_cursor`]. The discriminants are
 /// explicit because they are the persisted/hashed cursor encoding.
 /// `SearchOre = 0` deliberately coincides with the zeroed handler state every
@@ -69,23 +69,17 @@ pub enum MinerKind {
 /// FSM's initial state without a separate write.
 ///
 /// The five states gamemd's Harvest handler holds keep gamemd's own cursor
-/// numbering, so the field is directly comparable value-for-value:
-/// `0` looking, `1` cutting ore, `2` finding home, `3` the dock handoff,
-/// `4` going idle — the handler never writes a cursor above `4`. VERA's three
-/// extra states are numbered *above* that ceiling instead of colliding with a
-/// native meaning.
+/// numbering (`UnitClass::Mission_Harvest @ 0x0073E5E0`): `0` looking, `1`
+/// cutting ore, `2` finding home, `3` the dock handoff, `4` going idle — the
+/// handler never writes a cursor above `4`. VERA's one extra cursor,
+/// [`MinerState::ForcedReturn`], is numbered above that ceiling.
 ///
-/// Residual: [`MinerState::MoveToOre`] has no native counterpart at all —
-/// gamemd sets the destination in the same dispatch as the scan and stays on
-/// cursor `0` for the whole outbound drive. So a field-level comparison holds
-/// except while VERA sits in one of the three above-ceiling cursors.
-///
-/// Residual the other way: gamemd reaches cursor `4` from exactly one place,
-/// the bounded scan's miss. VERA also parks there when the miner can reach no
-/// refinery at all, so the cursor is *entered* more often than native's even
-/// though it is never mis-numbered. Both entries take the same re-search exit;
-/// what gamemd does with its own entry, and why VERA does not, is recorded on
-/// `miner_system::handle_wait_no_ore`.
+/// Residual: gamemd reaches cursor `4` from exactly one place, the bounded
+/// scan's miss. VERA also parks there when the miner can reach no refinery at
+/// all, so the cursor is *entered* more often than native's even though it is
+/// never mis-numbered. Both entries take the same re-search exit; what gamemd
+/// does with its own entry, and why VERA does not, is recorded on
+/// `miner_system::handle_going_to_idle`.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum MinerState {
@@ -103,12 +97,8 @@ pub enum MinerState {
     /// entry into this cursor. VERA also parks here when the miner can reach
     /// no refinery (VERA-internal, gamemd equivalent UNCHECKED).
     WaitNoOre = 4,
-    /// Pathing toward the target ore cell. VERA-internal: gamemd has no
-    /// "moving to ore" cursor.
-    MoveToOre = 5,
-    /// Incrementally unloading cargo bales into credits. VERA-internal legacy.
-    Unload = 6,
-    /// Player issued a manual return order. VERA-internal.
+    /// Player issued a manual return order. VERA-internal. (Cursors 5 and 6,
+    /// the retired drive-to-ore and legacy unload states, are unused.)
     ForcedReturn = 7,
 }
 
@@ -130,8 +120,6 @@ impl MinerState {
             2 => Self::ReturnToRefinery,
             3 => Self::Dock,
             4 => Self::WaitNoOre,
-            5 => Self::MoveToOre,
-            6 => Self::Unload,
             7 => Self::ForcedReturn,
             _ => return None,
         })
@@ -170,10 +158,6 @@ pub struct MinerConfig {
     pub chrono_miner_capacity: u16,
 
     // -- Timing (in sim ticks at 15Hz = RA2 game frames) --
-    /// Frame span for the nine native harvest StepTimer expiries:
-    /// `9 * HarvesterLoadRate`. Mission dispatch observes the ninth post-mission
-    /// increment on the following frame, so harvest gates arm for this value + 1.
-    pub harvest_tick_interval: u8,
     /// Whole-frame dump gate: the unload accumulator advances one frame per
     /// unloading tick and a resource slot drains once it reaches this value.
     /// Default 15 = ceil(HarvesterDumpRate(0.016) × 900) = ceil(14.4). Because
@@ -181,17 +165,6 @@ pub struct MinerConfig {
     /// gamemd's `rate × 900 <= accumulator` crossing exactly — no float in the
     /// gate, no tenths-rounding drift for modded rates.
     pub unload_tick_interval: u16,
-
-    // -- Search radii --
-    /// Short scan radius: cells to scan around last harvest cell (TiberiumShortScan).
-    pub local_continuation_radius: u16,
-    /// Long scan radius: cells to search from current position when short scan fails
-    /// (TiberiumLongScan). If this also fails, falls back to unbounded global search.
-    pub long_scan_radius: u16,
-    /// The fixed handler return of the state-0 scan miss (`return 0x69` at
-    /// `0x0073E91C`): frames until the GOING-TO-IDLE state (`WaitNoOre`)
-    /// dispatches and queues Guard. Not an INI value.
-    pub rescan_cooldown_ticks: u8,
 }
 
 impl Default for MinerConfig {
@@ -203,19 +176,10 @@ impl Default for MinerConfig {
             war_miner_capacity: 40,
             // Chrono Miner: 20 bales * 25 = 500 ore, 20 * 50 = 1000 gems
             chrono_miner_capacity: 20,
-            // HarvesterLoadRate=2 and nine expiries produce the 18-frame threshold.
-            // Mission dispatch runs before timer maintenance, so it observes step 9 on
-            // frame 19; call sites preserve that with harvest_tick_interval + 1.
-            harvest_tick_interval: 18,
             // HarvesterDumpRate=0.016 × 900 = 14.4 frames/gate; the integer
             // accumulator crosses at ceil(14.4) = 15. The whole slot drains per
             // gate (one ore gate + one gem gate, ~15 frames each).
             unload_tick_interval: 15,
-            local_continuation_radius: 6,
-            long_scan_radius: 48,
-            // TibSun legacy: 0x69 = 105 frames at 15fps logic rate (~7 seconds).
-            // Prevents aggressive re-scanning when no ore exists on the map.
-            rescan_cooldown_ticks: 105,
         }
     }
 }
@@ -226,18 +190,12 @@ impl MinerConfig {
     /// Replaces hardcoded defaults with data-driven values from rules.ini.
     /// Bale values and capacities stay at defaults (not exposed in [General]).
     pub fn from_general_rules(general: &GeneralRules) -> Self {
-        // HarvesterLoadRate: frames per step. 9 steps per bale.
-        let load_rate = general.harvester_load_rate.max(1);
-        let harvest_interval = (load_rate * 9).min(255) as u8;
         // HarvesterDumpRate is a double in gamemd (default 0.016). The dump gate
         // is `rate × 900 <= accumulator`; ruleset already stored ceil(rate × 900)
         // as a whole-frame threshold, so the gate stays integer-exact here.
         let unload_interval = general.harvester_dump_frames.max(1);
 
         Self {
-            local_continuation_radius: general.tiberium_short_scan.max(1) as u16,
-            long_scan_radius: general.tiberium_long_scan.max(1) as u16,
-            harvest_tick_interval: harvest_interval,
             unload_tick_interval: unload_interval,
             ..Self::default()
         }
@@ -291,40 +249,34 @@ pub struct Miner {
     /// Mission_Harvest state 2 to. VERA-internal: the native order is an Enter
     /// mission on the refinery.
     pub reserved_refinery: Option<u64>,
-    /// The ore/gem cell we are currently targeting.
-    pub target_ore_cell: Option<(u16, u16)>,
     /// Discrete cargo bales currently carried.
     pub cargo: Vec<CargoBale>,
     /// Maximum number of bales this miner can carry.
     pub capacity_bales: u16,
-    /// Frame-anchored gate for the next harvest helper call. Call sites arm for
-    /// `harvest_tick_interval + 1`: the ninth native StepTimer expiry occurs after
-    /// the frame-18 mission call, so the mission first observes it on frame 19.
-    pub harvest_timer: MissionTimer,
     /// Whether the player issued a manual return order.
     pub forced_return: bool,
-    /// Frame-anchored cooldown before re-scanning for ore in WaitNoOre state
-    /// (was a per-tick `u8` countdown; same +1 fence-post as `harvest_timer`).
-    pub rescan_cooldown: MissionTimer,
-    /// Archive ("ghost cell") of a nearby still-productive ore patch, saved
-    /// after the due full gate selects `ReturnToRefinery`. Survives the entire
-    /// dock cycle so the next `SearchOre` returns directly to it; consumed and
-    /// cleared at `SearchOre` entry.
-    pub last_harvest_cell: Option<(u16, u16)>,
     /// Unit+0x6D1 unload-active latch.
     #[serde(default)]
     pub unload_active: bool,
-    /// Unit+0xF8 StageClass value: the unload's dump counter. Ticked every
-    /// frame by `refinery_dock::tick_unload_stage` (TechnoClass::AI
-    /// `0x006FABC4`); the StageClass step (+0x110) is the constructor's 1.
+    /// Unit+0x6D2, set while Mission_Harvest works an ore cell: state 0's
+    /// scan hit and state 1's hop write 1, state 0's entry and a failed
+    /// Harvest_Ore_Tick write 0 (`0x0073E75B`, `0x0073E87D`, `0x0073E99A`,
+    /// `0x0073EB19`). `UnitClass::DrawExtras` (`0x0073CEC0`) draws OREGATH
+    /// from it while the locomotor is not moving.
     #[serde(default)]
-    pub unload_accumulator: i32,
+    pub harvesting: bool,
+    /// Unit+0xF8 StageClass value: Mission_Harvest state 1's step count and
+    /// the unload's dump counter. `refinery_dock::tick_stage` (TechnoClass::AI
+    /// `0x006FABC4`) adds the step (the constructor's 1) each time the timer
+    /// expires while the rate is nonzero.
+    #[serde(default)]
+    pub stage_value: i32,
     /// Unit+0x100/+0x108, the StageClass timer.
     #[serde(default)]
-    pub unload_cluster_timer: MissionTimer,
+    pub stage_timer: MissionTimer,
     /// Unit+0x10C, the StageClass rate; 0 stops the tick.
     #[serde(default)]
-    pub unload_cluster_repeat: u32,
+    pub stage_rate: u32,
 }
 
 impl Miner {
@@ -356,17 +308,14 @@ impl Miner {
         Self {
             kind,
             reserved_refinery: None,
-            target_ore_cell: None,
             cargo: Vec::with_capacity(capacity_bales as usize),
             capacity_bales,
-            harvest_timer: MissionTimer::default(),
             forced_return: false,
-            rescan_cooldown: MissionTimer::default(),
-            last_harvest_cell: None,
             unload_active: false,
-            unload_accumulator: 0,
-            unload_cluster_timer: MissionTimer::default(),
-            unload_cluster_repeat: 0,
+            harvesting: false,
+            stage_value: 0,
+            stage_timer: MissionTimer::default(),
+            stage_rate: 0,
         }
     }
 
@@ -433,11 +382,7 @@ mod tests {
 
     #[test]
     fn vera_internal_cursors_sit_above_the_native_ceiling() {
-        for state in [
-            MinerState::MoveToOre,
-            MinerState::Unload,
-            MinerState::ForcedReturn,
-        ] {
+        for state in [MinerState::ForcedReturn] {
             assert!(
                 state.cursor() > MinerState::NATIVE_CURSOR_CEILING,
                 "{state:?} must not collide with a cursor gamemd writes"
@@ -453,12 +398,12 @@ mod tests {
             MinerState::ReturnToRefinery,
             MinerState::Dock,
             MinerState::WaitNoOre,
-            MinerState::MoveToOre,
-            MinerState::Unload,
             MinerState::ForcedReturn,
         ] {
             assert_eq!(MinerState::from_cursor(state.cursor()), Some(state));
         }
+        assert_eq!(MinerState::from_cursor(5), None, "retired drive-to-ore cursor");
+        assert_eq!(MinerState::from_cursor(6), None, "retired legacy unload cursor");
         assert_eq!(MinerState::from_cursor(8), None);
         assert_eq!(MinerState::from_cursor(u32::MAX), None);
     }
@@ -556,20 +501,6 @@ mod tests {
             crate::rules::object_type::ObjectCategory::Infantry,
         );
         assert_eq!(miner_kind_for_object(&non_harvester), None);
-    }
-
-    #[test]
-    fn from_general_rules_overrides_scan_radii() {
-        let mut general = GeneralRules::default();
-        general.tiberium_short_scan = 10;
-        general.tiberium_long_scan = 60;
-
-        let cfg = MinerConfig::from_general_rules(&general);
-        assert_eq!(cfg.local_continuation_radius, 10);
-        assert_eq!(cfg.long_scan_radius, 60);
-        // Bale values stay at defaults.
-        assert_eq!(cfg.ore_bale_value, 25);
-        assert_eq!(cfg.gem_bale_value, 50);
     }
 
     #[test]

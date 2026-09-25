@@ -406,14 +406,14 @@ fn dress(mut s: Scene, input: &Value) -> Scene {
         if let Some(miner_state) = entity.miner.as_mut() {
             miner_state.unload_active = input["unloading"] == true;
             if let Some(stage) = input["stage"].as_array() {
-                miner_state.unload_accumulator = stage[0].as_i64().unwrap() as i32;
+                miner_state.stage_value = stage[0].as_i64().unwrap() as i32;
                 let start = stage[2].as_i64().unwrap();
                 let left = stage[3].as_u64().unwrap() as u32;
-                miner_state.unload_cluster_repeat = stage[4].as_u64().unwrap() as u32;
+                miner_state.stage_rate = stage[4].as_u64().unwrap() as u32;
                 if start >= 0 {
-                    miner_state.unload_cluster_timer.arm(start as u32, left);
+                    miner_state.stage_timer.arm(start as u32, left);
                 } else {
-                    miner_state.unload_cluster_timer.clear();
+                    miner_state.stage_timer.clear();
                 }
             }
             if let Some(storage) = input["storage"].as_array() {
@@ -567,7 +567,7 @@ fn compare_unload(s: &Scene, row: &Value, context: &str) {
         "{context}: +0x6D1"
     );
     assert_eq!(
-        i64::from(state.unload_accumulator),
+        i64::from(state.stage_value),
         expected["stage"][0].as_i64().unwrap(),
         "{context}: stage value"
     );
@@ -910,7 +910,7 @@ fn stage_tick_matches_the_original_stageclass_step() {
         let mut s = scene(input);
         for sample in row["values"].as_array().unwrap() {
             s.sim.session.binary_frame = sample[0].as_u64().unwrap() as u32;
-            crate::sim::miner::tick_unload_stage(&mut s.sim, s.miner);
+            crate::sim::miner::tick_stage(&mut s.sim, s.miner);
             let value = s
                 .sim
                 .substrate
@@ -920,7 +920,7 @@ fn stage_tick_matches_the_original_stageclass_step() {
                 .miner
                 .as_ref()
                 .unwrap()
-                .unload_accumulator;
+                .stage_value;
             assert_eq!(
                 i64::from(value),
                 sample[1].as_i64().unwrap(),

@@ -393,8 +393,7 @@ fn arm_search(sim: &mut Simulation, entity_id: u64) {
     entity
         .mission
         .set_handler_state(MinerState::SearchOre.cursor());
-    miner.target_ore_cell = None;
-    miner.harvest_timer.clear();
+    miner.stage_rate = 0;
 }
 
 fn advance(sim: &mut Simulation, oracle: &OutboundContractOracle, grid: &PathGrid) {
@@ -573,9 +572,12 @@ fn production_stock_miners_use_drive_command_for_adjacent_ore() {
             "{type_id} search mapgen RNG"
         );
         let entity = sim.substrate.entities.get(entity_id).expect("miner");
-        let miner = entity.miner.as_ref().expect("miner");
-        assert_eq!(entity.miner_state().unwrap(), MinerState::MoveToOre);
-        assert_eq!(miner.target_ore_cell, Some(target));
+        // Mission_Harvest state 0 holds through the drive (`0x0073E8C3`).
+        assert_eq!(entity.miner_state().unwrap(), MinerState::SearchOre);
+        assert_eq!(
+            entity.navigation.nav_com,
+            Some(NavTargetRef::cell(target.0, target.1))
+        );
         // The full outbound command is installed by the scan dispatch itself.
         assert_command_state(&sim, &oracle, entity_id, type_id, target);
 
@@ -1038,7 +1040,6 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
     let (
         nav_before,
         drive_before,
-        target_before,
         cargo_before,
         timers_before,
         miner_contacts_before,
@@ -1054,13 +1055,8 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
                 .as_ref()
                 .expect("Drive runtime")
                 .clone(),
-            miner.target_ore_cell,
             miner.cargo.clone(),
-            (
-                miner.harvest_timer,
-                miner.rescan_cooldown,
-                miner.unload_cluster_timer,
-            ),
+            (miner.stage_value, miner.stage_timer, miner.stage_rate),
             entity.radio_contacts.clone(),
             entity.dock_entered_with,
         )
@@ -1084,17 +1080,12 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
 
     let entity = sim.substrate.entities.get(entity_id).expect("HARV");
     let miner = entity.miner.as_ref().expect("miner");
-    let timers_after = (
-        miner.harvest_timer,
-        miner.rescan_cooldown,
-        miner.unload_cluster_timer,
-    );
+    let timers_after = (miner.stage_value, miner.stage_timer, miner.stage_rate);
     assert_eq!(entity.miner_state().unwrap(), MinerState::ReturnToRefinery);
     assert_eq!(miner.reserved_refinery, None);
     assert_eq!(entity.navigation.nav_com, nav_before);
     assert_eq!(entity.drive_locomotion.as_ref(), Some(&drive_before));
     assert!(entity.movement_target.is_none());
-    assert_eq!(miner.target_ore_cell, target_before);
     assert_eq!(miner.cargo, cargo_before);
     assert_eq!(timers_after, timers_before);
     assert_eq!(entity.radio_contacts, miner_contacts_before);
@@ -1313,10 +1304,6 @@ fn production_harv_navcom_without_movement_target_is_not_reissued() {
     advance(&mut sim, &oracle, &grid);
     let entity = sim.substrate.entities.get(entity_id).expect("HARV");
     assert_eq!(
-        entity.miner.as_ref().expect("miner").target_ore_cell,
-        Some(original),
-    );
-    assert_eq!(
         entity.navigation.nav_com,
         Some(NavTargetRef::cell(original.0, original.1)),
     );
@@ -1372,9 +1359,7 @@ fn production_harv_navcom_defers_removed_target_revalidation() {
 
     advance(&mut sim, &oracle, &grid);
     let entity = sim.substrate.entities.get(entity_id).expect("HARV");
-    let miner = entity.miner.as_ref().expect("miner");
-    assert_eq!(entity.miner_state().unwrap(), MinerState::MoveToOre);
-    assert_eq!(miner.target_ore_cell, Some(original));
+    assert_eq!(entity.miner_state().unwrap(), MinerState::SearchOre);
     assert_eq!(
         entity.navigation.nav_com,
         Some(NavTargetRef::cell(original.0, original.1)),
@@ -1441,7 +1426,7 @@ fn production_cmin_arrival_clears_navcom_same_tick_and_releases_drive() {
     }
     assert!(arrived, "CMIN must complete the outbound drive leg");
 
-    // The MoveToOre→Harvest transition lands on the next due dispatch; the
+    // The state 0 → state 1 transition lands on the next due dispatch; the
     // still-driving dispatches are paced at the Rate-epilogue cadence, so the
     // next due dispatch can be up to ~16 frames after physical arrival.
     let mut reached_harvest = false;
@@ -1458,7 +1443,7 @@ fn production_cmin_arrival_clears_navcom_same_tick_and_releases_drive() {
     }
     assert!(
         reached_harvest,
-        "MoveToOre→Harvest lands on the next due dispatch"
+        "state 0 → state 1 lands on the next due dispatch"
     );
     assert_ore_intact(&sim, &oracle, target);
 }

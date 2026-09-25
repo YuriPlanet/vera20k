@@ -125,6 +125,11 @@ pub(super) enum HashFeature {
     /// tag. Earlier schemas fold the constructor defaults in their place,
     /// which every miner outside the retired Chrono phases held.
     RetiredRefineryDockPhase = 206,
+    /// Mission_Harvest states 0/1 on the native StageClass: removes the
+    /// retired target-ore cell and harvest timer (earlier schemas fold their
+    /// defaults) and adds the harvester's Unit+0x6D1/+0x6D2 bytes and its
+    /// +0xF8 StageClass (value, timer, rate).
+    NativeOreField = 207,
 }
 
 impl HashSchema {
@@ -158,6 +163,7 @@ impl HashSchema {
                     | HashFeature::InvisoBullet
                     | HashFeature::BouncingDebris
                     | HashFeature::RetiredRefineryDockPhase
+                    | HashFeature::NativeOreField
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

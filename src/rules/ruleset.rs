@@ -809,13 +809,18 @@ pub struct GeneralRules {
     pub barrel_particle: Option<String>,
 
     // -- Harvester scan radii and economy --
-    /// Short-range ore scan radius in cells (TiberiumShortScan= in [General]).
-    /// Used when harvesting a single patch — scan nearby for the next cell.
-    /// Default 6 cells. YR only (RA2 hardcodes the same value).
+    /// `Rules+0x1778`, `[General] TiberiumShortScan=` in leptons: the ring
+    /// bound of Mission_Harvest state 1's next-cell scan and its full-cargo
+    /// archive scan (`0x0073E9F1`, `0x0073EAA6`, `>> 8` to cells). Read by
+    /// `RulesClass::ReadGeneral` at `0x0067028C..0x006702A6` through
+    /// `CCINIClass::ReadRange 0x00474620` (cells x 256, chopped) over the
+    /// current value; the constructor writes `0x600` (`0x00667638`). Retail
+    /// `6` is 1536.
     pub tiberium_short_scan: i32,
-    /// Long-range ore scan radius in cells (TiberiumLongScan= in [General]).
-    /// Used when short scan fails — look further for a new ore patch.
-    /// Default 48 cells.
+    /// `Rules+0x177C`, `[General] TiberiumLongScan=` in leptons: the ring
+    /// bound of Mission_Harvest state 0's ore search (`0x0073E851`). Read
+    /// like TiberiumShortScan (`0x006702AC..0x006702C5`); the constructor
+    /// writes `0x2000` (`0x00667642`). Retail `48` is 12288.
     pub tiberium_long_scan: i32,
     /// Slave Miner short scan distance in cells (SlaveMinerShortScan= in [General]).
     /// Deployed Slave Miner checks this range to decide if it should reposition.
@@ -844,17 +849,23 @@ pub struct GeneralRules {
     /// Guard duration before deployed Slave Miner re-scans for ore (SlaveMinerKickFrameDelay=).
     /// In game frames (15 fps). Default 150 (~10 seconds).
     pub slave_miner_kick_frame_delay: u32,
-    /// Standard harvester "too far" threshold in cells (HarvesterTooFarDistance=).
-    /// If the nearest refinery is farther than this, the harvester drives next to it
-    /// before reserving a dock. Default 5.
+    /// `Rules+0xD78`, `[General] HarvesterTooFarDistance=` in cells: a
+    /// refinery farther than this is approached before the dock is reserved.
+    /// `RulesClass::ReadGeneral` reads it through `CCINIClass::ReadInt
+    /// 0x005276D0` at `0x0066FFEB`; the constructor writes 5 (`0x00666835`).
     pub harvester_too_far_distance: i32,
-    /// Chrono harvester "too far" threshold in cells (ChronoHarvTooFarDistance=).
-    /// Larger than standard because chrono miners teleport back. Default 50.
+    /// `Rules+0xD7C`, `[General] ChronoHarvTooFarDistance=` in cells, the
+    /// Chrono Miner's threshold. Read through `ReadInt` at `0x0067000B`; the
+    /// constructor writes 50 (`0x00666846`).
     pub chrono_harv_too_far_distance: i32,
 
     // -- Harvester timing --
-    /// Frames per StepTimer increment during ore gathering (HarvesterLoadRate=).
-    /// One bale requires 9 steps, so harvest_interval = rate * 9. Default 2.
+    /// `Rules+0x1520`, `[General] HarvesterLoadRate=`: the StageClass rate
+    /// Mission_Harvest state 1 and Harvest_Ore_Tick arm (`0x0073E951`,
+    /// `0x0073D5D1`); state 1 cuts when the stage reaches 9. Read by
+    /// `RulesClass::ReadGeneral` at `0x00670CE7..0x00670D01` through
+    /// `CCINIClass::ReadInt 0x005276D0`; the constructor writes 2
+    /// (`0x006671CD`, `0x006673C7`). Retail leaves it unset.
     pub harvester_load_rate: i32,
     /// Whole-frame dump gate for refinery unloading (HarvesterDumpRate=).
     /// The unload accumulator advances one whole frame per unloading tick and a
@@ -1375,8 +1386,8 @@ impl Default for GeneralRules {
             spy_power_blackout_frames: 1000,
             damage_fire_types: vec![],
             barrel_particle: None,
-            tiberium_short_scan: 6,
-            tiberium_long_scan: 48,
+            tiberium_short_scan: 0x600,
+            tiberium_long_scan: 0x2000,
             slave_miner_short_scan: 8,
             slave_miner_slave_scan: 14,
             drain_money_frame_delay: 30,
@@ -2351,8 +2362,8 @@ impl GeneralRules {
                 .get("BarrelParticle")
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
-            tiberium_short_scan: general.get_i32("TiberiumShortScan").unwrap_or(6),
-            tiberium_long_scan: general.get_i32("TiberiumLongScan").unwrap_or(48),
+            tiberium_short_scan: general.read_range("TiberiumShortScan", 0x600),
+            tiberium_long_scan: general.read_range("TiberiumLongScan", 0x2000),
             slave_miner_short_scan: general.get_i32("SlaveMinerShortScan").unwrap_or(8),
             slave_miner_slave_scan: general.get_i32("SlaveMinerSlaveScan").unwrap_or(14),
             drain_money_frame_delay: general.get_i32("DrainMoneyFrameDelay").unwrap_or(30),
@@ -2363,9 +2374,9 @@ impl GeneralRules {
                 .get_i32("SlaveMinerKickFrameDelay")
                 .unwrap_or(150)
                 .max(0) as u32,
-            harvester_too_far_distance: general.get_i32("HarvesterTooFarDistance").unwrap_or(5),
-            chrono_harv_too_far_distance: general.get_i32("ChronoHarvTooFarDistance").unwrap_or(50),
-            harvester_load_rate: general.get_i32("HarvesterLoadRate").unwrap_or(2),
+            harvester_too_far_distance: general.read_int("HarvesterTooFarDistance", 5),
+            chrono_harv_too_far_distance: general.read_int("ChronoHarvTooFarDistance", 50),
+            harvester_load_rate: general.read_int("HarvesterLoadRate", 2),
             harvester_dump_frames: {
                 // gamemd reads HarvesterDumpRate with ReadDouble and gates on
                 // `rate × 900 <= accumulator`; the accumulator is integer-stepped,
@@ -5607,7 +5618,8 @@ MutateWarhead=MyMutate\n\
              [BuildingTypes]\n\
              [General]\n\
              TiberiumShortScan=10\n\
-             TiberiumLongScan=60\n\
+             TiberiumLongScan=6.5\n\
+             HarvesterLoadRate=3\n\
              SlaveMinerShortScan=12\n\
              SlaveMinerSlaveScan=20\n\
              SlaveMinerLongScan=55\n\
@@ -5618,8 +5630,10 @@ MutateWarhead=MyMutate\n\
              PurifierBonus=.30\n",
         );
         let rules = RuleSet::from_ini(&ini).expect("Should parse");
-        assert_eq!(rules.general.tiberium_short_scan, 10);
-        assert_eq!(rules.general.tiberium_long_scan, 60);
+        // ReadRange: cells x 256, chopped.
+        assert_eq!(rules.general.tiberium_short_scan, 10 * 256);
+        assert_eq!(rules.general.tiberium_long_scan, 1664);
+        assert_eq!(rules.general.harvester_load_rate, 3);
         assert_eq!(rules.general.slave_miner_short_scan, 12);
         assert_eq!(rules.general.slave_miner_slave_scan, 20);
         assert_eq!(rules.general.slave_miner_long_scan, 55);
@@ -5641,8 +5655,10 @@ MutateWarhead=MyMutate\n\
              FixtureOnly=1\n",
         );
         let rules = RuleSet::from_ini(&ini).expect("Should parse");
-        assert_eq!(rules.general.tiberium_short_scan, 6);
-        assert_eq!(rules.general.tiberium_long_scan, 48);
+        // The RulesClass constructor's leptons (`0x00667638`, `0x00667642`).
+        assert_eq!(rules.general.tiberium_short_scan, 0x600);
+        assert_eq!(rules.general.tiberium_long_scan, 0x2000);
+        assert_eq!(rules.general.harvester_load_rate, 2);
         assert_eq!(rules.general.slave_miner_short_scan, 8);
         assert_eq!(rules.general.slave_miner_slave_scan, 14);
         assert_eq!(rules.general.slave_miner_long_scan, 48);

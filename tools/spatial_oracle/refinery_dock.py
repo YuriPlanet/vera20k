@@ -126,15 +126,17 @@ def make_dock_fixture(case):
     named = {'other': OTHER, 'miner': ACTOR, 'refinery': BLD, None: 0}
     u.mem_write(MINER_ITEMS, dwords(BLD if linked else named[case.get('miner_contact')]))
     u.mem_write(BLD_ITEMS, dwords(ACTOR if linked else named[case.get('refinery_contact')]))
-    # Every 4x3 foundation cell but the pad (art RemoveOccupy1=3,1) lists the
-    # refinery as its first object: Unload's west-cell lookup and
-    # Per_Cell_Process's north-cell lookup (0x47C520) find it there.
+    # Every 4x3 foundation cell, the pad included, lists the refinery as its
+    # first object, as MapClass::Place_Down (0x5683C0) leaves it: Occupy_Down
+    # (0x47E8A0) for each offset of the type's Occupy_List (BuildingType+0xDFC,
+    # the 12-cell 4x3 list 0x45B1C0 builds; art AddOccupy/RemoveOccupy feed
+    # only Cell+0x100). Unload's west-cell lookup and Per_Cell_Process's
+    # north-cell lookup (0x47C520) find it there.
     u.mem_write(0xA8E9A0, b'\x01')
     if case.get('west_building', True):
         for fy in range(NW[1], NW[1] + 3):
             for fx in range(NW[0], NW[0] + 4):
-                if (fx, fy) != PAD:
-                    u.mem_write(cell(fx, fy) + 0xE4, dwords(BLD))
+                u.mem_write(cell(fx, fy) + 0xE4, dwords(BLD))
     # Harvester storage (Unit+0x33C float[4]) and the Tiberium Value table.
     u.mem_write(ACTOR + 0x33C, struct.pack('<4f', *case.get('storage', [0, 0, 0, 0])))
     u.mem_write(0xB0F4EC, dwords(TIB_ITEMS))
@@ -605,7 +607,7 @@ if __name__ == '__main__':
                       'assign_destination': ASSIGN, 'drive_do_turn': DO_TURN,
                       'give_tiberium': GIVE_TIBERIUM, 'random_ranged': RANDOM},
         assumptions=['track_destination fixture: original Unit vtable over a constructed Drive, 32x32 map, House, Rules; supplied Unit/Radio/Foot constructor prestates; Scenario RNG seeded through the original seeder.',
-                     'Refinery: original Building vtable 0x7E3EBC over supplied BuildingClass fields (+14, +6C, +9C, +AC, +B4, +E0 contacts, +21C, +418, +520, +57C, +584, +660) and BuildingTypeClass (+A0, +EF0=12 4x3, +1618 QueueingCell 4,1, +16B3, +16BB, +1780). It is the first object of every foundation cell but the pad. A second refinery supplies the third radio object.',
+                     'Refinery: original Building vtable 0x7E3EBC over supplied BuildingClass fields (+14, +6C, +9C, +AC, +B4, +E0 contacts, +21C, +418, +520, +57C, +584, +660) and BuildingTypeClass (+A0, +EF0=12 4x3, +1618 QueueingCell 4,1, +16B3, +16BB, +1780). It is the first object of every foundation cell (Place_Down 0x5683C0 over the 12-cell 4x3 Occupy_List). A second refinery supplies the third radio object.',
                      'Retail MissionControl Rate values for Guard/Enter/Harvest/Unload; Rules HarvesterTooFarDistance 5/50, PurifierBonus .25f, HarvesterDumpRate .016, ConditionYellow .5, AIVirtualPurifiers 4,2,0; Tiberium Values 25/50/25/25; House storage, economy and owned-type counter supplied.',
                      'Per_Cell_Process runs from 0x73A31F with its prologue locals supplied ([esp+14] Contact(0), [esp+1C] Get_Cell); its release snippet runs 0x73ACB3..0x73ADCA, which reads no local.',
                      'Harvester= (+0xE0E), Weeder= (+0xE0F), Refinery= (+0x16BB) and Weeder= (+0x16BC) as each row gives them.'],

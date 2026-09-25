@@ -575,6 +575,18 @@ impl OreGrowthState {
             .collect();
     }
 
+    /// Set a cell's spread flag byte (`TiberiumClass+0xF8`) without queueing it.
+    #[cfg(test)]
+    pub(crate) fn mark_native_spread_bitmap_for_tests(
+        &mut self,
+        type_index: usize,
+        cell: (u16, u16),
+    ) {
+        self.native_tiberium.classes[type_index]
+            .spread_bitmap
+            .insert(cell);
+    }
+
     /// Native per-type tiberium queue/timer shell.
     pub fn native_tiberium_state(&self) -> &NativeTiberiumState {
         &self.native_tiberium

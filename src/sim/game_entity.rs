@@ -113,16 +113,9 @@ fn default_base_plan_type_index() -> i32 {
 pub(crate) struct BaseDefenseResponseState {
     pub(crate) recruitable_a: bool,
     pub(crate) recruitable_b: bool,
-    pub(crate) archive_target: Option<TargetKind>,
+    archive_target: Option<TargetKind>,
     pub(crate) cooldown_start_frame: i32,
     pub(crate) cooldown_duration_frames: i32,
-}
-
-impl BaseDefenseResponseState {
-    /// `TechnoClass::Set_ArchiveTarget @ 0x0070C610` (Techno+0x218).
-    pub(crate) fn set_archive_target(&mut self, target: Option<TargetKind>) {
-        self.archive_target = target;
-    }
 }
 
 impl Default for BaseDefenseResponseState {
@@ -1157,6 +1150,18 @@ pub struct GameEntity {
 }
 
 impl GameEntity {
+    /// `TechnoClass::ArchiveTarget` (`Techno+0x218`): the base-defence
+    /// responder's post and a harvester's archived ore cell share this one
+    /// field, stored in [`BaseDefenseResponseState`].
+    pub(crate) fn archive_target(&self) -> Option<crate::sim::combat::TargetKind> {
+        self.base_defense_response.archive_target
+    }
+
+    /// `TechnoClass::Set_ArchiveTarget @ 0x0070C610`, a plain store.
+    pub(crate) fn set_archive_target(&mut self, target: Option<crate::sim::combat::TargetKind>) {
+        self.base_defense_response.archive_target = target;
+    }
+
     pub(crate) const fn is_mission_only(&self) -> bool {
         self.mission_only
     }

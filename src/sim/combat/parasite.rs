@@ -308,7 +308,7 @@ impl Simulation {
     fn parasite_released_owner_orders(&mut self, owner: u64, clear_archive: bool, rules: &RuleSet) {
         if let Some(entity) = self.substrate.entities.get_mut(owner) {
             if clear_archive {
-                entity.base_defense_response.set_archive_target(None);
+                entity.set_archive_target(None);
             }
             crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
         }

@@ -1195,8 +1195,8 @@ const DAMAGE_SPARK_ROLL_MAX: u32 = 0x7fff_fffe;
 /// movement. Modelled exactly so the stream stays aligned if a mod ever enables it.
 fn techno_common_post(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
     // `TechnoClass::AI` StageClass step (`0x006FABC4`), after the mission
-    // dispatch; VERA represents only the miner's unload stage.
-    crate::sim::miner::tick_unload_stage(sim, id);
+    // dispatch; VERA represents only the harvester's stage.
+    crate::sim::miner::tick_stage(sim, id);
     let Some(rules) = rules else {
         return;
     };
@@ -1405,7 +1405,7 @@ fn clear_passive_target_off_mission(sim: &mut Simulation, id: u64) {
     if !drop {
         return;
     }
-    let _ = sim.set_archive_target_represented(id, None);
+    let _ = sim.assign_target_represented(id, None);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.passively_acquired_target = false;
     }

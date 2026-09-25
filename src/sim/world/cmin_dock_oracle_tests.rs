@@ -51,7 +51,7 @@ const UNREPRESENTED: [&str; 5] = [
     "move_to_guard_deploying",
 ];
 
-const CMIN: &str = "[CMIN]\nStrength=400\nSpeed=4\nROT=5\nHarvester=yes\nTeleporter=yes\n\
+pub(super) const CMIN: &str = "[CMIN]\nStrength=400\nSpeed=4\nROT=5\nHarvester=yes\nTeleporter=yes\n\
     Dock=GAREFN\nStorage=20\nMovementZone=Crusher\nUnloadingClass=CMON\n\
     ChronoInSound=CminIn\nChronoOutSound=CminOut\n\
     Locomotor={4A582747-9839-11D1-B709-00A024DDAFD1}\n\
@@ -132,10 +132,10 @@ fn coord(v: &Value) -> DriveCoord {
     }
 }
 
-/// The War scene dressed with the row's CMIN prestate: the raw NavCom (the
-/// oracle writes +0x5A4 directly), a Drive piggybacked over the Teleport, the
-/// +0x1F8/+0x6AD bytes, the paralysis timer and the warp bytes.
-fn cmin_scene(input: &Value) -> Scene {
+/// The War scene's input for a CMIN row: the Chrono Miner (or its
+/// non-harvester twin) as the miner, and no NavCom yet (`dress_cmin` writes
+/// it raw, as the oracle writes +0x5A4).
+pub(super) fn cmin_base_input(input: &Value) -> Value {
     let mut base = input.clone();
     let fields = base.as_object_mut().unwrap();
     fields.remove("nav");
@@ -145,8 +145,21 @@ fn cmin_scene(input: &Value) -> Scene {
         "CMIN"
     };
     fields.insert("miner_type".into(), miner_type.into());
+    base
+}
+
+/// The War scene dressed with the row's CMIN prestate: the raw NavCom (the
+/// oracle writes +0x5A4 directly), a Drive piggybacked over the Teleport, the
+/// +0x1F8/+0x6AD bytes, the paralysis timer and the warp bytes.
+fn cmin_scene(input: &Value) -> Scene {
     let (rules, ini) = cmin_rules(input);
-    let mut s = scene_with(&base, rules, &ini);
+    let mut s = scene_with(&cmin_base_input(input), rules, &ini);
+    dress_cmin(&mut s, input);
+    s
+}
+
+/// [`cmin_scene`]'s prestate on a built scene.
+pub(super) fn dress_cmin(s: &mut Scene, input: &Value) {
     let frame = s.sim.session.binary_frame;
     if input["pad_unit"] == true {
         // A second Unit listed first in the pad cell (Get_Unit finds it).
@@ -162,16 +175,12 @@ fn cmin_scene(input: &Value) -> Scene {
                 &std::collections::BTreeMap::new(),
             )
             .expect("pad unit");
-        place(&mut s, tank, (9, 10));
+        place(s, tank, (9, 10));
     }
     if let Some(exact) = input.get("miner_coord") {
         let exact = coord(exact);
         let miner = s.miner;
-        place(
-            &mut s,
-            miner,
-            ((exact.x >> 8) as u16, (exact.y >> 8) as u16),
-        );
+        place(s, miner, ((exact.x >> 8) as u16, (exact.y >> 8) as u16));
         let position = &mut s.sim.substrate.entities.get_mut(miner).unwrap().position;
         position.sub_x = crate::util::fixed_math::SimFixed::from_num(exact.x & 0xFF);
         position.sub_y = crate::util::fixed_math::SimFixed::from_num(exact.y & 0xFF);
@@ -206,7 +215,6 @@ fn cmin_scene(input: &Value) -> Scene {
             being_warped_ticks: 30,
         });
     }
-    s
 }
 
 fn kind_name(kind: LocomotorKind) -> &'static str {

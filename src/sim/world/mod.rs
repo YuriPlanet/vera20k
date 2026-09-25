@@ -4589,7 +4589,7 @@ impl Simulation {
             entity.movement_target = None;
             entity.order_intent = None;
             if !unit_deploying {
-                entity.base_defense_response.set_archive_target(None);
+                entity.set_archive_target(None);
             }
         }
         let readiness = crate::sim::mission::authority::LiveReadyInputProvider { rules };
@@ -6831,6 +6831,13 @@ mod smudge_integration_tests;
 #[cfg(test)]
 #[path = "refinery_dock_oracle_tests.rs"]
 mod refinery_dock_oracle_tests;
+#[cfg(test)]
+#[path = "harvest_field_oracle_tests.rs"]
+mod harvest_field_oracle_tests;
+
+#[cfg(test)]
+#[path = "harvest_field_cycle_tests.rs"]
+mod harvest_field_cycle_tests;
 
 #[cfg(test)]
 #[path = "refinery_dock_cycle_tests.rs"]

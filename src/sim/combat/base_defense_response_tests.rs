@@ -300,10 +300,7 @@ fn gsi_04_05_positive_transaction_queues_in_order_and_arms_only_on_overshoot() {
             responder.mission.queued(),
             MissionId::from_known(expected_mission)
         );
-        assert_eq!(
-            responder.base_defense_response.archive_target,
-            Some(TargetKind::Entity(1))
-        );
+        assert_eq!(responder.archive_target(), Some(TargetKind::Entity(1)));
         assert_eq!(
             responder.attack_target.as_ref().map(|target| target.target),
             Some(TargetKind::Entity(2))
