@@ -74,6 +74,8 @@ const CHECKPOINT_SKIRMISH_0X6B_ENTRY_PREFIX: &str = "skirmish-0x6b-entry-tick-";
 const CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN: &str = "skirmish-0x102-choose-map-return";
 const CHECKPOINT_SKIRMISH_START_BLANK: &str = "skirmish-start-blank";
 const CHECKPOINT_SKIRMISH_LOADING_FIRST_FRAME: &str = "skirmish-loading-first-frame";
+const CHECKPOINT_SKIRMISH_0X6B_EJECT_BOX: &str = "skirmish-0x6b-eject-box";
+const CHECKPOINT_SKIRMISH_AFTER_QUIT: &str = "skirmish-after-quit";
 const EXPECTED_WIDTH: u32 = 800;
 const EXPECTED_HEIGHT: u32 = 600;
 const EXPECTED_CURSOR_X: u32 = 400;
@@ -177,6 +179,12 @@ pub enum ShellCaptureCheckpoint {
     /// Start Game on `0x102`: the loading screen's first frame. The map load
     /// then runs to the end before the process exits.
     SkirmishLoadingFirstFrame,
+    /// Use Map on `0x6B`'s first map with AI rows that do not fit: the eject
+    /// box over the empty backdrop.
+    Skirmish0x6BEjectBox,
+    /// Start Game, a short game, Leave through the in-game abort: the new
+    /// `0x102` the shell resumes on, settled.
+    SkirmishAfterQuit,
 }
 
 impl ShellCaptureCheckpoint {
@@ -266,6 +274,8 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN => Ok(Self::Skirmish0x102ChooseMapReturn),
             CHECKPOINT_SKIRMISH_START_BLANK => Ok(Self::SkirmishStartBlank),
             CHECKPOINT_SKIRMISH_LOADING_FIRST_FRAME => Ok(Self::SkirmishLoadingFirstFrame),
+            CHECKPOINT_SKIRMISH_0X6B_EJECT_BOX => Ok(Self::Skirmish0x6BEjectBox),
+            CHECKPOINT_SKIRMISH_AFTER_QUIT => Ok(Self::SkirmishAfterQuit),
             CHECKPOINT_MOVIES_0X101_STEADY => Ok(Self::MoviesPage0x101Steady),
             CHECKPOINT_MAIN_MENU_0XE2_EXIT_CONFIRM => Ok(Self::MainMenu0xE2ExitConfirm),
             CHECKPOINT_MOVIE_LIST_0X129_STEADY => Ok(Self::MovieList0x129Steady),
@@ -333,6 +343,8 @@ impl ShellCaptureCheckpoint {
             Self::Skirmish0x102ChooseMapReturn => CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN,
             Self::SkirmishStartBlank => CHECKPOINT_SKIRMISH_START_BLANK,
             Self::SkirmishLoadingFirstFrame => CHECKPOINT_SKIRMISH_LOADING_FIRST_FRAME,
+            Self::Skirmish0x6BEjectBox => CHECKPOINT_SKIRMISH_0X6B_EJECT_BOX,
+            Self::SkirmishAfterQuit => CHECKPOINT_SKIRMISH_AFTER_QUIT,
         }
     }
 
@@ -839,6 +851,12 @@ impl ShellCaptureSession {
             ShellCaptureCheckpoint::SkirmishLoadingFirstFrame => Some(
                 skirmish::SkirmishCapture::loading(skirmish::LoadingTarget::FirstFrame),
             ),
+            ShellCaptureCheckpoint::Skirmish0x6BEjectBox => Some(
+                skirmish::SkirmishCapture::chooser(skirmish::ChooserTarget::Eject),
+            ),
+            ShellCaptureCheckpoint::SkirmishAfterQuit => Some(skirmish::SkirmishCapture::loading(
+                skirmish::LoadingTarget::AfterQuit,
+            )),
             ShellCaptureCheckpoint::Skirmish0x102Entry(tick) => {
                 Some(skirmish::SkirmishCapture::entry(tick))
             }
@@ -883,7 +901,9 @@ impl ShellCaptureSession {
     }
 
     fn timeout(&self) -> Duration {
-        if self.skirmish.is_some() || self.movies.is_some() {
+        if let Some(capture) = &self.skirmish {
+            capture.timeout()
+        } else if self.movies.is_some() {
             Duration::from_secs(60)
         } else {
             CAPTURE_TIMEOUT

@@ -345,7 +345,11 @@ impl App {
         .with_accepted_random_map(accepted_random_map);
         state.frontend.skirmish_shell_state.pressed_owner_draw_button = None;
         state.frontend.skirmish_shell_last_painted_pressed_button = None;
-        state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
+        // GameMode stays 5 through the game, so the shell resumes on a new
+        // `0x102` afterwards (`App::resume_shell_after_match`).
+        state.frontend.shell_route = crate::app::shell_route::ShellRoute::Skirmish {
+            return_to_single_player: true,
+        };
         state.frontend.shell_first_paint_slide = None;
         state.frontend.skirmish_preview_texture = None;
         crate::app::loading::pump::begin_loading(state, request);
@@ -607,7 +611,7 @@ impl App {
         true
     }
 
-    fn handle_choose_map_modal_mouse_down(state: &mut AppState) -> bool {
+    pub(super) fn handle_choose_map_modal_mouse_down(state: &mut AppState) -> bool {
         if state
             .frontend
             .skirmish_shell_state
@@ -697,7 +701,7 @@ impl App {
             .and_then(|modal| modal.scroll_deadline())
     }
 
-    fn handle_choose_map_modal_mouse_up(state: &mut AppState) -> bool {
+    pub(super) fn handle_choose_map_modal_mouse_up(state: &mut AppState) -> bool {
         if Self::handle_choose_map_eject_mouse_up(state) {
             return true;
         }

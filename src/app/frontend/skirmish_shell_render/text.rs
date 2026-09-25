@@ -529,7 +529,6 @@ pub(super) fn push_player_name_edit_text_draw(
 pub(super) fn build_shell_text_draws(
     state: &AppState,
     layout: &SkirmishShellLayout,
-    validation_layout: Option<&BodyOkLayout>,
     shell: &SkirmishShellState,
     maps: &[MapMenuEntry],
     sliding: bool,
@@ -542,9 +541,6 @@ pub(super) fn build_shell_text_draws(
         .and_then(|open| combo_dropdown_rect(shell, layout, maps, open.id))
     {
         covering_overlays.push(dropdown);
-    }
-    if let Some(validation_layout) = validation_layout {
-        covering_overlays.push(validation_layout.dialog);
     }
 
     if !sliding {
