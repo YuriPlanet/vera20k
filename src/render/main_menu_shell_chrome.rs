@@ -241,6 +241,95 @@ pub fn build_main_menu_shell_chrome_atlas(
     })
 }
 
+/// Campaign selection `0x94` art from the loader `0x0072D9A0`: the faction
+/// emblems (every frame, for their hover animation) and the dialog
+/// background. 640-wide screens use the small set.
+pub struct CampaignShellArt {
+    pub texture: BatchTexture,
+    pub background: Option<MainMenuShellChromeEntry>,
+    /// The background one RGB565 unit darker: what the difficulty trackbar
+    /// saves and restores under itself (`0x00621B80`, colour 0 at alpha 0).
+    pub background_dark: Option<MainMenuShellChromeEntry>,
+    pub allied: Vec<MainMenuShellChromeEntry>,
+    pub soviet: Vec<MainMenuShellChromeEntry>,
+    /// TRAKGRIP.PCX, the 12x22 trackbar thumb.
+    pub slider_thumb: Option<MainMenuShellChromeEntry>,
+    /// The trackbar's two bevel boxes (`0x006208F0`) on a canvas two pixels
+    /// larger on every side than the control.
+    pub slider_frame: Option<MainMenuShellChromeEntry>,
+}
+
+/// SHP names by screen size (`0x0072D9A0`, `[0x008A00A4] == 640`): Allied
+/// emblem, Soviet emblem, background.
+pub fn campaign_art_names(small: bool) -> [&'static str; 3] {
+    if small {
+        ["FSASM.SHP", "FSSSM.SHP", "FSBKGDSM.SHP"]
+    } else {
+        ["FSALG.SHP", "FSSLG.SHP", "FSBKGDLG.SHP"]
+    }
+}
+
+/// The palettes `0x0072D9A0` loads for them (`0x0072DA5C..0x0072DA96`), in
+/// the same order; both screen sizes use these.
+pub const CAMPAIGN_ART_PALETTES: [&str; 3] = ["FSALG.PAL", "FSSLG.PAL", "FSBKGDLG.PAL"];
+
+/// `slider` is the difficulty trackbar's control size for this screen.
+pub fn build_campaign_shell_art(
+    gpu: &GpuContext,
+    batch: &BatchRenderer,
+    assets: &AssetManager,
+    small: bool,
+    slider: (u32, u32),
+) -> Option<CampaignShellArt> {
+    let [allied_pal, soviet_pal, background_pal] =
+        CAMPAIGN_ART_PALETTES.map(|name| load_named_palette(assets, name));
+    let [allied, soviet, background] = campaign_art_names(small);
+    let mut rendered = render_shp_frames(assets, allied, &allied_pal?, "frame");
+    let allied_count = rendered.len();
+    rendered.extend(render_shp_frames(assets, soviet, &soviet_pal?, "frame"));
+    let soviet_count = rendered.len() - allied_count;
+    let mut labels: Vec<&str> = Vec::new();
+    if let Some(entry) = render_shp_entry(assets, background, &background_pal?, 0, None) {
+        rendered.push(RenderedChromeEntry {
+            label: "background:dark".into(),
+            width: entry.width,
+            height: entry.height,
+            rgba: darken_one_rgb565_unit(&entry.rgba),
+        });
+        rendered.push(entry);
+        labels.extend(["background:dark", "background"]);
+    }
+    if let Some(entry) = render_pcx_entry(assets, "TRAKGRIP.PCX") {
+        rendered.push(entry);
+        labels.push("thumb");
+    }
+    let (frame_w, frame_h, frame_rgba) =
+        crate::render::skirmish_shell_chrome::trackbar_frame_rgba(slider.0, slider.1, 0);
+    rendered.push(RenderedChromeEntry {
+        label: "slider:frame".into(),
+        width: frame_w,
+        height: frame_h,
+        rgba: frame_rgba,
+    });
+    labels.push("frame");
+    let (texture, packed) = pack_entries(gpu, batch, &rendered)?;
+    let extra = |name: &str| {
+        labels
+            .iter()
+            .position(|label| *label == name)
+            .map(|index| packed[allied_count + soviet_count + index])
+    };
+    Some(CampaignShellArt {
+        texture,
+        allied: packed[..allied_count].to_vec(),
+        soviet: packed[allied_count..allied_count + soviet_count].to_vec(),
+        background: extra("background"),
+        background_dark: extra("background:dark"),
+        slider_thumb: extra("thumb"),
+        slider_frame: extra("frame"),
+    })
+}
+
 fn load_named_palette(assets: &AssetManager, name: &str) -> Option<Palette> {
     let bytes = assets.get_ref(name)?;
     Palette::from_bytes(bytes)

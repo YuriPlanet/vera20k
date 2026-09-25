@@ -281,6 +281,16 @@ impl App {
                     } else {
                         Self::render_egui_main_menu_fallback(state, &mut encoder, &view, event_loop)?;
                     }
+                } else if Self::campaign_active(state) {
+                    if crate::app::frontend::campaign_shell_render::render_campaign_page(
+                        state,
+                        &mut encoder,
+                        &output.texture,
+                    )? {
+                        presented_shell = PresentedShell::Campaign;
+                    } else {
+                        Self::render_egui_main_menu_fallback(state, &mut encoder, &view, event_loop)?;
+                    }
                 } else if Self::native_launcher_options_active(state) {
                     pending_launcher_title_receipt = Some(
                         crate::app::frontend::skirmish_shell_render::render_launcher_options(

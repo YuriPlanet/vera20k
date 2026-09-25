@@ -207,7 +207,7 @@ impl App {
         )
     }
 
-    fn play_generic_click_sound(state: &mut AppState) {
+    pub(super) fn play_generic_click_sound(state: &mut AppState) {
         let sound_id = state
             .rules()
             .and_then(|rules| rules.general.generic_click_sound.as_deref())

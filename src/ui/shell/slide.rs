@@ -131,7 +131,9 @@ impl SlideDialogSpec {
 /// Network, Movies & Credits and Options on top, Exit (`0x3EE`) at the bottom.
 /// `0x100` and `0x101`: three page buttons, Main Menu (`0x686`) at the bottom.
 /// `0x129`: Play Movie, then Back (`0x686`). `0x102`: Start Game and Choose Map,
-/// then Back (`0x5C0`), with the map button and the top panel.
+/// then Back (`0x5C0`), with the map button and the top panel. `0x94`: only
+/// Back (`0x686`); its one top-list button, Load `0x40E`, stays hidden
+/// (`0x0052F05C`), and `0x0060A180` counts visible buttons only.
 pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
     SlideDialogSpec {
         dialog_id: 0x00E2,
@@ -168,14 +170,21 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         map_button: true,
         top_panel: true,
     },
+    SlideDialogSpec {
+        dialog_id: 0x0094,
+        top_buttons: 0,
+        bottom_button: true,
+        map_button: false,
+        top_panel: false,
+    },
 ];
 
 /// Front-end shell dialog ids that slide on first paint (the eligibility
 /// allow-list, scoped to the front-end shells). The rendered shells
 /// (`RENDERED_SHELL_SLIDES`) plus the front-end dialogs documented as
-/// allow-listed but not yet rendered here (`0x94`/`0x6B` per
+/// allow-listed but not yet rendered here (`0x6B` per
 /// `docs/research/skirmish-ui/SHELL_FIRST_PAINT_SLIDE_GENERIC_TRIGGER_GHIDRA_REPORT.md`
-/// §3); those slide once a renderer maps to them and they gain a
+/// §3); it slides once a renderer maps to it and it gains a
 /// `RENDERED_SHELL_SLIDES` entry. The original's full list
 /// (`0x0060C540`, 55 ids) also marks Options `0xD5` and its children, Load
 /// `0xB7`, Score `0x108`, the in-game menu dialogs (`0xB5`, `0xB6`, `0xB8`,
@@ -762,7 +771,7 @@ mod tests {
         ))
         .unwrap();
         let cases = fixture["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 24);
+        assert_eq!(cases.len(), 30);
         for case in cases {
             let dialog = case["dialog"].as_str().unwrap();
             let dialog_id = u16::from_str_radix(dialog.trim_start_matches("0x"), 16).unwrap();
@@ -1042,11 +1051,9 @@ mod tests {
 
     #[test]
     fn allow_listed_but_unrendered_dialogs_have_no_column() {
-        // 0x94/0x6B are eligible per research but have no renderer yet, so
-        // the app layer never drives them.
-        for id in [0x0094u16, 0x006B] {
-            assert!(is_slide_eligible(DialogId(id)));
-            assert_eq!(slide_spec_for(DialogId(id)), None);
-        }
+        // 0x6B is eligible per research but has no renderer yet, so the app
+        // layer never drives it.
+        assert!(is_slide_eligible(DialogId(0x006B)));
+        assert_eq!(slide_spec_for(DialogId(0x006B)), None);
     }
 }

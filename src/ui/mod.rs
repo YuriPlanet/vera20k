@@ -11,6 +11,7 @@
 //! - ui/ depends on: sim/ (reads game state, produces commands)
 //! - ui/ does NOT depend on: assets/, render/, sidebar/, audio/, net/
 
+pub mod campaign_shell;
 pub mod client_theme;
 pub mod gadget;
 pub mod game_screen;

@@ -656,6 +656,39 @@ pub(crate) fn trackbar_position_from_x(
     relative.min(i32::from(maximum)) as u8
 }
 
+/// What a left press does on a shell trackbar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TrackbarPress {
+    /// Outside the admitted strip: nothing happens.
+    Ignored,
+    /// On the thumb: capture it for dragging, without moving it.
+    Capture,
+    /// Beside the thumb: jump once to this position, without capture.
+    Jump(u8),
+}
+
+/// gamemd-derived: the initial down row of `TrackBar_ProcessMouse @
+/// 0x0061D950` requires `y > bottom - 18`; thumb-down captures without a
+/// jump, while a rail down jumps once and does not capture.
+pub(crate) fn trackbar_press(
+    position: u8,
+    local_x: i32,
+    local_y: i32,
+    width: i32,
+    height: i32,
+    reserve: i32,
+    maximum: u8,
+) -> TrackbarPress {
+    if local_x < 0 || local_x >= width || local_y <= height - 18 || local_y >= height {
+        return TrackbarPress::Ignored;
+    }
+    let left = thumb_left(position, width, reserve, maximum);
+    if (left..left + 12).contains(&local_x) {
+        return TrackbarPress::Capture;
+    }
+    TrackbarPress::Jump(trackbar_position_from_x(local_x, width, reserve, maximum))
+}
+
 pub(crate) fn thumb_left(position: u8, client_width: i32, reserve: i32, maximum: u8) -> i32 {
     let usable_span = (client_width - reserve - 13).max(1);
     // Original 0x0061E486..0x0061E4A8 (TBM_SETPOS) and
@@ -823,39 +856,28 @@ impl OptionsDialogState {
         }
     }
 
-    /// gamemd-derived: the initial down row of `TrackBar_ProcessMouse @
-    /// 0x0061D950` requires `y > bottom - 18`; thumb-down captures without a
-    /// jump, while a rail down jumps once and does not capture.
+    /// A press on one trackbar ([`trackbar_press`]).
     pub(crate) fn trackbar_mouse_down(
         &mut self,
         id: LauncherTrackbarId,
         frame: PhysicalControlFrame,
     ) {
-        if (id.is_audio() && !self.launcher_audio_available)
-            || frame.local_x < 0
-            || frame.local_x >= frame.width
-            || frame.local_y <= frame.height - 18
-            || frame.local_y >= frame.height
-        {
+        if id.is_audio() && !self.launcher_audio_available {
             return;
         }
-        let left = thumb_left(
+        match trackbar_press(
             self.trackbar_position(id),
-            frame.width,
-            id.plaque_reserve(),
-            id.maximum(),
-        );
-        if (left..left + 12).contains(&frame.local_x) {
-            self.capture = Some(id);
-            return;
-        }
-        let position = trackbar_position_from_x(
             frame.local_x,
+            frame.local_y,
             frame.width,
+            frame.height,
             id.plaque_reserve(),
             id.maximum(),
-        );
-        self.set_trackbar_position(id, position);
+        ) {
+            TrackbarPress::Ignored => {}
+            TrackbarPress::Capture => self.capture = Some(id),
+            TrackbarPress::Jump(position) => self.set_trackbar_position(id, position),
+        }
     }
 
     pub(crate) fn trackbar_mouse_move(

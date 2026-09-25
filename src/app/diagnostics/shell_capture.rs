@@ -37,6 +37,13 @@ const CHECKPOINT_MOVIE_LIST_0X129_SELECTED: &str = "movie-list-0x129-selected";
 const CHECKPOINT_MOVIE_LIST_0X129_FULL: &str = "movie-list-0x129-full";
 const CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2: &str = "movie-list-0x129-full-down2";
 const CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME: &str = "movie-list-0x129-back-first-frame";
+const CHECKPOINT_CAMPAIGN_0X94_STEADY: &str = "campaign-0x94-steady";
+const CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT: &str = "campaign-0x94-slider-left";
+const CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT: &str = "campaign-0x94-slider-right";
+const CHECKPOINT_CAMPAIGN_0X94_ENTRY_PREFIX: &str = "campaign-0x94-entry-tick-";
+/// Slider press points of the retail comparison stills.
+const CAMPAIGN_SLIDER_LEFT_POINT: (i32, i32) = (190, 275);
+const CAMPAIGN_SLIDER_RIGHT_POINT: (i32, i32) = (440, 275);
 const CHECKPOINT_CREDITS_ROLL_FRAME_PREFIX: &str = "credits-roll-frame-";
 const CHECKPOINT_SNEAK_PEEK_FRAME_PREFIX: &str = "sneak-peek-frame-";
 const CHECKPOINT_MAIN_MENU_0XE2_SLIDE_OUT_PREFIX: &str = "main-menu-0xe2-slide-out-tick-";
@@ -85,6 +92,13 @@ pub enum ShellCaptureCheckpoint {
     /// Back on the movie list: the first frame after its teardown slide,
     /// which must already be the recreated `0x101`'s entry slide at tick 0.
     MovieList0x129BackFirstFrame,
+    /// Single Player -> New Campaign: campaign selection `0x94` settled.
+    Campaign0x94Steady,
+    /// The same after a press on the difficulty slider's left or right end.
+    Campaign0x94SliderLeft,
+    Campaign0x94SliderRight,
+    /// Its entry slide held at one tick (`campaign-0x94-entry-tick-<N>`).
+    Campaign0x94Entry(u32),
     /// Show_Credits pinned at one roll frame (`credits-roll-frame-<N>`).
     CreditsRollFrame(u64),
     /// Sneak Peeks Play_Movie pinned at one video frame (`sneak-peek-frame-<N>`).
@@ -139,6 +153,11 @@ impl ShellCaptureCheckpoint {
                 ShellSlideKind::Skirmish,
                 Self::Skirmish0x102Entry,
             ),
+            (
+                CHECKPOINT_CAMPAIGN_0X94_ENTRY_PREFIX,
+                ShellSlideKind::Campaign,
+                Self::Campaign0x94Entry,
+            ),
         ] {
             let Some(tick) = value.strip_prefix(prefix) else {
                 continue;
@@ -168,6 +187,9 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_MOVIE_LIST_0X129_FULL => Ok(Self::MovieList0x129Full),
             CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2 => Ok(Self::MovieList0x129FullDown2),
             CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME => Ok(Self::MovieList0x129BackFirstFrame),
+            CHECKPOINT_CAMPAIGN_0X94_STEADY => Ok(Self::Campaign0x94Steady),
+            CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT => Ok(Self::Campaign0x94SliderLeft),
+            CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT => Ok(Self::Campaign0x94SliderRight),
             _ => bail!("unsupported shell-capture checkpoint {value:?}"),
         }
     }
@@ -184,6 +206,10 @@ impl ShellCaptureCheckpoint {
             Self::MovieList0x129Full => CHECKPOINT_MOVIE_LIST_0X129_FULL,
             Self::MovieList0x129FullDown2 => CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2,
             Self::MovieList0x129BackFirstFrame => CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME,
+            Self::Campaign0x94Steady => CHECKPOINT_CAMPAIGN_0X94_STEADY,
+            Self::Campaign0x94SliderLeft => CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT,
+            Self::Campaign0x94SliderRight => CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT,
+            Self::Campaign0x94Entry(_) => "campaign-0x94-entry",
             Self::CreditsRollFrame(_) => "credits-roll-frame",
             Self::SneakPeekFrame(_) => "sneak-peek-frame",
             Self::MainMenu0xE2SlideOut(_) => "main-menu-0xe2-slide-out",
@@ -202,6 +228,22 @@ impl ShellCaptureCheckpoint {
             Self::MovieList0x129Full => movies::MoviesTarget::FullList { down_presses: 0 },
             Self::MovieList0x129FullDown2 => movies::MoviesTarget::FullList { down_presses: 2 },
             Self::MovieList0x129BackFirstFrame => movies::MoviesTarget::ListBackFirstFrame,
+            Self::Campaign0x94Steady => movies::MoviesTarget::Campaign0x94 {
+                press: None,
+                entry_tick: None,
+            },
+            Self::Campaign0x94SliderLeft => movies::MoviesTarget::Campaign0x94 {
+                press: Some(CAMPAIGN_SLIDER_LEFT_POINT),
+                entry_tick: None,
+            },
+            Self::Campaign0x94SliderRight => movies::MoviesTarget::Campaign0x94 {
+                press: Some(CAMPAIGN_SLIDER_RIGHT_POINT),
+                entry_tick: None,
+            },
+            Self::Campaign0x94Entry(tick) => movies::MoviesTarget::Campaign0x94 {
+                press: None,
+                entry_tick: Some(tick),
+            },
             Self::CreditsRollFrame(frame) => movies::MoviesTarget::Credits { frame },
             Self::SneakPeekFrame(frame) => movies::MoviesTarget::SneakPeek { frame },
             Self::MainMenu0xE2SlideOut(tick) => movies::MoviesTarget::SlideOut {
@@ -1309,6 +1351,10 @@ mod tests {
             (
                 "skirmish-0x102-entry-tick-",
                 ShellCaptureCheckpoint::Skirmish0x102Entry(17),
+            ),
+            (
+                "campaign-0x94-entry-tick-",
+                ShellCaptureCheckpoint::Campaign0x94Entry(17),
             ),
         ] {
             assert_eq!(

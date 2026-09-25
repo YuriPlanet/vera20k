@@ -14,7 +14,7 @@
 //! wave is live. The slide-in start cue is `GUIMoveInSound` (stock `MenuSlideIn`);
 //! the stock-empty end cue (`ShellButtonSlideSound`) stays silent.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
 
@@ -57,6 +57,8 @@ pub(crate) enum ShellSlideKind {
     MovieList,
     /// Dialog 0x102 — offline skirmish setup.
     Skirmish,
+    /// Dialog 0x94 — campaign selection.
+    Campaign,
 }
 
 impl ShellSlideKind {
@@ -70,6 +72,7 @@ impl ShellSlideKind {
             ShellSlideKind::MoviesAndCredits => 0x0101,
             ShellSlideKind::MovieList => 0x0129,
             ShellSlideKind::Skirmish => 0x0102,
+            ShellSlideKind::Campaign => 0x0094,
         })
     }
 
@@ -107,6 +110,8 @@ pub(crate) enum ShellExitThen {
     SkirmishStart(Box<crate::skirmish_launch::SkirmishLaunchSession>),
     /// Skirmish Back (result `0x5C0`) to the Single Player page.
     SkirmishBack,
+    /// Campaign selection Back (result -1): state 1 recreates Single Player.
+    CampaignBack,
 }
 
 impl ShellExitThen {
@@ -118,6 +123,7 @@ impl ShellExitThen {
             Self::MoviesCredits(_) => ShellSlideKind::MoviesAndCredits,
             Self::PlayMovie | Self::MovieListBack => ShellSlideKind::MovieList,
             Self::SkirmishStart(_) | Self::SkirmishBack => ShellSlideKind::Skirmish,
+            Self::CampaignBack => ShellSlideKind::Campaign,
         }
     }
 }
@@ -129,7 +135,13 @@ impl ShellExitThen {
 pub(crate) struct ShellExit {
     wave: ShellFrameWave,
     then: ShellExitThen,
+    /// When the last tick had been shown.
+    completed_at: Option<Instant>,
 }
+
+/// After tearing `0x94` down, state 8 waits while the campaign voice still
+/// plays, at most this long (`0x0052E036..0x0052E089`, `0xBB8` ms).
+const CAMPAIGN_VOICE_WAIT: Duration = Duration::from_millis(3000);
 
 /// How a request to leave a family dialog starts.
 #[derive(Debug)]
@@ -184,6 +196,7 @@ pub(crate) fn begin_shell_exit(state: &mut AppState, then: ShellExitThen) -> She
             state.frontend.shell_exit = Some(ShellExit {
                 wave: ShellFrameWave::new_slide_out(column, Instant::now()),
                 then,
+                completed_at: None,
             });
             ShellExitStart::Sliding
         }
@@ -213,6 +226,20 @@ pub(crate) fn advance_shell_exit(state: &mut AppState, now: Instant) -> Option<S
     }
     if !state.frontend.shell_exit.as_mut()?.advance(now) {
         return None;
+    }
+    if kind == ShellSlideKind::Campaign {
+        // The last slide-out frame stays on screen while the voice plays.
+        let completed_at = *state
+            .frontend
+            .shell_exit
+            .as_mut()?
+            .completed_at
+            .get_or_insert(now);
+        if now < completed_at + CAMPAIGN_VOICE_WAIT
+            && crate::app::App::campaign_voice_playing(state)
+        {
+            return None;
+        }
     }
     state.frontend.shell_exit.take().map(|exit| exit.then)
 }
@@ -351,7 +378,8 @@ impl<'a> ShellLifecycleReducer<'a> {
             ShellSlideKind::MainMenu => return None,
             ShellSlideKind::SinglePlayer
             | ShellSlideKind::MoviesAndCredits
-            | ShellSlideKind::MovieList => ShellWaveCompletion::MenuPage,
+            | ShellSlideKind::MovieList
+            | ShellSlideKind::Campaign => ShellWaveCompletion::MenuPage,
             ShellSlideKind::Skirmish => ShellWaveCompletion::Skirmish,
         })
     }
@@ -529,6 +557,8 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
             ShellSlideKind::MoviesAndCredits
         } else if state.frontend.shell_route.movie_list() {
             ShellSlideKind::MovieList
+        } else if state.frontend.shell_route.campaign() {
+            ShellSlideKind::Campaign
         } else if !state.frontend.main_menu_shell_failed {
             ShellSlideKind::MainMenu
         } else {
@@ -678,6 +708,13 @@ pub(crate) fn render_shell_first_paint_slide(
                 destination,
             )?
         }
+        ShellSlideKind::Campaign => {
+            crate::app::frontend::campaign_shell_render::render_campaign_page(
+                state,
+                encoder,
+                destination,
+            )?
+        }
         ShellSlideKind::SinglePlayer | ShellSlideKind::MoviesAndCredits => matches!(
             crate::app::frontend::menu_page_render::render_active_menu_page(
                 state,
@@ -786,6 +823,7 @@ mod tests {
         let mut exit = ShellExit {
             wave: ShellFrameWave::new_slide_out(ShellSlideKind::MovieList.column(9), t0),
             then: ShellExitThen::MovieListBack,
+            completed_at: None,
         };
         for tick in 1..=17u64 {
             assert!(

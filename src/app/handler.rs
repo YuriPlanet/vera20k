@@ -649,11 +649,13 @@ impl ApplicationHandler for App {
                         return;
                     }
 
-                    if (Self::menu_page_active(state) || Self::movie_list_active(state))
+                    if (Self::menu_page_active(state)
+                        || Self::movie_list_active(state)
+                        || Self::campaign_active(state))
                         && is_escape
                     {
                         // IsDialogMessageA turns Escape into IDCANCEL (id 2),
-                        // which the 0x100/0x101/0x129 procs and the common
+                        // which the 0x100/0x101/0x129/0x94 procs and the common
                         // handler 0x00622B50 ignore: the dialog stays open.
                         return;
                     }
@@ -804,6 +806,9 @@ impl ApplicationHandler for App {
                 if !egui_consumed && Self::movie_list_active(state) {
                     Self::handle_movie_list_mouse_move(state);
                 }
+                if !egui_consumed && Self::campaign_active(state) {
+                    Self::handle_campaign_mouse_move(state);
+                }
                 if Self::score_shell_active(state) {
                     Self::handle_score_shell_mouse_move(state);
                 }
@@ -812,6 +817,7 @@ impl ApplicationHandler for App {
                     && !state.frontend.main_menu_shell_failed
                     && !Self::menu_page_active(state)
                     && !Self::movie_list_active(state)
+                    && !Self::campaign_active(state)
                     && state.frontend.fullscreen_movie.is_none()
                     && state.frontend.credits_roll.is_none()
                     && !Self::native_skirmish_shell_active(state)
@@ -858,6 +864,16 @@ impl ApplicationHandler for App {
                                 Self::handle_movie_list_mouse_down(state);
                             } else {
                                 Self::handle_movie_list_mouse_up(state);
+                            }
+                        }
+                        return;
+                    }
+                    if Self::campaign_active(state) {
+                        if button == MouseButton::Left {
+                            if btn_state.is_pressed() {
+                                Self::handle_campaign_mouse_down(state);
+                            } else {
+                                Self::handle_campaign_mouse_up(state);
                             }
                         }
                         return;
@@ -980,6 +996,7 @@ impl ApplicationHandler for App {
                 crate::app::input::keyboard::poll_scroll_repeat(state),
                 crate::app::input::sound::poll_scroll_repeat(state),
                 Self::poll_movie_list_scroll(state),
+                Self::poll_campaign(state),
             ]
             .into_iter()
             .flatten()

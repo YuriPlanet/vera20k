@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original shell bevel 0x006208F0 (border 2) for the two trackbar frame boxes of 0x0061D950, plaque-less 272x22 and plaque 128x21",
+  "assumptions": [
+    "Box inset 1 + (plaque on) from 0x0061E22A..0x0061E235; boxes are control-relative",
+    "Runtime colours 0x00C5BEA7 / 0x00807A68 as written by 0x0060FA81..0x0060FA9B"
+  ],
+  "substitutions": [
+    "Surface Draw_Line (+0x30) and Put_Pixel (+0x24) are recorded and return",
+    "Pixel-format globals set to RGB565"
+  ],
+  "entry_points": {
+    "bevel": "0x006208F0"
+  },
+  "payload_sha256": "6d171c32d54963feff86c8da7c1235b93bdda9912d5bbc3bf713ecfd4ec8cf34"
+}
