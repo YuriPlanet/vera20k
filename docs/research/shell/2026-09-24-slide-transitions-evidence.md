@@ -24,7 +24,7 @@ Every PrepareSession result that ends a family dialog calls
 
 1. `WWKeyboard__Clear` `0x0054F720` on `[0x0087F770]` drops queued keys.
 2. `ShellDialog__SlideOutAndWait` `0x00608070`:
-   - It does nothing in a network session (`0x0069BBE0`), for a dialog without a
+   - It does nothing while a game is suspended behind an in-game menu (`0x0069BBE0`, Session `+0x30D8`), for a dialog without a
      record, when `+0xBD` is 0 or `+0xB0 != 1`, or when the window is hidden.
    - Otherwise it plays Rules `+0x19C` at volume 1.0. That field is
      `[AudioVisual] GUIMoveOutSound`, read at `0x006694C7`; retail value

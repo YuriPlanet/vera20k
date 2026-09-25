@@ -66,14 +66,14 @@ one frame per 91 ms.
   returns the `0x71C` kind-4 startup timer 1 (`0x00603240`); Rust tests read its
   reference file.
 - Fix-up pass `0x0060B950`: for these dialogs the heading moves `+7` y and grows
-  `+1` h (`0x0060BD17..0x0060BD31`) unless a network session is active
+  `+1` h (`0x0060BD17..0x0060BD31`) unless the game is suspended behind an in-game menu
   (`0x0069BBE0`); only `0xBC 0xBD 0x102 0xC2 0xC9 0xBC6 0x105 0x6B 0x113` take
   `+1` y instead (`0x0060BCE4`).
 - The text is drawn in the window, which carries the same one-pixel
   compatibility correction, so the effective rectangle is `(635, 9, 163, 18)`
   at 800×600 for all four dialogs, the rectangle `0xE2` already used. The
   reveal starts when the dialog's first-paint slide completes.
-- Placement `0x0060B1D0` (no network session): `x = W − inset − w − dx`,
+- Placement `0x0060B1D0` (no suspended game): `x = W − inset − w − dx`,
   `y = resource y + dy`, with `dx = max(0, (W − 800) / 2)` and
   `dy = max(0, (H − 600) / 2)`; the panel art only moves from height 768, so
   at heights 601..767 these statics sit below their art as in retail.
@@ -127,7 +127,7 @@ RA2TS movie during slides is covered by the
 ## Status line `0x695`
 
 - Kind 1 through `0x00602490` for dialogs accepted by `0x00601360` while no
-  network session is active (`0x00602AA5..0x00602AC7`); interval 15 ms, step 3,
+  game is suspended behind an in-game menu (`0x00602AA5..0x00602AC7`); interval 15 ms, step 3,
   range 16 (`0x0060134E`, `0x00601D02..0x00601D14`, `0x006023C8..0x006023D8`),
   executed by `tools/storage_oracle/shell_static_timers.py` for `0xE2 0x100
   0x101 0x129 0xD5 0x102 0xB7`.

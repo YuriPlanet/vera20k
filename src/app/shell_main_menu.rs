@@ -304,12 +304,14 @@ impl App {
         state.match_state.input.zoom_target = 1.0;
     }
 
+    /// `0x497` enables Load Saved Game when the scan `0x00559C20` finds a
+    /// save the list reader accepts; the list `0x005596A0` uses the same
+    /// reader, so an enabled button always opens a non-empty list.
     fn refresh_single_player_load_state(state: &mut AppState) {
-        state.persistence.refresh_save_list_if_dirty();
         state
             .frontend
             .single_player_shell_state
-            .load_saved_game_enabled = !state.persistence.save_list_cache.entries().is_empty();
+            .load_saved_game_enabled = state.persistence.repository.has_browser_entry();
     }
 
     pub(super) fn open_single_player_shell(state: &mut AppState) {
@@ -878,11 +880,10 @@ impl App {
                     .map(crate::ui::single_player_shell::action_for_control)
                 {
                     match action {
-                        // States 0x12, 8 and 0xB destroy 0x100. Load Saved Game
-                        // still opens a substitute panel over the page, so it
-                        // keeps it.
+                        // States 0x12, 8, 9 and 0xB destroy 0x100.
                         SinglePlayerShellAction::MainMenu
                         | SinglePlayerShellAction::NewCampaign
+                        | SinglePlayerShellAction::LoadSavedGame
                         | SinglePlayerShellAction::Skirmish => {
                             Self::leave_shell_dialog(state, ShellExitThen::SinglePlayer(action));
                         }
@@ -971,6 +972,7 @@ impl App {
             ShellExitThen::SkirmishStart(session) => Self::commit_skirmish_start(state, *session),
             ShellExitThen::SkirmishBack => Self::commit_skirmish_back(state),
             ShellExitThen::CampaignBack => Self::commit_campaign_back(state),
+            ShellExitThen::LoadSavedGameBack => Self::commit_load_saved_game_back(state),
         }
     }
 
@@ -1039,8 +1041,7 @@ impl App {
                     .single_player_shell_state
                     .load_saved_game_enabled
                 {
-                    state.match_state.match_presentation.show_save_load_panel = true;
-                    state.persistence.invalidate_save_list();
+                    Self::open_load_saved_game_page(state);
                 }
             }
             SinglePlayerShellAction::NewCampaign => Self::open_campaign_page(state),

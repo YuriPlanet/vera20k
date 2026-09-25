@@ -3,7 +3,9 @@
 //! mode titles and the active-game parent/button art differ here.
 
 use super::in_game_shell::{self, InGameShellFrame};
-use super::modals::{BackdropInteriorPaint, push_saved_browser_modal_instances};
+use super::modals::{
+    BackdropInteriorPaint, push_saved_browser_modal_instances, push_saved_browser_prompt_instances,
+};
 use super::pause_menu::{button_frame, button_text_rect, button_text_rgb};
 use super::text::{
     localized_label, push_saved_browser_contents_text, push_saved_browser_prompt_text,
@@ -125,4 +127,27 @@ pub(crate) fn render_saved_game_shell(
             label: "Active Saved Game Browser",
         },
     )
+}
+
+/// Row text and the message box of Single Player's Load Saved Game `0xB7`,
+/// a family page: the row text (description, date, time) goes into `texts`
+/// unless the teardown slide blanks the list, then the box's text clips
+/// everything under it. Returns the box's art, drawn from the skirmish
+/// chrome, when one is up.
+pub(crate) fn family_saved_game_overlays(
+    state: &AppState,
+    layout: &crate::ui::skirmish_shell::SavedSeedLayout,
+    browser: &crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>,
+    rows: bool,
+    texts: &mut Vec<crate::render::shell_text::ShellTextDraw>,
+) -> Vec<crate::render::batch::SpriteInstance> {
+    if rows {
+        push_saved_browser_contents_text(texts, state, layout, browser);
+    }
+    push_saved_browser_prompt_text(texts, state, layout, browser);
+    let mut sprites = Vec::new();
+    if let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
+        push_saved_browser_prompt_instances(&mut sprites, atlas, layout, browser);
+    }
+    sprites
 }

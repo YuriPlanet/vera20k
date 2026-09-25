@@ -649,6 +649,16 @@ impl ApplicationHandler for App {
                         return;
                     }
 
+                    if Self::load_saved_game_active(state) {
+                        // The message box takes Enter/Escape; the page
+                        // ignores IDOK/IDCANCEL (0x00558A30).
+                        if event.state.is_pressed() {
+                            Self::handle_load_saved_game_key(state, code);
+                        }
+                        state.platform.window.request_redraw();
+                        return;
+                    }
+
                     if (Self::menu_page_active(state)
                         || Self::movie_list_active(state)
                         || Self::campaign_active(state))
@@ -809,6 +819,9 @@ impl ApplicationHandler for App {
                 if !egui_consumed && Self::campaign_active(state) {
                     Self::handle_campaign_mouse_move(state);
                 }
+                if !egui_consumed && Self::load_saved_game_active(state) {
+                    Self::handle_load_saved_game_mouse_move(state);
+                }
                 if Self::score_shell_active(state) {
                     Self::handle_score_shell_mouse_move(state);
                 }
@@ -818,6 +831,7 @@ impl ApplicationHandler for App {
                     && !Self::menu_page_active(state)
                     && !Self::movie_list_active(state)
                     && !Self::campaign_active(state)
+                    && !Self::load_saved_game_active(state)
                     && state.frontend.fullscreen_movie.is_none()
                     && state.frontend.credits_roll.is_none()
                     && !Self::native_skirmish_shell_active(state)
@@ -875,6 +889,13 @@ impl ApplicationHandler for App {
                             } else {
                                 Self::handle_campaign_mouse_up(state);
                             }
+                        }
+                        return;
+                    }
+                    if Self::load_saved_game_active(state) {
+                        if button == MouseButton::Left {
+                            Self::handle_load_saved_game_mouse(state, btn_state.is_pressed());
+                            state.platform.window.request_redraw();
                         }
                         return;
                     }
@@ -992,6 +1013,7 @@ impl ApplicationHandler for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let shell_scroll_wake = if let Some(state) = self.state.as_mut() {
             Self::update_saved_seed_browser_scroll(state, false);
+            Self::update_load_saved_game_scroll(state, false);
             [
                 crate::app::input::keyboard::poll_scroll_repeat(state),
                 crate::app::input::sound::poll_scroll_repeat(state),

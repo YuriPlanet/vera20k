@@ -59,6 +59,8 @@ pub(crate) enum ShellSlideKind {
     Skirmish,
     /// Dialog 0x94 — campaign selection.
     Campaign,
+    /// Dialog 0xB7 — Single Player's Load Saved Game.
+    LoadSavedGame,
 }
 
 impl ShellSlideKind {
@@ -73,6 +75,7 @@ impl ShellSlideKind {
             ShellSlideKind::MovieList => 0x0129,
             ShellSlideKind::Skirmish => 0x0102,
             ShellSlideKind::Campaign => 0x0094,
+            ShellSlideKind::LoadSavedGame => 0x00B7,
         })
     }
 
@@ -112,6 +115,8 @@ pub(crate) enum ShellExitThen {
     SkirmishBack,
     /// Campaign selection Back (result -1): state 1 recreates Single Player.
     CampaignBack,
+    /// Load Saved Game Back (result 2): state 1 recreates Single Player.
+    LoadSavedGameBack,
 }
 
 impl ShellExitThen {
@@ -124,6 +129,7 @@ impl ShellExitThen {
             Self::PlayMovie | Self::MovieListBack => ShellSlideKind::MovieList,
             Self::SkirmishStart(_) | Self::SkirmishBack => ShellSlideKind::Skirmish,
             Self::CampaignBack => ShellSlideKind::Campaign,
+            Self::LoadSavedGameBack => ShellSlideKind::LoadSavedGame,
         }
     }
 }
@@ -379,7 +385,8 @@ impl<'a> ShellLifecycleReducer<'a> {
             ShellSlideKind::SinglePlayer
             | ShellSlideKind::MoviesAndCredits
             | ShellSlideKind::MovieList
-            | ShellSlideKind::Campaign => ShellWaveCompletion::MenuPage,
+            | ShellSlideKind::Campaign
+            | ShellSlideKind::LoadSavedGame => ShellWaveCompletion::MenuPage,
             ShellSlideKind::Skirmish => ShellWaveCompletion::Skirmish,
         })
     }
@@ -559,6 +566,8 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
             ShellSlideKind::MovieList
         } else if state.frontend.shell_route.campaign() {
             ShellSlideKind::Campaign
+        } else if state.frontend.shell_route.load_saved_game() {
+            ShellSlideKind::LoadSavedGame
         } else if !state.frontend.main_menu_shell_failed {
             ShellSlideKind::MainMenu
         } else {
@@ -710,6 +719,13 @@ pub(crate) fn render_shell_first_paint_slide(
         }
         ShellSlideKind::Campaign => {
             crate::app::frontend::campaign_shell_render::render_campaign_page(
+                state,
+                encoder,
+                destination,
+            )?
+        }
+        ShellSlideKind::LoadSavedGame => {
+            crate::app::frontend::load_saved_game_render::render_load_saved_game_page(
                 state,
                 encoder,
                 destination,

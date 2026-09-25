@@ -141,6 +141,12 @@ num-traits = "0.2"
 # (same team behind cpal). Covers all RA2 needs: SFX, music, volume control.
 rodio = "0.22"
 
+# --- Unix saved-list timestamps ---
+# Local time and the user's locale (src/util/native_file_time.rs). The
+# lockfile already carries libc 0.2.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 # --- macOS application icon ---
 # macOS has no per-window icon; the Dock shows NSApplication's icon image, which
 # `app::window_icon` sets at startup. These are the objc2 0.6 / AppKit 0.3 versions

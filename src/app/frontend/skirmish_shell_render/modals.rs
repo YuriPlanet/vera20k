@@ -590,6 +590,16 @@ pub(super) fn push_saved_browser_modal_instances<I: Clone + PartialEq>(
             );
         }
     }
+    push_saved_browser_prompt_instances(out, atlas, layout, browser);
+}
+
+/// The browser's message box (PUDLGBGN and its buttons), when one is up.
+pub(super) fn push_saved_browser_prompt_instances<I: Clone + PartialEq>(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    layout: &SavedSeedLayout,
+    browser: &SavedSeedBrowserState<I>,
+) {
     if let Some(prompt) = browser.prompt.as_ref() {
         let (dialog, _, yes, no) = prompt.layout(layout.screen.w as u32, layout.screen.h as u32);
         let mut buttons = vec![shell_paint::ModalButton {
