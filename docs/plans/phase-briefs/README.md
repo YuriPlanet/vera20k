@@ -3,7 +3,7 @@
 One brief per phase of
 [`2026-07-30-clean-slate-system-implementation-order.md`](../2026-07-30-clean-slate-system-implementation-order.md).
 A goal session reads the brief for its phase **before** the plan or the
-research index. The brief is the handover between sessions working the
+research archive. The brief is the handover between sessions working the
 same phase; the plan is only the dependency order.
 
 Briefs are written when a phase is first targeted and updated by the session
