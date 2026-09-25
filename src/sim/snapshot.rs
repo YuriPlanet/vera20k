@@ -588,7 +588,9 @@ use crate::sim::world::Simulation;
 // 201 -> 202: the rearm countdown moves onto the object (`TechnoClass+0x2EC`):
 // AttackTarget loses its cooldown/burst-delay counters and the cloak runtime
 // its copy of the timer.
-const SNAPSHOT_VERSION: u32 = 202;
+// 202 -> 203: a bullet keeps OnBridge and no owner house, a house its ROF
+// bias (`HouseClass+0x1A8`), and a TeamType `Aggressive=`.
+const SNAPSHOT_VERSION: u32 = 203;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3538,7 +3540,9 @@ mod tests {
         // 199 -> 200: the Gattling stage, value and turret animation counter.
         // 200 -> 201: no `last_attacker_id`; TeamType `Suicide=`.
         // 201 -> 202: the rearm timer on the object.
-        assert_eq!(super::SNAPSHOT_VERSION, 202);
+        // 202 -> 203: bullet OnBridge, no owner house; house ROF bias; TeamType
+        // `Aggressive=`.
+        assert_eq!(super::SNAPSHOT_VERSION, 203);
     }
 
     #[test]

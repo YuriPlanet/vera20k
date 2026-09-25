@@ -154,7 +154,9 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
     // passive acquire + spawner; foundations: Move cadence + hashed runtime
     // state). Neither side's values describe the merged tree; re-derived below
     // from the merged tree's own output in the same merge commit.
-    0x0E65_195B_66CB_8FDC,
+    // 2026-09-25 combat chain 1: Mission_Guard cadence draws from frame 0 and
+    // the tank duel from tick 281 (see GLOBAL_HARNESS_FINAL_HASH).
+    0x7BEC_A2AE_4D99_DA81,
     0x39F3_258B_A550_EB7C,
     0x1CE8_1848_7043_6163,
 );
@@ -659,7 +661,7 @@ const GLOBAL_PRE_SUSTAINED_SIGHT_V142_HASH: u64 = 0x4E6E_0CFE_23A8_03A7;
 
 // Schema171: fresh-turn admission/residual clearing and retained-owner hashes.
 // See TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md, PR415 causal attribution.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 2969748113275805488;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 17742218090737448348;
 // Schema174 removes folds instead of adding them: OreGrowthState's node-era
 // scanner cursor, candidate lists and sample counters, and ProductionState's
 // fallback ore overlay id. The pre-174 projection folds the values those fields
@@ -668,10 +670,10 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 296974811
 // id. It is not a general reconstruction; a scenario finalized by the map
 // loader held Some(first TIB* id). The projection must still equal the previous
 // current pin, asserted below. Rust hash-composition ratchet, not a native golden.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 12588711074673950861;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 7094813934618577171;
 // v181 adds the default Foot+580 factor to every entity's hash. The pre-181
 // assertion below retains the previous entire fixture state/RNG ratchet.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xDAF7_FF08_E159_54F7;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0x1256_8F26_12CB_1B30;
 // Snapshot182 adds ordered display vectors. The pre-182 projection below
 // must reproduce the previous whole-fixture hash, including all RNG/state.
 // Schema186 removes the always-None release-tail byte from each entity. This
@@ -700,9 +702,20 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xDAF7_FF08_E159_
 // cooldown/burst-delay counters and the cloak copy: composition only.
 // Before(202) reproduces the v201 pin; per-tick replay, the RNG stream pins and
 // the route tripwires are unchanged.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0xFFF8_3258_DF1E_850B;
-const GLOBAL_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0x591D_D8AB_05AD_B66C;
-const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 5260791561060714057;
+// 2026-09-25 combat chain 1 (behavior, snapshot 203), traced tick by tick
+// against 947c7044: from frame 0 three objects on Guard run Mission_Guard and
+// draw its RandomRanged(0, 2) cadence, and the infantry idle fidgets move with
+// them (Scenario stream only). Cells and health match until tick 281, when
+// tank 4's attack-move, which acquired tank 6 there before too, now fires on
+// it. 947c7044 never fired and at tick 292 swapped to infantryman 7; its fire
+// path carried a shroud gate and invented retargets, neither of which native
+// has, and this chain deletes both. Tank 6 retaliates and the duel ends with tank
+// 4 dead at tick 590. The main and mapgen streams are unchanged. Schema 203
+// adds the house ROF bias and bullet OnBridge folds. Old values: the commit
+// that moved them.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x9941_BD3B_AC71_581E;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0xE77B_8C4E_81A6_7C37;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 7034257082188559193;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -1036,17 +1049,17 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
-        0x065F_2FBB_F9DB_A8F8,
+        0x2D96_8243_E7D2_954D,
         "v190 changes only the Foot neighbor-history hash composition in this fixture"
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
-        0xF060_AF6C_B39D_7725,
+        0xBCD5_965B_DEE3_DED2,
         "v189 adds only the retained Techno+3D4 hash fold"
     );
     let before_burst_hash = rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(187));
     assert_eq!(
-        before_burst_hash, 0x6255_BA80_BED5_E219,
+        before_burst_hash, 0x9F8B_13A5_B90D_1A9E,
         "schema187 only replaces zero remaining-shot fields with the retained index in this fixture"
     );
     let before_release_hash =
@@ -1104,7 +1117,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     // 2026-09-23: moved by the Drive/Ship order and first-Process behavior
     // change (see GLOBAL_HARNESS_FINAL_HASH), not by a hash owner.
     assert_eq!(
-        before_power_hash, 6770460542547855998,
+        before_power_hash, 16281269595277929600,
         "full08 projection moved: investigate behavior or another hash owner; do not rebaseline"
     );
 
@@ -1168,56 +1181,23 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
             entity.foot_speed,
         );
     }
-    // The retasked tank is still driving west to its retained destination at
-    // the 600-frame boundary. Each of its track ends continues into
-    // Process_Movement in the same Process (`movement::track_continuation`),
-    // so the following visits keep a live track and advance it. This is a
-    // production continuation regression, not a native scenario golden.
-    let continuation_start = {
-        let tank = rep
-            .substrate
-            .entities
-            .get(4)
-            .expect("retasked tank survives");
-        assert_eq!(
-            tank.navigation.nav_com,
-            Some(crate::sim::components::NavTargetRef::Cell { rx: 8, ry: 8 }),
-        );
-        crate::sim::movement::ground_pose::position_world_xy(&tank.position)
-    };
-    let mut continuation_admitted = false;
-    for _ in 0..16 {
-        let tick = rep.advance_tick(
-            &[],
-            Some(&rules),
-            &heights,
-            Some(&grid),
-            Some(&overlays),
-            HARNESS_TICK_MS,
-        );
-        assert!(
-            tick.frame_committed,
-            "retained destination continuation must commit"
-        );
-        let tank = rep
-            .substrate
-            .entities
-            .get(4)
-            .expect("continuing tank survives");
-        continuation_admitted |= tank.drive_locomotion.as_ref().is_some_and(|drive| {
-            drive.track.turn_index >= 0 && drive.track_valid && drive.head_to.is_some()
-        });
-    }
-    let continuation_end = crate::sim::movement::ground_pose::position_world_xy(
-        &rep.substrate.entities.get(4).unwrap().position,
-    );
+    // Tank 4's attack-move acquires Soviet tank 6 at tick 281 and fires; tank 6
+    // retaliates. After the Stop (300) and the Move home (320) a hit from tank
+    // 6 turns tank 4 back (ShouldRetaliate 0x007087C0: no Target, and Move
+    // keeps the constructor's Retaliate=yes), and the duel ends with tank 4
+    // dead at tick 590. The same-call track continuation this block used to
+    // follow is covered by track_path_continuation_tests on production rows.
     assert!(
-        continuation_admitted,
-        "the retained destination must keep a live track"
+        rep.substrate.entities.get(4).is_none(),
+        "the retasked tank loses its duel"
     );
-    assert!(
-        continuation_end[0] < continuation_start[0],
-        "retained westbound destination must advance",
+    assert_eq!(
+        rep.substrate
+            .entities
+            .get(6)
+            .map(|tank| tank.health.current),
+        Some(12),
+        "tank 6 takes six 105mm hits (65 * 75% heavy)"
     );
 
     assert_eq!(

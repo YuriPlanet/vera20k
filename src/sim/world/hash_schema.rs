@@ -111,6 +111,11 @@ pub(super) enum HashFeature {
     /// copy. Earlier schemas fold zero counters on AttackTarget (the bounded
     /// fixtures had no reload in progress) and the timer in the cloak slot.
     RearmTimer = 202,
+    /// A bullet's OnBridge (`ObjectClass+0x8C`, set for an Inviso shot) and
+    /// the house ROF bias (`HouseClass+0x1A8`). The bullet no longer keeps
+    /// its owner's house (DamageArea reads the live Owner); earlier schemas
+    /// fold the live source's house in its place.
+    InvisoBullet = 203,
 }
 
 impl HashSchema {
@@ -141,6 +146,7 @@ impl HashSchema {
                     | HashFeature::IvanBomb
                     | HashFeature::Gattling
                     | HashFeature::RearmTimer
+                    | HashFeature::InvisoBullet
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {
