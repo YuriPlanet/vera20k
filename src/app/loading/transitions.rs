@@ -179,6 +179,9 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         sim.set_input_delay_ticks(state.match_state.configured_input_delay_ticks);
     }
     state.match_state.match_presentation.unit_atlas = result.presentation.unit_atlas;
+    // Slope-transition sprites belong to the match's voxel models; the cache
+    // otherwise keeps every earlier match's pages alive.
+    *state.renderer.vxl_slope_transition_cache.borrow_mut() = Default::default();
     state.match_state.match_presentation.palette_set = result.presentation.palette_set;
     state.match_state.match_presentation.sprite_atlas = result.presentation.sprite_atlas;
     state.match_state.match_presentation.overlay_atlas = result.presentation.overlay_atlas;

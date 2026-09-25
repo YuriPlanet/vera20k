@@ -26,7 +26,10 @@ pub use hit_test::{
 };
 pub use launch::{launch_session, launch_settings, pack_launch_session_without_start_validation};
 
-pub use choose_map::{ChooseMapModalState, ChooseMapSelection};
+pub use choose_map::{
+    ChooseMapListPress, ChooseMapModalState, ChooseMapSelection, EjectPrompt, EjectPromptButton,
+    ai_rows_beyond_limit_occupied,
+};
 pub use player_name::{
     PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT, PLAYER_NAME_EDIT_LIMIT_BYTES,
     PlayerNameEditState, SkirmishShellState, accept_selected_map, blur_player_name_edit,
@@ -132,7 +135,7 @@ pub enum SkirmishHoverTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChooseMapHoverTarget {
     ModeList0x6eb,
-    ModeListRow0x6eb { mode_index: usize },
+    ModeListRow0x6eb { mode_id: i32 },
     MapList0x553,
     Preview0x468,
     StatusHelp0x695,

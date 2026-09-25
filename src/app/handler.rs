@@ -632,11 +632,26 @@ impl ApplicationHandler for App {
                         return;
                     }
 
+                    if Self::native_skirmish_shell_active(state)
+                        && event.state.is_pressed()
+                        && !event.repeat
+                        && matches!(
+                            code,
+                            KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
+                        )
+                        && Self::cancel_choose_map_eject_prompt(state)
+                    {
+                        return;
+                    }
                     if Self::native_skirmish_shell_active(state) && is_escape {
-                        if state.frontend.skirmish_shell_state.choose_map_modal.is_some() {
-                            // Native chooser `0x6B` has no verified Escape
-                            // dismissal. Consume the key without applying the
-                            // Cancel transaction or changing its selection.
+                        if state
+                            .frontend
+                            .skirmish_shell_state
+                            .choose_map_modal
+                            .is_some()
+                        {
+                            // The chooser's loop (`0x007759E0`) runs without
+                            // IsDialogMessage: Escape does nothing.
                             state.platform.window.request_redraw();
                             return;
                         }
@@ -1040,6 +1055,7 @@ impl ApplicationHandler for App {
                 crate::app::input::keyboard::poll_scroll_repeat(state),
                 crate::app::input::sound::poll_scroll_repeat(state),
                 Self::poll_movie_list_scroll(state),
+                Self::poll_choose_map_scroll(state),
                 Self::poll_campaign(state),
             ]
             .into_iter()

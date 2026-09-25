@@ -5,17 +5,14 @@
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_paint;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
-use crate::skirmish_modes::SkirmishGameMode;
 use crate::ui::shell::geom::LOWER_STRIP_H;
 use crate::ui::shell::modal::BodyOkLayout;
 use crate::ui::skirmish_shell::{
     COMBO_DROPDOWN_ROW_H, COMBO_FACE_H, ChooseMapModalButton, ChooseMapModalLayout,
     RandomMapSetupControl, RandomMapSetupLayout, RandomMapSetupModalState, RectPx,
     SETUP_COMBO_ROWS, SavedSeedBrowserState, SavedSeedControl, SavedSeedLayout,
-    SkirmishShellLayout, SkirmishShellState, choose_map_listbox_content_rect,
-    choose_map_listbox_row_rect, choose_map_listbox_scroll_thumb_rect,
-    choose_map_listbox_scrollbar_rect, choose_map_listbox_visible_row_count,
-    random_map_setup_dropdown_rect, setup_combo_items, trackbar_pixel_offset,
+    SkirmishShellLayout, SkirmishShellState, random_map_setup_dropdown_rect, setup_combo_items,
+    trackbar_pixel_offset,
 };
 
 use super::chrome::{
@@ -28,8 +25,7 @@ use super::{
     OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
     OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
     SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE, SHELL_DROPDOWN_DEPTH,
-    SHELL_MODAL_BG_RGB, SHELL_MODAL_PANEL_RGB, SHELL_PARENT_BACKGROUND_DEPTH, SHELL_LABEL_TEXT_RGB,
-    SHELL_SCROLLBAR_TRACK_RGB_PENDING_SCROLLBAR_SOURCE_CAPTURE,
+    SHELL_LABEL_TEXT_RGB, SHELL_MODAL_BG_RGB, SHELL_MODAL_PANEL_RGB, SHELL_PARENT_BACKGROUND_DEPTH,
 };
 
 /// The five combo rows as hit-test controls, for the enabled/disabled lookup.
@@ -74,71 +70,14 @@ const fn backdrop_interior(retail_background_available: bool) -> BackdropInterio
     }
 }
 
-pub(super) fn push_choose_map_listbox_instances(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    list: RectPx,
-    row_count: usize,
-    top_index: usize,
-    selected_index: Option<usize>,
-    interior: BackdropInteriorPaint,
-    depth: f32,
-) {
-    let content = choose_map_listbox_content_rect(row_count, list);
-    if interior.paints_solid_fill() {
-        push_solid_rect(
-            out,
-            atlas,
-            list,
-            SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
-            depth,
-        );
-    }
-    if let Some(idx) = selected_index {
-        let visible_rows = choose_map_listbox_visible_row_count(list);
-        if idx >= top_index && idx < top_index + visible_rows {
-            let row = idx - top_index;
-            let rect = choose_map_listbox_row_rect(content, row);
-            if rect.h > 0 {
-                push_solid_rect(
-                    out,
-                    atlas,
-                    rect,
-                    OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
-                    depth - 0.00001,
-                );
-            }
-        }
-    }
-    if let Some(scrollbar) = choose_map_listbox_scrollbar_rect(row_count, list) {
-        if let Some(thumb) = choose_map_listbox_scroll_thumb_rect(row_count, top_index, list) {
-            push_solid_rect(
-                out,
-                atlas,
-                scrollbar,
-                SHELL_SCROLLBAR_TRACK_RGB_PENDING_SCROLLBAR_SOURCE_CAPTURE,
-                depth - 0.000015,
-            );
-            let chrome = atlas.control_chrome();
-            paint_control(
-                out,
-                &chrome,
-                ControlPaint::ScrollBar {
-                    scrollbar,
-                    thumb,
-                    pressed_part: None,
-                },
-            );
-        }
-    }
-    push_ownerdraw_two_pixel_bevel_frame(out, atlas, list, depth - 0.00002);
-}
-
 pub(super) fn choose_map_background_entry(
     atlas: &SkirmishShellChromeAtlas,
     layout: &ChooseMapModalLayout,
 ) -> Option<SkirmishShellChromeEntry> {
+    // `0x0072E730` draws the small shape at 640 wide and the large one
+    // (loaded only at exactly 800) elsewhere.
     match layout.screen.w {
+        640 => atlas.choose_map_background_640_customize_battle,
         800 => atlas.choose_map_background_800_customize_battle,
         _ => None,
     }
@@ -201,35 +140,35 @@ pub(super) fn push_choose_map_modal_control_instances(
     layout: &ChooseMapModalLayout,
     interior: BackdropInteriorPaint,
     shell: &SkirmishShellState,
-    modes: &[SkirmishGameMode],
+    steady: bool,
 ) {
     let Some(modal) = shell.choose_map_modal.as_ref() else {
         return;
     };
-    let mode_row_count = modal.mode_row_count(modes);
-    let selected_mode_index = modes
-        .iter()
-        .position(|mode| mode.id == modal.selected_mode_id);
-    push_choose_map_listbox_instances(
+    // Both lists are the shell list subclass (`0x00618D40`).
+    super::list::paint_list(
         out,
         atlas,
-        layout.mode_list,
-        mode_row_count,
+        modal.mode_geometry(layout),
         modal.mode_top_index,
-        selected_mode_index,
-        interior,
-        SHELL_DROPDOWN_DEPTH - 0.00010,
+        modal.selected_mode_row(),
+        modal.mode_scroll.pressed_part(),
+        interior.paints_solid_fill(),
     );
-    push_choose_map_listbox_instances(
+    super::list::paint_list(
         out,
         atlas,
-        layout.map_list,
-        modal.filtered_record_indices.len(),
+        modal.map_geometry(layout),
         modal.map_top_index,
         modal.highlighted_filtered_index,
-        interior,
-        SHELL_DROPDOWN_DEPTH - 0.00010,
+        modal.map_scroll.pressed_part(),
+        interior.paints_solid_fill(),
     );
+    // While a slide runs the column replaces the buttons and the preview
+    // static is validate-only (`0x00606800`).
+    if !steady {
+        return;
+    }
     // The modal's right-column buttons are the same owner-draw type-1 class as the
     // setup shell's Start/Choose/Back: SDBTNANM frame 2 idle, frame 4 pressed. They
     // share the right-panel SDBTNANM cell geometry, so draw them through the same
@@ -247,7 +186,7 @@ pub(super) fn push_choose_map_modal_control_instances(
             atlas,
             button,
             modal.pressed_button == Some(id),
-            !modal.button_enabled(id, modes),
+            !modal.button_enabled(id),
             SHELL_DROPDOWN_DEPTH - 0.00011,
         );
     }
@@ -258,6 +197,30 @@ pub(super) fn push_choose_map_modal_control_instances(
         OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
         SHELL_DROPDOWN_DEPTH - 0.00012,
     );
+    if let Some(prompt) = modal.eject_prompt {
+        let screen = layout.screen;
+        let boxed = crate::ui::shell::modal::quit_confirm_layout(screen.w, screen.h);
+        let pressed = |button| prompt.pressed == Some(button);
+        let buttons = [
+            shell_paint::ModalButton {
+                rect: boxed.ok,
+                pressed: pressed(crate::ui::skirmish_shell::EjectPromptButton::Ok),
+                enabled: true,
+            },
+            shell_paint::ModalButton {
+                rect: boxed.cancel,
+                pressed: pressed(crate::ui::skirmish_shell::EjectPromptButton::Cancel),
+                enabled: true,
+            },
+        ];
+        out.extend(shell_paint::paint_modal_sprites(
+            atlas.validation_modal_background_pudlgbgn,
+            super::chrome::type3_button_frames(atlas),
+            boxed.dialog,
+            &buttons,
+            VALIDATION_MODAL_SPRITE_DEPTHS,
+        ));
+    }
 }
 
 /// Generic common-shell background selected for random-map dialog `0x105`.

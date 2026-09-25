@@ -21,15 +21,12 @@ use crate::ui::movies_credits_shell::{
     MOVIE_LIST_CONTROL, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT_KEY, MOVIE_LIST_TOOLTIP_KEY,
     MovieListLayout, compute_movie_list_layout,
 };
-use crate::ui::shell::list::{ListScrollPart, ShellListGeometry};
+use crate::ui::shell::list::{
+    ListFrameTone, ListScrollPart, ShellListGeometry, grip_tiles, list_frame_lines,
+    scrollbar_arrow_origins, scrollbar_edge_lines, scrollbar_interior,
+};
 use crate::ui::shell::static_reveal::Kind1RevealWindow;
 
-/// Owner-draw ListBox frame colors (`0x00619230`), as RGB: light
-/// `0xC5BEA7`, dark `0x807A68`, and their average `0xA29C87` at the two
-/// corners where they meet.
-const LIST_FRAME_LIGHT: [u8; 3] = [0xA7, 0xBE, 0xC5];
-const LIST_FRAME_DARK: [u8; 3] = [0x68, 0x7A, 0x80];
-const LIST_FRAME_CORNER: [u8; 3] = [0x87, 0x9C, 0xA2];
 /// Selected-row fill `0x0000FF` (RGB red).
 const LIST_SELECTED_FILL: [u8; 3] = [0xFF, 0x00, 0x00];
 /// Row text inset from the row's left edge.
@@ -102,64 +99,10 @@ fn push_solid(
     });
 }
 
-/// The two offset frame rings around list window `w`, as measured in the
-/// native capture. With `R = x + w` and `B = y + h`, the outer ring spans
-/// `x-1..=R+1` by `y-1..=B+1` (light top/left, dark bottom/right) and the
-/// inner ring spans `x..=R` by `y..=B` with the colors swapped. Each ring's
-/// top-right and bottom-left corner takes the average color.
+/// The list's two frame rings around window `w` (`0x00619230`).
 fn push_list_frame(out: &mut Vec<SpriteInstance>, atlas: &MainMenuShellChromeAtlas, w: RectPx) {
-    let (left, top) = (w.x, w.y);
-    let (right, bottom) = (w.x + w.w, w.y + w.h);
-    for (ring, top_left, bottom_right) in [
-        (1, LIST_FRAME_LIGHT, LIST_FRAME_DARK),
-        (0, LIST_FRAME_DARK, LIST_FRAME_LIGHT),
-    ] {
-        let (x0, y0) = (left - ring, top - ring);
-        let (x1, y1) = (right + ring, bottom + ring);
-        // Top edge x0..x1-1, corner at x1; left edge y0..y1-1, corner at y1.
-        push_solid(
-            out,
-            atlas,
-            RectPx::new(x0, y0, x1 - x0, 1),
-            top_left,
-            LIST_DEPTH,
-        );
-        push_solid(
-            out,
-            atlas,
-            RectPx::new(x0, y0, 1, y1 - y0),
-            top_left,
-            LIST_DEPTH,
-        );
-        push_solid(
-            out,
-            atlas,
-            RectPx::new(x1, y0, 1, 1),
-            LIST_FRAME_CORNER,
-            LIST_DEPTH,
-        );
-        push_solid(
-            out,
-            atlas,
-            RectPx::new(x0, y1, 1, 1),
-            LIST_FRAME_CORNER,
-            LIST_DEPTH,
-        );
-        // Right edge y0+1..=y1, bottom edge x0+1..=x1.
-        push_solid(
-            out,
-            atlas,
-            RectPx::new(x1, y0 + 1, 1, y1 - y0),
-            bottom_right,
-            LIST_DEPTH,
-        );
-        push_solid(
-            out,
-            atlas,
-            RectPx::new(x0 + 1, y1, x1 - x0, 1),
-            bottom_right,
-            LIST_DEPTH,
-        );
+    for (line, tone) in list_frame_lines(w) {
+        push_solid(out, atlas, line, tone.rgb(), LIST_DEPTH);
     }
 }
 
@@ -200,31 +143,16 @@ fn push_list_scrollbar(
     thumb: RectPx,
     pressed: Option<ListScrollPart>,
 ) {
-    let (top, bottom) = (bar.y, bar.y + bar.h - 1);
-    push_solid(
-        out,
-        atlas,
-        RectPx::new(bar.x, top, 1, bottom - top),
-        LIST_FRAME_LIGHT,
-        LIST_DEPTH,
-    );
-    push_solid(
-        out,
-        atlas,
-        RectPx::new(bar.x + 1, top - 1, 1, bottom - top + 1),
-        LIST_FRAME_DARK,
-        LIST_DEPTH,
-    );
-    for (x, y) in [(bar.x, top), (bar.x + 1, top - 1), (bar.x + 1, bottom)] {
-        push_solid(
-            out,
-            atlas,
-            RectPx::new(x, y, 1, 1),
-            LIST_FRAME_CORNER,
-            LIST_DEPTH - 0.000005,
-        );
+    for (line, tone) in scrollbar_edge_lines(bar) {
+        // The corner pixels go over the lines they cross.
+        let depth = if tone == ListFrameTone::Corner {
+            LIST_DEPTH - 0.000005
+        } else {
+            LIST_DEPTH
+        };
+        push_solid(out, atlas, line, tone.rgb(), depth);
     }
-    let interior = RectPx::new(bar.x + 2, bar.y + 1, bar.w - 2, bar.h - 2);
+    let interior = scrollbar_interior(bar);
     if let Some((entry, origin)) = backdrop {
         push_entry_crop(out, entry, origin, interior, LIST_FILL_DEPTH);
     }
@@ -233,20 +161,13 @@ fn push_list_scrollbar(
     let arrow_h = art
         .down_released
         .map_or(22, |entry| entry.pixel_size[1].round() as i32);
-    for (released, pressed_art, part, y) in [
-        (
-            art.up_released,
-            art.up_pressed,
-            ListScrollPart::Up,
-            interior.y,
-        ),
-        (
-            art.down_released,
-            art.down_pressed,
-            ListScrollPart::Down,
-            interior.y + interior.h - arrow_h,
-        ),
-    ] {
+    for ((released, pressed_art, part), (x, y)) in [
+        (art.up_released, art.up_pressed, ListScrollPart::Up),
+        (art.down_released, art.down_pressed, ListScrollPart::Down),
+    ]
+    .into_iter()
+    .zip(scrollbar_arrow_origins(bar, arrow_h))
+    {
         let entry = if pressed == Some(part) {
             pressed_art.or(released)
         } else {
@@ -258,9 +179,7 @@ fn push_list_scrollbar(
     }
     if let Some(mid) = art.grip_mid {
         let tile_h = mid.pixel_size[1].round() as i32;
-        let mut y = thumb.y;
-        while tile_h > 0 && y < thumb.y + thumb.h {
-            let h = tile_h.min(thumb.y + thumb.h - y);
+        for (y, h) in grip_tiles(thumb, tile_h) {
             out.push(SpriteInstance {
                 position: [x as f32, y as f32],
                 size: [mid.pixel_size[0], h as f32],
@@ -271,7 +190,6 @@ fn push_list_scrollbar(
                 alpha: 1.0,
                 ..Default::default()
             });
-            y += tile_h;
         }
     }
     if let Some(top) = art.grip_top {

@@ -615,7 +615,6 @@ pub(crate) fn build_presentation_manifest(
     house_colors: &HouseColorMap,
     theater_unit_palette: Option<&Palette>,
     theater_iso_palette: Option<&Palette>,
-    vxl_compute: Option<&mut crate::render::vxl_compute::VxlComputeRenderer>,
 ) -> PresentationManifest {
     let (unit_atlas, sprite_atlas, palette_set) = build_entity_atlases(
         sim,
@@ -630,7 +629,6 @@ pub(crate) fn build_presentation_manifest(
         house_colors,
         theater_unit_palette,
         theater_iso_palette,
-        vxl_compute,
     );
     PresentationManifest {
         unit_atlas,
@@ -652,7 +650,6 @@ pub(crate) fn build_entity_atlases(
     house_colors: &HouseColorMap,
     theater_unit_palette: Option<&Palette>,
     theater_iso_palette: Option<&Palette>,
-    vxl_compute: Option<&mut crate::render::vxl_compute::VxlComputeRenderer>,
 ) -> (
     Option<UnitAtlas>,
     Option<SpriteAtlas>,
@@ -673,22 +670,21 @@ pub(crate) fn build_entity_atlases(
     // wouldn't work anyway.
     let unit_atlas: Option<UnitAtlas> = if palette.is_some() {
         unit_atlas::build_unit_atlas(
-            gpu,
+            &gpu.device,
+            &gpu.queue,
             batch,
             sim.entities(),
             asset_manager,
             rules,
             art,
             None, // initial build — no existing cache
-            vxl_compute,
             Some(&sim.interner),
         )
     } else {
         None
     };
     // Pre-load building types that can be spawned at runtime (e.g., ConYards from MCV deploy).
-    let extra_buildings: Vec<&str> =
-        deployable_building_types(sim.entities(), rules, Some(&sim.interner));
+    let extra_buildings: Vec<&str> = deployable_building_types(rules);
     let mut anim_remap_keys = sprite_atlas::collect_anim_remap_base_keys(sim);
     if let Some(rules) = rules {
         anim_remap_keys.extend(startup_crate_anim_remap_keys(rules, overlay_registry));
@@ -709,7 +705,8 @@ pub(crate) fn build_entity_atlases(
         theater_iso_palette.or_else(|| loaded_iso_palette.as_ref().and_then(Option::as_ref));
     let shp_atlas: Option<SpriteAtlas> = palette.as_ref().and_then(|pal| {
         sprite_atlas::build_sprite_atlas(
-            gpu,
+            &gpu.device,
+            &gpu.queue,
             batch,
             sim.entities(),
             asset_manager,

@@ -8,11 +8,13 @@
 //! are written into one reused GPU page after the unit instances are built
 //! ([`VxlPoseFrameCache::upload`]).
 
+use std::collections::BTreeMap;
+
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::vpl_file::VplFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::gpu::GpuContext;
-use crate::render::unit_atlas::{UnitSpriteEntry, UnitSpriteKey, render_unit_sprite_posed};
+use crate::render::unit_atlas::{UnitModel, UnitSpriteEntry, UnitSpriteKey};
 use crate::render::vxl_raster::VxlSprite;
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -28,9 +30,11 @@ pub struct VxlPoseFrameCache {
     shelf_height: u32,
     dirty: bool,
     /// The GPU page, created on the first crash pose and rewritten in place.
-    texture: Option<(wgpu::Texture, BatchTexture)>,
+    texture: Option<BatchTexture>,
     /// `VOXELS.VPL`, parsed on the first crash pose.
     vpl: Option<Option<VplFile>>,
+    /// Each crashing type's voxel model, parsed on its first crash pose.
+    models: BTreeMap<String, Option<UnitModel>>,
 }
 
 impl VxlPoseFrameCache {
@@ -52,10 +56,8 @@ impl VxlPoseFrameCache {
     /// Rasterize one crashing body at `tilt` (roll, pitch in radians) and place
     /// it on this frame's page. None when the model does not resolve or the
     /// page is full.
-    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
-        gpu: &GpuContext,
         asset_manager: &AssetManager,
         rules: Option<&RuleSet>,
         art: Option<&ArtRegistry>,
@@ -73,17 +75,12 @@ impl VxlPoseFrameCache {
                     .and_then(|data| VplFile::from_bytes(data).ok())
             })
             .as_ref();
-        let (sprite, _, native_draw_bounds) = render_unit_sprite_posed(
-            asset_manager,
-            key,
-            rules,
-            art,
-            vpl,
-            None,
-            gpu,
-            None,
-            Some(tilt),
-        )?;
+        let model = self
+            .models
+            .entry(key.type_id.clone())
+            .or_insert_with(|| UnitModel::load(asset_manager, &key.type_id, rules, art))
+            .as_ref()?;
+        let (sprite, native_draw_bounds) = model.render_crash_pose(key, vpl, tilt);
         let (px, py) = self.try_place(&sprite)?;
         self.blit(&sprite, px, py);
         self.dirty = true;
@@ -108,32 +105,21 @@ impl VxlPoseFrameCache {
             return;
         }
         let rows = self.used_rows();
-        let (texture, _) = self.texture.get_or_insert_with(|| {
-            batch.create_updatable_unit_atlas_texture(gpu, PAGE_SIZE, PAGE_SIZE)
+        let texture = self.texture.get_or_insert_with(|| {
+            batch.create_blank_unit_atlas_texture(&gpu.device, PAGE_SIZE, PAGE_SIZE)
         });
-        gpu.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
+        crate::render::atlas_growth::write_texels(
+            &gpu.queue,
+            texture.view.texture(),
+            [0, 0],
+            [PAGE_SIZE, rows],
+            1,
             &self.pixels[..(rows * PAGE_SIZE) as usize],
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(PAGE_SIZE),
-                rows_per_image: Some(rows),
-            },
-            wgpu::Extent3d {
-                width: PAGE_SIZE,
-                height: rows,
-                depth_or_array_layers: 1,
-            },
         );
     }
 
     pub fn texture(&self) -> Option<&BatchTexture> {
-        self.texture.as_ref().map(|(_, texture)| texture)
+        self.texture.as_ref()
     }
 
     /// Rows holding this frame's sprites: every closed shelf and the open one.

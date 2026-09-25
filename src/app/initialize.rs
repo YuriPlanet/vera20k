@@ -186,7 +186,6 @@ impl App {
         // 6A5090/6A5130 change row capacity on resize, never artwork scale.
         let ui_scale = 1.0;
         let sidebar_layout_spec = SidebarChromeLayoutSpec::stock();
-        let vxl_compute = crate::render::vxl_compute::VxlComputeRenderer::new(&gpu.device);
         let dev_skirmish_shell_enabled = Self::dev_skirmish_shell_enabled();
         if dev_skirmish_shell_enabled {
             log::info!(
@@ -648,6 +647,7 @@ impl App {
                 shell_preview_overlay_registry: None,
                 dev_skirmish_shell_enabled,
                 skirmish_shell_state,
+                choose_map_last_mode_row: None,
                 offline_skirmish_runtime,
                 skirmish_shell_last_painted_pressed_button: None,
                 skirmish_shell_chrome,
@@ -701,7 +701,6 @@ impl App {
                 shell_surface_presenter,
                 upscale_pass,
                 egui,
-                vxl_compute: Some(vxl_compute),
                 bit_font,
                 vxl_slope_transition_cache: std::cell::RefCell::new(Default::default()),
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),

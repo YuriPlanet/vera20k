@@ -2435,7 +2435,6 @@ pub(crate) fn load_map_from_initial(
     _skirmish_settings: &crate::ui::main_menu::SkirmishSettings,
     theater_cache_mismatch: bool,
     runtime_color_scheme_count: usize,
-    mut vxl_compute: Option<&mut crate::render::vxl_compute::VxlComputeRenderer>,
     native_rules_owner: &mut crate::rules::process_owner::NativeRulesProcessOwner,
     shared_cell_dummy: crate::map::resolved_terrain::SharedCellDummy,
     tile_variant_selector_cache: &mut crate::map::tile_variant_selector::TileVariantSelectorCache,
@@ -3090,7 +3089,6 @@ pub(crate) fn load_map_from_initial(
         &house_color_map,
         unit_palette.as_ref(),
         overlay_iso_palette.as_ref(),
-        vxl_compute.as_deref_mut(),
     );
     let (mut unit_atlas, mut sprite_atlas, mut palette_set) = (
         manifest.unit_atlas,
@@ -3163,7 +3161,6 @@ pub(crate) fn load_map_from_initial(
                     &house_color_map,
                     unit_palette.as_ref(),
                     overlay_iso_palette.as_ref(),
-                    vxl_compute.as_deref_mut(),
                 );
                 unit_atlas = new_unit_atlas;
                 sprite_atlas = new_sprite_atlas;

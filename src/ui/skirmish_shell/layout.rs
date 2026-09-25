@@ -1,6 +1,5 @@
 //! Dialog 0x102 shell layout recovered from gamemd.exe.
 
-use super::scroll::ScrollModel;
 pub use crate::ui::shell::geom::{RectPx, RightPanelRects};
 use crate::ui::shell::geom::{
     center_offset, dlu_rect, right_panel_rects, snap_button_biased_truncate,
@@ -35,9 +34,6 @@ pub const PLAYER_NAME_EDIT_CLIENT_INSET: i32 = 1;
 pub const PLAYER_NAME_EDIT_TEXT_LEFT_INSET: i32 = 2;
 pub const CHOOSE_MAP_MODAL_W: i32 = 533;
 pub const CHOOSE_MAP_MODAL_H: i32 = 369;
-pub const CHOOSE_MAP_LIST_ROW_H: i32 = 19;
-pub const CHOOSE_MAP_LISTBOX_ROW_H: i32 = CHOOSE_MAP_LIST_ROW_H;
-pub const CHOOSE_MAP_LISTBOX_SCROLLBAR_W: i32 = 20;
 // Random-map setup dialog 0x105. Same 533x369-DLU frame, font and background as
 // choose-map. Its right-column controls sit 2-3 DLU left of choose-map's in the
 // resource (and the preview 2 DLU right), but every right-column helper here is
@@ -191,6 +187,9 @@ pub struct SkirmishShellLayout {
     pub status_help: RectPx,
 }
 
+/// Heading `0x694` of Choose Map `0x6B`.
+pub const CHOOSE_MAP_TITLE_KEY: &str = "GUI:ChooseMap";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChooseMapModalButton {
     UseMap0x6c5,
@@ -214,12 +213,6 @@ pub enum RandomMapSetupControl {
     Save0x6c3,
     Delete0x6c4,
     Cancel0x5c0,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChooseMapListboxId {
-    Mode0x6eb,
-    Map0x553,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -443,10 +436,6 @@ pub const fn combo_swatch_rect(rect: RectPx) -> RectPx {
     )
 }
 
-fn dialog_child(dialog: RectPx, local: RectPx) -> RectPx {
-    RectPx::new(dialog.x + local.x, dialog.y + local.y, local.w, local.h)
-}
-
 fn right_anchor(screen_w: i32, screen_h: i32, original: RectPx) -> RectPx {
     let offset_x = center_offset(screen_w, SHELL_BASE_W);
     let offset_y = center_offset(screen_h, SHELL_BASE_H);
@@ -465,10 +454,9 @@ fn status_help_rect(screen_w: i32, screen_h: i32) -> RectPx {
     RectPx::new(offset_x + 10, screen_h - offset_y - 21, 615, 20)
 }
 
+/// Status line `0x695` of `0x6B`: the family static (template 303x12 DLU).
 fn choose_map_status_help_rect(screen_w: i32, screen_h: i32) -> RectPx {
-    let offset_x = center_offset(screen_w, SHELL_BASE_W);
-    let offset_y = center_offset(screen_h, SHELL_BASE_H);
-    RectPx::new(offset_x + 10, screen_h - offset_y - 21, 455, 20)
+    crate::ui::shell::layout::status_line_rect(RectPx::new(2, 355, 303, 12), screen_w, screen_h)
 }
 
 fn back_rect(screen_w: i32, panel: RightPanelRects) -> RectPx {
@@ -637,8 +625,8 @@ pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMa
     ChooseMapModalLayout {
         screen: RectPx::new(0, 0, screen_w, screen_h),
         dialog: RectPx::new(0, 0, screen_w, screen_h),
-        mode_list: dlu_rect(77, 78, 130, 211),
-        map_list: dlu_rect(225, 78, 130, 211),
+        mode_list: crate::ui::shell::geom::child_window(77, 78, 130, 211),
+        map_list: crate::ui::shell::geom::child_window(225, 78, 130, 211),
         use_map_button: snap_button_biased_truncate(
             screen_w,
             screen_h,
@@ -661,13 +649,6 @@ pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMa
         status_help: choose_map_status_help_rect(screen_w, screen_h),
         preview: right_anchor(screen_w, screen_h, preview_base),
     }
-}
-
-pub fn compute_fixed_800_choose_map_modal_layout(
-    screen_w: u32,
-    screen_h: u32,
-) -> ChooseMapModalLayout {
-    compute_choose_map_modal_layout(screen_w, screen_h)
 }
 
 /// Layout for the random-map setup dialog `0x105`.
@@ -985,99 +966,6 @@ pub fn saved_seed_control_at(layout: &SavedSeedLayout, x: i32, y: i32) -> Option
     None
 }
 
-/// Which list row `(x, y)` falls on, given the row count.
-pub fn saved_seed_list_row_at(
-    layout: &SavedSeedLayout,
-    row_count: usize,
-    top_index: usize,
-    x: i32,
-    y: i32,
-) -> Option<usize> {
-    choose_map_listbox_row_at(layout.list, row_count, top_index, x, y)
-}
-
-pub const fn choose_map_listbox_rect(
-    layout: &ChooseMapModalLayout,
-    id: ChooseMapListboxId,
-) -> RectPx {
-    match id {
-        ChooseMapListboxId::Mode0x6eb => layout.mode_list,
-        ChooseMapListboxId::Map0x553 => layout.map_list,
-    }
-}
-
-pub fn choose_map_listbox_visible_row_count(rect: RectPx) -> usize {
-    ScrollModel::listbox().visible_rows(0, rect.h)
-}
-
-pub fn choose_map_listbox_needs_scrollbar(row_count: usize, rect: RectPx) -> bool {
-    row_count > choose_map_listbox_visible_row_count(rect)
-}
-
-pub fn choose_map_listbox_scrollbar_rect(row_count: usize, rect: RectPx) -> Option<RectPx> {
-    if !choose_map_listbox_needs_scrollbar(row_count, rect) {
-        return None;
-    }
-    Some(RectPx::new(
-        rect.x + rect.w - CHOOSE_MAP_LISTBOX_SCROLLBAR_W,
-        rect.y,
-        CHOOSE_MAP_LISTBOX_SCROLLBAR_W,
-        rect.h,
-    ))
-}
-
-pub fn choose_map_listbox_content_rect(row_count: usize, rect: RectPx) -> RectPx {
-    let scrollbar_w = if choose_map_listbox_needs_scrollbar(row_count, rect) {
-        CHOOSE_MAP_LISTBOX_SCROLLBAR_W
-    } else {
-        0
-    };
-    RectPx::new(rect.x, rect.y, (rect.w - scrollbar_w).max(0), rect.h)
-}
-
-pub fn choose_map_listbox_row_rect(content: RectPx, visible_row: usize) -> RectPx {
-    let y = content.y + visible_row as i32 * CHOOSE_MAP_LISTBOX_ROW_H;
-    RectPx::new(
-        content.x,
-        y,
-        content.w,
-        CHOOSE_MAP_LISTBOX_ROW_H
-            .min(content.y + content.h - y)
-            .max(0),
-    )
-}
-
-pub fn choose_map_listbox_max_top_index(row_count: usize, rect: RectPx) -> usize {
-    ScrollModel::listbox().max_top_index(row_count, choose_map_listbox_visible_row_count(rect))
-}
-
-pub fn choose_map_listbox_scroll_thumb_rect(
-    row_count: usize,
-    top_index: usize,
-    rect: RectPx,
-) -> Option<RectPx> {
-    let scrollbar = choose_map_listbox_scrollbar_rect(row_count, rect)?;
-    let visible_rows = choose_map_listbox_visible_row_count(rect);
-    let model = ScrollModel::listbox();
-    let thumb_h = model.thumb_height(visible_rows, row_count, scrollbar.h)?;
-    let max_top = choose_map_listbox_max_top_index(row_count, rect);
-    let thumb_y = model.thumb_y(scrollbar, thumb_h, top_index, max_top);
-    Some(RectPx::new(scrollbar.x, thumb_y, scrollbar.w, thumb_h))
-}
-
-pub fn choose_map_listbox_top_index_from_track_click(
-    row_count: usize,
-    top_index: usize,
-    rect: RectPx,
-    mouse_y: i32,
-) -> Option<usize> {
-    let scrollbar = choose_map_listbox_scrollbar_rect(row_count, rect)?;
-    let thumb = choose_map_listbox_scroll_thumb_rect(row_count, top_index, rect)?;
-    let max_top = choose_map_listbox_max_top_index(row_count, rect);
-    let model = ScrollModel::listbox();
-    Some(model.top_index_from_thumb_top(scrollbar, thumb.h, max_top, mouse_y - thumb.h / 2))
-}
-
 pub fn choose_map_modal_button_at(
     layout: &ChooseMapModalLayout,
     x: i32,
@@ -1095,40 +983,13 @@ pub fn choose_map_modal_button_at(
     None
 }
 
-pub fn choose_map_modal_list_row_at(list: RectPx, x: i32, y: i32) -> Option<usize> {
-    if !list.contains(x, y) {
-        return None;
-    }
-    Some(((y - list.y) / CHOOSE_MAP_LISTBOX_ROW_H) as usize)
-}
-
-pub fn choose_map_listbox_row_at(
-    list: RectPx,
-    row_count: usize,
-    top_index: usize,
-    x: i32,
-    y: i32,
-) -> Option<usize> {
-    let content = choose_map_listbox_content_rect(row_count, list);
-    if !content.contains(x, y) {
-        return None;
-    }
-    let idx = top_index + ((y - content.y) / CHOOSE_MAP_LISTBOX_ROW_H) as usize;
-    (idx < row_count).then_some(idx)
-}
-
 #[cfg(test)]
 mod tests {
     use super::RandomMapSetupControl;
     use super::{
-        CHOOSE_MAP_LIST_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, ChooseMapModalButton, RectPx,
-        SkirmishCheckboxId, checkbox_icon_rect, checkbox_text_rect,
-        choose_map_listbox_content_rect, choose_map_listbox_row_at,
-        choose_map_listbox_scroll_thumb_rect, choose_map_listbox_scrollbar_rect,
-        choose_map_listbox_top_index_from_track_click, choose_map_modal_button_at,
-        choose_map_modal_list_row_at, combo_arrow_rect, combo_face_rect, combo_swatch_rect,
-        combo_text_rect, compute_choose_map_modal_layout,
-        compute_fixed_800_choose_map_modal_layout, compute_fixed_800_layout, compute_layout,
+        ChooseMapModalButton, RectPx, SkirmishCheckboxId, checkbox_icon_rect, checkbox_text_rect,
+        choose_map_modal_button_at, combo_arrow_rect, combo_face_rect, combo_swatch_rect,
+        combo_text_rect, compute_choose_map_modal_layout, compute_fixed_800_layout, compute_layout,
         compute_random_map_setup_layout, dlu_rect, player_name_edit_client_rect,
         player_name_edit_text_rect, random_map_setup_control_at, trackbar_active_width,
         trackbar_pixel_offset, trackbar_plaque_rect, trackbar_thumb_rect, trackbar_value_text_rect,
@@ -1163,23 +1024,6 @@ mod tests {
             layout.rows.ai_type_combos[0],
             RectPx::new(171, 169, 150, 120)
         );
-    }
-
-    #[test]
-    fn fixed_800_choose_map_modal_uses_verified_0x6b_shell_helpers() {
-        let layout = compute_fixed_800_choose_map_modal_layout(1024, 768);
-
-        assert_eq!(layout.screen, RectPx::new(0, 0, 1024, 768));
-        assert_eq!(layout.dialog, RectPx::new(0, 0, 1024, 768));
-        assert_eq!(layout.mode_list, RectPx::new(116, 127, 195, 343));
-        assert_eq!(layout.map_list, RectPx::new(338, 127, 195, 343));
-        assert_eq!(layout.use_map_button, RectPx::new(756, 283, 156, 42));
-        assert_eq!(
-            layout.create_random_map_button,
-            RectPx::new(756, 325, 156, 42)
-        );
-        assert_eq!(layout.cancel_button, RectPx::new(756, 619, 156, 42));
-        assert_eq!(layout.status_help, RectPx::new(122, 663, 455, 20));
     }
 
     #[test]
@@ -1570,8 +1414,8 @@ mod tests {
 
         assert_eq!(layout.screen, RectPx::new(0, 0, 800, 600));
         assert_eq!(layout.dialog, RectPx::new(0, 0, 800, 600));
-        assert_eq!(layout.mode_list, RectPx::new(116, 127, 195, 343));
-        assert_eq!(layout.map_list, RectPx::new(338, 127, 195, 343));
+        assert_eq!(layout.mode_list, RectPx::new(116, 127, 196, 344));
+        assert_eq!(layout.map_list, RectPx::new(338, 127, 196, 344));
         assert_eq!(layout.use_map_button, RectPx::new(644, 199, 156, 42));
         assert_eq!(
             layout.create_random_map_button,
@@ -1582,7 +1426,7 @@ mod tests {
         assert_eq!(layout.select_engagement, RectPx::new(120, 33, 386, 20));
         assert_eq!(layout.game_type_heading, RectPx::new(116, 98, 195, 16));
         assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 195, 16));
-        assert_eq!(layout.status_help, RectPx::new(10, 579, 455, 20));
+        assert_eq!(layout.status_help, RectPx::new(10, 578, 456, 21));
         assert_eq!(layout.preview, RectPx::new(644, 37, 144, 112));
     }
 
@@ -1592,8 +1436,8 @@ mod tests {
 
         assert_eq!(layout.screen, RectPx::new(0, 0, 1024, 768));
         assert_eq!(layout.dialog, RectPx::new(0, 0, 1024, 768));
-        assert_eq!(layout.mode_list, RectPx::new(116, 127, 195, 343));
-        assert_eq!(layout.map_list, RectPx::new(338, 127, 195, 343));
+        assert_eq!(layout.mode_list, RectPx::new(116, 127, 196, 344));
+        assert_eq!(layout.map_list, RectPx::new(338, 127, 196, 344));
         assert_eq!(layout.use_map_button, RectPx::new(756, 283, 156, 42));
         assert_eq!(
             layout.create_random_map_button,
@@ -1604,7 +1448,7 @@ mod tests {
         assert_eq!(layout.select_engagement, RectPx::new(120, 33, 386, 20));
         assert_eq!(layout.game_type_heading, RectPx::new(116, 98, 195, 16));
         assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 195, 16));
-        assert_eq!(layout.status_help, RectPx::new(122, 663, 455, 20));
+        assert_eq!(layout.status_help, RectPx::new(122, 662, 456, 21));
         assert_eq!(layout.preview, RectPx::new(756, 121, 144, 112));
     }
 
@@ -1646,89 +1490,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn choose_map_modal_list_hit_test_uses_verified_owner_draw_row_height() {
-        let layout = compute_choose_map_modal_layout(800, 600);
-
-        assert_eq!(
-            choose_map_modal_list_row_at(layout.map_list, layout.map_list.x, layout.map_list.y),
-            Some(0)
-        );
-        assert_eq!(
-            choose_map_modal_list_row_at(
-                layout.map_list,
-                layout.map_list.x,
-                layout.map_list.y + CHOOSE_MAP_LIST_ROW_H
-            ),
-            Some(1)
-        );
-        assert_eq!(
-            choose_map_modal_list_row_at(
-                layout.map_list,
-                layout.map_list.x,
-                layout.map_list.y + layout.map_list.h
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn choose_map_modal_listbox_hit_testing_reserves_scrollbar_width() {
-        let layout = compute_choose_map_modal_layout(800, 600);
-        let rows = 20;
-        let scrollbar = choose_map_listbox_scrollbar_rect(rows, layout.map_list).unwrap();
-        let content = choose_map_listbox_content_rect(rows, layout.map_list);
-
-        assert_eq!(scrollbar, RectPx::new(513, 127, 20, 343));
-        assert_eq!(content, RectPx::new(338, 127, 175, 343));
-        assert_eq!(
-            choose_map_listbox_row_at(layout.map_list, rows, 5, content.x + 2, content.y),
-            Some(5)
-        );
-        assert_eq!(
-            choose_map_listbox_row_at(layout.map_list, rows, 5, scrollbar.x, scrollbar.y),
-            None
-        );
-    }
-
-    #[test]
-    fn choose_map_modal_scrollbar_thumb_and_track_map_to_top_index() {
-        let layout = compute_choose_map_modal_layout(800, 600);
-        let rows = 20;
-        let scrollbar = choose_map_listbox_scrollbar_rect(rows, layout.map_list).unwrap();
-        let thumb = choose_map_listbox_scroll_thumb_rect(rows, 3, layout.map_list).unwrap();
-
-        assert_eq!(thumb.w, scrollbar.w);
-        assert!(thumb.y >= scrollbar.y + COMBO_DROPDOWN_SCROLLBAR_BUTTON_H);
-        assert!(thumb.y + thumb.h <= scrollbar.y + scrollbar.h - COMBO_DROPDOWN_SCROLLBAR_BUTTON_H);
-        assert_eq!(
-            choose_map_listbox_top_index_from_track_click(
-                rows,
-                0,
-                layout.map_list,
-                scrollbar.y + COMBO_DROPDOWN_SCROLLBAR_BUTTON_H
-            ),
-            Some(0)
-        );
-        assert_eq!(
-            choose_map_listbox_top_index_from_track_click(
-                rows,
-                0,
-                layout.map_list,
-                scrollbar.y + scrollbar.h - COMBO_DROPDOWN_SCROLLBAR_BUTTON_H - 1
-            ),
-            Some(2)
-        );
-    }
-}
-
-#[cfg(test)]
-mod setup_bounds {
-    use super::*;
-
-    /// Every control of the setup dialog has to land inside the 800x600 shell
-    /// surface. The right column anchors to the panel rather than to its own
-    /// resource x, so an anchoring change is the plausible way this breaks.
     #[test]
     fn random_map_setup_rects_stay_inside_the_screen() {
         let layout = compute_random_map_setup_layout(800, 600);

@@ -69,6 +69,9 @@ const CHECKPOINT_MAIN_MENU_0XE2_SLIDE_OUT_PREFIX: &str = "main-menu-0xe2-slide-o
 const CHECKPOINT_MOVIE_LIST_0X129_SLIDE_OUT_PREFIX: &str = "movie-list-0x129-slide-out-tick-";
 const CHECKPOINT_SKIRMISH_0X102_BACK_SLIDE_OUT_PREFIX: &str = "skirmish-0x102-back-slide-out-tick-";
 const CHECKPOINT_SKIRMISH_0X102_ENTRY_PREFIX: &str = "skirmish-0x102-entry-tick-";
+const CHECKPOINT_SKIRMISH_0X6B_STEADY: &str = "skirmish-0x6b-steady";
+const CHECKPOINT_SKIRMISH_0X6B_ENTRY_PREFIX: &str = "skirmish-0x6b-entry-tick-";
+const CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN: &str = "skirmish-0x102-choose-map-return";
 const EXPECTED_WIDTH: u32 = 800;
 const EXPECTED_HEIGHT: u32 = 600;
 const EXPECTED_CURSOR_X: u32 = 400;
@@ -160,6 +163,13 @@ pub enum ShellCaptureCheckpoint {
     /// Skirmish opened from Single Player, its entry slide held at one tick
     /// (`skirmish-0x102-entry-tick-<N>`).
     Skirmish0x102Entry(u32),
+    /// Choose Map `0x6B` settled after Skirmish's Choose Map.
+    Skirmish0x6BSteady,
+    /// Choose Map `0x6B`'s entry slide held at one tick
+    /// (`skirmish-0x6b-entry-tick-<N>`).
+    Skirmish0x6BEntry(u32),
+    /// Cancel on `0x6B`, then `0x102` settled after its new entry slide.
+    Skirmish0x102ChooseMapReturn,
 }
 
 impl ShellCaptureCheckpoint {
@@ -197,6 +207,11 @@ impl ShellCaptureCheckpoint {
                 CHECKPOINT_SKIRMISH_0X102_ENTRY_PREFIX,
                 ShellSlideKind::Skirmish,
                 Self::Skirmish0x102Entry,
+            ),
+            (
+                CHECKPOINT_SKIRMISH_0X6B_ENTRY_PREFIX,
+                ShellSlideKind::ChooseMap,
+                Self::Skirmish0x6BEntry,
             ),
             (
                 CHECKPOINT_CAMPAIGN_0X94_ENTRY_PREFIX,
@@ -240,6 +255,8 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_MAIN_MENU_0XE2_STEADY => Ok(Self::MainMenu0xE2Steady),
             CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE => Ok(Self::MainMenu0xE2EntrySequence),
             CHECKPOINT_SKIRMISH_0X102_STEADY => Ok(Self::Skirmish0x102Steady),
+            CHECKPOINT_SKIRMISH_0X6B_STEADY => Ok(Self::Skirmish0x6BSteady),
+            CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN => Ok(Self::Skirmish0x102ChooseMapReturn),
             CHECKPOINT_MOVIES_0X101_STEADY => Ok(Self::MoviesPage0x101Steady),
             CHECKPOINT_MAIN_MENU_0XE2_EXIT_CONFIRM => Ok(Self::MainMenu0xE2ExitConfirm),
             CHECKPOINT_MOVIE_LIST_0X129_STEADY => Ok(Self::MovieList0x129Steady),
@@ -302,6 +319,9 @@ impl ShellCaptureCheckpoint {
             Self::MovieList0x129SlideOut(_) => "movie-list-0x129-slide-out",
             Self::Skirmish0x102BackSlideOut(_) => "skirmish-0x102-back-slide-out",
             Self::Skirmish0x102Entry(_) => "skirmish-0x102-entry",
+            Self::Skirmish0x6BSteady => CHECKPOINT_SKIRMISH_0X6B_STEADY,
+            Self::Skirmish0x6BEntry(_) => "skirmish-0x6b-entry",
+            Self::Skirmish0x102ChooseMapReturn => CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN,
         }
     }
 
@@ -793,6 +813,15 @@ impl ShellCaptureSession {
             ShellCaptureCheckpoint::Skirmish0x102BackSlideOut(tick) => {
                 Some(skirmish::SkirmishCapture::slide_out(tick))
             }
+            ShellCaptureCheckpoint::Skirmish0x6BSteady => Some(skirmish::SkirmishCapture::chooser(
+                skirmish::ChooserTarget::Steady,
+            )),
+            ShellCaptureCheckpoint::Skirmish0x6BEntry(tick) => Some(
+                skirmish::SkirmishCapture::chooser(skirmish::ChooserTarget::Entry(tick)),
+            ),
+            ShellCaptureCheckpoint::Skirmish0x102ChooseMapReturn => Some(
+                skirmish::SkirmishCapture::chooser(skirmish::ChooserTarget::Return),
+            ),
             ShellCaptureCheckpoint::Skirmish0x102Entry(tick) => {
                 Some(skirmish::SkirmishCapture::entry(tick))
             }

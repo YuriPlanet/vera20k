@@ -6,9 +6,8 @@
 //! column (every tile row's SDBTNANM frame, plus the Skirmish map button and top
 //! panel) on a 30 ms tick; nothing is repositioned.
 //!
-//! The render-agnostic data + schedule live in [`crate::ui::shell::slide`] (the
-//! dialog-id allow-list, each dialog's slide column, and the [`ShellFrameWave`]
-//! frame sweep). This module is the app/render glue: it maps the currently-showing
+//! The render-agnostic data + schedule live in [`crate::ui::shell::slide`] (each
+//! rendered dialog's slide column and the [`ShellFrameWave`] frame sweep). This module is the app/render glue: it maps the currently-showing
 //! screen to a shell dialog, (re)starts/advances the wave on entry edges, plays
 //! the slide-in start cue, and dispatches the per-frame shell repaint while the
 //! wave is live. The slide-in start cue is `GUIMoveInSound` (stock `MenuSlideIn`);
@@ -65,6 +64,10 @@ pub(crate) enum ShellSlideKind {
     Options,
     /// Dialog 0x10E — Westwood Online welcome.
     WolWelcome,
+    /// Dialog 0xA3 — Options' Keyboard page (front-end parent only).
+    Keyboard,
+    /// Dialog 0x6B — Skirmish's Choose Map, a family page of its own.
+    ChooseMap,
 }
 
 impl ShellSlideKind {
@@ -82,6 +85,8 @@ impl ShellSlideKind {
             ShellSlideKind::LoadSavedGame => 0x00B7,
             ShellSlideKind::Options => 0x00D5,
             ShellSlideKind::WolWelcome => 0x010E,
+            ShellSlideKind::Keyboard => 0x00A3,
+            ShellSlideKind::ChooseMap => 0x006B,
         })
     }
 
@@ -123,9 +128,24 @@ pub(crate) enum ShellExitThen {
     CampaignBack,
     /// Load Saved Game Back (result 2): state 1 recreates Single Player.
     LoadSavedGameBack,
-    /// Options Main Menu (result `0x5CB`): the controls commit, and state
-    /// 0x12 recreates `0xE2`.
-    OptionsBack,
+    /// An Options result: `0x0055FC80` tears `0xD5` down with its slide, then
+    /// commits and writes (Main Menu `0x5CB`; state 0x12 recreates `0xE2`) or
+    /// commits and runs the Keyboard page (`0x5CE`).
+    Options(crate::ui::main_menu_dialogs::options::LauncherParentResult),
+    /// Keyboard `0xA3` Back or Cancel: `0x005FBEF0` tears it down with its
+    /// slide, then the bindings save or reload and a new `0xD5` is built.
+    KeyboardClose(crate::app::input::keyboard::KeyboardExit),
+    /// Skirmish Choose Map (`0x5AA`): `0x102` slides out and hides without
+    /// packing (`0x006AD931`, `0x006AD93C`), then `0x6B` runs.
+    SkirmishChooseMap,
+    /// Choose Map Use Map: `0x6B` slides out (`0x007757E0`), the selection
+    /// commits and `0x102` shows again with its entry slide.
+    ChooseMapUse(crate::ui::skirmish_shell::ChooseMapSelection),
+    /// Choose Map Cancel: `0x6B` slides out and `0x102` shows again.
+    ChooseMapCancel,
+    /// Choose Map Create Random Map: `0x6B` slides out and hides
+    /// (`0x005E6A03..0x005E6A0B`) before the random-map dialog runs.
+    ChooseMapRandomMap,
     /// Westwood Online Main Menu (result 0): `0xE2` is recreated.
     WolBack,
     /// A Westwood Online action: `0x10E` closes before the WOLAPI object
@@ -144,7 +164,12 @@ impl ShellExitThen {
             Self::SkirmishStart(_) | Self::SkirmishBack => ShellSlideKind::Skirmish,
             Self::CampaignBack => ShellSlideKind::Campaign,
             Self::LoadSavedGameBack => ShellSlideKind::LoadSavedGame,
-            Self::OptionsBack => ShellSlideKind::Options,
+            Self::Options(_) => ShellSlideKind::Options,
+            Self::KeyboardClose(_) => ShellSlideKind::Keyboard,
+            Self::SkirmishChooseMap => ShellSlideKind::Skirmish,
+            Self::ChooseMapUse(_) | Self::ChooseMapCancel | Self::ChooseMapRandomMap => {
+                ShellSlideKind::ChooseMap
+            }
             Self::WolBack | Self::WolApiMissing => ShellSlideKind::WolWelcome,
         }
     }
@@ -404,7 +429,9 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::Campaign
             | ShellSlideKind::LoadSavedGame
             | ShellSlideKind::Options
-            | ShellSlideKind::WolWelcome => ShellWaveCompletion::MenuPage,
+            | ShellSlideKind::WolWelcome
+            | ShellSlideKind::Keyboard
+            | ShellSlideKind::ChooseMap => ShellWaveCompletion::MenuPage,
             ShellSlideKind::Skirmish => ShellWaveCompletion::Skirmish,
         })
     }
@@ -549,9 +576,8 @@ pub(crate) fn main_menu_presented_is_poisoned(state: &AppState) -> bool {
 /// Which allow-listed shell dialog is currently showing, if any. Mirrors the
 /// main-menu render dispatch order (skirmish > single-player > bare menu); the
 /// egui fallback / skirmish-setup paths are not native shell dialogs and do not
-/// slide. The candidate is gated through the data-driven slide allow-list, so a
-/// dialog only slides when its id is eligible. Returns `None` off the main menu
-/// screen.
+/// slide. The candidate is gated on its dialog having a slide column. Returns
+/// `None` off the main menu screen.
 pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideKind> {
     use crate::ui::game_screen::GameScreen;
     if state.frontend.screen != GameScreen::MainMenu {
@@ -564,12 +590,15 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     }
     // Options `0xD5` runs after `0xE2` is destroyed (state 5,
     // `0x0052DDAB`); state 0x12 builds a new `0xE2` when it closes. Its
-    // Keyboard child `0xA3` does not slide here yet. The Exit confirmation
-    // (state 6) and the quit after it (state 7) run without a family dialog.
-    if state.frontend.keyboard_dialog.is_some()
-        || state.frontend.exit_confirm_modal.is_some()
-        || state.frontend.quit_cascade.is_some()
-    {
+    // Keyboard page `0xA3` runs after `0xD5` is destroyed (`0x0055FD06`) and
+    // slides like it. The Exit confirmation (state 6) and the quit after it
+    // (state 7) run without a family dialog.
+    if let Some(dialog) = state.frontend.keyboard_dialog.as_ref() {
+        return (dialog.parent == crate::ui::shell::keyboard::KeyboardParent::Launcher)
+            .then_some(ShellSlideKind::Keyboard)
+            .filter(|kind| crate::ui::shell::slide::is_slide_eligible(kind.dialog_id()));
+    }
+    if state.frontend.exit_confirm_modal.is_some() || state.frontend.quit_cascade.is_some() {
         return None;
     }
     // Only the native page slides; the assetless fallback does not.
@@ -580,7 +609,15 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     }
     let candidate =
         if state.frontend.shell_route.skirmish() || state.frontend.dev_skirmish_shell_enabled {
-            ShellSlideKind::Skirmish
+            let shell = &state.frontend.skirmish_shell_state;
+            if shell.choose_map_modal.is_none() {
+                ShellSlideKind::Skirmish
+            } else if shell.random_map_setup_modal.is_some() || shell.saved_seed_browser.is_some() {
+                // The chooser hides while the random-map dialogs run.
+                return None;
+            } else {
+                ShellSlideKind::ChooseMap
+            }
         } else if state.frontend.shell_route.single_player() {
             ShellSlideKind::SinglePlayer
         } else if state.frontend.shell_route.movies_and_credits() {
@@ -722,7 +759,7 @@ pub(crate) fn render_shell_first_paint_slide(
     ShellLifecycleReducer::from_state(state).advance_wave(Instant::now());
 
     let rendered = match kind {
-        ShellSlideKind::Skirmish => {
+        ShellSlideKind::Skirmish | ShellSlideKind::ChooseMap => {
             if !crate::app::App::ensure_skirmish_shell_chrome(state) {
                 log::warn!("Skirmish shell chrome unavailable; cancelling first-paint slide");
                 state.frontend.shell_first_paint_slide = None;
@@ -781,6 +818,14 @@ pub(crate) fn render_shell_first_paint_slide(
                 )?;
                 true
             }
+        }
+        ShellSlideKind::Keyboard => {
+            crate::app::frontend::skirmish_shell_render::render_keyboard_shell(
+                state,
+                encoder,
+                destination,
+            )?;
+            true
         }
         ShellSlideKind::SinglePlayer | ShellSlideKind::MoviesAndCredits => matches!(
             crate::app::frontend::menu_page_render::render_active_menu_page(

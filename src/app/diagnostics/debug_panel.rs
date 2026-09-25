@@ -181,20 +181,10 @@ pub(crate) fn draw_debug_panel(ctx: &egui::Context, state: &AppState) {
             // --- VXL render pipeline ---
             if let Some(atlas) = &state.match_state.match_presentation.unit_atlas {
                 ui.separator();
-                if atlas.gpu_rendered > 0 {
-                    ui.colored_label(
-                        egui::Color32::from_rgb(20, 120, 20),
-                        format!(
-                            "VXL: {} GPU compute, {} CPU",
-                            atlas.gpu_rendered, atlas.cpu_rendered,
-                        ),
-                    );
-                } else {
-                    ui.colored_label(
-                        egui::Color32::from_rgb(160, 120, 0),
-                        format!("VXL: {} CPU (GPU inactive)", atlas.cpu_rendered),
-                    );
-                }
+                ui.colored_label(
+                    egui::Color32::from_rgb(20, 120, 20),
+                    format!("VXL: {} sprites rendered by the last build", atlas.rendered),
+                );
             }
 
             ui.separator();

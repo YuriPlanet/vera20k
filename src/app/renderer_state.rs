@@ -25,7 +25,6 @@ pub(crate) struct RendererState {
     pub(crate) upscale_pass: Option<crate::render::upscale_pass::UpscalePass>,
     /// egui integration — input handling + GPU rendering.
     pub(super) egui: EguiIntegration,
-    pub(crate) vxl_compute: Option<crate::render::vxl_compute::VxlComputeRenderer>,
     /// GAME.FNT bitmap font (falls back to the built-in 5x7 face).
     pub(crate) bit_font: BitFont,
     pub(crate) vxl_slope_transition_cache:

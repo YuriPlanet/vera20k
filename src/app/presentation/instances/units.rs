@@ -709,7 +709,6 @@ fn emit_crash_pose_sprite(
         return;
     };
     let Some(entry) = state.renderer.vxl_pose_frame_cache.borrow_mut().render(
-        &state.renderer.gpu,
         assets,
         state.rules(),
         state.rules().map(|rules| &rules.art_registry),

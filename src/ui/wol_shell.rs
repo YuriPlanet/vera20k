@@ -12,7 +12,7 @@
 //! returns to `0xE2` (-2).
 
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{RectPx, dlu_rect};
+use crate::ui::shell::geom::{RectPx, child_window, dlu_rect};
 use crate::ui::shell::layout::status_line_rect;
 use crate::ui::shell::menu_page::{
     self, MenuPageButtonRect, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec,
@@ -319,13 +319,6 @@ fn static_help(id: u16) -> Option<&'static str> {
     })
 }
 
-/// A template child window: the 6x13 conversion one pixel wider and taller,
-/// as every family child measures (`0x0060C42E` keeps the template place).
-fn child_window((x, y, w, h): (i32, i32, i32, i32)) -> RectPx {
-    let rect = dlu_rect(x, y, w, h);
-    RectPx::new(rect.x, rect.y, rect.w + 1, rect.h + 1)
-}
-
 /// The two group boxes (`BS_GROUPBOX`): ladder stats and icon glossary.
 pub const WOL_GROUP_BOXES: [(i32, i32, i32, i32); 2] = [(81, 52, 255, 106), (61, 186, 289, 126)];
 
@@ -353,12 +346,16 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayout {
     );
     let texts = WOL_TEXT_STATICS
         .iter()
-        .map(|text| (*text, child_window(text.dlu)))
+        .map(|text| {
+            let (x, y, w, h) = text.dlu;
+            (*text, child_window(x, y, w, h))
+        })
         .collect();
     let icons = WOL_ICONS
         .iter()
         .map(|icon| {
-            let mut window = child_window(icon.dlu);
+            let (x, y, w, h) = icon.dlu;
+            let mut window = child_window(x, y, w, h);
             if icon.id == 0x079F {
                 window.x += 1;
             }
@@ -370,7 +367,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayout {
         status_help,
         texts,
         icons,
-        group_boxes: WOL_GROUP_BOXES.map(child_window),
+        group_boxes: WOL_GROUP_BOXES.map(|(x, y, w, h)| child_window(x, y, w, h)),
     }
 }
 

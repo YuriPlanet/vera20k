@@ -68,7 +68,7 @@ pub fn combo_dropdown_visible_row_count(
     id: SkirmishComboId,
 ) -> usize {
     let item_count = combo_items(state, maps, id).len();
-    ScrollModel::combo(combo_dropdown_max_visible_rows(id)).visible_rows(item_count, 0)
+    ScrollModel::combo(combo_dropdown_max_visible_rows(id)).visible_rows(item_count)
 }
 
 fn combo_dropdown_item_count(
@@ -149,7 +149,7 @@ pub fn combo_dropdown_scroll_thumb_rect(
     let model = ScrollModel::combo(combo_dropdown_max_visible_rows(id));
     let visible_rows = combo_dropdown_visible_row_count(state, maps, id);
     let item_count = combo_dropdown_item_count(state, maps, id);
-    let thumb_h = model.thumb_height(visible_rows, item_count, scrollbar.h)?;
+    let thumb_h = model.thumb_height(visible_rows, item_count, scrollbar.h);
     let max_top = combo_dropdown_max_top_index(state, maps, id);
     let open_top = state
         .open_combo_dropdown

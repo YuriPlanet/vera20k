@@ -178,6 +178,101 @@ impl ShellListGeometry {
     }
 }
 
+/// A line tone of the owner-draw list frame (`0x00619230`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListFrameTone {
+    /// `0xC5BEA7` (`0x00BBGGRR`).
+    Light,
+    /// `0x807A68`.
+    Dark,
+    /// `0xA29C87`, the two tones' average, where they meet.
+    Corner,
+}
+
+impl ListFrameTone {
+    pub const fn rgb(self) -> [u8; 3] {
+        match self {
+            Self::Light => [0xA7, 0xBE, 0xC5],
+            Self::Dark => [0x68, 0x7A, 0x80],
+            Self::Corner => [0x87, 0x9C, 0xA2],
+        }
+    }
+}
+
+/// The two offset frame rings around list window `window` (`0x00619230`,
+/// measured on the retail `0x129` and `0x6B` lists), in paint order. With
+/// `R = x + w` and `B = y + h`, the outer ring spans `x-1..=R+1` by
+/// `y-1..=B+1` (light top/left, dark bottom/right) and the inner ring spans
+/// `x..=R` by `y..=B` with the tones swapped. Each ring's top-right and
+/// bottom-left corner takes the average tone.
+pub fn list_frame_lines(window: RectPx) -> [(RectPx, ListFrameTone); 12] {
+    let ring = |grow: i32, top_left: ListFrameTone, bottom_right: ListFrameTone| {
+        let (x0, y0) = (window.x - grow, window.y - grow);
+        let (x1, y1) = (window.x + window.w + grow, window.y + window.h + grow);
+        [
+            (RectPx::new(x0, y0, x1 - x0, 1), top_left),
+            (RectPx::new(x0, y0, 1, y1 - y0), top_left),
+            (RectPx::new(x1, y0, 1, 1), ListFrameTone::Corner),
+            (RectPx::new(x0, y1, 1, 1), ListFrameTone::Corner),
+            (RectPx::new(x1, y0 + 1, 1, y1 - y0), bottom_right),
+            (RectPx::new(x0 + 1, y1, x1 - x0, 1), bottom_right),
+        ]
+    };
+    let [a, b, c, d, e, f] = ring(1, ListFrameTone::Light, ListFrameTone::Dark);
+    let [g, h, i, j, k, l] = ring(0, ListFrameTone::Dark, ListFrameTone::Light);
+    [a, b, c, d, e, f, g, h, i, j, k, l]
+}
+
+/// The scrollbar child's left edge inside the list frame (`0x0061C690`,
+/// measured on the retail 17-row movie list): a light line at `bar.x` and a
+/// dark line at `bar.x + 1` between the list's top and bottom rings, then
+/// the corner tone painted over each crossing with a ring of the other tone.
+pub fn scrollbar_edge_lines(bar: RectPx) -> [(RectPx, ListFrameTone); 5] {
+    let (top, bottom) = (bar.y, bar.y + bar.h - 1);
+    [
+        (
+            RectPx::new(bar.x, top, 1, bottom - top),
+            ListFrameTone::Light,
+        ),
+        (
+            RectPx::new(bar.x + 1, top - 1, 1, bottom - top + 1),
+            ListFrameTone::Dark,
+        ),
+        (RectPx::new(bar.x, top, 1, 1), ListFrameTone::Corner),
+        (RectPx::new(bar.x + 1, top - 1, 1, 1), ListFrameTone::Corner),
+        (RectPx::new(bar.x + 1, bottom, 1, 1), ListFrameTone::Corner),
+    ]
+}
+
+/// The scrollbar's inside, right of its edge lines: the arrows sit at its
+/// top and bottom and the grip in its columns. The parent background shows
+/// through it, without the list's darkening.
+pub fn scrollbar_interior(bar: RectPx) -> RectPx {
+    RectPx::new(bar.x + 2, bar.y + 1, bar.w - 2, bar.h - 2)
+}
+
+/// Where the scrollbar's arrows go: at the interior's left, the up arrow at
+/// its top and the down arrow (`arrow_h` tall) at its bottom.
+pub fn scrollbar_arrow_origins(bar: RectPx, arrow_h: i32) -> [(i32, i32); 2] {
+    let interior = scrollbar_interior(bar);
+    [
+        (interior.x, interior.y),
+        (interior.x, interior.y + interior.h - arrow_h),
+    ]
+}
+
+/// The grip middle's tiles: `tile_h` rows each from the thumb top, the last
+/// one cut at the thumb bottom, as `(y, h)`. The 2-row caps go over them.
+pub fn grip_tiles(thumb: RectPx, tile_h: i32) -> Vec<(i32, i32)> {
+    if tile_h <= 0 {
+        return Vec::new();
+    }
+    (thumb.y..thumb.y + thumb.h)
+        .step_by(tile_h as usize)
+        .map(|y| (y, tile_h.min(thumb.y + thumb.h - y)))
+        .collect()
+}
+
 /// Whether a list press is the second click of a double-click: within the
 /// host double-click time and rectangle of the previous press anywhere in
 /// the list. Windows then sends `WM_LBUTTONDBLCLK`, which the list subclass

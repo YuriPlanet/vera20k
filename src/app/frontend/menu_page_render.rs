@@ -212,6 +212,8 @@ pub(crate) fn active_page_title_text(
             crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE.title_key
         }
         ShellSlideKind::WolWelcome => crate::ui::wol_shell::WOL_WELCOME_PAGE.title_key,
+        ShellSlideKind::Keyboard => crate::ui::shell::keyboard::KEYBOARD_PAGE.title_key,
+        ShellSlideKind::ChooseMap => crate::ui::skirmish_shell::CHOOSE_MAP_TITLE_KEY,
         // The Options heading is the dialog's own resolved label.
         ShellSlideKind::Options => {
             return state

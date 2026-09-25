@@ -1106,11 +1106,13 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
         );
 }
 
-/// Refresh entity atlases after new entities are spawned.
+/// Refresh entity atlases after entities spawn, die, change owner or leave the
+/// display.
 ///
-/// Uses an incremental approach: first checks if the existing atlases already
-/// contain all needed sprite keys. If so, skips the expensive rebuild entirely.
-/// Only performs a full rebuild when genuinely new sprite types appear.
+/// This runs on every such event, so the check is per object model, never per
+/// sprite key: a refresh happens only when a voxel model or an object (type,
+/// house colour) appears that the atlas has not collected. The refresh then
+/// renders only those sprites and appends them to a growth page.
 /// Reuses the process asset manager instead of creating a new one (avoids re-opening
 /// all MIX archives from disk).
 pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
@@ -1124,50 +1126,29 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
         return;
     };
 
-    // Check if unit atlas needs rebuilding (new voxel entity types appeared).
-    let unit_needed = unit_atlas::collect_needed_unit_keys(
+    // Check if the unit atlas lacks a voxel model the world now draws.
+    let unit_rebuild = !unit_atlas::atlas_covers_world(
+        state.match_state.match_presentation.unit_atlas.as_ref(),
         sim.entities(),
-        asset_manager,
         bound_rules,
-        bound_rules.map(|rules| &rules.art_registry),
         Some(&sim.interner),
     );
-    let unit_rebuild: bool = match &state.match_state.match_presentation.unit_atlas {
-        Some(atlas) => !atlas.has_all_keys(&unit_needed),
-        None => !unit_needed.is_empty(),
-    };
 
-    // Check if sprite atlas needs rebuilding (new SHP entity types appeared).
-    let extra_buildings: Vec<&str> = crate::app::frontend::skirmish::deployable_building_types(
-        sim.entities(),
-        bound_rules,
-        Some(&sim.interner),
-    );
-    let sprite_base_keys = sprite_atlas::collect_needed_base_keys(
+    // Check if the sprite atlas lacks an object (type, house colour), an
+    // AnimClass colour remap or the harvest overlay the world now draws.
+    let extra_buildings: Vec<&str> =
+        crate::app::frontend::skirmish::deployable_building_types(bound_rules);
+    let anim_remap_keys = sprite_atlas::collect_anim_remap_base_keys(sim);
+    let sprite_rebuild = !sprite_atlas::atlas_covers_world(
+        state.match_state.match_presentation.sprite_atlas.as_ref(),
         sim.entities(),
         &state.match_state.match_presentation.house_color_map,
         &extra_buildings,
+        &anim_remap_keys,
         Some(&sim.interner),
     );
-    let anim_remap_keys = sprite_atlas::collect_anim_remap_base_keys(sim);
-    let sprite_rebuild: bool = match &state.match_state.match_presentation.sprite_atlas {
-        Some(atlas) => {
-            !sprite_atlas::atlas_covers_base_keys(
-                atlas,
-                &sprite_base_keys,
-                sprite_atlas::ShpPaletteContext::Legacy,
-            ) || !sprite_atlas::atlas_covers_base_keys(
-                atlas,
-                &anim_remap_keys,
-                sprite_atlas::ShpPaletteContext::SelectedScheme,
-            )
-        }
-        None => !sprite_base_keys.is_empty() || !anim_remap_keys.is_empty(),
-    };
 
-    // Early out: no new sprite types → skip the expensive atlas rebuild.
     if !unit_rebuild && !sprite_rebuild {
-        log::debug!("Atlas refresh: no new sprite types — skipping rebuild");
         return;
     }
 
@@ -1181,17 +1162,17 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
     };
 
     if unit_rebuild {
-        log::info!("Rebuilding unit atlas: new voxel entity types detected");
+        log::info!("Refreshing the unit atlas: new voxel models");
         let existing = state.match_state.match_presentation.unit_atlas.take();
         if let Some(new_unit_atlas) = unit_atlas::build_unit_atlas(
-            &state.renderer.gpu,
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
             &state.renderer.batch_renderer,
             sim.entities(),
             asset_manager,
             bound_rules,
             bound_rules.map(|rules| &rules.art_registry),
             existing,
-            state.renderer.vxl_compute.as_mut(),
             Some(&sim.interner),
         ) {
             state.match_state.match_presentation.unit_atlas = Some(new_unit_atlas);
@@ -1199,7 +1180,7 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
     }
 
     if sprite_rebuild {
-        log::warn!(">>> SPRITE ATLAS REBUILD TRIGGERED — new SHP entity types detected <<<");
+        log::info!("Refreshing the sprite atlas: new SHP object types or colour remaps");
         let existing = state.match_state.match_presentation.sprite_atlas.take();
         let cell_drawer_type_ids: HashSet<String> = sim
             .resolved_terrain
@@ -1213,7 +1194,8 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
             &state.match_state.match_presentation.theater_ext,
         );
         if let Some(new_sprite_atlas) = sprite_atlas::build_sprite_atlas(
-            &state.renderer.gpu,
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
             &state.renderer.batch_renderer,
             sim.entities(),
             asset_manager,

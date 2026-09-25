@@ -810,7 +810,7 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
         // snapping once.
         //
         // Pre-copy the by-value pieces before borrowing so the disjoint
-        // split-borrows (gpu/depth_view/batch shared, vxl_compute &mut,
+        // split-borrows (gpu/depth_view/batch shared,
         // native.progress &mut, native.atlas shared, request shared) all
         // hold simultaneously.
         let render_size = [
@@ -888,7 +888,6 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
                 &request.fallback_skirmish_settings,
                 progress.native_theater_cache_mismatch,
                 progress.runtime_color_scheme_count,
-                state.renderer.vxl_compute.as_mut(),
                 native_rules_owner,
                 shared_cell_dummy,
                 tile_variant_selector_cache,

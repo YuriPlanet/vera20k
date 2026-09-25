@@ -288,22 +288,12 @@ pub(super) fn dispatch_draw_passes(
     // above Layer 2 (buildings, units, turrets).
     // Passthrough pipeline (no depth interaction) — particles are translucent
     // and Y-sorted on the CPU, so no GPU depth read/write needed.
-    const PARTICLE_KEYS: [&str; 4] = ["particle_p0", "particle_p1", "particle_p2", "particle_p3"];
-    for (i, key) in PARTICLE_KEYS.iter().enumerate() {
-        if let Some(page) = state
-            .match_state
-            .match_presentation
-            .sprite_atlas
-            .as_ref()
-            .and_then(|a| a.page(i))
-        {
-            if let Some((buf, count)) = pool.get(key) {
-                if count == 0 {
-                    continue;
-                }
+    if let Some(atlas) = state.match_state.match_presentation.sprite_atlas.as_ref() {
+        for (page, atlas_page) in atlas.pages.iter().enumerate() {
+            if let Some((buf, count)) = pool.get_page("particle_page", page) {
                 state.renderer.batch_renderer.draw_passthrough_range(
                     &mut pass,
-                    &page.texture,
+                    &atlas_page.texture,
                     buf,
                     0,
                     count,
