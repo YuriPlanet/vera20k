@@ -854,9 +854,11 @@ impl Simulation {
     /// The Teleporter arm of Unit Assign_Destination
     /// (`0x007423CD..0x007427C0`) for a `Teleporter=` type. The Teleport
     /// primary stays in charge only for a Cell destination holding no Unit
-    /// while radio slot 0 holds a `DockUnload=` building — the refinery's
-    /// MOVE_HERE to its pad. Every other destination, NULL included, drives:
-    /// a Drive piggybacks over the Teleport (`0x007425E6..0x0074277E`).
+    /// while radio slot 0 holds a `DockUnload=` building (any such cell, not
+    /// only the pad: oracle row `contact_other_cell`); in the dock chain that
+    /// is the refinery's MOVE_HERE to its pad. Every other destination, NULL
+    /// included, drives: a Drive piggybacks over the Teleport
+    /// (`0x007425E6..0x0074277E`).
     ///
     /// Back to Teleport, a Drive piggyback ends when `Is_Ok_To_End` allows it
     /// (`0x00742500..0x0074258A`). A Drive that cannot end yet is stopped, the
