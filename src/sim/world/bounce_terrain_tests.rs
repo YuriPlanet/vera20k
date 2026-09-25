@@ -409,3 +409,110 @@ fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection()
         assert_ne!(before, sim.state_hash(), "{name} persistent result");
     }
 }
+
+/// A stock debris chunk's whole flight (`tools/spatial_oracle/anim_bouncer_flight.py`):
+/// DBRIS1LG/SM bodies from the constructor's own launch, `BounceClass::Update`
+/// once per tick until it reports contact, over flat level-0 and level-2
+/// ground, off a level-4 mesa and inside a level-4-walled pit. Every tick's
+/// verdict, truncated coordinate and position bits match; velocity matches
+/// numerically (the flat reflection's signed zero, as above).
+#[test]
+fn a_debris_chunk_flight_matches_original_update() {
+    const CENTER: i32 = 100;
+    const RADIUS: i32 = 12;
+    let rows: Value = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/anim_bouncer_flight.json"
+    ))
+    .unwrap();
+    let rows = rows.as_array().unwrap();
+    assert_eq!(rows.len(), 64);
+    let mut issues = Vec::new();
+    for row in rows {
+        let input = &row["input"];
+        let terrain_name = input["terrain"].as_str().unwrap();
+        let level = |x: i32, y: i32| {
+            let ring = (x - CENTER).abs().max((y - CENTER).abs());
+            match terrain_name {
+                "flat0" => 0,
+                "flat2" => 2,
+                "mesa" => 4 * u8::from(ring <= 1),
+                "pit" => 4 * u8::from(ring > 2),
+                other => panic!("unknown terrain {other}"),
+            }
+        };
+        let size = (CENTER + RADIUS + 1) as u16;
+        let mut cells: Vec<_> = (0..size)
+            .flat_map(|y| (0..size).map(move |x| terrain_cell(x, y)))
+            .collect();
+        let mut allocated = Vec::new();
+        for y in CENTER - RADIUS..=CENTER + RADIUS {
+            for x in CENTER - RADIUS..=CENTER + RADIUS {
+                let cell = &mut cells[y as usize * usize::from(size) + x as usize];
+                cell.level = level(x, y);
+                allocated.push((x as u16, y as u16));
+            }
+        }
+        let mut grid = ResolvedTerrainGrid::from_cells(size, size, cells);
+        grid.test_set_native_allocated_cells(&allocated);
+        grid.test_set_dummy_cell_level_slope(0, 0);
+        let mut sim = Simulation::new();
+        sim.resolved_terrain = Some(grid);
+        sim.overlay_grid = Some(OverlayGrid::new(size, size));
+        let terrain = ResolvedBounceTerrain {
+            sim: &sim,
+            rules: None,
+        };
+
+        let hex = row["launch_body_hex"].as_str().unwrap();
+        let bytes: Vec<u8> = (0..hex.len() / 2)
+            .map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap())
+            .collect();
+        let f64_at = |at: usize| {
+            NativeF64Bits::from_bits(u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap()))
+        };
+        let f32_at = |at: usize| {
+            NativeF32Bits::from_bits(u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()))
+        };
+        let mut state = BounceState {
+            elasticity: f64_at(0),
+            gravity: f64_at(8),
+            angular_velocity_magnitude: f64_at(0x10),
+            position: std::array::from_fn(|axis| f32_at(0x18 + axis * 4)),
+            velocity: std::array::from_fn(|axis| f32_at(0x24 + axis * 4)),
+            spin_axis: [NativeF32Bits::POSITIVE_ZERO; 3],
+            spin_angle: NativeF64Bits::POSITIVE_ZERO,
+        };
+        for (tick, native) in row["ticks"].as_array().unwrap().iter().enumerate() {
+            let native = native.as_array().unwrap();
+            let at = |i: usize| native[i].as_i64().unwrap();
+            let outcome = match state.update(&terrain).unwrap() {
+                BounceOutcome::Falling => 0,
+                BounceOutcome::Bounced => 1,
+                BounceOutcome::Stopped => 2,
+            };
+            let coord = state.position_leptons();
+            let actual = (outcome, coord.x, coord.y, coord.z);
+            let expected = (at(0), at(1) as i32, at(2) as i32, at(3) as i32);
+            if actual != expected {
+                issues.push(format!(
+                    "{input} tick {}: {actual:?} != {expected:?}",
+                    tick + 1
+                ));
+                break;
+            }
+            for axis in 0..3 {
+                let position = state.position[axis].bits();
+                let velocity = f32::from_bits(state.velocity[axis].bits());
+                if position != at(4 + axis) as u32
+                    || velocity != f32::from_bits(at(7 + axis) as u32)
+                {
+                    issues.push(format!("{input} tick {} axis {axis} bits", tick + 1));
+                }
+            }
+            if outcome != 0 {
+                break;
+            }
+        }
+    }
+    assert!(issues.is_empty(), "{}", issues.join("\n"));
+}

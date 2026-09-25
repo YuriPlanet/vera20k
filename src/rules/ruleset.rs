@@ -3870,7 +3870,7 @@ impl RuleSet {
         self.animation_sequences.hash(&mut hasher);
         self.effect_assets.hash(&mut hasher);
         self.terrain_spawner_assets.hash(&mut hasher);
-        b"art-smudge-config-v1".hash(&mut hasher);
+        b"art-smudge-config-v2".hash(&mut hasher);
         let smudge_anim_inputs = self
             .art_registry
             .iter_entries()

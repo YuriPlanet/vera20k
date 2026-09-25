@@ -592,10 +592,12 @@ use crate::sim::world::Simulation;
 // movement owners read `Rules+0x1718` (`[General] CloseEnough=`).
 // 203 -> 204: a bullet keeps OnBridge and no owner house, a house its ROF
 // bias (`HouseClass+0x1A8`), and a TeamType `Aggressive=`.
-// 204 -> 205: a miner no longer keeps the Chrono Miner's retired dock phases
+// 204 -> 205: a bullet keeps its `Arcing=` (`BulletTypeClass+0x29B`) and an
+// anim its BounceClass body (`AnimClass+0x128`).
+// 205 -> 206: a miner no longer keeps the Chrono Miner's retired dock phases
 // (home refinery, dock-queued byte, dock phase, pivot facing, enter/approach/
 // deploy timers, exit cell); an entity keeps Techno+0x1F8.
-const SNAPSHOT_VERSION: u32 = 205;
+const SNAPSHOT_VERSION: u32 = 206;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3540,8 +3542,9 @@ mod tests {
         // 202 -> 203: no Simulation copy of CloseEnough.
         // 203 -> 204: bullet OnBridge, no owner house; house ROF bias; TeamType
         // `Aggressive=`.
-        // 204 -> 205: the retired Chrono dock phases; Techno+0x1F8.
-        assert_eq!(super::SNAPSHOT_VERSION, 205);
+        // 204 -> 205: bullet `Arcing=`; an anim's bounce body.
+        // 205 -> 206: the retired Chrono dock phases; Techno+0x1F8.
+        assert_eq!(super::SNAPSHOT_VERSION, 206);
     }
 
     #[test]

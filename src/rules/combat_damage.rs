@@ -56,6 +56,10 @@ pub struct CombatDamageDefaults {
     /// `IvanIconFlickerRate=` in frames (`RulesClass+0xFD8`, ReadINI
     /// `0x0066C62B`; constructor 8 at `0x00666BA8`): the bomb clock's blink.
     pub ivan_icon_flicker_rate: i32,
+    /// `SplashList=` (`RulesClass+0xBC4`, count `+0xBD0`; constructor empty):
+    /// the water explosions. A bouncing debris chunk landing in water below
+    /// the deck plays the first (`AnimClass::AI 0x00423DD2`).
+    pub splash_list: Vec<String>,
     /// Large grey smoke plume — buildings under heavy damage.
     pub default_large_grey_smoke_system: Option<String>,
     /// Small grey smoke plume.
@@ -89,6 +93,9 @@ impl CombatDamageDefaults {
             ivan_damage: section.get_i32("IvanDamage").unwrap_or(100),
             ivan_timed_delay: section.get_i32("IvanTimedDelay").unwrap_or(450),
             ivan_icon_flicker_rate: section.get_i32("IvanIconFlickerRate").unwrap_or(8),
+            splash_list: crate::rules::object_type::parse_csv_string_list(
+                section.get("SplashList"),
+            ),
             default_large_grey_smoke_system: read_name(section, "DefaultLargeGreySmokeSystem"),
             default_small_grey_smoke_system: read_name(section, "DefaultSmallGreySmokeSystem"),
             default_spark_system: read_name(section, "DefaultSparkSystem"),
@@ -114,6 +121,7 @@ impl Default for CombatDamageDefaults {
             ivan_damage: 100,
             ivan_timed_delay: 450,
             ivan_icon_flicker_rate: 8,
+            splash_list: Vec::new(),
             default_large_grey_smoke_system: None,
             default_small_grey_smoke_system: None,
             default_spark_system: None,

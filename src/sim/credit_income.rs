@@ -803,11 +803,12 @@ mod tests {
         let result = sim.advance_tick(&[order], Some(&rules), &heights, Some(&grid), None, 67);
         assert_eq!(result.executed_commands, 1, "the Attack order is admitted");
         let disc = sim.substrate.entities.get(disk).unwrap();
-        // The MEGAMISSION arm queues Attack; the queued mission is the
-        // effective selector until the per-object AI's Ready->Commence
-        // promotes it on a later visit (`mission_host_promote`).
+        // The MEGAMISSION arm queues Attack behind the Guard the disc took at
+        // Unlimbo (`UnitClass::Enter_Idle_Mode 0x00738970`); the per-object
+        // AI's Ready->Commence promotes it on a later visit
+        // (`mission_host_promote`).
         assert_eq!(
-            disc.mission.effective().known(),
+            disc.mission.queued().known(),
             Some(MissionType::Attack),
             "the order queues Attack"
         );

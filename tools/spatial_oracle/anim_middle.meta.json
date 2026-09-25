@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "AnimClass::Middle 0x00424F00 with the real scorch and crater placers 0x006B59A0/0x006B5C90 over Scorch/Crater/ForceBigCraters, middle-frame sizes around the 60x50 large-mark test, the 30-lepton height gate, cached and fetched frame sizes, image presence, CanPlace admit masks, particle spawns, cell (0,0) and Scenario seeds.",
+  "assumptions": [
+    "x87 control word 0x0E7F (PC53, chop), the harness default.",
+    "The SmudgeType table and the anim's AnimType fields are supplied."
+  ],
+  "substitutions": [
+    "anim vt+0x48 GetCoords, vt+0x6C Get_Image and vt+0x1C8 GetHeight are stubs",
+    "MapClass::GetCell 0x005657A0 returns a fixed cell; 0x0069E7E0 returns the case's frame size",
+    "SmudgeTypeClass CanPlace 0x006B5F80 answers the case's admit mask",
+    "operator new 0x007C8E17 is a bump allocator; delete 0x007C8B3D is a no-op",
+    "the SmudgeClass constructor 0x006B4A50, Reduce_Tiberium 0x00480A80 and the particle constructor 0x0062E430 record their arguments; the ParticleType array (0x00A83D9C) names entry i as 0x1000 + i"
+  ],
+  "entry_points": {
+    "middle": "0x00424F00",
+    "scorch": "0x006B59A0",
+    "crater": "0x006B5C90"
+  },
+  "payload_sha256": "9daab4c38e0368c7f5bba87775a85edc388f28fe84500ccfc330d6e40acecea8"
+}

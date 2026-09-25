@@ -19,7 +19,7 @@ use crate::sim::movement::ground_pose::{
 /// reads physical GetHeight, Jumpjet54B8D0 additionally reads marked-on-map,
 /// structural bridge, falling and its linked +2C height. Ground movers do not
 /// query height. No terrain is a headless compatibility case, not native proof.
-fn entity_layer(
+pub(super) fn entity_layer(
     entity: &GameEntity,
     terrain: Option<&ResolvedTerrainGrid>,
     rules: Option<&RuleSet>,

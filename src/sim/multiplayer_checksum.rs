@@ -427,6 +427,7 @@ mod tests {
             start_sound_active: false,
             stop_sound_id: None,
             display: Default::default(),
+            bounce: None,
         }
     }
 

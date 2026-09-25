@@ -116,11 +116,15 @@ pub(super) enum HashFeature {
     /// its owner's house (DamageArea reads the live Owner); earlier schemas
     /// fold the live source's house in its place.
     InvisoBullet = 204,
+    /// A bullet's `Arcing=` (`BulletTypeClass+0x29B`), which impact
+    /// resolution (`0x00468D80`) reads, and a bouncing anim's BounceClass
+    /// body (`AnimClass+0x128`).
+    BouncingDebris = 205,
     /// Removes the Chrono Miner's retired dock-phase fold (home refinery,
     /// dock-queued byte, dock phase, pivot facing) and adds the Techno+0x1F8
     /// tag. Earlier schemas fold the constructor defaults in their place,
     /// which every miner outside the retired Chrono phases held.
-    RetiredRefineryDockPhase = 205,
+    RetiredRefineryDockPhase = 206,
 }
 
 impl HashSchema {
@@ -152,6 +156,7 @@ impl HashSchema {
                     | HashFeature::Gattling
                     | HashFeature::RearmTimer
                     | HashFeature::InvisoBullet
+                    | HashFeature::BouncingDebris
                     | HashFeature::RetiredRefineryDockPhase
             ),
             #[cfg(test)]

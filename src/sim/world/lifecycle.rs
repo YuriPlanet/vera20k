@@ -901,6 +901,19 @@ impl Simulation {
                 crate::sim::house_tracking::HouseTracking::added_to_game,
             );
         }
+        // TechnoClass::Unlimbo 0x006F6E2A..0x006F6E4F: Enter_Idle_Mode(1, 1),
+        // Ready_To_Commence and Commence, ahead of its second mode-one query
+        // and of Foot4D722F's owner discovery below, which then observes the
+        // committed idle mission rather than a queued one.
+        if let Some(rules) = context.rules
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| entity.lifecycle.object_alive)
+        {
+            super::foot_unlimbo_idle_mode(self, stable_id, rules);
+        }
         // TechnoUnlimbo6F6E65..AD runs this second mode-one query only
         // after successful Object Mark and the +90 alive gate. A failed Mark
         // must retain history. This precedes Foot4D722F's owner observation.
@@ -999,9 +1012,6 @@ impl Simulation {
         } else {
             false
         };
-        if let Some(rules) = context.rules {
-            super::infantry_unlimbo_idle_mode(self, stable_id, rules);
-        }
         RevealOutcome::Revealed { logic_registered }
     }
 
@@ -1011,7 +1021,7 @@ impl Simulation {
     /// viewer CellPUT arm: that still requires its Tag4/House1F4 continuation.
     /// Missing current-house/House state belongs to the admitted headless
     /// substrate, not an invented native House0 or actor-owner fallback.
-    fn record_foot_owner_discovery(&mut self, stable_id: u64) {
+    pub(super) fn record_foot_owner_discovery(&mut self, stable_id: u64) {
         let Some(current_house) = self.session.current_house else {
             return;
         };

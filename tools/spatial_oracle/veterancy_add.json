@@ -1,0 +1,2232 @@
+[
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3e84bda1"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 1400,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3f04bda1"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 2100,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3f471c71"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3eaaaaaa"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 1800,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3f2aaaaa"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 2700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3f800000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 600,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3e638e38"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3d97b425"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "39c22e45"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3a91a2b3"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3eaaaaaa"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 1400,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3f2aaaaa"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 2100,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3f800000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3edb6db6"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 1800,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3f5b6db6"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 2700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3fa49249"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 600,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3e924924"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3dc30c30"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "39f9a934"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3abb3ee7"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 600,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3ec71c71"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 600,
+      "points": 1400,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3f471c71"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 600,
+      "points": 2100,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3f955555"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 600,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3f000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 600,
+      "points": 1800,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3f800000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 600,
+      "points": 2700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3fc00000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 600,
+      "points": 600,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3eaaaaaa"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 600,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3de38e38"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 600,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3a11a2b3"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 600,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3ada740d"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1500,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3e1f49f4"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1500,
+      "points": 1400,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3e9f49f4"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1500,
+      "points": 2100,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3eeeeeee"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1500,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3e4ccccc"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1500,
+      "points": 1800,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3ecccccc"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1500,
+      "points": 2700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3f199999"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1500,
+      "points": 600,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3e088888"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1500,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3d360b60"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1500,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "39690452"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1500,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3a2ec33e"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1750,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3e088888"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1750,
+      "points": 1400,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3e888888"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1750,
+      "points": 2100,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3ecccccc"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1750,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3e2f8af8"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1750,
+      "points": 1800,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3eaf8af8"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1750,
+      "points": 2700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3f03a83a"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1750,
+      "points": 600,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3dea0ea0"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1750,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3d1c09c0"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1750,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3947ba90"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1750,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3a15cbec"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 2000,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3deeeeee"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 2000,
+      "points": 1400,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3e6eeeee"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 2000,
+      "points": 2100,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3eb33333"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 2000,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3e199999"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 2000,
+      "points": 1800,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3e999999"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 2000,
+      "points": 2700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3ee66666"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 2000,
+      "points": 600,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3dcccccc"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 2000,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3d088888"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 2000,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "392ec33e"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 2000,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3a03126e"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 100,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 100,
+      "points": 1400,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 100,
+      "points": 2100,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 100,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 100,
+      "points": 1800,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 100,
+      "points": 2700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 100,
+      "points": 600,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 100,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3f2aaaaa"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 100,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3b5a740d"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 100,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3c23d70a"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1,
+      "points": 1400,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1,
+      "points": 2100,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1,
+      "points": 1800,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1,
+      "points": 2700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1,
+      "points": 600,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3eaaaaaa"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 1,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3f800000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1400,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 2100,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1800,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 2700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 600,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3de38e38"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3eaaaaaa"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 1400,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 2100,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 1800,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 2700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 600,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3d430c30"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3e124924"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 13,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 13,
+      "points": 1400,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 13,
+      "points": 2100,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 13,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 13,
+      "points": 1800,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 13,
+      "points": 2700,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 13,
+      "points": 600,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 13,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 13,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3cd20d20"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 13,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 0
+    },
+    "result_bits": "3d9d89d8"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 1.5,
+      "start_bits": 0
+    },
+    "result_bits": "3f04bda1"
+  },
+  {
+    "input": {
+      "cap": 1.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 1.5,
+      "start_bits": 0
+    },
+    "result_bits": "3f04bda1"
+  },
+  {
+    "input": {
+      "cap": 3.5,
+      "cost": 900,
+      "points": 700,
+      "ratio": 1.5,
+      "start_bits": 0
+    },
+    "result_bits": "3f04bda1"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 2.2,
+      "start_bits": 0
+    },
+    "result_bits": "3eb50295"
+  },
+  {
+    "input": {
+      "cap": 1.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 2.2,
+      "start_bits": 0
+    },
+    "result_bits": "3eb50295"
+  },
+  {
+    "input": {
+      "cap": 3.5,
+      "cost": 900,
+      "points": 700,
+      "ratio": 2.2,
+      "start_bits": 0
+    },
+    "result_bits": "3eb50295"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 0.1,
+      "start_bits": 0
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 1.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 0.1,
+      "start_bits": 0
+    },
+    "result_bits": "3f800000"
+  },
+  {
+    "input": {
+      "cap": 3.5,
+      "cost": 900,
+      "points": 700,
+      "ratio": 0.1,
+      "start_bits": 0
+    },
+    "result_bits": "40600000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 7.0,
+      "start_bits": 0
+    },
+    "result_bits": "3de38e38"
+  },
+  {
+    "input": {
+      "cap": 1.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 7.0,
+      "start_bits": 0
+    },
+    "result_bits": "3de38e38"
+  },
+  {
+    "input": {
+      "cap": 3.5,
+      "cost": 900,
+      "points": 700,
+      "ratio": 7.0,
+      "start_bits": 0
+    },
+    "result_bits": "3de38e38"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.3,
+      "start_bits": 0
+    },
+    "result_bits": "3e7158c7"
+  },
+  {
+    "input": {
+      "cap": 1.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.3,
+      "start_bits": 0
+    },
+    "result_bits": "3e7158c7"
+  },
+  {
+    "input": {
+      "cap": 3.5,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.3,
+      "start_bits": 0
+    },
+    "result_bits": "3e7158c7"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1048886691
+    },
+    "result_bits": "3f04bda2"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1048886691
+    },
+    "result_bits": "3f17b426"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 1048886691
+    },
+    "result_bits": "3f17b426"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 1048886691
+    },
+    "result_bits": "3ebda131"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 1048886691
+    },
+    "result_bits": "3ecde235"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1057275297
+    },
+    "result_bits": "3f471c71"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1057275297
+    },
+    "result_bits": "3f5a12f6"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 1057275297
+    },
+    "result_bits": "3f5a12f6"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 1057275297
+    },
+    "result_bits": "3f212f68"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 1057275297
+    },
+    "result_bits": "3f294fea"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1061624946
+    },
+    "result_bits": "3f84bda1"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1061624946
+    },
+    "result_bits": "3f8e38e3"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 1061624946
+    },
+    "result_bits": "3f8e38e3"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 1061624946
+    },
+    "result_bits": "3f638e39"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 1061624946
+    },
+    "result_bits": "3f6baebb"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1065353214
+    },
+    "result_bits": "3fa12f67"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1065353214
+    },
+    "result_bits": "3faaaaa9"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 1065353214
+    },
+    "result_bits": "3faaaaa9"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 1065353214
+    },
+    "result_bits": "3f8e38e2"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 1065353214
+    },
+    "result_bits": "3f924923"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1065353216
+    },
+    "result_bits": "3fa12f68"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1065353216
+    },
+    "result_bits": "3faaaaaa"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 1065353216
+    },
+    "result_bits": "3faaaaaa"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 1065353216
+    },
+    "result_bits": "3f8e38e3"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 1065353216
+    },
+    "result_bits": "3f924924"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1065663905
+    },
+    "result_bits": "3fa5ed09"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1065663905
+    },
+    "result_bits": "3faf684b"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 1065663905
+    },
+    "result_bits": "3faf684b"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 1065663905
+    },
+    "result_bits": "3f92f684"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 1065663905
+    },
+    "result_bits": "3f9706c5"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1067838729
+    },
+    "result_bits": "3fc71c71"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1067838729
+    },
+    "result_bits": "3fd097b3"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 1067838729
+    },
+    "result_bits": "3fd097b3"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 1067838729
+    },
+    "result_bits": "3fb425ec"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 1067838729
+    },
+    "result_bits": "3fb8362d"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1070013554
+    },
+    "result_bits": "3fe84bda"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1070013554
+    },
+    "result_bits": "3ff1c71c"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 1070013554
+    },
+    "result_bits": "3ff1c71c"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 1070013554
+    },
+    "result_bits": "3fd55555"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 1070013554
+    },
+    "result_bits": "3fd96596"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1072188378
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1072188378
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 1072188378
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 1072188378
+    },
+    "result_bits": "3ff684bd"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 1072188378
+    },
+    "result_bits": "3ffa94fe"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1073741823
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1073741823
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 1073741823
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 1073741823
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 1073741823
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1073741824
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1073741824
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 1073741824
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 1073741824
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 1073741824
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1051372202
+    },
+    "result_bits": "3f17b425"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1051372202
+    },
+    "result_bits": "3f2aaaaa"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 1051372202
+    },
+    "result_bits": "3f2aaaaa"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 1051372202
+    },
+    "result_bits": "3ee38e38"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 1051372202
+    },
+    "result_bits": "3ef3cf3c"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1059760811
+    },
+    "result_bits": "3f6d097b"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1059760811
+    },
+    "result_bits": "3f800000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 1059760811
+    },
+    "result_bits": "3f800000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 1059760811
+    },
+    "result_bits": "3f471c72"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 1059760811
+    },
+    "result_bits": "3f4f3cf4"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1068149419
+    },
+    "result_bits": "3fcbda13"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 700,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1068149419
+    },
+    "result_bits": "3fd55555"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 900,
+      "ratio": 3.0,
+      "start_bits": 1068149419
+    },
+    "result_bits": "3fd55555"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 3,
+      "points": 1,
+      "ratio": 3.0,
+      "start_bits": 1068149419
+    },
+    "result_bits": "3fb8e38e"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 7,
+      "points": 3,
+      "ratio": 3.0,
+      "start_bits": 1068149419
+    },
+    "result_bits": "3fbcf3cf"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 0,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1056964608
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": -900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1056964608
+    },
+    "result_bits": "3e7684bd"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": 0,
+      "ratio": 3.0,
+      "start_bits": 1056964608
+    },
+    "result_bits": "3f000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "cost": 900,
+      "points": -700,
+      "ratio": 3.0,
+      "start_bits": 1056964608
+    },
+    "result_bits": "3e7684bd"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "rhino_grizzly",
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 0,
+      "step": 1
+    },
+    "result_bits": "3e84bda1"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "rhino_grizzly",
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1048886689,
+      "step": 2
+    },
+    "result_bits": "3f04bda1"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "rhino_grizzly",
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1057275297,
+      "step": 3
+    },
+    "result_bits": "3f471c71"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "rhino_grizzly",
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1061624945,
+      "step": 4
+    },
+    "result_bits": "3f84bda0"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "rhino_grizzly",
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1065663904,
+      "step": 5
+    },
+    "result_bits": "3fa5ed08"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "rhino_grizzly",
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1067838728,
+      "step": 6
+    },
+    "result_bits": "3fc71c70"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "rhino_grizzly",
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1070013552,
+      "step": 7
+    },
+    "result_bits": "3fe84bd8"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "rhino_grizzly",
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1072188376,
+      "step": 8
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "rhino_grizzly",
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1073741824,
+      "step": 9
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "rhino_grizzly",
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1073741824,
+      "step": 10
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "rhino_grizzly",
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1073741824,
+      "step": 11
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "rhino_grizzly",
+      "cost": 900,
+      "points": 700,
+      "ratio": 3.0,
+      "start_bits": 1073741824,
+      "step": 12
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "gi_gi",
+      "cost": 200,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 0,
+      "step": 1
+    },
+    "result_bits": "3eaaaaaa"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "gi_gi",
+      "cost": 200,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 1051372202,
+      "step": 2
+    },
+    "result_bits": "3f2aaaaa"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "gi_gi",
+      "cost": 200,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 1059760810,
+      "step": 3
+    },
+    "result_bits": "3f7fffff"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "gi_gi",
+      "cost": 200,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 1065353215,
+      "step": 4
+    },
+    "result_bits": "3faaaaaa"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "gi_gi",
+      "cost": 200,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 1068149418,
+      "step": 5
+    },
+    "result_bits": "3fd55554"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "gi_gi",
+      "cost": 200,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 1070945620,
+      "step": 6
+    },
+    "result_bits": "3ffffffe"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "gi_gi",
+      "cost": 200,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 1073741822,
+      "step": 7
+    },
+    "result_bits": "40000000"
+  },
+  {
+    "input": {
+      "cap": 2.0,
+      "chain": "gi_gi",
+      "cost": 200,
+      "points": 200,
+      "ratio": 3.0,
+      "start_bits": 1073741824,
+      "step": 8
+    },
+    "result_bits": "40000000"
+  }
+]
