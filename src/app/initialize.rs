@@ -677,7 +677,6 @@ impl App {
                 exit_confirm_modal: None,
                 options_dialog: None,
                 keyboard_dialog: None,
-                launcher_options_presentation: Default::default(),
                 movie_list: None,
                 movie_list_selection: -1,
                 fullscreen_movie: None,

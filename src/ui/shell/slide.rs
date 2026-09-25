@@ -135,7 +135,8 @@ impl SlideDialogSpec {
 /// Back (`0x686`); its one top-list button, Load `0x40E`, stays hidden
 /// (`0x0052F05C`), and `0x0060A180` counts visible buttons only. `0xB7` from
 /// Single Player: Load (`0x40F`, counted even while disabled), then Back
-/// (`0x686`).
+/// (`0x686`). `0xD5` (launcher Options): Keyboard (`0x5CE`) and Network
+/// (`0x5CD`), then Main Menu (`0x686`).
 pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
     SlideDialogSpec {
         dialog_id: 0x00E2,
@@ -186,6 +187,13 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         map_button: false,
         top_panel: false,
     },
+    SlideDialogSpec {
+        dialog_id: 0x00D5,
+        top_buttons: 2,
+        bottom_button: true,
+        map_button: false,
+        top_panel: false,
+    },
 ];
 
 /// Front-end shell dialog ids that slide on first paint (the eligibility
@@ -195,14 +203,14 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
 /// `docs/research/skirmish-ui/SHELL_FIRST_PAINT_SLIDE_GENERIC_TRIGGER_GHIDRA_REPORT.md`
 /// §3); it slides once a renderer maps to it and it gains a
 /// `RENDERED_SHELL_SLIDES` entry. The original's full list
-/// (`0x0060C540`, 55 ids) also marks Options `0xD5` and its children, Score
-/// `0x108`, the in-game menu dialogs (`0xB5`, `0xB6`, `0xB8`, `0xBBA`,
+/// (`0x0060C540`, 55 ids) also marks Options' Keyboard `0xA3` and Network
+/// `0xD7`, Score `0x108`, the in-game menu dialogs (`0xB5`, `0xB6`, `0xB8`, `0xBBA`,
 /// `0xBBB`) and the LAN/WOL setup dialogs; none of them slides here yet.
 /// `0xB7` slides only outside a suspended game (`0x00612690`), which is the
 /// only place it is rendered as a family page. Message boxes (`0x120`
 /// confirm, `0xCE` body-ok) are not in it.
 pub(crate) const SHELL_SLIDE_ALLOW_LIST: &[u16] = &[
-    0x00E2, 0x0094, 0x006B, 0x00B7, 0x0100, 0x0101, 0x0102, 0x0129,
+    0x00E2, 0x0094, 0x006B, 0x00B7, 0x00D5, 0x0100, 0x0101, 0x0102, 0x0129,
 ];
 
 /// Whether a dialog plays the first-paint controls-reveal slide.
@@ -783,7 +791,7 @@ mod tests {
         ))
         .unwrap();
         let cases = fixture["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 36);
+        assert_eq!(cases.len(), 42);
         for case in cases {
             let dialog = case["dialog"].as_str().unwrap();
             let dialog_id = u16::from_str_radix(dialog.trim_start_matches("0x"), 16).unwrap();

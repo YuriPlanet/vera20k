@@ -84,7 +84,6 @@ pub(crate) struct FrontendState {
     pub(crate) options_dialog: Option<crate::ui::main_menu_dialogs::OptionsDialogState>,
     /// Shared A3 child, reached from launcher Options or paused Game Controls.
     pub(crate) keyboard_dialog: Option<crate::ui::shell::keyboard::KeyboardState>,
-    pub(crate) launcher_options_presentation: super::skirmish_shell_render::LauncherOptionsPresentation,
     /// Movie list `0x129` instance while `ShellRoute::MovieList` is shown.
     pub(crate) movie_list: Option<crate::ui::movies_credits_shell::MovieListState>,
     /// `DAT_00825C80`: the list row last played, retained for the process

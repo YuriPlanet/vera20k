@@ -16,6 +16,7 @@ pub(crate) enum PresentedShell {
     Skirmish,
     Campaign,
     LoadSavedGame,
+    Options,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
