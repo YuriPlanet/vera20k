@@ -34,16 +34,25 @@ enum Phase {
     ChooserReturn,
     /// Start Game pressed: `0x102` slides out and the scenario loads.
     Starting,
+    /// The game's Leave was confirmed: the abort exit runs and the shell
+    /// resumes.
+    Quitting,
 }
 
-/// Which loading frame a Start Game checkpoint captures.
+/// What a Start Game checkpoint captures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum LoadingTarget {
     /// The black frame that replaces the closed shell.
     Blank,
     /// The loading screen's first frame; the map load then runs to the end.
     FirstFrame,
+    /// The game runs [`QUIT_AFTER_FRAMES`] frames, then Leave through the
+    /// in-game abort; the new `0x102` settled after its entry slide.
+    AfterQuit,
 }
+
+/// In-game frames before the quit route presses Leave.
+const QUIT_AFTER_FRAMES: u32 = 30;
 
 /// What a Choose Map checkpoint captures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +86,7 @@ pub(super) struct SkirmishCapture {
     /// pointer, as the retail helper's pointer rests over the map list.
     pointer_rested: bool,
     loading: Option<LoadingTarget>,
+    in_game_frames: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -118,15 +128,25 @@ fn guard(state: &AppState, chooser: Option<ChooserTarget>, loading: bool) -> Res
     let shell = &state.frontend.skirmish_shell_state;
     CaptureGuard {
         main_menu_screen: state.frontend.screen == GameScreen::MainMenu
-            || (loading && state.frontend.screen == GameScreen::Loading),
+            || (loading
+                && matches!(
+                    state.frontend.screen,
+                    GameScreen::Loading | GameScreen::InGame
+                )),
         surface: (state.render_width(), state.render_height()),
         failed: state.frontend.main_menu_shell_failed,
         developer_shortcut: state.frontend.dev_skirmish_shell_enabled,
         software_cursor: state.use_software_cursor(),
-        cursor: (
-            state.match_state.input.cursor_x,
-            state.match_state.input.cursor_y,
-        ),
+        // The game moves the pointer; the quit route puts it back at rest
+        // when the shell returns (and its readiness requires that).
+        cursor: if loading && state.frontend.screen != GameScreen::Loading {
+            (EXPECTED_CURSOR_X as f32, EXPECTED_CURSOR_Y as f32)
+        } else {
+            (
+                state.match_state.input.cursor_x,
+                state.match_state.input.cursor_y,
+            )
+        },
         interaction_active: state.main_menu_dialog_open()
             || state.frontend.quit_cascade.is_some()
             || state.match_state.match_presentation.show_save_load_panel
@@ -238,7 +258,11 @@ impl SkirmishCapture {
     }
 
     fn guard(&self, state: &AppState) -> Result<()> {
-        guard(state, self.chooser, self.phase == Phase::Starting)
+        guard(
+            state,
+            self.chooser,
+            matches!(self.phase, Phase::Starting | Phase::Quitting),
+        )
     }
 
     /// A press and release at `point` through the chooser's production
@@ -290,6 +314,15 @@ impl SkirmishCapture {
         Ok(())
     }
 
+    /// The route's time budget: the quit route loads and plays a game.
+    pub(super) fn timeout(&self) -> std::time::Duration {
+        if self.loading == Some(LoadingTarget::AfterQuit) {
+            std::time::Duration::from_secs(180)
+        } else {
+            std::time::Duration::from_secs(60)
+        }
+    }
+
     /// `0x6B` shows with no slide and its heading and status line revealed.
     fn chooser_settled(state: &AppState) -> bool {
         state
@@ -312,6 +345,11 @@ impl SkirmishCapture {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
+        if self.phase == Phase::Quitting && state.frontend.screen == GameScreen::MainMenu {
+            // Back in the shell the pointer rests at the centre again.
+            state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
+            state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
+        }
         self.guard(state)?;
         self.last_presented = Some(rendered);
         match (self.phase, rendered) {
@@ -475,6 +513,23 @@ impl SkirmishCapture {
                     _ => {}
                 }
             }
+            (Phase::Starting, _)
+                if self.loading == Some(LoadingTarget::AfterQuit)
+                    && state.frontend.screen == GameScreen::InGame =>
+            {
+                self.in_game_frames += 1;
+                if self.in_game_frames == QUIT_AFTER_FRAMES {
+                    // The abort box's Leave through the production action
+                    // (queues the EXIT event, `0x004F192C`).
+                    crate::app::input::abort::activate(
+                        state,
+                        crate::ui::shell::abort::AbortButton::Leave,
+                    );
+                    self.route.push(json!({"screen": "in game", "frame": frame,
+                        "action": "Leave", "in_game_frames": self.in_game_frames}));
+                    self.phase = Phase::Quitting;
+                }
+            }
             (Phase::SlideOut, PresentedShell::Skirmish) => {
                 let target = self
                     .slide_out_tick
@@ -563,10 +618,22 @@ impl SkirmishCapture {
             }
             None => {}
         }
+        if self.loading == Some(LoadingTarget::AfterQuit) {
+            return Ok(self.phase == Phase::Quitting
+                && state.frontend.screen == GameScreen::MainMenu
+                && (
+                    state.match_state.input.cursor_x,
+                    state.match_state.input.cursor_y,
+                ) == (EXPECTED_CURSOR_X as f32, EXPECTED_CURSOR_Y as f32)
+                && self.last_presented == Some(PresentedShell::Skirmish)
+                && self.settled(state)?);
+        }
         if let Some(target) = self.loading {
             let next = match target {
                 LoadingTarget::Blank => crate::app::loading::pump::NextLoadingFrame::Blank,
-                LoadingTarget::FirstFrame => crate::app::loading::pump::NextLoadingFrame::First,
+                LoadingTarget::FirstFrame | LoadingTarget::AfterQuit => {
+                    crate::app::loading::pump::NextLoadingFrame::First
+                }
             };
             return Ok(self.phase == Phase::Starting
                 && state.frontend.screen == GameScreen::Loading

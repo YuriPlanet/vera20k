@@ -302,6 +302,15 @@ impl App {
         Self::enter_shell_window_mode(state);
         state.match_state.input.zoom_level = 1.0;
         state.match_state.input.zoom_target = 1.0;
+        Self::resume_shell_after_match(state);
+    }
+
+    /// Where the shell resumes after a match: a Skirmish game re-enters a new
+    /// `0x102` (PrepareSession with GameMode 5), anything else the main menu.
+    pub(super) fn resume_shell_after_match(state: &mut AppState) {
+        if state.frontend.shell_route.skirmish() {
+            Self::enter_native_skirmish_from_single_player(state);
+        }
     }
 
     /// `0x497` enables Load Saved Game when the scan `0x00559C20` finds a
@@ -340,7 +349,12 @@ impl App {
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
     }
 
-    fn enter_native_skirmish_from_single_player(state: &mut AppState) {
+    /// A new `0x102` from Single Player's Skirmish or, after a Skirmish game,
+    /// from PrepareSession: GameMode stays 5, so state `0x10` re-reads the
+    /// settings and runs the Skirmish runner again (`0x0052DB09..0x0052DB24`,
+    /// `0x0052E119`, `0x0052E168` -> `0x006AE2C0`). Its Back returns to
+    /// Single Player either way (GameMode 0, state 1, `0x0052E175`).
+    pub(super) fn enter_native_skirmish_from_single_player(state: &mut AppState) {
         // Prepare dialog 0x102 from the process-lifetime MIX list before
         // destroying its 0x100 source. Active YR's FUN_00534E50 registers the
         // neutral pair on that shared list before the shell SHPs are loaded.
