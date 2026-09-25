@@ -1542,3 +1542,171 @@ fn gsi_08_04_a_two_step_re_aim_is_refused_for_the_whole_arc_not_only_its_first_f
          latch was committed before arm A's Set instead of after it"
     );
 }
+
+/// `UnitClass::Facing_Update @ 0x00736990` executed frame after frame
+/// (`tools/spatial_oracle/turret_cadence.py`, every callee native): the aim
+/// `Set` and its latch, re-aims at a moving target only once an arc ends, the
+/// idle return exactly `GuardAreaTargetingDelay + 5` frames after the last
+/// shot, hull turns, and FacingClass interpolation — turret current and
+/// desired facing and the `+0x6AF` latch, frame for frame, through VERA's
+/// `facing_update` and `apply_unit_facing`. Rows exercising arms VERA does not
+/// model on this path (OmniFire, TurretLocked, TurretSpins, a simple deployer,
+/// a Battle Bunker, Magnetron, a NavCom, no weapon) are left out, as are
+/// targets off the map (negative world coordinates), which VERA's cell
+/// positions cannot hold.
+#[test]
+fn turret_cadence_matches_the_original() {
+    use crate::sim::movement::turret::facing_update;
+    use crate::util::fixed_math::SimFixed;
+
+    let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/turret_cadence.json"
+    ))
+    .unwrap();
+    let off_map = |input: &serde_json::Value| {
+        std::iter::once(&input["target_coord"])
+            .chain(
+                input["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|event| &event["value"]),
+            )
+            .filter_map(|value| value.as_array())
+            .any(|coord| coord.iter().take(2).any(|axis| axis.as_i64().unwrap() < 0))
+    };
+    let mut compared = 0;
+    let mut issues = Vec::new();
+    for row in &rows {
+        let input = &row["input"];
+        let int = |key: &str| input[key].as_i64().unwrap_or(0);
+        let weapon = &input["weapon"];
+        let navcom_events = input["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|event| event["kind"].as_str().unwrap().contains("navcom"));
+        if weapon["present"] != 1
+            || weapon["omni_fire"] != 0
+            || weapon["turret_locked"] != 0
+            || int("turret_spins") != 0
+            || int("simple_deployer") != 0
+            || int("deployed") != 0
+            || int("bunkered") != 0
+            || int("magnetron") != 0
+            || !input["navcom_coord"].is_null()
+            || navcom_events
+            || int("hull_rot") != int("turret_rot")
+            || off_map(input)
+        {
+            continue;
+        }
+        let rot = int("turret_rot") as i32;
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\nGuardAreaTargetingDelay={}\n\
+             [VehicleTypes]\n0=MTNK\n[InfantryTypes]\n[BuildingTypes]\n0=GAPILE\n[AircraftTypes]\n\
+             [MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=105mm\nROT={rot}\nTurret=yes\n\
+             [GAPILE]\nStrength=300\nArmor=heavy\n\
+             [105mm]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\n\
+             [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n",
+            int("delay")
+        )))
+        .unwrap();
+        let coord = |value: &serde_json::Value| {
+            let at = |i: usize| value[i].as_i64().unwrap() as i32;
+            (at(0), at(1))
+        };
+        let place = |entity: &mut GameEntity, (x, y): (i32, i32)| {
+            entity.position.rx = (x / 256) as u16;
+            entity.position.ry = (y / 256) as u16;
+            entity.position.sub_x = SimFixed::from_num(x % 256);
+            entity.position.sub_y = SimFixed::from_num(y % 256);
+        };
+        let mut sim = Simulation::new();
+        let mut unit = GameEntity::test_default(1, "MTNK", "Americans", 0, 0);
+        place(&mut unit, coord(&input["unit_coord"]));
+        let hull_init = int("hull_init") as u16;
+        unit.facing = (hull_init >> 8) as u8;
+        unit.body_facing = Some(FacingClass::new(hull_init, rot));
+        unit.barrel_facing = Some(FacingClass::new(int("turret_init") as u16, rot));
+        unit.last_fire_frame = int("last_fire");
+        unit.turret_rotation_latch = int("latch_init") != 0;
+        let mut target = GameEntity::test_default(2, "GAPILE", "Soviet", 0, 0);
+        if !input["target_coord"].is_null() {
+            place(&mut target, coord(&input["target_coord"]));
+            unit.attack_target = Some(AttackTarget::new(2));
+        }
+        sim.substrate.entities.insert(unit);
+        sim.substrate.entities.insert(target);
+        use_test_interner(&mut sim);
+        let start = int("start") as u32;
+        let events = input["events"].as_array().unwrap();
+        for (index, native) in row["frames"].as_array().unwrap().iter().enumerate() {
+            let frame = start + index as u32;
+            for event in events.iter().filter(|event| event["at"] == index) {
+                let value = &event["value"];
+                match event["kind"].as_str().unwrap() {
+                    "target_coord" => {
+                        place(sim.substrate.entities.get_mut(2).unwrap(), coord(value));
+                        sim.substrate.entities.get_mut(1).unwrap().attack_target =
+                            Some(AttackTarget::new(2));
+                    }
+                    "clear_target" => {
+                        sim.substrate.entities.get_mut(1).unwrap().attack_target = None;
+                    }
+                    "last_fire" => {
+                        sim.substrate.entities.get_mut(1).unwrap().last_fire_frame =
+                            value.as_i64().unwrap();
+                    }
+                    "hull_set" => {
+                        let unit = sim.substrate.entities.get_mut(1).unwrap();
+                        unit.body_facing
+                            .as_mut()
+                            .unwrap()
+                            .set(value.as_u64().unwrap() as u16, frame);
+                    }
+                    other => panic!("unmodelled event {other}"),
+                }
+            }
+            let update = facing_update(
+                sim.substrate.entities.get(1).unwrap(),
+                &sim.substrate.entities,
+                Some(&rules),
+                &sim.interner,
+                frame,
+            );
+            crate::sim::world::unit_post::apply_unit_facing(
+                &mut sim.substrate.entities,
+                &[crate::sim::combat::UnitFacingUpdate::from_facing_update(
+                    1, update,
+                )],
+                &rules,
+                &sim.interner,
+                frame,
+            );
+            let unit = sim.substrate.entities.get(1).unwrap();
+            let barrel = unit.barrel_facing.as_ref().unwrap();
+            let actual = (
+                barrel.current(frame),
+                barrel.destination(),
+                unit.turret_rotation_latch,
+            );
+            let turret = native["turret"].as_array().unwrap();
+            let expected = (
+                turret[0].as_u64().unwrap() as u16,
+                turret[1].as_u64().unwrap() as u16,
+                native["latch"].as_u64().unwrap() != 0,
+            );
+            if actual != expected {
+                issues.push(format!(
+                    "{} frame {frame}: {actual:?} != {expected:?}",
+                    input["name"]
+                ));
+                break;
+            }
+        }
+        compared += 1;
+    }
+    assert!(compared >= 40, "only {compared} rows compared");
+    assert!(issues.is_empty(), "{}", issues.join("\n"));
+}

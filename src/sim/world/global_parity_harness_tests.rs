@@ -156,7 +156,8 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
     // from the merged tree's own output in the same merge commit.
     // 2026-09-25 combat chain 1: Mission_Guard cadence draws from frame 0 and
     // the tank duel from tick 281 (see GLOBAL_HARNESS_FINAL_HASH).
-    0x7BEC_A2AE_4D99_DA81,
+    // 2026-09-25 combat chain 2: vehicle Guard cadence draws from frame 0.
+    0x526D_C44A_4C20_4BAB,
     0x39F3_258B_A550_EB7C,
     0x1CE8_1848_7043_6163,
 );
@@ -661,7 +662,7 @@ const GLOBAL_PRE_SUSTAINED_SIGHT_V142_HASH: u64 = 0x4E6E_0CFE_23A8_03A7;
 
 // Schema171: fresh-turn admission/residual clearing and retained-owner hashes.
 // See TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md, PR415 causal attribution.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 17742218090737448348;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 1251167382382790085;
 // Schema174 removes folds instead of adding them: OreGrowthState's node-era
 // scanner cursor, candidate lists and sample counters, and ProductionState's
 // fallback ore overlay id. The pre-174 projection folds the values those fields
@@ -670,10 +671,10 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 177422180
 // id. It is not a general reconstruction; a scenario finalized by the map
 // loader held Some(first TIB* id). The projection must still equal the previous
 // current pin, asserted below. Rust hash-composition ratchet, not a native golden.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 7094813934618577171;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 3390742988134478757;
 // v181 adds the default Foot+580 factor to every entity's hash. The pre-181
 // assertion below retains the previous entire fixture state/RNG ratchet.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0x1256_8F26_12CB_1B30;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xF311_9067_82CA_C64A;
 // Snapshot182 adds ordered display vectors. The pre-182 projection below
 // must reproduce the previous whole-fixture hash, including all RNG/state.
 // Schema186 removes the always-None release-tail byte from each entity. This
@@ -713,9 +714,17 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0x1256_8F26_12CB_
 // 4 dead at tick 590. The main and mapgen streams are unchanged. Schema 204
 // adds the house ROF bias and bullet OnBridge folds. Old values: the commit
 // that moved them.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x9941_BD3B_AC71_581E;
-const GLOBAL_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0xE77B_8C4E_81A6_7C37;
-const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 7034257082188559193;
+// 2026-09-25 combat chain 2 (behavior, snapshot 205), traced against d02452cd:
+// the vehicles take their idle mission on Unlimbo (UnitClass::Enter_Idle_Mode
+// 0x00738970), so their Mission_Guard cadence draws from frame 0 and every
+// vehicle move starts one frame earlier. The duel shifts by a tick (tank 4
+// dies at 588 instead of 587; tank 6 still ends at 12 HP); main/mapgen streams
+// unchanged. With that hook disabled every old pin reproduces, so the other
+// chain-2 mechanisms (impact ladder, Middle, debris, veterancy) leave this
+// fixture untouched: it binds no anim art. Old values: the moving commit.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x448B_03D8_7937_09AA;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0x00B4_EF53_9135_6C1D;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 7203384866521846607;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -1049,17 +1058,17 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
-        0x2D96_8243_E7D2_954D,
+        0x1AFB_B1F8_D862_C4C9,
         "v190 changes only the Foot neighbor-history hash composition in this fixture"
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
-        0xBCD5_965B_DEE3_DED2,
+        0x5BEE_57CB_172B_9D55,
         "v189 adds only the retained Techno+3D4 hash fold"
     );
     let before_burst_hash = rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(187));
     assert_eq!(
-        before_burst_hash, 0x9F8B_13A5_B90D_1A9E,
+        before_burst_hash, 0xA30E_9AD5_61AD_9C4F,
         "schema187 only replaces zero remaining-shot fields with the retained index in this fixture"
     );
     let before_release_hash =
@@ -1117,7 +1126,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     // 2026-09-23: moved by the Drive/Ship order and first-Process behavior
     // change (see GLOBAL_HARNESS_FINAL_HASH), not by a hash owner.
     assert_eq!(
-        before_power_hash, 16281269595277929600,
+        before_power_hash, 16967402887069896679,
         "full08 projection moved: investigate behavior or another hash owner; do not rebaseline"
     );
 

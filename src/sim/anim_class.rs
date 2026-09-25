@@ -2255,7 +2255,7 @@ const BOUNCE_SPLASH_LIFT_LEPTONS: i32 = 3;
 /// equal, as for every stock debris chunk), then the `Bouncer=` arm's launch
 /// (`0x004224D9..0x00422648`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct AnimConstructorDraws {
+pub struct AnimConstructorDraws {
     /// The drawn `RandomRate=` delay in logic frames, before normalization.
     pub random_rate: Option<u16>,
     pub bounce: Option<BounceState>,
