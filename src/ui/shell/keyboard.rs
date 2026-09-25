@@ -5,6 +5,21 @@ use super::geom::{self, RectPx};
 use super::in_game_shell::InGameShellLayout;
 use super::list::ListScrollInteraction;
 
+/// A3 as a front-end family page: no top buttons, Back on the bottom row,
+/// heading `0x694` and status line `0x695` (template at `0x00BEF560`).
+pub const KEYBOARD_PAGE: super::menu_page::MenuPageSpec = super::menu_page::MenuPageSpec {
+    dialog: super::descriptor::DialogId(0x00A3),
+    title_key: "GUI:KeyboardOptions",
+    stacked: &[],
+    back: super::menu_page::MenuPageButtonSpec {
+        id: 0x0686,
+        dlu_top: 346,
+        csf_key: "GUI:Back",
+        tooltip_key: "STT:KeyboardButtonBack",
+        result: None,
+    },
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyboardParent {
     Launcher,
@@ -184,23 +199,25 @@ impl KeyboardLayout {
                 r.h,
             )
         };
-        let (title, back) = if let Some((shell, size)) = shell {
+        let (title, back, footer) = if let Some((shell, size)) = shell {
             (
                 RectPx::new(width - 165, 2, 162, 16),
                 RectPx::new(width - 147, shell.side3.y - size[1], size[0], size[1]),
+                RectPx::new(10, height - 21, 455, 20),
             )
         } else {
-            (
-                RectPx::new(635 + (width - 800) / 2, 9 + (height - 600) / 2, 162, 17),
-                RectPx::new(644 + (width - 800) / 2, 535 + (height - 600) / 2, 156, 42),
-            )
+            // The front-end page is a family page: its heading, Back and
+            // status line sit where every family page puts them.
+            let page =
+                super::menu_page::compute_layout(&KEYBOARD_PAGE, width as u32, height as u32);
+            (page.title, page.buttons[0].rect, page.status_help)
         };
         let mut category = dlu(63, 83, 138, 146);
         category.h = crate::ui::skirmish_shell::COMBO_FACE_H;
         Self {
             title,
             back,
-            footer: RectPx::new(10, height - 21, 455, 20),
+            footer,
             category,
             commands: dlu(224, 82, 136, 110),
             group: dlu(63, 98, 138, 95),

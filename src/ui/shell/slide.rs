@@ -137,7 +137,8 @@ impl SlideDialogSpec {
 /// Single Player: Load (`0x40F`, counted even while disabled), then Back
 /// (`0x686`). `0xD5` (launcher Options): Keyboard (`0x5CE`) and Network
 /// (`0x5CD`), then Main Menu (`0x686`). `0x10E` (Westwood Online welcome):
-/// six top buttons, then Main Menu (`0x686`).
+/// six top buttons, then Main Menu (`0x686`). `0xA3` (Options' Keyboard):
+/// Back (`0x686`) only; Assign and Reset All sit on the left side.
 pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
     SlideDialogSpec {
         dialog_id: 0x00E2,
@@ -202,6 +203,13 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         map_button: false,
         top_panel: false,
     },
+    SlideDialogSpec {
+        dialog_id: 0x00A3,
+        top_buttons: 0,
+        bottom_button: true,
+        map_button: false,
+        top_panel: false,
+    },
 ];
 
 /// Front-end shell dialog ids that slide on first paint (the eligibility
@@ -218,7 +226,7 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
 /// only place it is rendered as a family page. Message boxes (`0x120`
 /// confirm, `0xCE` body-ok) are not in it.
 pub(crate) const SHELL_SLIDE_ALLOW_LIST: &[u16] = &[
-    0x00E2, 0x0094, 0x006B, 0x00B7, 0x00D5, 0x0100, 0x0101, 0x0102, 0x010E, 0x0129,
+    0x00E2, 0x0094, 0x00A3, 0x006B, 0x00B7, 0x00D5, 0x0100, 0x0101, 0x0102, 0x010E, 0x0129,
 ];
 
 /// Whether a dialog plays the first-paint controls-reveal slide.
@@ -805,7 +813,7 @@ mod tests {
         ))
         .unwrap();
         let cases = fixture["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 48);
+        assert_eq!(cases.len(), 54);
         for case in cases {
             let dialog = case["dialog"].as_str().unwrap();
             let dialog_id = u16::from_str_radix(dialog.trim_start_matches("0x"), 16).unwrap();

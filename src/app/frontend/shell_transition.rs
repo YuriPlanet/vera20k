@@ -65,6 +65,8 @@ pub(crate) enum ShellSlideKind {
     Options,
     /// Dialog 0x10E — Westwood Online welcome.
     WolWelcome,
+    /// Dialog 0xA3 — Options' Keyboard page (front-end parent only).
+    Keyboard,
 }
 
 impl ShellSlideKind {
@@ -82,6 +84,7 @@ impl ShellSlideKind {
             ShellSlideKind::LoadSavedGame => 0x00B7,
             ShellSlideKind::Options => 0x00D5,
             ShellSlideKind::WolWelcome => 0x010E,
+            ShellSlideKind::Keyboard => 0x00A3,
         })
     }
 
@@ -123,9 +126,13 @@ pub(crate) enum ShellExitThen {
     CampaignBack,
     /// Load Saved Game Back (result 2): state 1 recreates Single Player.
     LoadSavedGameBack,
-    /// Options Main Menu (result `0x5CB`): the controls commit, and state
-    /// 0x12 recreates `0xE2`.
-    OptionsBack,
+    /// An Options result: `0x0055FC80` tears `0xD5` down with its slide, then
+    /// commits and writes (Main Menu `0x5CB`; state 0x12 recreates `0xE2`) or
+    /// commits and runs the Keyboard page (`0x5CE`).
+    Options(crate::ui::main_menu_dialogs::options::LauncherParentResult),
+    /// Keyboard `0xA3` Back or Cancel: `0x005FBEF0` tears it down with its
+    /// slide, then the bindings save or reload and a new `0xD5` is built.
+    KeyboardClose(crate::app::input::keyboard::KeyboardExit),
     /// Westwood Online Main Menu (result 0): `0xE2` is recreated.
     WolBack,
     /// A Westwood Online action: `0x10E` closes before the WOLAPI object
@@ -144,7 +151,8 @@ impl ShellExitThen {
             Self::SkirmishStart(_) | Self::SkirmishBack => ShellSlideKind::Skirmish,
             Self::CampaignBack => ShellSlideKind::Campaign,
             Self::LoadSavedGameBack => ShellSlideKind::LoadSavedGame,
-            Self::OptionsBack => ShellSlideKind::Options,
+            Self::Options(_) => ShellSlideKind::Options,
+            Self::KeyboardClose(_) => ShellSlideKind::Keyboard,
             Self::WolBack | Self::WolApiMissing => ShellSlideKind::WolWelcome,
         }
     }
@@ -404,7 +412,8 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::Campaign
             | ShellSlideKind::LoadSavedGame
             | ShellSlideKind::Options
-            | ShellSlideKind::WolWelcome => ShellWaveCompletion::MenuPage,
+            | ShellSlideKind::WolWelcome
+            | ShellSlideKind::Keyboard => ShellWaveCompletion::MenuPage,
             ShellSlideKind::Skirmish => ShellWaveCompletion::Skirmish,
         })
     }
@@ -564,12 +573,15 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     }
     // Options `0xD5` runs after `0xE2` is destroyed (state 5,
     // `0x0052DDAB`); state 0x12 builds a new `0xE2` when it closes. Its
-    // Keyboard child `0xA3` does not slide here yet. The Exit confirmation
-    // (state 6) and the quit after it (state 7) run without a family dialog.
-    if state.frontend.keyboard_dialog.is_some()
-        || state.frontend.exit_confirm_modal.is_some()
-        || state.frontend.quit_cascade.is_some()
-    {
+    // Keyboard page `0xA3` runs after `0xD5` is destroyed (`0x0055FD06`) and
+    // slides like it. The Exit confirmation (state 6) and the quit after it
+    // (state 7) run without a family dialog.
+    if let Some(dialog) = state.frontend.keyboard_dialog.as_ref() {
+        return (dialog.parent == crate::ui::shell::keyboard::KeyboardParent::Launcher)
+            .then_some(ShellSlideKind::Keyboard)
+            .filter(|kind| crate::ui::shell::slide::is_slide_eligible(kind.dialog_id()));
+    }
+    if state.frontend.exit_confirm_modal.is_some() || state.frontend.quit_cascade.is_some() {
         return None;
     }
     // Only the native page slides; the assetless fallback does not.
@@ -781,6 +793,14 @@ pub(crate) fn render_shell_first_paint_slide(
                 )?;
                 true
             }
+        }
+        ShellSlideKind::Keyboard => {
+            crate::app::frontend::skirmish_shell_render::render_keyboard_shell(
+                state,
+                encoder,
+                destination,
+            )?;
+            true
         }
         ShellSlideKind::SinglePlayer | ShellSlideKind::MoviesAndCredits => matches!(
             crate::app::frontend::menu_page_render::render_active_menu_page(
