@@ -677,9 +677,10 @@ impl Simulation {
                 let Some(info) = self.resolve_move_info(*entity_id, rules) else {
                     return false;
                 };
-                // Chrono Miners (Teleporter=yes + Harvester=yes) drive normally for
-                // player commands — they only teleport on return-to-refinery
-                // (handled by miner_system::chrono_teleport, not here).
+                // Chrono Miners (Teleporter=yes + Harvester=yes) drive for player
+                // commands; they warp only onto a refinery pad, through the Unit
+                // setter's Teleporter arm (`set_unit_cell_destination`). RESIDUAL:
+                // this Move does not run that setter (no arm, no +0x1F8 clear).
                 let use_teleport_move = !info.is_harvester
                     && (info.loco_kind == Some(LocomotorKind::Teleport) || info.is_teleporter);
 

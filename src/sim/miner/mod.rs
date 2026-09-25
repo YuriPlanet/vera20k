@@ -28,7 +28,7 @@ pub(crate) use self::harvest_mission::dispatch_harvest_for_object;
 pub(crate) use self::miner_system::extract_bale;
 pub(crate) use self::refinery_dock::{
     clear_unload_latch, mission_enter, mission_unload, native_dock_miner, per_cell_dock_now,
-    tick_unload_stage,
+    per_cell_release_dock_contact, tick_unload_stage,
 };
 
 use crate::rules::object_type::ObjectType;

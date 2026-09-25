@@ -1060,7 +1060,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(206)),
         GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_DOCK_PHASE_V206,
-        "v205 only removes the retired miner dock folds"
+        "v206 only removes the retired miner dock folds"
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(202)),

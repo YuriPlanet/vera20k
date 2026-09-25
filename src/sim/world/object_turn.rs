@@ -634,6 +634,11 @@ impl Simulation {
                 sim.resolved_terrain.as_ref(),
                 Some(&mut teleport_visuals),
             );
+            // RESIDUAL: the destination WarpOut is built here with the source
+            // one; native builds it after the arrival's Per_Cell_Process(2),
+            // Stop_Moving, crate pickup and NULL assign (`0x00719742`). Only
+            // an arrival step that draws RNG (a crush's death animation)
+            // could see the order.
             for descriptor in warp_spawns {
                 let type_name = descriptor.type_name;
                 if let Err(error) = sim.spawn_anim_object(rules, descriptor) {
@@ -675,8 +680,9 @@ impl Simulation {
                 // (0x00739EC0), with the Foot body and its playfield tail.
                 sim.unit_per_cell_process_arrival(stable_id, rules);
                 // 0x00719725 Stop_Moving: the tick retired the request.
-                // 0x0071972E CellClass::PickupCrate: the crate receiver every
-                // mover still lacks (`movement::track_fresh` residuals).
+                // 0x0071972E CellClass::PickupCrate (`0x00481A00`): the crate
+                // receiver every mover still lacks (`movement::track_fresh`
+                // residuals).
                 // 0x0071973C: vt+0x480(NULL, 1). A Teleporter still in radio
                 // contact gets a Drive here, which the FootClass::AI tail below
                 // ends again.

@@ -1286,7 +1286,15 @@ fn handle_return(sim: &mut Simulation, rules: &RuleSet, snap: &mut MinerSnapshot
     if driving && !teleporter {
         return;
     }
-    let narrow = pinned.or_else(|| find_docking_bay(sim, rules, snap, false));
+    // The narrow pass takes only a bay with a free contact slot
+    // (`FUN_0065ADF0` at `0x004DEF09`), the pinned one included, so a
+    // driving Teleporter keeps its NavCom while that bay is busy.
+    let narrow = match pinned {
+        Some(bay) => refinery_dock_capacity_for_sid(sim, rules, bay)
+            .filter(|&capacity| miner_dock::would_admit(sim, bay, id, capacity))
+            .map(|_| bay),
+        None => find_docking_bay(sim, rules, snap, false),
+    };
     if driving {
         if narrow.is_none() {
             return;
@@ -1437,10 +1445,13 @@ fn handle_handoff(sim: &mut Simulation, snap: &MinerSnapshot) {
 /// `Queue_Mission(mission, 0)` at `0x004C73B9`). A human war miner therefore
 /// parks on Guard until re-ordered — native behaviour.
 ///
-/// Step 2's cell search is VERA-internal in detail (the native range/flag
-/// arguments of `Find_Nearby_Passable_Cell` are not modelled; the same
-/// `find_nearby_passable_cell_with_index` helper the return staging uses
-/// stands in), gamemd equivalent UNCHECKED beyond the seed cell.
+/// Step 2's cell search is VERA-internal in detail: `FUN_00703590`'s
+/// `Find_Nearby_Passable_Cell` arguments are not modelled, and the exit
+/// spiral (`exit_cell_search::find_nearby_passable_cell_with_index`) stands
+/// in, where the return staging calls the native search
+/// ([`refinery_staging_cell`]). gamemd equivalent UNCHECKED beyond the seed
+/// cell. The destination goes through the Unit setter, so a Chrono Miner
+/// drives it.
 ///
 /// **Non-human houses take a VERA-internal bridge instead, gamemd equivalent
 /// = AI lane (`AI_Choose_Unit` 0x004FEB7B / `Mission_Guard` arm ii)

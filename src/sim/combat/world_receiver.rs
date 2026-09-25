@@ -2899,8 +2899,8 @@ struct FireAtLaunchAim {
 /// the only stock types with an offset. Effect: a launch speed a few leptons
 /// per frame off.
 ///
-/// RESIDUAL (lead inputs): `Is_Moving` has no VERA answer for a Hover or
-/// Teleport target (`motion_query::is_moving`), and a Jumpjet vehicle's
+/// RESIDUAL (lead inputs): `Is_Moving` has no VERA answer for a Hover target
+/// (`motion_query::is_moving`), and a Jumpjet vehicle's
 /// current speed reads 0 because the production Jumpjet host does not apply
 /// `SetSpeedFraction` (`jumpjet_cruise.rs`; native vt+0x544 at `0x0054B9A4`,
 /// `0x0054C814`, `0x0054D1AE`). Trigger: shots at a moving Kirov, Floating
@@ -3772,10 +3772,10 @@ fn fireat_tail(
 /// its retained estimate (`+0x70`). The weapon is the one FireAt just
 /// installed on the bullet (`SetWeaponType 0x0046B260`); a shot with no
 /// BulletType fires the default Inviso type, which is not Inaccurate.
-/// RESIDUAL: `motion_query::is_moving` has no answer for a Hover or Teleport
-/// firer and reads as not moving, so such a firer debits while moving.
-/// Trigger: a hover or Chrono unit firing on the move. Effect: its target's
-/// estimate runs lower than native's until the next recovery.
+/// RESIDUAL: `motion_query::is_moving` has no answer for a Hover firer and
+/// reads as not moving, so such a firer debits while moving. Trigger: a hover
+/// unit firing on the move. Effect: its target's estimate runs lower than
+/// native's until the next recovery.
 fn fireat_estimate_debit(
     world: &mut Simulation,
     rules: &RuleSet,

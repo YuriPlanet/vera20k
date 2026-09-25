@@ -7,9 +7,11 @@
 //! sits at the destination 50% translucent for `chrono_delay` frames until fully
 //! materialized.
 //!
-//! Units with `Locomotor=Teleport` always use this. Units with `Teleporter=yes`
-//! but a different base locomotor (e.g., Chrono Miner with Drive) get a temporary
-//! override via the piggyback mechanism, restoring their base locomotor after arrival.
+//! Units with `Locomotor=Teleport` use this. A `Teleporter=` unit (the Chrono
+//! Miner, whose primary locomotor is this one) drives instead wherever the
+//! Unit setter's Teleporter arm (`0x007423CD`, `movement/track_path.rs`)
+//! installs a Drive piggyback: every destination except a cell MOVE_HERE
+//! while radio slot 0 is a `DockUnload=` building.
 //!
 //! No pathfinding — the unit is relocated instantly. Occupancy is cleared at the
 //! old position and marked at the new position during the Relocate phase.
@@ -229,11 +231,14 @@ pub fn issue_teleport_command(
 ///
 /// RESIDUALS: the EMP/death-frame guard (`vt+0x37C`, unrepresented, as for
 /// the Drive Move_To) and the Chronosphere's +0x270 (not represented); the
-/// destination resolution's Can_Enter_Cell refusal and nearby-cell
-/// replacement (`0x00718B70`, rows `pad_cannot_enter*`), reached only for a
-/// cell whose occupy bit another vehicle holds without a Unit in its list;
-/// and that resolution's reservation bit (Unit `vt+0xF0`/`+0xF4`), which the
-/// next resolution clears at the previous destination whoever stands there.
+/// destination resolution's (`0x00718B70`) Unit Can_Enter_Cell refusal
+/// (`vt+0x1AC`, `0x0071911D`) and its Find_Nearby_Passable_Cell replacement
+/// (`0x00719185`), reached for any cell the Teleporter arm admitted (no Unit
+/// in its list) that Can_Enter_Cell still refuses: infantry on the pad, or an
+/// occupy bit another vehicle holds (the only case rows `pad_cannot_enter*`
+/// cover); and that resolution's reservation bit (Unit `vt+0xF0`/`+0xF4`),
+/// which the next resolution clears at the previous destination whoever
+/// stands there.
 pub(crate) fn teleport_move_to(
     entity: &mut crate::sim::game_entity::GameEntity,
     target: (u16, u16),
@@ -306,10 +311,17 @@ fn arm_teleport(
     true
 }
 
-/// Drop attack locks that name `teleporting_id` before the relocation tick.
+/// Drop attack locks that name `teleporting_id` before the relocation tick:
+/// the analogue of the warp's Techno detach sweep (`0x0070D4A0`, called at
+/// `0x007193C7`). Radio and presentation links remain root-owned integration
+/// work.
 ///
-/// This is the available clean-room analogue of the native incoming-target
-/// release. Radio and presentation links remain root-owned integration work.
+/// RESIDUAL: the bullet sweep after it (`0x007193CC..0x007193F4`) retargets
+/// every live bullet aimed at the owner (+0x10C) to the cell the owner leaves
+/// (`0x00468430`; NULL for an airborne owner). VERA's projectiles keep homing
+/// on the owner. Trigger: a shot in flight at a Chrono Miner, Legionnaire,
+/// Commando or Ivan the frame it warps. Effect: the shot follows it to the
+/// destination instead of landing on the old cell.
 fn release_incoming_target_locks(entities: &mut EntityStore, teleporting_id: u64) {
     for id in entities.keys_sorted() {
         if id == teleporting_id {

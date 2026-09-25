@@ -6047,6 +6047,808 @@
       }
     }
   ],
+  "per_cell_release": [
+    {
+      "events": [
+        [
+          "ready",
+          0
+        ],
+        [
+          "send",
+          "miner",
+          3,
+          "refinery",
+          1
+        ]
+      ],
+      "input": {
+        "mission": "harvest",
+        "name": "release_harvest_contact",
+        "ready": [
+          0
+        ],
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          1
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "ready",
+          0
+        ],
+        [
+          "send",
+          "miner",
+          3,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          25,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          25,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          25,
+          "miner",
+          0
+        ]
+      ],
+      "input": {
+        "miner_tether": true,
+        "mission": "harvest",
+        "name": "release_harvest_contact_tethered",
+        "ready": [
+          0
+        ],
+        "refinery_tether": true,
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          1
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "ready",
+          0
+        ],
+        [
+          "send",
+          "miner",
+          3,
+          "refinery",
+          1
+        ]
+      ],
+      "input": {
+        "mission": "guard",
+        "name": "release_guard_contact",
+        "ready": [
+          0
+        ],
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 5,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          1
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "ready",
+          1
+        ],
+        [
+          "commence",
+          "miner"
+        ]
+      ],
+      "input": {
+        "mission": "harvest",
+        "name": "release_enter_queued_ready",
+        "queued": "enter",
+        "ready": [
+          1
+        ],
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          200,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "ready",
+          0
+        ]
+      ],
+      "input": {
+        "mission": "harvest",
+        "name": "release_enter_queued_not_ready",
+        "queued": "enter",
+        "ready": [
+          0
+        ],
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": 7,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "ready",
+          0
+        ]
+      ],
+      "input": {
+        "mission": "enter",
+        "name": "release_enter_current",
+        "ready": [
+          0
+        ],
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "ready",
+          0
+        ]
+      ],
+      "input": {
+        "mission": "unload",
+        "name": "release_unload",
+        "ready": [
+          0
+        ],
+        "status": 0
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [],
+      "input": {
+        "mission": "harvest",
+        "name": "release_unload_latch",
+        "ready": [],
+        "status": 2,
+        "unloading": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "events": [
+        [
+          "ready",
+          0
+        ]
+      ],
+      "input": {
+        "linked": false,
+        "mission": "harvest",
+        "name": "release_no_contact",
+        "ready": [
+          0
+        ],
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "ready",
+          0
+        ]
+      ],
+      "input": {
+        "mission": "harvest",
+        "name": "release_not_refinery",
+        "ready": [
+          0
+        ],
+        "refinery_flag": false,
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "ready",
+          0
+        ]
+      ],
+      "input": {
+        "harvester": false,
+        "mission": "harvest",
+        "name": "release_not_harvester",
+        "ready": [
+          0
+        ],
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "ready",
+          0
+        ],
+        [
+          "send",
+          "miner",
+          3,
+          "refinery",
+          1
+        ]
+      ],
+      "input": {
+        "harvester": false,
+        "mission": "harvest",
+        "name": "release_weeder_dock",
+        "ready": [
+          0
+        ],
+        "status": 2,
+        "weeder": true,
+        "weeder_dock": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          1
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "ready",
+          0
+        ]
+      ],
+      "input": {
+        "harvester": false,
+        "mission": "harvest",
+        "name": "release_weeder_not_weeder_dock",
+        "ready": [
+          0
+        ],
+        "status": 2,
+        "weeder": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    }
+  ],
   "radio": [
     {
       "events": [

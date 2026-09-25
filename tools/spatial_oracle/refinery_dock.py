@@ -62,7 +62,8 @@ def name_of(pointer):
 
 
 def place_building(u, building, nw):
-    u.mem_write(building, dwords(0x7E3EBC))
+    # Primary and RTTI (What_Am_I) vtables, as the constructor writes them (0x43B725).
+    u.mem_write(building, dwords(0x7E3EBC, 0x7E3EA0))
     u.mem_write(building + 0x14, dwords(1))
     u.mem_write(building + 0x9C, dwords(nw[0] * 256 + 128, nw[1] * 256 + 128, 0))
     u.mem_write(building + 0xB4, dwords(-1))
@@ -83,7 +84,9 @@ def make_dock_fixture(case):
     u.mem_write(ACTOR + 0xB4, dwords(MISSION[queued] if queued else -1))
     u.mem_write(ACTOR + 0x418, bytes([case.get('miner_tether', False)]))
     u.mem_write(ACTOR + 0x6AF, bytes([case.get('turret_latch', False)]))
-    u.mem_write(TYPE + 0xE0E, b'\x01')  # Harvester=
+    u.mem_write(TYPE + 0xE0E, bytes([case.get('harvester', True)]))  # Harvester=
+    if case.get('weeder'):
+        u.mem_write(TYPE + 0xE0F, b'\x01')  # Weeder=
     nav = case.get('nav')
     u.mem_write(ACTOR + 0x5A4, dwords(cell(*nav) if nav else 0))
     if case.get('moving'):
@@ -108,7 +111,9 @@ def make_dock_fixture(case):
     u.mem_write(BTYPE + 0xEF0, dwords(12))
     u.mem_write(BTYPE + 0x1618, dwords(4, 1))  # art QueueingCell=4,1 (ReadMinMax)
     u.mem_write(BTYPE + 0x16B3, bytes([case.get('dock_unload', True)]))
-    u.mem_write(BTYPE + 0x16BB, b'\x01')
+    u.mem_write(BTYPE + 0x16BB, bytes([case.get('refinery_flag', True)]))  # Refinery=
+    if case.get('weeder_dock'):
+        u.mem_write(BTYPE + 0x16BC, b'\x01')  # Weeder=
     u.mem_write(BTYPE + 0x1780, dwords(1))
     # A second refinery elsewhere, holding whatever slot the row gives it.
     place_building(u, OTHER, (20, 20))
@@ -315,6 +320,20 @@ def per_cell(case):
     u.reg_write(UC_X86_REG_EBP, ACTOR)
     u.reg_write(UC_X86_REG_ESP, frame)
     run_checked(u, 0x73A31F, 0x73A5EA, count=200000)
+    assert not any(unused), (case, unused)
+    return dict(input=case, events=events, state=state(u, read32))
+
+
+def per_cell_release(case):
+    """Unit Per_Cell_Process(2)'s Ready/Commence and its Refinery=/Weeder=
+    contact release, 0x73ACB3..0x73ADCA, on the miner (no prologue local)."""
+    from unicorn.x86_const import UC_X86_REG_EBP
+    from tools.native_oracle import run_checked
+    u, call, read32 = make_dock_fixture(case)
+    events, unused = observe_dock(u, read32, case)
+    u.reg_write(UC_X86_REG_EBP, ACTOR)
+    u.reg_write(UC_X86_REG_ESP, SP - 0x100)
+    run_checked(u, 0x73ACB3, 0x73ADCA, count=200000)
     assert not any(unused), (case, unused)
     return dict(input=case, events=events, state=state(u, read32))
 
@@ -534,6 +553,29 @@ def per_cell_cases():
     ]
 
 
+def per_cell_release_cases():
+    # A War Miner at the queueing cell holding the refinery as its contact
+    # (both ways), as Mission_Harvest state 2's HELLO leaves it.
+    harvest = dict(mission='harvest', status=2, ready=[0])
+    return [
+        dict(harvest, name='release_harvest_contact'),
+        dict(harvest, name='release_harvest_contact_tethered', miner_tether=True,
+             refinery_tether=True),
+        dict(harvest, name='release_guard_contact', mission='guard'),
+        dict(harvest, name='release_enter_queued_ready', queued='enter', ready=[1]),
+        dict(harvest, name='release_enter_queued_not_ready', queued='enter'),
+        dict(harvest, name='release_enter_current', mission='enter'),
+        dict(harvest, name='release_unload', mission='unload', status=0),
+        dict(harvest, name='release_unload_latch', unloading=True, ready=[]),
+        dict(harvest, name='release_no_contact', linked=False),
+        dict(harvest, name='release_not_refinery', refinery_flag=False),
+        dict(harvest, name='release_not_harvester', harvester=False),
+        dict(harvest, name='release_weeder_dock', harvester=False, weeder=True,
+             weeder_dock=True),
+        dict(harvest, name='release_weeder_not_weeder_dock', harvester=False, weeder=True),
+    ]
+
+
 def generate():
     return {'source': 'unicorn/gamemd.exe',
             'can_dock': [can_dock(case) for case in handshake_cases()],
@@ -542,26 +584,30 @@ def generate():
             'mission_harvest': [mission(case, HARVEST) for case in harvest_cases()],
             'mission_unload': [mission(case, UNLOAD) for case in unload_cases()],
             'per_cell': [per_cell(case) for case in per_cell_cases()],
+            'per_cell_release': [per_cell_release(case) for case in per_cell_release_cases()],
             'stage_tick': [stage_tick(case) for case in stage_cases()]}
 
 
 if __name__ == '__main__':
     finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=lambda: provenance(
-        scope='94 original executions of the War Miner refinery dock: 19 Building 0x0E (DockUnload) '
+        scope='107 original executions of the War Miner refinery dock: 19 Building 0x0E (DockUnload) '
               'handshakes and 18 single transmits through the radio core with every nested '
               'receiver; 9 FootClass::Mission_Enter, 9 UnitClass::Mission_Harvest (states 2/3) '
               'and 30 UnitClass::Mission_Unload (harvester branch) dispatches with their return '
-              'value and Scenario draws; 6 Unit Per_Cell_Process(2) Enter-arm snippets; 3 '
-              'TechnoClass::AI StageClass tick runs.',
+              'value and Scenario draws; 6 Unit Per_Cell_Process(2) Enter-arm snippets and 13 of '
+              'its Ready/Commence and Refinery=/Weeder= contact release; 3 TechnoClass::AI '
+              'StageClass tick runs.',
         entry_points={'transmit': TRANSMIT, 'building_receive': 0x43C2D0, 'unit_receive': 0x737430,
                       'foot_receive': 0x4D8FB0, 'techno_receive': 0x6F4AB0, 'radio_receive': 0x65A820,
                       'mission_enter': ENTER, 'mission_harvest': HARVEST, 'mission_unload': UNLOAD,
-                      'per_cell_enter_arm': 0x73A31F, 'stage_tick': 0x6FABC4,
+                      'per_cell_enter_arm': 0x73A31F, 'per_cell_release': 0x73ACB3,
+                      'stage_tick': 0x6FABC4,
                       'assign_destination': ASSIGN, 'drive_do_turn': DO_TURN,
                       'give_tiberium': GIVE_TIBERIUM, 'random_ranged': RANDOM},
         assumptions=['track_destination fixture: original Unit vtable over a constructed Drive, 32x32 map, House, Rules; supplied Unit/Radio/Foot constructor prestates; Scenario RNG seeded through the original seeder.',
                      'Refinery: original Building vtable 0x7E3EBC over supplied BuildingClass fields (+14, +6C, +9C, +AC, +B4, +E0 contacts, +21C, +418, +520, +57C, +584, +660) and BuildingTypeClass (+A0, +EF0=12 4x3, +1618 QueueingCell 4,1, +16B3, +16BB, +1780). It is the first object of every foundation cell but the pad. A second refinery supplies the third radio object.',
                      'Retail MissionControl Rate values for Guard/Enter/Harvest/Unload; Rules HarvesterTooFarDistance 5/50, PurifierBonus .25f, HarvesterDumpRate .016, ConditionYellow .5, AIVirtualPurifiers 4,2,0; Tiberium Values 25/50/25/25; House storage, economy and owned-type counter supplied.',
-                     'Per_Cell_Process runs from 0x73A31F with its prologue locals supplied ([esp+14] Contact(0), [esp+1C] Get_Cell).'],
+                     'Per_Cell_Process runs from 0x73A31F with its prologue locals supplied ([esp+14] Contact(0), [esp+1C] Get_Cell); its release snippet runs 0x73ACB3..0x73ADCA, which reads no local.',
+                     'Harvester= (+0xE0E), Weeder= (+0xE0F), Refinery= (+0x16BB) and Weeder= (+0x16BC) as each row gives them.'],
         substitutions=['Unit Scatter, Enter_Idle_Mode and the refinery animation producers (PlayNthAnim, DestroyNthAnim, refinery smoke) are observed and return without effect.',
                        'Unit Ready_To_Commence answers the row\'s supplied value; Find_Docking_Bay answers the supplied bay per call; Find_Nearby_Passable_Cell answers the supplied cell.']))

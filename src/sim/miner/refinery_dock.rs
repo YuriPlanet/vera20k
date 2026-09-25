@@ -351,6 +351,11 @@ fn unload_finishing(sim: &mut Simulation, rules: &RuleSet, id: u64) -> i32 {
             now,
             &LiveReadyInputProvider { rules },
         );
+        // Not ready (Unit Ready_To_Commence `0x00744270` refuses): no
+        // OVER_OUT, so the contact outlives the unload until the AI host
+        // commences Harvest. A Chrono Miner's ore destination then keeps the
+        // Teleport (the Unit setter's Teleporter arm) and warps, and the
+        // warp's Per_Cell release drops the contact. Native reading; no row.
         if sim.mission_ready_to_commence(id, rules) {
             radio::transmit_to_contact(sim, id, RadioMessage::Break, Some(rules));
             let _ = sim.mission_commence_exact(id, now);
@@ -420,6 +425,61 @@ pub(crate) fn per_cell_dock_now(sim: &mut Simulation, rules: &RuleSet, id: u64) 
     // 0x0073A5CE..0x0073A5E4: an answer other than 1 or 5 scatters the unit
     // (a refinery being sold) — RESIDUAL, module doc.
     let _ = reply;
+}
+
+/// Unit `Per_Cell_Process(2)` after Ready/Commence (`0x0073ACD7..0x0073AD48`)
+/// and its Weeder twin (`0x0073AD4E..0x0073ADC4`): a `Harvester=` unit
+/// (`Type+0xE0E`) whose effective mission (vt+0x184) is not Unload, whose
+/// Mission (+0xAC) and MissionQueue (+0xB4) are not Enter and whose +0x6D1
+/// latch is clear sends OVER_OUT (`PUSH 3; CALL [vt+0x274]`) when
+/// `Contacts[0]` is a `Refinery=` building (`Type+0x16BB`); a `Weeder=` unit
+/// (`Type+0xE0F`) does the same toward a `Weeder=` building (`Type+0x16BC`).
+/// So a miner that radioed its refinery while still driving (Mission_Harvest
+/// state 2) loses that contact at the next track end unless state 3 has
+/// queued Enter first. Evidence: tools/spatial_oracle/refinery_dock.json
+/// `per_cell_release` rows.
+pub(crate) fn per_cell_release_dock_contact(sim: &mut Simulation, rules: &RuleSet, id: u64) {
+    let unload = MissionId::from_known(MissionType::Unload);
+    let enter = MissionId::from_known(MissionType::Enter);
+    // The Harvester arm, then the Weeder arm; each reads Contacts[0] afresh.
+    for weeder in [false, true] {
+        let Some(entity) = sim.substrate.entities.get(id) else {
+            return;
+        };
+        let armed = sim
+            .object_type(entity.type_ref(), rules)
+            .is_some_and(|object| {
+                if weeder {
+                    object.weeder
+                } else {
+                    object.harvester
+                }
+            })
+            && entity.mission.effective() != unload
+            && entity.mission.current() != enter
+            && entity.mission.queued() != enter
+            && !entity
+                .miner
+                .as_ref()
+                .is_some_and(|miner| miner.unload_active);
+        let dock = armed
+            && entity
+                .radio_contacts
+                .slot(0)
+                .and_then(|contact| sim.substrate.entities.get(contact))
+                .filter(|contact| contact.category == EntityCategory::Structure)
+                .and_then(|contact| sim.object_type(contact.type_ref(), rules))
+                .is_some_and(|building| {
+                    if weeder {
+                        building.weeder
+                    } else {
+                        building.refinery
+                    }
+                });
+        if dock {
+            radio::transmit_to_contact(sim, id, RadioMessage::Break, Some(rules));
+        }
+    }
 }
 
 /// Unit+0x6D1 with the image it selects: `UnitClass::Draw` (`0x0073D2BA`)

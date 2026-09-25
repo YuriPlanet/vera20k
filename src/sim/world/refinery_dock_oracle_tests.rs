@@ -2,7 +2,8 @@
 //! the War Miner refinery dock runs against the Rust owners — the radio
 //! receive chain (`radio::receive`), Mission_Enter / Mission_Harvest /
 //! Mission_Unload (`miner::refinery_dock`, `miner_system`), the
-//! Per_Cell_Process DOCK_NOW sender and the StageClass tick — on a scene
+//! Per_Cell_Process DOCK_NOW sender and contact release, and the StageClass
+//! tick — on a scene
 //! built like the oracle's: a War Miner and a 4x3 DockUnload refinery whose
 //! NW cell is (6, 9), so the pad is (9, 10).
 //!
@@ -169,6 +170,23 @@ fn world(rules: &RuleSet, ini: &IniFile) -> Simulation {
 
 pub(super) fn scene(input: &Value) -> Scene {
     let mut text = String::from(RULES);
+    // The type flags the Per_Cell release rows vary.
+    if input["harvester"] == false {
+        text = text.replacen("Harvester=yes", "Harvester=no", 1);
+    }
+    if input["weeder"] == true {
+        text = text.replacen("[HARV]\n", "[HARV]\nWeeder=yes\n", 1);
+    }
+    if input["refinery_flag"] == false {
+        text = text.replacen(
+            "Strength=900\nRefinery=yes\nDockUnload",
+            "Strength=900\nDockUnload",
+            1,
+        );
+    }
+    if input["weeder_dock"] == true {
+        text = text.replacen("[GAREFN]\n", "[GAREFN]\nWeeder=yes\n", 1);
+    }
     // A supplied Find_Nearby_Passable_Cell miss is ground no wheel can cross.
     let wheel = if input["passable"] == serde_json::json!([null]) {
         0
@@ -858,6 +876,31 @@ fn per_cell_dock_now_matches_the_original_track_end_arm() {
     }
 }
 
+/// Per_Cell_Process(2)'s Ready/Commence and Refinery=/Weeder= contact
+/// release (`0x0073ACB3..0x0073ADCA`) through the production track-end
+/// owner. The rows stand at the queueing cell, off the pad, so the Enter arm
+/// before the snippet (the `per_cell` rows) sends nothing, and the crush and
+/// Foot tail after it find nothing to act on.
+#[test]
+fn per_cell_release_matches_the_original_track_end_arm() {
+    let corpus = corpus();
+    for row in corpus["per_cell_release"].as_array().unwrap() {
+        let input = &row["input"];
+        let context = input["name"].as_str().unwrap().to_string();
+        let mut s = scene(input);
+        radio::take_transmit_log();
+        s.sim.unit_per_cell_process_arrival(s.miner, Some(&s.rules));
+        assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
+        compare_state(&s, row, &context);
+        let miner = s.sim.substrate.entities.get(s.miner).unwrap();
+        assert_eq!(
+            u64::from(miner.miner.as_ref().is_some_and(|m| m.unload_active)),
+            row["state"]["unloading"].as_u64().unwrap(),
+            "{context}: unload latch"
+        );
+    }
+}
+
 #[test]
 fn stage_tick_matches_the_original_stageclass_step() {
     let corpus = corpus();
@@ -898,5 +941,6 @@ fn replay_covers_every_row() {
     assert_eq!(count("mission_harvest"), 9);
     assert_eq!(count("mission_unload"), 30);
     assert_eq!(count("per_cell"), 6);
+    assert_eq!(count("per_cell_release"), 13);
     assert_eq!(count("stage_tick"), 3);
 }
