@@ -338,6 +338,7 @@ impl Simulation {
             airfield,
             crate::sim::radio::RadioMessage::Hello,
             crate::sim::radio::RadioPayload::default(),
+            None,
         );
         Some(pad)
     }
@@ -365,6 +366,7 @@ impl Simulation {
                 airfield,
                 crate::sim::radio::RadioMessage::Break,
                 crate::sim::radio::RadioPayload::default(),
+                None,
             );
         }
     }

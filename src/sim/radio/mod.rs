@@ -1,21 +1,21 @@
-//! Radio contact RPC vocabulary — the message/response opcodes and payload
-//! exchanged over the synchronous contact bus.
-//!
-//! Defines the message/response vocabulary and the `Contacts` slot store; the
-//! `transmit()` bus and the per-category `receive_radio()` handlers land in
-//! later slices. Opcodes equal the original radio protocol's wire values so
-//! dispatch stays a direct discriminant match. Pure enums + integer slots — no
-//! float, no RNG. sim/ only — never render/ui/sidebar/audio/net.
+//! Radio contact RPC — the message/response opcodes, the `Contacts` slot store
+//! and the synchronous transmit bus (`RadioClass::Transmit_Message @
+//! 0x0065A970`). Every receiver runs inline inside the sender's transmit, so
+//! nested replies finish before the outer transmit returns; the per-class
+//! receive chain lives in [`receive`]. Opcodes equal the original radio
+//! protocol's wire values so dispatch stays a direct discriminant match. Pure
+//! enums + integer slots — no float, no RNG. Native evidence:
+//! tools/spatial_oracle/refinery_dock.json (`radio` and `can_dock` rows).
+//! sim/ only — never render/ui/sidebar/audio/net.
 use serde::{Deserialize, Serialize};
 
 pub mod contacts;
 pub mod receive;
 pub use contacts::Contacts;
-pub use receive::{
-    REFINERY_ACCEPTED_DX, REFINERY_ACCEPTED_DY, receive_radio, refinery_accepted_cell,
-};
+pub use receive::receive_radio;
 
 use crate::map::entities::EntityCategory;
+use crate::rules::ruleset::RuleSet;
 #[cfg(test)]
 use crate::sim::world::LifecycleTestEvent;
 use crate::sim::world::Simulation;
@@ -66,19 +66,46 @@ fn record_test_event(event: RadioTestEvent) {
     RADIO_TEST_TRACE.with(|trace| trace.borrow_mut().push(event));
 }
 
+/// One transmit as the native oracle records it: sender, message, receiver
+/// and the reply, logged in entry order (a nested transmit follows its outer
+/// one) with the reply filled in when the transmit returns.
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TransmitRecord {
+    pub(crate) sender_sid: u64,
+    pub(crate) msg: u8,
+    pub(crate) target_sid: u64,
+    pub(crate) reply: Option<u8>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static TRANSMIT_LOG: RefCell<Vec<TransmitRecord>> = const { RefCell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+pub(crate) fn take_transmit_log() -> Vec<TransmitRecord> {
+    TRANSMIT_LOG.with(|log| std::mem::take(&mut *log.borrow_mut()))
+}
+
 /// Send BREAK synchronously to every live contact before Techno Conceal.
 ///
 /// Only the capacity is captured. Each sparse slot is re-read immediately
 /// before dispatch so mutations made by an earlier receiver are visible to the
 /// remaining ascending-slot walk, matching `Broadcast_Radio_ToAll @ 0x0065ACE0`.
 /// No entity borrow is held across [`transmit`].
-pub(crate) fn broadcast_break(sim: &mut Simulation, sender_sid: u64) {
-    broadcast(sim, sender_sid, RadioMessage::Break);
+pub(crate) fn broadcast_break(sim: &mut Simulation, sender_sid: u64, rules: Option<&RuleSet>) {
+    broadcast(sim, sender_sid, RadioMessage::Break, rules);
 }
 
 /// Radio65ACE0, shared by landing24/takeoff25 and teardown3. Receivers may
 /// mutate later sparse slots synchronously; never collect contacts up front.
-pub(crate) fn broadcast(sim: &mut Simulation, sender_sid: u64, message: RadioMessage) {
+pub(crate) fn broadcast(
+    sim: &mut Simulation,
+    sender_sid: u64,
+    message: RadioMessage,
+    rules: Option<&RuleSet>,
+) {
     let capacity = sim
         .substrate
         .entities
@@ -110,33 +137,76 @@ pub(crate) fn broadcast(sim: &mut Simulation, sender_sid: u64, message: RadioMes
                 target_sid,
                 message,
                 RadioPayload::default(),
+                rules,
             );
         }
     }
 }
 
-/// Synchronous radio RPC (§5.2.1). Centralizes the HELLO/BREAK sender-side
-/// contact bookkeeping (already-linked ⇒ ROGER without re-dispatch; on ROGER
-/// the sender records the contact, self-evicting its own slot 0 when full); BREAK
-/// nulls every sender slot to the target before forwarding. Every other opcode
-/// dispatches straight to the receiver's [`receive_radio`]. The receiver only
-/// ever sees an RTTI-filtered (Techno) sender.
+/// `RadioClass::Transmit_Message @ 0x0065A970` (vtable +0x27C): the sender-side
+/// HELLO and OVER_OUT bookkeeping, then the receiver's class chain
+/// ([`receive_radio`]). Every other opcode returns the receiver's answer
+/// unchanged. The receiver only ever sees an RTTI-filtered (Techno) sender
+/// (`As_Techno @ 0x0040DD70`). `rules` reaches the type-aware receivers; a
+/// caller without it gets their rules-free answers.
 pub fn transmit(
     sim: &mut Simulation,
     sender_sid: u64,
     target_sid: u64,
     msg: RadioMessage,
     payload: RadioPayload,
+    rules: Option<&RuleSet>,
 ) -> RadioResponse {
+    #[cfg(test)]
+    let log_index = TRANSMIT_LOG.with(|log| {
+        let mut log = log.borrow_mut();
+        log.push(TransmitRecord {
+            sender_sid,
+            msg: msg.code(),
+            target_sid,
+            reply: None,
+        });
+        log.len() - 1
+    });
     let filtered = filtered_techno_sender(sim, sender_sid);
-    match msg {
-        RadioMessage::Hello => transmit_hello(sim, sender_sid, target_sid, filtered),
-        RadioMessage::Break => {
-            transmit_break(sim, sender_sid, target_sid, filtered);
-            RadioResponse::None
+    let reply = match msg {
+        RadioMessage::Hello => transmit_hello(sim, sender_sid, target_sid, filtered, rules),
+        RadioMessage::Break => transmit_over_out(sim, sender_sid, target_sid, filtered, rules),
+        _ => receive_radio(sim, target_sid, filtered, msg, payload, rules),
+    };
+    #[cfg(test)]
+    TRANSMIT_LOG.with(|log| {
+        if let Some(record) = log.borrow_mut().get_mut(log_index) {
+            record.reply = Some(reply.code());
         }
-        _ => receive_radio(sim, target_sid, filtered, msg, payload),
-    }
+    });
+    reply
+}
+
+/// `RadioClass @ 0x0065ACB0` (vtable +0x274): transmit to `Contacts[0]`, or
+/// answer 0 without dispatching when that slot is null.
+pub(crate) fn transmit_to_contact(
+    sim: &mut Simulation,
+    sender_sid: u64,
+    msg: RadioMessage,
+    rules: Option<&RuleSet>,
+) -> RadioResponse {
+    let Some(target_sid) = sim
+        .substrate
+        .entities
+        .get(sender_sid)
+        .and_then(|sender| sender.radio_contacts.slot(0))
+    else {
+        return RadioResponse::None;
+    };
+    transmit(
+        sim,
+        sender_sid,
+        target_sid,
+        msg,
+        RadioPayload::default(),
+        rules,
+    )
 }
 
 /// RTTI sender filter (§5.2.2): the receiver only sees Unit/Aircraft/Building/
@@ -152,46 +222,66 @@ fn filtered_techno_sender(sim: &Simulation, sender_sid: u64) -> Option<u64> {
     }
 }
 
-/// HELLO sender side (§5.2.4): already linked ⇒ ROGER without re-dispatch; else
-/// dispatch to the receiver and, on ROGER, record the contact (slot-0 self-evict
-/// when the sender's own array is full).
+/// HELLO sender side, `0x0065A9ED..0x0065AA72`: a target already in a slot
+/// answers ROGER without a dispatch. Otherwise the first null slot is chosen;
+/// with none, the sender first transmits OVER_OUT to `Contacts[0]` and reuses
+/// slot 0 (the old link breaks even when this HELLO then fails). A receiver
+/// ROGER stores the target in that slot; any other answer returns NEGATORY.
 fn transmit_hello(
     sim: &mut Simulation,
     sender_sid: u64,
     target_sid: u64,
     filtered: Option<u64>,
+    rules: Option<&RuleSet>,
 ) -> RadioResponse {
-    if sim
-        .substrate
-        .entities
-        .get(sender_sid)
-        .is_some_and(|s| s.radio_contacts.contains(target_sid))
-    {
+    let Some(sender) = sim.substrate.entities.get(sender_sid) else {
+        return RadioResponse::Negatory;
+    };
+    if sender.radio_contacts.contains(target_sid) {
         return RadioResponse::Roger;
     }
+    let slot = match sender.radio_contacts.first_free() {
+        Some(slot) => slot,
+        None => {
+            if let Some(evicted) = sender.radio_contacts.slot(0) {
+                transmit(
+                    sim,
+                    sender_sid,
+                    evicted,
+                    RadioMessage::Break,
+                    RadioPayload::default(),
+                    rules,
+                );
+            }
+            0
+        }
+    };
     let response = receive_radio(
         sim,
         target_sid,
         filtered,
         RadioMessage::Hello,
         RadioPayload::default(),
+        rules,
     );
-    if response == RadioResponse::Roger {
-        if let Some(sender) = sim.substrate.entities.get_mut(sender_sid) {
-            // A non-building sender holds capacity 1. The miner FSM BREAKs its
-            // previous refinery before HELLOing another (`begin_return`, the
-            // MEGAMISSION retask, the redirect), so the self-evict below is not
-            // reached by that handshake. It evicts the sender's slot only; the
-            // evicted partner's own BREAK cascade is not modelled.
-            let _ = sender.radio_contacts.insert_evicting(target_sid);
-        }
+    if response != RadioResponse::Roger {
+        return RadioResponse::Negatory;
     }
-    response
+    if let Some(sender) = sim.substrate.entities.get_mut(sender_sid) {
+        sender.radio_contacts.set_slot(slot, target_sid);
+    }
+    RadioResponse::Roger
 }
 
-/// BREAK sender side (§5.2.5): null EVERY sender slot matching the target, then
-/// forward BREAK so the receiver runs its teardown.
-fn transmit_break(sim: &mut Simulation, sender_sid: u64, target_sid: u64, filtered: Option<u64>) {
+/// OVER_OUT sender side, `0x0065A99C..0x0065A9DB`: null EVERY sender slot
+/// holding the target, then return the receiver's answer to its teardown.
+fn transmit_over_out(
+    sim: &mut Simulation,
+    sender_sid: u64,
+    target_sid: u64,
+    filtered: Option<u64>,
+    rules: Option<&RuleSet>,
+) -> RadioResponse {
     if let Some(sender) = sim.substrate.entities.get_mut(sender_sid) {
         while sender.radio_contacts.remove(target_sid).is_some() {}
     }
@@ -210,7 +300,8 @@ fn transmit_break(sim: &mut Simulation, sender_sid: u64, target_sid: u64, filter
         filtered,
         RadioMessage::Break,
         RadioPayload::default(),
-    );
+        rules,
+    )
 }
 
 /// A radio message sent from one entity to another. Discriminant = wire opcode.
@@ -230,13 +321,27 @@ pub enum RadioMessage {
     CanDock = 0x0E,
     CanEnter = 0x0F,
     IsUnitLinked = 0x11, // name inferred
+    /// MOVE_HERE: the payload cell is where the receiver should be; a Foot
+    /// already in it answers [`RadioResponse::AlreadyThere`] (`0x004D9139`).
     MoveToCell = 0x12,
+    /// "Do you need to move?": a Foot answers ROGER with no NavCom or a
+    /// stopped locomotor, else NEGATORY (`0x004D90E8`).
     NeedToMove = 0x13,
-    DockNow = 0x15,            // name inferred
-    TimingSync = 0x16,         // name inferred
-    EnterDock = 0x18,          // name inferred
-    LeaveDock = 0x19,          // name inferred
-    SecondaryLockSet = 0x1A,   // name inferred
+    DockNow = 0x15, // name inferred
+    /// Sent by a dock after the tether: a Unit turns to face 0x4000, then
+    /// answers with [`RadioMessage::DockNow`] (`0x007376AD`).
+    PrepareToDock = 0x16, // name inferred
+    /// Broadcast by a building being sold (`BuildingClass::Sell`,
+    /// `0x0044AB5A..0x0044AB68`): a harvester mid-unload drops its latch and
+    /// turns to Harvest (Unit `0x00737A98`); a Foot leaves or parks on Guard
+    /// (`0x004D902B`).
+    RunAway = 0x17, // name inferred
+    /// Techno+0x418 tether: the receiver sets its flag and sends the message
+    /// back (`0x006F4B1F`), so both ends end up tethered.
+    Tether = 0x18, // name inferred
+    /// Clears the tether on both ends (`0x006F4B8D`).
+    Untether = 0x19, // name inferred
+    SecondaryLockSet = 0x1A, // name inferred
     SecondaryLockClear = 0x1B, // name inferred
     RepairTick = 0x1C,
     HelipadReserveAck = 0x1D, // name inferred
@@ -263,7 +368,8 @@ pub enum RadioResponse {
     None = 0,
     Roger = 1,
     Negatory = 0x0A,
-    CellAccepted = 0x14,
+    /// A Foot's answer to MOVE_HERE when it already stands in the cell.
+    AlreadyThere = 0x14, // name inferred
     Queued = 0x17,
     InsufficientFunds = 0x20,
     RepairComplete = 0x21,
@@ -303,7 +409,7 @@ mod tests {
         assert_eq!(RadioResponse::None.code(), 0);
         assert_eq!(RadioResponse::Roger.code(), 1);
         assert_eq!(RadioResponse::Negatory.code(), 0x0A);
-        assert_eq!(RadioResponse::CellAccepted.code(), 0x14);
+        assert_eq!(RadioResponse::AlreadyThere.code(), 0x14);
         assert_eq!(RadioResponse::Queued.code(), 0x17);
         assert_eq!(RadioResponse::InsufficientFunds.code(), 0x20);
         assert_eq!(RadioResponse::RepairComplete.code(), 0x21);

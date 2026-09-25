@@ -21,7 +21,7 @@ use crate::ui::movies_credits_shell::{
     MOVIE_LIST_CONTROL, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT_KEY, MOVIE_LIST_TOOLTIP_KEY,
     MovieListLayout, compute_movie_list_layout,
 };
-use crate::ui::shell::list::ListScrollPart;
+use crate::ui::shell::list::{ListScrollPart, ShellListGeometry};
 use crate::ui::shell::static_reveal::Kind1RevealWindow;
 
 /// Owner-draw ListBox frame colors (`0x00619230`), as RGB: light
@@ -288,6 +288,108 @@ fn push_list_scrollbar(
     }
 }
 
+/// The family pages' parent background (`0x0060D20B`: MNSCRNL, MNSCRNS at
+/// 640 wide) with its darkened copy for list interiors, at its origin.
+pub(crate) struct FamilyBackdrop {
+    background: Option<MainMenuShellChromeEntry>,
+    darkened: Option<MainMenuShellChromeEntry>,
+    origin: (i32, i32),
+}
+
+pub(crate) fn family_backdrop(
+    atlas: &MainMenuShellChromeAtlas,
+    screen_w: i32,
+    screen_h: i32,
+) -> FamilyBackdrop {
+    let (background, darkened) = if screen_w == 640 {
+        (
+            atlas.parent_background_640_mnscrns,
+            atlas.parent_background_640_mnscrns_list,
+        )
+    } else {
+        (
+            atlas.parent_background_large_mnscrnl,
+            atlas.parent_background_large_mnscrnl_list,
+        )
+    };
+    FamilyBackdrop {
+        background,
+        darkened,
+        origin: crate::app::frontend::main_menu_shell_render::shell_background_origin(
+            screen_w, screen_h,
+        ),
+    }
+}
+
+pub(crate) fn push_family_backdrop(out: &mut Vec<SpriteInstance>, backdrop: &FamilyBackdrop) {
+    if let Some(entry) = backdrop.background {
+        let (x, y) = backdrop.origin;
+        push_entry_crop(
+            out,
+            entry,
+            backdrop.origin,
+            RectPx::new(x, y, entry.pixel_size[0] as i32, entry.pixel_size[1] as i32),
+            PARENT_BACKGROUND_DEPTH,
+        );
+    }
+}
+
+/// The rows a family list shows, when it has any state to paint.
+pub(crate) struct FamilyListRows<'a> {
+    pub geometry: &'a ShellListGeometry,
+    pub top: usize,
+    pub selected: Option<usize>,
+    pub pressed: Option<ListScrollPart>,
+}
+
+/// A family list box over the parent background: its darkened interior,
+/// the two frame rings around `window`, the scrollbar when the rows
+/// overflow, and the selected row's fill. Row text is the caller's.
+pub(crate) fn push_family_list(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &MainMenuShellChromeAtlas,
+    backdrop: &FamilyBackdrop,
+    window: RectPx,
+    rows: Option<FamilyListRows<'_>>,
+) {
+    if let Some(entry) = backdrop.darkened {
+        push_entry_crop(
+            out,
+            entry,
+            backdrop.origin,
+            list_interior(window),
+            LIST_FILL_DEPTH + 0.00001,
+        );
+    }
+    push_list_frame(out, atlas, window);
+    let Some(rows) = rows else {
+        return;
+    };
+    let geometry = rows.geometry;
+    if let (Some(bar), Some(thumb)) = (geometry.scrollbar, geometry.thumb) {
+        push_list_scrollbar(
+            out,
+            atlas,
+            backdrop.background.map(|entry| (entry, backdrop.origin)),
+            bar,
+            thumb,
+            rows.pressed,
+        );
+    }
+    if let Some(selected) = rows.selected
+        && let Some(visible) = selected.checked_sub(rows.top)
+        && visible < geometry.visible_rows
+    {
+        push_solid(
+            out,
+            atlas,
+            geometry.row(visible),
+            LIST_SELECTED_FILL,
+            LIST_FILL_DEPTH,
+        );
+    }
+}
+
 /// Sprites and labels for dialog `0x129`.
 fn movie_list_composition<'a>(
     state: &'a AppState,
@@ -301,35 +403,9 @@ fn movie_list_composition<'a>(
     Vec<PaintLabel<'a>>,
 ) {
     let screen_w = layout.page.screen.w;
-    let screen_h = layout.page.screen.h;
-    let origin =
-        crate::app::frontend::main_menu_shell_render::shell_background_origin(screen_w, screen_h);
-    let (background, darkened) = if screen_w == 640 {
-        (
-            atlas.parent_background_640_mnscrns,
-            atlas.parent_background_640_mnscrns_list,
-        )
-    } else {
-        (
-            atlas.parent_background_large_mnscrnl,
-            atlas.parent_background_large_mnscrnl_list,
-        )
-    };
+    let backdrop = family_backdrop(atlas, screen_w, layout.page.screen.h);
     let mut sprites = Vec::new();
-    if let Some(entry) = background {
-        push_entry_crop(
-            &mut sprites,
-            entry,
-            origin,
-            RectPx::new(
-                origin.0,
-                origin.1,
-                entry.pixel_size[0] as i32,
-                entry.pixel_size[1] as i32,
-            ),
-            PARENT_BACKGROUND_DEPTH,
-        );
-    }
+    push_family_backdrop(&mut sprites, &backdrop);
     sprites.extend(shell_paint::paint_chrome(
         atlas,
         layout.page.right_panel,
@@ -349,46 +425,32 @@ fn movie_list_composition<'a>(
     // the list box and the prompt stay blank.
     let leaving = exit_wave.is_some();
     let list = state.frontend.movie_list.as_ref().filter(|_| !leaving);
-    let interior = list_interior(layout.list);
-    if let Some(entry) = darkened.filter(|_| !leaving) {
-        push_entry_crop(
+    let mut labels = Vec::new();
+    if !leaving {
+        let geometry = list.map(|list| list.geometry(layout.list));
+        push_family_list(
             &mut sprites,
-            entry,
-            origin,
-            interior,
-            LIST_FILL_DEPTH + 0.00001,
+            atlas,
+            &backdrop,
+            layout.list,
+            geometry
+                .as_ref()
+                .zip(list)
+                .map(|(geometry, list)| FamilyListRows {
+                    geometry,
+                    top: list.top,
+                    selected: list.selected,
+                    pressed: list.scroll.pressed_part(),
+                }),
         );
     }
-    if !leaving {
-        push_list_frame(&mut sprites, atlas, layout.list);
-    }
-    let mut labels = Vec::new();
     if let Some(list) = list {
         let geometry = list.geometry(layout.list);
-        if let (Some(bar), Some(thumb)) = (geometry.scrollbar, geometry.thumb) {
-            push_list_scrollbar(
-                &mut sprites,
-                atlas,
-                background.map(|entry| (entry, origin)),
-                bar,
-                thumb,
-                list.scroll.pressed_part(),
-            );
-        }
         for (visible, index) in (list.top..list.rows.len())
             .take(geometry.visible_rows)
             .enumerate()
         {
             let row = geometry.row(visible);
-            if list.selected == Some(index) {
-                push_solid(
-                    &mut sprites,
-                    atlas,
-                    row,
-                    LIST_SELECTED_FILL,
-                    LIST_FILL_DEPTH,
-                );
-            }
             labels.push(PaintLabel {
                 text: resolve_csf(state, list.rows[index].label_key),
                 rect: RectPx::new(

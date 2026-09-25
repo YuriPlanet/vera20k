@@ -84,7 +84,6 @@ pub(crate) struct FrontendState {
     pub(crate) options_dialog: Option<crate::ui::main_menu_dialogs::OptionsDialogState>,
     /// Shared A3 child, reached from launcher Options or paused Game Controls.
     pub(crate) keyboard_dialog: Option<crate::ui::shell::keyboard::KeyboardState>,
-    pub(crate) launcher_options_presentation: super::skirmish_shell_render::LauncherOptionsPresentation,
     /// Movie list `0x129` instance while `ShellRoute::MovieList` is shown.
     pub(crate) movie_list: Option<crate::ui::movies_credits_shell::MovieListState>,
     /// `DAT_00825C80`: the list row last played, retained for the process
@@ -99,6 +98,9 @@ pub(crate) struct FrontendState {
     /// Its emblem and background art (`0x0072D9A0`), loaded with the dialog
     /// and freed when it closes (`0x0072DAA0`).
     pub(crate) campaign_art: Option<crate::render::main_menu_shell_chrome::CampaignShellArt>,
+    /// Single Player's Load Saved Game `0xB7` while its route shows.
+    pub(crate) load_saved_game:
+        Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,
     /// End-of-match score presentation, decorated from the sim-owned terminal
     /// snapshot and held until the player leaves the screen. `None` for result
     /// screens with no native score analogue (a load failure, a trigger-driven

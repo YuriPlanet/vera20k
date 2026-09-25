@@ -178,6 +178,28 @@ impl ShellListGeometry {
     }
 }
 
+/// Whether a list press is the second click of a double-click: within the
+/// host double-click time and rectangle of the previous press anywhere in
+/// the list. Windows then sends `WM_LBUTTONDBLCLK`, which the list subclass
+/// only forwards as `LBN_DBLCLK` (`0x0061A904..0x0061A945`): no selection,
+/// no sound. A double-click ends the sequence, so the next press starts a
+/// new one.
+pub fn is_double_click(
+    last_press: &mut Option<(Instant, i32, i32)>,
+    now: Instant,
+    x: i32,
+    y: i32,
+    (time, width, height): (Duration, i32, i32),
+) -> bool {
+    let double = last_press.is_some_and(|(last, px, py)| {
+        now.duration_since(last) <= time
+            && (x - px).abs() * 2 <= width
+            && (y - py).abs() * 2 <= height
+    });
+    *last_press = if double { None } else { Some((now, x, y)) };
+    double
+}
+
 /// 0x0061C818 uses natural log with the stored binary64 0.2; 0x007C5F00
 /// truncates the result to integer, then the caller enforces the 14 px minimum.
 /// f64 arithmetic preserves ordinary control geometry; x87 rounding-edge cases

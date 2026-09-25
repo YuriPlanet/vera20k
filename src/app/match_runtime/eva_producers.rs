@@ -415,7 +415,7 @@ mod tests {
             "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
              [BuildingTypes]\n0=GACNST\n1=GAREFN\n2=GAWEAP\n\
              [GACNST]\nStrength=1000\nArmor=wood\nConstructionYard=yes\n\
-             [GAREFN]\nStrength=1000\nArmor=wood\nRefinery=yes\nResourceDestination=yes\n\
+             [GAREFN]\nStrength=1000\nArmor=wood\nRefinery=yes\nDockUnload=yes\nResourceDestination=yes\n\
              [GAWEAP]\nStrength=1000\nArmor=wood\nFactory=UnitType\n",
         );
         let rules = RuleSet::from_ini(&ini).expect("rally test rules should parse");

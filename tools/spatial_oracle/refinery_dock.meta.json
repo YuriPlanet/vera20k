@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "94 original executions of the War Miner refinery dock: 19 Building 0x0E (DockUnload) handshakes and 18 single transmits through the radio core with every nested receiver; 9 FootClass::Mission_Enter, 9 UnitClass::Mission_Harvest (states 2/3) and 30 UnitClass::Mission_Unload (harvester branch) dispatches with their return value and Scenario draws; 6 Unit Per_Cell_Process(2) Enter-arm snippets; 3 TechnoClass::AI StageClass tick runs.",
+  "assumptions": [
+    "track_destination fixture: original Unit vtable over a constructed Drive, 32x32 map, House, Rules; supplied Unit/Radio/Foot constructor prestates; Scenario RNG seeded through the original seeder.",
+    "Refinery: original Building vtable 0x7E3EBC over supplied BuildingClass fields (+14, +6C, +9C, +AC, +B4, +E0 contacts, +21C, +418, +520, +57C, +584, +660) and BuildingTypeClass (+A0, +EF0=12 4x3, +1618 QueueingCell 4,1, +16B3, +16BB, +1780). It is the first object of every foundation cell but the pad. A second refinery supplies the third radio object.",
+    "Retail MissionControl Rate values for Guard/Enter/Harvest/Unload; Rules HarvesterTooFarDistance 5/50, PurifierBonus .25f, HarvesterDumpRate .016, ConditionYellow .5, AIVirtualPurifiers 4,2,0; Tiberium Values 25/50/25/25; House storage, economy and owned-type counter supplied.",
+    "Per_Cell_Process runs from 0x73A31F with its prologue locals supplied ([esp+14] Contact(0), [esp+1C] Get_Cell)."
+  ],
+  "substitutions": [
+    "Unit Scatter, Enter_Idle_Mode and the refinery animation producers (PlayNthAnim, DestroyNthAnim, refinery smoke) are observed and return without effect.",
+    "Unit Ready_To_Commence answers the row's supplied value; Find_Docking_Bay answers the supplied bay per call; Find_Nearby_Passable_Cell answers the supplied cell."
+  ],
+  "entry_points": {
+    "transmit": "0x0065A970",
+    "building_receive": "0x0043C2D0",
+    "unit_receive": "0x00737430",
+    "foot_receive": "0x004D8FB0",
+    "techno_receive": "0x006F4AB0",
+    "radio_receive": "0x0065A820",
+    "mission_enter": "0x004D9290",
+    "mission_harvest": "0x0073E5E0",
+    "mission_unload": "0x0073D630",
+    "per_cell_enter_arm": "0x0073A31F",
+    "stage_tick": "0x006FABC4",
+    "assign_destination": "0x00741970",
+    "drive_do_turn": "0x004B0EF0",
+    "give_tiberium": "0x004F9610",
+    "random_ranged": "0x0065C7E0"
+  },
+  "payload_sha256": "f7a15909d42e392990ae5bad92b316b65152af9ebf973cd2446cc0eb85612f42"
+}

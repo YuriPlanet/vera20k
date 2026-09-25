@@ -135,7 +135,7 @@ pub fn layout_pass_in_game_options(
         .collect()
 }
 
-/// Status line `0x695` of the right-panel shells outside a network session
+/// Status line `0x695` of the right-panel shells outside a suspended game
 /// (`0x0060B550`): the window at `x = dx + 10`, `y = H - h - dy - 1`, where
 /// `dx`/`dy` are the non-negative halves of the screen beyond 800x600. The
 /// runtime window carries the same one-pixel size correction as the heading
@@ -204,7 +204,7 @@ fn apply_anchor(
     }
 }
 
-/// Right-panel static anchor (`0x0060B1D0`, no network session): inset
+/// Right-panel static anchor (`0x0060B1D0`, no suspended game): inset
 /// `(168 - w) / 2` from the right edge, less the horizontal half of the
 /// screen beyond 800; `y` is the resource `y` plus the vertical half beyond
 /// 600. Both halves clamp at 0. `rect` is the converted client rect.

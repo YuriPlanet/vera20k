@@ -735,6 +735,54 @@ impl Simulation {
         }
     }
 
+    /// Unit 0x741970(cell, 1) for a Drive/Ship receiver from a class caller:
+    /// the radio MOVE_HERE (Foot 0x004D91EB) and Mission_Harvest's staging
+    /// destination (0x0073EDB5). 0x741A80..0x741A90: an unchanged NavCom
+    /// returns before any write (the +1F8 force byte is not represented), so
+    /// the refinery's repeated MOVE_HERE leaves a running drive alone
+    /// (tools/spatial_oracle/track_destination.json `same_nav` rows).
+    /// Otherwise the ordinary accepted setter (`prepare_track_destination`).
+    /// Returns false for a non-track receiver or a refused destination.
+    pub(crate) fn set_unit_cell_destination(
+        &mut self,
+        id: u64,
+        cell: (u16, u16),
+        rules: &RuleSet,
+    ) -> bool {
+        let Some(actor) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if !track_unit(actor) || !super::can_accept_destination(actor) {
+            return false;
+        }
+        if actor.navigation.nav_com == Some(NavTargetRef::cell(cell.0, cell.1)) {
+            return true;
+        }
+        let Some(info) = self.resolve_move_info(id, Some(rules)) else {
+            return false;
+        };
+        let timing = super::DestinationTiming::from_rules(self.session.binary_frame, Some(rules));
+        let actor = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .expect("same setter actor");
+        super::movement_commands::prepare_track_destination(
+            actor,
+            cell,
+            None,
+            info.speed,
+            self.resolved_terrain.as_ref(),
+            timing,
+        );
+        if let Some(target) = actor.movement_target.as_mut() {
+            target.accel_factor = info.accel_factor;
+            target.decel_factor = info.decel_factor;
+            target.slowdown_distance = info.slowdown_distance;
+        }
+        true
+    }
+
     /// Unit 0x741970(NULL, 1) for a Drive/Ship receiver, as Find_Path's
     /// failure continuation (0x4D413A) and the Process continuations call it.
     /// - 0x741A80..0x741A90: without a NavCom (and without the +1F8 byte,

@@ -954,6 +954,8 @@ mod tests {
             RuleSet::from_ini(&IniFile::from_str(ini_str)).expect("rules parse")
         };
         let mut sim = Simulation::with_seed(0x51A7_E002);
+        // A skirmish: the virtual purifiers need `g_GameMode != 0`.
+        sim.session.game_mode_nonzero = true;
         let yuri = sim.interner.intern("YuriCountry");
         let mut house = HouseState::new(yuri, 2, None, false, 0, 10);
         house.difficulty = crate::sim::house_state::HouseDifficulty::Normal;

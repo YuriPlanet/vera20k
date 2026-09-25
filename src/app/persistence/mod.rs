@@ -494,10 +494,20 @@ impl SaveRepository {
     /// the diagnostic panel's embedded-time policy. The shared browser sorts
     /// these records with the established retail comparator after adding New.
     pub(crate) fn browser_entries(&self) -> Vec<(SaveEntry, u64)> {
-        let Ok(directory) = std::fs::read_dir(&self.directory) else {
-            return Vec::new();
-        };
-        directory
+        self.readable_entries().collect()
+    }
+
+    /// Whether any save reads: the scan stops at the first one, like
+    /// `LoadOptionsClass__HasLoadableSave` `0x00559C20`.
+    pub(crate) fn has_browser_entry(&self) -> bool {
+        self.readable_entries().next().is_some()
+    }
+
+    /// Saves whose header reads, with their file time, in directory order.
+    fn readable_entries(&self) -> impl Iterator<Item = (SaveEntry, u64)> + '_ {
+        std::fs::read_dir(&self.directory)
+            .into_iter()
+            .flatten()
             .filter_map(|item| {
                 let item = item.ok()?;
                 let path = item.path();
@@ -515,7 +525,6 @@ impl SaveRepository {
                 );
                 Some((SaveEntry { path, header }, ticks))
             })
-            .collect()
     }
 
     /// Quickload policy: select the `.bin` file with the newest filesystem

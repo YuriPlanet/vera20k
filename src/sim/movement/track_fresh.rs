@@ -1100,14 +1100,7 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return;
         };
-        let rot = actor.locomotor.as_ref().map_or(0, |loco| loco.rot);
-        let facing = actor.facing;
-        actor
-            .body_facing
-            .get_or_insert_with(|| {
-                super::facing_class::FacingClass::new(u16::from(facing) << 8, rot)
-            })
-            .set(desired, frame);
+        super::drive_do_turn(actor, desired, frame);
         if let Some(body) = actor.body_facing.as_ref() {
             actor.facing = (body.current(frame) >> 8) as u8;
         }

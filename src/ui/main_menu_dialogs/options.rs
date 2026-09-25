@@ -12,8 +12,10 @@ pub(crate) mod shell;
 
 /// gamemd-derived: launcher owner `OptionsClass__ShowLauncherDialog @
 /// 0x0055FC80` and its primary-proc slice `0x0055FDB0..0x0056047A` bind the
-/// RT_DIALOG `0xD5` controls to these launcher-local CSF keys/fallbacks.
-pub(crate) const LAUNCHER_LABEL_SPECS: [(&str, &str); 34] = [
+/// RT_DIALOG `0xD5` controls to these launcher-local CSF keys/fallbacks. The
+/// template's slider captions (`GUI:HigherDetail`, `GUI:Harder`,
+/// `GUI:Faster`) never show: the init renames them by position.
+pub(crate) const LAUNCHER_LABEL_SPECS: [(&str, &str); 31] = [
     ("GUI:OptionsMenu", "Options"),
     ("GUI:MainMenu", "Main Menu"),
     ("GUI:Keyboard", "Keyboard"),
@@ -33,9 +35,6 @@ pub(crate) const LAUNCHER_LABEL_SPECS: [(&str, &str); 34] = [
     ("GUI:SoundVolume", "Sound Volume"),
     ("GUI:VoiceVolume", "Voice Volume"),
     ("GUI:Blank", ""),
-    ("GUI:HigherDetail", "Higher"),
-    ("GUI:Harder", "Harder"),
-    ("GUI:Faster", "Faster"),
     ("TXT_LOW", "Low"),
     ("TXT_HIGH", "High"),
     ("TXT_EASY", "Easy"),
@@ -71,9 +70,6 @@ pub(crate) struct LauncherOptionsLabels {
     pub(crate) sound_volume: String,
     pub(crate) voice_volume: String,
     pub(crate) blank: String,
-    higher_detail: String,
-    harder: String,
-    faster: String,
     low: String,
     high: String,
     easy: String,
@@ -108,22 +104,19 @@ impl LauncherOptionsLabels {
             sound_volume: label(16),
             voice_volume: label(17),
             blank: label(18),
-            higher_detail: label(19),
-            harder: label(20),
-            faster: label(21),
-            low: label(22),
-            high: label(23),
-            easy: label(24),
-            normal: label(25),
-            hard: label(26),
+            low: label(19),
+            high: label(20),
+            easy: label(21),
+            normal: label(22),
+            hard: label(23),
             scroll_tokens: [
+                label(24),
+                label(25),
+                label(26),
                 label(27),
                 label(28),
                 label(29),
                 label(30),
-                label(31),
-                label(32),
-                label(33),
             ],
         }
     }
@@ -644,6 +637,25 @@ pub(crate) fn admitted_volume_position(volume: f32) -> u8 {
     admitted_initial_position(request.trunc() as i64, 10)
 }
 
+/// Detail caption by position: `TXT_LOW`, else `TXT_HIGH` (table
+/// `0x0082A248` entries 0 and 2).
+fn detail_caption(labels: &LauncherOptionsLabels, position: u8) -> String {
+    if position == 0 {
+        labels.low.clone()
+    } else {
+        labels.high.clone()
+    }
+}
+
+/// Difficulty caption by position (table `0x0082A254`).
+fn difficulty_caption(labels: &LauncherOptionsLabels, position: u8) -> String {
+    match position {
+        0 => labels.easy.clone(),
+        1 => labels.normal.clone(),
+        _ => labels.hard.clone(),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct OptionsDialogState {
     labels: LauncherOptionsLabels,
@@ -695,10 +707,17 @@ impl OptionsDialogState {
         values.voice_position = admitted_initial_position(i64::from(values.voice_position), 10);
         let selected_resolution =
             selected_resolution.filter(|index| *index < resolution_rows.len());
+        // The 0x497 init sets each trackbar's range and position; every change
+        // sends WM_HSCROLL (0x0061E609..0x0061E6AF), whose handler
+        // (0x0055FF68) names the position (tables 0x0082A248 / 0x0082A254 /
+        // 0x0082A260), so the resource captions never show.
+        let detail_caption = detail_caption(&labels, values.detail_position);
+        let difficulty_caption = difficulty_caption(&labels, values.difficulty_position);
+        let scroll_caption = labels.scroll_tokens[usize::from(values.scroll_position)].clone();
         Self {
-            detail_caption: labels.higher_detail.clone(),
-            difficulty_caption: labels.harder.clone(),
-            scroll_caption: labels.faster.clone(),
+            detail_caption,
+            difficulty_caption,
+            scroll_caption,
             labels,
             values,
             resolution_rows,
@@ -769,20 +788,12 @@ impl OptionsDialogState {
         *slot = position;
         match id {
             LauncherTrackbarId::Detail => {
-                self.detail_caption = if position == 0 {
-                    self.labels.low.clone()
-                } else {
-                    self.labels.high.clone()
-                };
+                self.detail_caption = detail_caption(&self.labels, position);
                 self.pending_events
                     .push(LauncherOptionsEvent::Cue(LauncherCue::GenericClick));
             }
             LauncherTrackbarId::Difficulty => {
-                self.difficulty_caption = match position {
-                    0 => self.labels.easy.clone(),
-                    1 => self.labels.normal.clone(),
-                    _ => self.labels.hard.clone(),
-                };
+                self.difficulty_caption = difficulty_caption(&self.labels, position);
                 self.pending_events
                     .push(LauncherOptionsEvent::Cue(LauncherCue::GenericClick));
             }
@@ -1474,7 +1485,7 @@ mod tests {
 
     #[test]
     fn exact_launcher_label_fallbacks_are_local_and_complete() {
-        const EXPECTED: [(&str, &str); 34] = [
+        const EXPECTED: [(&str, &str); 31] = [
             ("GUI:OptionsMenu", "Options"),
             ("GUI:MainMenu", "Main Menu"),
             ("GUI:Keyboard", "Keyboard"),
@@ -1494,9 +1505,6 @@ mod tests {
             ("GUI:SoundVolume", "Sound Volume"),
             ("GUI:VoiceVolume", "Voice Volume"),
             ("GUI:Blank", ""),
-            ("GUI:HigherDetail", "Higher"),
-            ("GUI:Harder", "Harder"),
-            ("GUI:Faster", "Faster"),
             ("TXT_LOW", "Low"),
             ("TXT_HIGH", "High"),
             ("TXT_EASY", "Easy"),
@@ -1537,9 +1545,6 @@ mod tests {
             labels.sound_volume.as_str(),
             labels.voice_volume.as_str(),
             labels.blank.as_str(),
-            labels.higher_detail.as_str(),
-            labels.harder.as_str(),
-            labels.faster.as_str(),
             labels.low.as_str(),
             labels.high.as_str(),
             labels.easy.as_str(),
@@ -1711,7 +1716,7 @@ mod tests {
     }
 
     #[test]
-    fn initial_captions_ignore_positions_and_only_changed_values_swap_tokens() {
+    fn captions_name_the_position_from_the_start_and_only_changes_click() {
         let mut state = OptionsDialogState::new(
             labels(),
             LauncherOptionsValues {
@@ -1724,18 +1729,16 @@ mod tests {
             None,
             true,
         );
-        assert_eq!(state.detail_caption, "Higher");
-        assert_eq!(state.difficulty_caption, "Harder");
-        assert_eq!(state.scroll_caption, "Faster");
+        // Retail opens with the positions named (TXT_LOW/HARD/SLOWEST here).
+        assert_eq!(state.detail_caption, "Low");
+        assert_eq!(state.difficulty_caption, "Hard");
+        assert_eq!(state.scroll_caption, "Slowest");
 
         state.set_trackbar_position(LauncherTrackbarId::Detail, 1);
         state.set_trackbar_position(LauncherTrackbarId::Difficulty, 2);
         state.set_trackbar_position(LauncherTrackbarId::Scroll, 6);
         assert_eq!(state.detail_caption, "High");
-        assert_eq!(
-            state.difficulty_caption, "Harder",
-            "unchanged move retains resource caption"
-        );
+        assert_eq!(state.difficulty_caption, "Hard", "an unchanged move");
         assert_eq!(state.scroll_caption, "Fastest");
         assert_eq!(
             state.drain_output().events,

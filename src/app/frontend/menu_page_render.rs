@@ -208,6 +208,18 @@ pub(crate) fn active_page_title_text(
         }
         ShellSlideKind::MovieList => crate::ui::movies_credits_shell::MOVIE_LIST_PAGE.title_key,
         ShellSlideKind::Campaign => crate::ui::campaign_shell::CAMPAIGN_PAGE.title_key,
+        ShellSlideKind::LoadSavedGame => {
+            crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE.title_key
+        }
+        // The Options heading is the dialog's own resolved label.
+        ShellSlideKind::Options => {
+            return state
+                .frontend
+                .options_dialog
+                .as_ref()
+                .map(|dialog| dialog.shell_title_text().to_owned())
+                .unwrap_or_default();
+        }
         ShellSlideKind::MainMenu | ShellSlideKind::Skirmish => return String::new(),
     };
     resolve_csf(state, key).into_owned()

@@ -69,8 +69,24 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
         // same single-writer reason (`harvest_mission.rs`).
         let depot_dock_state = entity.dock_state.is_some();
         let miner_enter_depot = mission == Some(MissionType::Enter) && depot_dock_state;
+        // A War Miner's refinery dock runs the native Enter and Unload
+        // handlers (`miner::refinery_dock`); the Harvest handler declines
+        // both selectors, so the timer keeps one writer. A miner boarding a
+        // transport keeps VERA's passenger boarding flow, as every other unit
+        // does.
+        let war_miner_dock = !depot_dock_state
+            && matches!(
+                mission,
+                Some(MissionType::Enter) | Some(MissionType::Unload)
+            )
+            && !matches!(
+                entity.passenger_role,
+                crate::sim::passenger::PassengerRole::Boarding { .. }
+            )
+            && crate::sim::miner::native_dock_miner(sim, id);
         if entity.miner.is_some()
             && !miner_enter_depot
+            && !war_miner_dock
             && !matches!(mission, Some(MissionType::Guard) | Some(MissionType::Move))
         {
             return;
@@ -83,6 +99,7 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
             mission,
             harvester_miner: entity.miner.is_some(),
             depot_dock_state,
+            war_miner_dock,
             timer_due: entity.mission.dispatch_timer().due(now),
             moving_or_queued: moving || entity.mission.queued() != MissionId::NONE,
             bunker_delegate: entity.bunker_link.installed_in().is_some(),
@@ -200,6 +217,11 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
             MissionHandlerEvaluation::cadence(
                 crate::sim::docking::building_dock::mission_enter_dispatch(sim, rules, id),
             )
+        }
+        // A War Miner docking at its refinery: `FootClass::Mission_Enter @
+        // 0x004D9290` (UnitClass does not override the slot).
+        (EntityCategory::Unit, Some(MissionType::Enter)) if input.war_miner_dock => {
+            MissionHandlerEvaluation::cadence(crate::sim::miner::mission_enter(sim, rules, id))
         }
         // `UnitClass::Mission_Attack @ 0x007447A0` is a tail jump to
         // `FootClass::Mission_Attack`, so vehicles belong on this path.
@@ -468,6 +490,11 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
                 sim, id, rules,
             ))
         }
+        // The harvester branch of `UnitClass::Mission_Unload @ 0x0073D630`
+        // (`0x0073D672` → `0x0073DEE0`) for a War Miner on its refinery pad.
+        (EntityCategory::Unit, Some(MissionType::Unload)) if input.war_miner_dock => {
+            MissionHandlerEvaluation::cadence(crate::sim::miner::mission_unload(sim, rules, id))
+        }
         (EntityCategory::Unit, Some(MissionType::Guard)) => {
             // **VERA-internal, gamemd equivalent UNCHECKED — this mapping is
             // wrong and the arm is dead.** The "three byte latches, then
@@ -607,6 +634,9 @@ pub(super) struct MissionHandlerInput {
     /// The object holds a repair-depot `DockState`: its Enter dispatch is
     /// `building_dock::mission_enter_dispatch`.
     pub(super) depot_dock_state: bool,
+    /// A War Miner on Enter or Unload without a depot `DockState`: its
+    /// refinery dock missions (`miner::refinery_dock`).
+    pub(super) war_miner_dock: bool,
     pub(super) timer_due: bool,
     pub(super) moving_or_queued: bool,
     pub(super) bunker_delegate: bool,
@@ -1648,9 +1678,7 @@ fn mission_cadence(rules: &RuleSet, mission: MissionType) -> i32 {
 
 #[inline]
 fn jittered_mission_cadence(sim: &mut Simulation, rules: &RuleSet, mission: MissionType) -> i32 {
-    let base = mission_cadence(rules, mission);
-    let jitter = sim.scenario_rng.next_range_u32_inclusive(0, 2) as i32;
-    base.saturating_add(jitter)
+    sim.mission_rate_epilogue(rules, mission)
 }
 
 /// Whether this dispatch takes the shortened cadence — `FootClass::Mission_Attack`'s
@@ -1937,7 +1965,7 @@ mod harvester_guard_override_tests {
              [BuildingTypes]\n0=GAREFN\n\
              [HARV]\nHarvester=yes\nDock=GAREFN\nSpeed=4\n\
              [CMIN]\nHarvester=yes\nTeleporter=yes\nDock=GAREFN\nSpeed=4\n\
-             [GAREFN]\nFoundation=4x3\nRefinery=yes\n",
+             [GAREFN]\nFoundation=4x3\nRefinery=yes\nDockUnload=yes\n",
         ))
         .expect("guard override rules")
     }

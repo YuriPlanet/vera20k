@@ -70,7 +70,7 @@ impl Simulation {
                 let detach = entity.radio_contacts.slot(0) == Some(pad)
                     && requested.and_then(target_id) != Some(pad);
                 if detach {
-                    crate::sim::radio::broadcast_break(self, id);
+                    crate::sim::radio::broadcast_break(self, id, Some(rules));
                 }
             }
         }

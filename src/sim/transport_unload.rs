@@ -81,13 +81,8 @@ const WAIT_MOVING_FRAMES: i32 = 10;
 /// `ftol([Unload] Rate × 900) + RandomRanged(0, 2)` on the Scenario stream
 /// (`Random__RandomRanged` at `0x0073E2B0` on `*(0x00A8B230)+0x218`). The
 /// base is computed FIRST and consumes no RNG; the draw follows.
-fn unload_epilogue(sim: &mut Simulation, rules: &RuleSet) -> i32 {
-    let base = rules
-        .mission_control
-        .rate_frames(MissionType::Unload)
-        .min(i32::MAX as u32) as i32;
-    let jitter = sim.scenario_rng.next_range_u32_inclusive(0, 2) as i32;
-    base.saturating_add(jitter)
+fn unload_epilogue(sim: &mut Simulation, rules: &RuleSet, id: u64) -> i32 {
+    sim.mission_rate_epilogue_for(rules, id, MissionType::Unload)
 }
 
 /// Whether this entity's type takes the transport branch of the Unit Unload
@@ -678,7 +673,12 @@ fn eject_head_passenger(
                 passenger.passively_acquired_target = false;
                 passenger.order_intent = None;
             }
-            sim.queue_megamission_with_teardown(pax_id, MissionType::Move, DockTeardown::None);
+            sim.queue_megamission_with_teardown(
+                pax_id,
+                MissionType::Move,
+                DockTeardown::None,
+                Some(rules),
+            );
             issue_pathed_move(sim, rules, path_grid, overlay_registry, pax_id, dest);
 
             if let Some(sound) = leave_sound {
@@ -709,7 +709,7 @@ pub(crate) fn unit_mission_unload(
 ) -> i32 {
     let now = sim.session.binary_frame;
     let Some(entity) = sim.substrate.entities.get(id) else {
-        return unload_epilogue(sim, rules);
+        return unload_epilogue(sim, rules, id);
     };
     match entity.mission.handler_state() {
         STATE_PICK_EXIT => {
@@ -767,7 +767,7 @@ pub(crate) fn unit_mission_unload(
             // Nothing to unload or nowhere to unload: `Queue_Mission(Guard)`
             // (`0x0073D887`) and the epilogue.
             queue_guard(sim, id);
-            unload_epilogue(sim, rules)
+            unload_epilogue(sim, rules, id)
         }
         STATE_TURNING => {
             if hull_turn_finished(entity, now) {
@@ -777,7 +777,7 @@ pub(crate) fn unit_mission_unload(
                 }
                 return 1;
             }
-            unload_epilogue(sim, rules)
+            unload_epilogue(sim, rules, id)
         }
         STATE_EJECT => {
             if cargo_count(entity) > entity.transport_unload_keep_count {
@@ -785,7 +785,7 @@ pub(crate) fn unit_mission_unload(
             } else if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.mission.set_handler_state(STATE_DONE);
             }
-            unload_epilogue(sim, rules)
+            unload_epilogue(sim, rules, id)
         }
         STATE_DONE => {
             // `Queue_Mission(Guard)` then `+0xB8 = 1` (`0x0073DCC1`..`0x0073DCC7`).
@@ -793,9 +793,9 @@ pub(crate) fn unit_mission_unload(
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.mission.set_movement_bypass_latch();
             }
-            unload_epilogue(sim, rules)
+            unload_epilogue(sim, rules, id)
         }
-        _ => unload_epilogue(sim, rules),
+        _ => unload_epilogue(sim, rules, id),
     }
 }
 
@@ -870,7 +870,7 @@ pub(crate) fn dispatch_aircraft_unload(
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.mission.set_handler_state(next);
             }
-            unload_epilogue(sim, rules)
+            unload_epilogue(sim, rules, id)
         }
         AIR_STATE_WAIT_STOP => {
             // `Is_Moving` false (`0x0041549D`): for the Jumpjet locomotor that
@@ -905,7 +905,7 @@ pub(crate) fn dispatch_aircraft_unload(
                     aircraft_enter_idle_mode(sim, id);
                 }
             }
-            unload_epilogue(sim, rules)
+            unload_epilogue(sim, rules, id)
         }
         AIR_STATE_RESET => {
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
@@ -913,7 +913,7 @@ pub(crate) fn dispatch_aircraft_unload(
             }
             1
         }
-        _ => unload_epilogue(sim, rules),
+        _ => unload_epilogue(sim, rules, id),
     };
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.mission.write_dispatch_epilogue(now as i32, delay);
@@ -1065,7 +1065,12 @@ fn eject_from_aircraft(
                 passenger.passively_acquired_target = false;
                 passenger.order_intent = None;
             }
-            sim.queue_megamission_with_teardown(pax_id, MissionType::Move, DockTeardown::None);
+            sim.queue_megamission_with_teardown(
+                pax_id,
+                MissionType::Move,
+                DockTeardown::None,
+                Some(rules),
+            );
             if let Some(dest) = scan_cell {
                 issue_pathed_move(sim, rules, path_grid, overlay_registry, pax_id, dest);
             }

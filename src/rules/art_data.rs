@@ -133,9 +133,11 @@ pub struct ArtEntry {
     pub extra_light: i32,
     /// BuildingType +0x1702, art parser 004612B4: use the cell ISO Convert.
     pub terrain_palette: bool,
-    /// Harvester queueing cell offset from building origin (QueueingCell= in art.ini).
-    /// Where miners wait outside the dock when it is occupied. e.g. `(4, 1)` for GAREFN.
-    pub queueing_cell: Option<(u16, u16)>,
+    /// `QueueingCell=` (BuildingType+0x1618/+0x161C): `ReadMinMax @ 0x00529880`
+    /// on the ARTMD section at `0x00461506`, default `(0, 0)`. Mission_Harvest
+    /// adds the low words to the dock's NW cell for the waiting miner's staging
+    /// search (`0x0073ED25..0x0073ED3B`). GAREFN/NAREFN: `4,1`.
+    pub queueing_cell: [i32; 2],
     /// All `DockingOffset%d` entries actually present in this art.ini section,
     /// in index order. Up to 8 (defensive ceiling for mod safety; retail uses
     /// up to 4). The art→rules merge in [`crate::rules::ruleset`] is what
@@ -1128,12 +1130,7 @@ impl ArtRegistry {
                 .unwrap_or(DEFAULT_ART_RATE_LOGIC_FRAMES);
             let anim_runtime_config = parse_anim_runtime_config(section);
             let extra_light: i32 = section.get_i32("ExtraLight").unwrap_or(0);
-            let queueing_cell: Option<(u16, u16)> = section.get("QueueingCell").and_then(|s| {
-                let mut parts = s.split(',');
-                let x = parts.next()?.trim().parse::<u16>().ok()?;
-                let y = parts.next()?.trim().parse::<u16>().ok()?;
-                Some((x, y))
-            });
+            let queueing_cell = section.read_minmax("QueueingCell", [0, 0]);
             // Multi-pad parser: read DockingOffset0..7 from art.ini.
             // Over-reads here; the art→rules merge in ruleset.rs truncates or
             // zero-pads to match rules.ini NumberOfDocks. 8 is a defensive

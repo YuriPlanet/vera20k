@@ -12,6 +12,7 @@ mod harvest_mission;
 pub mod miner_dock;
 mod miner_dock_sequence;
 pub(crate) mod miner_system;
+mod refinery_dock;
 
 #[cfg(test)]
 #[path = "miner_tests.rs"]
@@ -28,6 +29,10 @@ pub(crate) use self::miner_dock_sequence::{
 // Generic nearby-passable-cell search, reused by the tank-bunker exit placement.
 pub(crate) use self::miner_dock_sequence::find_nearby_passable_cell_with_index;
 pub(crate) use self::miner_system::extract_bale;
+pub(crate) use self::refinery_dock::{
+    clear_unload_latch, mission_enter, mission_unload, native_dock_miner, per_cell_dock_now,
+    tick_unload_stage,
+};
 
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::GeneralRules;
@@ -407,26 +412,17 @@ pub struct Miner {
     /// Unit+0x6D1 unload-active latch.
     #[serde(default)]
     pub unload_active: bool,
-    /// Unit+0xF8 dump accumulator.
+    /// Unit+0xF8 StageClass value: the unload's dump counter. Ticked every
+    /// frame by `refinery_dock::tick_unload_stage` (TechnoClass::AI
+    /// `0x006FABC4`); the StageClass step (+0x110) is the constructor's 1.
     #[serde(default)]
     pub unload_accumulator: i32,
-    /// Unit+0xFC timer-fired marker.
-    #[serde(default)]
-    pub unload_timer_fired: bool,
-    /// Unit timer-cluster gate: the start-frame + duration folded into one
-    /// frame-anchored timer (was `unload_cluster_start_frame` +
-    /// `unload_cluster_duration`; already frame-anchored).
+    /// Unit+0x100/+0x108, the StageClass timer.
     #[serde(default)]
     pub unload_cluster_timer: MissionTimer,
-    /// Unit+0x104 opaque timer-cluster scratch.
-    #[serde(default)]
-    pub unload_cluster_scratch: i32,
-    /// Unit+0x10C timer-cluster repeat interval / active flag.
+    /// Unit+0x10C, the StageClass rate; 0 stops the tick.
     #[serde(default)]
     pub unload_cluster_repeat: u32,
-    /// Unit+0x110 accumulator increment step. Constructor default is 1.
-    #[serde(default = "default_unload_accumulator_step")]
-    pub unload_accumulator_step: i32,
     /// Legacy/conditional exit cell cache. Stock zero-link refinery unload
     /// completion does not install a queue-cell destination; this remains
     /// serialized so old saves and conditional release experiments can be
@@ -479,11 +475,8 @@ impl Miner {
             mission_deploy_timer: MissionTimer::default(),
             unload_active: false,
             unload_accumulator: 0,
-            unload_timer_fired: false,
             unload_cluster_timer: MissionTimer::default(),
-            unload_cluster_scratch: 0,
             unload_cluster_repeat: 0,
-            unload_accumulator_step: default_unload_accumulator_step(),
             exit_cell: None,
         }
     }
@@ -508,10 +501,6 @@ impl Miner {
     pub fn cargo_value(&self) -> u32 {
         self.cargo.iter().map(|b| b.value as u32).sum()
     }
-}
-
-fn default_unload_accumulator_step() -> i32 {
-    1
 }
 
 /// Determine the miner chassis from parsed rules data.
@@ -716,7 +705,7 @@ mod tests {
              Harvester=yes\n\
              [GAREFN]\n\
              Name=Ore Refinery\n\
-             Refinery=yes\n\
+             Refinery=yes\nDockUnload=yes\n\
              [Tiberiums]\n\
              0=Riparius\n\
              1=Cruentus\n\
@@ -759,7 +748,7 @@ mod tests {
              Harvester=yes\n\
              [GAREFN]\n\
              Name=Ore Refinery\n\
-             Refinery=yes\n",
+             Refinery=yes\nDockUnload=yes\n",
         );
         let rules = RuleSet::from_ini(&ini).expect("rules");
         let cfg = MinerConfig::from_rules(&rules);

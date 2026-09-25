@@ -135,6 +135,17 @@ pub(crate) fn dispatch_harvest_for_object(
         if current == Some(crate::sim::mission::MissionType::Enter) && entity.dock_state.is_some() {
             return;
         }
+        // A War Miner's refinery dock runs as the native Enter and Unload
+        // missions (`refinery_dock`), dispatched from the Foot handler host.
+        if miner.kind == MinerKind::War
+            && matches!(
+                current,
+                Some(crate::sim::mission::MissionType::Enter)
+                    | Some(crate::sim::mission::MissionType::Unload)
+            )
+        {
+            return;
+        }
         // Native Mission_Dispatch gate: run the handler only when the
         // dispatch timer is due (verified host shape). The strength>0 gate is
         // the bracket's IsAlive guard upstream.

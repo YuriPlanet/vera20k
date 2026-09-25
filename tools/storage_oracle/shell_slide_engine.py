@@ -56,6 +56,8 @@ DIALOGS = (
     ("0x129", 1, 1, 0, 0),
     ("0x102", 2, 1, 1, 1),
     ("0x94", 0, 1, 0, 0),
+    ("0xB7", 1, 1, 0, 0),
+    ("0xD5", 2, 1, 0, 0),
 )
 RESOLUTIONS = ((640, 480), (800, 600), (1024, 768))
 
@@ -257,7 +259,7 @@ if __name__ == "__main__":
                    provenance=lambda: provenance(
         scope="Complete original slide engine 0x006071E0 (both directions) after the rect initializer 0x0072EC70, for the family dialogs' button counts and flags at 640x480, 800x600 and 1024x768",
         assumptions=[
-            "Visible top-button and bottom-button counts per dialog are supplied (0xE2 5+1, 0x100 and 0x101 3+1, 0x129 1+1, 0x102 2+1, 0x94 0+1 with Load 0x40E hidden); the classifier callbacks 0x0060A180/0x0060A250 are not executed",
+            "Visible top-button and bottom-button counts per dialog are supplied (0xE2 5+1, 0x100 and 0x101 3+1, 0x129 1+1, 0x102 2+1, 0x94 0+1 with Load 0x40E hidden, 0xB7 1+1 with Load 0x40F counted even when disabled, 0xD5 2+1 Keyboard and Network); the classifier callbacks 0x0060A180/0x0060A250 are not executed",
             "Record flags +0xD5/+0xD6/+0xD7 as set per dialog id at creation: 0x102 has +0xD5 and +0xD6, the family pages none",
             "Draw calls are recorded as (shape, frame, x, y); pixels, palettes and blits are not rasterised",
         ],

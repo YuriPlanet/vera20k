@@ -1194,6 +1194,9 @@ const DAMAGE_SPARK_ROLL_MAX: u32 = 0x7fff_fffe;
 /// so the early-out fires before any allocation or draw — zero `scenario_rng`
 /// movement. Modelled exactly so the stream stays aligned if a mod ever enables it.
 fn techno_common_post(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
+    // `TechnoClass::AI` StageClass step (`0x006FABC4`), after the mission
+    // dispatch; VERA represents only the miner's unload stage.
+    crate::sim::miner::tick_unload_stage(sim, id);
     let Some(rules) = rules else {
         return;
     };
@@ -3563,6 +3566,7 @@ mod tests {
             mission: Some(MissionType::Attack),
             harvester_miner: false,
             depot_dock_state: false,
+            war_miner_dock: false,
             timer_due: true,
             moving_or_queued: false,
             bunker_delegate: false,
@@ -3664,6 +3668,7 @@ mod tests {
             mission: Some(MissionType::Attack),
             harvester_miner: false,
             depot_dock_state: false,
+            war_miner_dock: false,
             timer_due: true,
             moving_or_queued: false,
             bunker_delegate: false,

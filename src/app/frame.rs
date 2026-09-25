@@ -203,7 +203,6 @@ impl App {
                 });
         let mut pending_main_menu_entry_token = None;
         let mut pending_main_menu_title_receipt = None;
-        let mut pending_launcher_title_receipt = None;
         use crate::app::diagnostics::shell_capture::PresentedShell;
         let mut presented_shell = PresentedShell::Other;
 
@@ -291,11 +290,21 @@ impl App {
                     } else {
                         Self::render_egui_main_menu_fallback(state, &mut encoder, &view, event_loop)?;
                     }
+                } else if Self::load_saved_game_active(state) {
+                    if crate::app::frontend::load_saved_game_render::render_load_saved_game_page(
+                        state,
+                        &mut encoder,
+                        &output.texture,
+                    )? {
+                        presented_shell = PresentedShell::LoadSavedGame;
+                    } else {
+                        Self::render_egui_main_menu_fallback(state, &mut encoder, &view, event_loop)?;
+                    }
                 } else if Self::native_launcher_options_active(state) {
-                    pending_launcher_title_receipt = Some(
-                        crate::app::frontend::skirmish_shell_render::render_launcher_options(
-                            state, &mut encoder, &output.texture,
-                        )?);
+                    crate::app::frontend::skirmish_shell_render::render_launcher_options(
+                        state, &mut encoder, &output.texture,
+                    )?;
+                    presented_shell = PresentedShell::Options;
                 } else if Self::native_skirmish_shell_active(state) {
                     crate::app::frontend::skirmish_shell_render::render_skirmish_shell(
                         state,
@@ -321,12 +330,9 @@ impl App {
                                 }
                             };
                             state.renderer.egui.begin_frame(&state.platform.window);
-                            if state.match_state.match_presentation.show_save_load_panel {
-                                Self::handle_save_load_panel(state);
-                            }
-                            // Campaign selector (and any other menu modal) draws
-                            // over the SP shell; confirm-quit cannot originate
-                            // here, so its return value is ignored.
+                            // A menu modal draws over the page; confirm-quit
+                            // cannot originate here, so its return value is
+                            // ignored.
                             let _ = Self::draw_main_menu_dialogs(state, false);
                             state.renderer.egui.end_frame_and_render(
                                 &state.renderer.gpu,
@@ -690,10 +696,6 @@ impl App {
             if let Some(receipt) = dialog.title_receipt.take() {
                 anyhow::ensure!(dialog.title.record_presented(receipt), "keyboard title receipt was stale at present commit");
             }
-        }
-        if let Some(receipt) = pending_launcher_title_receipt {
-            anyhow::ensure!(state.frontend.launcher_options_presentation.record_presented(receipt),
-                "launcher title receipt was stale at present commit");
         }
         if let Some(session) = shell_capture.as_deref_mut() {
             session.after_present(state, presented_shell)?;

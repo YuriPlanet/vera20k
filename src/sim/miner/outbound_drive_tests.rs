@@ -253,6 +253,9 @@ fn install_world(
             .expect("overlay grid")
             .place_overlay(rx, ry, oracle.tib01, 0);
     }
+    // Map load publishes the canonical PathGrid the frame and the Drive
+    // destination search read.
+    sim.path_grid = Some(std::sync::Arc::new(grid.clone()));
     if install_zones {
         sim.rebuild_zone_grid(grid);
         assert!(sim.zone_grid.is_some());
@@ -758,13 +761,13 @@ fn production_stock_harv_far_return_drive_uses_rule_profile() {
     let config = MinerConfig::from_rules(&oracle.rules);
     let refinery_anchor = (10, 10);
     let refinery_type = oracle.rules.object("GAREFN").expect("GAREFN");
-    let queueing = refinery_type.queueing_cell.expect("stock QueueingCell");
+    let queueing = refinery_type.queueing_cell;
     let staging = (
-        refinery_anchor.0 + queueing.0,
-        refinery_anchor.1 + queueing.1,
+        refinery_anchor.0 + queueing[0] as u16,
+        refinery_anchor.1 + queueing[1] as u16,
     );
     let accepted_dock = (refinery_anchor.0 + 3, refinery_anchor.1 + 1);
-    assert_eq!(queueing, (4, 1));
+    assert_eq!(queueing, [4, 1]);
     assert_ne!(staging, accepted_dock);
 
     let dx = u32::from(START.0.abs_diff(refinery_anchor.0));
@@ -793,11 +796,13 @@ fn production_stock_harv_far_return_drive_uses_rule_profile() {
 
     let harv = oracle.rules.object("HARV").expect("HARV");
     let entity = sim.substrate.entities.get(entity_id).expect("HARV");
-    let miner = entity.miner.as_ref().expect("miner");
     let movement = entity.movement_target.as_ref().expect("movement target");
     let drive = entity.drive_locomotion.as_ref().expect("Drive runtime");
     assert_eq!(entity.miner_state().unwrap(), MinerState::ReturnToRefinery);
-    assert_eq!(miner.reserved_refinery, Some(refinery_id));
+    assert!(
+        !entity.radio_contacts.contains(refinery_id),
+        "beyond HarvesterTooFarDistance the return sends no HELLO"
+    );
     assert_eq!(movement.final_goal, Some(staging));
     assert_eq!(
         entity.navigation.nav_com,
@@ -858,10 +863,10 @@ fn gsi_04_07_placement_miner_return_threads_live_wall_neighbor_authority() {
     let config = MinerConfig::from_rules(&oracle.rules);
     let refinery_anchor = (24, 31);
     let refinery_type = oracle.rules.object("GAREFN").expect("GAREFN");
-    let queueing = refinery_type.queueing_cell.expect("stock QueueingCell");
+    let queueing = refinery_type.queueing_cell;
     let staging = (
-        refinery_anchor.0 + queueing.0,
-        refinery_anchor.1 + queueing.1,
+        refinery_anchor.0 + queueing[0] as u16,
+        refinery_anchor.1 + queueing[1] as u16,
     );
     assert_eq!(staging, (28, 32));
     assert!(START.0.abs_diff(refinery_anchor.0) > config.too_far_threshold_standard);
@@ -927,14 +932,6 @@ fn gsi_04_07_placement_miner_return_threads_live_wall_neighbor_authority() {
             .expect("zone grid")
             .set_hierarchy(ZoneHierarchy::new(level0, level1, level2));
 
-        assert_eq!(
-            sim.substrate
-                .entities
-                .get(miner_id)
-                .and_then(|entity| entity.miner.as_ref())
-                .and_then(|miner| miner.reserved_refinery),
-            None,
-        );
         let _ = sim.advance_tick(
             &[],
             Some(&oracle.rules),
@@ -943,14 +940,9 @@ fn gsi_04_07_placement_miner_return_threads_live_wall_neighbor_authority() {
             Some(&overlay_registry),
             67,
         );
-        assert_eq!(
-            sim.substrate
-                .entities
-                .get(miner_id)
-                .and_then(|entity| entity.miner.as_ref())
-                .and_then(|miner| miner.reserved_refinery),
-            Some(refinery_id),
-        );
+        // The far return sends no HELLO; it stages at the QueueingCell.
+        let entity = sim.substrate.entities.get(miner_id).expect("miner");
+        assert!(!entity.radio_contacts.contains(refinery_id));
         (sim, miner_id)
     };
 
@@ -964,6 +956,14 @@ fn gsi_04_07_placement_miner_return_threads_live_wall_neighbor_authority() {
             .and_then(|movement| movement.final_goal),
         Some(staging),
         "Wall=yes must supply the off-marker neighbor exception to the live return route",
+    );
+    assert_eq!(
+        wall_case
+            .substrate
+            .entities
+            .get(wall_miner)
+            .and_then(|entity| entity.navigation.nav_com),
+        Some(NavTargetRef::cell(staging.0, staging.1)),
     );
 
     let (rock_case, rock_miner) = make_case(rock_id, 0x0407_0002);
@@ -985,13 +985,13 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
     let refinery_anchor = (10, 10);
     let original = (32, 29);
     let refinery_type = oracle.rules.object("GAREFN").expect("GAREFN");
-    let queueing = refinery_type.queueing_cell.expect("stock QueueingCell");
+    let queueing = refinery_type.queueing_cell;
     let staging = (
-        refinery_anchor.0 + queueing.0,
-        refinery_anchor.1 + queueing.1,
+        refinery_anchor.0 + queueing[0] as u16,
+        refinery_anchor.1 + queueing[1] as u16,
     );
     let accepted_dock = (refinery_anchor.0 + 3, refinery_anchor.1 + 1);
-    assert_eq!(queueing, (4, 1));
+    assert_eq!(queueing, [4, 1]);
     assert_ne!(staging, accepted_dock);
     let mut sim = production_sim(0x0715_D009, &oracle);
     let mut grid = PathGrid::new(GRID_SIZE, GRID_SIZE);

@@ -44,7 +44,7 @@ was found.
 - **Control rectangles:** from 800 pixels wide,
   `ShellDialog__GetControlOverrideRect` `0x00608500` gives the left-side
   controls fixed pixel rectangles, which `0x0060AF50` applies with the
-  half-margins beyond 800x600 (none in a network session):
+  half-margins beyond 800x600 (none while a game is suspended):
 
   | Control | Rect at 800x600 |
   |---|---|

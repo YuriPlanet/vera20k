@@ -39,6 +39,9 @@ impl App {
         state.match_state.match_presentation.abort_buttons = Default::default();
         state.match_state.match_presentation.sound_dialog = None;
         state.match_state.match_presentation.saved_game_browser = None;
+        // The dev save/load panel belongs to the match; nothing draws or
+        // closes it at the main menu.
+        state.match_state.match_presentation.show_save_load_panel = false;
         // Persist the deterministic diagnostic log before leaving the scenario.
         // Runtime and presentation resources remain retained in the shell.
         crate::app::match_runtime::sim_tick::flush_replay_log(state);

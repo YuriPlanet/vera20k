@@ -136,25 +136,16 @@ impl MovieListState {
         self.scroll.poll(geometry, &mut self.top, x, y, now)
     }
 
-    /// Whether a press is the second click of a double-click: within the
-    /// host double-click time and rectangle of the previous press. Windows
-    /// then sends `WM_LBUTTONDBLCLK`, which the subclass only forwards as
-    /// `LBN_DBLCLK` (`0x0061A904..0x0061A945`): no selection, no sound. A
-    /// double-click ends the sequence, so the next press starts a new one.
+    /// Whether a press is the second click of a double-click
+    /// ([`crate::ui::shell::list::is_double_click`]).
     pub fn is_double_click(
         &mut self,
         now: Instant,
         x: i32,
         y: i32,
-        (time, width, height): (Duration, i32, i32),
+        limits: (Duration, i32, i32),
     ) -> bool {
-        let double = self.last_press.is_some_and(|(last, px, py)| {
-            now.duration_since(last) <= time
-                && (x - px).abs() * 2 <= width
-                && (y - py).abs() * 2 <= height
-        });
-        self.last_press = if double { None } else { Some((now, x, y)) };
-        double
+        crate::ui::shell::list::is_double_click(&mut self.last_press, now, x, y, limits)
     }
 
     /// Row under a pointer press (`0x0061A948`): `client_y / 19 + top`,
