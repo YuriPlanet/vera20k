@@ -44,20 +44,31 @@ pub(crate) fn bridge_constructor_terrain() -> ResolvedTerrainGrid {
 /// Tile2 is invalid against the two-entry registry; tile0 has the supplied
 /// slope used by the second-pass admission discriminator. No Recalc substitute.
 pub(crate) fn install_bridge_batch_test_catalog(grid: &mut ResolvedTerrainGrid, slope: bool) {
-    install_repair_test_catalog(grid, slope, true);
+    install_repair_test_catalog(grid, slope, true, 11);
 }
 
 pub(crate) fn install_ordinary_repair_test_catalog(grid: &mut ResolvedTerrainGrid) {
-    install_repair_test_catalog(grid, false, false);
+    install_repair_test_catalog(grid, false, false, 11);
 }
 
-fn install_repair_test_catalog(grid: &mut ResolvedTerrainGrid, slope: bool, wheel_only: bool) {
+/// The ordinary catalog with a Tunnel tile1 (TMP terrain type 5): a Cell on it
+/// keeps Cell+EC = Tunnel through the Recalc(-1) its Mark runs.
+pub(crate) fn install_tunnel_repair_test_catalog(grid: &mut ResolvedTerrainGrid) {
+    install_repair_test_catalog(grid, false, false, 5);
+}
+
+fn install_repair_test_catalog(
+    grid: &mut ResolvedTerrainGrid,
+    slope: bool,
+    wheel_only: bool,
+    second_terrain: u8,
+) {
     let theater = synthetic_theater_from_ini(
         b"[TileSet0000]\nTilesInSet=2\nFileName=source\nSetName=Plain\n",
     );
     let mut first = gsi_04_02_last_tiles_tmp_bytes(11, [0; 3], [0; 3]);
     first[62] = u8::from(slope);
-    let second = gsi_04_02_last_tiles_tmp_bytes(11, [0; 3], [0; 3]);
+    let second = gsi_04_02_last_tiles_tmp_bytes(second_terrain, [0; 3], [0; 3]);
     let (_directory, assets) = gsi_04_02_asset_manager_with_loose_tmps(&[
         ("source01.tem", &first),
         ("source02.tem", &second),

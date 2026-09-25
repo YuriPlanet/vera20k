@@ -6,7 +6,7 @@
 //! then closes them using parsed rules timings.
 
 use crate::map::entities::EntityCategory;
-use crate::map::houses::{HouseAllianceMap, are_houses_friendly};
+use crate::map::houses::HouseAllianceMap;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::{BuildingGateMissionState, BuildingGatePhase, BuildingGateRuntime};
@@ -129,11 +129,26 @@ pub fn request_open(gate: &mut BuildingGateRuntime) {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// `MapClass::0x00578AD0`, the gate question a ground mover asks before it
+/// selects a track or path step into `cell`.
+///
+/// The cell's ground object list (+E4) is walked in list order, skipping the
+/// mover itself; the first `Gate=yes` building (BuildingType+16B7) decides.
+/// When the gate's owner counts the mover as an ally (House 0x4F9A90 on the
+/// gate's +21C, a directional test), the answer is [`gate_admission`]
+/// (Building 0x00452540), which may queue the gate's Open mission. Any other
+/// gate answers true when it is passable (Building 0x004525F0), else the walk
+/// continues. A cell with no deciding gate answers true.
+///
+/// Every caller except the Drive/Ship fresh arm (0x4B33F3, where false makes
+/// Process_Movement return) discards the answer: the code-3 responses of the
+/// fresh and chain queries (0x4B3602, 0x4B41AE, 0x4B1EB6) and the Walk and
+/// Hover blocked steps.
+#[allow(clippy::too_many_arguments)]
 pub fn request_gate_open_for_cell(
     entities: &mut EntityStore,
     occupancy: &OccupancyGrid,
     cell: (u16, u16),
-    object_list_layer: MovementLayer,
     mover_id: u64,
     mover_owner: &str,
     rules: &RuleSet,
@@ -141,13 +156,12 @@ pub fn request_gate_open_for_cell(
     interner: &StringInterner,
 ) -> bool {
     let Some(occ) = occupancy.get(cell.0, cell.1) else {
-        return false;
+        return true;
     };
     let candidates: Vec<u64> = occ
-        .iter_layer(object_list_layer)
+        .iter_layer(MovementLayer::Ground)
         .filter_map(|occupant| (occupant.entity_id != mover_id).then_some(occupant.entity_id))
         .collect();
-    let mut requested = false;
     for candidate_id in candidates {
         let Some(candidate) = entities.get(candidate_id) else {
             continue;
@@ -155,21 +169,46 @@ pub fn request_gate_open_for_cell(
         if candidate.category != EntityCategory::Structure {
             continue;
         }
-        let Some(obj) = rules.object(interner.resolve(candidate.type_ref())) else {
-            continue;
-        };
-        if !obj.gate
-            || !are_houses_friendly(alliances, mover_owner, interner.resolve(candidate.owner()))
+        if !rules
+            .object(interner.resolve(candidate.type_ref()))
+            .is_some_and(|obj| obj.gate)
         {
             continue;
         }
+        let allied = crate::map::houses::is_allied_with(
+            alliances,
+            interner.resolve(candidate.owner()),
+            mover_owner,
+        );
         let Some(candidate) = entities.get_mut(candidate_id) else {
             continue;
         };
-        request_open(candidate.building_gate.get_or_insert_with(Default::default));
-        requested = true;
+        let gate = candidate.building_gate.get_or_insert_with(Default::default);
+        if allied {
+            return gate_admission(gate);
+        }
+        if gate.can_garrison_passable() {
+            return true;
+        }
     }
-    requested
+    true
+}
+
+/// Building `0x00452540` for a `Gate=yes` building: a gate that is not in its
+/// Open mission (0x18), or whose door is closing (0x4A5130) or closed
+/// (0x4A51D0), has the mission queued again (vt+1F0/+1E8/+1EC) and answers
+/// false; otherwise true once the door rests open (0x4A51B0).
+fn gate_admission(gate: &mut BuildingGateRuntime) -> bool {
+    if !gate.mission_18_active
+        || matches!(
+            gate.phase,
+            BuildingGatePhase::Closing | BuildingGatePhase::ClosedStable
+        )
+    {
+        request_open(gate);
+        return false;
+    }
+    gate.phase == BuildingGatePhase::OpenStable
 }
 
 pub fn tick_gate_runtimes(
@@ -388,11 +427,12 @@ mod tests {
         );
         let interner = crate::sim::intern::test_interner();
 
-        assert!(request_gate_open_for_cell(
+        // A closed allied gate queues its Open mission and still refuses
+        // (0x452540 answers true only once the door rests open).
+        assert!(!request_gate_open_for_cell(
             &mut entities,
             &occupancy,
             (10, 10),
-            MovementLayer::Ground,
             1,
             "Americans",
             &rules,

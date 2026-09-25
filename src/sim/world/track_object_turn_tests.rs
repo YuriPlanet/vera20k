@@ -593,6 +593,10 @@ fn ship_fresh_claim_survives_next_object_visit_and_snapshot_rebuild() {
 #[test]
 fn ordinary_default_passive_false_does_not_accept_a_chain() {
     let (mut sim, rules) = fixture();
+    // The chain query (0x4B1C3E) asks the native Unit+1AC over map cells.
+    sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
+        32,
+    ));
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     entity.drive_locomotion.as_mut().unwrap().track = TrackProgress {
         turn_index: 1,

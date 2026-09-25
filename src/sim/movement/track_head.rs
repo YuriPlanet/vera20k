@@ -54,6 +54,28 @@ pub(super) fn accept_fresh_progress(
     ship: &mut Option<ShipLocomotionRuntime>,
     turn_index: usize,
 ) {
+    let Some(progress) = select_fresh_progress(kind, drive, ship, turn_index) else {
+        return;
+    };
+    progress.accept_fresh();
+    // Drive ProcessMovement4B46C5 publishes +63 before the accepted head
+    // and Apply1, even when this invocation cannot pay a point.
+    match kind {
+        LocomotorKind::Drive => drive.as_mut().unwrap().track_valid = true,
+        LocomotorKind::Ship => ship.as_mut().unwrap().track_valid = true,
+        _ => unreachable!(),
+    }
+}
+
+/// Drive ProcessMovement4B4016..4B4034 / Ship twin: the turn table selector
+/// (+58) and the reversed byte (+60 = 0), written before the crate question
+/// and the second candidate, so every later arm of the same call sees them.
+pub(super) fn select_fresh_progress<'a>(
+    kind: LocomotorKind,
+    drive: &'a mut Option<DriveLocomotionRuntime>,
+    ship: &'a mut Option<ShipLocomotionRuntime>,
+    turn_index: usize,
+) -> Option<&'a mut crate::sim::components::TrackProgress> {
     use super::track_process::TrackFamily;
     let (progress, family) = match kind {
         LocomotorKind::Drive => {
@@ -64,17 +86,10 @@ pub(super) fn accept_fresh_progress(
             let state = ship.get_or_insert_with(Default::default);
             (&mut state.track, TrackFamily::Ship)
         }
-        _ => return,
+        _ => return None,
     };
     assert!(progress.select_fresh(family, (turn_index / 8) as u8, (turn_index % 8) as u8));
-    progress.accept_fresh();
-    // Drive ProcessMovement4B46C5 publishes +63 before the accepted head
-    // and Apply1, even when this invocation cannot pay a point.
-    match kind {
-        LocomotorKind::Drive => drive.as_mut().unwrap().track_valid = true,
-        LocomotorKind::Ship => ship.as_mut().unwrap().track_valid = true,
-        _ => unreachable!(),
-    }
+    Some(progress)
 }
 
 /// Outer Process admission (Drive4B055A..576, mirrored Ship): the class

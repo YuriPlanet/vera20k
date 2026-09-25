@@ -588,7 +588,9 @@ use crate::sim::world::Simulation;
 // 201 -> 202: the rearm countdown moves onto the object (`TechnoClass+0x2EC`):
 // AttackTarget loses its cooldown/burst-delay counters and the cloak runtime
 // its copy of the timer.
-const SNAPSHOT_VERSION: u32 = 202;
+// 202 -> 203: the Simulation no longer keeps its own CloseEnough copy; the
+// movement owners read `Rules+0x1718` (`[General] CloseEnough=`).
+const SNAPSHOT_VERSION: u32 = 203;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3538,7 +3540,8 @@ mod tests {
         // 199 -> 200: the Gattling stage, value and turret animation counter.
         // 200 -> 201: no `last_attacker_id`; TeamType `Suicide=`.
         // 201 -> 202: the rearm timer on the object.
-        assert_eq!(super::SNAPSHOT_VERSION, 202);
+        // 202 -> 203: no Simulation copy of CloseEnough.
+        assert_eq!(super::SNAPSHOT_VERSION, 203);
     }
 
     #[test]

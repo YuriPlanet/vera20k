@@ -4,8 +4,8 @@
 //! Drive 0x4B2630 and Ship 0x6A1C80 are instruction twins in these arms
 //! (aligned in the track-process-path handoff R1); each Drive address below
 //! is followed by its Ship twin. Order within one Process call:
-//! - 0x4B281C..0x4B2845 / 0x6A1E6C..0x6A1E95: the Foot+640 exact-zero wait,
-//!   owned by the mover visit (`movement_tick::no_queue_path_request`);
+//! - 0x4B281C..0x4B2845 / 0x6A1E6C..0x6A1E95: the Foot+640 exact-zero wait
+//!   (`track_fresh::track_no_queue_arm`);
 //! - 0x4B284B..0x4B286D / 0x6A1EA0..0x6A1EBD: +640 = (Frame, PathDelay);
 //! - 0x4B28A3 / 0x6A1EF3: `Find_Path(cell(dest), 0, 0)` (`foot_path.rs`);
 //! - success 0x4B2F45..0x4B32A1 / 0x6A2595..0x6A28F1: the tube return, the
@@ -65,9 +65,6 @@ use crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
 /// Foot+64C after a found route (0x4B3285 / 0x6A28D5).
 const FOUND_ROUTE_RETRIES: u32 = 10;
 
-/// LandType Tunnel (10), the Cell+EC value the ally stop excludes.
-const LAND_TUNNEL: u8 = 10;
-
 /// A Unit on Drive or Ship, whose class setter is Unit 0x741970.
 fn track_unit(entity: &GameEntity) -> bool {
     entity.category == EntityCategory::Unit
@@ -79,7 +76,7 @@ fn track_unit(entity: &GameEntity) -> bool {
         })
 }
 
-fn track_destination(entity: &GameEntity) -> Option<DriveCoord> {
+pub(super) fn track_destination(entity: &GameEntity) -> Option<DriveCoord> {
     match entity.locomotor.as_ref()?.kind {
         LocomotorKind::Drive => entity.drive_locomotion.as_ref()?.destination,
         LocomotorKind::Ship => entity.ship_locomotion.as_ref()?.destination,
@@ -89,7 +86,7 @@ fn track_destination(entity: &GameEntity) -> Option<DriveCoord> {
 
 /// `if (head != Null) { head = Null; +63 = 0; }` as every arm here writes it.
 /// Raw occupation marks are untouched, as in native.
-fn clear_track_head(entity: &mut GameEntity) {
+pub(super) fn clear_track_head(entity: &mut GameEntity) {
     match entity.locomotor.as_ref().map(|loco| loco.kind) {
         Some(LocomotorKind::Drive) => {
             if let Some(drive) = entity.drive_locomotion.as_mut()
@@ -255,7 +252,7 @@ impl Simulation {
                 location.x.wrapping_sub(destination.x),
                 location.y.wrapping_sub(destination.y),
                 location.z.wrapping_sub(destination.z),
-            ) < self.close_enough.to_num::<i32>()
+            ) < rules.general.close_enough
             && matches!(mission, Some(MissionType::Move | MissionType::AreaGuard))
         {
             //4B29AF..4B2A44: clear the head, then stop or take the waypoint.
@@ -430,7 +427,6 @@ impl Simulation {
                     &mut self.substrate.entities,
                     &self.substrate.occupancy,
                     (cell.0 as u16, cell.1 as u16),
-                    MovementLayer::Ground,
                     id,
                     &owner,
                     rules,
@@ -442,6 +438,40 @@ impl Simulation {
             6 => self.answer_track_ally_cell(id, cell, rules),
             _ => Ok(false),
         }
+    }
+
+    /// `CellClass::Find_Nearest_Object 0x47C3D0` with the (0,0) sub-point over
+    /// `layer`'s list of `cell`: ranked by each object's vt+0x48 coordinate (a
+    /// building's centre), the first in list order on a tie.
+    pub(super) fn nearest_cell_object(
+        &self,
+        cell: (u16, u16),
+        layer: MovementLayer,
+        rules: &RuleSet,
+    ) -> Option<u64> {
+        crate::sim::cell_kernel::nearest_eligible_in_order(
+            crate::sim::cell_kernel::CellQueryPoint { x: 0, y: 0 },
+            self.substrate
+                .occupancy
+                .get(cell.0, cell.1)
+                .into_iter()
+                .flat_map(|list| list.iter_layer(layer))
+                .filter_map(|entry| self.substrate.entities.get(entry.entity_id))
+                .map(|entity| {
+                    let coord = self.object_type(entity.type_ref(), rules).map_or_else(
+                        || ground_pose::position_world_coord(&entity.position),
+                        |kind| ground_pose::object_center_coord(entity, kind),
+                    );
+                    (
+                        entity.stable_id(),
+                        true,
+                        crate::sim::cell_kernel::CellQueryPoint {
+                            x: coord.x,
+                            y: coord.y,
+                        },
+                    )
+                }),
+        )
     }
 
     /// The code-6 arm (0x4B2B4B..0x4B2DC0 / 0x4B302D..0x4B327D and the Ship
@@ -481,30 +511,7 @@ impl Simulation {
             MovementLayer::Ground
         };
         let key = (cell.0 as u16, cell.1 as u16);
-        let blocker = crate::sim::cell_kernel::nearest_eligible_in_order(
-            crate::sim::cell_kernel::CellQueryPoint { x: 0, y: 0 },
-            self.substrate
-                .occupancy
-                .get(key.0, key.1)
-                .into_iter()
-                .flat_map(|list| list.iter_layer(layer))
-                .filter_map(|entry| self.substrate.entities.get(entry.entity_id))
-                .map(|entity| {
-                    let coord = self.object_type(entity.type_ref(), rules).map_or_else(
-                        || ground_pose::position_world_coord(&entity.position),
-                        |kind| ground_pose::object_center_coord(entity, kind),
-                    );
-                    (
-                        entity.stable_id(),
-                        true,
-                        crate::sim::cell_kernel::CellQueryPoint {
-                            x: coord.x,
-                            y: coord.y,
-                        },
-                    )
-                }),
-        );
-        let Some(blocker) = blocker else {
+        let Some(blocker) = self.nearest_cell_object(key, layer, rules) else {
             return Ok(false);
         };
         let allied = self.substrate.entities.get(blocker).is_some_and(|b| {
@@ -519,51 +526,20 @@ impl Simulation {
             return Ok(false);
         }
         let destination = track_destination(actor).unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
+        //4B2C14..4B2C62: Distance3D (0x41C380) below CloseEnough, then no
+        //radio contact (0x65AE30) and the shared stop band.
         let close = native_coord_distance(
             location.x.wrapping_sub(destination.x),
             location.y.wrapping_sub(destination.y),
             location.z.wrapping_sub(destination.z),
-        ) < self.close_enough.to_num::<i32>();
-        let standing_land = terrain
-            .cell(actor.position.rx, actor.position.ry)
-            .map(|c| c.yr_cell_land_type);
-        if close
-            && actor.radio_contacts.is_empty()
-            && destination.z.wrapping_sub(location.z).wrapping_abs()
-                < 2 * GROUND_LEVEL_HEIGHT_LEPTONS
-            && standing_land != Some(LAND_TUNNEL)
-        {
+        ) < rules.general.close_enough;
+        if close && actor.radio_contacts.is_empty() && self.track_stop_band(location, destination) {
             //4B2CDD..4B2D65: clear the head, then stop or take the waypoint.
             self.stop_or_take_next_waypoint(id, rules);
             return Ok(true);
         }
-        //4B2D68..4B2DC0: Scatter_Objects(Null, 1, 1, flag), flag = a deck
-        //cell whose level is more than two levels from the Foot.
-        let level = cells
-            .ground_fields(cells.lookup((cell.0 as i16, cell.1 as i16)))
-            .0 as i8;
-        let deck = cells.flags(cells.lookup((cell.0 as i16, cell.1 as i16))) & 0x100 != 0
-            && (location.z / GROUND_LEVEL_HEIGHT_LEPTONS - i32::from(level)).abs() > 2;
-        let grid = self.path_grid_snapshot();
-        super::bump_crush::scatter_cell_objects(
-            &mut self.substrate.entities,
-            &self.substrate.occupancy,
-            key,
-            if deck {
-                MovementLayer::Bridge
-            } else {
-                MovementLayer::Ground
-            },
-            grid.as_deref(),
-            self.resolved_terrain.as_ref(),
-            &mut self.scenario_rng,
-            Some(rules),
-            &self.interner,
-            super::DestinationTiming::new(
-                self.session.binary_frame,
-                rules.general.blockage_path_delay_ticks,
-            ),
-        );
+        //4B2D68..4B2DC0: the forced scatter of the refused cell.
+        self.scatter_blocked_track_cell(id, (cell.0 as i16, cell.1 as i16), rules, None);
         Ok(false)
     }
 
@@ -571,7 +547,7 @@ impl Simulation {
     /// SetDestination(NULL, 1), else Foot 0x4DF0D0 (NavCom only) then the
     /// Unit idle entry (+0x484 = 0x738970), whose AL the caller may return.
     /// Returns that AL (false after the NULL setter).
-    fn stop_or_take_next_waypoint(&mut self, id: u64, rules: &RuleSet) -> bool {
+    pub(super) fn stop_or_take_next_waypoint(&mut self, id: u64, rules: &RuleSet) -> bool {
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return false;
         };
@@ -609,7 +585,7 @@ impl Simulation {
     }
 
     /// Foot+90 as Drive re-reads it after a synchronous setter.
-    fn track_owner_alive(&self, id: u64) -> bool {
+    pub(super) fn track_owner_alive(&self, id: u64) -> bool {
         self.substrate
             .entities
             .get(id)

@@ -493,16 +493,14 @@ mod tests {
         let mut high = terrain_cell(0, 0, flat);
         high.level = 2;
         let terrain = ResolvedTerrainGrid::from_cells(2, 1, vec![high, terrain_cell(1, 0, flat)]);
+        // Stock rulesmd.ini [General]: TrackedDownhill=1.2.
+        let stock = TerrainSpeedConfig {
+            tracked_downhill: SimFixed::lit("1.2"),
+            wheeled_downhill: SimFixed::lit("1.2"),
+            ..TerrainSpeedConfig::default()
+        };
         let sample = |kind: LocomotorKind, st: SpeedType| {
-            compute_drive_target_speed_fraction(
-                st,
-                kind,
-                (0, 0),
-                (1, 0),
-                &terrain,
-                &TerrainSpeedConfig::default(),
-                false,
-            )
+            compute_drive_target_speed_fraction(st, kind, (0, 0), (1, 0), &terrain, &stock, false)
         };
         // Downhill: the Drive mover takes the 1.2x coefficient...
         assert_eq!(

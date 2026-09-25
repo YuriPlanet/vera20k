@@ -56,6 +56,58 @@ pub(super) fn publish_fresh_target(
         }
         _ => SIM_ONE,
     };
+    publish_target_fraction(entity, requested);
+}
+
+/// The native Process_Movement fresh arm's publication for its candidate
+/// Cell (`track_fresh`), with Road's row when the retained height is two or
+/// more levels from the Cell (`0x4B3C84`).
+pub(super) fn publish_fresh_track_target(
+    entity: &mut GameEntity,
+    strength: i32,
+    rules: &RuleSet,
+    terrain: &ResolvedTerrainGrid,
+    terrain_speed: &TerrainSpeedConfig,
+    next_cell: (u16, u16),
+    road: bool,
+) {
+    let Some(loco) = entity.locomotor.as_ref() else {
+        return;
+    };
+    let speed_type = loco.speed_type;
+    let below_yellow = crate::sim::pathfinding::terrain_speed::is_at_or_below_condition_yellow(
+        entity.health.current,
+        strength,
+        rules.general.condition_yellow,
+    );
+    let road_row = road.then(|| {
+        rules
+            .terrain_rules
+            .semantics_for_land_type(1)
+            .map_or(SIM_ONE, |road| {
+                road.speed_costs.speed_multiplier_for(speed_type)
+            })
+    });
+    let xy = super::ground_pose::position_world_xy(&entity.position);
+    let requested = crate::sim::pathfinding::terrain_speed::fresh_track_speed_fraction(
+        speed_type,
+        (xy[0], xy[1]),
+        next_cell,
+        road_row,
+        terrain,
+        terrain_speed,
+        below_yellow,
+    );
+    publish_target_fraction(entity, requested);
+}
+
+/// Drive4B3DFA..3E21 / Ship twin: a selector below 64 keeps the request on
+/// the class target (+50); otherwise it goes to the Foot setter, clamped,
+/// when it differs from the applied fraction.
+fn publish_target_fraction(entity: &mut GameEntity, requested: SimFixed) {
+    let Some(kind) = entity.locomotor.as_ref().map(|loco| loco.kind) else {
+        return;
+    };
     let (selector, retained) = match kind {
         LocomotorKind::Drive => {
             let state = entity.drive_locomotion.get_or_insert_with(Default::default);
@@ -65,7 +117,7 @@ pub(super) fn publish_fresh_target(
             let state = entity.ship_locomotion.get_or_insert_with(Default::default);
             (state.track.turn_index, &mut state.target_speed_fraction)
         }
-        _ => unreachable!(),
+        _ => return,
     };
     if selector < 64 {
         *retained = requested;

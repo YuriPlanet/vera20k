@@ -3587,6 +3587,22 @@ pub const TURN_TRACK_TURNS_FLAG: u8 = 0x08;
 /// Facing units per direction octant (256 / 8).
 const OCTANT_FACING_STEP: u8 = 0x20;
 
+/// The fresh selector `to + from*8` (Drive 0x4B4016..0x4B4034): a null entry
+/// takes the straight `from*9` diagonal, which is never itself null.
+/// ShipLocomotion consumes only the RawTrack set it shares with Drive.
+pub(crate) fn fresh_turn_index(from: u8, to: u8, is_ship: bool) -> usize {
+    let (from, to) = (usize::from(from & 7), usize::from(to & 7));
+    let straight_index = from * FACING_DIRECTIONS + from;
+    let mut turn_index = from * FACING_DIRECTIONS + to;
+    if TURN_TRACKS[turn_index].normal_track == 0 {
+        turn_index = straight_index;
+    }
+    if is_ship && TURN_TRACKS[turn_index].normal_track > SHIP_MAX_SHARED_RAW_TRACK {
+        turn_index = straight_index;
+    }
+    turn_index
+}
+
 /// Highest RawTrack index in the set ShipLocomotion shares with Drive.
 const SHIP_MAX_SHARED_RAW_TRACK: u8 = 13;
 
@@ -3682,18 +3698,7 @@ pub fn plan_drive_track_from_path(
     let to_dir = to_delta
         .and_then(|(dx, dy)| octant_from_cell_delta(dx, dy))
         .unwrap_or(from_dir);
-
-    // `from * 9` is the straight-ahead entry on the table diagonal; it is the
-    // null-curve substitute and is never itself null.
-    let straight_index = from_dir * FACING_DIRECTIONS + from_dir;
-    let mut turn_index = from_dir * FACING_DIRECTIONS + to_dir;
-    if TURN_TRACKS[turn_index].normal_track == 0 {
-        turn_index = straight_index;
-    }
-    // ShipLocomotion consumes only the RawTrack set it shares with Drive.
-    if is_ship && TURN_TRACKS[turn_index].normal_track > SHIP_MAX_SHARED_RAW_TRACK {
-        turn_index = straight_index;
-    }
+    let turn_index = fresh_turn_index(from_dir as u8, to_dir as u8, is_ship);
 
     let turn = &TURN_TRACKS[turn_index];
     let raw_index = turn.normal_track;

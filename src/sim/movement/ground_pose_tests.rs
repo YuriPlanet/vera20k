@@ -650,6 +650,8 @@ fn terminal_centre_height_commits_before_next_process_turn_without_finalizer() {
     let target = entity.movement_target.as_mut().unwrap();
     target.path = vec![(3, 3), (4, 3)];
     target.path_layers = vec![MovementLayer::Ground; 2];
+    // A component fixture's route, never published to Foot+5E0.
+    target.adapter_route = true;
     target.final_goal = Some((4, 3));
     target.move_dir_x = SimFixed::from_num(256);
     target.move_dir_y = SIM_ZERO;
@@ -950,7 +952,16 @@ fn cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
         render_offset_x: 0,
         render_offset_y: 0,
         terrain_class: crate::rules::terrain_rules::TerrainClass::Clear,
-        speed_costs: Default::default(),
+        // Every row the Drive/Ship fixtures use admits, so the native
+        // Unit+1AC (the chain query) answers from occupancy alone.
+        speed_costs: crate::rules::terrain_rules::SpeedCostProfile {
+            foot: Some(100),
+            track: Some(100),
+            wheel: Some(100),
+            float: Some(100),
+            amphibious: Some(100),
+            ..Default::default()
+        },
         is_water: false,
         is_cliff_like: false,
         is_rough: false,
