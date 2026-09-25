@@ -1919,9 +1919,9 @@ mod tests {
                 records,
                 entities.get(1).unwrap().health.current,
                 effects
-                    .invulnerability_impact_effects
+                    .combat_light_requests
                     .iter()
-                    .map(|effect| effect.target_id)
+                    .filter_map(|effect| effect.target_id)
                     .collect(),
             )
         }

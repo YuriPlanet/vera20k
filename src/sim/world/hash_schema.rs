@@ -116,6 +116,10 @@ pub(super) enum HashFeature {
     /// its owner's house (DamageArea reads the live Owner); earlier schemas
     /// fold the live source's house in its place.
     InvisoBullet = 204,
+    /// A bullet's `Arcing=` (`BulletTypeClass+0x29B`), which impact
+    /// resolution (`0x00468D80`) reads, and a bouncing anim's BounceClass
+    /// body (`AnimClass+0x128`).
+    BouncingDebris = 205,
 }
 
 impl HashSchema {
@@ -147,6 +151,7 @@ impl HashSchema {
                     | HashFeature::Gattling
                     | HashFeature::RearmTimer
                     | HashFeature::InvisoBullet
+                    | HashFeature::BouncingDebris
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

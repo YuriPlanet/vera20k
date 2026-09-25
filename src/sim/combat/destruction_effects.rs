@@ -123,6 +123,9 @@ const CELL_EXPLOSION_SCATTER_LEPTONS: i32 = 0x40;
 pub struct DeathAnimSpawn {
     pub coord: AnimWorldCoord,
     pub delay: u16,
+    /// The constructor's draws when the producer already took them at their
+    /// native point (a death debris piece); otherwise the spawn draws.
+    pub draws: Option<crate::sim::anim_class::AnimConstructorDraws>,
 }
 
 impl Simulation {
@@ -144,7 +147,12 @@ impl Simulation {
             sub_x,
             sub_y,
             z,
-            death: Some(DeathAnimSpawn { coord, delay }),
+            world_z: coord.z,
+            death: Some(DeathAnimSpawn {
+                coord,
+                delay,
+                draws: None,
+            }),
         });
     }
 
@@ -164,7 +172,9 @@ impl Simulation {
             reverse: false,
             ..AnimClassSpawnDescriptor::new(type_id, rx, ry, sub_x, sub_y, z)
         };
-        if let Err(error) = self.spawn_anim_at_world(rules, descriptor, spawn.coord) {
+        if let Err(error) =
+            self.spawn_anim_at_world_with_draws(rules, descriptor, spawn.coord, spawn.draws)
+        {
             log::debug!(
                 "death anim [{}] did not construct: {error}",
                 self.interner.resolve(type_id)

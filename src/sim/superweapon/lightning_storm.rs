@@ -321,10 +321,9 @@ fn spawn_bolt(
             });
 
         // GroundStrike selects and starts its explosion AnimClass before it
-        // enters Apply_area_damage. Commit the Anim's immediate smudge/RNG at
-        // that producer boundary; the later per-cell ore sweep must observe it.
+        // enters Apply_area_damage; the anim's scorch or crater is its own
+        // Middle, at its middle frame.
         let mut explosions: Vec<crate::sim::combat::ExplosionEffect> = Vec::new();
-        let mut smudges = Vec::new();
         crate::sim::combat::emit_warhead_detonation_effects(
             warhead,
             rules.general.lightning_damage,
@@ -336,11 +335,7 @@ fn spawn_bolt(
             world_z_leptons,
             &mut sim.interner,
             &mut explosions,
-            &mut smudges,
         );
-        for request in smudges {
-            sim.commit_smudge_request_inline(rules, overlay_registry, request);
-        }
         // The strike's explosion is the ordinary warhead `AnimList=` pick with
         // the ordinary row (`0x0053A50E`: drawFlags 0x2600, the `0x0048ACE0`
         // zAdjust), so it takes the combat explosion constructor.
@@ -353,6 +348,7 @@ fn spawn_bolt(
                 fx.sub_x,
                 fx.sub_y,
                 fx.z,
+                fx.world_z,
             );
         }
 

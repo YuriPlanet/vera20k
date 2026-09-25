@@ -454,21 +454,17 @@ pub fn kill_award_points(
 /// if (unrounded sum >= Rules->VeteranCap) vet = f32(VeteranCap)
 /// ```
 ///
-/// The clamp compares the UNROUNDED sum, before the store narrows it to `f32` —
-/// that ordering is why the accumulate and the compare cannot be folded.
+/// The clamp compares the UNROUNDED sum, before the store narrows it to `f32`.
+/// Every step runs under gamemd's ambient x87 word, 53-bit precision with
+/// round-toward-zero (`WinMain 0x006BBFB7..0x006BBFC1`), so the divide, the
+/// add and the `FST dword` store all chop. A round-to-nearest store is one
+/// `f32` ulp high on most awards, which is not harmless: three awards of a
+/// third reach exactly 1.0 rounded to nearest but 0.99999994 chopped, so an
+/// equal-cost unit promotes on its fourth kill, not its third.
 ///
-/// This is the project's documented native-float substrate rather than
-/// `SimFixed` deliberately: the native state is a running `f32` that carries its
-/// own rounding forward, so an exact-rational accumulator diverges from it in
-/// general. Reproducing the float exactly is the only form that matches; the
-/// value is stored as bits, so no float reaches sim state.
+/// The value is stored as bits, so no float reaches sim state.
 ///
-/// RESIDUAL (GSI-08.12) — the x87 precision control word is UNCHECKED. Under
-/// the MSVC CRT default of 53-bit precision this is bit-exact; under 64-bit
-/// precision the two can differ by one ulp of `f32`, and only when the
-/// unrounded sum sits within half an ulp of a rounding tie. Neither stock
-/// promotion boundary is near a tie (see the tests), so no stock kill count
-/// moves either way.
+/// Native execution: `tools/spatial_oracle/veterancy_add.py`.
 pub fn accumulate(
     raw: NativeF32Bits,
     recipient_cost: i32,
@@ -476,25 +472,32 @@ pub fn accumulate(
     veteran_ratio: f64,
     veteran_cap: f64,
 ) -> NativeF32Bits {
+    use crate::util::native_x87::{NativeF64Bits, X87Chop53, X87Ordering};
     if points <= 0 {
         return raw;
     }
-    // A zero-cost recipient is NOT an early return in native: the divide yields
-    // +INF, the compare sends it to the clamp, and the object stores
-    // `VeteranCap` — instant elite on its first kill. A negative cost yields
-    // -INF, which stores as a rookie value. Reproduce both rather than guarding.
-    if recipient_cost == 0 {
-        return NativeF32Bits::from_bits((veteran_cap as f32).to_bits());
-    }
-    // `FDIV`/`FADD` at x87 working precision, then one `FCOMP` against the cap
-    // on the UNROUNDED sum, then a single `FSTP float` store. `X87Chop53` is
-    // deliberately NOT used here: it models the truncating mode gamemd sets for
-    // `ftol`, and this store rounds to nearest-even, which is one ulp of `f32`
-    // apart at every step.
-    let delta = f64::from(points) / (f64::from(recipient_cost) * veteran_ratio);
-    let sum = delta + f64::from(f32::from_bits(raw.bits()));
-    let clamped = if sum >= veteran_cap { veteran_cap } else { sum };
-    NativeF32Bits::from_bits((clamped as f32).to_bits())
+    let cap = X87Chop53::load_f64(NativeF64Bits::from_bits(veteran_cap.to_bits()))
+        .expect("finite VeteranCap");
+    let denominator = X87Chop53::mul(
+        X87Chop53::load_i32(recipient_cost),
+        X87Chop53::load_f64(NativeF64Bits::from_bits(veteran_ratio.to_bits()))
+            .expect("finite VeteranRatio"),
+    );
+    // A zero denominator divides a positive award to +INF, which the compare
+    // sends to the clamp: the object stores `VeteranCap` on its first kill.
+    let Ok(delta) = X87Chop53::div(X87Chop53::load_i32(points), denominator) else {
+        return X87Chop53::store_f32_masked_chop(cap);
+    };
+    let sum = X87Chop53::add(
+        delta,
+        X87Chop53::load_f32(raw).expect("a stored veterancy is finite"),
+    );
+    let stored = if X87Chop53::compare(sum, cap) == X87Ordering::Less {
+        sum
+    } else {
+        cap
+    };
+    X87Chop53::store_f32_masked_chop(stored)
 }
 
 /// Award one kill's experience to its recipient, if the recipient can hold it.
@@ -578,10 +581,41 @@ mod tests {
         )
     }
 
+    /// Every `veterancy_add.json` row: the original `0x0074FF50` under the
+    /// native control word.
+    #[test]
+    fn accumulate_matches_the_original() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/veterancy_add.json"
+        ))
+        .unwrap();
+        let mut compared = 0;
+        for row in &rows {
+            let input = &row["input"];
+            let points = input["points"].as_i64().unwrap() as i32;
+            if points <= 0 {
+                // The award callers never pass a non-positive award.
+                continue;
+            }
+            let result = accumulate(
+                NativeF32Bits::from_bits(input["start_bits"].as_u64().unwrap() as u32),
+                input["cost"].as_i64().unwrap() as i32,
+                points,
+                input["ratio"].as_f64().unwrap(),
+                input["cap"].as_f64().unwrap(),
+            );
+            assert_eq!(
+                format!("{:08x}", result.bits()),
+                row["result_bits"].as_str().unwrap(),
+                "{input}"
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 217);
+    }
+
     /// A Grizzly (Cost=700) killing rookie Rhinos (Cost=900) earns 3/7 per kill:
-    /// veteran on kill 3, elite on kill 5. Both crossings sit far from a
-    /// rounding tie, so the kill counts do not depend on the precision-control
-    /// question recorded on `accumulate`.
+    /// veteran on kill 3, elite on kill 5.
     #[test]
     fn gsi_08_12_grizzly_promotes_on_the_third_and_fifth_rhino() {
         let steps = run(700, 900, 5);
@@ -589,17 +623,18 @@ mod tests {
         assert_eq!(ranks, vec![0, 0, 100, 100, 200]);
     }
 
-    /// A GI killing GIs is the knife edge: the delta is exactly 1/3, so the
-    /// running `f32` reaches 1.0000000199 on kill 3 rather than exactly 1.0.
+    /// A GI killing GIs is the knife edge: each award is a third, and the
+    /// chopped `f32` running sum stops one ulp short of 1.0 on kill 3 and of
+    /// 2.0 on kill 6 (`veterancy_add.json`, chain `gi_gi`). The GI promotes on
+    /// its fourth and seventh kill.
     #[test]
-    fn gsi_08_12_gi_promotes_on_the_third_and_sixth_gi() {
-        let steps = run(200, 200, 6);
-        // The `f32` running sum reaches 1.0000000199 on kill 3, which stores as
-        // exactly 1.0 — still a promotion.
-        assert_eq!(steps[0].bits(), 0x3EAA_AAAB);
-        assert_eq!(steps[2].bits(), 0x3F80_0000);
+    fn gsi_08_12_gi_promotes_on_the_fourth_and_seventh_gi() {
+        let steps = run(200, 200, 7);
+        assert_eq!(steps[0].bits(), 0x3EAA_AAAA);
+        assert_eq!(steps[2].bits(), 0x3F7F_FFFF);
+        assert_eq!(steps[5].bits(), 0x3FFF_FFFE);
         let ranks: Vec<u16> = steps.iter().map(|raw| rank_u16(*raw)).collect();
-        assert_eq!(ranks, vec![0, 0, 100, 100, 100, 200]);
+        assert_eq!(ranks, vec![0, 0, 0, 100, 100, 100, 200]);
     }
 
     /// The victim's own rank multiplies the award before it is divided.

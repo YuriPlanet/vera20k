@@ -191,7 +191,7 @@ mod schema166_receipt {
 // Schema171: retained timers/track ownership and signed-health/hash composition.
 // All201 baseline/candidate positions and RNG states matched. See the PR415
 // section of docs/research/TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md.
-const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 14052036168648626709;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 878034761769452076;
 // Schema174 removes folds instead of adding them: OreGrowthState's node-era
 // scanner cursor, candidate lists and sample counters, and ProductionState's
 // fallback ore overlay id. The pre-174 projection folds the values those fields
@@ -200,10 +200,10 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 140520361
 // id. It is not a general reconstruction; a scenario finalized by the map
 // loader held Some(first TIB* id). The projection must still equal the previous
 // current pin, asserted below. Rust hash-composition ratchet, not a native golden.
-const BRIDGE_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 1994288996225597037;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 6938168863139048597;
 // v181 folds Foot+580, including default1.0. The pre-181 assertion below
 // reproduces the previous whole fixture hash; path and RNG pins are unchanged.
-const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 9925643987465047575;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 7561855454504905019;
 // Snapshot182 adds ordered display vectors. The pre-182 projection below
 // must reproduce the previous whole-fixture hash, including all RNG/state.
 // Schema186 removes the always-None release-tail byte. No aircraft participate;
@@ -244,9 +244,15 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 99256439874650475
 // and health match 947c7044 on all 200 ticks (traced). Schema 204 adds the
 // house ROF bias and bullet OnBridge folds. Old values: the commit that moved
 // them.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0xD866_6A7C_28C9_D608;
-const BRIDGE_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0xB137_8958_335F_D627;
-const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 15264776308859423951;
+// 2026-09-25 combat chain 2 (behavior, snapshot 205), traced against d02452cd:
+// the vehicle now takes its idle mission on Unlimbo (UnitClass::Enter_Idle_Mode
+// 0x00738970, Guard), so its Mission_Guard cadence draws from frame 0 and it
+// starts its move one frame earlier: every cell is entered one tick sooner and
+// the final cell and health are unchanged; main/mapgen streams unchanged. With
+// that hook disabled every old pin reproduces. Old values: the moving commit.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x9D26_63FE_1130_9E06;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0xD647_5869_EE05_41D7;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 4350841866948950648;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
@@ -845,17 +851,17 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(187)),
-        5458940486897823098,
+        13132899633947150139,
         "schema187 only replaces zero remaining-shot fields with the retained index in this fixture"
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
-        1884571037204767467,
+        17836007346589956114,
         "v189 adds only the retained Techno+3D4 hash fold"
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
-        8577239407133352716,
+        16757600261337163915,
         "v190 changes only the Foot neighbor-history hash composition in this fixture"
     );
     assert_eq!(

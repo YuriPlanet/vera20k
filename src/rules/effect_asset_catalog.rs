@@ -219,10 +219,26 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     for name in rules.general.infantry_death_anims.iter().flatten() {
         insert(name);
     }
+    // Death debris chunks (`TechnoClass::ReceiveDamage 0x00702281`): a
+    // type's own `DebrisAnims=` or `[General] MetallicDebris=`.
     for object in rules.all_objects() {
-        for name in object.explosion_anims.iter().chain(&object.destroy_anims) {
+        for name in object
+            .explosion_anims
+            .iter()
+            .chain(&object.destroy_anims)
+            .chain(&object.debris_anims)
+        {
             insert(name);
         }
+    }
+    for name in &rules.general.metallic_debris {
+        insert(name);
+    }
+    // A chunk landing in water below the deck: `Wake=` and the first
+    // `SplashList=` entry (`AnimClass::AI 0x00423D46..0x00423DDD`).
+    insert(&rules.general.wake.name);
+    for name in &rules.combat_damage.splash_list {
+        insert(name);
     }
     // `[General] Parachute=`: the canopy `ObjectClass::Paradrop` attaches to a
     // dropped object (`sim::movement::parachute_descent`).

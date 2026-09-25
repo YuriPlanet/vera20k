@@ -337,8 +337,6 @@ fn outside_reentry_clears_current_discovery_only_after_successful_alive_mark() {
 #[test]
 fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
     use crate::sim::mission::{MissionId, MissionType};
-    // A vehicle: an infantryman's Unlimbo commits Enter_Idle_Mode's Guard over
-    // the queued mission (`0x006F6E2A`), which would hide the discovery arm.
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=E1\n[E1]\nStrength=100\nSpeed=4\nSight=8\n\
          Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
@@ -362,23 +360,51 @@ fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
         .unwrap();
     let ambush = MissionId::from_known(MissionType::Ambush);
     let hunt = MissionId::from_known(MissionType::Hunt);
+    let guard = MissionId::from_known(MissionType::Guard);
+    // TechnoClass::Unlimbo runs Enter_Idle_Mode and Commence (`0x006F6E2A`)
+    // before FootClass::Unlimbo's owner discovery (`0x004D722F`), so a
+    // queued Ambush is already replaced by Guard when discovery looks.
+    crate::sim::mission::authority::queue_entity_mission_deferred(
+        sim.substrate.entities.get_mut(id).unwrap(),
+        ambush,
+    );
+    assert!(
+        sim.reveal_constructed_object_at_height(
+            id,
+            6,
+            5,
+            0,
+            0,
+            PlacementEvidence::MarkSucceeded,
+            &rules
+        )
+        .is_some()
+    );
+    let entity = sim.substrate.entities.get(id).unwrap();
+    assert!(entity.discovery.discovered_by_other_house);
+    assert_eq!(entity.mission.current(), guard);
+    assert_eq!(entity.mission.queued(), MissionId::NONE);
+    // The discovery arm itself (`TechnoClass 0x006F4960`, reached again when
+    // another house first sees the object): an Ambush queue on a computer
+    // house's object turns to Hunt on the first entry only.
     for first in [true, false] {
         let entity = sim.substrate.entities.get_mut(id).unwrap();
-        // No current mission: native +184 observes the queued Ambush.
+        entity.discovery.discovered_by_other_house = !first;
+        entity
+            .mission
+            .apply_test_fixture(crate::sim::mission::state::MissionTestFixture {
+                current: MissionId::NONE,
+                suspended: MissionId::NONE,
+                queued: MissionId::NONE,
+                movement_bypass_latch: 0,
+                handler_state: 0,
+                mission_start_frame: 0,
+                ai_counter: 0,
+                dispatch_timer: crate::sim::mission::timer::MissionDispatchTimer::at_frame(0),
+            });
         crate::sim::mission::authority::queue_entity_mission_deferred(entity, ambush);
         assert_eq!(entity.mission.effective(), ambush);
-        assert!(
-            sim.reveal_constructed_object_at_height(
-                id,
-                6,
-                5,
-                0,
-                0,
-                PlacementEvidence::MarkSucceeded,
-                &rules
-            )
-            .is_some()
-        );
+        sim.record_foot_owner_discovery(id);
         let entity = sim.substrate.entities.get(id).unwrap();
         assert!(entity.discovery.discovered_by_other_house);
         assert_eq!(entity.mission.queued(), if first { hunt } else { ambush });
@@ -387,7 +413,6 @@ fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
             MissionId::NONE,
             "Queue(false) does not commence"
         );
-        sim.object_conceal(id);
     }
 }
 

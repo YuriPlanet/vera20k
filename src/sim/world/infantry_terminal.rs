@@ -62,11 +62,9 @@ impl InfantryDeathPostlude {
         self,
         world: &mut Simulation,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
         effects: &mut crate::sim::combat::DeathEffects,
     ) {
         if let ReceiverDeathRecipe::ExternalAnim(inf_death) = self.recipe {
-            let mut smudges = Vec::new();
             crate::sim::combat::emit_infantry_death_anim(
                 &rules.general,
                 inf_death,
@@ -78,16 +76,7 @@ impl InfantryDeathPostlude {
                 self.world_z_leptons,
                 &mut world.interner,
                 &mut effects.explosion_effects,
-                &mut smudges,
             );
-            for request in smudges {
-                #[cfg(test)]
-                if world.receiver_fixture.is_some() {
-                    effects.smudge_spawn_requests.push(request);
-                    continue;
-                }
-                world.commit_smudge_request_inline(rules, overlay_registry, request);
-            }
         }
         if matches!(self.recipe, ReceiverDeathRecipe::ExternalAnim(_)) {
             effects.immediate_uninit_ids.push(self.id);
@@ -348,6 +337,7 @@ impl Simulation {
                     z: location.z,
                 },
                 delay: 0,
+                draws: None,
             },
         );
         Some(body)

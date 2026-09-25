@@ -331,7 +331,7 @@ impl SmudgeGrid {
         }
 
         // Pass 1 — flag filter and per-candidate placement check.
-        let mut placeable: Vec<u16> = Vec::new();
+        let mut placeable: Vec<(u16, u8, u8)> = Vec::new();
         for (id, def) in registry.iter_with_id() {
             let flagged = match kind {
                 SmudgeKind::Burn => def.burn,
@@ -350,41 +350,56 @@ impl SmudgeGrid {
                 Some(occupancy),
                 force_big,
             ) {
-                placeable.push(id);
+                placeable.push((id, def.width, def.height));
             }
         }
-        // Nothing fits: return without consuming a draw, as gamemd does.
-        if placeable.is_empty() {
+        let Some(chosen_id) = pick_smudge_candidate(&placeable, dmg, dmg2, force_big, rng) else {
             return false;
-        }
-
-        // Pass 2 — size preference, applied to the placeable list only.
-        let preferred: Vec<u16> = placeable
-            .iter()
-            .copied()
-            .filter(|&id| {
-                let d = registry.get(id).unwrap();
-                if force_big {
-                    d.width >= 2 && d.height >= 2
-                } else {
-                    (d.width == 1 && d.height == 1) || (0x3C < dmg && 0x32 < dmg2)
-                }
-            })
-            .collect();
-        // An empty preference set falls back to the whole placeable list —
-        // gamemd draws over `placeable` in that case rather than bailing.
-        let pool: &[u16] = if preferred.is_empty() {
-            &placeable
-        } else {
-            &preferred
         };
-
-        let pick_idx = (rng.next_range_u32(pool.len() as u32)) as usize;
-        let chosen_id = pool[pick_idx];
         let chosen = registry.get(chosen_id).unwrap();
         self.write_footprint(rx, ry, chosen_id, chosen.width, chosen.height);
         true
     }
+}
+
+/// The pick of `0x006B59A0` / `0x006B5C90` over the `placeable` candidates
+/// (type id, width, height, in registry order):
+/// - nothing placeable: no pick and no draw;
+/// - the preferred list: with `force_big`, types at least 2x2; otherwise 1x1
+///   types, or every type when the anim frame is wider than 0x3C and taller
+///   than 0x32;
+/// - one `RandomRanged(0, n - 1)` over the preferred list, or over the whole
+///   placeable list when none is preferred (no draw when `n` is 1).
+///
+/// Native execution: `tools/spatial_oracle/anim_middle.py`.
+pub(crate) fn pick_smudge_candidate(
+    placeable: &[(u16, u8, u8)],
+    width: i32,
+    height: i32,
+    force_big: bool,
+    rng: &mut SimRng,
+) -> Option<u16> {
+    if placeable.is_empty() {
+        return None;
+    }
+    let preferred: Vec<u16> = placeable
+        .iter()
+        .filter(|&&(_, w, h)| {
+            if force_big {
+                w >= 2 && h >= 2
+            } else {
+                (w == 1 && h == 1) || (0x3C < width && 0x32 < height)
+            }
+        })
+        .map(|&(id, _, _)| id)
+        .collect();
+    let all: Vec<u16> = placeable.iter().map(|&(id, _, _)| id).collect();
+    let pool = if preferred.is_empty() {
+        &all
+    } else {
+        &preferred
+    };
+    Some(pool[rng.next_range_u32(pool.len() as u32) as usize])
 }
 
 /// Lepton-space coord (256 leptons = 1 cell, matches gamemd's CoordStruct).

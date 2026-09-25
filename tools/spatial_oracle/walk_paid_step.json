@@ -1482,7 +1482,7 @@
       "cos_table"
     ],
     "crosses_cell": false,
-    "facing": 8315,
+    "facing": 10855,
     "input": {
       "current": [
         1408,
@@ -1491,21 +1491,21 @@
       ],
       "head": [
         1728,
-        1088,
+        1216,
         0
       ],
       "initial_duration": 0,
-      "initial_facing": 8315,
-      "initial_previous": 8315,
+      "initial_facing": 10855,
+      "initial_previous": 10855,
       "initial_start": 4294967295,
       "name": "slice6_paid_step_1",
       "rot": 0,
       "speed": 10
     },
-    "previous": 8315,
+    "previous": 10855,
     "proposed": [
-      1415,
-      1401,
+      1416,
+      1402,
       0
     ],
     "speed_fraction": 1.0,
@@ -1524,30 +1524,30 @@
       "cos_table"
     ],
     "crosses_cell": false,
-    "facing": 8315,
+    "facing": 10855,
     "input": {
       "current": [
-        1415,
-        1401,
+        1416,
+        1402,
         0
       ],
       "head": [
         1728,
-        1088,
+        1216,
         0
       ],
       "initial_duration": 0,
-      "initial_facing": 8315,
-      "initial_previous": 8315,
+      "initial_facing": 10855,
+      "initial_previous": 10855,
       "initial_start": 4294967295,
       "name": "slice6_paid_step_2",
       "rot": 0,
       "speed": 10
     },
-    "previous": 8315,
+    "previous": 10855,
     "proposed": [
-      1422,
-      1394,
+      1424,
+      1396,
       0
     ],
     "speed_fraction": 1.0,
@@ -1566,30 +1566,30 @@
       "cos_table"
     ],
     "crosses_cell": false,
-    "facing": 8315,
+    "facing": 10855,
     "input": {
       "current": [
-        1422,
-        1394,
+        1424,
+        1396,
         0
       ],
       "head": [
         1728,
-        1088,
+        1216,
         0
       ],
       "initial_duration": 0,
-      "initial_facing": 8315,
-      "initial_previous": 8315,
+      "initial_facing": 10855,
+      "initial_previous": 10855,
       "initial_start": 4294967295,
       "name": "slice6_paid_step_3",
       "rot": 0,
       "speed": 10
     },
-    "previous": 8315,
+    "previous": 10855,
     "proposed": [
-      1429,
-      1387,
+      1432,
+      1390,
       0
     ],
     "speed_fraction": 1.0,
@@ -1608,30 +1608,30 @@
       "cos_table"
     ],
     "crosses_cell": false,
-    "facing": 8315,
+    "facing": 10855,
     "input": {
       "current": [
-        1429,
-        1387,
+        1432,
+        1390,
         0
       ],
       "head": [
         1728,
-        1088,
+        1216,
         0
       ],
       "initial_duration": 0,
-      "initial_facing": 8315,
-      "initial_previous": 8315,
+      "initial_facing": 10855,
+      "initial_previous": 10855,
       "initial_start": 4294967295,
       "name": "slice6_paid_step_4",
       "rot": 0,
       "speed": 10
     },
-    "previous": 8315,
+    "previous": 10855,
     "proposed": [
-      1436,
-      1380,
+      1440,
+      1384,
       0
     ],
     "speed_fraction": 1.0,
@@ -1650,30 +1650,30 @@
       "cos_table"
     ],
     "crosses_cell": false,
-    "facing": 8315,
+    "facing": 11047,
     "input": {
       "current": [
-        1436,
-        1380,
+        1440,
+        1384,
         0
       ],
       "head": [
         1728,
-        1088,
+        1216,
         0
       ],
       "initial_duration": 0,
-      "initial_facing": 8315,
-      "initial_previous": 8315,
+      "initial_facing": 10855,
+      "initial_previous": 10855,
       "initial_start": 4294967295,
       "name": "slice6_paid_step_5",
       "rot": 0,
       "speed": 10
     },
-    "previous": 8315,
+    "previous": 11047,
     "proposed": [
-      1443,
-      1373,
+      1448,
+      1379,
       0
     ],
     "speed_fraction": 1.0,

@@ -592,7 +592,9 @@ use crate::sim::world::Simulation;
 // movement owners read `Rules+0x1718` (`[General] CloseEnough=`).
 // 203 -> 204: a bullet keeps OnBridge and no owner house, a house its ROF
 // bias (`HouseClass+0x1A8`), and a TeamType `Aggressive=`.
-const SNAPSHOT_VERSION: u32 = 204;
+// 204 -> 205: a bullet keeps its `Arcing=` (`BulletTypeClass+0x29B`) and an
+// anim its BounceClass body (`AnimClass+0x128`).
+const SNAPSHOT_VERSION: u32 = 205;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3545,7 +3547,8 @@ mod tests {
         // 202 -> 203: no Simulation copy of CloseEnough.
         // 203 -> 204: bullet OnBridge, no owner house; house ROF bias; TeamType
         // `Aggressive=`.
-        assert_eq!(super::SNAPSHOT_VERSION, 204);
+        // 204 -> 205: bullet `Arcing=`; an anim's bounce body.
+        assert_eq!(super::SNAPSHOT_VERSION, 205);
     }
 
     #[test]

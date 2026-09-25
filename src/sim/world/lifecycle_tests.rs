@@ -1812,6 +1812,7 @@ fn insert_anim(sim: &mut Simulation, stable_id: u64, inactive: bool) {
         start_sound_active: false,
         stop_sound_id: None,
         display: Default::default(),
+        bounce: None,
     };
     assert!(sim.substrate.anims.insert(anim).is_none());
 }
@@ -6468,8 +6469,12 @@ fn assert_direct_fatal_death_weapon_starts_crater(bridge: bool) {
     );
     let mut rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
     rules.art_registry = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
-        "[CRATERANIM]\nCrater=yes\nScorch=no\nStart=0\nFrameWidth=100\nFrameHeight=100\n",
+        "[CRATERANIM]\nCrater=yes\nScorch=no\nStart=0\n",
     ));
+    // One raw frame: no middle frame, so Start runs Middle at construction.
+    rules
+        .art_registry
+        .bind_anim_frame_count_for_test("CRATERANIM", 1);
     let registry = crate::map::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
     let mut sim = Simulation::with_seed(1);
     let mut cells = Vec::new();
@@ -6526,8 +6531,10 @@ fn assert_direct_fatal_death_weapon_starts_crater(bridge: bool) {
 
         // Wave vslot call 0x0075F42C -> DeathWeapon Detonate 0x0070D782 ->
         // zero-delay Anim constructor 0x00469C93 -> 0x00422702/0x00424D5A.
-        // Default Start=0 crater work is synchronous, including Reduce_Tiberium
-        // at 0x004250E7. Evidence: active gamemd.exe bodies/call instructions.
+        // A type without a middle frame (+0x298 == 0) runs Middle from Start
+        // (0x00424D5A), so its crater work, including Reduce_Tiberium at
+        // 0x004250E7, is synchronous. Evidence: active gamemd.exe bodies/call
+        // instructions.
         assert!(sim.object_ai_visit_one(
             wave_id,
             Some(&rules),

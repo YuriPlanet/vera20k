@@ -316,6 +316,7 @@ fn classify_projectile_delivery(
             inaccurate: projectile.inaccurate,
             floater: projectile.floater,
             elasticity_bits: projectile.elasticity.to_bits(),
+            arcing: projectile.arcing,
         },
         ballistic,
         vertical: projectile
@@ -1370,32 +1371,42 @@ pub struct ExplosionEffect {
     /// Sub-cell impact Y in leptons.
     pub sub_y: SimFixed,
     pub z: u8,
+    /// Exact absolute Z in leptons; the anim is constructed there (its Middle
+    /// height gate reads it). `z` is the level byte of the same point.
+    pub world_z: i32,
     /// A death producer's own constructor call (`Death_Explosion`, the
     /// Aircraft death arm, `DestructionEffects`): `AnimClass(type, coord,
     /// delay, 1, 0x600, 0, 0)` at an exact coordinate. `None` rows construct
-    /// with the warhead impact's `(0, 1, 0x2600, -15)` at a level-rounded
-    /// coordinate: the impact anim, the InfDeath anims and the TechnoClass
-    /// debris anims. Natively the debris anims take `(center + 0x14 Z, 0, 1,
-    /// 0x600, 0, 0)` (`0x007024AA`, `0x00702566`); on stock their rows are
-    /// dropped as unbound art (GSI-05.14).
+    /// with the warhead impact's `(0, 1, 0x2600, -15)` at the impact's cell,
+    /// sub-cell and exact `world_z`: the impact anim and the InfDeath anims. The TechnoClass
+    /// debris anims are death constructions at `center + 0x14 Z` (`0x007024AA`,
+    /// `0x00702566`) that already took their constructor draws.
     pub death: Option<destruction_effects::DeathAnimSpawn>,
 }
 
-/// One transient combat-light request emitted when active IronCurtain or
-/// ForceShield rejects a positive receiver call. `FUN_0048A620` creates an
-/// unowned screen-space light, not an AnimClass/ParticleSystem, so this record
-/// retains the exact call inputs without inventing an attachment or house.
+/// One transient combat-light request, the inputs of one `FUN_0048A620` call.
+/// It creates an unowned screen-space light, not an AnimClass/ParticleSystem,
+/// so this record keeps the exact call inputs without inventing an attachment
+/// or house. Callers:
+/// - an active IronCurtain or ForceShield rejecting a positive receiver call
+///   (the damage shifted left once; flags IC=1, ForceShield=6);
+/// - a `Bright=` bullet's detonation (`BulletClass::DetonateAtCoord
+///   0x00469BD6..0x00469C41`: the bullet's damage `+0x6C`, flags from the
+///   warhead's `CLDisableRed/Green/Blue=` as 2/4/8);
+/// - every rocket impact (`RocketLocomotion::Detonate 0x006632AF`, not forced)
+///   and a bouncing chunk's dry landing (`AnimClass::AI 0x00423EF8`, not
+///   forced).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvulnerabilityImpactEffect {
+pub struct CombatLightRequest {
     /// Receiver provenance only; this is not native effect ownership.
-    pub target_id: u64,
-    /// Post-defender-transform damage shifted left once before the helper call.
-    pub doubled_damage: i32,
+    pub target_id: Option<u64>,
+    /// The damage the helper sizes the light from.
+    pub damage: i32,
     pub warhead_ref: InternedId,
     pub coord: ProjectileCoord,
-    /// Native helper force/create argument (literal true on this callsite).
+    /// Native helper force/create argument (literal true on both callsites).
     pub force_create: bool,
-    /// Native raw draw flags: IC=1, ForceShield=6.
+    /// Native raw draw flags.
     pub flags: u32,
 }
 
@@ -1404,18 +1415,12 @@ pub struct InvulnerabilityImpactEffect {
 /// a test adapter.
 #[derive(Debug, Clone)]
 pub enum SmudgeSpawnRequest {
-    /// Emitted alongside ExplosionEffect when a warhead's AnimList anim spawns.
-    /// Carries the anim's interned SHP name for AnimType flag lookup.
-    Anim {
-        anim_name: InternedId,
-        rx: u16,
-        ry: u16,
-        sub_x: SimFixed,
-        sub_y: SimFixed,
-        /// Exact absolute CoordStruct Z. ExplosionEffect keeps its separate
-        /// coarse presentation byte; the native smudge altitude gate is in
-        /// leptons and must never reconstruct this value from that byte.
-        world_z_leptons: i32,
+    /// `AnimClass::Middle @ 0x00424F00` past its height gate: the anim's
+    /// coordinate (vt+0x48) and its marks. The anim runtime emits it at Start
+    /// or at the anim's middle frame.
+    AnimMiddle {
+        coord: crate::sim::smudge_grid::SimCoord,
+        marks: smudge_dispatch::AnimMiddleMarks,
     },
     /// Emitted once per >=2x2 building destruction (DestructionEffects path).
     BuildingCenter {
@@ -1459,7 +1464,6 @@ pub(crate) fn emit_infantry_death_anim(
     world_z_leptons: i32,
     interner: &mut StringInterner,
     explosion_effects: &mut Vec<ExplosionEffect>,
-    smudge_spawn_requests: &mut Vec<SmudgeSpawnRequest>,
 ) {
     let Some(anim_name) = general.infantry_death_anim(inf_death) else {
         return;
@@ -1472,22 +1476,14 @@ pub(crate) fn emit_infantry_death_anim(
         sub_x,
         sub_y,
         z,
+        world_z: world_z_leptons,
         death: None,
-    });
-    smudge_spawn_requests.push(SmudgeSpawnRequest::Anim {
-        anim_name,
-        rx,
-        ry,
-        sub_x,
-        sub_y,
-        world_z_leptons,
     });
 }
 
-/// Emit the warhead's AnimList animation and a paired smudge spawn request
-/// for one detonation at (rx, ry, z). Mirrors gamemd's WarheadType::Detonate
-/// dispatch into AnimClass::Start: every detonation that spawns an anim
-/// also runs the anim's first-frame smudge logic.
+/// Emit the warhead's AnimList animation for one detonation at (rx, ry, z).
+/// Its scorch or crater is the anim's own `AnimClass::Middle`, which the anim
+/// runtime runs at the anim's middle frame.
 ///
 /// Pushes nothing if `warhead.anim_list` is empty.
 ///
@@ -1507,7 +1503,6 @@ pub(crate) fn emit_warhead_detonation_effects(
     world_z_leptons: i32,
     interner: &mut StringInterner,
     explosion_effects: &mut Vec<ExplosionEffect>,
-    smudge_spawn_requests: &mut Vec<SmudgeSpawnRequest>,
 ) {
     if warhead.anim_list.is_empty() {
         return;
@@ -1522,15 +1517,8 @@ pub(crate) fn emit_warhead_detonation_effects(
         sub_x,
         sub_y,
         z,
+        world_z: world_z_leptons,
         death: None,
-    });
-    smudge_spawn_requests.push(SmudgeSpawnRequest::Anim {
-        anim_name: interned_name,
-        rx,
-        ry,
-        sub_x,
-        sub_y,
-        world_z_leptons,
     });
 }
 
@@ -1911,7 +1899,7 @@ pub(crate) struct DeathEffects {
     /// world consequence boundary. The live receiver has allocator access;
     /// deferred admission preserves the existing allocation and Logic order.
     pub(crate) voxel_debris: Vec<crate::sim::voxel_anim::VoxelDebrisSpawn>,
-    pub(crate) invulnerability_impact_effects: Vec<InvulnerabilityImpactEffect>,
+    pub(crate) combat_light_requests: Vec<CombatLightRequest>,
     pub(crate) bridge_damage_events: Vec<BridgeDamageEvent>,
     #[cfg(test)]
     pub(crate) wall_mutations: Vec<WallMutation>,
@@ -1986,8 +1974,8 @@ impl DeathEffects {
         self.structure_destroyed |= other.structure_destroyed;
         self.explosion_effects.append(&mut other.explosion_effects);
         self.voxel_debris.append(&mut other.voxel_debris);
-        self.invulnerability_impact_effects
-            .append(&mut other.invulnerability_impact_effects);
+        self.combat_light_requests
+            .append(&mut other.combat_light_requests);
         self.bridge_damage_events
             .append(&mut other.bridge_damage_events);
         #[cfg(test)]
@@ -2030,50 +2018,27 @@ impl DeathEffects {
 /// from a drop-in therefore has the byte clear, so an ordinary death over water
 /// DOES throw debris and consumes the block's draws.
 ///
-/// RESIDUAL (GSI-05.14) — the SHP half pushes `ExplosionEffect` rows, and with
-/// stock data nothing comes of them: `spawn_combat_explosion_anim` constructs
-/// only art types the loader bound, `anim_class_roots` lists neither
-/// `DebrisAnims=` nor `MetallicDebris=`, and no stock warhead, `Explosion=` or
-/// `DestroyAnim=` names a debris type, so every row is dropped. The draws are
-/// taken; no chunk is drawn. Binding them without the bouncer arm would be
-/// worse, because `LoopCount=-1` chunks would play in place forever. Native
-/// builds a bouncing `AnimClass` (`0x00421EA0`): every stock
-/// debris AnimType is `Bouncer=yes` — all 26 named by `[General]
-/// MetallicDebris=` or by any `DebrisAnims=` line carry it, authored in
-/// `artmd.ini` rather than `rulesmd.ini` (`AnimTypeClass+0x35A`, read at
-/// `0x004286A7`) — so native's constructor enters its own `BounceClass::Init`
-/// arm and the chunk flies an arc before landing.
-/// - Trigger: every death that reaches either SHP arm — in gamemd, 324 of the
-///   356 stock sections that throw (of 439 authoring `MaxDebris=` in gamemd's
-///   own spelling, 83 author 0).
-/// - Player effect: no debris chunk appears at all, and its
-///   `Damage=`/`Warhead=` on landing is not applied.
-/// - Frequency: continuous — every building death (no `[BuildingTypes]` section
-///   authors `DebrisTypes=`, so all 292 that throw land here) plus 18 of the 50
-///   registered `[VehicleTypes]` that throw and 11 of the 12 `[AircraftTypes]`.
-///   The other 32 vehicle types take the voxel arm instead. Those counts are on
-///   gamemd's case-exact key read, which `ObjectType::from_ini_section` matches
-///   (`CCINIClass::ReadInt @ 0x005276D0` CRCs the raw key bytes): the 17
-///   `[VehicleTypes]` spelling `Maxdebris=` take the constructor default 0 here
-///   as they do in retail and never reach this arm.
-/// - Downstream risk: the constructor's own draws are not consumed either —
-///   one `RandomRanged` for `RandomRate=`, three `Random__Next()` for the
-///   launch velocity and three `RandomRanged(-0xFFFF, 0xFFFF)` inside
-///   `BounceClass::Init`, so seven per anim. Every debris producer in the
-///   engine shares that gap today; closing it belongs with the AnimClass
-///   bouncer owner, not here, because the same seven draws are missing from
-///   the `Explosion=`/`DestroyAnim=` producer beside this one.
+/// The SHP half constructs a bouncing `AnimClass` per piece (`0x00421EA0`):
+/// every stock debris AnimType is `Bouncer=yes` — all 26 named by `[General]
+/// MetallicDebris=` or by any `DebrisAnims=` line, authored in `artmd.ini`
+/// (`AnimTypeClass+0x35A`, read at `0x004286A7`). Each piece's constructor
+/// draws (`RandomRate=`, none for the stock chunks, then three velocity draws
+/// and `BounceClass::Init`'s three) are taken right after its pick, as native
+/// constructs it before picking the next; the row carries them to the
+/// deferred construction. Native execution:
+/// `tools/spatial_oracle/anim_bouncer_launch.py` (`debris_loop` rows).
+/// Counts on gamemd's case-exact key read, which `ObjectType::from_ini_section`
+/// matches (`CCINIClass::ReadInt @ 0x005276D0` CRCs the raw key bytes): 324 of
+/// the 356 stock sections that throw reach an SHP arm (of 439 authoring
+/// `MaxDebris=`, 83 author 0); the 17 `[VehicleTypes]` spelling `Maxdebris=`
+/// (the Rhino among them) take the constructor default 0 and throw nothing.
 #[allow(clippy::too_many_arguments)]
 fn throw_debris_for_death(
     object_type: &ObjectType,
     rules: &RuleSet,
     interner: &mut StringInterner,
     owner: InternedId,
-    rx: u16,
-    ry: u16,
-    sub_x: SimFixed,
-    sub_y: SimFixed,
-    z: u8,
+    (world_x, world_y): (i32, i32),
     world_z_leptons: i32,
     scenario_rng: &mut SimRng,
     voxel_debris: &mut Vec<crate::sim::voxel_anim::VoxelDebrisSpawn>,
@@ -2084,12 +2049,6 @@ fn throw_debris_for_death(
     if object_type.max_debris <= 0 {
         return;
     }
-    let world_x = i32::from(rx)
-        .wrapping_mul(256)
-        .wrapping_add(sub_x.to_num::<i32>());
-    let world_y = i32::from(ry)
-        .wrapping_mul(256)
-        .wrapping_add(sub_y.to_num::<i32>());
 
     let debris_types: Vec<Option<(crate::rules::voxel_anim_type::VoxelAnimTypeId, _)>> =
         object_type
@@ -2109,11 +2068,33 @@ fn throw_debris_for_death(
         debris_anim_count: object_type.debris_anims.len(),
         metallic_debris_count: rules.general.metallic_debris.len(),
     };
+    // Native lifts the anim coordinate by 20 leptons (`ADD EAX, 0x14` at
+    // `0x00702443`/`0x0070254B`) and constructs `AnimClass(type, coord, 0, 1,
+    // 0x600, 0, 0)` there, exactly.
+    let anim_coord = crate::sim::anim_class::AnimWorldCoord {
+        x: world_x,
+        y: world_y,
+        z: world_z_leptons.wrapping_add(0x14),
+    };
+    let debris_name = |source: ShpDebrisSource, index: usize| match source {
+        ShpDebrisSource::TypeDebrisAnims => object_type.debris_anims.get(index),
+        ShpDebrisSource::RulesMetallicDebris => rules.general.metallic_debris.get(index),
+    };
     let Ok(thrown) = throw_death_debris(
         &data,
         Some(owner),
         glam::IVec3::new(world_x, world_y, world_z_leptons),
         scenario_rng,
+        &mut |source, index, rng| {
+            let Some(config) = debris_name(source, index).and_then(|name| {
+                rules
+                    .art_registry
+                    .anim_runtime_config(&name.to_ascii_uppercase())
+            }) else {
+                return Ok(None);
+            };
+            crate::sim::anim_class::anim_constructor_draws(config, anim_coord, rng).map(Some)
+        },
     ) else {
         // A launch velocity outside the verified x87 domain needs a modded
         // `[VoxelAnims]` value far past any stock one; the draws are already
@@ -2122,16 +2103,9 @@ fn throw_debris_for_death(
     };
     voxel_debris.extend(thrown.voxels);
     for row in thrown.anims {
-        let name = match row.source {
-            ShpDebrisSource::TypeDebrisAnims => object_type.debris_anims.get(row.index),
-            ShpDebrisSource::RulesMetallicDebris => rules.general.metallic_debris.get(row.index),
-        };
-        // Native lifts the anim coordinate by 20 leptons (`ADD EAX, 0x14` at
-        // `0x00702443`). `ExplosionEffect` carries Z as a height LEVEL, and 20
-        // leptons is under a sixth of one, so the lift is below this row's
-        // resolution and is not represented.
-        if let Some(name) = name {
+        if let Some(name) = debris_name(row.source, row.index) {
             let shp_name = interner.intern(name);
+            let (rx, ry, sub_x, sub_y, z) = anim_coord.to_cell_sub_z();
             explosion_effects.push(ExplosionEffect {
                 shp_name,
                 rx,
@@ -2139,7 +2113,12 @@ fn throw_debris_for_death(
                 sub_x,
                 sub_y,
                 z,
-                death: None,
+                world_z: anim_coord.z,
+                death: Some(destruction_effects::DeathAnimSpawn {
+                    coord: anim_coord,
+                    delay: 0,
+                    draws: row.draws,
+                }),
             });
         }
     }
@@ -2208,7 +2187,7 @@ enum ConcreteDeathSmudgePlan {
 #[derive(Debug, Clone, Copy)]
 struct ResolvedReceiveDamage {
     outcome: damage::DamageOutcome,
-    invulnerability_impact: Option<InvulnerabilityImpactEffect>,
+    invulnerability_impact: Option<CombatLightRequest>,
 }
 
 fn receiver_effect_coord(
@@ -2418,7 +2397,7 @@ fn resolve_receive_damage(
         scenario_no_damage,
         rules.combat_damage.max_damage,
     );
-    let invulnerability_impact = outcome.invulnerability_impact_damage.map(|doubled_damage| {
+    let invulnerability_impact = outcome.invulnerability_impact_damage.map(|damage| {
         let flags = match active_invulnerability
             .expect("receiver gate retained active state")
             .kind
@@ -2426,9 +2405,9 @@ fn resolve_receive_damage(
             crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain => 1,
             crate::sim::superweapon::invulnerability::InvulnKind::ForceShield => 6,
         };
-        InvulnerabilityImpactEffect {
-            target_id: target.stable_id(),
-            doubled_damage,
+        CombatLightRequest {
+            target_id: Some(target.stable_id()),
+            damage,
             warhead_ref: event.warhead_ref,
             coord: receiver_effect_coord(target, terrain),
             force_create: true,
@@ -2632,7 +2611,9 @@ pub(crate) struct CombatEmit {
     pub(crate) drain_links: Vec<(u64, u64)>,
 }
 
-fn projectile_impact_cell(impact: ProjectileCoord) -> (u16, u16, SimFixed, SimFixed, i32) {
+pub(crate) fn projectile_impact_cell(
+    impact: ProjectileCoord,
+) -> (u16, u16, SimFixed, SimFixed, i32) {
     let rx = impact.x.div_euclid(256).clamp(0, i32::from(u16::MAX)) as u16;
     let ry = impact.y.div_euclid(256).clamp(0, i32::from(u16::MAX)) as u16;
     (
@@ -2890,6 +2871,7 @@ fn emit_projectile_shrapnel(
                 inaccurate: child_projectile.inaccurate,
                 floater: child_projectile.floater,
                 elasticity_bits: child_projectile.elasticity.to_bits(),
+                arcing: child_projectile.arcing,
             },
         });
     }
@@ -3340,7 +3322,7 @@ mod impact_height_tests {
     }
 
     #[test]
-    fn gsi_04_11_fatal_infantry_special_anim_emits_effect_and_smudge_request() {
+    fn gsi_04_11_fatal_infantry_special_anim_emits_effect_at_the_body_height() {
         let mut interner = test_interner();
         let general = crate::rules::ruleset::GeneralRules::default();
         let cases = [
@@ -3357,7 +3339,6 @@ mod impact_height_tests {
         ];
         for (inf_death, expected_name) in cases {
             let mut effects = Vec::new();
-            let mut smudges = Vec::new();
             emit_infantry_death_anim(
                 &general,
                 inf_death,
@@ -3369,39 +3350,115 @@ mod impact_height_tests {
                 208,
                 &mut interner,
                 &mut effects,
-                &mut smudges,
             );
             let Some(expected_name) = expected_name else {
                 assert!(effects.is_empty(), "InfDeath {inf_death}");
-                assert!(smudges.is_empty(), "InfDeath {inf_death}");
                 continue;
             };
             assert_eq!(effects.len(), 1, "InfDeath {inf_death}");
-            assert_eq!(smudges.len(), 1, "InfDeath {inf_death}");
             assert_eq!(interner.resolve(effects[0].shp_name), expected_name);
-            assert_eq!((effects[0].rx, effects[0].ry, effects[0].z), (7, 8, 2));
-            let SmudgeSpawnRequest::Anim {
-                anim_name,
-                rx,
-                ry,
-                sub_x,
-                sub_y,
-                world_z_leptons,
-            } = &smudges[0]
-            else {
-                panic!("special death effect must run the Anim smudge start path");
-            };
-            assert_eq!(interner.resolve(*anim_name), expected_name);
             assert_eq!(
                 (
-                    *rx,
-                    *ry,
-                    sub_x.to_num::<i32>(),
-                    sub_y.to_num::<i32>(),
-                    *world_z_leptons,
+                    effects[0].rx,
+                    effects[0].ry,
+                    effects[0].z,
+                    effects[0].world_z
                 ),
-                (7, 8, 64, 192, 208)
+                (7, 8, 2, 208)
             );
+        }
+    }
+
+    /// `TechnoClass::ReceiveDamage`'s metallic debris loop
+    /// (`0x007024E0..0x0070256B`, `tools/spatial_oracle/anim_bouncer_launch.py`,
+    /// executed with the whole AnimClass constructor per piece) on retail
+    /// rules and art: each piece's `MetallicDebris=` pick, then that piece's
+    /// constructor draws, before the next pick. The budget is pinned (equal
+    /// bounds take no draw) so the rows start at the loop.
+    #[test]
+    fn debris_pieces_construct_between_picks_as_the_original() {
+        let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let Some(art) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
+            return;
+        };
+        let mut rules =
+            crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+        rules.merge_art_data(&crate::rules::art_data::ArtRegistry::from_ini(&art));
+        let golden: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/anim_bouncer_launch.json"
+        ))
+        .unwrap();
+        let rows = golden["debris_loop"].as_array().unwrap();
+        assert_eq!(rows.len(), 9);
+        for row in rows {
+            let input = &row["input"];
+            let pieces = input["pieces"].as_i64().unwrap() as i32;
+            let mut object_type = rules.object("MTNK").unwrap().clone();
+            object_type.max_debris = pieces + 1;
+            object_type.min_debris = pieces;
+            object_type.debris_types.clear();
+            object_type.debris_anims.clear();
+            let coord = input["coord"].as_array().unwrap();
+            let at = |i: usize| coord[i].as_i64().unwrap() as i32;
+            let mut interner = test_interner();
+            let owner = interner.intern("Americans");
+            let mut rng = SimRng::new(input["seed"].as_u64().unwrap());
+            assert_eq!(rng.native_state_hex(), row["rng_before"].as_str().unwrap());
+            let mut voxels = Vec::new();
+            let mut effects = Vec::new();
+            throw_debris_for_death(
+                &object_type,
+                &rules,
+                &mut interner,
+                owner,
+                (at(0), at(1)),
+                at(2),
+                &mut rng,
+                &mut voxels,
+                &mut effects,
+            );
+            assert_eq!(
+                rng.native_state_hex(),
+                row["rng_after"].as_str().unwrap(),
+                "{input}"
+            );
+            let names: Vec<String> = row["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|event| event["call"] == "anim_ctor")
+                .map(|event| event["type"].as_str().unwrap().to_string())
+                .collect();
+            assert_eq!(
+                effects
+                    .iter()
+                    .map(|effect| interner.resolve(effect.shp_name).to_string())
+                    .collect::<Vec<_>>(),
+                names,
+                "{input}"
+            );
+            for (effect, native) in effects.iter().zip(row["anims"].as_array().unwrap()) {
+                let spawn = effect
+                    .death
+                    .expect("a debris piece is an exact construction");
+                let location = native["location"].as_array().unwrap();
+                assert_eq!(
+                    [spawn.coord.x, spawn.coord.y, spawn.coord.z],
+                    std::array::from_fn(|i| location[i].as_i64().unwrap() as i32),
+                    "{input}"
+                );
+                let body = spawn
+                    .draws
+                    .and_then(|draws| draws.bounce)
+                    .expect("a bouncing chunk");
+                let bits = |key: &str, i: usize| native["bounce"][key][i].as_u64().unwrap() as u32;
+                for axis in 0..3 {
+                    assert_eq!(body.position[axis].bits(), bits("position_bits", axis));
+                    assert_eq!(body.velocity[axis].bits(), bits("velocity_bits", axis));
+                }
+            }
         }
     }
 

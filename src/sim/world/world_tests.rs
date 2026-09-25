@@ -1949,8 +1949,12 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
     );
     let mut rules = RuleSet::from_ini(&ini).expect("bullet ore-order rules");
     rules.art_registry = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
-        "[EXPLOSION]\nCrater=yes\nScorch=no\nFrameWidth=100\nFrameHeight=100\n",
+        "[EXPLOSION]\nCrater=yes\nScorch=no\n",
     ));
+    // One raw frame: no middle frame, so Start runs Middle at construction.
+    rules
+        .art_registry
+        .bind_anim_frame_count_for_test("EXPLOSION", 1);
     let registry = crate::map::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
     let ore_id = registry.id_for_name("ORE").expect("ORE overlay id");
 
@@ -1998,15 +2002,6 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
         "Apply_area_damage must clear ten-density ore before Bullet impact AnimClass::Start"
     );
     assert!(
-        sim.smudge_grid
-            .as_ref()
-            .unwrap()
-            .cell(5, 5)
-            .type_id
-            .is_some(),
-        "the outer crater must observe the already-cleared overlay cell"
-    );
-    assert!(
         result
             .consequences
             .effects()
@@ -2019,6 +2014,19 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
             .effects()
             .smudge_spawn_requests
             .is_empty()
+    );
+    // The receiver transaction's commit constructs the AnimList anim.
+    let _ = result
+        .consequences
+        .commit(&mut sim, &rules, Some(&registry), None);
+    assert!(
+        sim.smudge_grid
+            .as_ref()
+            .unwrap()
+            .cell(5, 5)
+            .type_id
+            .is_some(),
+        "the outer crater must observe the already-cleared overlay cell"
     );
     let mut expected_rng = crate::sim::rng::SimRng::new(1);
     let _ = expected_rng.next_range_u32(1);
