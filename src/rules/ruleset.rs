@@ -4240,7 +4240,7 @@ impl RuleSet {
                         crate::rules::foundation::foundation_name(&obj.foundation).to_string();
                 }
                 // Merge QueueingCell from art.ini (TibSun legacy dock system).
-                if entry.queueing_cell.is_some() {
+                if entry.queueing_cell != [0, 0] {
                     obj.queueing_cell = entry.queueing_cell;
                     dock_patched += 1;
                 }
@@ -5509,7 +5509,7 @@ MutateWarhead=MyMutate\n\
              Harvester=yes\n\
              Dock=modproc\n\
              [MODPROC]\n\
-             Refinery=yes\n\
+             Refinery=yes\nDockUnload=yes\n\
              FreeUnit=modharv\n\
              [FAKEREF]\n\
              Name=Fake Refinery\n",
@@ -5536,7 +5536,7 @@ MutateWarhead=MyMutate\n\
              [BuildingTypes]\n\
              0=MODPROC\n\
              [MODPROC]\n\
-             Refinery=yes\n\
+             Refinery=yes\nDockUnload=yes\n\
              FreeUnit=UNKNOWN\n",
         );
         let rules = RuleSet::from_ini(&ini).expect("Should parse");

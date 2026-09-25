@@ -2613,7 +2613,7 @@ impl Simulation {
         // TechnoClass::Limbo releases the gattling loop and clears the report
         // latch (`0x006F6C6B`, `0x006F6C76`) ahead of its radio pass.
         self.gattling_limbo(stable_id);
-        crate::sim::radio::broadcast_break(self, stable_id);
+        crate::sim::radio::broadcast_break(self, stable_id, None);
         self.object_conceal_with_context(stable_id, context)
     }
 
@@ -2783,7 +2783,7 @@ impl Simulation {
             return;
         };
         match category {
-            EntityCategory::Structure => crate::sim::radio::broadcast_break(self, stable_id),
+            EntityCategory::Structure => crate::sim::radio::broadcast_break(self, stable_id, None),
             EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft => {
                 if let Some(contact) = self
                     .substrate
@@ -2797,6 +2797,7 @@ impl Simulation {
                         contact,
                         crate::sim::radio::RadioMessage::Break,
                         crate::sim::radio::RadioPayload::default(),
+                        None,
                     );
                 }
             }
@@ -2880,7 +2881,7 @@ impl Simulation {
         crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
             entity, None,
         );
-        crate::sim::radio::broadcast_break(self, stable_id);
+        crate::sim::radio::broadcast_break(self, stable_id, None);
         crate::sim::spawn_manager::kill_all_spawns_with_context(self, stable_id, context);
         crate::sim::spawn_manager::clear_all_spawn_targets(self, stable_id);
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {

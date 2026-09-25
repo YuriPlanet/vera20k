@@ -30,6 +30,21 @@ pub(crate) fn drive_locomotor_is_moving(entity: &GameEntity) -> bool {
     super::track_head::motion_state(entity, super::track_process::TrackFamily::Drive).0
 }
 
+/// `DriveLocomotionClass::Do_Turn @ 0x004B0EF0` (ILocomotion +0x4C): one
+/// `FacingClass::Set @ 0x004C9220` on the owner's PrimaryFacing (+0x388).
+/// Re-issuing the destination the facing already holds keeps its running
+/// timer (tools/mcv_deploy_oracle.json turns). The hull then animates from the
+/// frame-anchored `body_facing`; `unit_post::apply_unit_facing` mirrors it into
+/// the 8-bit heading while the unit holds no movement target.
+pub(crate) fn drive_do_turn(entity: &mut GameEntity, desired: u16, frame: u32) {
+    let rot = entity.locomotor.as_ref().map_or(0, |loco| loco.rot);
+    let facing = entity.facing;
+    entity
+        .body_facing
+        .get_or_insert_with(|| super::FacingClass::new(u16::from(facing) << 8, rot))
+        .set(desired, frame);
+}
+
 /// Compute the Drive-local target speed fraction from currently modeled runtime
 /// modifiers. This is the `DriveLocomotion` owner value; raw `Speed=` remains a
 /// separate top-speed input.

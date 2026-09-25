@@ -86,7 +86,9 @@ mod movement_path;
 mod movement_step;
 pub(crate) mod movement_tick;
 mod navcom;
-pub(crate) use navcom::{nav_target_coordinate, set_walk_destination_coord, target_cell_coord};
+pub(crate) use navcom::{
+    building_dock_cell, nav_target_coordinate, set_walk_destination_coord, target_cell_coord,
+};
 #[cfg(test)]
 pub(crate) mod fresh_oracle_seam;
 mod path_markers;
@@ -139,7 +141,7 @@ pub(crate) use foot_speed::owner_current_speed_from_fraction;
 // NOT test-gated: `techno_common_pre`'s DisguiseWhenStill check
 // (sim/world/techno_ai.rs) consumes this in every build; a 2026-08-14
 // warning-cleanup gate on it broke release-only compilation.
-pub(crate) use drive_locomotion::drive_locomotor_is_moving;
+pub(crate) use drive_locomotion::{drive_do_turn, drive_locomotor_is_moving};
 
 // Re-export command functions so callers can use `movement::issue_move_command` etc.
 pub use movement_commands::{
@@ -155,7 +157,7 @@ pub(crate) use movement_path::{
     path_search_used_zone_grid_marker, reset_path_search_used_zone_grid_marker,
 };
 pub(crate) use movement_tick::sync_formation_speeds_after_live_pass;
-pub(crate) use navcom::set_destination_internal_cell;
+pub(crate) use navcom::{set_destination_internal_cell, track_stop_moving};
 // Legacy batch tick used by focused movement fixtures.
 #[cfg(test)]
 pub(crate) use movement_tick::tick_movement_with_grids;

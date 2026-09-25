@@ -1324,7 +1324,7 @@ mod tests {
              CanC4=yes\n\
              [GAREFN]\n\
              Strength=1000\n\
-             Refinery=yes\n",
+             Refinery=yes\nDockUnload=yes\n",
         );
         RuleSet::from_ini(&ini).expect("cursor contract rules")
     }

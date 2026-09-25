@@ -807,7 +807,7 @@ mod tests {
     use crate::rules::art_data::ArtRegistry;
     use crate::rules::ini_parser::IniFile;
     use crate::sim::components::Health;
-    use crate::sim::miner::{MinerState, RefineryDockPhase, ResourceType};
+    use crate::sim::miner::{MinerState, ResourceType};
     use crate::sim::overlay_grid::OverlayGrid;
     use crate::sim::pathfinding::PathGrid;
 
@@ -852,7 +852,7 @@ mod tests {
              [MODPROC]\n\
              Name=Mod Ore Processor\n\
              Foundation=3x3\n\
-             Refinery=yes\n\
+             Refinery=yes\nDockUnload=yes\n\
              FreeUnit=MODHARV\n\
              Strength=900\n\
              Cost=900\n\
@@ -1367,7 +1367,7 @@ mod tests {
              [FAKEREF]\n\
              Name=Fake Refinery\n\
              [MODPROC]\n\
-             Refinery=yes\n",
+             Refinery=yes\nDockUnload=yes\n",
         ))
         .expect("rules should parse");
         let mut interner = crate::sim::intern::StringInterner::new();
@@ -1581,13 +1581,13 @@ mod tests {
             match entity.miner_state().expect("miner cursor") {
                 MinerState::Harvest => saw_harvest = true,
                 MinerState::ReturnToRefinery => saw_return = true,
-                MinerState::Dock => {
-                    saw_dock_or_unload = true;
-                    if miner.dock_phase == RefineryDockPhase::Unloading {
-                        saw_unload = true;
-                    }
-                }
+                MinerState::Dock => saw_dock_or_unload = true,
                 _ => {}
+            }
+            // The War Miner unloads in its native Unload mission.
+            if entity.mission.current().known() == Some(crate::sim::mission::MissionType::Unload) {
+                saw_dock_or_unload = true;
+                saw_unload = true;
             }
             if miner.home_refinery == Some(refinery_sid) {
                 saw_home_refinery = true;

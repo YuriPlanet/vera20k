@@ -102,6 +102,7 @@ pub fn break_bunker_link(sim: &mut Simulation, building_id: u64) -> Option<u64> 
         unit_id,
         RadioMessage::Break,
         RadioPayload::default(),
+        None,
     );
     if let Some(u) = sim.substrate.entities.get_mut(unit_id) {
         u.bunker_link = BunkerLink::None;
@@ -277,6 +278,7 @@ fn break_first_contact(sim: &mut Simulation, building_id: u64) {
             contact,
             RadioMessage::Break,
             RadioPayload::default(),
+            None,
         );
     }
 }

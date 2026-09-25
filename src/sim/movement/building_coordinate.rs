@@ -20,6 +20,27 @@ pub(super) fn navigation_coordinate(
     if !(object.helipad || object.unit_repair || object.bunker) {
         return Ok(center);
     }
+    dock_coordinate(
+        current,
+        center,
+        object,
+        contacts,
+        requester,
+        requester_coordinate,
+    )
+}
+
+/// `BuildingClass::GetDockCoord @ 0x00447B20` (vtable +0xA8), which the
+/// DOCKING receiver (`0x0043C91B`) and Per_Cell_Process (`0x0073A3B1`) call
+/// directly for a refinery, outside the +4C flag gate above.
+pub(crate) fn dock_coordinate(
+    current: DriveCoord,
+    center: DriveCoord,
+    object: &ObjectType,
+    contacts: &Contacts,
+    requester: Option<u64>,
+    requester_coordinate: impl FnOnce() -> Result<DriveCoord, String>,
+) -> Result<DriveCoord, String> {
     //447B2D: Weeder+16BC, NOT Shipyard. ReadBool4604C1 uses81AC50="Weeder".
     if object.weeder {
         return Ok(DriveCoord {

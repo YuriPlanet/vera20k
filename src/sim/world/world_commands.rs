@@ -660,6 +660,7 @@ impl Simulation {
                     *entity_id,
                     MissionType::Move,
                     DockTeardown::All,
+                    rules,
                 );
                 // Clear attack and order intent.
                 if let Some(e) = self.substrate.entities.get_mut(*entity_id) {
@@ -944,7 +945,7 @@ impl Simulation {
                 // link (`PUSH 3; CALL [vt+0x280]` at `0x004C75DC`). Only the
                 // miner's refinery handshake is modelled on that bus here.
                 // A tethered miner never gets here (see the top of this arm).
-                crate::sim::miner::miner_dock::break_for_retask(self, *entity_id);
+                crate::sim::miner::miner_dock::break_for_retask(self, *entity_id, rules);
                 self.commit_stop_miner_guard(*entity_id);
                 true
             }
@@ -977,6 +978,7 @@ impl Simulation {
                     *attacker_id,
                     MissionType::Attack,
                     DockTeardown::AircraftOnly,
+                    rules,
                 );
                 if let Some(e) = self.substrate.entities.get_mut(*attacker_id) {
                     e.order_intent = None;
@@ -1017,6 +1019,7 @@ impl Simulation {
                     *attacker_id,
                     MissionType::Attack,
                     DockTeardown::IdleOnly,
+                    rules,
                 );
                 if let Some(e) = self.substrate.entities.get_mut(*attacker_id) {
                     e.order_intent = None;
@@ -1052,6 +1055,7 @@ impl Simulation {
                     *attacker_id,
                     MissionType::Attack,
                     DockTeardown::IdleOnly,
+                    rules,
                 );
                 if let Some(e) = self.substrate.entities.get_mut(*attacker_id) {
                     e.order_intent = None;
@@ -1098,6 +1102,7 @@ impl Simulation {
                     *entity_id,
                     MissionType::AttackMove,
                     DockTeardown::IdleOnly,
+                    rules,
                 );
                 if let Some(e) = self.substrate.entities.get_mut(*entity_id) {
                     represented_assign_target(e, None);
@@ -1600,6 +1605,7 @@ impl Simulation {
                     *entity_id,
                     MissionType::Enter,
                     DockTeardown::Depot,
+                    Some(rules),
                 );
                 // Set dock state and issue move toward depot.
                 let (dock_rx, dock_ry) =
@@ -1728,6 +1734,7 @@ impl Simulation {
                     *passenger_id,
                     MissionType::Enter,
                     DockTeardown::None,
+                    Some(rules),
                 );
                 // Clear existing state on the passenger.
                 if let Some(e) = self.substrate.entities.get_mut(*passenger_id) {
@@ -1849,6 +1856,7 @@ impl Simulation {
                                 *transport_id,
                                 MissionType::Unload,
                                 DockTeardown::All,
+                                Some(rules),
                             );
                         }
                         if let Some(e) = self.substrate.entities.get_mut(*transport_id) {
@@ -1889,7 +1897,7 @@ impl Simulation {
                 // This arm assigns the mission below instead of queueing it, so
                 // an unload in progress is abandoned here rather than by the
                 // Unload mission's contact gate.
-                crate::sim::miner::miner_dock::break_for_retask(self, *entity_id);
+                crate::sim::miner::miner_dock::break_for_retask(self, *entity_id, rules);
                 crate::sim::miner::abandon_unload_for_direct_retask(self, *entity_id);
                 // Commit the Harvest mission and the MoveToOre cursor of
                 // record. Native (EventClass::Execute MEGAMISSION,
@@ -1986,6 +1994,7 @@ impl Simulation {
                     *attacker_id,
                     MissionType::Sabotage,
                     DockTeardown::None,
+                    Some(rules),
                 );
                 // Clear conflicting state and set c4_plant.
                 if let Some(e) = self.substrate.entities.get_mut(*attacker_id) {
@@ -2130,6 +2139,7 @@ impl Simulation {
                     *engineer_id,
                     MissionType::Capture,
                     DockTeardown::None,
+                    Some(rules),
                 );
                 // Clear conflicting state and set capture target.
                 if let Some(e) = self.substrate.entities.get_mut(*engineer_id) {
@@ -2390,6 +2400,7 @@ impl Simulation {
                     *bunker_id,
                     crate::sim::radio::RadioMessage::CanEnter,
                     crate::sim::radio::RadioPayload::default(),
+                    None,
                 ) != crate::sim::radio::RadioResponse::Roger
                 {
                     return false;
@@ -2401,6 +2412,7 @@ impl Simulation {
                     *bunker_id,
                     crate::sim::radio::RadioMessage::DockNow,
                     crate::sim::radio::RadioPayload::default(),
+                    None,
                 );
                 // Retask onto Enter (no dock reservation), mark the unit as
                 // approaching THIS bunker (the install machine's keep-alive gate).
@@ -2408,6 +2420,7 @@ impl Simulation {
                     *unit_id,
                     MissionType::Enter,
                     DockTeardown::None,
+                    Some(rules),
                 );
                 if let Some(e) = self.substrate.entities.get_mut(*unit_id) {
                     // Event4C7467 dispatches Assign_Target before the destination write.
@@ -2560,6 +2573,7 @@ impl Simulation {
                     depot_id,
                     crate::sim::radio::RadioMessage::Break,
                     crate::sim::radio::RadioPayload::default(),
+                    None,
                 );
             }
         }
@@ -3464,12 +3478,12 @@ mod tests {
              Name=Ore Refinery\n\
              Strength=900\n\
              Foundation=4x3\n\
-             Refinery=yes\n\
+             Refinery=yes\nDockUnload=yes\n\
              [OTHERPROC]\n\
              Name=Other Refinery\n\
              Strength=900\n\
              Foundation=4x3\n\
-             Refinery=yes\n",
+             Refinery=yes\nDockUnload=yes\n",
         );
         RuleSet::from_ini(&ini).expect("miner return rules")
     }

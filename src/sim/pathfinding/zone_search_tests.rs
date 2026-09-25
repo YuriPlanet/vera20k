@@ -1095,13 +1095,16 @@ fn gsi_04_12_miner_dock_approach_threads_exact_blocker_counts() {
          [BuildingTypes]\n0=REFN\n\n\
          [HARV]\nStrength=600\nSpeed=4\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\nMovementZone=Normal\nHarvester=yes\nDock=REFN\nStorage=20\n\n\
          [BLOCK]\nStrength=300\nSpeed=4\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\nMovementZone=Normal\n\n\
-         [REFN]\nStrength=900\nFoundation=1x1\nRefinery=yes\n",
+         [REFN]\nStrength=900\nFoundation=1x1\nRefinery=yes\nDockUnload=yes\n",
     ))
     .expect("dock-approach rules should parse");
 
-    // The refinery's 1x1 geometric QueueingCell is (1,0). The live miner
-    // starts at (5,0). The blocker at(0,2) admits the unmarked ground approach
-    // to the bridge detour without occupying the route.
+    // The War Miner's dock approach and staging legs are Unit
+    // Assign_Destination (0x741970, reached through Foot MOVE_HERE 0x12 and
+    // Mission_Harvest state 2); the cell (1,0) beside the refinery is the
+    // leg's goal. The live miner starts at (5,0). The blocker at (0,2)
+    // admits the unmarked ground approach to the bridge detour without
+    // occupying the route.
     let (path_grid, zone_grid, terrain) = caller_count_bridge_detour(MovementZone::Normal, true);
 
     let mut height_map = BTreeMap::new();
@@ -1123,33 +1126,11 @@ fn gsi_04_12_miner_dock_approach_threads_exact_blocker_counts() {
         .expect("harvester should spawn");
     sim.spawn_object("BLOCK", "Russians", 0, 2, 0, &rules, &height_map)
         .expect("dynamic blocker should spawn");
-    {
-        let entity = sim.substrate.entities.get_mut(miner_id).unwrap();
-        let miner = entity.miner.as_mut().expect("HARV should own miner state");
-        miner.cargo.push(CargoBale {
-            resource_type: ResourceType::Ore,
-            value: 25,
-        });
-        miner.reserved_refinery = Some(refinery_id);
-        miner.dock_phase = RefineryDockPhase::Approach;
-        miner.approach_hello_timer = crate::sim::mission::timer::MissionTimer::armed(0, 10);
-        entity.mission.set_handler_state(MinerState::Dock.cursor());
-    }
+    assert!(sim.substrate.entities.get(refinery_id).is_some());
+    assert!(sim.set_unit_cell_destination(miner_id, (1, 0), &rules));
 
-    crate::sim::miner::miner_system::tick_miners(
-        &mut sim,
-        &rules,
-        &MinerConfig::default(),
-        Some(&path_grid),
-    );
-
-    let miner = sim.substrate.entities.get(miner_id).unwrap();
-    assert_eq!(miner.miner_state(), Some(MinerState::Dock));
-    let miner_state = miner.miner.as_ref().unwrap();
-    assert_eq!(miner_state.dock_phase, RefineryDockPhase::Approach);
-    assert_eq!(miner_state.reserved_refinery, Some(refinery_id));
     let movement = first_track_process_route(&mut sim, miner_id, Some(&rules), &path_grid)
-        .expect("live Approach dispatch should install the hierarchy-backed queue route");
+        .expect("the dock leg's first Process should install the hierarchy-backed route");
     assert_eq!(movement.path.first().copied(), Some((5, 0)));
     assert!(
         movement

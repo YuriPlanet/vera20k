@@ -458,7 +458,7 @@ impl Simulation {
         use crate::sim::radio::{self, RadioMessage};
         if layer == Some(DisplayLayer::GROUND) {
             self.clear_fly_foot_destination(id, rules);
-            radio::broadcast(self, id, RadioMessage::EnterDock);
+            radio::broadcast(self, id, RadioMessage::Tether, rules);
             if let Some(entity) = self.substrate.entities.get(id) {
                 let config = crate::sim::vision::VisionConfig {
                     require_playfield_membership: true,
@@ -485,7 +485,7 @@ impl Simulation {
                 // changes; there is no second simulation fog-edge authority.
             }
         } else {
-            radio::broadcast(self, id, RadioMessage::LeaveDock);
+            radio::broadcast(self, id, RadioMessage::Untether, rules);
             if self.substrate.entities.get(id).is_some_and(|e| {
                 !e.radio_contacts.is_empty()
                     && e.navigation.nav_com.is_some()
@@ -499,7 +499,7 @@ impl Simulation {
                         None => false,
                     }
             }) {
-                radio::broadcast_break(self, id);
+                radio::broadcast_break(self, id, rules);
             }
         }
     }

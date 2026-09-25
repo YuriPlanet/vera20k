@@ -631,6 +631,27 @@ fn commence_leaf(entity: &mut crate::sim::game_entity::GameEntity, now: u32) -> 
 }
 
 impl Simulation {
+    /// The handler return every `ftol(Rate × 900) + RandomRanged(0, 2)` exit
+    /// shares — Mission_Harvest (`0x0073EF77`), Mission_Enter (`0x004D946C`),
+    /// Mission_Unload (`0x0073E289`) and the Foot handlers: the base is the
+    /// MissionControl slot of `mission` (`0x005B3A00` indexes the object's
+    /// CURRENT mission, so a handler that commenced another mission passes
+    /// that one), computed first with no RNG, then one draw on the Scenario
+    /// stream (`0x0065C7E0` on `*(0x00A8B230)+0x218`). Native evidence:
+    /// tools/spatial_oracle/refinery_dock.json (`delay` of the Enter, Harvest
+    /// and Unload rows, one `[0, 2]` draw each).
+    pub(crate) fn mission_rate_epilogue(
+        &mut self,
+        rules: &RuleSet,
+        mission: super::MissionType,
+    ) -> i32 {
+        let base = rules
+            .mission_control
+            .rate_frames(mission)
+            .min(i32::MAX as u32) as i32;
+        base.saturating_add(self.scenario_rng.next_range_u32_inclusive(0, 2) as i32)
+    }
+
     pub(crate) fn mission_assign_exact(
         &mut self,
         receiver: u64,
@@ -700,6 +721,21 @@ impl Simulation {
             if let Some(entity) = self.substrate.entities.get_mut(receiver) {
                 commence_leaf(entity, now);
             }
+        }
+    }
+
+    /// `Ready_To_Commence` (vt+0x200) as a query, for handlers that act
+    /// between the answer and the Commence (Mission_Unload state 4 sends
+    /// OVER_OUT first, `0x0073E264..0x0073E279`). Same degraded moving gate
+    /// as [`Self::mission_host_promote`].
+    pub(crate) fn mission_ready_to_commence(&self, receiver: u64, rules: &RuleSet) -> bool {
+        let Some(entity) = self.substrate.entities.get(receiver) else {
+            return false;
+        };
+        match evaluate_ready(self, receiver, &entity.mission, Some(rules), true) {
+            Ok(ready) => ready,
+            Err(ReadyUnavailable::Locomotor | ReadyUnavailable::SignedHeight) => true,
+            Err(_) => false,
         }
     }
 

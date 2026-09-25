@@ -18,7 +18,7 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::BaleDepositEvent;
-use crate::sim::miner::{MinerConfig, MinerKind, MinerState, RefineryDockPhase, ResourceType};
+use crate::sim::miner::{MinerConfig, MinerKind, MinerState, RefineryDockPhase};
 use crate::sim::mission::MissionType;
 use crate::sim::movement;
 use crate::sim::movement::facing_class::FacingClass;
@@ -28,10 +28,8 @@ use crate::sim::pathfinding::PathGrid;
 use crate::sim::world::Simulation;
 
 use super::miner_dock::{self, ContactAdmission};
-use super::miner_system::{MinerSnapshot, effective_purifier_count};
-use crate::sim::economy::apply_income_mult;
-use crate::sim::house_state::{house_state_for_owner_mut, income_ppm_for_owner};
-use crate::sim::production::{credits_entry_for_owner, foundation_dimensions};
+use super::miner_system::MinerSnapshot;
+use crate::sim::production::foundation_dimensions;
 
 /// Maximum diamond-ring radius for the post-unload exit-cell spiral search.
 /// gamemd's `FootClass::Find_Nearby_Passable_Cell` derives its cap from
@@ -151,9 +149,7 @@ fn clear_mission_deploy_delay(snap: &mut MinerSnapshot) {
 
 fn clear_unload_timer_cluster(snap: &mut MinerSnapshot) {
     snap.miner.unload_accumulator = 0;
-    snap.miner.unload_timer_fired = false;
     snap.miner.unload_cluster_timer.clear();
-    snap.miner.unload_cluster_scratch = 0;
     snap.miner.unload_cluster_repeat = 0;
 }
 
@@ -179,6 +175,17 @@ pub(crate) fn abandon_unload_for_direct_retask(sim: &mut Simulation, miner_sid: 
     let Some(miner) = entity.miner.as_mut() else {
         return;
     };
+    if miner.kind == MinerKind::War {
+        // The War Miner's unload is the Unload mission; Harvest replaces it
+        // here, so its contact gate never runs to drop the +0x6D1 latch.
+        if miner.unload_active {
+            miner.unload_active = false;
+            miner.unload_cluster_repeat = 0;
+            miner.unload_cluster_timer.clear();
+            entity.display_type_override = None;
+        }
+        return;
+    }
     if !matches!(
         miner.dock_phase,
         RefineryDockPhase::Pivoting
@@ -190,9 +197,7 @@ pub(crate) fn abandon_unload_for_direct_retask(sim: &mut Simulation, miner_sid: 
     }
     miner.unload_active = false;
     miner.unload_accumulator = 0;
-    miner.unload_timer_fired = false;
     miner.unload_cluster_timer.clear();
-    miner.unload_cluster_scratch = 0;
     miner.unload_cluster_repeat = 0;
     miner.mission_deploy_timer.clear();
     miner.dock_enter_retry.clear();
@@ -204,64 +209,18 @@ pub(crate) fn abandon_unload_for_direct_retask(sim: &mut Simulation, miner_sid: 
     entity.facing_target = None;
 }
 
-fn tick_unload_accumulator(sim: &Simulation, snap: &mut MinerSnapshot) {
-    // An unarmed timer means the cluster is inactive (was `start_frame == None`).
-    if !snap.miner.unload_cluster_timer.is_armed() {
-        snap.miner.unload_timer_fired = false;
-        return;
-    }
-    if snap.miner.unload_cluster_repeat == 0 {
-        snap.miner.unload_timer_fired = false;
-        return;
-    }
-    if !snap
-        .miner
-        .unload_cluster_timer
-        .due(sim.session.binary_frame)
-    {
-        snap.miner.unload_timer_fired = false;
-        return;
-    }
-
-    snap.miner.unload_accumulator = snap
-        .miner
-        .unload_accumulator
-        .saturating_add(snap.miner.unload_accumulator_step);
-    snap.miner.unload_timer_fired = true;
-    snap.miner
-        .unload_cluster_timer
-        .arm(sim.session.binary_frame, snap.miner.unload_cluster_repeat);
-    snap.miner.unload_cluster_scratch = 0;
-}
-
 // ---------------------------------------------------------------------------
 // Cell computation helpers
 // ---------------------------------------------------------------------------
 
-/// Queue cell — where the miner waits outside the refinery (pathfindable).
-///
-/// Uses art.ini `QueueingCell=` when available (merged into ObjectType),
-/// otherwise falls back to geometric approximation from foundation dimensions.
-pub(super) fn refinery_queue_cell(
-    rx: u16,
-    ry: u16,
-    width: u16,
-    height: u16,
-    queueing_cell: Option<(u16, u16)>,
-) -> (u16, u16) {
-    if let Some((qx, qy)) = queueing_cell {
-        (rx + qx, ry + qy)
-    } else {
-        (rx + width, ry + height / 2)
-    }
-}
-
-/// CAN_DOCK queue target sent by `BuildingClass::Receive_Radio` case 0x0E.
-///
-/// Verified in gamemd: this path hardcodes building anchor + (3, 1) and does
-/// not read art.ini `QueueingCell=`.
-pub(super) fn refinery_can_dock_queue_cell(rx: u16, ry: u16) -> (u16, u16) {
-    (rx.saturating_add(3), ry.saturating_add(1))
+/// Queue cell — the refinery's NW cell plus the low words of art
+/// `QueueingCell=` (`0x0073ED25..0x0073ED3B`, int16 adds; `(0, 0)` without
+/// the key).
+pub(super) fn refinery_queue_cell(rx: u16, ry: u16, queueing_cell: [i32; 2]) -> (u16, u16) {
+    (
+        (rx as i16).wrapping_add(queueing_cell[0] as i16) as u16,
+        (ry as i16).wrapping_add(queueing_cell[1] as i16) as u16,
+    )
 }
 
 /// Pad cell — on the refinery platform inside the building footprint.
@@ -285,7 +244,7 @@ pub(super) fn refinery_pad_cell(
         crate::sim::docking::pad_geometry::pad_cell_for((rx, ry), (width, height), &pad)
     } else {
         let _ = (width, height);
-        (rx.saturating_add(3), ry.saturating_add(1))
+        crate::sim::radio::receive::dock_pad_cell(rx, ry)
     }
 }
 
@@ -311,12 +270,13 @@ pub(super) fn refinery_exit_cell(
     ry: u16,
     width: u16,
     height: u16,
-    queueing_cell: Option<(u16, u16)>,
+    queueing_cell: [i32; 2],
     path_grid: Option<&PathGrid>,
     occupancy: Option<&OccupancyGrid>,
     tick: u64,
 ) -> (u16, u16) {
-    let queue = refinery_queue_cell(rx, ry, width, height, queueing_cell);
+    let _ = (width, height);
+    let queue = refinery_queue_cell(rx, ry, queueing_cell);
 
     if let Some(grid) = path_grid {
         if let Some(cell) = find_nearby_passable_cell_with_index(
@@ -441,15 +401,15 @@ fn resolve_refinery_cells(
     let (w, h) = obj
         .map(|o| foundation_dimensions(&o.foundation))
         .unwrap_or((1, 1));
-    let qc = obj.and_then(|o| o.queueing_cell);
+    let qc = obj.map_or([0, 0], |o| o.queueing_cell);
     let dock_off = obj.and_then(|o| o.pads.first().map(|p| p.lepton_offset));
     let dock_capacity = obj.map(|o| o.dock_contact_capacity() as usize).unwrap_or(1);
     let rx = entity.position.rx;
     let ry = entity.position.ry;
-    let wait_queue = refinery_queue_cell(rx, ry, w, h, qc);
+    let wait_queue = refinery_queue_cell(rx, ry, qc);
     Some((
         wait_queue,
-        refinery_can_dock_queue_cell(rx, ry),
+        crate::sim::radio::receive::dock_pad_cell(rx, ry),
         refinery_pad_cell(rx, ry, w, h, dock_off),
         dock_capacity,
     ))
@@ -559,9 +519,7 @@ pub(crate) fn interrupt_refinery_docked_miners(sim: &mut Simulation, ref_sid: u6
         miner.mission_deploy_timer.clear();
         miner.unload_active = false;
         miner.unload_accumulator = 0;
-        miner.unload_timer_fired = false;
         miner.unload_cluster_timer.clear();
-        miner.unload_cluster_scratch = 0;
         miner.unload_cluster_repeat = 0;
         miner.exit_cell = None;
         if miner.is_full() {
@@ -811,8 +769,6 @@ pub(super) fn handle_dock_sequence(
         }
     }
 
-    tick_unload_accumulator(sim, snap);
-
     if phase_before != snap.miner.dock_phase {
         record_dock_phase(snap, phase_before, snap.miner.dock_phase);
     }
@@ -940,44 +896,6 @@ fn phase_mission_enter(
         miner_dock::enter_dock(sim, snap.entity_id, ref_sid);
         sync_dock_facing(sim, rules, snap);
         snap.miner.dock_phase = RefineryDockPhase::FaceSync;
-        schedule_enter_retry(sim, rules, snap);
-        return;
-    }
-
-    // A war miner now reaches Mission_Enter from up to `HarvesterTooFarDistance`
-    // (5 cells) out — the state-2 HELLO handoff at `0x0073EE51` — not from
-    // adjacency. Native Mission_Enter drives to the CAN_DOCK cell through the
-    // ordinary pathfinder; VERA's direct move below is a straight line that
-    // ignores the grid, which is only safe from a neighbouring cell. Path to
-    // the `QueueingCell` first (it sits beside the pad on stock refineries)
-    // and take the direct step from there. VERA-internal shape, gamemd
-    // equivalent UNCHECKED beyond "the pathfinder gets it there". Chrono keeps
-    // its existing shape: its inbound leg is the teleport locomotor's.
-    //
-    // Residual (VERA-internal): the hop assumes the `QueueingCell` is
-    // adjacent to the accepted CAN_DOCK cell, which holds for every stock
-    // refinery (art `QueueingCell=4,1` beside the pad). A modded refinery
-    // whose `QueueingCell` is NOT adjacent to the pad loops here: the miner
-    // reaches the queue cell, is still not adjacent to `accepted_cell`, and
-    // is routed back to the queue cell on every enter retry, never taking
-    // the direct step. Trigger: modded art only; stock play never hits it.
-    // Effect: that miner never docks. Fix belongs with the native
-    // pathfinder-driven Mission_Enter drive, not here.
-    if !moving
-        && snap.miner.kind == MinerKind::War
-        && !is_adjacent_or_at((snap.rx, snap.ry), accepted_cell)
-    {
-        if let Some(grid) = path_grid {
-            super::miner_system::issue_move_if_idle(
-                sim,
-                Some(rules),
-                grid,
-                snap.entity_id,
-                wait_queue,
-                snap.speed,
-                overlay_registry,
-            );
-        }
         schedule_enter_retry(sim, rules, snap);
         return;
     }
@@ -1113,11 +1031,9 @@ fn start_unload_deploy(sim: &mut Simulation, rules: &RuleSet, snap: &mut MinerSn
 
     snap.miner.unload_active = true;
     snap.miner.unload_accumulator = 0;
-    snap.miner.unload_timer_fired = false;
     snap.miner
         .unload_cluster_timer
         .arm(sim.session.binary_frame, 1);
-    snap.miner.unload_cluster_scratch = 0;
     snap.miner.unload_cluster_repeat = 1;
     snap.miner.dock_phase = RefineryDockPhase::Unloading;
 }
@@ -1217,93 +1133,18 @@ fn phase_unloading(
     // therefore consume identity/RNG and append Logic entries before credits.
     crate::sim::world::building_anim::begin_refinery_unload_gate(sim, rules, unload_building_id);
 
-    // Drain one resource-type "slot" per threshold crossing — all bales
-    // of the same type drop in one atomic step. The 14.4-tick interval
-    // is the latency between SLOT drains, not between bale credits.
-    //
-    // Slot order is fixed: Ore first, then Gems, so mixed cargo drains
-    // ore first.
-    const SLOT_ORDER: [ResourceType; 2] = [ResourceType::Ore, ResourceType::Gem];
-    let next_slot = SLOT_ORDER
-        .iter()
-        .copied()
-        .find(|t| snap.miner.cargo.iter().any(|b| b.resource_type == *t));
-
-    if let Some(slot_type) = next_slot {
-        let mut slot_value: i32 = 0;
-        let mut slot_bales: i32 = 0; // P7: bale COUNT (the HarvestedCredits stat is bales×5, not value×5)
-        snap.miner.cargo.retain(|b| {
-            if b.resource_type == slot_type {
-                slot_value = slot_value.saturating_add(i32::from(b.value));
-                slot_bales += 1;
-                false
-            } else {
-                true
-            }
-        });
-
-        // Credits go to the REFINERY OWNER, not the harvester's current
-        // controller. gamemd reads the building's owner via vtable+0x3C
-        // (`GetOwner` on the BuildingClass instance, not on the harvester).
-        // Matters under mind-control: a Yuri unit MC'ing an enemy harvester
-        // still credits the original refinery owner — the "steal" doesn't
-        // work. The single GetOwner result also keys the purifier-count
-        // lookup, so base credits and bonus always share one owner.
-        let refinery_owner: String = sim
-            .substrate
-            .entities
-            .get(unload_building_id)
-            .map(|b| sim.interner.resolve(b.owner()).to_string())
-            .expect("west-cell unload building should exist");
-
-        // P7: per-country IncomeMult folds into the base credits (single truncation,
-        // matching gamemd's one ftol per deposit call); 1.0 on stock (identity, hash-neutral).
-        // The HarvestedCredits stat accrues bales×5 (statistics-only; never the wallet).
-        let income_ppm = income_ppm_for_owner(&sim.houses, &sim.interner, rules, &refinery_owner);
-        let base_credits = apply_income_mult(slot_value, income_ppm);
-        if base_credits > 0 {
-            {
-                let credits = credits_entry_for_owner(sim, &refinery_owner);
-                *credits = credits.saturating_add(base_credits);
-            }
-            if let Some(h) =
-                house_state_for_owner_mut(&mut sim.houses, &refinery_owner, &sim.interner)
-            {
-                h.economy.add_harvested(slot_bales);
-            }
-        }
-
-        // Purifier bonus applied once per slot drain — the single-truncation credit + the
-        // single-truncation HarvestedCredits stat (see the helpers' contracts).
-        let purifier_count = effective_purifier_count(sim, rules, &refinery_owner);
-        let bonus_ppm = rules.general.purifier_bonus_ppm;
-        let bonus_credits = crate::sim::economy::purifier_bonus_credits(
+    // Drain one resource-type "slot" per threshold crossing and pay the
+    // refinery owner — the same helpers the War Miner's Unload mission uses.
+    if let Some((slot_value, slot_bales)) =
+        super::refinery_dock::drain_first_slot(&mut snap.miner.cargo)
+    {
+        super::refinery_dock::pay_refinery_owner(
+            sim,
+            rules,
+            unload_building_id,
             slot_value,
-            purifier_count,
-            bonus_ppm,
-            income_ppm,
+            slot_bales,
         );
-        if bonus_credits > 0 {
-            {
-                let credits = credits_entry_for_owner(sim, &refinery_owner);
-                *credits = credits.saturating_add(bonus_credits);
-            }
-            let bonus_stat = crate::sim::economy::purifier_bonus_harvested(
-                slot_bales,
-                purifier_count,
-                bonus_ppm,
-            );
-            if let Some(h) =
-                house_state_for_owner_mut(&mut sim.houses, &refinery_owner, &sim.interner)
-            {
-                h.economy.add_harvested_raw(bonus_stat);
-            }
-        }
-
-        // One deposit event per due dump gate. Native fires the refinery smoke
-        // burst (vtable+0x468, `0x0073E37E`) and the `+0x584 == NULL` SpecialAnim
-        // start (`0x0073E384..0x0073E3BA`) BEFORE it looks at the cargo, so the
-        // gate that drains a slot and the gate that finds nothing both emit.
         sim.bale_events.push(BaleDepositEvent {
             building_id: unload_building_id,
             tick: sim.session.tick,

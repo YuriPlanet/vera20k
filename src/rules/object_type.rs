@@ -687,6 +687,12 @@ pub struct ObjectType {
     /// Native BuildingType `Weeder=` classification. ExitObject dispatch tests
     /// this independently from `Refinery=`, `WeaponsFactory=`, and `Naval=`.
     pub weeder: bool,
+    /// `DockUnload=` (BuildingType+0x16B3; `BuildingTypeClass::ReadINI`
+    /// ReadBool at `0x004609DD`, constructor default 0). The refinery dock
+    /// keys on this flag, not on `Refinery=` (+0x16BB): the harvester
+    /// CAN_LOAD answer (`0x0043C66B`), the DOCKING pad arm (`0x0043CA1B`)
+    /// and the unload request (`0x0043C788`). Stock NAREFN/GAREFN set both.
+    pub dock_unload: bool,
     /// Whether this building has a bib (`Bib=yes` in rules.ini). When true, the
     /// east-edge column of the foundation footprint is unit-passable — units
     /// can drive across that strip even though the cells remain part of the
@@ -712,9 +718,9 @@ pub struct ObjectType {
     pub free_unit: Option<String>,
     /// Structures this unit may dock with (Dock= in rules.ini), normalized uppercase.
     pub dock: Vec<String>,
-    /// Queueing cell offset from building origin (QueueingCell= in art.ini).
-    /// Where miners wait outside the dock. Merged from art.ini during init.
-    pub queueing_cell: Option<(u16, u16)>,
+    /// `QueueingCell=` from the art section (see `ArtEntry::queueing_cell`),
+    /// merged during init; `(0, 0)` without one.
+    pub queueing_cell: [i32; 2],
     /// All docking pads on this building, parsed from art.ini `DockingOffset0..N-1`.
     /// Index in vec IS the pad index.
     ///
@@ -2005,6 +2011,7 @@ impl ObjectType {
             spawned: section.get_bool("Spawned").unwrap_or(false),
             refinery: section.get_bool("Refinery").unwrap_or(false),
             weeder: section.get_bool("Weeder").unwrap_or(false),
+            dock_unload: section.get_bool("DockUnload").unwrap_or(false),
             bib: section.get_bool("Bib").unwrap_or(false),
             gate: section.get_bool("Gate").unwrap_or(false),
             deploy_time_ticks: native_minutes_to_ticks(
@@ -2022,8 +2029,8 @@ impl ObjectType {
                 .filter(|s| !s.is_empty())
                 .map(|s| s.to_ascii_uppercase())
                 .collect(),
-            queueing_cell: None, // merged from art.ini later
-            pads: Vec::new(),    // merged from art.ini later
+            queueing_cell: [0, 0], // merged from art.ini later
+            pads: Vec::new(),      // merged from art.ini later
             hidden_occupancy: BuildingHiddenOccupancyProfile::default(),
             base_reservation_spacing: None,
             unloading_class: section.get("UnloadingClass").map(|s| s.to_string()),
@@ -3331,7 +3338,7 @@ mod tests {
     #[test]
     fn test_parse_refinery_free_unit_and_dock() {
         let ini: IniFile = IniFile::from_str(
-            "[MODPROC]\nRefinery=yes\nFreeUnit=MODHARV\n\
+            "[MODPROC]\nRefinery=yes\nDockUnload=yes\nFreeUnit=MODHARV\n\
              [MODHARV]\nHarvester=yes\nDock=modproc,NAREFN\n",
         );
 

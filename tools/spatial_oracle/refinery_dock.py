@@ -181,7 +181,7 @@ def make_dock_fixture(case):
 
 
 def observe_dock(u, read32, case):
-    events, pending = [], []
+    events, pending, draws = [], [], {}
     ready = list(case.get('ready', []))
     bays = list(case.get('bays', []))
     passable = list(case.get('passable', []))
@@ -196,6 +196,8 @@ def observe_dock(u, read32, case):
         from unicorn.x86_const import UC_X86_REG_ECX
         sp = u.reg_read(UC_X86_REG_ESP)
         this = u.reg_read(UC_X86_REG_ECX)
+        if address in draws:
+            events[draws.pop(address)].append(u.reg_read(UC_X86_REG_EAX))
         if address == TRANSMIT:
             msg, target = read32(sp + 4), read32(sp + 12)
             if target == 0:
@@ -213,6 +215,7 @@ def observe_dock(u, read32, case):
         elif address == COMMENCE:
             events.append(['commence', name_of(this)])
         elif address == RANDOM:
+            draws[read32(sp)] = len(events)
             events.append(['random', read32(sp + 4), read32(sp + 8)])
         elif address == SCATTER:
             events.append(['scatter', name_of(this), read32(sp + 8), read32(sp + 12)])
@@ -450,17 +453,17 @@ def harvest_cases():
         dict(name='return_driving', mission='harvest', status=2, nav=[12, 12], moving=True),
         dict(name='return_hello', mission='harvest', status=2, linked=False, bays=['refinery']),
         dict(name='return_hello_linked', mission='harvest', status=2, bays=['refinery']),
-        dict(name='return_refused_close', mission='harvest', status=2, bays=['refinery', 'refinery'],
+        # A refinery whose slot is taken fails the narrow pass's
+        # Has_Free_Or_Own pre-filter (0x004DEF09); the wide pass finds it.
+        dict(name='return_busy_close', mission='harvest', status=2, bays=[None, 'refinery'],
              **busy),
-        dict(name='return_refused_beyond_0x300', mission='harvest', status=2, miner_cell=[11, 10],
-             bays=['refinery', 'refinery'], passable=[[10, 11]], **busy),
+        dict(name='return_busy_beyond_0x300', mission='harvest', status=2, miner_cell=[11, 10],
+             bays=[None, 'refinery'], passable=[[10, 10]], **busy),
         dict(name='return_too_far', mission='harvest', status=2, miner_cell=[16, 16],
              bays=['refinery', 'refinery'], passable=[[10, 10]], linked=False),
         dict(name='return_too_far_no_cell', mission='harvest', status=2, miner_cell=[16, 16],
              bays=['refinery', 'refinery'], passable=[None], linked=False),
         dict(name='return_no_bay', mission='harvest', status=2, bays=[None, None], linked=False),
-        dict(name='return_narrow_none_wide_close', mission='harvest', status=2,
-             bays=[None, 'refinery'], **busy),
         dict(name='handoff', mission='harvest', status=3),
     ]
 
@@ -497,6 +500,8 @@ def unload_cases():
         dict(dumping, name='unload_new_order', storage=[40, 0, 0, 0], nav=[12, 12], queued='guard'),
         dict(dumping, name='unload_new_order_harvest', storage=[40, 0, 0, 0], nav=[12, 12],
              queued='harvest'),
+        dict(dumping, name='unload_new_order_below_gate', stage=[3, 0, 199, 1, 1],
+             storage=[40, 0, 0, 0], nav=[12, 12], queued='guard'),
         dict(base, name='unload_state4_ready', status=4, unloading=True, ready=[1]),
         dict(base, name='unload_state4_not_ready', status=4, unloading=True, ready=[0]),
         dict(base, name='unload_state4_production_anim', status=4, unloading=True,
@@ -544,8 +549,8 @@ if __name__ == '__main__':
     finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=lambda: provenance(
         scope='94 original executions of the War Miner refinery dock: 19 Building 0x0E (DockUnload) '
               'handshakes and 18 single transmits through the radio core with every nested '
-              'receiver; 9 FootClass::Mission_Enter, 10 UnitClass::Mission_Harvest (states 2/3) '
-              'and 29 UnitClass::Mission_Unload (harvester branch) dispatches with their return '
+              'receiver; 9 FootClass::Mission_Enter, 9 UnitClass::Mission_Harvest (states 2/3) '
+              'and 30 UnitClass::Mission_Unload (harvester branch) dispatches with their return '
               'value and Scenario draws; 6 Unit Per_Cell_Process(2) Enter-arm snippets; 3 '
               'TechnoClass::AI StageClass tick runs.',
         entry_points={'transmit': TRANSMIT, 'building_receive': 0x43C2D0, 'unit_receive': 0x737430,

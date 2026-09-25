@@ -1183,6 +1183,13 @@ impl Simulation {
             < 2 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS)
     }
 
+    /// `UnitClass::Enter_Idle_Mode(0, 1)` (vt+0x484) from a class caller:
+    /// the refinery dock's Mission_Enter refusal (`0x004D92E2`) and
+    /// Mission_Unload's lost contact (`0x0073DEF2`).
+    pub(crate) fn unit_enter_idle_mode(&mut self, id: u64, rules: Option<&RuleSet>) -> bool {
+        self.track_enter_idle_mode(id, rules)
+    }
+
     /// Bounded Unit738970 receiver. Existing idle selectors cover ordinary
     /// human vehicles/miners; deploy/radio/AI arms remain receiver residuals.
     pub(super) fn track_enter_idle_mode(&mut self, id: u64, rules: Option<&RuleSet>) -> bool {
@@ -1303,6 +1310,13 @@ impl Simulation {
         }
         if !self.track_survives(id) {
             return;
+        }
+        // 0x0073A31F..0x0073A5EA, before the Ready/Commence below: a tethered
+        // unit on Enter arriving north-adjacent to its dock sends DOCK_NOW.
+        if let Some(rules) = rules
+            && reason == super::track_turn::PerCellReason::Arrival
+        {
+            crate::sim::miner::per_cell_dock_now(self, rules, id);
         }
         // Unit PerCell2 739EC0: after MCV retry, +6D1==0 admits
         // Ready(+200)73ACC2 -> Commence(+1EC)73ACD1, BEFORE full-cell

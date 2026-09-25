@@ -7,7 +7,7 @@
     1,
     33621247
   ],
-  "scope": "94 original executions of the War Miner refinery dock: 19 Building 0x0E (DockUnload) handshakes and 18 single transmits through the radio core with every nested receiver; 9 FootClass::Mission_Enter, 10 UnitClass::Mission_Harvest (states 2/3) and 29 UnitClass::Mission_Unload (harvester branch) dispatches with their return value and Scenario draws; 6 Unit Per_Cell_Process(2) Enter-arm snippets; 3 TechnoClass::AI StageClass tick runs.",
+  "scope": "94 original executions of the War Miner refinery dock: 19 Building 0x0E (DockUnload) handshakes and 18 single transmits through the radio core with every nested receiver; 9 FootClass::Mission_Enter, 9 UnitClass::Mission_Harvest (states 2/3) and 30 UnitClass::Mission_Unload (harvester branch) dispatches with their return value and Scenario draws; 6 Unit Per_Cell_Process(2) Enter-arm snippets; 3 TechnoClass::AI StageClass tick runs.",
   "assumptions": [
     "track_destination fixture: original Unit vtable over a constructed Drive, 32x32 map, House, Rules; supplied Unit/Radio/Foot constructor prestates; Scenario RNG seeded through the original seeder.",
     "Refinery: original Building vtable 0x7E3EBC over supplied BuildingClass fields (+14, +6C, +9C, +AC, +B4, +E0 contacts, +21C, +418, +520, +57C, +584, +660) and BuildingTypeClass (+A0, +EF0=12 4x3, +1618 QueueingCell 4,1, +16B3, +16BB, +1780). It is the first object of every foundation cell but the pad. A second refinery supplies the third radio object.",
@@ -35,5 +35,5 @@
     "give_tiberium": "0x004F9610",
     "random_ranged": "0x0065C7E0"
   },
-  "payload_sha256": "1a729a67a32eea2da706fd812d13c110d0714cd8741242dcde0376c527f1e853"
+  "payload_sha256": "f7a15909d42e392990ae5bad92b316b65152af9ebf973cd2446cc0eb85612f42"
 }

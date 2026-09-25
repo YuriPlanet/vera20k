@@ -82,12 +82,7 @@ const WAIT_MOVING_FRAMES: i32 = 10;
 /// (`Random__RandomRanged` at `0x0073E2B0` on `*(0x00A8B230)+0x218`). The
 /// base is computed FIRST and consumes no RNG; the draw follows.
 fn unload_epilogue(sim: &mut Simulation, rules: &RuleSet) -> i32 {
-    let base = rules
-        .mission_control
-        .rate_frames(MissionType::Unload)
-        .min(i32::MAX as u32) as i32;
-    let jitter = sim.scenario_rng.next_range_u32_inclusive(0, 2) as i32;
-    base.saturating_add(jitter)
+    sim.mission_rate_epilogue(rules, MissionType::Unload)
 }
 
 /// Whether this entity's type takes the transport branch of the Unit Unload
@@ -678,7 +673,12 @@ fn eject_head_passenger(
                 passenger.passively_acquired_target = false;
                 passenger.order_intent = None;
             }
-            sim.queue_megamission_with_teardown(pax_id, MissionType::Move, DockTeardown::None);
+            sim.queue_megamission_with_teardown(
+                pax_id,
+                MissionType::Move,
+                DockTeardown::None,
+                Some(rules),
+            );
             issue_pathed_move(sim, rules, path_grid, overlay_registry, pax_id, dest);
 
             if let Some(sound) = leave_sound {
@@ -1065,7 +1065,12 @@ fn eject_from_aircraft(
                 passenger.passively_acquired_target = false;
                 passenger.order_intent = None;
             }
-            sim.queue_megamission_with_teardown(pax_id, MissionType::Move, DockTeardown::None);
+            sim.queue_megamission_with_teardown(
+                pax_id,
+                MissionType::Move,
+                DockTeardown::None,
+                Some(rules),
+            );
             if let Some(dest) = scan_cell {
                 issue_pathed_move(sim, rules, path_grid, overlay_registry, pax_id, dest);
             }

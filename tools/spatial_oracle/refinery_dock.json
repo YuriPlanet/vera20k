@@ -1816,7 +1816,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -1933,7 +1934,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -2046,7 +2048,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -2126,7 +2129,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -2188,7 +2192,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -2253,7 +2258,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -2317,7 +2323,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -2396,7 +2403,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -2494,6 +2502,7 @@
         [
           "random",
           0,
+          2,
           2
         ]
       ],
@@ -2555,7 +2564,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -2633,7 +2643,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -2707,7 +2718,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -2768,14 +2780,7 @@
           0,
           0,
           0,
-          "refinery"
-        ],
-        [
-          "send",
-          "miner",
-          2,
-          "refinery",
-          10
+          null
         ],
         [
           "find_docking_bay",
@@ -2787,17 +2792,18 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
         "bays": [
-          "refinery",
+          null,
           "refinery"
         ],
         "linked": false,
         "mission": "harvest",
-        "name": "return_refused_close",
+        "name": "return_busy_close",
         "refinery_contact": "other",
         "status": 2
       },
@@ -2851,14 +2857,7 @@
           0,
           0,
           0,
-          "refinery"
-        ],
-        [
-          "send",
-          "miner",
-          2,
-          "refinery",
-          10
+          null
         ],
         [
           "find_docking_bay",
@@ -2876,7 +2875,7 @@
           2,
           [
             10,
-            11
+            10
           ]
         ],
         [
@@ -2884,19 +2883,20 @@
           "miner",
           [
             10,
-            11
+            10
           ],
           1
         ],
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
         "bays": [
-          "refinery",
+          null,
           "refinery"
         ],
         "linked": false,
@@ -2905,11 +2905,11 @@
           10
         ],
         "mission": "harvest",
-        "name": "return_refused_beyond_0x300",
+        "name": "return_busy_beyond_0x300",
         "passable": [
           [
             10,
-            11
+            10
           ]
         ],
         "refinery_contact": "other",
@@ -2931,7 +2931,7 @@
         "miner_mission": 10,
         "miner_nav": [
           10,
-          11
+          10
         ],
         "miner_queued": -1,
         "miner_status": 2,
@@ -3001,7 +3001,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -3104,7 +3105,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -3186,7 +3188,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -3223,82 +3226,6 @@
           0
         ],
         "refinery_contact": null,
-        "refinery_queued": -1,
-        "refinery_tether": 0,
-        "score": 0,
-        "stage": [
-          0,
-          -1,
-          0,
-          0
-        ],
-        "storage": [
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ],
-        "unloading": 0
-      }
-    },
-    {
-      "delay": 15,
-      "events": [
-        [
-          "find_docking_bay",
-          0,
-          0,
-          0,
-          null
-        ],
-        [
-          "find_docking_bay",
-          0,
-          1,
-          1,
-          "refinery"
-        ],
-        [
-          "random",
-          0,
-          2
-        ]
-      ],
-      "input": {
-        "bays": [
-          null,
-          "refinery"
-        ],
-        "linked": false,
-        "mission": "harvest",
-        "name": "return_narrow_none_wide_close",
-        "refinery_contact": "other",
-        "status": 2
-      },
-      "state": {
-        "balance": 0,
-        "dispatch_timer": [
-          0,
-          0
-        ],
-        "facing": {
-          "desired": 49152,
-          "duration": 0,
-          "start": 49152,
-          "timer_start": -1
-        },
-        "miner_contact": null,
-        "miner_mission": 10,
-        "miner_nav": null,
-        "miner_queued": -1,
-        "miner_status": 2,
-        "miner_tether": 0,
-        "other_contact": null,
-        "refinery_bstate": [
-          0,
-          0
-        ],
-        "refinery_contact": "other",
         "refinery_queued": -1,
         "refinery_tether": 0,
         "score": 0,
@@ -3500,7 +3427,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -3629,7 +3557,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -4880,7 +4809,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -4976,7 +4906,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -5236,6 +5167,88 @@
       }
     },
     {
+      "delay": 1,
+      "events": [
+        [
+          "play_anim",
+          8
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_new_order_below_gate",
+        "nav": [
+          12,
+          12
+        ],
+        "queued": "guard",
+        "stage": [
+          3,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          40,
+          0,
+          0,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": [
+          12,
+          12
+        ],
+        "miner_queued": 5,
+        "miner_status": 4,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          3,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          40.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
       "delay": 15,
       "events": [
         [
@@ -5262,7 +5275,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -5337,7 +5351,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {
@@ -5467,7 +5482,8 @@
         [
           "random",
           0,
-          2
+          2,
+          1
         ]
       ],
       "input": {

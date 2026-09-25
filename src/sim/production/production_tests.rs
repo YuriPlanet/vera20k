@@ -216,7 +216,7 @@ pub(super) fn build_catalog_rules() -> RuleSet {
              TechLevel=1\n\
              Owner=Americans,Alliance\n\
              BuildCat=Tech\n\
-             Refinery=yes\n\
+             Refinery=yes\nDockUnload=yes\n\
              FreeUnit=HARV\n\
              Foundation=3x3\n\
              [GAPILE]\n\
