@@ -56,20 +56,16 @@
 //!     `+0x94` and the last Rules `+0xBC4` entry) instead. VERA has no
 //!     producer of the byte (`drop_in_bridge_member` snaps a falling unit
 //!     to the ground, recorded DRIFT there).
+//! - A `Crashable=` (`+0xD95`) unit's crash impact calls `Death_Explosion`
+//!   once more (`0x007461D1`, the Jumpjet's 0x117C notice), outside any
+//!   receiver transaction: [`Simulation::unit_death_explosion_now`] builds
+//!   each anim right after its pick (`sim::world::crash`).
 //! - The other `Death_Explosion` callers are not wired:
 //!   - The crush of a Unit victim (`0x007418E5` -> `vt+0x170` =
 //!     `0x00746D60`: Death_Explosion, then the capture release `0x00710460`).
 //!     VERA's crush teardown (`movement_tick`) draws no pick and plays no
 //!     anim. Trigger: the Battle Fortress, stock's only `OmniCrusher=`,
 //!     crushing any vehicle but the five `OmniCrushResistant=` types.
-//!   - A `Crashable=` (`+0xD95`) unit's crash (`0x007461D1`, locomotor
-//!     message 0x117C through the Unit vtable at `0x007F5C4C`:
-//!     Death_Explosion then UnInit; `BalloonHover=` types fire their
-//!     DeathWeapon instead). The shared `FootClass::Crash` is ported for
-//!     aircraft (`sim::world::crash`), but `UnitClass::ReceiveDamage` does not
-//!     call it for a `Crashable=` unit (`0x00738457..0x00738485`) and the
-//!     Jumpjet crash state (`0x0054CA90`) is not ported, so stock ZEP, SHAD,
-//!     HIND, SCHP, SCHD and DISK still vanish at the killing hit.
 //!   - The `DeathFrames=` completion (`0x00736381`), dead on stock.
 //! - `AnimClass::Middle @ 0x00424F00` is not run for these anims, so the
 //!   scorch/crater a multi-frame explosion leaves at its middle frame (and its

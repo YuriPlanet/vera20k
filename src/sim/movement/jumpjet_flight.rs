@@ -53,9 +53,6 @@ const ARRIVAL_RADIUS: i32 = 20;
 /// Extra reference height for a non-building techno in a cell (`ADD EBP,0x55`
 /// at `0x004850EF`).
 const CELL_OBJECT_LIFT: i32 = 0x55;
-/// `0x008223B0`: binary32 16384/2pi, the radians-to-units scale of
-/// `Math::SinFromTable @ 0x004CACB0` and `CosFromTable @ 0x004CAD00`.
-const TRIG_UNITS_PER_RADIAN_F32: u32 = 0x4522_F983;
 /// `0x007E2810`: -2pi/65536.
 const NEG_RADIANS_PER_FACING_UNIT: u64 = 0xBF19_222D_989F_5E57;
 /// `0x007E2818`: -65536/2pi.
@@ -359,18 +356,6 @@ fn ordering(lhs: X87Value, rhs: X87Value) -> X87Ordering {
     X87Chop53::compare(lhs, rhs)
 }
 
-fn table_index(radians: X87Value) -> i32 {
-    X87Chop53::ftol_i32_low_masked(X87Chop53::mul(radians, single(TRIG_UNITS_PER_RADIAN_F32)))
-}
-
-fn table_sin(trig: &TrigTable, radians: X87Value) -> X87Value {
-    single(trig.sin(table_index(radians)).to_bits())
-}
-
-fn table_cos(trig: &TrigTable, radians: X87Value) -> X87Value {
-    single(trig.cos(table_index(radians)).to_bits())
-}
-
 fn native_cell(value: i32) -> i16 {
     (value.wrapping_add((value >> 31) & 0xFF) >> 8) as i16
 }
@@ -464,7 +449,7 @@ pub(crate) fn update_coordinates_and_altitude(
     };
     flight.bob_phase_bits = store_double(bob);
     let bob_target = X87Chop53::ftol_i32_low_masked(X87Chop53::add(
-        X87Chop53::mul(table_sin(host.trig(), bob), int(params.deviation)),
+        X87Chop53::mul(host.trig().sin_from_table(bob), int(params.deviation)),
         int(flight.target_height),
     ));
 
@@ -546,10 +531,10 @@ pub(crate) fn update_coordinates_and_altitude(
     );
     let new_y = X87Chop53::ftol_i32_low_masked(X87Chop53::sub(
         int(location[1]),
-        X87Chop53::mul(table_sin(host.trig(), angle), step),
+        X87Chop53::mul(host.trig().sin_from_table(angle), step),
     ));
     let new_x = X87Chop53::ftol_i32_low_masked(X87Chop53::add(
-        X87Chop53::mul(table_cos(host.trig(), angle), step),
+        X87Chop53::mul(host.trig().cos_from_table(angle), step),
         int(location[0]),
     ));
     host.set_location([new_x, new_y, location[2]]);

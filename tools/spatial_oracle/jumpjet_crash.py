@@ -17,8 +17,16 @@ and State5 runs until its impact calls the owner's INoticeSink slot 0 with
 Not covered: a kill while the owner still holds a NavCom (Set_Destination's
 locomotor calls are untraced), bridges and building tops in the reference
 height, and the Magnetron-lifted arms (+0x6AD, +0x427).
+
+A second family runs Draw_Matrix 0x0054DCC0 (ILocomotion +0x24) on the same
+owner: TechnoType +0xD22 (TiltCrashJumpjet=) with either rocking angle (owner
++0x328 sideways, +0x32C forwards) at least 0.005 takes the tilt arm, which
+offsets and rotates the facing matrix of LocomotionClass::Draw_Matrix
+0x0055A730 by the angles and the type's voxel half sizes (+0x360, +0x368),
+keyed -1; otherwise the base matrix alone.
 """
 from pathlib import Path
+import struct
 
 from unicorn.x86_const import UC_X86_REG_ESP
 
@@ -27,6 +35,7 @@ from tools.spatial_oracle.map_queries import dwords
 from tools.spatial_oracle.jumpjet_states import (
     BASE, LOCO, OWNER, SCRATCH, States, centre,
 )
+from tools.spatial_oracle.walk_head_occupation import TYPE
 
 MAP = 0x87F7E8
 NOTICE_VTABLE = SCRATCH + 0xEA00
@@ -150,10 +159,57 @@ def fall_rows():
     return rows
 
 
+DRAW_MATRIX = 0x54DCC0
+FACING_CONSTRUCTOR, FACING_SET_ROT, FACING_SET = 0x4C91C0, 0x4C9680, 0x4C9300
+
+
+def draw_matrix(row):
+    """Draw_Matrix 0x0054DCC0 on the corpus owner: the type's TiltCrashJumpjet
+    byte and voxel half sizes, the owner's rocking angles and body facing."""
+    owner = States(dict(FALL_BASE, **TYPES['DISK'], order=None, phase=2, moving=False,
+                        start=[*centre(10), 500], target_height=750))
+    u = owner.uc
+    u.mem_write(TYPE + 0xD22, bytes([row['tilt']]))
+    u.mem_write(TYPE + 0x360, struct.pack('<dd', *row['half_sizes']))
+    u.mem_write(OWNER + 0x328, struct.pack('<ff', *row['angles']))
+    facing = OWNER + 0x388
+    owner.call(FACING_CONSTRUCTOR, facing, [])
+    owner.call(FACING_SET_ROT, facing, [4])
+    u.mem_write(SCRATCH + 0xEB00, dwords(row['facing']))
+    owner.call(FACING_SET, facing, [SCRATCH + 0xEB00])
+    out, key = SCRATCH + 0xEC00 - 0x80, SCRATCH + 0xEC00 - 0x10
+    u.mem_write(key, dwords(row['key']))
+    owner.call(DRAW_MATRIX, 0, [LOCO + 4, out, key])
+    matrix = struct.unpack('<12I', u.mem_read(out, 48))
+    return dict(matrix=[f'{x:08x}' for x in matrix], key=owner.read32(key))
+
+
+def draw_matrix_rows():
+    rows = []
+    angle_sets = [(0.0, 0.0), (0.004, -0.0049), (0.005, 0.0), (0.0, -0.0051), (0.4, 0.0),
+                  (0.0, 0.35), (0.7853982, -0.6), (-0.7, 0.7853982), (-0.3, -0.2),
+                  (-0.7853982, -0.7853982)]
+    for tilt in (1, 0):
+        for facing in (0x0000, 0x4000, 0x6200, 0xC000):
+            for angles in angle_sets:
+                rows.append((f'tilt{tilt}_f{facing:04x}_{angles[0]}_{angles[1]}',
+                             dict(tilt=tilt, facing=facing, angles=list(angles),
+                                  half_sizes=[10.5, 10.0], key=3)))
+    # Other half sizes: the offsets scale with the voxel's own extent.
+    for half_sizes in ([6.0, 11.5], [20.5, 3.0]):
+        for angles in ((0.4, 0.0), (0.0, 0.35), (0.7853982, -0.6)):
+            rows.append((f'half{half_sizes[0]}_{half_sizes[1]}_{angles[0]}_{angles[1]}',
+                         dict(tilt=1, facing=0x6200, angles=list(angles),
+                              half_sizes=half_sizes, key=3)))
+    return rows
+
+
 def generate():
     return dict(
         fall=[dict(name=name, input=row, output=Crash(row).execute())
               for name, row in fall_rows()],
+        draw_matrix=[dict(name=name, input=row, output=draw_matrix(row))
+                     for name, row in draw_matrix_rows()],
     )
 
 
@@ -165,15 +221,23 @@ if __name__ == '__main__':
               '0x0054AF2E..0x0054B02C and State5 0x0054CA90 until the 0x117C impact notice. Types: '
               'ZEP, SHAD, HIND, SCHP, DISK with their stock JumpjetSpeed/Climb/Crash/Height/Wobbles/'
               'NoWobbles/Deviation/BalloonHover; a hover without the moving byte; an out-of-bounds '
-              'fall. Not a kill with a live NavCom, bridges, building tops or the lifted arms.',
+              'fall. Not a kill with a live NavCom, bridges, building tops or the lifted arms. '
+              'draw_matrix: Draw_Matrix 0x0054DCC0 with TiltCrashJumpjet (+0xD22) on and off, four '
+              'body facings, rocking angles around the 0.005 gate and to the balloon clamp, and '
+              'three voxel half-size pairs (+0x360, +0x368).',
         entry_points={'move_to': 0x54B1C0, 'process': 0x54AEC0, 'stop_moving': 0x54B4D0,
                       'state5': 0x54CA90, 'update': 0x54D0F0, 'in_bounds': 0x568300,
-                      'facing_set': 0x4C9220, 'facing_current': 0x4C93D0},
+                      'facing_set': 0x4C9220, 'facing_current': 0x4C93D0,
+                      'draw_matrix': DRAW_MATRIX, 'base_draw_matrix': 0x55A730},
         assumptions=['Everything jumpjet_states.States assumes; owner Health +0x6C set to 0 and the '
                      'crash latch +0x425 to 1 between the two Stop_Moving calls, as the Techno death arm '
                      'and FootClass::Crash order them; the owner has no NavCom, so UnitClass '
                      'Set_Destination(NULL) returns at 0x00741A80 without reaching the locomotor; '
-                     'MapClass +0xF4/+0xF8 give the In_Bounds diamond per row; +0x6AD and +0x427 clear.'],
+                     'MapClass +0xF4/+0xF8 give the In_Bounds diamond per row; +0x6AD and +0x427 clear.',
+                     'draw_matrix: the owner body facing +0x388 built by the original FacingClass '
+                     'constructor, SetROT(4) and Set; the half sizes written as the doubles '
+                     'TechnoTypeClass::ReadINI stores from the main voxel (0x007160C7..0x0071611D); '
+                     'the caller key 3.'],
         substitutions=['As jumpjet_states.States, plus: the owner INoticeSink (owner +8) slot 0 records '
                        '(notice, argument) and returns; MapClass layer remove 0x004A9770 is recorded and '
                        'otherwise a no-op.'],

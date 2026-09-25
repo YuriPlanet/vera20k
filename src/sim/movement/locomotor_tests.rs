@@ -330,6 +330,7 @@ fn make_obj(locomotor: LocomotorKind, category: ObjectCategory) -> ObjectType {
         zfudge_bridge: 7,
         too_big_to_fit_under_bridge: false,
         crashable: false,
+        tilt_crash_jumpjet: false,
         move_to_shroud: true,
         teleporter: false,
         hover_attack: false,
