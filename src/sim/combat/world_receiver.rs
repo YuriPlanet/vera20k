@@ -4512,22 +4512,30 @@ pub(crate) fn tick_combat(
             continue;
         };
         let own_removed = emit.remove_attack[n_remove..].contains(&snap.stable_id);
-        // A removal leaves `Target == 0`, so native's arm A does not run and the
-        // only `Set` left is arm B's idle return at `0x00736BDD`, which the
-        // `+0x6AF` store at `0x00736B16` precedes: that arc starts with a clear
-        // latch. (VERA swings back on the removal tick rather than after the
-        // dwell; that difference is the pre-existing S3 kill-tick behaviour.)
-        let replacement_is_idle_return = true;
-        let replacement: Option<u16> =
-            own_removed.then(|| crate::sim::movement::turret::body_facing_to_turret(e.facing));
-        if let Some(replacement) = replacement {
+        // A removal leaves `Target == 0` before `UnitClass::Facing_Update @
+        // 0x00736990` runs (`0x007365E8`, after `Fire_At_Target`): arm A does
+        // not aim, and arm B's idle return (`0x00736BDD`) waits out the dwell
+        // since the last shot (`GuardAreaTargetingDelay + 5`, `0x00736B4B`)
+        // and turns to the animated hull or the move destination.
+        if own_removed {
+            let mut targetless = e.clone();
+            targetless.attack_target = None;
+            let replacement = UnitFacingUpdate::from_facing_update(
+                snap.stable_id,
+                crate::sim::movement::turret::facing_update(
+                    &targetless,
+                    &world.substrate.entities,
+                    Some(rules),
+                    &world.interner,
+                    binary_frame,
+                ),
+            );
             let update = emit
                 .unit_facing
                 .iter_mut()
                 .find(|u| u.entity_id == snap.stable_id)
                 .expect("Unit attacker was seeded before fire");
-            update.turret_destination = Some(replacement);
-            update.turret_destination_is_idle_return = replacement_is_idle_return;
+            *update = replacement;
         }
     }
     // An idle unit killed or warped out earlier in the frame no longer reaches

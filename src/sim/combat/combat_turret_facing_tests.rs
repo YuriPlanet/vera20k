@@ -419,8 +419,8 @@ fn s3_unit_facing_emitted_for_attacker_and_idle() {
 #[test]
 fn removed_attacker_returns_to_body_same_tick() {
     // A unit whose own resolution cleared its attack (dead target, nothing to
-    // acquire) returns to body facing the same tick — matching both today's
-    // output and gamemd's upstream same-pass target-validation clear.
+    // acquire) and that has not fired within the idle dwell returns to body
+    // facing the same tick.
     let mut sim = Simulation::new();
     spawn_turreted(&mut sim, 1, 5, 5, 5);
     spawn_target(&mut sim, 2, 5, 8);
@@ -445,6 +445,34 @@ fn removed_attacker_returns_to_body_same_tick() {
             .is_none(),
         "the remove was applied by the batch"
     );
+}
+
+/// `UnitClass::Facing_Update @ 0x00736990`'s idle return waits
+/// `GuardAreaTargetingDelay + 5` frames since the last shot (`0x00736B4B`): a
+/// unit that dropped its target right after firing holds its turret instead
+/// of swinging back the same tick, and swings once the dwell has passed.
+#[test]
+fn removed_attacker_holds_its_turret_through_the_dwell() {
+    for (since_last_shot, expected) in [(40, None), (41, Some(body_facing_to_turret(0)))] {
+        let mut sim = Simulation::new();
+        spawn_turreted(&mut sim, 1, 5, 5, 5);
+        spawn_target(&mut sim, 2, 5, 8);
+        sim.substrate.entities.get_mut(2).unwrap().health.current = 0;
+        use_test_interner(&mut sim);
+        let rules = rules_with_mtnk_rot(5);
+        sim.session.binary_frame = 100;
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        unit.attack_target = Some(AttackTarget::new(2));
+        unit.last_fire_frame = 100 - since_last_shot;
+
+        let result = run_combat_direct(&mut sim, &rules);
+
+        assert_eq!(
+            unit_facing_of(&result, 1),
+            expected,
+            "{since_last_shot} frames"
+        );
+    }
 }
 
 #[test]
