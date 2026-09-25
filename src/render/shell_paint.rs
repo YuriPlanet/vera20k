@@ -132,6 +132,43 @@ pub fn push_entry_native(
     push_entry_sized(out, entry, x as f32, y as f32, entry.pixel_size, depth);
 }
 
+/// The part of `entry`, drawn with its top-left at `entry_origin`, that lies
+/// inside `rect`, 1:1.
+pub fn push_entry_crop(
+    out: &mut Vec<SpriteInstance>,
+    entry: MainMenuShellChromeEntry,
+    entry_origin: (i32, i32),
+    rect: RectPx,
+    depth: f32,
+) {
+    // Clip the destination to the entry canvas, then map it to atlas UVs.
+    let left = rect.x.max(entry_origin.0);
+    let top = rect.y.max(entry_origin.1);
+    let right = (rect.x + rect.w).min(entry_origin.0 + entry.pixel_size[0] as i32);
+    let bottom = (rect.y + rect.h).min(entry_origin.1 + entry.pixel_size[1] as i32);
+    if right <= left || bottom <= top {
+        return;
+    }
+    let u_per_px = entry.uv_size[0] / entry.pixel_size[0];
+    let v_per_px = entry.uv_size[1] / entry.pixel_size[1];
+    out.push(SpriteInstance {
+        position: [left as f32, top as f32],
+        size: [(right - left) as f32, (bottom - top) as f32],
+        uv_origin: [
+            entry.uv_origin[0] + (left - entry_origin.0) as f32 * u_per_px,
+            entry.uv_origin[1] + (top - entry_origin.1) as f32 * v_per_px,
+        ],
+        uv_size: [
+            (right - left) as f32 * u_per_px,
+            (bottom - top) as f32 * v_per_px,
+        ],
+        depth,
+        tint: [1.0, 1.0, 1.0],
+        alpha: 1.0,
+        ..Default::default()
+    });
+}
+
 fn push_entry_rect(
     out: &mut Vec<SpriteInstance>,
     entry: MainMenuShellChromeEntry,

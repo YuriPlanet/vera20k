@@ -81,7 +81,12 @@ def path_a_encoded_rgb(
     base_rgb: tuple[int, int, int],
     highlight_rgb: tuple[int, int, int],
 ) -> tuple[int, int, int] | None:
-    """Return native Path-A encoded RGB for a one-based UTF-16 unit."""
+    """Return native Path-A encoded RGB for a one-based UTF-16 unit.
+
+    The blend starts from the font's 16-bit text colour: the shell print
+    (0x00621040) truncates the COLORREF to R5G6B5 units and 0x00434DED shifts
+    them back to bytes with the low bits clear (src/render/shell_text_reveal.rs).
+    """
 
     if (
         type(unit_position) is not int
@@ -102,6 +107,7 @@ def path_a_encoded_rgb(
         raise ValidationError("Path-A color channels must be 8-bit integers")
     if count != 0 and count <= unit_position:
         return None
+    base_rgb = (base_rgb[0] & 0xF8, base_rgb[1] & 0xFC, base_rgb[2] & 0xF8)
 
     remaining = count - unit_position - 1
     if remaining >= reveal_range:

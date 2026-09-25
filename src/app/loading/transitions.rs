@@ -120,6 +120,9 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     crate::app::reset_scenario_exit_runtime(state);
     let startup = result.scenario.startup;
     let returns_scenario_rng_to_offline_shell = startup.launch_session().is_some();
+    state.match_state.match_presentation.local_player_handle = startup
+        .launch_session()
+        .map(|launch| launch.player_name.clone());
     // A loaded world is not timed until the launch handoff actually reaches
     // InGame (SpawnPick remains outside the scenario elapsed span).
     state.match_state.scenario_elapsed_clock.reset();

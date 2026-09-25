@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "The original qsort 0x007C8B48 with the score comparator 0x005C9AE0 on twelve supplied score lists of two to eight rows",
+  "assumptions": [
+    "Entries are 0x70 bytes with the score at +0x60 and nothing else read by the comparator",
+    "The pointer array starts in input order, as ScoreDialog__FillEntries leaves it",
+    "Which houses get a row and their scores are established separately"
+  ],
+  "substitutions": [
+    "Entries and the pointer array are written into scratch and 0x00ABF958 directly"
+  ],
+  "entry_points": {
+    "qsort": "0x007C8B48",
+    "comparator": "0x005C9AE0"
+  },
+  "payload_sha256": "5a5dbb8683eabc181ba43a852cd19487fd3b200a026113a23dc830e4aa89352e"
+}

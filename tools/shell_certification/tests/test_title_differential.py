@@ -43,11 +43,11 @@ class TitleDifferentialTests(unittest.TestCase):
         )
         self.assertEqual(
             path_a_encoded_rgb(9, 17, 8, BASE_RGB, HIGHLIGHT_RGB),
-            (255, 255, 30),
+            (248, 252, 30),
         )
         self.assertEqual(
             path_a_encoded_rgb(1, 17, 8, BASE_RGB, HIGHLIGHT_RGB),
-            BASE_RGB,
+            (248, 252, 0),
         )
 
     def test_path_a_negative_delta_truncates_toward_zero(self) -> None:

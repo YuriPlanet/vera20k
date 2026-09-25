@@ -141,7 +141,8 @@ impl SlideDialogSpec {
 /// Back (`0x686`) only; Assign and Reset All sit on the left side. `0x6B`
 /// (Choose Map): Use Map and Create Random Map (`0x6C5`, `0x583`, counted
 /// even while disabled), Cancel (`0x5C0`), the top panel (`+0xD5`,
-/// `0x00622915`) and no map button.
+/// `0x00622915`) and no map button. `0x108` (Score): only Continue
+/// (`0x6D1`, the bottom list's `0x00609A71`); no top-list button.
 pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
     SlideDialogSpec {
         dialog_id: 0x00E2,
@@ -220,12 +221,19 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         map_button: false,
         top_panel: true,
     },
+    SlideDialogSpec {
+        dialog_id: 0x0108,
+        top_buttons: 0,
+        bottom_button: true,
+        map_button: false,
+        top_panel: false,
+    },
 ];
 
 /// Whether a dialog plays the first-paint controls-reveal slide: every
 /// front-end shell with a `RENDERED_SHELL_SLIDES` column. The original's full
-/// list (`0x0060C540`, 55 ids) also marks Options' Network `0xD7`, Score
-/// `0x108`, the in-game menu dialogs (`0xB5`, `0xB6`, `0xB8`, `0xBBA`, `0xBBB`)
+/// list (`0x0060C540`, 55 ids) also marks Options' Network `0xD7`, the
+/// in-game menu dialogs (`0xB5`, `0xB6`, `0xB8`, `0xBBA`, `0xBBB`)
 /// and the LAN/WOL setup dialogs; none of them slides here yet. `0xB7` slides
 /// only outside a suspended game (`0x00612690`), which is the only place it is
 /// rendered as a family page. Message boxes (`0x120` confirm, `0xCE` body-ok)
@@ -803,7 +811,7 @@ mod tests {
         ))
         .unwrap();
         let cases = fixture["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 60);
+        assert_eq!(cases.len(), 66);
         for case in cases {
             let dialog = case["dialog"].as_str().unwrap();
             let dialog_id = u16::from_str_radix(dialog.trim_start_matches("0x"), 16).unwrap();
