@@ -884,6 +884,7 @@ mod tests {
 
     fn mode() -> SkirmishGameMode {
         SkirmishGameMode {
+            class: crate::skirmish_modes::MpModeClass::Battle,
             id: 1,
             ui_name_key: "GUI:Battle".to_string(),
             tooltip_key: "STT:ModeBattle".to_string(),
@@ -897,6 +898,7 @@ mod tests {
 
     fn cooperative_mode() -> SkirmishGameMode {
         SkirmishGameMode {
+            class: crate::skirmish_modes::MpModeClass::Cooperative,
             override_file: "MPCoopMD.ini".to_string(),
             ..mode()
         }

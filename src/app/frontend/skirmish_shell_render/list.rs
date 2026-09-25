@@ -1,8 +1,20 @@
-//! Common618D40 list backing, selection and61C690 scrollbar paint.
-use super::chrome::*;
+//! The owner-draw list `0x00618D40` (paint `0x00619230`) and its scrollbar
+//! child (`0x0061C690`) on the Skirmish-family atlas.
 use super::*;
-use crate::ui::shell::list::{ListScrollPart, ShellListGeometry};
+use crate::ui::shell::list::{
+    ListFrameTone, ListScrollPart, ShellListGeometry, grip_tiles, list_frame_lines,
+    scrollbar_arrow_origins, scrollbar_edge_lines, scrollbar_interior,
+};
 
+fn tone_rgb(tone: ListFrameTone) -> [f32; 3] {
+    tone.rgb().map(|channel| f32::from(channel) / 255.0)
+}
+
+/// A list over its dialog's background: the selected row's fill, the two
+/// frame rings around the window (the paint surface less its extra column
+/// and row) and, when the rows overflow, the scrollbar child. The native
+/// list also darkens the background under its rows by one RGB565 unit; that
+/// is not drawn here.
 pub(super) fn paint_list(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
@@ -25,57 +37,69 @@ pub(super) fn paint_list(
             depth - 0.00001,
         );
     }
-    push_rect_outline(
-        out,
-        atlas,
-        geometry.outer,
-        OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
-        depth - 0.00002,
-    );
-    if let (Some(bar), Some(thumb)) = (geometry.scrollbar, geometry.thumb) {
-        let chrome = atlas.control_chrome();
-        let inner = RectPx::new(bar.x + 1, bar.y + 1, 18, bar.h - 2);
-        push_solid_rect(
-            out,
-            atlas,
-            inner,
-            SHELL_SCROLLBAR_TRACK_RGB_PENDING_SCROLLBAR_SOURCE_CAPTURE,
-            depth - 0.00002,
-        );
-        for (up, y, released, pressed) in [
-            (
-                true,
-                inner.y,
-                chrome.scrollbar_arrow_up_released,
-                chrome.scrollbar_arrow_up_pressed,
-            ),
-            (
-                false,
-                inner.y + inner.h - 22,
-                chrome.scrollbar_arrow_down_released,
-                chrome.scrollbar_arrow_down_pressed,
-            ),
-        ] {
-            let control = if up {
-                ListScrollPart::Up
-            } else {
-                ListScrollPart::Down
-            };
-            if let Some(entry) = super::controls::scrollbar_arrow_entry(
-                released,
-                pressed,
-                pressed_part == Some(control),
-            ) {
-                push_entry_native(out, entry, inner.x, y, depth - 0.00003);
-            }
+    let outer = geometry.outer;
+    let window = RectPx::new(outer.x, outer.y, outer.w - 1, outer.h - 1);
+    for (line, tone) in list_frame_lines(window) {
+        push_solid_rect(out, atlas, line, tone_rgb(tone), depth - 0.00002);
+    }
+    let (Some(bar), Some(thumb)) = (geometry.scrollbar, geometry.thumb) else {
+        return;
+    };
+    for (line, tone) in scrollbar_edge_lines(bar) {
+        // The corner pixels go over the lines they cross.
+        let line_depth = if tone == ListFrameTone::Corner {
+            depth - 0.000025
+        } else {
+            depth - 0.00002
+        };
+        push_solid_rect(out, atlas, line, tone_rgb(tone), line_depth);
+    }
+    let chrome = atlas.control_chrome();
+    let x = scrollbar_interior(bar).x;
+    let arrow_h = chrome
+        .scrollbar_arrow_down_released
+        .map_or(22, |entry| entry.pixel_size[1].round() as i32);
+    for ((released, pressed, part), (x, y)) in [
+        (
+            chrome.scrollbar_arrow_up_released,
+            chrome.scrollbar_arrow_up_pressed,
+            ListScrollPart::Up,
+        ),
+        (
+            chrome.scrollbar_arrow_down_released,
+            chrome.scrollbar_arrow_down_pressed,
+            ListScrollPart::Down,
+        ),
+    ]
+    .into_iter()
+    .zip(scrollbar_arrow_origins(bar, arrow_h))
+    {
+        if let Some(entry) =
+            super::controls::scrollbar_arrow_entry(released, pressed, pressed_part == Some(part))
+        {
+            push_entry_native(out, entry, x, y, depth - 0.00003);
         }
-        super::controls::push_scrollbar_thumb(out, &chrome, thumb, depth - 0.00004);
-        push_rect_outline(
-            out,
-            atlas,
-            bar,
-            OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
-            depth - 0.00005,
-        );
+    }
+    if let Some(mid) = chrome.scrollbar_thumb_mid {
+        let tile_h = mid.pixel_size[1].round() as i32;
+        for (y, h) in grip_tiles(thumb, tile_h) {
+            out.push(SpriteInstance {
+                position: [x as f32, y as f32],
+                size: [mid.pixel_size[0], h as f32],
+                uv_origin: mid.uv_origin,
+                uv_size: [mid.uv_size[0], mid.uv_size[1] * h as f32 / tile_h as f32],
+                depth: depth - 0.00003,
+                tint: [1.0, 1.0, 1.0],
+                alpha: 1.0,
+                ..Default::default()
+            });
+        }
+    }
+    if let Some(cap) = chrome.scrollbar_thumb_top {
+        push_entry_native(out, cap, x, thumb.y, depth - 0.00004);
+    }
+    if let Some(cap) = chrome.scrollbar_thumb_bottom {
+        let h = cap.pixel_size[1].round() as i32;
+        push_entry_native(out, cap, x, thumb.y + thumb.h - h, depth - 0.00004);
     }
 }

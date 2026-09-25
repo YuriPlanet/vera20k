@@ -9,19 +9,19 @@ use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::shell_paint::{self, PaintLabel};
 use crate::render::shell_text::{self, Reveal, ShellAlign, ShellTextDraw, TextRect};
+use crate::skirmish_modes::mode_by_id;
 use crate::ui::main_menu::SkirmishCountry;
 use crate::ui::shell::modal::BodyOkLayout;
 use crate::ui::skirmish_shell::{
-    COMBO_DROPDOWN_ROW_H, COMBO_FACE_H, COMBO_TEXT_LEFT_INSET, ChooseMapModalButton,
-    ChooseMapModalLayout, OwnerDrawButton, RandomMapSetupLayout, RectPx, SETUP_COMBO_ROWS,
-    SavedSeedLayout, SkirmishAiRowType, SkirmishCheckboxId, SkirmishComboId, SkirmishComboItem,
-    SkirmishCountryChoice, SkirmishShellLayout, SkirmishShellOpponent, SkirmishShellState,
-    SkirmishTrackbarId, checkbox_text_rect, choose_map_listbox_content_rect,
-    choose_map_listbox_row_rect,
-    choose_map_listbox_visible_row_count, combo_dropdown_content_rect, combo_dropdown_rect,
-    combo_dropdown_visible_row_count, combo_enabled, combo_items, combo_text_rect,
-    player_name_edit_text_rect, player_row_visible, random_map_setup_dropdown_rect,
-    setup_combo_items, trackbar_value_text_rect, trackbar_visual_value,
+    CHOOSE_MAP_TITLE_KEY, COMBO_DROPDOWN_ROW_H, COMBO_FACE_H, COMBO_TEXT_LEFT_INSET,
+    ChooseMapModalButton, ChooseMapModalLayout, OwnerDrawButton, RandomMapSetupLayout, RectPx,
+    SETUP_COMBO_ROWS, SavedSeedLayout, SkirmishAiRowType, SkirmishCheckboxId, SkirmishComboId,
+    SkirmishComboItem, SkirmishCountryChoice, SkirmishShellLayout, SkirmishShellOpponent,
+    SkirmishShellState, SkirmishTrackbarId, checkbox_text_rect, combo_dropdown_content_rect,
+    combo_dropdown_rect, combo_dropdown_visible_row_count, combo_enabled, combo_items,
+    combo_text_rect, player_name_edit_text_rect, player_row_visible,
+    random_map_setup_dropdown_rect, setup_combo_items, trackbar_value_text_rect,
+    trackbar_visual_value,
 };
 
 use super::controls::trackbar_rect_for_id;
@@ -823,17 +823,6 @@ pub(super) fn parent_shell_status_help_text(shell: &SkirmishShellState) -> Optio
     (!shell.status_help_text.is_empty()).then_some(shell.status_help_text.as_str())
 }
 
-#[cfg(test)]
-pub(super) fn choose_map_modal_parent_status_help_text(
-    _shell: &SkirmishShellState,
-) -> Option<&str> {
-    None
-}
-
-pub(super) fn choose_map_modal_status_help_text(shell: &SkirmishShellState) -> Option<&str> {
-    (!shell.status_help_text.is_empty()).then_some(shell.status_help_text.as_str())
-}
-
 /// Text for the random-map setup dialog `0x105`.
 ///
 /// The six row labels are `SS_LEFT` in the resource (style `0x50000200`), unlike
@@ -976,40 +965,40 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     }
 }
 
+/// Text of Choose Map `0x6B`. The heading is the family kind-1 static (its
+/// reveal starts when the entry slide ends); the status line is painted by
+/// the caller. While a slide runs the column draws the buttons without
+/// captions; the labels and lists (left-side children) still paint.
 pub(super) fn push_choose_map_modal_text_draws(
     out: &mut Vec<ShellTextDraw>,
     state: &AppState,
     layout: &ChooseMapModalLayout,
+    title: Option<crate::ui::shell::static_reveal::Kind1RevealWindow>,
+    sliding: bool,
 ) {
     let Some(modal) = state.frontend.skirmish_shell_state.choose_map_modal.as_ref() else {
         return;
     };
-
-    for (key, fallback, rect, align) in [
-        (
-            "GUI:ChooseMap",
-            "Choose Map",
-            layout.title,
-            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-        ),
+    if let Some(window) = title {
+        let heading = localized_label(state, CHOOSE_MAP_TITLE_KEY, "Choose Map");
+        out.push(shell_text::draw_in_rect_path_a(
+            &state.renderer.bit_font,
+            &heading,
+            rect_to_text_rect(layout.title),
+            ShellAlign::H_CENTER,
+            [0.0; 2],
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
+            crate::app::frontend::main_menu_shell_render::shell_reveal_path_a(window),
+        ));
+    }
+    for (key, fallback, rect) in [
         (
             "GUI:SelectEngagement",
             "Select Engagement",
             layout.select_engagement,
-            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
         ),
-        (
-            "GUI:GameType",
-            "Game Type",
-            layout.game_type_heading,
-            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-        ),
-        (
-            "GUI:GameMap",
-            "Game Map",
-            layout.game_map_heading,
-            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-        ),
+        ("GUI:GameType", "Game Type", layout.game_type_heading),
+        ("GUI:GameMap", "Game Map", layout.game_map_heading),
     ] {
         let label = localized_label(state, key, fallback);
         push_text_draw(
@@ -1018,94 +1007,80 @@ pub(super) fn push_choose_map_modal_text_draws(
             &label,
             rect_to_text_rect(rect),
             SHELL_LABEL_TEXT_RGB,
-            align,
+            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
             SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
         );
     }
-
-    for (label, rect, button) in [
-        (
-            localized_label(state, "GUI:UseMap", "Use Map"),
-            layout.use_map_button,
-            ChooseMapModalButton::UseMap0x6c5,
-        ),
-        (
-            localized_label(state, "GUI:Cancel", "Cancel"),
-            layout.cancel_button,
-            ChooseMapModalButton::Cancel0x5c0,
-        ),
-        (
-            localized_label(state, "GUI:CreateRandomMap", "Create Random Map"),
-            layout.create_random_map_button,
-            ChooseMapModalButton::CreateRandomMap0x583,
-        ),
-    ] {
-        let disabled = !modal.button_enabled(button, &state.frontend.skirmish_modes);
-        push_text_draw(
-            out,
-            state,
-            &label,
-            rect_to_text_rect(rect),
-            button_label_color_for_disabled(disabled),
-            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-            SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
-        );
+    if !sliding {
+        for (label, rect, button) in [
+            (
+                localized_label(state, "GUI:UseMap", "Use Map"),
+                layout.use_map_button,
+                ChooseMapModalButton::UseMap0x6c5,
+            ),
+            (
+                localized_label(state, "GUI:Cancel", "Cancel"),
+                layout.cancel_button,
+                ChooseMapModalButton::Cancel0x5c0,
+            ),
+            (
+                localized_label(state, "GUI:CreateRandomMap", "Create Random Map"),
+                layout.create_random_map_button,
+                ChooseMapModalButton::CreateRandomMap0x583,
+            ),
+        ] {
+            let disabled = !modal.button_enabled(button);
+            push_text_draw(
+                out,
+                state,
+                &label,
+                rect_to_text_rect(rect),
+                button_label_color_for_disabled(disabled),
+                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
+            );
+        }
     }
-
-    if let Some(status_help_text) = choose_map_modal_status_help_text(&state.frontend.skirmish_shell_state) {
-        push_label_draw(
-            out,
-            state,
-            status_help_text,
-            layout.status_help,
-            SHELL_DROPDOWN_TEXT_DEPTH - 0.0001,
-        );
-    }
-
-    let mode_count = modal.mode_row_count(&state.frontend.skirmish_modes);
-    let mode_content = choose_map_listbox_content_rect(mode_count, layout.mode_list);
-    let visible_mode_rows = choose_map_listbox_visible_row_count(layout.mode_list);
-    for (visible_row, mode) in state
-        .frontend.skirmish_modes
+    let geometry = modal.mode_geometry(layout);
+    for (visible, mode_id) in modal
+        .mode_rows()
         .iter()
         .skip(modal.mode_top_index)
-        .take(visible_mode_rows)
+        .take(geometry.visible_rows)
         .enumerate()
     {
+        let Some(mode) = mode_by_id(&state.frontend.skirmish_modes, *mode_id) else {
+            continue;
+        };
         let label = localized_label(state, &mode.ui_name_key, &mode.ui_name_key);
-        let row_rect = choose_map_listbox_row_rect(mode_content, visible_row);
-        let rect = RectPx::new(row_rect.x + 2, row_rect.y, row_rect.w - 2, row_rect.h);
+        let row = geometry.row(visible);
         push_text_draw(
             out,
             state,
             &label,
-            rect_to_text_rect(rect),
+            rect_to_text_rect(RectPx::new(row.x + 2, row.y, row.w - 2, row.h)),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::V_CENTER,
             SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
         );
     }
-
-    let map_count = modal.map_row_count();
-    let map_content = choose_map_listbox_content_rect(map_count, layout.map_list);
-    let visible_map_rows = choose_map_listbox_visible_row_count(layout.map_list);
-    for (visible_row, record_idx) in modal
+    let geometry = modal.map_geometry(layout);
+    for (visible, record_idx) in modal
         .filtered_record_indices
         .iter()
         .skip(modal.map_top_index)
-        .take(visible_map_rows)
+        .take(geometry.visible_rows)
         .enumerate()
     {
         let Some(record) = state.frontend.scenario_catalog.records().get(*record_idx) else {
             continue;
         };
-        let row_rect = choose_map_listbox_row_rect(map_content, visible_row);
-        let rect = RectPx::new(row_rect.x + 2, row_rect.y, row_rect.w - 2, row_rect.h);
+        let row = geometry.row(visible);
         push_text_draw(
             out,
             state,
             &record.display_name,
-            rect_to_text_rect(rect),
+            rect_to_text_rect(RectPx::new(row.x + 2, row.y, row.w - 2, row.h)),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::V_CENTER,
             SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
@@ -1442,6 +1417,91 @@ pub(super) fn push_saved_browser_contents_text<I>(
 
 }
 
+/// Chrome is drawn before text in this renderer: cut a message box's
+/// rectangle out of the text already queued so it cannot paint through the
+/// box's panel.
+pub(super) fn exclude_text_under(out: &mut Vec<ShellTextDraw>, dialog: RectPx) {
+    let underlying = std::mem::take(out);
+    for draw in underlying {
+        let clip = draw.scissor;
+        let x0 = clip.x as i32;
+        let y0 = clip.y as i32;
+        let x1 = x0 + clip.w as i32;
+        let y1 = y0 + clip.h as i32;
+        let cut_x0 = dialog.x.clamp(x0, x1);
+        let cut_x1 = (dialog.x + dialog.w).clamp(x0, x1);
+        let cut_y0 = dialog.y.clamp(y0, y1);
+        let cut_y1 = (dialog.y + dialog.h).clamp(y0, y1);
+        for (left, top, right, bottom) in [
+            (x0, y0, x1, cut_y0),
+            (x0, cut_y1, x1, y1),
+            (x0, cut_y0, cut_x0, cut_y1),
+            (cut_x1, cut_y0, x1, cut_y1),
+        ] {
+            if right > left && bottom > top {
+                out.push(ShellTextDraw {
+                    instances: draw.instances.clone(),
+                    scissor: crate::render::shell_text::ScissorRect {
+                        x: left as u32,
+                        y: top as u32,
+                        w: (right - left) as u32,
+                        h: (bottom - top) as u32,
+                    },
+                });
+            }
+        }
+    }
+}
+
+/// Use Map's eject box over the chooser: body `GUI:EjectAIPlayers`, OK and
+/// Cancel.
+pub(super) fn push_choose_map_eject_prompt_text(
+    out: &mut Vec<ShellTextDraw>,
+    state: &AppState,
+    prompt: &crate::ui::skirmish_shell::EjectPrompt,
+) {
+    let layout = crate::ui::shell::modal::quit_confirm_layout(
+        state.render_width() as i32,
+        state.render_height() as i32,
+    );
+    exclude_text_under(out, layout.dialog);
+    let pressed = |button| prompt.pressed == Some(button);
+    let labels = [
+        PaintLabel {
+            text: localized_label(state, "GUI:EjectAIPlayers", "GUI:EjectAIPlayers").into(),
+            rect: layout.body,
+            rgb: SHELL_LABEL_TEXT_RGB,
+            align: validation_modal_body_text_align(),
+            path_a_reveal: None,
+        },
+        PaintLabel {
+            text: localized_label(state, "GUI:Ok", "OK").into(),
+            rect: button_label_rect_px(
+                layout.ok,
+                pressed(crate::ui::skirmish_shell::EjectPromptButton::Ok),
+            ),
+            rgb: SHELL_LABEL_TEXT_RGB,
+            align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            path_a_reveal: None,
+        },
+        PaintLabel {
+            text: localized_label(state, "GUI:Cancel", "Cancel").into(),
+            rect: button_label_rect_px(
+                layout.cancel,
+                pressed(crate::ui::skirmish_shell::EjectPromptButton::Cancel),
+            ),
+            rgb: SHELL_LABEL_TEXT_RGB,
+            align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            path_a_reveal: None,
+        },
+    ];
+    out.extend(shell_paint::paint_labels_at_depth(
+        &state.renderer.bit_font,
+        &labels,
+        SHELL_DROPDOWN_TEXT_DEPTH - 0.00013,
+    ));
+}
+
 pub(super) fn push_saved_browser_prompt_text<I>(
     out: &mut Vec<ShellTextDraw>,
     state: &AppState,
@@ -1449,35 +1509,9 @@ pub(super) fn push_saved_browser_prompt_text<I>(
     browser: &crate::ui::skirmish_shell::SavedSeedBrowserState<I>,
 ) {
     if let Some(prompt) = browser.prompt.as_ref() {
-        let (dialog, body_rect, yes, no) = prompt.layout(layout.screen.w as u32, layout.screen.h as u32);
-        // Chrome is drawn before text in this renderer. Exclude the prompt's
-        // rectangle from underlying text so it cannot paint through its panel.
-        let underlying = std::mem::take(out);
-        for draw in underlying {
-            let clip = draw.scissor;
-            let x0 = clip.x as i32;
-            let y0 = clip.y as i32;
-            let x1 = x0 + clip.w as i32;
-            let y1 = y0 + clip.h as i32;
-            let cut_x0 = dialog.x.clamp(x0, x1);
-            let cut_x1 = (dialog.x + dialog.w).clamp(x0, x1);
-            let cut_y0 = dialog.y.clamp(y0, y1);
-            let cut_y1 = (dialog.y + dialog.h).clamp(y0, y1);
-            for (left, top, right, bottom) in [
-                (x0, y0, x1, cut_y0), (x0, cut_y1, x1, y1),
-                (x0, cut_y0, cut_x0, cut_y1), (cut_x1, cut_y0, x1, cut_y1),
-            ] {
-                if right > left && bottom > top {
-                    out.push(ShellTextDraw {
-                        instances: draw.instances.clone(),
-                        scissor: crate::render::shell_text::ScissorRect {
-                            x: left as u32, y: top as u32,
-                            w: (right - left) as u32, h: (bottom - top) as u32,
-                        },
-                    });
-                }
-            }
-        }
+        let (dialog, body_rect, yes, no) =
+            prompt.layout(layout.screen.w as u32, layout.screen.h as u32);
+        exclude_text_under(out, dialog);
         let mut labels = vec![PaintLabel {
             text: prompt.body.as_str().into(), rect: body_rect, rgb: SHELL_LABEL_TEXT_RGB,
             align: validation_modal_body_text_align(), path_a_reveal: None,

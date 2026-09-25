@@ -242,11 +242,34 @@ pub(super) fn ensure_random_map_setup_preview_texture(state: &mut AppState) -> b
     true
 }
 
+/// The map the preview shows: while Choose Map shows, its highlighted map
+/// (the loop callback `0x005E66F0` reloads the preview for every new
+/// highlight and restores the session's map afterwards); otherwise the
+/// committed one.
+pub(super) fn preview_map_idx(state: &AppState) -> usize {
+    let shell = &state.frontend.skirmish_shell_state;
+    shell
+        .choose_map_modal
+        .as_ref()
+        .filter(|_| shell.random_map_setup_modal.is_none() && shell.saved_seed_browser.is_none())
+        .and_then(|modal| modal.selected_record_index())
+        .and_then(|record| state.frontend.scenario_catalog.records().get(record))
+        .and_then(|record| {
+            state
+                .frontend
+                .scenario_catalog
+                .shell_maps()
+                .iter()
+                .position(|map| map.file_name.eq_ignore_ascii_case(&record.file_name))
+        })
+        .unwrap_or(shell.selected_map_idx)
+}
+
 pub(super) fn ensure_selected_preview_texture(state: &mut AppState) {
     if ensure_random_map_setup_preview_texture(state) {
         return;
     }
-    let selected_map_idx = state.frontend.skirmish_shell_state.selected_map_idx;
+    let selected_map_idx = preview_map_idx(state);
     let selected_entry = state.frontend.scenario_catalog.shell_maps().get(selected_map_idx).cloned();
     let selected_is_random_sentinel = selected_entry
         .as_ref()

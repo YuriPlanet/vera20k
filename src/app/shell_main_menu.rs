@@ -1022,6 +1022,10 @@ impl App {
             ShellExitThen::KeyboardClose(exit) => {
                 crate::app::input::keyboard::commit_close(state, exit)
             }
+            ShellExitThen::SkirmishChooseMap => Self::open_choose_map_modal(state),
+            ShellExitThen::ChooseMapUse(selection) => Self::commit_choose_map_use(state, selection),
+            ShellExitThen::ChooseMapCancel => Self::close_choose_map_modal(state),
+            ShellExitThen::ChooseMapRandomMap => Self::commit_choose_map_random_map(state),
             ShellExitThen::WolBack => Self::return_from_wol(state),
             ShellExitThen::WolApiMissing => Self::commit_wol_api_missing(state),
         }

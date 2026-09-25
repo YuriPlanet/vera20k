@@ -81,6 +81,15 @@ pub fn dlu_rect(x: i32, y: i32, w: i32, h: i32) -> RectPx {
     )
 }
 
+/// A family dialog's template child window: the 6x13 conversion one pixel
+/// wider and taller, as the `0x10E` and `0x6B` children measure in the retail
+/// captures (`0x0060C42E` keeps the template place). The `0x129` movie list
+/// measured at the plain conversion.
+pub fn child_window(x: i32, y: i32, w: i32, h: i32) -> RectPx {
+    let rect = dlu_rect(x, y, w, h);
+    RectPx::new(rect.x, rect.y, rect.w + 1, rect.h + 1)
+}
+
 /// `(screen - base) / 2` clamped to >= 0. Canonical form; algebraically equal to
 /// the single-player `if screen > base` guard and the main-menu inline guard for
 /// every i32.

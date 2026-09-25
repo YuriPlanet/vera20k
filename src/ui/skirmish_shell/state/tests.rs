@@ -5,6 +5,9 @@ use super::*;
 use crate::app::loading::init::MapMenuEntry;
 use crate::map::briefing::BriefingSection;
 use crate::map::preview::PreviewSection;
+use crate::map::skirmish_scenarios::{
+    SkirmishScenarioKind, SkirmishScenarioRecord, SkirmishScenarioSource,
+};
 use crate::map::waypoints::Waypoint;
 use crate::rules::ini_parser::IniFile;
 use crate::skirmish_launch::{
@@ -12,14 +15,10 @@ use crate::skirmish_launch::{
     SkirmishLaunchOptions,
 };
 use crate::skirmish_modes::stock_skirmish_modes;
-use crate::map::skirmish_scenarios::{
-    SkirmishScenarioKind, SkirmishScenarioRecord, SkirmishScenarioSource,
-};
-use crate::ui::skirmish_shell::layout::TRACKBAR_THUMB_W;
+use crate::ui::skirmish_shell::layout::{TRACKBAR_THUMB_W, compute_choose_map_modal_layout};
 use crate::ui::skirmish_shell::{
     COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, COMBO_DROPDOWN_SCROLLBAR_W,
-    COMBO_FACE_H, ChooseMapListboxId, RectPx, checkbox_text_rect,
-    compute_fixed_800_choose_map_modal_layout, compute_layout, trackbar_pixel_offset,
+    COMBO_FACE_H, RectPx, checkbox_text_rect, compute_layout, trackbar_pixel_offset,
     trackbar_thumb_rect,
 };
 
@@ -129,7 +128,8 @@ fn choose_map_modal_open_filters_and_highlights_current_record() {
         test_scenario_record(2, "team", "teamgame"),
     ];
 
-    let modal = ChooseMapModalState::open(1, Some(1), &modes, &records);
+    let layout = compute_choose_map_modal_layout(800, 600);
+    let modal = ChooseMapModalState::open(1, Some(1), &modes, &records, &layout);
 
     assert_eq!(modal.selected_mode_id, 1);
     assert_eq!(modal.filtered_record_indices, vec![0, 1]);
@@ -146,9 +146,10 @@ fn choose_map_modal_select_mode_rebuilds_map_list_by_filter() {
         test_scenario_record(1, "team", "teamgame"),
         test_scenario_record(2, "duel", "duel"),
     ];
-    let mut modal = ChooseMapModalState::open(1, Some(0), &modes, &records);
+    let layout = compute_choose_map_modal_layout(800, 600);
+    let mut modal = ChooseMapModalState::open(1, Some(0), &modes, &records, &layout);
 
-    assert!(modal.select_mode(9, &modes, &records));
+    assert!(modal.select_mode(9, &modes, &records, &layout));
 
     assert_eq!(modal.selected_mode_id, 9);
     assert_eq!(modal.filtered_record_indices, vec![1]);
@@ -163,9 +164,10 @@ fn choose_map_modal_cancel_restores_saved_selection_accept_uses_highlight() {
         test_scenario_record(0, "first", "standard"),
         test_scenario_record(1, "second", "standard"),
     ];
-    let mut modal = ChooseMapModalState::open(1, Some(0), &modes, &records);
+    let layout = compute_choose_map_modal_layout(800, 600);
+    let mut modal = ChooseMapModalState::open(1, Some(0), &modes, &records, &layout);
 
-    assert!(modal.select_map_filtered_row(1));
+    modal.highlighted_filtered_index = Some(1);
 
     assert_eq!(
         modal.accept_selection(),
@@ -187,13 +189,14 @@ fn choose_map_modal_cancel_restores_saved_selection_accept_uses_highlight() {
 fn choose_map_modal_random_map_command_is_mode_gated_and_single_record() {
     let modes = stock_skirmish_modes();
     let mut records = vec![test_scenario_record(0, "battle", "standard")];
-    let mut modal = ChooseMapModalState::open(1, Some(0), &modes, &records);
+    let layout = compute_choose_map_modal_layout(800, 600);
+    let mut modal = ChooseMapModalState::open(1, Some(0), &modes, &records, &layout);
 
     let first_random = modal
-        .create_random_map(&mut records, &modes, "Random Map", 4)
+        .create_random_map(&mut records, &modes, "Random Map", 4, &layout)
         .expect("battle allows random maps");
     let second_random = modal
-        .create_random_map(&mut records, &modes, "Random Map", 4)
+        .create_random_map(&mut records, &modes, "Random Map", 4, &layout)
         .expect("battle still allows random maps");
 
     assert_eq!(first_random, second_random);
@@ -204,34 +207,12 @@ fn choose_map_modal_random_map_command_is_mode_gated_and_single_record() {
     );
     assert_eq!(modal.selected_record_index(), Some(first_random));
 
-    assert!(modal.select_mode(9, &modes, &records));
+    assert!(modal.select_mode(9, &modes, &records, &layout));
     assert_eq!(
-        modal.create_random_map(&mut records, &modes, "Nope", 4),
+        modal.create_random_map(&mut records, &modes, "Nope", 4, &layout),
         None
     );
     assert_eq!(records.len(), 2);
-}
-
-#[test]
-fn choose_map_modal_scrolls_mode_and_map_listboxes_independently() {
-    let modes = stock_skirmish_modes();
-    let records = (0..20)
-        .map(|idx| test_scenario_record(idx, &format!("map{idx}"), "standard"))
-        .collect::<Vec<_>>();
-    let mut modal = ChooseMapModalState::open(1, Some(0), &modes, &records);
-
-    assert!(modal.scroll_listbox_by_rows(ChooseMapListboxId::Map0x553, 20, 11, 4));
-    assert_eq!(modal.map_top_index, 4);
-    assert_eq!(modal.mode_top_index, 0);
-
-    assert!(modal.scroll_listbox_by_rows(ChooseMapListboxId::Map0x553, 20, 11, 100));
-    assert_eq!(modal.map_top_index, 9);
-
-    assert!(modal.scroll_listbox_by_rows(ChooseMapListboxId::Map0x553, 20, 11, -100));
-    assert_eq!(modal.map_top_index, 0);
-
-    assert!(!modal.set_top_index_clamped(ChooseMapListboxId::Mode0x6eb, modes.len(), 11, 5));
-    assert_eq!(modal.mode_top_index, 0);
 }
 
 #[test]
@@ -601,7 +582,8 @@ fn skirmish_status_help_includes_flag_and_right_panel_static_targets() {
 fn hovered_shell_control_blocks_parent_targets_when_modal_owns_input() {
     let layout = compute_layout(800, 600);
     let mut shell = SkirmishShellState::default();
-    shell.choose_map_modal = Some(ChooseMapModalState::open(1, None, &[], &[]));
+    let chooser = compute_choose_map_modal_layout(800, 600);
+    shell.choose_map_modal = Some(ChooseMapModalState::open(1, None, &[], &[], &chooser));
 
     assert_eq!(
         hovered_shell_control(
@@ -742,16 +724,15 @@ fn status_help_color_row_uses_item_specific_stt_with_generic_miss_fallback() {
 
 #[test]
 fn hovered_choose_map_modal_control_resolves_0x6b_status_targets() {
-    let layout = compute_fixed_800_choose_map_modal_layout(800, 600);
+    let layout = compute_choose_map_modal_layout(800, 600);
     let modes = stock_skirmish_modes();
     let records = vec![test_scenario_record(0, "arena", "standard")];
-    let modal = ChooseMapModalState::open(1, Some(0), &modes, &records);
+    let modal = ChooseMapModalState::open(1, Some(0), &modes, &records, &layout);
 
     assert_eq!(
         hovered_choose_map_modal_control(
             &layout,
             &modal,
-            modes.len(),
             layout.use_map_button.x,
             layout.use_map_button.y
         ),
@@ -760,20 +741,13 @@ fn hovered_choose_map_modal_control_resolves_0x6b_status_targets() {
         ))
     );
     assert_eq!(
-        hovered_choose_map_modal_control(
-            &layout,
-            &modal,
-            modes.len(),
-            layout.preview.x,
-            layout.preview.y
-        ),
+        hovered_choose_map_modal_control(&layout, &modal, layout.preview.x, layout.preview.y),
         Some(ChooseMapHoverTarget::Preview0x468)
     );
     assert_eq!(
         hovered_choose_map_modal_control(
             &layout,
             &modal,
-            modes.len(),
             layout.status_help.x,
             layout.status_help.y
         ),
@@ -783,17 +757,15 @@ fn hovered_choose_map_modal_control_resolves_0x6b_status_targets() {
         hovered_choose_map_modal_control(
             &layout,
             &modal,
-            modes.len(),
             layout.mode_list.x + 1,
             layout.mode_list.y + 1
         ),
-        Some(ChooseMapHoverTarget::ModeListRow0x6eb { mode_index: 0 })
+        Some(ChooseMapHoverTarget::ModeListRow0x6eb { mode_id: 1 })
     );
     assert_eq!(
         hovered_choose_map_modal_control(
             &layout,
             &modal,
-            modes.len(),
             layout.map_list.x + 1,
             layout.map_list.y + 1
         ),

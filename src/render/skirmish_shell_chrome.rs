@@ -62,6 +62,8 @@ pub struct SkirmishShellChromeAtlas {
     pub background_640_mnscrns: Option<SkirmishShellChromeEntry>,
     pub background_800_coop_game_setup: Option<SkirmishShellChromeEntry>,
     pub choose_map_background_800_customize_battle: Option<SkirmishShellChromeEntry>,
+    /// Choose Map at 640 wide: MNSCRNS through MnScrnLCustomizeBattle.PAL.
+    pub choose_map_background_640_customize_battle: Option<SkirmishShellChromeEntry>,
     /// Generic common-shell small background, decoded through SHELL.PAL.
     pub generic_background_640_mnscrns_shell: Option<SkirmishShellChromeEntry>,
     /// Generic common-shell large background, decoded through SHELL.PAL.
@@ -412,6 +414,19 @@ pub fn build_skirmish_shell_chrome_atlas(
             ),
             "MnScrnLCustomizeBattle.shp",
         );
+        // At 640 wide `0x6B` draws the small MNSCRNS through its own
+        // CustomizeBattle palette (`0x0060CF00`, `0x0072E7AD`).
+        push_optional(
+            &mut rendered,
+            render_shp_entry_labeled(
+                assets,
+                "MNSCRNS.SHP",
+                "mnscrns.shp#customizebattle",
+                choose_map_background_palette,
+                0,
+            ),
+            "MNSCRNS.SHP",
+        );
     } else {
         log::warn!(
             "Skipping verified Choose Map modal background because MnScrnLCustomizeBattle.PAL is missing or invalid"
@@ -548,6 +563,9 @@ pub fn build_skirmish_shell_chrome_atlas(
         background_800_coop_game_setup: by_label.get("mnscrnlcoopgamesetup.shp").copied(),
         choose_map_background_800_customize_battle: by_label
             .get("mnscrnlcustomizebattle.shp")
+            .copied(),
+        choose_map_background_640_customize_battle: by_label
+            .get("mnscrns.shp#customizebattle")
             .copied(),
         generic_background_640_mnscrns_shell: by_label.get("mnscrns.shp#shell").copied(),
         generic_background_large_mnscrnl_shell: by_label.get("mnscrnl.shp#shell").copied(),

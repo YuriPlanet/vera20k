@@ -7,14 +7,37 @@
 use crate::assets::asset_manager::AssetManager;
 use crate::rules::ini_parser::IniFile;
 
-const STOCK_MODE_CATEGORIES: [&str; 6] = [
-    "Battle",
-    "ManBattle",
-    "Siege",
-    "Unholy",
-    "FreeForAll",
-    "Cooperative",
-];
+/// The mode class an `MPModesMD.ini` section builds. The loader `0x005D7CE0`
+/// reads the sections in this order, each through its own factory
+/// (`0x005D8170..0x005D82B0`), and inserts every mode by id (`0x005D7590`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MpModeClass {
+    Battle,
+    ManBattle,
+    Siege,
+    Unholy,
+    FreeForAll,
+    Cooperative,
+}
+
+impl MpModeClass {
+    const SECTIONS: [(Self, &'static str); 6] = [
+        (Self::Battle, "Battle"),
+        (Self::ManBattle, "ManBattle"),
+        (Self::Siege, "Siege"),
+        (Self::Unholy, "Unholy"),
+        (Self::FreeForAll, "FreeForAll"),
+        (Self::Cooperative, "Cooperative"),
+    ];
+
+    /// Vtable `+0x40`, which Skirmish's game-type list requires
+    /// (`0x005D6130` at `0x005D6263`). Battle (`0x005C0E20`) and FreeForAll
+    /// (`0x005C5E30`) answer true; ManBattle, Siege, Unholy and Cooperative
+    /// keep the base `0x005D6360` (false).
+    pub const fn lists_in_skirmish(self) -> bool {
+        matches!(self, Self::Battle | Self::FreeForAll)
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum SkirmishModeLoadError {
@@ -28,6 +51,7 @@ pub enum SkirmishModeLoadError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkirmishGameMode {
+    pub class: MpModeClass,
     pub id: i32,
     pub ui_name_key: String,
     pub tooltip_key: String,
@@ -39,7 +63,7 @@ pub struct SkirmishGameMode {
 }
 
 impl SkirmishGameMode {
-    fn from_roster_row_native_defaults(id: i32, value: &str) -> Option<Self> {
+    fn from_roster_row_native_defaults(class: MpModeClass, id: i32, value: &str) -> Option<Self> {
         let fields: Vec<&str> = value.split(',').map(str::trim).collect();
         if fields.len() < 5 {
             return None;
@@ -47,6 +71,7 @@ impl SkirmishGameMode {
 
         let random_maps_allowed = parse_bool(fields[4]).unwrap_or(false);
         Some(Self {
+            class,
             id,
             ui_name_key: fields[0].to_string(),
             tooltip_key: fields[1].to_string(),
@@ -87,18 +112,18 @@ where
     F: FnMut(&str) -> Option<IniFile>,
 {
     let mut modes = Vec::new();
-    for category in STOCK_MODE_CATEGORIES {
+    for (class, category) in MpModeClass::SECTIONS {
         let Some(section) = ini.section(category) else {
             continue;
         };
         for key in section.keys() {
-            let Ok(id) = key.parse::<i32>() else {
-                continue;
-            };
+            // The id is the key's atoi (`CString` to int `0x007B6280`).
+            let id = crate::rules::ini_value::atoi_lenient(key);
             let Some(value) = section.get(key) else {
                 continue;
             };
-            let Some(mut mode) = SkirmishGameMode::from_roster_row_native_defaults(id, value)
+            let Some(mut mode) =
+                SkirmishGameMode::from_roster_row_native_defaults(class, id, value)
             else {
                 continue;
             };
@@ -195,6 +220,26 @@ mod tests {
         assert_eq!(modes[0].ui_name_key, "GUI:Battle");
         assert_eq!(modes[0].map_filter, "standard");
         assert!(modes[0].random_maps_allowed);
+    }
+
+    #[test]
+    fn retail_skirmish_lists_battle_free_for_all_and_team_alliance() {
+        let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("mpmodesmd.ini") else {
+            return;
+        };
+        let listed: Vec<(i32, String)> = parse_mpmodes_ini(&ini)
+            .into_iter()
+            .filter(|mode| mode.class.lists_in_skirmish())
+            .map(|mode| (mode.id, mode.ui_name_key))
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                (1, "GUI:Battle".to_string()),
+                (2, "GUI:FreeForAll".to_string()),
+                (9, "GUI:TeamGame".to_string()),
+            ]
+        );
     }
 
     #[test]

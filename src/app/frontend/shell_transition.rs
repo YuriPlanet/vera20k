@@ -6,9 +6,8 @@
 //! column (every tile row's SDBTNANM frame, plus the Skirmish map button and top
 //! panel) on a 30 ms tick; nothing is repositioned.
 //!
-//! The render-agnostic data + schedule live in [`crate::ui::shell::slide`] (the
-//! dialog-id allow-list, each dialog's slide column, and the [`ShellFrameWave`]
-//! frame sweep). This module is the app/render glue: it maps the currently-showing
+//! The render-agnostic data + schedule live in [`crate::ui::shell::slide`] (each
+//! rendered dialog's slide column and the [`ShellFrameWave`] frame sweep). This module is the app/render glue: it maps the currently-showing
 //! screen to a shell dialog, (re)starts/advances the wave on entry edges, plays
 //! the slide-in start cue, and dispatches the per-frame shell repaint while the
 //! wave is live. The slide-in start cue is `GUIMoveInSound` (stock `MenuSlideIn`);
@@ -67,6 +66,8 @@ pub(crate) enum ShellSlideKind {
     WolWelcome,
     /// Dialog 0xA3 — Options' Keyboard page (front-end parent only).
     Keyboard,
+    /// Dialog 0x6B — Skirmish's Choose Map, a family page of its own.
+    ChooseMap,
 }
 
 impl ShellSlideKind {
@@ -85,6 +86,7 @@ impl ShellSlideKind {
             ShellSlideKind::Options => 0x00D5,
             ShellSlideKind::WolWelcome => 0x010E,
             ShellSlideKind::Keyboard => 0x00A3,
+            ShellSlideKind::ChooseMap => 0x006B,
         })
     }
 
@@ -133,6 +135,17 @@ pub(crate) enum ShellExitThen {
     /// Keyboard `0xA3` Back or Cancel: `0x005FBEF0` tears it down with its
     /// slide, then the bindings save or reload and a new `0xD5` is built.
     KeyboardClose(crate::app::input::keyboard::KeyboardExit),
+    /// Skirmish Choose Map (`0x5AA`): `0x102` slides out and hides without
+    /// packing (`0x006AD931`, `0x006AD93C`), then `0x6B` runs.
+    SkirmishChooseMap,
+    /// Choose Map Use Map: `0x6B` slides out (`0x007757E0`), the selection
+    /// commits and `0x102` shows again with its entry slide.
+    ChooseMapUse(crate::ui::skirmish_shell::ChooseMapSelection),
+    /// Choose Map Cancel: `0x6B` slides out and `0x102` shows again.
+    ChooseMapCancel,
+    /// Choose Map Create Random Map: `0x6B` slides out and hides
+    /// (`0x005E6A03..0x005E6A0B`) before the random-map dialog runs.
+    ChooseMapRandomMap,
     /// Westwood Online Main Menu (result 0): `0xE2` is recreated.
     WolBack,
     /// A Westwood Online action: `0x10E` closes before the WOLAPI object
@@ -153,6 +166,10 @@ impl ShellExitThen {
             Self::LoadSavedGameBack => ShellSlideKind::LoadSavedGame,
             Self::Options(_) => ShellSlideKind::Options,
             Self::KeyboardClose(_) => ShellSlideKind::Keyboard,
+            Self::SkirmishChooseMap => ShellSlideKind::Skirmish,
+            Self::ChooseMapUse(_) | Self::ChooseMapCancel | Self::ChooseMapRandomMap => {
+                ShellSlideKind::ChooseMap
+            }
             Self::WolBack | Self::WolApiMissing => ShellSlideKind::WolWelcome,
         }
     }
@@ -413,7 +430,8 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::LoadSavedGame
             | ShellSlideKind::Options
             | ShellSlideKind::WolWelcome
-            | ShellSlideKind::Keyboard => ShellWaveCompletion::MenuPage,
+            | ShellSlideKind::Keyboard
+            | ShellSlideKind::ChooseMap => ShellWaveCompletion::MenuPage,
             ShellSlideKind::Skirmish => ShellWaveCompletion::Skirmish,
         })
     }
@@ -558,9 +576,8 @@ pub(crate) fn main_menu_presented_is_poisoned(state: &AppState) -> bool {
 /// Which allow-listed shell dialog is currently showing, if any. Mirrors the
 /// main-menu render dispatch order (skirmish > single-player > bare menu); the
 /// egui fallback / skirmish-setup paths are not native shell dialogs and do not
-/// slide. The candidate is gated through the data-driven slide allow-list, so a
-/// dialog only slides when its id is eligible. Returns `None` off the main menu
-/// screen.
+/// slide. The candidate is gated on its dialog having a slide column. Returns
+/// `None` off the main menu screen.
 pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideKind> {
     use crate::ui::game_screen::GameScreen;
     if state.frontend.screen != GameScreen::MainMenu {
@@ -592,7 +609,15 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     }
     let candidate =
         if state.frontend.shell_route.skirmish() || state.frontend.dev_skirmish_shell_enabled {
-            ShellSlideKind::Skirmish
+            let shell = &state.frontend.skirmish_shell_state;
+            if shell.choose_map_modal.is_none() {
+                ShellSlideKind::Skirmish
+            } else if shell.random_map_setup_modal.is_some() || shell.saved_seed_browser.is_some() {
+                // The chooser hides while the random-map dialogs run.
+                return None;
+            } else {
+                ShellSlideKind::ChooseMap
+            }
         } else if state.frontend.shell_route.single_player() {
             ShellSlideKind::SinglePlayer
         } else if state.frontend.shell_route.movies_and_credits() {
@@ -734,7 +759,7 @@ pub(crate) fn render_shell_first_paint_slide(
     ShellLifecycleReducer::from_state(state).advance_wave(Instant::now());
 
     let rendered = match kind {
-        ShellSlideKind::Skirmish => {
+        ShellSlideKind::Skirmish | ShellSlideKind::ChooseMap => {
             if !crate::app::App::ensure_skirmish_shell_chrome(state) {
                 log::warn!("Skirmish shell chrome unavailable; cancelling first-paint slide");
                 state.frontend.shell_first_paint_slide = None;
