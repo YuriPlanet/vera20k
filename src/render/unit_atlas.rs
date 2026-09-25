@@ -281,7 +281,7 @@ impl UnitAtlas {
         mut sprites: Vec<CachedUnitSprite>,
     ) {
         // Tallest first keeps each shelf tight.
-        sprites.sort_by(|a, b| b.height.cmp(&a.height));
+        sprites.sort_by_key(|sprite| std::cmp::Reverse(sprite.height));
         let max_dim = device.limits().max_texture_dimension_2d;
         // A fresh shelf keeps resident sprites out of the rows uploaded below.
         if let Some(growth) = self.growth.as_mut() {
@@ -885,18 +885,19 @@ impl UnitModel {
         };
         // Ordinary ground, single-section ShadowIndex/frame-zero geometry. Keep
         // aircraft scaling and unsupported callers on the existing path.
-        if key.layer == VxlLayer::Shadow && key.frame == 0 && self.drive_shadow {
-            if let Some(sprite) =
+        if key.layer == VxlLayer::Shadow
+            && key.frame == 0
+            && self.drive_shadow
+            && let Some(sprite) =
                 vxl_raster::shadow::render(&self.body, self.body_hva.as_ref(), &params)
-            {
-                let bounds = [
-                    sprite.offset_x as i32,
-                    sprite.offset_y as i32,
-                    sprite.width as i32,
-                    sprite.height as i32,
-                ];
-                return Some((sprite, Some(bounds)));
-            }
+        {
+            let bounds = [
+                sprite.offset_x as i32,
+                sprite.offset_y as i32,
+                sprite.width as i32,
+                sprite.height as i32,
+            ];
+            return Some((sprite, Some(bounds)));
         }
         let native_draw_bounds = self.native_draw_bounds(&params, key.layer);
 

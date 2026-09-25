@@ -415,7 +415,7 @@ impl SpriteAtlas {
         mut sprites: Vec<RenderedShpSprite>,
     ) {
         // Tallest first keeps each shelf tight.
-        sprites.sort_by(|a, b| b.height.cmp(&a.height));
+        sprites.sort_by_key(|sprite| std::cmp::Reverse(sprite.height));
         let max_dim = device.limits().max_texture_dimension_2d;
         // A fresh shelf keeps resident sprites out of the rows uploaded below.
         if let Some(growth) = self.growth.as_mut() {
