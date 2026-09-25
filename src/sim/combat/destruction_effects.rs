@@ -56,20 +56,16 @@
 //!     `+0x94` and the last Rules `+0xBC4` entry) instead. VERA has no
 //!     producer of the byte (`drop_in_bridge_member` snaps a falling unit
 //!     to the ground, recorded DRIFT there).
+//! - A `Crashable=` (`+0xD95`) unit's crash impact calls `Death_Explosion`
+//!   once more (`0x007461D1`, the Jumpjet's 0x117C notice), outside any
+//!   receiver transaction: [`Simulation::unit_death_explosion_now`] builds
+//!   each anim right after its pick (`sim::world::crash`).
 //! - The other `Death_Explosion` callers are not wired:
 //!   - The crush of a Unit victim (`0x007418E5` -> `vt+0x170` =
 //!     `0x00746D60`: Death_Explosion, then the capture release `0x00710460`).
 //!     VERA's crush teardown (`movement_tick`) draws no pick and plays no
 //!     anim. Trigger: the Battle Fortress, stock's only `OmniCrusher=`,
 //!     crushing any vehicle but the five `OmniCrushResistant=` types.
-//!   - A `Crashable=` (`+0xD95`) unit's crash (`0x007461D1`, locomotor
-//!     message 0x117C through the Unit vtable at `0x007F5C4C`:
-//!     Death_Explosion then UnInit; `BalloonHover=` types fire their
-//!     DeathWeapon instead). The shared `FootClass::Crash` is ported for
-//!     aircraft (`sim::world::crash`), but `UnitClass::ReceiveDamage` does not
-//!     call it for a `Crashable=` unit (`0x00738457..0x00738485`) and the
-//!     Jumpjet crash state (`0x0054CA90`) is not ported, so stock ZEP, SHAD,
-//!     HIND, SCHP, SCHD and DISK still vanish at the killing hit.
 //!   - The `DeathFrames=` completion (`0x00736381`), dead on stock.
 //! - `AnimClass::Middle @ 0x00424F00` is not run for these anims, so the
 //!   scorch/crater a multi-frame explosion leaves at its middle frame (and its
@@ -221,12 +217,43 @@ impl Simulation {
 
     /// `UnitClass::Death_Explosion @ 0x00738680`: one `Explosion=` anim and
     /// then one `DestroyAnim=` anim at the unit's Location, each picked with
-    /// one Scenario `Next()` (`0x007386A7`, `0x0073881D`).
+    /// one Scenario `Next()` (`0x007386A7`, `0x0073881D`), recorded on the
+    /// receiver transaction's anim list.
     pub(crate) fn unit_death_explosion(
         &mut self,
         rules: &RuleSet,
         unit_id: u64,
         anims: &mut Vec<ExplosionEffect>,
+    ) {
+        self.unit_death_explosion_with(rules, unit_id, |world, anim, coord| {
+            world.push_death_anim(anims, anim, coord, 0);
+        });
+    }
+
+    /// [`Self::unit_death_explosion`] outside a receiver transaction (a
+    /// crashed Jumpjet's impact notice): each anim is constructed right after
+    /// its pick, as the native constructor call follows it (`0x0073871E`,
+    /// `0x00738854`).
+    pub(crate) fn unit_death_explosion_now(&mut self, rules: &RuleSet, unit_id: u64) {
+        self.unit_death_explosion_with(rules, unit_id, |world, anim, coord| {
+            let type_id = world.interner.intern(anim);
+            world.admit_death_anim(
+                rules,
+                type_id,
+                DeathAnimSpawn {
+                    coord,
+                    delay: 0,
+                    draws: None,
+                },
+            );
+        });
+    }
+
+    fn unit_death_explosion_with(
+        &mut self,
+        rules: &RuleSet,
+        unit_id: u64,
+        mut emit: impl FnMut(&mut Self, &str, AnimWorldCoord),
     ) {
         let Some(entity) = self.substrate.entities.get(unit_id) else {
             return;
@@ -258,14 +285,14 @@ impl Simulation {
             } else {
                 picked
             };
-            self.push_death_anim(anims, anim, coord, 0);
+            emit(self, anim, coord);
         }
         // `0x00738749..0x007387FC` sums the stored ore's value into a local
         // nothing reads and calls the ShakeScreen stub (`0x0048DED0`, a bare
         // `RET`): no effect.
         if !object.destroy_anims.is_empty() {
             let anim = self.pick_death_anim(&object.destroy_anims);
-            self.push_death_anim(anims, anim, coord, 0);
+            emit(self, anim, coord);
         }
     }
 

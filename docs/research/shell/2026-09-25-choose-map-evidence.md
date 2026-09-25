@@ -24,7 +24,10 @@ carries the names used here.
   line `0x695`.
 - Cancel (`0x5C0`) and Use Map (`0x6C5`) end the dialog through `0x007757E0`:
   `0x6B` slides out and is destroyed; `0x102` is shown again, so it slides
-  in again and restarts every kind-1 reveal (`0x006230B8`). Cancel restores
+  in again. Its SHOW completion (`0x006230B8`) sends `0x4EE`, which starts
+  only statics that never started (`0x00615FDB`): finished ones repaint at
+  their final count, and only a changed text restarts (corrected in
+  `2026-09-26-skirmish-statics-evidence.md`). Cancel restores
   the saved selection (`0x006AD955`); Use Map commits it (`0x006ADA21`).
 - Create Random Map (`0x583`, enabled by the listed mode's
   `RandomMapsAllowed` `0x005D6350`) slides `0x6B` out and hides it, then

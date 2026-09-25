@@ -1446,10 +1446,31 @@ fn finish_concrete_death(
     }
     // `UnitClass::ReceiveDamage` then lifts the dying unit off its cell
     // (`0x00737F7A`) before its passengers and crew leave. Passenger escape
-    // (`0x00737FD2`) is not ported: the fatal prelude already purged them,
-    // and a type with passenger capacity has no crew roll.
+    // (`0x00737FD2`) is not ported: the fatal prelude already purged the
+    // passengers of every unit but a `Crashable=` one, and a type with
+    // passenger capacity has no crew roll.
+    let crashable = category == EntityCategory::Unit
+        && world
+            .object_type(type_id, rules)
+            .is_some_and(|object| object.crashable);
     if category == EntityCategory::Unit && callbacks_enabled(world) {
         world.mark_up_dying_unit(dead_id, crate::sim::world::UninitContext::with_rules(rules));
+        // `0x00737F97..0x00737FAB`: above 0xD0 leptons the passengers die with
+        // the attacker credited; a `Crashable=` type then skips the escape
+        // loop (`0x00737FBE`), so lower down its Crash kills them uncredited.
+        let high = world.substrate.entities.get(dead_id).is_some_and(|entity| {
+            crate::sim::movement::air_movement::current_fly_height(
+                entity,
+                world.resolved_terrain.as_ref(),
+            ) > 0xD0
+        });
+        if crashable && high {
+            world.kill_passengers(
+                dead_id,
+                killing_attacker(world, damage_events, dead_id),
+                rules,
+            );
+        }
         world.spawn_vehicle_crew(rules, overlay_registry, dead_id, prevent_crew_escape);
     }
 
@@ -1491,6 +1512,11 @@ fn finish_concrete_death(
         // `AircraftClass::ReceiveDamage` (`0x00416694..0x004166A3`): an
         // airborne aircraft crashes instead of its UnInit. It stays alive and
         // represented, with Health 0, until its fall's impact.
+        effects.despawned_ids.push(dead_id);
+    } else if crashable && callbacks_enabled(world) && world.foot_crash(dead_id, None, rules) {
+        // `UnitClass::ReceiveDamage` (`0x00738457..0x00738475`): an airborne
+        // `Crashable=` unit crashes (`Crash(0)`, no attacker) instead of its
+        // UnInit, and falls to its impact (a Jumpjet: `jumpjet_crash_impact`).
         effects.despawned_ids.push(dead_id);
     } else {
         effects.immediate_uninit_ids.push(dead_id);
@@ -2697,6 +2723,10 @@ fn admit_attacker_fire<'r>(
 /// out. `UnitClass::AI` returns first on vt+0x1D4, BeingWarpedOut `+0x270`
 /// (`0x007362FB..0x0073635A`), which a Temporal chain and the teleport's
 /// warp-out both set.
+///
+/// Native gates the update on IsAlive (`+0x90`, `0x007365BB`), so a crashing
+/// Unit's wreck still reaches it; here Health does (recorded residual at the
+/// Techno bracket's Guard B, `world::techno_ai`).
 fn unit_reaches_fire_update(world: &Simulation, id: u64) -> bool {
     world
         .substrate

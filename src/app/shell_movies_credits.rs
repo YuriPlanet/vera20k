@@ -114,7 +114,7 @@ impl App {
             list.scroll_pointer_moved(layout.list, x, y);
         }
         // Every hover message repaints the status line (0x00615EF7).
-        state.frontend.shell_status_line.hover_repaint();
+        state.frontend.shell_status_line.repaint();
     }
 
     /// Scrollbar arrow auto-repeat; returns the next wake deadline.

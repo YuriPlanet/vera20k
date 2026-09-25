@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "The WM_INITDIALOG child relayout (0x0060AAB0, 0x0060C540, 0x0060C4A0 -> 0x0060C0C0 and its placement helpers) of 0x102, 0x6B, 0x105 and 0x108 at 640x480, 800x600 and 1024x768, after 0x0072EC70",
+  "assumptions": [
+    "Children start at the 6x13 dialog-base-unit conversion of their RT_DIALOG template (MulDiv rounding) one pixel wider and taller, the runtime window size measured in retail captures; the conversion itself is Windows code and not executed",
+    "The dialog is at (0, 0); no game is suspended behind the shell and the session globals are zero (no network session)",
+    "Record +0x68 (the class code the subclass installer stores) is Button 0, Static 2, anything else 0xB"
+  ],
+  "substitutions": [
+    "user32 window calls are served by a window model of the dialog and its children; any other import faults",
+    "Right-panel shape globals hold headers with the retail canvas sizes",
+    "operator new/delete and the window-rect helper 0x00775690 are replaced",
+    "Dialog-record table hash [0xAC1B18] returns bucket 0"
+  ],
+  "entry_points": {
+    "rect_init": "0x0072EC70",
+    "child_setup": "0x0060AAB0",
+    "include_set": "0x0060C540",
+    "relayout": "0x0060C4A0",
+    "child_relayout": "0x0060C0C0"
+  },
+  "payload_sha256": "4e2d3fe9cc108a5a2dd66b1f8222b4bce90f52c969e2b0172a8032964dc342d9"
+}

@@ -184,10 +184,12 @@ fn apply_anchor(
             screen_w,
             screen_h,
             geom::dlu_rect(dlu.x, dlu.y, dlu.w, dlu.h),
+            None,
         ),
         AnchorRule::RightAnchorRuntimeAdjust {
             resource_dw,
             resource_dh,
+            inset,
             dy,
             dh,
         } => {
@@ -198,18 +200,19 @@ fn apply_anchor(
                 resource.w + resource_dw,
                 resource.h + resource_dh,
             );
-            let a = right_anchor(screen_w, screen_h, adjusted);
+            let a = right_anchor(screen_w, screen_h, adjusted, inset);
             RectPx::new(a.x, a.y + dy, a.w, a.h + dh)
         }
     }
 }
 
-/// Right-panel static anchor (`0x0060B1D0`, no suspended game): inset
-/// `(168 - w) / 2` from the right edge, less the horizontal half of the
-/// screen beyond 800; `y` is the resource `y` plus the vertical half beyond
-/// 600. Both halves clamp at 0. `rect` is the converted client rect.
-fn right_anchor(screen_w: i32, screen_h: i32, rect: RectPx) -> RectPx {
-    let inset = (geom::RIGHT_PANEL_WIDTH - rect.w) / 2;
+/// Right-panel static anchor (`0x0060B1D0`, no suspended game): the inset
+/// override, else `(168 - w) / 2`, from the right edge, less the horizontal
+/// half of the screen beyond 800; `y` is the resource `y` plus the vertical
+/// half beyond 600. Both halves clamp at 0. `rect` is the converted client
+/// rect.
+fn right_anchor(screen_w: i32, screen_h: i32, rect: RectPx, inset: Option<i32>) -> RectPx {
+    let inset = inset.unwrap_or((geom::RIGHT_PANEL_WIDTH - rect.w) / 2);
     let delta_x = geom::center_offset(screen_w, SHELL_BASE_W);
     let delta_y = geom::center_offset(screen_h, SHELL_BASE_H);
     RectPx::new(
@@ -221,13 +224,48 @@ fn right_anchor(screen_w: i32, screen_h: i32, rect: RectPx) -> RectPx {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::ui::shell::descriptor::{
         BgKind, ControlDescriptor, ControlKind, DialogDescriptor, DialogId,
     };
     use crate::ui::shell::geom::SDBTNANM_CELL_W_NARROW;
     use crate::ui::shell::in_game_options::{build_in_game_options_descriptor, control};
+
+    /// Child `control` of `dialog` at `width`x`height` after the executed
+    /// WM_INITDIALOG relayout (`tools/storage_oracle/shell_relayout.py`).
+    pub(crate) fn executed_child_window(
+        dialog: u16,
+        control: u16,
+        width: i32,
+        height: i32,
+    ) -> RectPx {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/storage_oracle/shell_relayout.json"
+        ))
+        .unwrap();
+        let case = fixture["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| {
+                case["dialog_id"] == dialog && case["width"] == width && case["height"] == height
+            })
+            .unwrap_or_else(|| panic!("no relayout of {dialog:#x} at {width}x{height}"));
+        let child = case["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|child| child["id"] == control)
+            .unwrap_or_else(|| panic!("{dialog:#x} has no child {control:#x}"));
+        let rect: Vec<i32> = child["rect"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_i64().unwrap() as i32)
+            .collect();
+        RectPx::new(rect[0], rect[1], rect[2], rect[3])
+    }
 
     fn ctrl(id: u16, kind: ControlKind, dlu: RectPx, anchor: AnchorRule) -> ControlDescriptor {
         ControlDescriptor {
@@ -276,12 +314,7 @@ mod tests {
                     0x0694,
                     ControlKind::Static,
                     RectPx::new(425, 1, 108, 10),
-                    AnchorRule::RightAnchorRuntimeAdjust {
-                        resource_dw: 1,
-                        resource_dh: 1,
-                        dy: 7,
-                        dh: 1,
-                    },
+                    crate::ui::shell::descriptor::HEADING_ANCHOR,
                 ),
                 ctrl(
                     0x071C,

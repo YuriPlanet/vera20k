@@ -66,6 +66,9 @@ pub(super) enum LoadingTarget {
 /// In-game frames before the quit route presses Leave.
 const QUIT_AFTER_FRAMES: u32 = 30;
 
+/// Start Game's centre at 800x600 (the retail helper's `sk-hover-start.png`).
+const START_GAME_POINT: (i32, i32) = (720, 262);
+
 /// What a Choose Map checkpoint captures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ChooserTarget {
@@ -97,6 +100,10 @@ pub(super) struct SkirmishCapture {
     /// The steady chooser got the production mouse move at the resting
     /// pointer, as the retail helper's pointer rests over the map list.
     pointer_rested: bool,
+    /// Once `0x102` settles, rest the pointer here through the production
+    /// mouse move.
+    hover: Option<(i32, i32)>,
+    hovered: bool,
     loading: Option<LoadingTarget>,
     in_game_frames: u32,
     deploy_sent: bool,
@@ -111,6 +118,7 @@ struct CaptureGuard {
     developer_shortcut: bool,
     software_cursor: bool,
     cursor: (f32, f32),
+    expected_cursor: (f32, f32),
     interaction_active: bool,
 }
 
@@ -126,10 +134,7 @@ impl CaptureGuard {
             "skirmish capture encountered fallback or a developer shortcut"
         );
         ensure!(self.software_cursor, "software cursor unavailable");
-        ensure!(
-            self.cursor == (EXPECTED_CURSOR_X as f32, EXPECTED_CURSOR_Y as f32),
-            "capture cursor moved"
-        );
+        ensure!(self.cursor == self.expected_cursor, "capture cursor moved");
         ensure!(
             !self.interaction_active,
             "skirmish capture encountered modal, editing or interaction state"
@@ -138,7 +143,12 @@ impl CaptureGuard {
     }
 }
 
-fn guard(state: &AppState, chooser: Option<ChooserTarget>, loading: bool) -> Result<()> {
+fn guard(
+    state: &AppState,
+    chooser: Option<ChooserTarget>,
+    loading: bool,
+    expected_cursor: (f32, f32),
+) -> Result<()> {
     let shell = &state.frontend.skirmish_shell_state;
     CaptureGuard {
         main_menu_screen: state.frontend.screen == GameScreen::MainMenu
@@ -161,6 +171,7 @@ fn guard(state: &AppState, chooser: Option<ChooserTarget>, loading: bool) -> Res
                 state.match_state.input.cursor_y,
             )
         },
+        expected_cursor,
         interaction_active: state.main_menu_dialog_open()
             || state.frontend.quit_cascade.is_some()
             || state.match_state.match_presentation.show_save_load_panel
@@ -271,7 +282,18 @@ impl SkirmishCapture {
         }
     }
 
+    pub(super) fn hover(point: (i32, i32)) -> Self {
+        Self {
+            hover: Some(point),
+            ..Self::default()
+        }
+    }
+
     fn guard(&self, state: &AppState) -> Result<()> {
+        let rest = self
+            .hover
+            .filter(|_| self.hovered)
+            .unwrap_or((EXPECTED_CURSOR_X as i32, EXPECTED_CURSOR_Y as i32));
         guard(
             state,
             self.chooser,
@@ -283,6 +305,7 @@ impl SkirmishCapture {
                     | Phase::Scoring
                     | Phase::Continuing
             ),
+            (rest.0 as f32, rest.1 as f32),
         )
     }
 
@@ -548,6 +571,16 @@ impl SkirmishCapture {
             (Phase::Skirmish, PresentedShell::Skirmish) => {
                 if self.settled(state)? && self.selected_scene.is_none() {
                     self.selected_scene = Some(selected_scene(state)?);
+                } else if let Some(point) = self
+                    .hover
+                    .filter(|_| self.selected_scene.is_some() && !self.hovered)
+                {
+                    state.match_state.input.cursor_x = point.0 as f32;
+                    state.match_state.input.cursor_y = point.1 as f32;
+                    App::handle_skirmish_shell_mouse_move(state);
+                    self.hovered = true;
+                    self.route.push(json!({"dialog": 0x102, "frame": frame,
+                        "action": "pointer rests", "point": [point.0, point.1]}));
                 } else if self.selected_scene.is_some() && self.slide_out_tick.is_some() {
                     ensure!(
                         App::handle_skirmish_back(state)
@@ -559,14 +592,22 @@ impl SkirmishCapture {
                         .push(json!({"dialog": 0x102, "frame": frame, "action": "Back"}));
                     self.phase = Phase::SlideOut;
                 } else if self.selected_scene.is_some() && self.loading.is_some() {
-                    // Start Game (`0x617`) through the production action.
+                    // The pointer moves onto Start Game (`0x617`), whose help
+                    // reaches the status line as it would before a click,
+                    // then the production action runs and the pointer rests
+                    // again.
+                    state.match_state.input.cursor_x = START_GAME_POINT.0 as f32;
+                    state.match_state.input.cursor_y = START_GAME_POINT.1 as f32;
+                    App::handle_skirmish_shell_mouse_move(state);
                     App::start_game_from_shell(state);
+                    state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
+                    state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
                     ensure!(
                         state.frontend.shell_exit.is_some(),
                         "Start Game did not start 0x102's teardown slide"
                     );
-                    self.route
-                        .push(json!({"dialog": 0x102, "frame": frame, "action": "StartGame"}));
+                    self.route.push(json!({"dialog": 0x102, "frame": frame,
+                        "action": "StartGame", "hover": [START_GAME_POINT.0, START_GAME_POINT.1]}));
                     self.phase = Phase::Starting;
                 } else if self.selected_scene.is_some() && self.chooser.is_some() {
                     App::leave_shell_dialog(
@@ -728,12 +769,9 @@ impl SkirmishCapture {
             state.frontend.main_menu_movie.is_none(),
             "prior shell movie survived skirmish entry"
         );
-        let shell = &state.frontend.skirmish_shell_state;
         Ok(state.frontend.shell_first_paint_slide.is_none()
             && state.frontend.shell_slide_active_shell == Some(ShellSlideKind::Skirmish)
-            && shell.title_reveal.has_completed()
-            && shell.game_type_reveal.has_completed()
-            && shell.map_label_reveal.has_completed())
+            && state.frontend.skirmish_shell_state.statics.is_terminal())
     }
 
     pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
@@ -825,6 +863,7 @@ impl SkirmishCapture {
         if self.phase != Phase::Skirmish
             || self.last_presented != Some(PresentedShell::Skirmish)
             || self.selected_scene.is_none()
+            || self.hover.is_some() != self.hovered
         {
             return Ok(false);
         }
@@ -888,6 +927,7 @@ mod tests {
             developer_shortcut: false,
             software_cursor: true,
             cursor: (400.0, 300.0),
+            expected_cursor: (400.0, 300.0),
             interaction_active: false,
         };
         assert!(valid.validate().is_ok());

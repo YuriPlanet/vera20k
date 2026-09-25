@@ -62,6 +62,16 @@ const TURRET_FACING_BUCKETS: u16 = crate::render::vxl_raster::VOXEL_FACING_STEPS
 // VxlLayer lives in sim::components — re-exported here for convenience.
 pub use crate::sim::components::VxlLayer;
 
+/// The locomotor Draw_Matrix arm a tilted body's pose comes from, with its roll
+/// and pitch in radians (`TechnoClass+0x328`, `+0x32C`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CrashTilt {
+    /// `FlyLocomotionClass`'s crashing arm (`0x004CF610`).
+    Fly([f32; 2]),
+    /// `JumpjetLocomotionClass`'s `TiltCrashJumpjet=` arm (`0x0054DCC0`).
+    Jumpjet([f32; 2]),
+}
+
 /// Cache key: unique combination of object type, facing, layer, frame, and slope.
 ///
 /// Note: house color is NOT in the key. Atlas tiles store house-neutral palette
@@ -979,24 +989,28 @@ impl UnitModel {
         Some((sprite, native_draw_bounds))
     }
 
-    /// Metadata follows the requested VXL, not the union-sized texture canvas
-    /// used to store each separate layer. Composite keys retain their actual
-    /// body/turret/barrel bake order; live independently facing parts are united
-    /// later by presentation at their actual anchors and draw order.
-    /// One crashing Fly body's composite at `tilt` (roll, pitch in radians):
-    /// Fly Draw_Matrix's crashing arm (`0x004CF610`), rendered afresh because
-    /// native keys that draw -1 and never caches it.
+    /// One tilted body's composite at its locomotor arm's pose, rendered afresh
+    /// because both arms key their draw -1 and native never caches it. The
+    /// Jumpjet arm's half sizes come from this model's main voxel; one that
+    /// never loaded leaves them at the constructor's zero (`0x00710C4E`).
     pub(crate) fn render_crash_pose(
         &self,
         key: &UnitSpriteKey,
         vpl: Option<&VplFile>,
-        tilt: [f32; 2],
+        tilt: CrashTilt,
     ) -> (VxlSprite, Option<[i32; 4]>) {
+        let body_tilt = match tilt {
+            CrashTilt::Fly(angles) => vxl_raster::BodyTilt::Fly(angles),
+            CrashTilt::Jumpjet(angles) => vxl_raster::BodyTilt::Jumpjet {
+                angles,
+                half_sizes: vxl_raster::jumpjet_tilt_half_sizes(&self.body).unwrap_or([0.0; 2]),
+            },
+        };
         let params = VxlRenderParams {
             frame: key.frame,
             facing: key.facing,
             slope_type: key.slope_type,
-            body_tilt: Some(tilt),
+            body_tilt: Some(body_tilt),
             ..VxlRenderParams::default()
         };
         let sprite = composite_parts(
@@ -1013,6 +1027,10 @@ impl UnitModel {
         )
     }
 
+    /// Metadata follows the requested VXL, not the union-sized texture canvas
+    /// used to store each separate layer. Composite keys retain their actual
+    /// body/turret/barrel bake order; live independently facing parts are united
+    /// later by presentation at their actual anchors and draw order.
     fn native_draw_bounds(&self, params: &VxlRenderParams, layer: VxlLayer) -> Option<[i32; 4]> {
         let body =
             || vxl_raster::native_vxl_draw_bounds(&self.body, self.body_hva.as_ref(), params);

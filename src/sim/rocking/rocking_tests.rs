@@ -652,3 +652,55 @@ fn crash_spin_matches_native_rocking_update() {
         }
     }
 }
+
+/// `RockingUpdate`'s crashing branch on a Unit owner, through the real
+/// `UnitClass` type getters (`tools/spatial_oracle/unit_rocking_update.json`,
+/// `crash` mode): one step from the clamp boundaries (±π/4 and its
+/// neighbouring f32s, ±4) with rates of both signs, for `BalloonHover=` off,
+/// on, and a raw 255. The rates are kept; within one quantum of native f32.
+#[test]
+fn unit_crash_spin_matches_native_rocking_update() {
+    use crate::sim::rocking::rocking_system::advance_crash_spin;
+    let rows: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/unit_rocking_update.json"
+    ))
+    .unwrap();
+    let native = |hex: &serde_json::Value| {
+        f64::from(f32::from_bits(
+            u32::from_str_radix(hex.as_str().unwrap(), 16).unwrap(),
+        ))
+    };
+    let mut crashing = 0;
+    for row in rows.as_array().unwrap() {
+        if row["output"]["mode"] != "crash" {
+            continue;
+        }
+        crashing += 1;
+        let input = &row["input"];
+        let fixed = |key: &str| SimFixed::from_num(native(&input[key]));
+        let mut state = RockingState {
+            vel_sideways: fixed("side_velocity_bits"),
+            vel_forwards: fixed("forward_velocity_bits"),
+            angle_sideways: fixed("side_angle_bits"),
+            angle_forwards: fixed("forward_angle_bits"),
+            is_ship_rocking: false,
+        };
+        let rates = (state.vel_sideways, state.vel_forwards);
+        advance_crash_spin(&mut state, input["balloon_hover"].as_i64() != Some(0));
+        let output = &row["output"];
+        for (actual, key) in [
+            (state.angle_sideways, "side_angle_bits"),
+            (state.angle_forwards, "forward_angle_bits"),
+        ] {
+            let expected = native(&output[key]);
+            assert!(
+                (actual.to_num::<f64>() - expected).abs() <= 2.0 / 65536.0,
+                "{} {key}: {actual} vs {expected}",
+                input["name"]
+            );
+        }
+        assert_eq!((state.vel_sideways, state.vel_forwards), rates);
+        assert!(!output["damage_called"].as_bool().unwrap());
+    }
+    assert_eq!(crashing, 135);
+}

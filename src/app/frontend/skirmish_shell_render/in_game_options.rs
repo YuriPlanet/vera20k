@@ -97,7 +97,6 @@ pub(crate) fn build_in_game_options_text_instances(
             draw.align,
             [0.0, 0.0],
             SHELL_CONTROL_TEXT_DEPTH,
-            None,
         );
         out.push(text_draw);
     }

@@ -1798,11 +1798,21 @@ impl Simulation {
         self.unmark_entity_remove(stable_id, UninitContext::default());
     }
 
+    /// Mark(REMOVE) around a locomotor's own relocation: native Mark never
+    /// touches the AircraftTracker, which Limbo and the locomotors' touchdown
+    /// and crash impact remove from.
+    pub(crate) fn unmark_entity_remove_keeping_air_tracker(&mut self, stable_id: u64) {
+        self.unmark_entity_remove_impl(stable_id, false, UninitContext::default());
+    }
+
     /// `UnitClass::ReceiveDamage` lifts a dying unit off its cell
     /// (vt+0x124 Mark(UP) at `0x00737F7A`) before its passengers and crew are
-    /// placed there. The UnInit that follows finds it already unmarked.
+    /// placed there. The UnInit that follows finds it already unmarked. Mark
+    /// leaves the AircraftTracker alone: a falling Jumpjet wreck stays in it
+    /// until its impact (`0x0054D075`), and any other dying unit leaves it
+    /// with its UnInit.
     pub(crate) fn mark_up_dying_unit(&mut self, stable_id: u64, context: UninitContext<'_>) {
-        self.unmark_entity_remove(stable_id, context);
+        self.unmark_entity_remove_impl(stable_id, false, context);
     }
 
     /// Materialize the legacy split representation before its first Fly
@@ -1905,6 +1915,9 @@ impl Simulation {
         // A cruising Jumpjet runs the native Update/State3 body instead of the
         // air adapter (`world::jumpjet_cruise`).
         let stats = match self.tick_jumpjet_cruise_one(stable_id, rules) {
+            // State 5's impact notice UnInits the wreck, so `Process`'s layer
+            // tail finds it dead (`0x0054B16C`); the object turn commits it.
+            Some(stats) if stats.impact => return stats,
             Some(stats) => stats,
             None => crate::sim::movement::air_movement::tick_air_movement(
                 &mut self.substrate.entities,
@@ -2032,7 +2045,7 @@ impl Simulation {
                     self.substrate.entities.get(id).unwrap(),
                     self.resolved_terrain.as_ref(),
                 );
-                self.set_fly_owner_height(id, height.wrapping_add(10));
+                self.set_object_height(id, height.wrapping_add(10));
                 self.add_entity_occupancy(id);
             } else {
                 self.finish_fly_layer_transition(id, after, rules);
@@ -2954,9 +2967,11 @@ impl Simulation {
     /// ClearAllTargets `0x006B7BB0`, Detach_All(1), and Deselect.
     ///
     /// The Foot prefix is the Stop command's navigation clear, which keeps only
-    /// an already committed segment. Foot+6AD (Magnetron-held) would skip the
-    /// spawn calls and Detach_All; VERA never sets it (the IsLocomotor arm is
-    /// unported). On this path the spawn calls repeat the Destroy's owner arm
+    /// an already committed segment; a Jumpjet Unit's `Stop_Driver` is the
+    /// locomotor's `Stop_Moving` ([`Self::jumpjet_stun_stop`]), whose NavCom
+    /// the second NULL destination clears again. Foot+6AD (Magnetron-held)
+    /// would skip the spawn calls and Detach_All; VERA never sets it (the
+    /// IsLocomotor arm is unported). On this path the spawn calls repeat the Destroy's owner arm
     /// and find nothing left to kill. Detach_All(1) repeats the broadcast the
     /// killing hit's Destroy already made (on a re-entered death arm,
     /// `0x0070202E..0x00702035`, that was an earlier call). The walk is not
@@ -2974,7 +2989,11 @@ impl Simulation {
             EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
         ) {
             crate::sim::movement::stop_navigation_at_committed_head(entity);
+            self.jumpjet_stun_stop(stable_id, context.rules);
         }
+        let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
+            return;
+        };
         crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
         crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
             entity, None,

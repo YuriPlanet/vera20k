@@ -1,9 +1,10 @@
-//! Per-frame sprites of crashing Fly bodies.
+//! Per-frame sprites of tilted (crashing) bodies.
 //!
-//! `FlyLocomotionClass` Draw_Matrix's crashing arm (`0x004CF610`) keys its
-//! draw -1, so the native voxel cache never holds a crash pose: the body is
+//! `FlyLocomotionClass` Draw_Matrix's crashing arm (`0x004CF610`) and
+//! `JumpjetLocomotionClass`'s `TiltCrashJumpjet=` arm (`0x0054DCC0`) key their
+//! draw -1, so the native voxel cache never holds such a pose: the body is
 //! rasterized afresh every frame with its current roll and pitch. This page
-//! does the same for the crashing bodies on screen. It is rebuilt each
+//! does the same for the tilted bodies on screen. It is rebuilt each
 //! presentation frame ([`VxlPoseFrameCache::begin_frame`]) and its used rows
 //! are written into one reused GPU page after the unit instances are built
 //! ([`VxlPoseFrameCache::upload`]).
@@ -14,7 +15,7 @@ use crate::assets::asset_manager::AssetManager;
 use crate::assets::vpl_file::VplFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::gpu::GpuContext;
-use crate::render::unit_atlas::{UnitModel, UnitSpriteEntry, UnitSpriteKey};
+use crate::render::unit_atlas::{CrashTilt, UnitModel, UnitSpriteEntry, UnitSpriteKey};
 use crate::render::vxl_raster::VxlSprite;
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -33,7 +34,7 @@ pub struct VxlPoseFrameCache {
     texture: Option<BatchTexture>,
     /// `VOXELS.VPL`, parsed on the first crash pose.
     vpl: Option<Option<VplFile>>,
-    /// Each crashing type's voxel model, parsed on its first crash pose.
+    /// Each tilted type's voxel model, parsed on its first tilted pose.
     models: BTreeMap<String, Option<UnitModel>>,
 }
 
@@ -53,16 +54,15 @@ impl VxlPoseFrameCache {
         self.dirty = false;
     }
 
-    /// Rasterize one crashing body at `tilt` (roll, pitch in radians) and place
-    /// it on this frame's page. None when the model does not resolve or the
-    /// page is full.
+    /// Rasterize one tilted body at its arm's pose and place it on this frame's
+    /// page. None when the model does not resolve or the page is full.
     pub fn render(
         &mut self,
         asset_manager: &AssetManager,
         rules: Option<&RuleSet>,
         art: Option<&ArtRegistry>,
         key: &UnitSpriteKey,
-        tilt: [f32; 2],
+        tilt: CrashTilt,
     ) -> Option<UnitSpriteEntry> {
         if self.pixels.is_empty() {
             self.begin_frame();

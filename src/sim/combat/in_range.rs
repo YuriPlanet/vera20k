@@ -877,12 +877,6 @@ mod tests {
             fly_current_speed: SIM_ZERO,
             altitude: SimFixed::from_num(altitude_lep as i32),
 
-            jumpjet_speed: SIM_ZERO,
-            jumpjet_accel: SIM_ZERO,
-            jumpjet_current_speed: SIM_ZERO,
-            jumpjet_deviation: 0,
-            jumpjet_crash_speed: SIM_ZERO,
-            jumpjet_turn_rate: 0,
             balloon_hover: false,
             hover_attack: false,
             speed_type: SpeedType::Winged,

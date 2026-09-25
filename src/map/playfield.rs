@@ -145,6 +145,18 @@ impl PlayfieldBounds {
     }
 }
 
+/// `MapClass::In_Bounds @ 0x00568300`: the diamond of the map `Size=` width
+/// (`MapClass+0xF4`) and height (`+0xF8`), in wrapping signed arithmetic.
+pub(crate) const fn size_diamond_contains(width: i32, height: i32, cell: (i16, i16)) -> bool {
+    let x = cell.0 as i32;
+    let y = cell.1 as i32;
+    let sum = x.wrapping_add(y);
+    width < sum
+        && x.wrapping_sub(y) < width
+        && y.wrapping_sub(x) < width
+        && sum <= width.wrapping_add(height.wrapping_mul(2))
+}
+
 /// Convert one LocalSize-relative coordinate through active
 /// `MapClass::LocalToCell @ 0x005654A0`.
 ///

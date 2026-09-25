@@ -165,7 +165,9 @@ RA2TS movie during slides is covered by the
 VERA20k keeps one `FrontendState.shell_status_line` for the showing family
 dialog: reset with every new instance, started on the same completion edge as
 the heading, fed the dialog's hover help text each recomposition, and repainted
-by its timer and by every cursor move over the dialog; a paint advances the
+by its timer and by every cursor move over the dialog (Skirmish `0x102`, which
+stays alive hidden while Choose Map shows, owns its own statics:
+`2026-09-26-skirmish-statics-evidence.md`); a paint advances the
 count only while it is below the target (the `jge` at `0x00615B2B`). A new
 `0xE2` instance clears the old one's hover and press. At 60 Hz a paint can
 advance at most once per presented frame, so a reveal under a moving mouse is

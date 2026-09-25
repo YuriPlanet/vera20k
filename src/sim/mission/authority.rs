@@ -242,7 +242,6 @@ fn represented_archived_destination(
 }
 
 const AIRCRAFT_ACTION_EXCEPTION: MissionId = MissionId::from_raw(0x1e);
-#[cfg(test)]
 const MISSION_GUARD: MissionId = MissionId::from_raw(5);
 /// Mission id 1, the `[Attack]` control entry. The selector every ground
 /// locomotor overrides onto when an object it is not allied with stands in the
@@ -1010,7 +1009,9 @@ impl Simulation {
         Ok(())
     }
 
-    #[cfg(test)]
+    /// `JumpjetLocomotionClass::Move_To`'s lift tail for an unloading owner
+    /// (`0x0054B479..0x0054B4B1`): `Queue_Mission(Guard, 1)`, the queued
+    /// bypass latch `+0xB8`, then a second readiness gate and Commence.
     pub(crate) fn mission_jumpjet_move_to_completion_exact(
         &mut self,
         receiver: u64,
@@ -1046,7 +1047,6 @@ impl Simulation {
         Ok(())
     }
 
-    #[cfg(test)]
     fn validate_jumpjet_second_gate_previews(
         &self,
         receiver: u64,

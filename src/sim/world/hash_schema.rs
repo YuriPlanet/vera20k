@@ -139,6 +139,11 @@ pub(super) enum HashFeature {
     /// slave pool and slave harvester cursor. Earlier schemas fold the pool
     /// from the manager's live slaves; the retired cursor has no counterpart.
     SlaveManager = 209,
+    /// Removes folds: the retired VERA copy of the Jumpjet type block in the
+    /// common locomotor runtime, which nothing read. Earlier schemas fold the
+    /// non-Jumpjet constants every stashed runtime of the pinned fixtures held;
+    /// a Jumpjet's own linked values are not reconstructed.
+    RetiredJumpjetLegacyBlock = 210,
 }
 
 impl HashSchema {
@@ -175,6 +180,7 @@ impl HashSchema {
                     | HashFeature::NativeOreField
                     | HashFeature::AircraftCrash
                     | HashFeature::SlaveManager
+                    | HashFeature::RetiredJumpjetLegacyBlock
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

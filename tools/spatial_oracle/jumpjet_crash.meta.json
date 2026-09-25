@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Jumpjet crash: a stock Crashable type flown to a hover through the original Move_To 0x0054B1C0 and Process 0x0054AEC0, killed (Health 0, Stop_Moving 0x0054B4D0 twice around the +0x425 latch), then Process per frame through the crash latch 0x0054AF2E..0x0054B02C and State5 0x0054CA90 until the 0x117C impact notice. Types: ZEP, SHAD, HIND, SCHP, DISK with their stock JumpjetSpeed/Climb/Crash/Height/Wobbles/NoWobbles/Deviation/BalloonHover; a hover without the moving byte; an out-of-bounds fall; SHAD and ZEP shot down in the cruise (State 3) and SHAD and HIND in the descent one climb step above the ground (State 4, lifted back to State 1 by the kill's Move_To). Not the null Set_Destination a live NavCom adds to the Stun, bridges, building tops or the lifted arms. draw_matrix: Draw_Matrix 0x0054DCC0 with TiltCrashJumpjet (+0xD22) on and off, four body facings, rocking angles around the 0.005 gate and to the balloon clamp, and three voxel half-size pairs (+0x360, +0x368).",
+  "assumptions": [
+    "Everything jumpjet_states.States assumes; owner Health +0x6C set to 0 and the crash latch +0x425 to 1 between the two Stop_Moving calls, as the Techno death arm and FootClass::Crash order them; the owner has no NavCom, so UnitClass Set_Destination(NULL) returns at 0x00741A80 without reaching the locomotor; MapClass +0xF4/+0xF8 give the In_Bounds diamond per row; +0x6AD and +0x427 clear.",
+    "draw_matrix: the owner body facing +0x388 built by the original FacingClass constructor, SetROT(4) and Set; the half sizes written as the doubles TechnoTypeClass::ReadINI stores from the main voxel (0x007160C7..0x0071611D); the caller key 3."
+  ],
+  "substitutions": [
+    "As jumpjet_states.States, plus: the owner INoticeSink (owner +8) slot 0 records (notice, argument) and returns; MapClass layer remove 0x004A9770 is recorded and otherwise a no-op; in the cruise and descent rows every FNPC 0x0056DC20 search after the order's own answers the owner's current cell, which is what the real search answers for a Fly-zone query from a passable cell."
+  ],
+  "entry_points": {
+    "move_to": "0x0054B1C0",
+    "process": "0x0054AEC0",
+    "stop_moving": "0x0054B4D0",
+    "state5": "0x0054CA90",
+    "update": "0x0054D0F0",
+    "in_bounds": "0x00568300",
+    "facing_set": "0x004C9220",
+    "facing_current": "0x004C93D0",
+    "draw_matrix": "0x0054DCC0",
+    "base_draw_matrix": "0x0055A730"
+  },
+  "payload_sha256": "12a4dadc14ed0bd81da077c1e5949583fee4406177fa06888ea4a758632fe0e1"
+}

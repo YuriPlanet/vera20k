@@ -348,7 +348,7 @@ fn build_native_loading_text_draw(
         w: width,
         h: height,
     };
-    let text_draw = draw_in_rect(font, text, text_rect, color, align, [0.0, 0.0], depth, None);
+    let text_draw = draw_in_rect(font, text, text_rect, color, align, [0.0, 0.0], depth);
     let mut backing = Vec::new();
     if with_backing && !text_draw.instances.is_empty() {
         let layout = font.wrap_layout(text, width);

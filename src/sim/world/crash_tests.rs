@@ -600,6 +600,495 @@ fn a_death_weapon_detonates_once_without_cluster_draws() {
     );
 }
 
+/// A crashable Jumpjet unit: `TEST` flies the Nighthawk's type block with
+/// `BalloonHover=` as asked (a Kirov's impact fires its current weapon, any
+/// other type's plays its `Explosion=` once more) and seats two `RIDER`s. The
+/// type names an `ImpactLandSound=` the Jumpjet impact must not play.
+fn jumpjet_rules(balloon: bool) -> RuleSet {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[General]\nConditionRed=0.25\n\
+         [AudioVisual]\nImpactLandSound=RulesLand\n\
+         [VehicleTypes]\n0=TEST\n1=VICTIM\n\
+         [InfantryTypes]\n0=RIDER\n\
+         [TEST]\nStrength=300\nArmor=none\nCrashable=yes\nBalloonHover={}\nPassengers=2\n\
+         Locomotor={{92612C46-F71F-11d1-AC9F-006008055BB5}}\nSpeedType=Hover\nMovementZone=Fly\n\
+         JumpjetHeight=500\n\
+         JumpjetClimb=10\nJumpjetCrash=40\nJumpjetSpeed=30\nJumpjetNoWobbles=yes\n\
+         Primary=CrashGun\nExplosion=BOOM\nCrashingSound=JJDie\nImpactLandSound=TypeLand\n\
+         [VICTIM]\nStrength=1000\nArmor=none\n\
+         [RIDER]\nStrength=100\nArmor=none\n\
+         [CrashGun]\nDamage=150\nWarhead=CrashWH\n\
+         [CrashWH]\nCellSpread=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        if balloon { "yes" } else { "no" },
+    )))
+    .unwrap();
+    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
+        "[BOOM]\nRate=100\n[SGRYSMK1]\nRate=100\n",
+    ));
+    art.bind_anim_frame_count_for_test("BOOM", 20);
+    art.bind_anim_frame_count_for_test("SGRYSMK1", 20);
+    rules.art_registry = art;
+    rules
+}
+
+/// Unit 1 hovers at `JumpjetHeight=` over cell (52, 52) of the aircraft
+/// fixture's map, holding that cell's air slot with the moving byte set, as
+/// the native corpus's kill leaves a hovering Jumpjet; its two riders sit in
+/// its cargo, a `VICTIM` stands below and a Soviet shooter at (40, 40).
+/// Answers the victim's and the shooter's ids.
+fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
+    use crate::sim::house_state::HouseState;
+    use crate::sim::passenger::{PassengerCargo, PassengerRole};
+    let rules = jumpjet_rules(balloon);
+    let mut sim = Simulation::with_seed(0);
+    install_common_raw_terrain(&mut sim, 70, 70, 0, None);
+    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        base: 64,
+        off_fc: 0,
+        off_100: 0,
+        off_104: 64,
+        off_108: 64,
+    });
+    sim.playfield_size_height = Some(64);
+    sim.session.binary_frame = 1000;
+    for (name, human) in [("Americans", true), ("Soviets", false)] {
+        let house = sim.interner.intern(name);
+        sim.houses
+            .insert(house, HouseState::new(house, 0, None, human, 0, 10));
+    }
+    let reveal = |sim: &mut Simulation, id: u64, rx: u16, ry: u16| {
+        assert!(matches!(
+            sim.try_reveal_entity(
+                id,
+                RevealRequest {
+                    position: RevealPosition {
+                        rx,
+                        ry,
+                        z: 0,
+                        sub_x: SimFixed::from_num(128),
+                        sub_y: SimFixed::from_num(128),
+                    },
+                    placement: PlacementEvidence::MarkSucceeded,
+                    logic_eligible: true,
+                }
+            ),
+            RevealOutcome::Revealed { .. }
+        ));
+    };
+    assert_eq!(sim.allocate_stable_id(), 1);
+    insert_entity(&mut sim, 1, EntityCategory::Unit);
+    sim.substrate.entities.get_mut(1).unwrap().locomotor = Some(LocomotorState::from_object_type(
+        rules.object("TEST").unwrap(),
+        0,
+    ));
+    reveal(&mut sim, 1, 52, 52);
+    sim.remove_entity_occupancy(1);
+    {
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        entity.health.current = 300;
+        entity.position.exact_z_leptons = Some(500);
+        entity.body_facing = Some(FacingClass::new(0x4000, 5));
+        let loco = entity.locomotor.as_mut().unwrap();
+        loco.altitude = SimFixed::from_num(500);
+        let runtime = loco.jumpjet_runtime_mut().unwrap();
+        runtime.phase = crate::sim::movement::jumpjet_flight::STATE_HOLD;
+        runtime.moving = true;
+        runtime.destination = DriveCoord {
+            x: START,
+            y: START,
+            z: 0,
+        };
+        runtime.flight.facing.snap(0x4000, 1000);
+        runtime.flight.target_height = 500;
+        entity.passenger_role = PassengerRole::Transport {
+            cargo: PassengerCargo::new(2, 0),
+        };
+    }
+    sim.add_entity_occupancy(1);
+    assert!(sim.substrate.air_slots.claim(52, 52, 1));
+    for _ in 0..2 {
+        let rider = sim
+            .construct_object_limbo_at_height("RIDER", "Americans", 52, 52, 0, 0, &rules)
+            .expect("rider");
+        sim.substrate
+            .entities
+            .get_mut(rider)
+            .unwrap()
+            .passenger_role = PassengerRole::Inside { transport_id: 1 };
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .passenger_role
+            .cargo_mut()
+            .unwrap()
+            .board_forced(rider, 1);
+    }
+    let spawn = |sim: &mut Simulation, owner: &str, rx: u16, ry: u16| {
+        let owner = sim.interner.intern(owner);
+        let type_ref = sim.interner.intern("VICTIM");
+        let id = sim.allocate_stable_id();
+        let mut entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
+            id,
+            rx,
+            ry,
+            0,
+            0,
+            owner,
+            crate::sim::components::Health { current: 1000 },
+            type_ref,
+            EntityCategory::Unit,
+            0,
+            5,
+            true,
+        );
+        entity.lifecycle.in_limbo = true;
+        sim.substrate.entities.insert(entity);
+        reveal(sim, id, rx, ry);
+        id
+    };
+    let victim = spawn(&mut sim, "Americans", 52, 52);
+    let shooter = spawn(&mut sim, "Soviets", 40, 40);
+    (sim, rules, victim, shooter)
+}
+
+/// What a crashed Jumpjet's fall looked like through `advance_tick`.
+struct JumpjetFall {
+    /// The wreck's Z after each frame it survived.
+    heights: Vec<i32>,
+    /// The frame the impact UnInit it.
+    impact_frame: usize,
+    crash_sound_frames: Vec<usize>,
+    impact_sounds: usize,
+    /// `Explosion=` anims built in the impact frame.
+    impact_booms: usize,
+}
+
+fn fall_to_the_impact(sim: &mut Simulation, rules: &RuleSet) -> JumpjetFall {
+    use std::collections::BTreeMap;
+    let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
+    let boom = sim.interner.intern("BOOM");
+    let mut fall = JumpjetFall {
+        heights: Vec::new(),
+        impact_frame: 0,
+        crash_sound_frames: Vec::new(),
+        impact_sounds: 0,
+        impact_booms: 0,
+    };
+    for frame in 1..40 {
+        sim.sound_events.clear();
+        let booms_before = sim
+            .substrate
+            .anims
+            .iter()
+            .filter(|(_, anim)| anim.type_id == boom)
+            .count();
+        sim.advance_tick(&[], Some(rules), &BTreeMap::new(), Some(&grid), None, 67);
+        if sim.sound_events.iter().any(|event| {
+            matches!(
+                event,
+                super::SimSoundEvent::AnimationStarted { anim_id: 1, .. }
+            )
+        }) {
+            fall.crash_sound_frames.push(frame);
+        }
+        fall.impact_sounds += sim
+            .sound_events
+            .iter()
+            .filter(|event| {
+                matches!(event, super::SimSoundEvent::VocAt { sound_id, .. }
+                    if sound_id == "TypeLand" || sound_id == "RulesLand")
+            })
+            .count();
+        match sim.substrate.entities.get(1) {
+            Some(entity) if entity.lifecycle.object_alive => {
+                assert!(entity.crashing && entity.health.current == 0);
+                fall.heights
+                    .push(entity.position.exact_z_leptons.expect("exact Z"));
+            }
+            _ => {
+                fall.impact_frame = frame;
+                fall.impact_booms = sim
+                    .substrate
+                    .anims
+                    .iter()
+                    .filter(|(_, anim)| anim.type_id == boom)
+                    .count()
+                    - booms_before;
+                return fall;
+            }
+        }
+    }
+    panic!("the wreck never reached the ground: {:?}", fall.heights);
+}
+
+/// Kill unit 1 through the production receiver: one area hit from the
+/// Soviet shooter.
+fn shoot_down(sim: &mut Simulation, rules: &RuleSet, shooter: u64) {
+    use crate::sim::combat::combat_aoe::AreaDamageReceiver;
+    let soviets = sim.interner.intern("Soviets");
+    let warhead = sim.interner.intern("CrashWH");
+    let hit =
+        crate::sim::combat::EntityDamageEvent::area(1, 400, 0, shooter, Some(soviets), warhead);
+    sim.commit_noncombat_aoe_receivers(rules, None, &[AreaDamageReceiver::Entity(hit)]);
+}
+
+/// A hovering Nighthawk-like Jumpjet shot down through the production
+/// receiver: `UnitClass::ReceiveDamage` kills its riders with the shooter's
+/// credit above 0xD0 leptons and crashes it instead of its UnInit, and the
+/// kill's Stun re-targets it through `Stop_Moving`. Through `advance_tick` it
+/// then falls by `JumpjetClimb=` plus `JumpjetCrash=` a frame, plays
+/// `CrashingSound=` on the edge, and at the ground releases its air slot,
+/// plays its `Explosion=` once more and is UnInit, with no impact sound.
+#[test]
+fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
+    let (mut sim, rules, victim, shooter) = jumpjet_fixture(false);
+    let riders: Vec<u64> = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .passenger_role
+        .cargo()
+        .unwrap()
+        .passengers
+        .clone();
+    shoot_down(&mut sim, &rules, shooter);
+
+    let entity = sim
+        .substrate
+        .entities
+        .get(1)
+        .expect("a crashing unit stays");
+    assert!(entity.crashing && entity.lifecycle.object_alive && !entity.dying);
+    assert_eq!(entity.health.current, 0);
+    assert!(
+        entity
+            .rocking
+            .as_ref()
+            .is_some_and(|r| r.vel_sideways != SimFixed::ZERO),
+        "Crash drew the spin"
+    );
+    assert!(
+        entity.passenger_role.cargo().unwrap().passengers.is_empty(),
+        "KillPassengers emptied the cargo"
+    );
+    for rider in riders {
+        assert!(
+            sim.substrate
+                .entities
+                .get(rider)
+                .is_none_or(|rider| !rider.lifecycle.object_alive),
+            "rider {rider} died with the transport"
+        );
+    }
+    let soviets = sim.interner.intern("Soviets");
+    assert_eq!(
+        sim.houses[&soviets].stats.units_killed, 2,
+        "the riders' kills go to the shooter; the wreck's comes at its UnInit"
+    );
+
+    // The kill's Stop_Moving searched from the hover cell, which the victim's
+    // vehicle bit refuses (`CheckCellPassability @ 0x004834A0`), and
+    // re-targeted a free neighbour.
+    let entity = sim.substrate.entities.get(1).unwrap();
+    let runtime = entity
+        .locomotor
+        .as_ref()
+        .unwrap()
+        .jumpjet_runtime()
+        .unwrap();
+    assert!(runtime.moving);
+    assert_eq!(
+        runtime.destination,
+        DriveCoord {
+            x: START - 256,
+            y: START - 256,
+            z: 0
+        }
+    );
+
+    let fall = fall_to_the_impact(&mut sim, &rules);
+    // Over a destination in another cell, the hold's Update reads the cell
+    // top, which the victim lifts by 85: the first frame climbs 10 before
+    // State 5 drops 40, then Update's descent and the crash take 50 a frame,
+    // and near the ground Update climbs against the drop again.
+    assert_eq!(
+        fall.heights,
+        vec![470, 420, 370, 320, 270, 220, 170, 120, 70, 40, 10]
+    );
+    assert_eq!(fall.impact_frame, 12);
+    assert_eq!(
+        fall.crash_sound_frames,
+        vec![1],
+        "CrashingSound= on the edge"
+    );
+    assert_eq!(fall.impact_sounds, 0, "a Jumpjet impact plays no sound");
+    assert_eq!(
+        fall.impact_booms, 1,
+        "Death_Explosion once more at the impact"
+    );
+    assert_eq!(sim.substrate.air_slots.holder(52, 52), None);
+    assert_eq!(
+        sim.substrate.entities.get(victim).unwrap().health.current,
+        1000,
+        "an Explosion= anim deals no damage"
+    );
+    assert_eq!(sim.houses[&soviets].stats.units_killed, 3);
+}
+
+/// A `BalloonHover=` wreck (the Kirov) fires its current weapon as its death
+/// weapon at the impact (`0x007461EF`), which strikes the unit below.
+///
+/// A balloon's Update keeps reading the cell top even over its own cell, and
+/// the victim below lifts that by 85 (`CellClass @ 0x00485080`): the first
+/// frame climbs 10 before State 5's drop, and near the ground Update climbs
+/// against the drop again, so the fall takes a frame more than the
+/// Nighthawk's.
+#[test]
+fn a_shot_down_balloon_jumpjet_bombs_its_impact_cell() {
+    let (mut sim, rules, victim, shooter) = jumpjet_fixture(true);
+    shoot_down(&mut sim, &rules, shooter);
+    let fall = fall_to_the_impact(&mut sim, &rules);
+    assert_eq!(
+        fall.heights,
+        vec![470, 420, 370, 320, 270, 220, 170, 120, 70, 40, 10]
+    );
+    assert_eq!(fall.impact_frame, 12);
+    assert_eq!(fall.impact_booms, 0, "no second Explosion= for a balloon");
+    assert_eq!(fall.impact_sounds, 0);
+    assert_eq!(
+        sim.substrate.entities.get(victim).unwrap().health.current,
+        1000 - 150,
+        "the death weapon's CrashGun hit the victim below"
+    );
+}
+
+/// An order dropped in the cruise (an Attack order or the attack approach
+/// dropping the goal) runs `Stop_Moving` through Foot's null arm, which keeps
+/// the moving byte: shot down there, the wreck still latches into State 5 and
+/// reaches the ground. (A hold without the moving byte never latches, natively
+/// too; VERA no longer makes one out of a dropped order.)
+#[test]
+fn a_jumpjet_shot_down_after_its_order_dropped_reaches_the_ground() {
+    let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
+    assert!(sim.issue_air_cell_destination(1, (60, 52), SimFixed::from_num(30), Some(&rules)));
+    // Cruise until the owner has left the hover cell.
+    let mut frame = 1001;
+    while sim
+        .substrate
+        .entities
+        .get(1)
+        .is_some_and(|entity| (entity.position.rx, entity.position.ry) == (52, 52))
+    {
+        assert!(frame < 1200, "the cruise never left the hover cell");
+        sim.session.binary_frame = frame;
+        sim.tick_air_movement_with_cell_lists_one(1, Some(&rules));
+        frame += 1;
+    }
+    let runtime = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(1)
+            .and_then(|entity| entity.locomotor.as_ref())
+            .and_then(|locomotor| locomotor.jumpjet_runtime())
+            .cloned()
+            .expect("runtime")
+    };
+    assert_eq!(
+        runtime(&sim).phase,
+        crate::sim::movement::jumpjet_flight::STATE_TRANSLATE
+    );
+    let entity = sim.substrate.entities.get_mut(1).unwrap();
+    let here = (entity.position.rx, entity.position.ry);
+    entity.movement_target = None;
+    sim.session.binary_frame = frame;
+    sim.tick_air_movement_with_cell_lists_one(1, Some(&rules));
+    let stopped = runtime(&sim);
+    assert!(stopped.moving, "Stop_Moving keeps the moving byte");
+    assert_eq!(
+        stopped.destination,
+        DriveCoord {
+            x: i32::from(here.0) * 256 + 128,
+            y: i32::from(here.1) * 256 + 128,
+            z: 0,
+        }
+    );
+
+    shoot_down(&mut sim, &rules, shooter);
+    let fall = fall_to_the_impact(&mut sim, &rules);
+    assert!(fall.impact_frame > 0, "the wreck reached the ground");
+    assert!(fall.heights.windows(2).all(|pair| pair[1] < pair[0]));
+}
+
+/// Shot down one climb step above the ground in State 4, the kill's
+/// `Stop_Moving` lifts the descent back into State 1 (`0x0054B455..0x0054B467`),
+/// so the next frame's Update climbs and the latch still engages: the wreck
+/// crashes instead of touching down (the native corpus's `SHAD` touchdown row).
+#[test]
+fn a_jumpjet_shot_down_touching_down_still_crashes() {
+    let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
+    {
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        entity.position.exact_z_leptons = Some(10);
+        let loco = entity.locomotor.as_mut().unwrap();
+        loco.altitude = SimFixed::from_num(10);
+        let runtime = loco.jumpjet_runtime_mut().unwrap();
+        runtime.phase = crate::sim::movement::jumpjet_flight::STATE_DESCEND;
+        runtime.flight.target_height = 0;
+        runtime.landing_latched = true;
+    }
+    shoot_down(&mut sim, &rules, shooter);
+    let entity = sim.substrate.entities.get(1).unwrap();
+    assert!(entity.crashing);
+    let runtime = entity
+        .locomotor
+        .as_ref()
+        .unwrap()
+        .jumpjet_runtime()
+        .unwrap();
+    assert_eq!(
+        runtime.phase,
+        crate::sim::movement::jumpjet_flight::STATE_ASCEND
+    );
+    assert_eq!(runtime.flight.target_height, 500);
+    assert!(runtime.moving && !runtime.landing_latched);
+
+    let fall = fall_to_the_impact(&mut sim, &rules);
+    assert_eq!(
+        (fall.heights.len(), fall.impact_frame),
+        (0, 1),
+        "climbs to 20, then State 5's drop of 40 hits the ground"
+    );
+    assert_eq!(
+        fall.impact_booms, 1,
+        "Death_Explosion once more at the impact"
+    );
+}
+
+/// On the ground a crashable unit's Crash refuses, and the receiver UnInits
+/// it as before (`0x00738475..0x0073847F`).
+#[test]
+fn a_landed_jumpjet_dies_where_it_stands() {
+    let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
+    {
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        entity.position.exact_z_leptons = Some(0);
+        let loco = entity.locomotor.as_mut().unwrap();
+        loco.altitude = SimFixed::ZERO;
+        loco.jumpjet_runtime_mut().unwrap().phase =
+            crate::sim::movement::jumpjet_flight::STATE_GROUND;
+    }
+    shoot_down(&mut sim, &rules, shooter);
+    assert!(
+        sim.substrate
+            .entities
+            .get(1)
+            .is_none_or(|entity| !entity.lifecycle.object_alive),
+        "no crash on the ground"
+    );
+}
+
 /// Retail Dustbowl runtime, end to end through production: a Harrier ordered
 /// at three flak tracks takes off, their `FlakTrackAAGun` volleys shoot it
 /// down, and it crashes. `VoiceCrashing=`/`CrashingSound=` play on the edge,
@@ -877,4 +1366,348 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
     assert_eq!(heard("IntruderVoiceDie").len(), 1, "{sounds:?}");
     assert_eq!(heard("IntruderDie").len(), 1, "{sounds:?}");
     assert_eq!(heard("GenAircraftCrash"), vec![impact_frame], "{sounds:?}");
+}
+
+/// Retail Dustbowl runtime, end to end through production: three flak tracks
+/// shoot down an Allied Nighthawk carrying two GIs and a Kirov left with 1
+/// Health as both fly over them. The Nighthawk's riders die with the flak's
+/// credit, and each wreck spins down under the Jumpjet State 5, a Nighthawk
+/// by `JumpjetClimb=` + `JumpjetCrash=` (50) a frame and a Kirov by 18,
+/// playing `CrashingSound=` and the owner's `VoiceCrashing=` on the edge.
+/// At the ground the Nighthawk plays its `Explosion=` once more and the Kirov
+/// drops its `BlimpBomb` as its death weapon; neither plays an impact sound.
+/// Ignored: needs the retail install (`RA2_DIR` or `config.toml`).
+#[test]
+#[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
+fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::house_state::HouseState;
+    use crate::sim::movement::air_movement::current_fly_height;
+    use crate::sim::passenger::PassengerRole;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let dir = std::env::var("RA2_DIR")
+        .ok()
+        .filter(|path| !path.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            crate::util::config::GameConfig::load()
+                .expect("set RA2_DIR or provide config.toml for this ignored test")
+                .paths
+                .ra2_dir
+        });
+    let mut scenario =
+        crate::headless_scenario::load(&dir, "Dustbowl.mmx", 0x00C0_FFEE).expect("Dustbowl loads");
+    let crate::sim::runtime::SimRuntime {
+        simulation: sim,
+        resources,
+    } = &mut scenario.runtime;
+    for (name, side, human) in [("Americans", 0, true), ("Russians", 1, false)] {
+        let house = sim.interner.intern(name);
+        sim.houses
+            .entry(house)
+            .or_insert_with(|| HouseState::new(house, side, None, human, 10_000, 10));
+        if !sim.session.house_order.contains(&house) {
+            sim.session.house_order.push(house);
+        }
+    }
+    // Open level ground: the Nighthawk and the Kirov land west of three flak
+    // tracks and are ordered past them. Each side keeps a power plant out of
+    // the fight, so neither house is defeated under the Battle mode's
+    // ShortGame.
+    let (nighthawk, kirov, destination) = (40..100_u16)
+        .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
+        .find_map(|(x, y)| {
+            let grid = sim.path_grid()?;
+            let terrain = sim.resolved_terrain.as_ref()?;
+            let level = terrain.cell(x, y)?.level;
+            let open = (x - 4..=x + 16).all(|cx| {
+                (y - 2..=y + 3).all(|cy| {
+                    terrain.cell(cx, cy).is_some_and(|cell| cell.level == level)
+                        && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)
+                })
+            });
+            if !open {
+                return None;
+            }
+            for (plant, owner, px) in [
+                ("GAPOWR", "Americans", x - 4),
+                ("NAPOWR", "Russians", x + 14),
+            ] {
+                sim.spawn_object(
+                    plant,
+                    owner,
+                    px,
+                    y - 2,
+                    0,
+                    &resources.rules,
+                    &resources.height_map,
+                )?;
+            }
+            let nighthawk = sim.spawn_object(
+                "SHAD",
+                "Americans",
+                x,
+                y,
+                64,
+                &resources.rules,
+                &resources.height_map,
+            )?;
+            let kirov = sim.spawn_object(
+                "ZEP",
+                "Americans",
+                x,
+                y + 2,
+                64,
+                &resources.rules,
+                &resources.height_map,
+            )?;
+            for (fx, fy) in [(x + 8, y - 1), (x + 8, y + 1), (x + 9, y)] {
+                sim.spawn_object(
+                    "HTK",
+                    "Russians",
+                    fx,
+                    fy,
+                    192,
+                    &resources.rules,
+                    &resources.height_map,
+                )?;
+            }
+            Some((nighthawk, kirov, (x + 12, y)))
+        })
+        .expect("open level ground for the fight");
+    let riders: Vec<u64> = (0..2)
+        .map(|_| {
+            let rider = sim
+                .construct_object_limbo_at_height("E1", "Americans", 0, 0, 0, 0, &resources.rules)
+                .expect("a GI");
+            sim.substrate
+                .entities
+                .get_mut(rider)
+                .unwrap()
+                .passenger_role = PassengerRole::Inside {
+                transport_id: nighthawk,
+            };
+            sim.substrate
+                .entities
+                .get_mut(nighthawk)
+                .unwrap()
+                .passenger_role
+                .cargo_mut()
+                .expect("the Nighthawk carries")
+                .board_forced(rider, 1);
+            rider
+        })
+        .collect();
+    sim.substrate
+        .entities
+        .get_mut(kirov)
+        .unwrap()
+        .health
+        .current = 1;
+    sim.resolve_type_handles(&resources.rules);
+    let americans = sim.interner.intern("Americans");
+    let russians = sim.interner.intern("Russians");
+    let intern_all = |sim: &mut Simulation, names: &[String]| -> BTreeSet<_> {
+        names.iter().map(|name| sim.interner.intern(name)).collect()
+    };
+    let explosions = intern_all(
+        sim,
+        &resources
+            .rules
+            .object("SHAD")
+            .expect("retail SHAD")
+            .explosion_anims,
+    );
+    let bomb_anims = intern_all(
+        sim,
+        &resources
+            .rules
+            .warhead("BlimpHE")
+            .expect("retail BlimpHE")
+            .anim_list,
+    );
+    let orders: Vec<_> = [nighthawk, kirov]
+        .into_iter()
+        .map(|entity_id| {
+            CommandEnvelope::new(
+                americans,
+                sim.session.tick + 1,
+                Command::Move {
+                    entity_id,
+                    target_rx: destination.0,
+                    target_ry: destination.1,
+                    queue: false,
+                    group_id: None,
+                },
+            )
+        })
+        .collect();
+    scenario
+        .runtime
+        .advance_frame(
+            &orders,
+            crate::headless_scenario::SIM_TICK_MS,
+            super::TickLane::Ordinary,
+        )
+        .expect("the order frame");
+
+    #[derive(Default)]
+    struct Wreck {
+        crash_frame: Option<i32>,
+        impact_frame: Option<i32>,
+        heights: Vec<i32>,
+        impact_anims: Vec<String>,
+    }
+    let mut wrecks: BTreeMap<u64, Wreck> = BTreeMap::new();
+    let mut sounds = Vec::new();
+    let mut riders_killed_by_crash = None;
+    for frame in 1..=1500 {
+        let anims_before: BTreeSet<_> = scenario
+            .sim()
+            .substrate
+            .anims
+            .iter()
+            .map(|(id, _)| *id)
+            .collect();
+        let output = scenario
+            .runtime
+            .advance_frame(
+                &[],
+                crate::headless_scenario::SIM_TICK_MS,
+                super::TickLane::Ordinary,
+            )
+            .expect("a retail frame");
+        let sim = scenario.sim();
+        for event in &output.sound_events {
+            match event {
+                super::SimSoundEvent::VocAt { sound_id, .. } => {
+                    sounds.push((frame, sound_id.clone()));
+                }
+                super::SimSoundEvent::AnimationStarted {
+                    anim_id, sound_id, ..
+                } if *anim_id == nighthawk || *anim_id == kirov => {
+                    sounds.push((frame, sim.interner.resolve(*sound_id).to_string()));
+                }
+                _ => {}
+            }
+        }
+        for id in [nighthawk, kirov] {
+            let wreck = wrecks.entry(id).or_default();
+            if wreck.impact_frame.is_some() {
+                continue;
+            }
+            let Some(entity) = sim
+                .substrate
+                .entities
+                .get(id)
+                .filter(|entity| entity.lifecycle.object_alive)
+            else {
+                assert!(wreck.crash_frame.is_some(), "{id} left before crashing");
+                wreck.impact_frame = Some(frame);
+                wreck.impact_anims = sim
+                    .substrate
+                    .anims
+                    .iter()
+                    .filter(|(anim_id, _)| !anims_before.contains(anim_id))
+                    .map(|(_, anim)| sim.interner.resolve(anim.type_id).to_string())
+                    .collect();
+                continue;
+            };
+            if !entity.crashing {
+                continue;
+            }
+            let height = current_fly_height(entity, sim.resolved_terrain.as_ref());
+            if wreck.crash_frame.is_none() {
+                wreck.crash_frame = Some(frame);
+                assert!(height > 0, "{id} shot down in the air");
+                assert_eq!(entity.health.current, 0);
+                assert_eq!(entity.killed_by, Some(russians));
+                if id == nighthawk {
+                    riders_killed_by_crash = Some(sim.houses[&russians].stats.units_killed);
+                    assert!(
+                        entity
+                            .passenger_role
+                            .cargo()
+                            .is_some_and(|cargo| cargo.passengers.is_empty()),
+                        "the riders died with the Nighthawk"
+                    );
+                }
+            }
+            wreck.heights.push(height);
+        }
+        if wrecks.values().all(|wreck| wreck.impact_frame.is_some()) {
+            break;
+        }
+    }
+    println!("sounds: {sounds:?}");
+    let sim = scenario.sim();
+    for rider in &riders {
+        assert!(
+            sim.substrate
+                .entities
+                .get(*rider)
+                .is_none_or(|rider| !rider.lifecycle.object_alive)
+        );
+    }
+    assert!(
+        riders_killed_by_crash.is_some_and(|kills| kills >= 2),
+        "the flak holds both riders' kills at the Nighthawk's death"
+    );
+    for (id, drop, crashing, voice, impact_cue) in [
+        (
+            nighthawk,
+            50,
+            "BlackOpsDie",
+            "BlackOpsVoiceDie",
+            "GenAircraftCrash",
+        ),
+        (kirov, 18, "KirovDie", "KirovVoiceDie", "KirovCrash"),
+    ] {
+        let wreck = &wrecks[&id];
+        println!(
+            "{crashing}: crashed at {:?}, impact at {:?}, heights {:?}, impact anims {:?}",
+            wreck.crash_frame, wreck.impact_frame, wreck.heights, wreck.impact_anims
+        );
+        let crash_frame = wreck.crash_frame.expect("shot down");
+        let impact_frame = wreck.impact_frame.expect("reached the ground");
+        // After the frame the latch engages, every frame falls by climb plus
+        // crash until the impact takes the wreck.
+        for pair in wreck.heights[1..].windows(2) {
+            assert_eq!(pair[0] - pair[1], drop, "{crashing}: {:?}", wreck.heights);
+        }
+        assert!(wreck.heights.last().is_some_and(|&last| last <= drop));
+        let heard = |name: &str| {
+            sounds
+                .iter()
+                .filter(|(_, sound)| sound == name)
+                .map(|(frame, _)| *frame)
+                .collect::<Vec<_>>()
+        };
+        // The flak's bullet kills the wreck after the wreck's own AI ran this
+        // frame; its next AI sees the latch rise.
+        assert_eq!(heard(crashing), vec![crash_frame + 1], "{sounds:?}");
+        assert_eq!(heard(voice), vec![crash_frame + 1], "{sounds:?}");
+        assert!(heard(impact_cue).is_empty(), "no Jumpjet impact sound");
+        assert!(impact_frame > crash_frame);
+    }
+    let impact_anims = |id: u64, set: &BTreeSet<crate::sim::intern::InternedId>| {
+        wrecks[&id]
+            .impact_anims
+            .iter()
+            .filter(|name| {
+                sim.interner
+                    .get(name)
+                    .is_some_and(|name| set.contains(&name))
+            })
+            .count()
+    };
+    assert!(
+        impact_anims(nighthawk, &explosions) >= 1,
+        "the Nighthawk explodes once more"
+    );
+    assert!(
+        impact_anims(kirov, &bomb_anims) >= 1,
+        "the Kirov's BlimpBomb detonates at the impact"
+    );
 }

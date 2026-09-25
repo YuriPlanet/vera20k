@@ -662,18 +662,25 @@ fn render_skirmish_shell_with_atlas(
             SHELL_PREVIEW_BACKDROP_DEPTH,
         );
     }
-    let (mut shell_draws, bare_text_instances) =
-        if message_box_up || choose_map_layout.is_some() || leaving {
-            (Vec::new(), Vec::new())
-        } else {
-            build_shell_text_draws(
-                state,
-                &layout,
-                &state.frontend.skirmish_shell_state,
-                state.frontend.scenario_catalog.shell_maps(),
-                sliding,
-            )
-        };
+    let parent_showing = !message_box_up && choose_map_layout.is_none() && !leaving;
+    // `0x102`'s kind-1 statics paint only while the dialog shows steadily.
+    let parent_statics = if parent_showing && !sliding {
+        text::paint_skirmish_statics(state, &layout)
+    } else {
+        Vec::new()
+    };
+    let (mut shell_draws, bare_text_instances) = if parent_showing {
+        build_shell_text_draws(
+            state,
+            &layout,
+            &state.frontend.skirmish_shell_state,
+            state.frontend.scenario_catalog.shell_maps(),
+            sliding,
+            &parent_statics,
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
     if let Some(choose_map_layout) = choose_map_layout.as_ref().filter(|_| !message_box_up) {
         // Mirrors the sprite pass: the setup dialog replaces the chooser, so
         // only one of the two contributes text.
@@ -1532,15 +1539,6 @@ mod tests {
         );
         assert!(!order.contains(&SkirmishShellDrawRole::OwnerDrawButton));
         assert!(!order.contains(&SkirmishShellDrawRole::ChooseMapOwnerDrawButton));
-    }
-
-    #[test]
-    fn parent_shell_status_text_is_blank_when_empty_and_present_when_set() {
-        let mut shell = SkirmishShellState::default();
-        assert_eq!(parent_shell_status_help_text(&shell), None);
-
-        shell.status_help_text = "Start Game".to_string();
-        assert_eq!(parent_shell_status_help_text(&shell), Some("Start Game"));
     }
 
     #[test]

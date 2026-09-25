@@ -1,5 +1,6 @@
 //! Dialog 0x102 shell layout recovered from gamemd.exe.
 
+use crate::ui::shell::descriptor::{AnchorRule, LOW_HEADING_ANCHOR, MAP_TEXT_ANCHOR};
 pub use crate::ui::shell::geom::{RectPx, RightPanelRects};
 use crate::ui::shell::geom::{
     center_offset, dlu_rect, right_panel_rects, snap_button_biased_truncate,
@@ -436,22 +437,14 @@ pub const fn combo_swatch_rect(rect: RectPx) -> RectPx {
     )
 }
 
-fn right_anchor(screen_w: i32, screen_h: i32, original: RectPx) -> RectPx {
-    let offset_x = center_offset(screen_w, SHELL_BASE_W);
-    let offset_y = center_offset(screen_h, SHELL_BASE_H);
-    let inset = (RIGHT_PANEL_WIDTH - original.w) / 2;
-    RectPx::new(
-        screen_w - offset_x - original.w - inset,
-        original.y + offset_y,
-        original.w,
-        original.h,
-    )
+/// A right-panel static by its template rect and anchor rule (`0x0060B1D0`).
+fn right_static(rule: AnchorRule, template: RectPx, screen_w: i32, screen_h: i32) -> RectPx {
+    crate::ui::shell::layout::anchor_rect(rule, template, screen_w, screen_h)
 }
 
+/// Status line `0x695` of `0x102`: the family static (template 410x12 DLU).
 fn status_help_rect(screen_w: i32, screen_h: i32) -> RectPx {
-    let offset_x = center_offset(screen_w, SHELL_BASE_W);
-    let offset_y = center_offset(screen_h, SHELL_BASE_H);
-    RectPx::new(offset_x + 10, screen_h - offset_y - 21, 615, 20)
+    crate::ui::shell::layout::status_line_rect(RectPx::new(2, 355, 410, 12), screen_w, screen_h)
 }
 
 /// Status line `0x695` of `0x6B`: the family static (template 303x12 DLU).
@@ -475,12 +468,28 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
 
     let start_base = dlu_rect(425, 149, 108, 23);
     let choose_base = dlu_rect(425, 176, 108, 23);
-    let preview_base = dlu_rect(429, 23, 96, 69);
     let panel = right_panel_rects(screen_w, screen_h);
+    // The executed relayout places them at (635, 3, 163, 17), (650, 167, 136,
+    // 17) and (650, 189, 136, 34) at 800x600.
     let right_panel_text = SkirmishRightPanelTextRects {
-        title: RectPx::new(panel.top.x + 3, panel.top.y + 3, 162, 16),
-        game_type: RectPx::new(panel.top.x + 17, panel.top.y + 167, 135, 16),
-        map_label: RectPx::new(panel.top.x + 17, panel.top.y + 189, 135, 33),
+        title: right_static(
+            LOW_HEADING_ANCHOR,
+            RectPx::new(425, 1, 108, 10),
+            screen_w,
+            screen_h,
+        ),
+        game_type: right_static(
+            MAP_TEXT_ANCHOR,
+            RectPx::new(432, 103, 90, 10),
+            screen_w,
+            screen_h,
+        ),
+        map_label: right_static(
+            MAP_TEXT_ANCHOR,
+            RectPx::new(432, 116, 90, 20),
+            screen_w,
+            screen_h,
+        ),
     };
     let mut player_name = dlu_rect(38, 36, 100, 14);
     player_name.x += 1;
@@ -565,7 +574,12 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
             SDBTNANM_W,
         ),
         back_button: back_rect(screen_w, panel),
-        map_preview: right_anchor(screen_w, screen_h, preview_base),
+        map_preview: right_static(
+            AnchorRule::RightAnchor,
+            RectPx::new(429, 23, 96, 69),
+            screen_w,
+            screen_h,
+        ),
         column_labels: SkirmishColumnLabelRects {
             players: dlu_rect(39, 21, 97, 10),
             side: dlu_rect(191, 21, 73, 10),
@@ -619,8 +633,6 @@ pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMa
     let panel = right_panel_rects(screen_w, screen_h);
     let use_map_base = dlu_rect(425, 122, 108, 23);
     let create_random_map_base = dlu_rect(425, 149, 108, 23);
-    let preview_base = dlu_rect(428, 23, 96, 69);
-    let title_base = dlu_rect(425, 1, 108, 10);
 
     ChooseMapModalLayout {
         screen: RectPx::new(0, 0, screen_w, screen_h),
@@ -642,12 +654,22 @@ pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMa
             panel,
             SDBTNANM_W,
         ),
-        title: right_anchor(screen_w, screen_h, title_base).translate(0, 1),
+        title: right_static(
+            LOW_HEADING_ANCHOR,
+            RectPx::new(425, 1, 108, 10),
+            screen_w,
+            screen_h,
+        ),
         select_engagement: dlu_rect(80, 20, 257, 12),
         game_type_heading: dlu_rect(77, 60, 130, 10),
         game_map_heading: dlu_rect(225, 60, 130, 10),
         status_help: choose_map_status_help_rect(screen_w, screen_h),
-        preview: right_anchor(screen_w, screen_h, preview_base),
+        preview: right_static(
+            AnchorRule::RightAnchor,
+            RectPx::new(428, 23, 96, 69),
+            screen_w,
+            screen_h,
+        ),
     }
 }
 
@@ -717,16 +739,17 @@ pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMa
             SETUP_ACTION_H,
         ),
         seed_field: dlu_rect(seed_x, seed_y, seed_w, seed_h),
-        title: right_anchor(
+        title: right_static(
+            LOW_HEADING_ANCHOR,
+            RectPx::new(title_x, title_y, title_w, title_h),
             screen_w,
             screen_h,
-            dlu_rect(title_x, title_y, title_w, title_h),
-        )
-        .translate(0, 1),
-        preview: right_anchor(
+        ),
+        preview: right_static(
+            AnchorRule::RightAnchor,
+            RectPx::new(preview_x, preview_y, preview_w, preview_h),
             screen_w,
             screen_h,
-            dlu_rect(preview_x, preview_y, preview_w, preview_h),
         ),
         use_map: right_button(SETUP_USE_MAP_Y),
         load: right_button(SETUP_LOAD_Y),
@@ -1258,19 +1281,28 @@ mod tests {
     }
 
     #[test]
-    fn status_help_strip_0x695_bottom_left_rects() {
-        assert_eq!(
-            compute_layout(640, 480).status_help,
-            RectPx::new(10, 459, 615, 20)
-        );
-        assert_eq!(
-            compute_layout(800, 600).status_help,
-            RectPx::new(10, 579, 615, 20)
-        );
-        assert_eq!(
-            compute_layout(1024, 768).status_help,
-            RectPx::new(122, 663, 615, 20)
-        );
+    fn right_panel_statics_and_status_line_match_the_executed_relayout() {
+        use crate::ui::shell::layout::tests::executed_child_window as executed;
+        for (w, h) in [(640, 480), (800, 600), (1024, 768)] {
+            let layout = compute_layout(w as u32, h as u32);
+            assert_eq!(layout.right_panel_text.title, executed(0x102, 0x694, w, h));
+            assert_eq!(
+                layout.right_panel_text.game_type,
+                executed(0x102, 0x6EC, w, h)
+            );
+            assert_eq!(
+                layout.right_panel_text.map_label,
+                executed(0x102, 0x5A8, w, h)
+            );
+            assert_eq!(layout.status_help, executed(0x102, 0x695, w, h));
+        }
+        let chooser = compute_choose_map_modal_layout(800, 600);
+        assert_eq!(chooser.title, executed(0x6B, 0x694, 800, 600));
+        assert_eq!(chooser.status_help, executed(0x6B, 0x695, 800, 600));
+        for (w, h) in [(800, 600), (1024, 768)] {
+            let setup = compute_random_map_setup_layout(w as u32, h as u32);
+            assert_eq!(setup.title, executed(0x105, 0x694, w, h));
+        }
     }
 
     #[test]
@@ -1379,9 +1411,6 @@ mod tests {
         assert_eq!(a.right_panel.tile, RectPx::new(632, 199, 168, 42));
         assert_eq!(a.right_panel.tile_count, 9);
         assert_eq!(a.right_panel.bottom, RectPx::new(632, 577, 168, 23));
-        assert_eq!(a.right_panel_text.title, RectPx::new(635, 3, 162, 16));
-        assert_eq!(a.right_panel_text.game_type, RectPx::new(649, 167, 135, 16));
-        assert_eq!(a.right_panel_text.map_label, RectPx::new(649, 189, 135, 33));
 
         let b = compute_layout(1024, 768);
         assert_eq!(b.right_panel.top, RectPx::new(744, 84, 168, 199));
@@ -1394,9 +1423,6 @@ mod tests {
         assert_eq!(c.right_panel.tile, RectPx::new(472, 199, 168, 42));
         assert_eq!(c.right_panel.tile_count, 6);
         assert_eq!(c.right_panel.bottom, RectPx::new(472, 451, 168, 29));
-        assert_eq!(c.right_panel_text.title, RectPx::new(475, 3, 162, 16));
-        assert_eq!(c.right_panel_text.game_type, RectPx::new(489, 167, 135, 16));
-        assert_eq!(c.right_panel_text.map_label, RectPx::new(489, 189, 135, 33));
     }
 
     #[test]
@@ -1422,7 +1448,7 @@ mod tests {
             RectPx::new(644, 241, 156, 42)
         );
         assert_eq!(layout.cancel_button, RectPx::new(644, 535, 156, 42));
-        assert_eq!(layout.title, RectPx::new(635, 3, 162, 16));
+        assert_eq!(layout.title, RectPx::new(635, 3, 163, 17));
         assert_eq!(layout.select_engagement, RectPx::new(120, 33, 386, 20));
         assert_eq!(layout.game_type_heading, RectPx::new(116, 98, 195, 16));
         assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 195, 16));
@@ -1444,7 +1470,7 @@ mod tests {
             RectPx::new(756, 325, 156, 42)
         );
         assert_eq!(layout.cancel_button, RectPx::new(756, 619, 156, 42));
-        assert_eq!(layout.title, RectPx::new(747, 87, 162, 16));
+        assert_eq!(layout.title, RectPx::new(747, 87, 163, 17));
         assert_eq!(layout.select_engagement, RectPx::new(120, 33, 386, 20));
         assert_eq!(layout.game_type_heading, RectPx::new(116, 98, 195, 16));
         assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 195, 16));

@@ -33,7 +33,6 @@ fn text(font: &BitFont, value: &str, rect: RectPx, align: ShellAlign, depth: f32
         align,
         [0.0; 2],
         depth,
-        None,
     )
 }
 

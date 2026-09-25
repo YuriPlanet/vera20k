@@ -2105,14 +2105,11 @@ fn jumpjet_stop_command_keeps_native_moving_and_selected_coordinate() {
     );
     assert_eq!(state.phase, before.phase);
     assert_ne!(state.destination, before.destination);
-    assert!(
-        sim.substrate
-            .entities
-            .get(id)
-            .unwrap()
-            .movement_target
-            .is_some()
-    );
+    // Foot's null arm clears the NavCom the Stop's Move_To wrote, and the
+    // movement adapter holds no goal: the locomotor alone flies the re-target.
+    let entity = sim.substrate.entities.get(id).unwrap();
+    assert!(entity.navigation.nav_com.is_none());
+    assert!(entity.movement_target.is_none());
 }
 
 #[test]
@@ -2158,7 +2155,7 @@ fn failed_jumpjet_stop_stock_fatal_receiver_precedes_cache_retirement() {
             phase: 1,
             ..Default::default()
         };
-        assert!(sim.stop_jumpjet_infantry_destination(id, Some(&rules), Some(&registry)));
+        assert!(sim.jumpjet_stop_moving(id, Some(&rules), Some(&registry)));
         let e = sim.substrate.entities.get(id).unwrap();
         let state = e.locomotor.as_ref().unwrap().jumpjet_runtime().unwrap();
         assert_eq!(

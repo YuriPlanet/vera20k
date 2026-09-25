@@ -136,7 +136,7 @@ impl App {
             Self::play_generic_click_sound(state);
         }
         // Every hover message repaints the status line (0x00615EF7).
-        state.frontend.shell_status_line.hover_repaint();
+        state.frontend.shell_status_line.repaint();
         state.platform.window.request_redraw();
     }
 

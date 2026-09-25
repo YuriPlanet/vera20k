@@ -189,11 +189,129 @@ fn voxel_crash_locomotor_matrix(step: u8, tilt: [f32; 2]) -> Mat4 {
     )
 }
 
-/// The draw matrix of one body draw: the crashing arm when a tilt is present,
-/// else the slope/facing products.
+/// `JumpjetLocomotionClass` Draw_Matrix's `TiltCrashJumpjet=` arm
+/// (`0x0054DD19..0x0054DF06`): the facing matrix of
+/// `LocomotionClass::Draw_Matrix @ 0x0055A730` between a lift and a shifted,
+/// rolled and pitched frame, `T_z * F * (T_xy * R_x(roll) * R_y(pitch))`, each
+/// product `MatrixMultiply @ 0x005AF980` in the native order. The offsets are
+/// the whole voxels [`jumpjet_tilt_offsets`] keeps the tilted body's rim on;
+/// the rotations are glam's, within 2e-3 of the table's, as the Fly arm's.
+fn voxel_jumpjet_tilt_locomotor_matrix(step: u8, angles: [f32; 2], half_sizes: [f32; 2]) -> Mat4 {
+    let (trig, _) = crate::map::retail_trig::required_math_tables();
+    let [x, y, z] = jumpjet_tilt_offsets(trig, angles, half_sizes);
+    let product = |left, right| native::matrix_product(left, right).expect("finite tilt matrix");
+    let lift = Mat4::from_translation(Vec3::new(0.0, 0.0, z as f32));
+    let frame = product(
+        product(
+            Mat4::from_translation(Vec3::new(x as f32, y as f32, 0.0)),
+            Mat4::from_rotation_x(angles[0]),
+        ),
+        Mat4::from_rotation_y(angles[1]),
+    );
+    product(product(lift, voxel_body_facing(step)), frame)
+}
+
+/// The `TiltCrashJumpjet=` arm's offsets, `[x, y, z]` in whole voxels
+/// (`0x0054DD48..0x0054DE53`), as the original evaluates them: the table sine
+/// and cosine stored as binary32, `Math::ftol` truncation, and the signs of
+/// the pitch and roll. `half_sizes` are `TechnoTypeClass+0x360` and `+0x368`
+/// ([`jumpjet_tilt_half_sizes`]); `angles` are the roll and pitch
+/// (`TechnoClass+0x328`, `+0x32C`).
+pub(crate) fn jumpjet_tilt_offsets(
+    trig: &crate::map::retail_trig::TrigTable,
+    [roll, pitch]: [f32; 2],
+    [half_y, half_x]: [f32; 2],
+) -> [i32; 3] {
+    use crate::util::native_x87::{NativeF32Bits, X87Chop53 as Fpu, X87Ordering, X87Value};
+    let single = |value: f32| {
+        Fpu::load_f32(NativeF32Bits::from_bits(value.to_bits())).unwrap_or(Fpu::load_i32(0))
+    };
+    // `FSTP float`: the table entries are binary32 already, so the store is
+    // exact; kept to mirror the four stack slots.
+    let stored = |value: X87Value| {
+        Fpu::store_f32(value).map_or(Fpu::load_i32(0), |bits| {
+            Fpu::load_f32(bits).unwrap_or(Fpu::load_i32(0))
+        })
+    };
+    let abs = |value: X87Value| {
+        if Fpu::compare(value, Fpu::load_i32(0)) == X87Ordering::Less {
+            Fpu::neg(value)
+        } else {
+            value
+        }
+    };
+    let (a, b) = (single(half_y), single(half_x));
+    let cos_pitch = stored(trig.cos_from_table(single(pitch)));
+    let sin_pitch = stored(trig.sin_from_table(single(pitch)));
+    let cos_roll = stored(trig.cos_from_table(single(roll)));
+    let sin_roll = trig.sin_from_table(single(roll));
+    let z = Fpu::ftol_i32_low_masked(Fpu::add(
+        Fpu::mul(abs(sin_roll), a),
+        Fpu::mul(abs(sin_pitch), b),
+    ));
+    let shifted = |cosine: X87Value, half: X87Value| {
+        let truncated = Fpu::ftol_i32_low_masked(Fpu::mul(cosine, half));
+        Fpu::ftol_i32_low_masked(Fpu::sub(half, Fpu::load_i32(truncated)))
+    };
+    let mut x = shifted(cos_pitch, b);
+    let mut y = shifted(cos_roll, a);
+    // `FCOMP float 0.0`: a negative pitch and a positive roll flip their shift.
+    if pitch < 0.0 {
+        x = x.wrapping_neg();
+    }
+    if roll > 0.0 {
+        y = y.wrapping_neg();
+    }
+    [x, y, z]
+}
+
+/// `0x0054DCE8..0x0054DD13`: the `TiltCrashJumpjet=` arm runs when either
+/// angle's magnitude, widened to double, is at least 0.005 (`0x007E44E8`); a
+/// NaN never tilts.
+pub(crate) fn jumpjet_tilt_applies(angles: [f32; 2]) -> bool {
+    angles
+        .into_iter()
+        .any(|angle| f64::from(angle.abs()) >= 0.005)
+}
+
+/// `TechnoTypeClass+0x360` and `+0x368` from the main voxel's first section
+/// (`TechnoTypeClass::ReadINI 0x007160C7..0x0071611D`, section info
+/// `0x007564B0(0, 0)`): its `SizeY` (`+0xA1`) times 0.5 plus 0.5, and its
+/// `SizeX` (`+0xA0`) times 0.5, both exact.
+pub(crate) fn jumpjet_tilt_half_sizes(vxl: &VxlFile) -> Option<[f32; 2]> {
+    let section = vxl.limbs.first()?;
+    Some([
+        f32::from(section.size_y) * 0.5 + 0.5,
+        f32::from(section.size_x) * 0.5,
+    ])
+}
+
+/// The locomotor Draw_Matrix arm a tilted body draws through.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BodyTilt {
+    /// `FlyLocomotionClass` Draw_Matrix's crashing arm (`0x004CF610`): roll
+    /// and pitch in radians.
+    Fly([f32; 2]),
+    /// `JumpjetLocomotionClass` Draw_Matrix's `TiltCrashJumpjet=` arm
+    /// (`0x0054DCC0`): roll and pitch in radians, and the main voxel's half
+    /// sizes ([`jumpjet_tilt_half_sizes`]).
+    Jumpjet {
+        angles: [f32; 2],
+        half_sizes: [f32; 2],
+    },
+}
+
+/// The draw matrix of one body draw: a tilt arm when one is present, else the
+/// slope/facing products. `UnitClass 0x0073B71C` takes camera * the
+/// locomotor's matrix.
 fn voxel_params_draw_rotation(params: &VxlRenderParams, step: u8) -> Mat4 {
     match params.body_tilt {
-        Some(tilt) => voxel_crash_rotation(step, tilt),
+        Some(BodyTilt::Fly(tilt)) => voxel_crash_rotation(step, tilt),
+        Some(BodyTilt::Jumpjet { angles, half_sizes }) => native::matrix_product(
+            voxel_camera_view(),
+            voxel_jumpjet_tilt_locomotor_matrix(step, angles, half_sizes),
+        )
+        .expect("finite tilt matrix"),
         None => voxel_draw_rotation_for_state(params.slope_type, params.slope_blend, step),
     }
 }
@@ -345,10 +463,10 @@ pub struct VxlRenderParams {
     /// Optional 3-frame slope transition. When present, this replaces
     /// `slope_type` with an interpolated slope orientation.
     pub slope_blend: Option<VxlSlopeBlend>,
-    /// A crashing Fly body's roll and pitch in radians (`TechnoClass+0x328`,
-    /// `+0x32C`). When present the body draws through Fly Draw_Matrix's
-    /// crashing arm ([`voxel_crash_rotation`]) instead of the slope matrices.
-    pub body_tilt: Option<[f32; 2]>,
+    /// A tilted body's locomotor Draw_Matrix arm and its roll and pitch
+    /// (`TechnoClass+0x328`, `+0x32C`). When present the body draws through
+    /// that arm instead of the slope matrices.
+    pub body_tilt: Option<BodyTilt>,
     /// Model-space-unit to pixel scale. Default: 1.0 — one unit is one pixel.
     ///
     /// The original applies no magnification anywhere between the section
@@ -2143,6 +2261,68 @@ mod tests {
 
         assert_mat4_close(limbs[0].combined, expected, 1e-6);
     }
+    /// Jumpjet Draw_Matrix against the executable
+    /// (`tools/spatial_oracle/jumpjet_crash.json`, `draw_matrix`): the
+    /// `TiltCrashJumpjet=` arm at four facings, over and under the 0.005 gate
+    /// and out to the balloon clamp, with three half-size pairs; and the base
+    /// arm under the gate or without the flag. The offsets are native to the
+    /// bit; the rotations within 2e-3 of the table's.
+    #[test]
+    fn jumpjet_tilt_draw_matrix_matches_native() {
+        let (trig, _) = crate::map::retail_trig::required_math_tables();
+        if !trig.matches_retail() {
+            assert!(
+                std::env::var_os("RA2_DIR").is_none(),
+                "RA2_DIR is set but the retail sine table does not match"
+            );
+            eprintln!("skipped: set RA2_DIR to the retail install to run this");
+            return;
+        }
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tools/spatial_oracle/jumpjet_crash.json"
+        ))
+        .unwrap();
+        let rows = corpus["draw_matrix"].as_array().unwrap();
+        assert_eq!(rows.len(), 86);
+        let mut tilted = 0;
+        for row in rows {
+            let input = &row["input"];
+            let name = row["name"].as_str().unwrap();
+            let pair = |key: &str| {
+                let values = input[key].as_array().unwrap();
+                [0, 1].map(|i| values[i].as_f64().unwrap() as f32)
+            };
+            let (angles, half_sizes) = (pair("angles"), pair("half_sizes"));
+            let native: Vec<f32> = row["output"]["matrix"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|hex| f32::from_bits(u32::from_str_radix(hex.as_str().unwrap(), 16).unwrap()))
+                .collect();
+            let step = voxel_facing_step_u16(input["facing"].as_u64().unwrap() as u16);
+            let tilt = input["tilt"] == 1 && jumpjet_tilt_applies(angles);
+            assert_eq!(row["output"]["key"] == u32::MAX, tilt, "{name}: the arm");
+            let expected = if tilt {
+                tilted += 1;
+                voxel_jumpjet_tilt_locomotor_matrix(step, angles, half_sizes)
+            } else {
+                voxel_body_facing(step)
+            };
+            for r in 0..3 {
+                for c in 0..4 {
+                    let actual = expected.col(c)[r];
+                    let native = native[r * 4 + c];
+                    let tolerance = if c == 3 { 1e-5 } else { 2e-3 };
+                    assert!(
+                        (actual - native).abs() < tolerance,
+                        "{name} m[{r}][{c}]: {actual} vs native {native}"
+                    );
+                }
+            }
+        }
+        assert_eq!(tilted, 34);
+    }
+
     /// Fly Draw_Matrix's crashing arm against the executable
     /// (`tools/spatial_oracle/aircraft_crash.json`, `draw_matrix`): four
     /// facings by six poses, the grounded and uncrashed bodies keying their

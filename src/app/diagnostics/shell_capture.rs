@@ -61,6 +61,13 @@ const OPTIONS_0XD5_HOVER_CHECKPOINTS: [(&str, (i32, i32)); 3] = [
     ("options-0xd5-hover-tooltips", (175, 315)),
     ("options-0xd5-hover-music", (140, 480)),
 ];
+/// `skirmish-0x102-hover-<control>`: once `0x102` settles the pointer rests
+/// on a control, as in the retail stills `sk-hover-start.png` and
+/// `sk-hover-short.png`.
+const SKIRMISH_0X102_HOVER_CHECKPOINTS: [(&str, (i32, i32)); 2] = [
+    ("skirmish-0x102-hover-start", (720, 262)),
+    ("skirmish-0x102-hover-short-game", (110, 294)),
+];
 /// Slider press points of the retail comparison stills.
 const CAMPAIGN_SLIDER_LEFT_POINT: (i32, i32) = (190, 275);
 const CAMPAIGN_SLIDER_RIGHT_POINT: (i32, i32) = (440, 275);
@@ -175,6 +182,9 @@ pub enum ShellCaptureCheckpoint {
     /// Skirmish opened from Single Player, its entry slide held at one tick
     /// (`skirmish-0x102-entry-tick-<N>`).
     Skirmish0x102Entry(u32),
+    /// Skirmish settled with the pointer resting on a control
+    /// (`SKIRMISH_0X102_HOVER_CHECKPOINTS` index).
+    Skirmish0x102Hover(usize),
     /// Choose Map `0x6B` settled after Skirmish's Choose Map.
     Skirmish0x6BSteady,
     /// Choose Map `0x6B`'s entry slide held at one tick
@@ -340,6 +350,12 @@ impl ShellCaptureCheckpoint {
                 {
                     return Ok(Self::Options0xD5Hover(index));
                 }
+                if let Some(index) = SKIRMISH_0X102_HOVER_CHECKPOINTS
+                    .iter()
+                    .position(|(name, _)| *name == value)
+                {
+                    return Ok(Self::Skirmish0x102Hover(index));
+                }
                 bail!("unsupported shell-capture checkpoint {value:?}")
             }
         }
@@ -378,6 +394,7 @@ impl ShellCaptureCheckpoint {
             Self::MovieList0x129SlideOut(_) => "movie-list-0x129-slide-out",
             Self::Skirmish0x102BackSlideOut(_) => "skirmish-0x102-back-slide-out",
             Self::Skirmish0x102Entry(_) => "skirmish-0x102-entry",
+            Self::Skirmish0x102Hover(index) => SKIRMISH_0X102_HOVER_CHECKPOINTS[index].0,
             Self::Skirmish0x6BSteady => CHECKPOINT_SKIRMISH_0X6B_STEADY,
             Self::Skirmish0x6BEntry(_) => "skirmish-0x6b-entry",
             Self::Skirmish0x102ChooseMapReturn => CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN,
@@ -914,6 +931,9 @@ impl ShellCaptureSession {
             ShellCaptureCheckpoint::Skirmish0x102Entry(tick) => {
                 Some(skirmish::SkirmishCapture::entry(tick))
             }
+            ShellCaptureCheckpoint::Skirmish0x102Hover(index) => Some(
+                skirmish::SkirmishCapture::hover(SKIRMISH_0X102_HOVER_CHECKPOINTS[index].1),
+            ),
             _ => None,
         };
         let movies = request
@@ -1653,7 +1673,10 @@ mod tests {
 
     #[test]
     fn options_hover_checkpoints_round_trip_their_names() {
-        for (name, _) in OPTIONS_0XD5_HOVER_CHECKPOINTS {
+        for (name, _) in OPTIONS_0XD5_HOVER_CHECKPOINTS
+            .into_iter()
+            .chain(SKIRMISH_0X102_HOVER_CHECKPOINTS)
+        {
             let checkpoint = ShellCaptureCheckpoint::parse(name).expect("hover checkpoint");
             assert_eq!(checkpoint.as_str(), name);
         }

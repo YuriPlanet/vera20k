@@ -237,6 +237,19 @@ impl TrigTable {
         self.cos(radians_to_units(radians) as i32)
     }
 
+    /// `Math::SinFromTable @ 0x004CACB0` for its double argument under the
+    /// process's x87 mode: the table unit is `Math::ftol` of the radians times
+    /// the binary32 scale at `0x008223B0` (16384/2pi), and the entry comes back
+    /// as the binary32 it is.
+    pub fn sin_from_table(&self, radians: X87Value) -> X87Value {
+        table_value(self.sin(from_table_units(radians)))
+    }
+
+    /// `Math::CosFromTable @ 0x004CAD00`, as [`Self::sin_from_table`].
+    pub fn cos_from_table(&self, radians: X87Value) -> X87Value {
+        table_value(self.cos(from_table_units(radians)))
+    }
+
     /// A table of the right shape but not the retail contents, for tests that
     /// need geometry rather than exactness.
     #[cfg(test)]
@@ -443,6 +456,21 @@ fn cos_index(angle_units: i32) -> i32 {
         index += 1;
     }
     index
+}
+
+/// `0x008223B0`: binary32 16384/2pi, the radians-to-units scale of
+/// `Math::SinFromTable` and `Math::CosFromTable`.
+const UNITS_PER_RADIAN_F32: u32 = 0x4522_F983;
+
+fn from_table_units(radians: X87Value) -> i32 {
+    let scale = X87Chop53::load_f32(NativeF32Bits::from_bits(UNITS_PER_RADIAN_F32))
+        .expect("the table scale is a finite binary32");
+    X87Chop53::ftol_i32_low_masked(X87Chop53::mul(radians, scale))
+}
+
+fn table_value(entry: f32) -> X87Value {
+    X87Chop53::load_f32(NativeF32Bits::from_bits(entry.to_bits()))
+        .unwrap_or_else(|_| X87Chop53::load_i32(0))
 }
 
 /// Convert radians to the caller units the lookups take.
