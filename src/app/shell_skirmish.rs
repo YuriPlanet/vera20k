@@ -1,5 +1,14 @@
 use super::*;
 
+/// Where Skirmish Back leads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SkirmishBackOutcome {
+    /// The shell continues (a teardown slide or an immediate close).
+    Leaving,
+    /// The developer-only Skirmish launch has no shell to return to.
+    ExitApp,
+}
+
 impl App {
     pub(super) fn dev_skirmish_shell_enabled() -> bool {
         std::env::var(DEV_SKIRMISH_SHELL_ENV)
@@ -187,6 +196,76 @@ impl App {
         state.frontend.skirmish_settings = settings;
     }
 
+    /// Skirmish Back (`0x5C0`): the proc packs the session like Start does
+    /// (`0x006ACEE0`), then the runner tears the dialog down. From the Single
+    /// Player route that is the teardown slide back to `0x100`; the developer
+    /// routes close at once.
+    pub(super) fn handle_skirmish_back(state: &mut AppState) -> SkirmishBackOutcome {
+        match crate::ui::skirmish_shell::pack_launch_session_without_start_validation(
+            &state.frontend.skirmish_shell_state,
+            state.frontend.scenario_catalog.shell_maps(),
+            &state.frontend.skirmish_modes,
+        ) {
+            Ok(raw_session) => {
+                if let Err(err) = state
+                    .frontend
+                    .offline_skirmish_runtime
+                    .close_shell_transaction(
+                        &state.frontend.skirmish_shell_state,
+                        state.frontend.scenario_catalog.shell_maps(),
+                        &state.frontend.skirmish_modes,
+                        &raw_session,
+                    )
+                {
+                    // Invalid Cooperative content has no parity-safe
+                    // retry cap. Keep Back usable, surface the malformed
+                    // data, and retain every draw consumed before error.
+                    log::error!("Could not complete Cooperative Back randomization: {err}");
+                }
+            }
+            Err(err) => {
+                log::warn!("Could not pack raw Skirmish Back session: {err:?}");
+            }
+        }
+        if state
+            .frontend
+            .shell_route
+            .skirmish_returns_to_single_player()
+        {
+            Self::leave_shell_dialog(
+                state,
+                crate::app::frontend::shell_transition::ShellExitThen::SkirmishBack,
+            );
+            SkirmishBackOutcome::Leaving
+        } else if Self::native_skirmish_shell_active(state) {
+            Self::close_native_skirmish_shell(state);
+            state.frontend.offline_skirmish_runtime.persist_snapshot();
+            SkirmishBackOutcome::Leaving
+        } else {
+            state.frontend.offline_skirmish_runtime.persist_snapshot();
+            SkirmishBackOutcome::ExitApp
+        }
+    }
+
+    /// Skirmish Start after the teardown slide: `0x006AE2C0` destroys the
+    /// dialog, writes the session fields (`0x006990A0`) and returns true, and
+    /// Main_Game launches the scenario.
+    pub(super) fn commit_skirmish_start(
+        state: &mut AppState,
+        session: crate::skirmish_launch::SkirmishLaunchSession,
+    ) {
+        Self::teardown_skirmish_shell_for_start(state);
+        state.frontend.offline_skirmish_runtime.persist_snapshot();
+        Self::start_skirmish_session(state, session);
+    }
+
+    /// Skirmish Back after the teardown slide: the session fields are written
+    /// (`0x006990A0`), then state 1 builds the Single Player page.
+    pub(super) fn commit_skirmish_back(state: &mut AppState) {
+        state.frontend.offline_skirmish_runtime.persist_snapshot();
+        Self::return_from_skirmish_to_single_player_shell(state);
+    }
+
     pub(super) fn teardown_skirmish_shell_for_start(state: &mut AppState) {
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
         state.frontend.shell_first_paint_slide = None;
@@ -327,10 +406,16 @@ impl App {
                             &raw_session,
                         ) {
                             Ok(resolved_session) => {
+                                // 0x006ACEE0 packs the session and writes
+                                // result 0x617; the runner (0x006AE2C0) then
+                                // slides the dialog out before the launch.
                                 Self::sync_legacy_skirmish_settings_from_shell(state);
-                                Self::teardown_skirmish_shell_for_start(state);
-                                state.frontend.offline_skirmish_runtime.persist_snapshot();
-                                Self::start_skirmish_session(state, resolved_session);
+                                Self::leave_shell_dialog(
+                                    state,
+                                    crate::app::frontend::shell_transition::ShellExitThen::SkirmishStart(
+                                        Box::new(resolved_session),
+                                    ),
+                                );
                             }
                             Err(err) => {
                                 log::error!(
@@ -352,38 +437,9 @@ impl App {
                 }
             }
             crate::ui::skirmish_shell::SkirmishShellAction::BackOrExit => {
-                match crate::ui::skirmish_shell::pack_launch_session_without_start_validation(
-                    &state.frontend.skirmish_shell_state,
-                    state.frontend.scenario_catalog.shell_maps(),
-                    &state.frontend.skirmish_modes,
-                ) {
-                    Ok(raw_session) => {
-                        if let Err(err) = state.frontend.offline_skirmish_runtime.close_shell_transaction(
-                            &state.frontend.skirmish_shell_state,
-                            state.frontend.scenario_catalog.shell_maps(),
-                            &state.frontend.skirmish_modes,
-                            &raw_session,
-                        ) {
-                            // Invalid Cooperative content has no parity-safe
-                            // retry cap. Keep Back usable, surface the malformed
-                            // data, and retain every draw consumed before error.
-                            log::error!("Could not complete Cooperative Back randomization: {err}");
-                        }
-                    }
-                    Err(err) => {
-                        log::warn!("Could not pack raw Skirmish Back session: {err:?}");
-                    }
-                }
-                if state.frontend.shell_route.skirmish_returns_to_single_player() {
-                    Self::return_from_skirmish_to_single_player_shell(state);
-                } else if Self::native_skirmish_shell_active(state) {
-                    Self::close_native_skirmish_shell(state);
-                } else {
-                    state.frontend.offline_skirmish_runtime.persist_snapshot();
+                if Self::handle_skirmish_back(state) == SkirmishBackOutcome::ExitApp {
                     event_loop.exit();
-                    return;
                 }
-                state.frontend.offline_skirmish_runtime.persist_snapshot();
             }
             crate::ui::skirmish_shell::SkirmishShellAction::ChooseMap => {
                 Self::open_choose_map_modal(state);
