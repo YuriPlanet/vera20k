@@ -495,7 +495,6 @@ impl App {
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
         Self::ensure_skirmish_shell_chrome(state);
-        state.frontend.launcher_options_presentation = Default::default();
         use crate::app::persistence::options::launcher::launcher_dialog_from_profile;
         use crate::ui::main_menu_dialogs::options::LauncherOptionsLabels;
 
@@ -567,17 +566,47 @@ impl App {
                 );
             }
         }
-        if let Some(result) = output.result {
-            let mut operations = AppStateLauncherParentOperations { state };
-            crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-                &mut operations, dialog, result,
-            );
-        } else {
-            state.frontend.options_dialog = Some(dialog);
+        match output.result {
+            // Main Menu: 0xD5 slides out (0x0055FD06) before the result is
+            // committed and state 0x12 recreates 0xE2.
+            Some(crate::ui::main_menu_dialogs::options::LauncherParentResult::Back) => {
+                state.frontend.options_dialog = Some(dialog);
+                Self::leave_shell_dialog(
+                    state,
+                    crate::app::frontend::shell_transition::ShellExitThen::OptionsBack,
+                );
+            }
+            Some(result) => {
+                let mut operations = AppStateLauncherParentOperations { state };
+                crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
+                    &mut operations,
+                    dialog,
+                    result,
+                );
+            }
+            None => state.frontend.options_dialog = Some(dialog),
         }
     }
 
+    /// Main Menu's teardown slide has run: commit the controls and write the
+    /// profile (`0x0055FAA0`, `0x005FAD10`); the next frame builds `0xE2`.
+    pub(super) fn commit_launcher_options_back(state: &mut AppState) {
+        let Some(dialog) = state.frontend.options_dialog.take() else {
+            return;
+        };
+        let mut operations = AppStateLauncherParentOperations { state };
+        crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
+            &mut operations,
+            dialog,
+            crate::ui::main_menu_dialogs::options::LauncherParentResult::Back,
+        );
+    }
+
     pub(crate) fn handle_launcher_options_mouse(state: &mut AppState, down: Option<bool>) {
+        if down.is_none() {
+            // Every hover message repaints the status line (0x00615EF7).
+            state.frontend.shell_status_line.hover_repaint();
+        }
         let Some(mut dialog) = state.frontend.options_dialog.take() else { return; };
         let (x, y) = (state.match_state.input.cursor_x as i32, state.match_state.input.cursor_y as i32);
         let (w, h) = (state.render_width() as i32, state.render_height() as i32);
@@ -727,6 +756,7 @@ impl App {
                 MainMenuShellAction::SinglePlayer
                 | MainMenuShellAction::MoviesAndCredits
                 | MainMenuShellAction::Options
+                | MainMenuShellAction::Network
                 | MainMenuShellAction::ExitGame => {
                     Self::leave_shell_dialog(state, ShellExitThen::MainMenu(action))
                 }
@@ -973,6 +1003,7 @@ impl App {
             ShellExitThen::SkirmishBack => Self::commit_skirmish_back(state),
             ShellExitThen::CampaignBack => Self::commit_campaign_back(state),
             ShellExitThen::LoadSavedGameBack => Self::commit_load_saved_game_back(state),
+            ShellExitThen::OptionsBack => Self::commit_launcher_options_back(state),
         }
     }
 
@@ -1068,13 +1099,24 @@ impl App {
             MainMenuShellAction::MoviesAndCredits => {
                 Self::open_movies_credits_page(state);
             }
-            MainMenuShellAction::WwOnline | MainMenuShellAction::Network => {
+            MainMenuShellAction::Network => Self::bounce_network_to_main_menu(state),
+            MainMenuShellAction::WwOnline => {
                 log::info!(
                     "Main-menu shell action {:?} is preserved but downstream dialog is not implemented yet",
                     action
                 );
             }
         }
+    }
+
+    /// Network (result 3, state 3 `0x0052DD75`): state 0x10 creates the IPX
+    /// interface and opens its socket (`0x007B10C0`, `AF_IPX`). Without IPX
+    /// the socket fails and the game returns to state 0x12 without a message
+    /// (`0x0052E425`), which builds a new `0xE2` with its entry slide. VERA20k
+    /// has no IPX transport, so it always takes that branch.
+    fn bounce_network_to_main_menu(state: &mut AppState) {
+        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
+        crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
     }
 
     /// Open the Exit-Game confirm message box, resolving its labels from CSF.
