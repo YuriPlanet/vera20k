@@ -58,6 +58,8 @@ pub(super) enum MoviesTarget {
     /// of its entry slide.
     Options0xD5 {
         entry_tick: Option<u32>,
+        /// Rest the pointer here instead of at the neutral point.
+        hover: Option<(i32, i32)>,
     },
 }
 
@@ -325,7 +327,7 @@ impl MoviesCapture {
                 }
             }
             (Phase::Options, PresentedShell::Other | PresentedShell::Options) => {
-                let MoviesTarget::Options0xD5 { entry_tick } = self.target else {
+                let MoviesTarget::Options0xD5 { entry_tick, hover } = self.target else {
                     bail!("options phase without an options target");
                 };
                 if let Some(target) = entry_tick {
@@ -352,10 +354,14 @@ impl MoviesCapture {
                     && Self::slide_settled(state, ShellSlideKind::Options)
                 {
                     Self::restore_neutral_pointer(state);
+                    if let Some((x, y)) = hover {
+                        state.match_state.input.cursor_x = x as f32;
+                        state.match_state.input.cursor_y = y as f32;
+                    }
                     App::handle_launcher_options_mouse(state, None);
-                    self.route.push(
-                        json!({"dialog": 0xd5, "frame": frame, "action": "pointer at neutral"}),
-                    );
+                    self.route.push(json!({"dialog": 0xd5, "frame": frame,
+                        "action": "pointer rests", "point": [
+                            state.match_state.input.cursor_x, state.match_state.input.cursor_y]}));
                     self.phase = Phase::Settling(SETTLE_FRAMES);
                 }
             }
@@ -554,9 +560,12 @@ impl MoviesCapture {
             }
             | MoviesTarget::Options0xD5 {
                 entry_tick: Some(_),
+                ..
             } => true,
             MoviesTarget::LoadSavedGame0xB7 { entry_tick: None }
-            | MoviesTarget::Options0xD5 { entry_tick: None } => {
+            | MoviesTarget::Options0xD5 {
+                entry_tick: None, ..
+            } => {
                 state.frontend.shell_page_title.is_terminal()
                     && state.frontend.shell_status_line.is_terminal()
             }
@@ -608,7 +617,7 @@ impl MoviesCapture {
                             == Some(target)
                     })
             }
-            MoviesTarget::Options0xD5 { entry_tick } => {
+            MoviesTarget::Options0xD5 { entry_tick, .. } => {
                 state.frontend.options_dialog.is_some()
                     && entry_tick.is_none_or(|target| {
                         state

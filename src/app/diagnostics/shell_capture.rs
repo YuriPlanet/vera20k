@@ -45,6 +45,13 @@ const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-stead
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
 const CHECKPOINT_OPTIONS_0XD5_STEADY: &str = "options-0xd5-steady";
 const CHECKPOINT_OPTIONS_0XD5_ENTRY_PREFIX: &str = "options-0xd5-entry-tick-";
+/// `options-0xd5-hover-<control>`: the pointer rests on a control (like the
+/// retail helper's hover capture) so the status line shows its help.
+const OPTIONS_0XD5_HOVER_CHECKPOINTS: [(&str, (i32, i32)); 3] = [
+    ("options-0xd5-hover-difficulty", (180, 214)),
+    ("options-0xd5-hover-tooltips", (175, 315)),
+    ("options-0xd5-hover-music", (140, 480)),
+];
 /// Slider press points of the retail comparison stills.
 const CAMPAIGN_SLIDER_LEFT_POINT: (i32, i32) = (190, 275);
 const CAMPAIGN_SLIDER_RIGHT_POINT: (i32, i32) = (440, 275);
@@ -113,6 +120,9 @@ pub enum ShellCaptureCheckpoint {
     Options0xD5Steady,
     /// Its entry slide held at one tick (`options-0xd5-entry-tick-<N>`).
     Options0xD5Entry(u32),
+    /// Settled with the pointer resting on a control
+    /// (`OPTIONS_0XD5_HOVER_CHECKPOINTS` index).
+    Options0xD5Hover(usize),
     /// Show_Credits pinned at one roll frame (`credits-roll-frame-<N>`).
     CreditsRollFrame(u64),
     /// Sneak Peeks Play_Movie pinned at one video frame (`sneak-peek-frame-<N>`).
@@ -216,7 +226,15 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT => Ok(Self::Campaign0x94SliderRight),
             CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY => Ok(Self::LoadSavedGame0xB7Steady),
             CHECKPOINT_OPTIONS_0XD5_STEADY => Ok(Self::Options0xD5Steady),
-            _ => bail!("unsupported shell-capture checkpoint {value:?}"),
+            _ => {
+                if let Some(index) = OPTIONS_0XD5_HOVER_CHECKPOINTS
+                    .iter()
+                    .position(|(name, _)| *name == value)
+                {
+                    return Ok(Self::Options0xD5Hover(index));
+                }
+                bail!("unsupported shell-capture checkpoint {value:?}")
+            }
         }
     }
 
@@ -240,6 +258,7 @@ impl ShellCaptureCheckpoint {
             Self::LoadSavedGame0xB7Entry(_) => "load-saved-game-0xb7-entry",
             Self::Options0xD5Steady => CHECKPOINT_OPTIONS_0XD5_STEADY,
             Self::Options0xD5Entry(_) => "options-0xd5-entry",
+            Self::Options0xD5Hover(index) => OPTIONS_0XD5_HOVER_CHECKPOINTS[index].0,
             Self::CreditsRollFrame(_) => "credits-roll-frame",
             Self::SneakPeekFrame(_) => "sneak-peek-frame",
             Self::MainMenu0xE2SlideOut(_) => "main-menu-0xe2-slide-out",
@@ -280,9 +299,17 @@ impl ShellCaptureCheckpoint {
             Self::LoadSavedGame0xB7Entry(tick) => movies::MoviesTarget::LoadSavedGame0xB7 {
                 entry_tick: Some(tick),
             },
-            Self::Options0xD5Steady => movies::MoviesTarget::Options0xD5 { entry_tick: None },
+            Self::Options0xD5Steady => movies::MoviesTarget::Options0xD5 {
+                entry_tick: None,
+                hover: None,
+            },
             Self::Options0xD5Entry(tick) => movies::MoviesTarget::Options0xD5 {
                 entry_tick: Some(tick),
+                hover: None,
+            },
+            Self::Options0xD5Hover(index) => movies::MoviesTarget::Options0xD5 {
+                entry_tick: None,
+                hover: Some(OPTIONS_0XD5_HOVER_CHECKPOINTS[index].1),
             },
             Self::CreditsRollFrame(frame) => movies::MoviesTarget::Credits { frame },
             Self::SneakPeekFrame(frame) => movies::MoviesTarget::SneakPeek { frame },
@@ -1411,6 +1438,15 @@ mod tests {
             );
             assert!(ShellCaptureCheckpoint::parse(&format!("{prefix}18")).is_err());
         }
+    }
+
+    #[test]
+    fn options_hover_checkpoints_round_trip_their_names() {
+        for (name, _) in OPTIONS_0XD5_HOVER_CHECKPOINTS {
+            let checkpoint = ShellCaptureCheckpoint::parse(name).expect("hover checkpoint");
+            assert_eq!(checkpoint.as_str(), name);
+        }
+        assert!(ShellCaptureCheckpoint::parse("options-0xd5-hover-nothing").is_err());
     }
 
     #[test]

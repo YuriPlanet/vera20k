@@ -94,9 +94,16 @@ column, heading, status line).
 |---|---|---|
 | `options-0xd5-steady` | `opt-d5-steady.png` (`ff12123b`) | 0 |
 | `options-0xd5-entry-tick-17` | `opt-d5.png` (`34829ad3`, the entry slide's tail) | 0 |
+| `options-0xd5-hover-difficulty` (pointer at 180, 214) | `hov-difficulty.png` (`44022a90`) | 0 |
+| `options-0xd5-hover-tooltips` (175, 315) | `hov-tooltips.png` (`a17386af`) | 0 |
+| `options-0xd5-hover-music` (140, 480) | `hov-music.png` (`c751c437`) | 0 |
 
 The tail differs from the settled page by 16,028 pixels in the column, so it
-pins the slide. By eye the left side matches for equal values: the captions
+pins the slide. The hover stills rest the retail pointer on a control with
+the helper's `hover-capture` (`yuri's_revenge_2026-09-25_12-02-*`): retail
+shows the table's help over sliders and checkboxes ("Controls the difficulty
+of the game.", …), and VERA20k's status line matches it exactly. Over the
+resolution area retail shows none, because its combo is absent there. By eye the left side matches for equal values: the captions
 read "High" and "Normal" at the same thumbs; scroll and volumes differ with
 the profiles.
 
@@ -105,9 +112,12 @@ the profiles.
 - **Native behavior established:** route, commit/slide/write order, slide
   suppression, reveal start, status help, keyboard, from instructions.
 - **Native execution:** the slide column (`shell_slide_engine.py`).
+- **Parity demonstrated:** the five comparisons above at 800x600 (right
+  panel, column, heading and status line; the left controls masked).
 - **Rust regression tested:** `ui::main_menu_dialogs::options::shell`
-  (family places, status help), `ui::shell::slide` (column golden),
-  `app::diagnostics::shell_capture` (checkpoints).
+  (family places, status help, help kept during a capture),
+  `ui::shell::slide` (column golden), `app::diagnostics::shell_capture`
+  (checkpoints, hover checkpoints).
 
 ## Residuals
 
@@ -122,11 +132,8 @@ the profiles.
 - **Monitor during the entry slide** shows its current frame without a timer,
   like the other family pages; whether `0x00606800` blanks it instead is
   unresolved for every family page (the comparisons mask the monitor).
-- **Status help over sliders, checkboxes and the combo.** The status line is
-  written from the dialog's own hit test (`0x00622CCB..0x00622E83`); the
-  trackbar subclass passes its `WM_NCHITTEST` to the original proc, so
-  retail may show no help over an enabled slider. VERA20k shows the table's
-  help for them; not yet compared against retail.
+- **Status help over the resolution combo** is not compared (retail under
+  Wine has no combo).
 - **Resolution combo.** Retail under Wine/cnc-ddraw shows no mode list
   (the proc skips filling it when the mode enumerator `0x004A4900` returns
   nothing, `0x005601C3`), so both retail stills lack the combo; VERA20k
