@@ -756,6 +756,7 @@ impl App {
                 MainMenuShellAction::SinglePlayer
                 | MainMenuShellAction::MoviesAndCredits
                 | MainMenuShellAction::Options
+                | MainMenuShellAction::Network
                 | MainMenuShellAction::ExitGame => {
                     Self::leave_shell_dialog(state, ShellExitThen::MainMenu(action))
                 }
@@ -1098,13 +1099,24 @@ impl App {
             MainMenuShellAction::MoviesAndCredits => {
                 Self::open_movies_credits_page(state);
             }
-            MainMenuShellAction::WwOnline | MainMenuShellAction::Network => {
+            MainMenuShellAction::Network => Self::bounce_network_to_main_menu(state),
+            MainMenuShellAction::WwOnline => {
                 log::info!(
                     "Main-menu shell action {:?} is preserved but downstream dialog is not implemented yet",
                     action
                 );
             }
         }
+    }
+
+    /// Network (result 3, state 3 `0x0052DD75`): state 0x10 creates the IPX
+    /// interface and opens its socket (`0x007B10C0`, `AF_IPX`). Without IPX
+    /// the socket fails and the game returns to state 0x12 without a message
+    /// (`0x0052E425`), which builds a new `0xE2` with its entry slide. VERA20k
+    /// has no IPX transport, so it always takes that branch.
+    fn bounce_network_to_main_menu(state: &mut AppState) {
+        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
+        crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
     }
 
     /// Open the Exit-Game confirm message box, resolving its labels from CSF.

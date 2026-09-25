@@ -61,6 +61,9 @@ pub(super) enum MoviesTarget {
         /// Rest the pointer here instead of at the neutral point.
         hover: Option<(i32, i32)>,
     },
+    /// Network on `0xE2`: its teardown slide, then a new `0xE2` with its
+    /// own entry slide, captured once settled.
+    NetworkBounce,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +80,12 @@ enum Phase {
     Campaign,
     LoadSavedGame,
     Options,
+    /// Network pressed: waiting for the teardown to commit.
+    NetworkLeaving,
+    /// A new `0xE2` exists: waiting for its entry slide to be seen.
+    NetworkReturning,
+    /// The new `0xE2`'s entry slide was seen: waiting for steady paint.
+    NetworkReturned,
     Settling(u32),
 }
 
@@ -130,6 +139,22 @@ impl MoviesCapture {
                         } => Some(Phase::SlideOut),
                         _ => None,
                     };
+                    if self.target == MoviesTarget::NetworkBounce {
+                        self.route
+                            .push(json!({"dialog": 0xe2, "frame": frame, "action": "Network"}));
+                        App::leave_shell_dialog(
+                            state,
+                            crate::app::frontend::shell_transition::ShellExitThen::MainMenu(
+                                crate::ui::main_menu_shell::MainMenuShellAction::Network,
+                            ),
+                        );
+                        ensure!(
+                            state.frontend.shell_exit.is_some(),
+                            "Network did not start the 0xE2 teardown slide"
+                        );
+                        self.phase = Phase::NetworkLeaving;
+                        return Ok(());
+                    }
                     if matches!(self.target, MoviesTarget::Options0xD5 { .. }) {
                         self.route
                             .push(json!({"dialog": 0xe2, "frame": frame, "action": "Options"}));
@@ -216,7 +241,8 @@ impl MoviesCapture {
                         | MoviesTarget::SlideOut { .. }
                         | MoviesTarget::Campaign0x94 { .. }
                         | MoviesTarget::LoadSavedGame0xB7 { .. }
-                        | MoviesTarget::Options0xD5 { .. } => {
+                        | MoviesTarget::Options0xD5 { .. }
+                        | MoviesTarget::NetworkBounce => {
                             bail!("{:?} capture reached the 0x101 page", self.target)
                         }
                     };
@@ -458,6 +484,30 @@ impl MoviesCapture {
                     self.phase = Phase::Settling(SETTLE_FRAMES);
                 }
             }
+            (Phase::NetworkLeaving, PresentedShell::MainMenu | PresentedShell::Other) => {
+                if state.frontend.shell_exit.is_none() {
+                    self.route
+                        .push(json!({"dialog": 0xe2, "frame": frame, "action": "teardown ended"}));
+                    self.phase = Phase::NetworkReturning;
+                }
+            }
+            (Phase::NetworkReturning, PresentedShell::MainMenu | PresentedShell::Other) => {
+                if state.frontend.shell_slide_active_shell == Some(ShellSlideKind::MainMenu)
+                    && state.frontend.shell_first_paint_slide.is_some()
+                {
+                    self.route.push(
+                        json!({"dialog": 0xe2, "frame": frame, "action": "new 0xE2 entry slide"}),
+                    );
+                    self.phase = Phase::NetworkReturned;
+                }
+            }
+            (Phase::NetworkReturned, PresentedShell::MainMenu) => {
+                if steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))? {
+                    self.route
+                        .push(json!({"dialog": 0xe2, "frame": frame, "action": "settled"}));
+                    self.phase = Phase::Settling(SETTLE_FRAMES);
+                }
+            }
             (Phase::Credits, PresentedShell::CreditsRoll) => {
                 let MoviesTarget::Credits { frame: target } = self.target else {
                     bail!("credits phase without a credits target");
@@ -573,7 +623,8 @@ impl MoviesCapture {
             | MoviesTarget::SneakPeek { .. }
             | MoviesTarget::ExitConfirm
             | MoviesTarget::SlideOut { .. }
-            | MoviesTarget::ListBackFirstFrame => true,
+            | MoviesTarget::ListBackFirstFrame
+            | MoviesTarget::NetworkBounce => true,
         };
         if !heading_settled {
             return Ok(false);
@@ -588,6 +639,11 @@ impl MoviesCapture {
             MoviesTarget::Credits { .. } => state.frontend.credits_roll.is_some(),
             MoviesTarget::SneakPeek { .. } => state.frontend.fullscreen_movie.is_some(),
             MoviesTarget::ExitConfirm => state.frontend.exit_confirm_modal.is_some(),
+            MoviesTarget::NetworkBounce => {
+                state.frontend.shell_exit.is_none()
+                    && crate::app::frontend::shell_transition::current_shell_slide_target(state)
+                        == Some(ShellSlideKind::MainMenu)
+            }
             MoviesTarget::SlideOut { kind, tick } => {
                 crate::app::frontend::shell_transition::shell_exit_wave(state, kind)
                     .and_then(|wave| wave.compatibility_tick())
