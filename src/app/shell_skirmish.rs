@@ -607,7 +607,7 @@ impl App {
         true
     }
 
-    fn handle_choose_map_modal_mouse_down(state: &mut AppState) -> bool {
+    pub(super) fn handle_choose_map_modal_mouse_down(state: &mut AppState) -> bool {
         if state
             .frontend
             .skirmish_shell_state
@@ -697,7 +697,7 @@ impl App {
             .and_then(|modal| modal.scroll_deadline())
     }
 
-    fn handle_choose_map_modal_mouse_up(state: &mut AppState) -> bool {
+    pub(super) fn handle_choose_map_modal_mouse_up(state: &mut AppState) -> bool {
         if Self::handle_choose_map_eject_mouse_up(state) {
             return true;
         }
