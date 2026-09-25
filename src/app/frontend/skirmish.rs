@@ -2817,45 +2817,24 @@ pub(crate) fn skirmish_mcv_type_for_house(
 /// Collect building type IDs that can be spawned at runtime and need atlas pre-loading.
 ///
 /// Scans all objects with `DeploysInto=` set in rules.ini to find deploy targets
-/// (e.g., AMCV→GACNST). Data-driven — no hardcoded MCV/ConYard type pairs.
-pub fn deployable_building_types<'a>(
-    entities: &crate::sim::entity_store::EntityStore,
-    rules: Option<&'a RuleSet>,
-    interner: Option<&crate::sim::intern::StringInterner>,
-) -> Vec<&'a str> {
+/// (e.g., AMCV→GACNST). Data-driven — no hardcoded MCV/ConYard type pairs. It
+/// covers every object type in the rules, since units with DeploysInto can
+/// appear via production or scripted events even without being on the map yet.
+pub fn deployable_building_types(rules: Option<&RuleSet>) -> Vec<&str> {
     let Some(rules) = rules else {
         return Vec::new();
     };
     let mut result: Vec<&str> = Vec::new();
-
-    // Collect deploy targets for any units currently on the map.
-    for entity in entities.values() {
-        let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
-        if let Some(obj) = rules.object(type_str) {
-            if let Some(ref target_id) = obj.deploys_into {
-                if let Some(target_obj) = rules.object(target_id) {
-                    let id_str: &str = &target_obj.id;
-                    if !result.iter().any(|r| r.eq_ignore_ascii_case(id_str)) {
-                        result.push(id_str);
-                    }
-                }
-            }
-        }
-    }
-
-    // Also include deploy targets from ALL objects in rules — units with DeploysInto
-    // can appear via production or scripted events even without being on the map yet.
     for obj in rules.all_objects() {
-        if let Some(ref target_id) = obj.deploys_into {
-            if let Some(target_obj) = rules.object(target_id) {
-                let id_str: &str = &target_obj.id;
-                if !result.iter().any(|r| r.eq_ignore_ascii_case(id_str)) {
-                    result.push(id_str);
-                }
-            }
+        if let Some(target_id) = &obj.deploys_into
+            && let Some(target_obj) = rules.object(target_id)
+            && !result
+                .iter()
+                .any(|r| r.eq_ignore_ascii_case(&target_obj.id))
+        {
+            result.push(&target_obj.id);
         }
     }
-
     result
 }
 

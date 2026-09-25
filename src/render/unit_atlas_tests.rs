@@ -37,15 +37,7 @@ fn cached_native_sprite_lookup_timing() {
             }
         }
     }
-    let atlas = UnitAtlas {
-        pages: vec![],
-        entries,
-        frame_counts: BTreeMap::new(),
-        rendered_cache: vec![],
-        gpu_rendered: 0,
-        cpu_rendered: 0,
-        shadow_masks: Default::default(),
-    };
+    let atlas = UnitAtlas::new(vec![], entries);
     let started = Instant::now();
     for unit in 0..20_000 {
         for layer in 0..3 {

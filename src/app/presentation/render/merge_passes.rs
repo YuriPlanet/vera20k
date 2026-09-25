@@ -305,36 +305,26 @@ pub(super) fn draw_merged_object_pass<'a>(
         }
     }
 
-    const UNIT_TRANSITION_KEYS: [&str; 4] = [
-        "unit_transition_p0",
-        "unit_transition_p1",
-        "unit_transition_p2",
-        "unit_transition_p3",
-    ];
-    for (i, instances) in unit_transition_paged.iter().enumerate() {
-        if let (Some(texture), Some(key)) = (
-            transition_cache.page_texture(i),
-            UNIT_TRANSITION_KEYS.get(i),
+    for (page, instances) in unit_transition_paged.iter().enumerate() {
+        if let (Some(texture), Some((buf, count))) = (
+            transition_cache.page_texture(page),
+            pool.get_page("unit_transition", page),
         ) {
-            if let Some((buf, count)) = pool.get(key) {
-                if count > 0 {
-                    groups.push(DrawGroup::new_voxel(texture, buf, instances, count));
-                }
-            }
+            groups.push(DrawGroup::new_voxel(texture, buf, instances, count));
         }
     }
 
     // SHP page draw groups — passthrough.
-    const SHP_KEYS: [&str; 4] = ["shp_p0", "shp_p1", "shp_p2", "shp_p3"];
     if let Some(sa) = sprite_atlas {
-        for (i, page) in sa.pages.iter().enumerate() {
-            if let Some(key) = SHP_KEYS.get(i) {
-                if let Some((buf, count)) = pool.get(key) {
-                    if count > 0 {
-                        let instances = shp_paged.get(i).map_or(&[][..], Vec::as_slice);
-                        groups.push(DrawGroup::new_shp(&page.texture, buf, instances, count));
-                    }
-                }
+        for (page, atlas_page) in sa.pages.iter().enumerate() {
+            if let Some((buf, count)) = pool.get_page("shp_page", page) {
+                let instances = shp_paged.get(page).map_or(&[][..], Vec::as_slice);
+                groups.push(DrawGroup::new_shp(
+                    &atlas_page.texture,
+                    buf,
+                    instances,
+                    count,
+                ));
             }
         }
     }

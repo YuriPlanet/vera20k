@@ -215,30 +215,8 @@ fn test_empty_world_returns_none() {
     assert!(needed.is_empty());
 }
 
-fn rendered_test_sprite(type_id: &str, rgba: Vec<u8>) -> RenderedShpSprite {
-    RenderedShpSprite {
-        key: ShpSpriteKey {
-            palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-            type_id: type_id.to_string(),
-            facing: 0,
-            frame: 0,
-            house_color: HouseColorIndex::default(),
-        },
-        rgba,
-        indices: vec![1],
-        width: 1,
-        height: 1,
-        offset_x: -1.0,
-        offset_y: -2.0,
-        canvas_rect: [-1.0, -2.0, 1.0, 1.0],
-        extended: false,
-    }
-}
-
-#[test]
-fn incremental_refresh_failure_restores_the_exact_prior_rendered_cache() {
-    let prior_key = make_shp_key("PRIOR", 0);
-    let prior_entry = ShpSpriteEntry {
+fn test_entry(page: u8) -> ShpSpriteEntry {
+    ShpSpriteEntry {
         uv_origin: [0.0, 0.0],
         uv_size: [1.0, 1.0],
         pixel_size: [1.0, 1.0],
@@ -246,51 +224,150 @@ fn incremental_refresh_failure_restores_the_exact_prior_rendered_cache() {
         offset_y: -2.0,
         canvas_rect: [-1.0, -2.0, 1.0, 1.0],
         extended: false,
-        page: 0,
-    };
-    let mut prior = SpriteAtlas {
-        pages: Vec::new(),
-        entries: HashMap::from([(prior_key.clone(), prior_entry)]),
-        make_frame_counts: HashMap::from([("PRIOR".to_string(), 3)]),
-        active_anim_frame_counts: HashMap::from([("PRIOR".to_string(), 4)]),
-        building_bounds: HashMap::from([(
-            "PRIOR".to_string(),
-            BuildingBounds {
-                min_x: -1.0,
-                min_y: -2.0,
-                width: 1.0,
-                height: 1.0,
-            },
-        )]),
-        rendered_cache: vec![rendered_test_sprite("PRIOR", vec![1, 2, 3, 4])],
-    };
+        page,
+    }
+}
 
-    let prior_cache_len = prior.rendered_cache.len();
-    let mut extracted_cache = std::mem::take(&mut prior.rendered_cache);
-    extracted_cache.push(rendered_test_sprite("NEW", vec![5, 6, 7, 8]));
+#[test]
+fn refresh_failure_returns_the_prior_atlas_unchanged() {
+    let prior_key = make_shp_key("PRIOR", 0);
+    let mut prior = SpriteAtlas::new(
+        Vec::new(),
+        HashMap::from([(prior_key.clone(), test_entry(0))]),
+    );
+    prior.make_frame_counts.insert("PRIOR".to_string(), 3);
+    prior
+        .active_anim_frame_counts
+        .insert("PRIOR".to_string(), 4);
+    prior.unrenderable.insert(make_shp_key("EMPTY", 0));
+    prior
+        .covered_objects
+        .entry("PRIOR".to_string())
+        .or_default()
+        .insert(HouseColorIndex(1));
 
-    let restored = abort_sprite_atlas_refresh(
-        Some(prior),
-        Some(extracted_cache),
-        prior_cache_len,
-        "required incremental sprite failed".to_string(),
-    )
-    .expect("an incremental failure must retain the prior atlas");
+    let restored =
+        abort_sprite_atlas_refresh(Some(prior), "required refresh sprite failed".to_string())
+            .expect("a refresh failure must retain the prior atlas");
 
     assert_eq!(restored.sprite_count(), 1);
     assert!(restored.get(&prior_key).is_some());
     assert_eq!(restored.make_frame_counts["PRIOR"], 3);
     assert_eq!(restored.active_anim_frame_counts["PRIOR"], 4);
-    assert_eq!(restored.building_bounds["PRIOR"].width, 1.0);
-    assert_eq!(restored.rendered_cache.len(), 1);
-    assert_eq!(restored.rendered_cache[0].key, prior_key);
-    assert_eq!(restored.rendered_cache[0].rgba, vec![1, 2, 3, 4]);
+    assert!(restored.unrenderable.contains(&make_shp_key("EMPTY", 0)));
+    assert!(restored.covers_object("PRIOR", HouseColorIndex(1)));
 }
 
 #[test]
 #[should_panic(expected = "required initial sprite failed")]
 fn required_initial_build_failure_remains_fail_fast() {
-    let _ = abort_sprite_atlas_refresh(None, None, 0, "required initial sprite failed".to_string());
+    let _ = abort_sprite_atlas_refresh(None, "required initial sprite failed".to_string());
+}
+
+/// One placed object of `type_id` owned by "Americans", and the interner
+/// that resolves it.
+fn one_object_world(
+    type_id: &str,
+    category: EntityCategory,
+) -> (
+    crate::sim::entity_store::EntityStore,
+    crate::sim::intern::StringInterner,
+) {
+    let mut entity =
+        crate::sim::game_entity::GameEntity::test_default(1, type_id, "Americans", 5, 5);
+    entity.category = category;
+    entity.is_voxel = false;
+    let mut store = crate::sim::entity_store::EntityStore::new();
+    store.insert(entity);
+    (store, crate::sim::intern::test_interner())
+}
+
+#[test]
+fn deploy_targets_get_the_same_keys_as_placed_structures() {
+    let rules =
+        crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[BuildingTypes]\n0=CAHOSP\n1=GACNST\n\n\
+             [CAHOSP]\nCanBeOccupied=yes\n\n[GACNST]\nStrength=1000\n",
+        ))
+        .expect("rules");
+    // Only an infantryman is placed; the two buildings arrive as deploy
+    // targets, which have no placed object to take a category from.
+    let (world, interner) = one_object_world("E1", EntityCategory::Infantry);
+    let color = HouseColorIndex(2);
+    let pairs: HashSet<(String, HouseColorIndex)> = ["E1", "CAHOSP", "GACNST"]
+        .into_iter()
+        .map(|type_id| (type_id.to_string(), color))
+        .collect();
+    let mut needed = HashSet::new();
+    insert_new_object_keys(&mut needed, &pairs, &world, Some(&interner), Some(&rules));
+
+    let frames = |type_id: &str| -> HashSet<u16> {
+        needed
+            .iter()
+            .filter(|key| key.type_id == type_id && key.house_color == color)
+            .map(|key| key.frame)
+            .collect()
+    };
+    assert_eq!(
+        frames("CAHOSP"),
+        HashSet::from([0, 1, 2, 3]),
+        "occupancy frame swap"
+    );
+    assert_eq!(frames("GACNST"), HashSet::from([0]), "a structure body");
+    assert_eq!(
+        frames("E1").len(),
+        56,
+        "an infantryman's default stand and walk layout"
+    );
+}
+
+#[test]
+fn building_animation_frames_render_from_the_file_they_were_counted_in() {
+    // [YAGRND_B] authors no NewTheater=, and no TEMPERATE archive holds
+    // YAGRND_B.SHP: AnimTypeClass forces the second letter to G and loads
+    // YGGRND_B.SHP. The object naming never reaches that file, so rendering
+    // must reuse the file the frame count came from.
+    let directory = StoredFrameTestDirectory::new();
+    directory.write_raw_and_rle_frames("YGGRND_B.SHP", [20, 10], [2, 1, 6, 4]);
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let art = ArtRegistry::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[YAGRND_B]\nImage=YAGRND_B\nLoopEnd=1\n",
+    ));
+
+    let (count, file) =
+        scan_building_anim_frame_count(&assets, &art, "YAGRND_B", 1, "tem", "TEMPERATE")
+            .expect("the anim naming finds the forced-G file");
+    assert_eq!(file, "YGGRND_B.SHP");
+    assert_eq!(count, 1, "two stored frames: one body frame, one shadow");
+
+    assert!(
+        load_shp_source(
+            &assets,
+            "YAGRND_B",
+            None,
+            "tem",
+            "TEMPERATE",
+            None,
+            Some(&art)
+        )
+        .is_none(),
+        "the object naming does not reach the forced-G file"
+    );
+    let source = load_shp_source(
+        &assets,
+        "YAGRND_B",
+        Some(&file),
+        "tem",
+        "TEMPERATE",
+        None,
+        Some(&art),
+    )
+    .expect("the counted file decodes");
+    let mut key = make_shp_key("YAGRND_B", 0);
+    key.palette_context = ShpPaletteContext::SelectedScheme;
+    let palette = Palette::from_bytes(&[0; 768]).expect("fixture palette");
+    let sprite = render_shp_frame(&source, &palette, true, &key, None).expect("frame 0 has pixels");
+    assert_eq!([sprite.width, sprite.height], [6, 4]);
 }
 
 #[test]
@@ -448,15 +525,19 @@ fn cell_anim_remap_registration_covers_every_bound_frame_for_its_color() {
         ("CRATE_SPARK".to_string(), HouseColorIndex(1)),
         ("OTHER".to_string(), HouseColorIndex(2)),
     ]);
+    let mut effects = EffectRegistry::default();
+    effects
+        .frames
+        .insert("CRATE_SPARK".to_string(), ("Crate_Spark".to_string(), 3));
     let mut needed = HashSet::new();
 
-    insert_anim_remap_frame_keys(&mut needed, "CRATE_SPARK", 3, &remaps);
+    insert_anim_remap_frame_keys(&mut needed, &effects, &remaps);
 
-    assert_eq!(needed.len(), 3);
+    assert_eq!(needed.len(), 3, "OTHER is no registered effect");
     for frame in 0..3 {
         assert!(needed.contains(&ShpSpriteKey {
             palette_context: crate::render::sprite_atlas::ShpPaletteContext::SelectedScheme,
-            type_id: "CRATE_SPARK".to_string(),
+            type_id: "Crate_Spark".to_string(),
             facing: 0,
             frame,
             house_color: HouseColorIndex(1),
@@ -728,53 +809,228 @@ fn palette_context_preserves_simultaneous_global_cell_and_attached_sprite_keys()
 }
 
 #[test]
-fn palette_context_refresh_coverage_preserves_loaded_remaps_and_detects_missing_ones() {
-    let mut key = make_shp_key("CRATE_SPARK", 0);
-    key.house_color = HouseColorIndex(3);
-    let entry = ShpSpriteEntry {
-        uv_origin: [0.0; 2],
-        uv_size: [1.0; 2],
-        pixel_size: [1.0; 2],
-        offset_x: 0.0,
-        offset_y: 0.0,
-        canvas_rect: [0.0, 0.0, 1.0, 1.0],
-        extended: false,
-        page: 0,
+fn object_and_remap_coverage_are_separate_and_follow_the_world() {
+    let (world, interner) = one_object_world("CRATE_SPARK", EntityCategory::Structure);
+    let colors = HouseColorMap::from([("Americans".to_string(), HouseColorIndex(3))]);
+    let remap = HashSet::from([("CRATE_SPARK".to_string(), HouseColorIndex(3))]);
+    let none = HashSet::new();
+    let covers = |atlas: Option<&SpriteAtlas>, remaps| {
+        atlas_covers_world(atlas, &world, &colors, &[], remaps, Some(&interner))
     };
-    let mut atlas = SpriteAtlas {
-        pages: Vec::new(),
-        entries: HashMap::from([(key.clone(), entry)]),
-        make_frame_counts: HashMap::new(),
-        active_anim_frame_counts: HashMap::new(),
-        building_bounds: HashMap::new(),
-        rendered_cache: Vec::new(),
-    };
-    let needs = HashSet::from([("CRATE_SPARK".to_string(), HouseColorIndex(3))]);
-    assert!(atlas_covers_base_keys(
-        &atlas,
-        &needs,
-        ShpPaletteContext::Legacy
-    ));
     assert!(
-        !atlas_covers_base_keys(&atlas, &needs, ShpPaletteContext::SelectedScheme),
+        !covers(None, &none),
+        "no atlas yet, and the world draws a sprite"
+    );
+
+    let mut atlas = SpriteAtlas::new(Vec::new(), HashMap::new());
+    assert!(!covers(Some(&atlas), &none));
+    atlas
+        .covered_objects
+        .entry("CRATE_SPARK".to_string())
+        .or_default()
+        .insert(HouseColorIndex(3));
+    assert!(covers(Some(&atlas), &none));
+    assert!(
+        !covers(Some(&atlas), &remap),
         "a coincident entity must not suppress animation preload"
     );
-    key.palette_context = ShpPaletteContext::SelectedScheme;
-    atlas.entries.insert(key.clone(), entry);
+    atlas.covered_anim_remaps.extend(remap.iter().cloned());
     assert!(
-        atlas_covers_base_keys(&atlas, &needs, ShpPaletteContext::SelectedScheme),
+        covers(Some(&atlas), &remap),
         "loaded animation must not force repeated atlas uploads"
     );
-    key.palette_context = ShpPaletteContext::Legacy;
-    atlas.entries.remove(&key);
-    assert!(atlas_covers_base_keys(
-        &atlas,
-        &needs,
-        ShpPaletteContext::SelectedScheme
-    ));
-    assert!(!atlas_covers_base_keys(
-        &atlas,
-        &needs,
-        ShpPaletteContext::Legacy
-    ));
+
+    let recoloured = HouseColorMap::from([("Americans".to_string(), HouseColorIndex(4))]);
+    assert!(
+        !atlas_covers_world(
+            Some(&atlas),
+            &world,
+            &recoloured,
+            &[],
+            &remap,
+            Some(&interner)
+        ),
+        "a new house colour is a new pair"
+    );
+    assert!(
+        !atlas_covers_world(
+            Some(&atlas),
+            &world,
+            &colors,
+            &["GACNST"],
+            &remap,
+            Some(&interner)
+        ),
+        "deploy targets are pairs in every house colour"
+    );
+}
+
+#[test]
+fn a_collected_pair_is_covered_even_when_nothing_of_it_is_drawable() {
+    // A type whose frame 0 is empty or whose SHP is missing has no atlas entry
+    // at all. Coverage by collected pairs keeps it from forcing a refresh on
+    // every spawn, death or Limbo, as a frame-0 entry probe would.
+    let (world, interner) = one_object_world("NOSHAPE", EntityCategory::Structure);
+    let colors = HouseColorMap::from([("Americans".to_string(), HouseColorIndex(1))]);
+    let mut atlas = SpriteAtlas::new(Vec::new(), HashMap::new());
+    let covers = |atlas: &SpriteAtlas| {
+        atlas_covers_world(
+            Some(atlas),
+            &world,
+            &colors,
+            &[],
+            &HashSet::new(),
+            Some(&interner),
+        )
+    };
+    atlas.unrenderable.insert(make_shp_key("NOSHAPE", 0));
+    assert!(!covers(&atlas));
+    atlas
+        .covered_objects
+        .entry("NOSHAPE".to_string())
+        .or_default()
+        .insert(HouseColorIndex(1));
+    assert!(covers(&atlas));
+    assert!(atlas.get(&make_shp_key("NOSHAPE", 0)).is_none());
+}
+
+#[test]
+#[ignore = "requires a wgpu adapter; actual growth-page uploads"]
+fn refreshed_sprites_upload_to_a_growth_page_and_leave_resident_ones_in_place() {
+    let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
+    let batch = BatchRenderer::new_with_device(
+        &gpu.device,
+        &gpu.queue,
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+    );
+    let sprite = |type_id: &str, index: u8, [width, height]: [u32; 2]| RenderedShpSprite {
+        key: make_shp_key(type_id, 0),
+        rgba: vec![index; (width * height * 4) as usize],
+        indices: vec![index; (width * height) as usize],
+        width,
+        height,
+        offset_x: 0.0,
+        offset_y: 0.0,
+        canvas_rect: [0.0, 0.0, width as f32, height as f32],
+        extended: false,
+    };
+    let mut atlas = pack_sprites(
+        &gpu.device,
+        &gpu.queue,
+        &batch,
+        &[sprite("RESIDENT", 7, [3, 2])],
+    );
+    let resident = *atlas.get(&make_shp_key("RESIDENT", 0)).unwrap();
+
+    atlas.append_sprites(
+        &gpu.device,
+        &gpu.queue,
+        &batch,
+        vec![sprite("WIDE", 11, [4, 3]), sprite("TALL", 9, [2, 5])],
+    );
+
+    assert_eq!(
+        atlas.page_count(),
+        2,
+        "one growth page after the packed one"
+    );
+    let after = *atlas.get(&make_shp_key("RESIDENT", 0)).unwrap();
+    assert_eq!(
+        (after.page, after.uv_origin, after.uv_size),
+        (resident.page, resident.uv_origin, resident.uv_size),
+        "resident sprites never move"
+    );
+    let growth = atlas.growth.as_ref().expect("growth page");
+    let page = &atlas.pages[growth.page].texture;
+    let indices = atlas.growth_indices[&growth.page].create_view(&Default::default());
+    for (type_id, index, size, origin) in [
+        // Tallest first: TALL opens the shelf, WIDE follows after 1px padding.
+        ("TALL", 9u8, [2u32, 5u32], [0u32, 0u32]),
+        ("WIDE", 11, [4, 3], [3, 0]),
+    ] {
+        let entry = atlas.get(&make_shp_key(type_id, 0)).unwrap();
+        assert_eq!(usize::from(entry.page), growth.page);
+        assert_eq!(
+            [
+                (entry.uv_origin[0] * page.width as f32).round() as u32,
+                (entry.uv_origin[1] * page.height as f32).round() as u32,
+            ],
+            origin
+        );
+        assert_eq!(entry.pixel_size, size.map(|v| v as f32));
+        assert_eq!(
+            gpu.read_uint_texels(&indices, origin, size),
+            vec![index; (size[0] * size[1]) as usize],
+            "{type_id} indices uploaded to its rectangle"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires retail archives; lists animations the object naming cannot reach"]
+fn retail_animations_render_from_the_file_their_frames_are_counted_in() {
+    // Before, every key rendered through the object naming while animation
+    // frames were counted through AnimTypeClass's. Where the two disagree the
+    // frames were registered but never drawable, and every refresh retried
+    // them. Lists every such animation on a stock TEMPERATE map.
+    //
+    // Run: RA2_DIR=<retail root> cargo test -p vera20k --lib \
+    //     retail_animations_render_from_the_file -- --ignored --nocapture
+    let root = std::env::var("RA2_DIR")
+        .ok()
+        .filter(|path| !path.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            crate::util::config::GameConfig::load()
+                .expect("set RA2_DIR or provide config.toml for this ignored test")
+                .paths
+                .ra2_dir
+        });
+    let scenario =
+        crate::headless_scenario::load(&root, "Dustbowl.mmx", 0x0B21_D6E5).expect("Dustbowl loads");
+    let mut assets = AssetManager::new(&root).expect("retail archives");
+    let theater_name = scenario.map.header.theater.clone();
+    let theater =
+        crate::map::theater::load_theater(&mut assets, &theater_name).expect("theater loads");
+    let rules = &scenario.runtime.resources.rules;
+    let art = &rules.art_registry;
+
+    let mut names: std::collections::BTreeSet<String> =
+        collect_effect_names(rules).into_iter().collect();
+    names.extend(art.building_anim_roots());
+    let mut unreachable = Vec::new();
+    for name in &names {
+        let candidates =
+            effect_anim_shp_candidates(name, Some(art), theater.extension, &theater_name);
+        let Some((counted, _)) = find_shp(&assets, &candidates) else {
+            continue;
+        };
+        let object = load_shp_source(
+            &assets,
+            name,
+            None,
+            theater.extension,
+            &theater_name,
+            Some(rules),
+            Some(art),
+        )
+        .map(|source| source.found_name);
+        if object.as_deref() != Some(counted) {
+            unreachable.push(format!(
+                "{name}: counted in {counted}, object naming {object:?}"
+            ));
+        }
+    }
+    eprintln!(
+        "{} of {} animations on {theater_name} now render from the file their frames are counted in:\n{}",
+        unreachable.len(),
+        names.len(),
+        unreachable.join("\n")
+    );
+    assert!(
+        unreachable
+            .iter()
+            .any(|line| line.starts_with("YAGRND_B: counted in YGGRND_B.SHP")),
+        "the Grinder's grinding animation is the known case"
+    );
 }

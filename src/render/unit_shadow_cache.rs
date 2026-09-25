@@ -5,7 +5,6 @@
 //! does not emulate the original shared 4 MB arena's global purge policy.
 
 use super::{UnitAtlas, UnitSpriteEntry, UnitSpriteKey};
-use std::collections::HashMap;
 
 impl UnitAtlas {
     /// Fill only on the first supported request. Parts are the exact atlas
@@ -73,49 +72,19 @@ impl UnitAtlas {
 
     fn upload_shadow_pixels(&self, queue: &wgpu::Queue, entry: &UnitSpriteEntry, pixels: &[u8]) {
         let page = &self.pages[entry.page].texture;
-        let width = entry.pixel_size[0] as u32;
-        let height = entry.pixel_size[1] as u32;
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: page.view.texture(),
-                mip_level: 0,
-                origin: wgpu::Origin3d {
-                    x: (entry.uv_origin[0] * page.width as f32).round() as u32,
-                    y: (entry.uv_origin[1] * page.height as f32).round() as u32,
-                    z: 0,
-                },
-                aspect: wgpu::TextureAspect::All,
-            },
+        let origin = [
+            (entry.uv_origin[0] * page.width as f32).round() as u32,
+            (entry.uv_origin[1] * page.height as f32).round() as u32,
+        ];
+        let size = entry.pixel_size.map(|v| v as u32);
+        crate::render::atlas_growth::write_texels(
+            queue,
+            page.view.texture(),
+            origin,
+            size,
+            1,
             pixels,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(width),
-                rows_per_image: Some(height),
-            },
-            wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
         );
-    }
-
-    pub(super) fn restore_shadow_masks(
-        &self,
-        queue: &wgpu::Queue,
-        masks: HashMap<UnitSpriteKey, Vec<u8>>,
-    ) {
-        let mut retained = self.shadow_masks.borrow_mut();
-        for (key, pixels) in masks {
-            let Some(entry) = self.entries.get(&key) else {
-                continue;
-            };
-            if pixels.len() != (entry.pixel_size[0] * entry.pixel_size[1]) as usize {
-                continue;
-            }
-            self.upload_shadow_pixels(queue, entry, &pixels);
-            retained.insert(key, pixels);
-        }
     }
 }
 
