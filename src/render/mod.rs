@@ -84,7 +84,6 @@ pub mod unit_slope_transition_cache;
 pub mod upscale_pass;
 #[cfg(test)]
 mod voxel_parity_tests;
-pub mod vxl_compute;
 pub mod vxl_normals;
 pub mod vxl_raster;
 pub mod wave_geometry;

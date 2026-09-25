@@ -3,8 +3,8 @@
 //! The explicit GTNK acceptance probe compares all 32 flat hull facings,
 //! original visibility bytes and all six crop outputs through production
 //! preparation/raster APIs. Synthetic forward/backward, section, empty-run and
-//! zero-erasure fixtures live in vxl_native.rs; actual GPU readbacks live in
-//! vxl_compute.rs. Native VPL result zero is a real store that can erase a
+//! zero-erasure fixtures live in vxl_native.rs; production bakes replay the
+//! prepared writes on the CPU. Native VPL result zero is a real store that can erase a
 //! prior voxel. The small no-VPL test here only checks source colors in a
 //! manually constructed legacy preview; it does not define native zero rules.
 //!

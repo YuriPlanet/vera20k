@@ -615,7 +615,6 @@ pub(crate) fn build_presentation_manifest(
     house_colors: &HouseColorMap,
     theater_unit_palette: Option<&Palette>,
     theater_iso_palette: Option<&Palette>,
-    vxl_compute: Option<&mut crate::render::vxl_compute::VxlComputeRenderer>,
 ) -> PresentationManifest {
     let (unit_atlas, sprite_atlas, palette_set) = build_entity_atlases(
         sim,
@@ -630,7 +629,6 @@ pub(crate) fn build_presentation_manifest(
         house_colors,
         theater_unit_palette,
         theater_iso_palette,
-        vxl_compute,
     );
     PresentationManifest {
         unit_atlas,
@@ -652,7 +650,6 @@ pub(crate) fn build_entity_atlases(
     house_colors: &HouseColorMap,
     theater_unit_palette: Option<&Palette>,
     theater_iso_palette: Option<&Palette>,
-    vxl_compute: Option<&mut crate::render::vxl_compute::VxlComputeRenderer>,
 ) -> (
     Option<UnitAtlas>,
     Option<SpriteAtlas>,
@@ -681,7 +678,6 @@ pub(crate) fn build_entity_atlases(
             rules,
             art,
             None, // initial build — no existing cache
-            vxl_compute,
             Some(&sim.interner),
         )
     } else {

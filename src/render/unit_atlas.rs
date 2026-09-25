@@ -28,7 +28,6 @@ use crate::assets::vpl_file::VplFile;
 use crate::assets::vxl_file::VxlFile;
 use crate::render::atlas_growth::{self, SPRITE_PADDING, ShelfCursor};
 use crate::render::batch::{BatchRenderer, BatchTexture};
-use crate::render::vxl_compute::VxlComputeRenderer;
 use crate::render::vxl_raster::{self, VxlRenderParams, VxlSlopeBlend, VxlSprite};
 use crate::rules::art_data::{self, ArtRegistry};
 use crate::rules::ruleset::RuleSet;
@@ -131,10 +130,8 @@ pub struct UnitAtlas {
     /// Palette indices of every resident sprite; native shadow masks are
     /// composed from them.
     rendered_cache: Vec<CachedUnitSprite>,
-    /// How many sprites were rendered via GPU compute in the last build.
-    pub gpu_rendered: u32,
-    /// How many sprites were rendered via CPU rasterizer in the last build.
-    pub cpu_rendered: u32,
+    /// How many sprites the last build or refresh rendered.
+    pub rendered: u32,
     /// First eligible composed-body mask for each supported shadow key.
     /// Pages are never repacked, so an uploaded mask stays where it was written.
     shadow_masks: std::cell::RefCell<HashMap<UnitSpriteKey, Vec<u8>>>,
@@ -267,8 +264,7 @@ impl UnitAtlas {
             entries,
             frame_counts: BTreeMap::new(),
             rendered_cache: Vec::new(),
-            gpu_rendered: 0,
-            cpu_rendered: 0,
+            rendered: 0,
             shadow_masks: Default::default(),
             covered: UnitAtlasDemand::default(),
             growth: None,
@@ -380,6 +376,42 @@ fn unit_entry(
         native_draw_bounds: sprite.native_draw_bounds,
         page,
     }
+}
+
+/// One key's rendered sprite and, for a prepared native shadow, its companion
+/// with the legacy shadow geometry (keyed at `LEGACY_SHADOW_FRAME`).
+struct RenderedKey {
+    sprite: CachedUnitSprite,
+    legacy_shadow: Option<CachedUnitSprite>,
+}
+
+fn render_unit_key(
+    model: &UnitModel,
+    key: &UnitSpriteKey,
+    vpl: Option<&VplFile>,
+    pose: &mut Option<PoseParts>,
+) -> Option<RenderedKey> {
+    let (sprite, native_draw_bounds) = model.render(key, vpl, None, pose)?;
+    let legacy_shadow = (key.layer == VxlLayer::Shadow && native_draw_bounds.is_some())
+        .then(|| {
+            let mut fallback_key = key.clone();
+            fallback_key.frame = LEGACY_SHADOW_FRAME;
+            let (fallback, _) = model.render(&fallback_key, vpl, None, pose)?;
+            Some(CachedUnitSprite::from_rendered(RenderedSprite {
+                key: fallback_key,
+                sprite: fallback,
+                native_draw_bounds: None,
+            }))
+        })
+        .flatten();
+    Some(RenderedKey {
+        sprite: CachedUnitSprite::from_rendered(RenderedSprite {
+            key: key.clone(),
+            sprite,
+            native_draw_bounds,
+        }),
+        legacy_shadow,
+    })
 }
 
 /// Intermediate rendered sprite before atlas packing (temporary, during build).
@@ -538,8 +570,9 @@ fn needed_unit_keys(
 /// Without an `existing` atlas every model's sprites are rendered and
 /// shelf-packed into new pages. With one, only the models it has not collected
 /// yet are rendered, and their sprites are appended to a growth page; the
-/// resident pages are not touched and the software rasterizer only runs for
-/// the new models.
+/// resident pages are not touched and the rasterizer only runs for the new
+/// models. Sprites come from the CPU replay of the native visibility writes
+/// (`PreparedDraw::render_cpu`), each model's poses spread over the cores.
 ///
 /// Returns `None` only when no prior atlas exists and no voxel sprite can be
 /// produced.
@@ -552,7 +585,6 @@ pub fn build_unit_atlas(
     rules: Option<&RuleSet>,
     art: Option<&ArtRegistry>,
     existing: Option<UnitAtlas>,
-    mut compute: Option<&mut VxlComputeRenderer>,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> Option<UnitAtlas> {
     let started = Instant::now();
@@ -580,13 +612,15 @@ pub fn build_unit_atlas(
                 .is_none_or(|atlas| !atlas.entries.contains_key(key))
         })
         .collect();
+    // By model, then pose: each model is parsed once, and each pose's body,
+    // turret and barrel are rasterized once for its three part keys.
     new_keys.sort_unstable_by(|a, b| {
-        (&a.type_id, a.layer, a.frame, a.facing, a.slope_type).cmp(&(
+        (&a.type_id, a.frame, a.facing, a.slope_type, a.layer).cmp(&(
             &b.type_id,
-            b.layer,
             b.frame,
             b.facing,
             b.slope_type,
+            b.layer,
         ))
     });
     log::info!(
@@ -597,8 +631,6 @@ pub fn build_unit_atlas(
 
     // Step 2: Render the new sprites.
     let mut rendered: Vec<CachedUnitSprite> = Vec::with_capacity(new_keys.len());
-    let mut gpu_rendered: u32 = 0;
-    let mut cpu_rendered: u32 = 0;
     let mut failed: BTreeMap<&str, usize> = BTreeMap::new();
     if !new_keys.is_empty() {
         // Load VPL file for Blinn-Phong lighting lookup (optional).
@@ -619,60 +651,54 @@ pub fn build_unit_atlas(
                     }
                 });
 
-        for key in &new_keys {
-            match render_unit_sprite(
-                asset_manager,
-                key,
-                rules,
-                art,
-                vpl.as_ref(),
-                compute.as_deref_mut(),
-                device,
-                queue,
-            ) {
-                Some((sprite, used_gpu, native_draw_bounds)) => {
-                    if key.layer == VxlLayer::Shadow && native_draw_bounds.is_some() {
-                        let mut fallback_key = key.clone();
-                        fallback_key.frame = LEGACY_SHADOW_FRAME;
-                        if let Some((fallback, _, _)) = render_unit_sprite(
-                            asset_manager,
-                            &fallback_key,
-                            rules,
-                            art,
-                            vpl.as_ref(),
-                            None,
-                            device,
-                            queue,
-                        ) {
-                            rendered.push(CachedUnitSprite::from_rendered(RenderedSprite {
-                                key: fallback_key,
-                                sprite: fallback,
-                                native_draw_bounds: None,
-                            }));
-                            cpu_rendered += 1;
-                        }
-                    }
-                    if used_gpu {
-                        gpu_rendered += 1;
-                    } else {
-                        cpu_rendered += 1;
-                    }
-                    rendered.push(CachedUnitSprite::from_rendered(RenderedSprite {
-                        key: key.clone(),
+        // One model at a time, its poses spread over the cores. Each worker
+        // takes whole poses, so a pose's parts still share one render, and
+        // results are merged back in key order.
+        let workers = std::thread::available_parallelism().map_or(1, |n| n.get());
+        for type_keys in new_keys.chunk_by(|a, b| a.type_id == b.type_id) {
+            let type_id = type_keys[0].type_id.as_str();
+            let Some(model) = UnitModel::load(asset_manager, type_id, rules, art) else {
+                *failed.entry(type_id).or_default() += type_keys.len();
+                continue;
+            };
+            let poses: Vec<&[UnitSpriteKey]> = type_keys
+                .chunk_by(|a, b| {
+                    (a.frame, a.facing, a.slope_type) == (b.frame, b.facing, b.slope_type)
+                })
+                .collect();
+            let (model, vpl) = (&model, vpl.as_ref());
+            let results: Vec<Option<RenderedKey>> = std::thread::scope(|scope| {
+                let jobs: Vec<_> = poses
+                    .chunks(poses.len().div_ceil(workers))
+                    .map(|chunk| {
+                        scope.spawn(move || {
+                            let mut pose = None;
+                            chunk
+                                .iter()
+                                .flat_map(|keys| keys.iter())
+                                .map(|key| render_unit_key(model, key, vpl, &mut pose))
+                                .collect::<Vec<_>>()
+                        })
+                    })
+                    .collect();
+                jobs.into_iter()
+                    .flat_map(|job| job.join().expect("VXL render worker panicked"))
+                    .collect()
+            });
+            for (key, result) in type_keys.iter().zip(results) {
+                match result {
+                    Some(RenderedKey {
                         sprite,
-                        native_draw_bounds,
-                    }));
+                        legacy_shadow,
+                    }) => {
+                        rendered.extend(legacy_shadow);
+                        rendered.push(sprite);
+                    }
+                    None => *failed.entry(key.type_id.as_str()).or_default() += 1,
                 }
-                None => *failed.entry(key.type_id.as_str()).or_default() += 1,
             }
         }
-        if gpu_rendered > 0 || cpu_rendered > 0 {
-            log::info!(
-                "VXL render: {} GPU compute, {} CPU rasterizer",
-                gpu_rendered,
-                cpu_rendered,
-            );
-        }
+        log::info!("VXL render: {} sprites", rendered.len());
         for (type_id, count) in failed {
             log::warn!("Failed to render {count} VXL sprites for {type_id}");
         }
@@ -703,8 +729,7 @@ pub fn build_unit_atlas(
     };
     atlas.frame_counts.extend(frame_counts);
     atlas.covered.extend(missing);
-    atlas.gpu_rendered = gpu_rendered;
-    atlas.cpu_rendered = cpu_rendered;
+    atlas.rendered = u32::try_from(added).unwrap_or(u32::MAX);
     let page_dimensions = atlas
         .pages
         .iter()
@@ -722,251 +747,274 @@ pub fn build_unit_atlas(
     Some(atlas)
 }
 
-/// Load and render a single VXL model to a 2D sprite.
+/// A turret or barrel part: `{image}TUR`, `{image}BARL` or `{image}BARREL`.
+pub(crate) struct VoxelPart {
+    vxl: VxlFile,
+    hva: Option<HvaFile>,
+}
+
+impl VoxelPart {
+    /// `{base}.VXL` with its optional HVA; None when the VXL is missing or
+    /// does not parse, which omits the part.
+    fn load(asset_manager: &AssetManager, base: &str) -> Option<Self> {
+        let vxl = VxlFile::from_bytes(asset_manager.get_ref(&format!("{base}.VXL"))?).ok()?;
+        let hva = asset_manager
+            .get_ref(&format!("{base}.HVA"))
+            .and_then(|data| HvaFile::from_bytes(data).ok());
+        Some(Self { vxl, hva })
+    }
+
+    fn render(&self, params: &VxlRenderParams, vpl: Option<&VplFile>) -> VxlSprite {
+        vxl_raster::render_vxl(&self.vxl, self.hva.as_ref(), params, vpl)
+    }
+
+    /// `Ok(None)` for an omitted part; `Err` when a present part has no
+    /// native draw bounds.
+    fn native_draw_bounds(
+        part: Option<&Self>,
+        params: &VxlRenderParams,
+    ) -> Result<Option<[i32; 4]>, ()> {
+        let Some(part) = part else {
+            return Ok(None);
+        };
+        vxl_raster::native_vxl_draw_bounds(&part.vxl, part.hva.as_ref(), params)
+            .map(Some)
+            .ok_or(())
+    }
+}
+
+/// A voxel model's files, parsed once and shared by every sprite drawn from
+/// it.
 ///
 /// Uses ArtRegistry to resolve the correct VXL/HVA filenames.
 /// Falls back to direct {TYPE_ID}.VXL if art data is unavailable.
-pub(crate) fn render_unit_sprite(
-    asset_manager: &AssetManager,
-    key: &UnitSpriteKey,
-    rules: Option<&RuleSet>,
-    art: Option<&ArtRegistry>,
-    vpl: Option<&VplFile>,
-    compute: Option<&mut VxlComputeRenderer>,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-) -> Option<(VxlSprite, bool, Option<[i32; 4]>)> {
-    render_unit_sprite_with_slope_blend(
-        asset_manager,
-        key,
-        rules,
-        art,
-        vpl,
-        compute,
-        device,
-        queue,
-        None,
-    )
+pub(crate) struct UnitModel {
+    type_id: String,
+    body: VxlFile,
+    body_hva: Option<HvaFile>,
+    turret: Option<VoxelPart>,
+    /// BARL is the common spelling; a handful of models use BARREL.
+    barl: Option<VoxelPart>,
+    barrel: Option<VoxelPart>,
+    /// Ordinary ground Drive units cast the prepared native shadow.
+    drive_shadow: bool,
 }
 
+/// The body, turret and barrel of one pose, rendered once for all three of
+/// its part keys.
+pub(crate) struct PoseParts {
+    pose: (u32, u8, u8, Option<VxlSlopeBlend>),
+    body: VxlSprite,
+    turret: Option<VxlSprite>,
+    barrel: Option<VxlSprite>,
+}
+
+impl UnitModel {
+    pub(crate) fn load(
+        asset_manager: &AssetManager,
+        type_id: &str,
+        rules: Option<&RuleSet>,
+        art: Option<&ArtRegistry>,
+    ) -> Option<Self> {
+        // Resolve image name: type_id → rules.ini Image= → art.ini Image= override.
+        let rules_image: String = rules
+            .and_then(|r| r.object(type_id))
+            .map(|o| o.image.clone())
+            .unwrap_or_else(|| type_id.to_string());
+        let image: String = art
+            .map(|a| a.resolve_effective_image_id(type_id, &rules_image))
+            .unwrap_or_else(|| rules_image.to_uppercase());
+
+        let (vxl_name, hva_name): (String, String) = art_data::voxel_asset_names(&image);
+
+        let vxl_data = asset_manager.get_ref(&vxl_name)?;
+        let body: VxlFile = match VxlFile::from_bytes(vxl_data) {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("Failed to parse {}: {}", vxl_name, e);
+                return None;
+            }
+        };
+
+        // HVA is optional — some models don't have animation files.
+        let body_hva: Option<HvaFile> =
+            asset_manager
+                .get_ref(&hva_name)
+                .and_then(|data| match HvaFile::from_bytes(data) {
+                    Ok(h) => Some(h),
+                    Err(e) => {
+                        log::trace!("No HVA for {} ({}), using default pose", type_id, e);
+                        None
+                    }
+                });
+        let part = |suffix: &str| VoxelPart::load(asset_manager, &format!("{image}{suffix}"));
+        Some(Self {
+            type_id: type_id.to_string(),
+            body,
+            body_hva,
+            turret: part("TUR"),
+            barl: part("BARL"),
+            barrel: part("BARREL"),
+            drive_shadow: rules.and_then(|r| r.object(type_id)).is_some_and(|o| {
+                o.locomotor == crate::rules::locomotor_type::LocomotorKind::Drive
+                    && !o.considered_aircraft
+            }),
+        })
+    }
+
+    /// Render one key's sprite with its native draw bounds. `pose` keeps the
+    /// last body/turret/barrel render, so a model's Body, Turret and Barrel
+    /// keys of one pose, rendered in a row, rasterize it once.
+    pub(crate) fn render(
+        &self,
+        key: &UnitSpriteKey,
+        vpl: Option<&VplFile>,
+        slope_blend: Option<VxlSlopeBlend>,
+        pose: &mut Option<PoseParts>,
+    ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
+        let params: VxlRenderParams = VxlRenderParams {
+            frame: if key.layer == VxlLayer::Shadow && key.frame == LEGACY_SHADOW_FRAME {
+                0
+            } else {
+                key.frame
+            },
+            facing: key.facing, // already quantized by atlas key generation
+            slope_type: key.slope_type,
+            slope_blend,
+            ..VxlRenderParams::default()
+        };
+        // Ordinary ground, single-section ShadowIndex/frame-zero geometry. Keep
+        // aircraft scaling and unsupported callers on the existing path.
+        if key.layer == VxlLayer::Shadow && key.frame == 0 && self.drive_shadow {
+            if let Some(sprite) =
+                vxl_raster::shadow::render(&self.body, self.body_hva.as_ref(), &params)
+            {
+                let bounds = [
+                    sprite.offset_x as i32,
+                    sprite.offset_y as i32,
+                    sprite.width as i32,
+                    sprite.height as i32,
+                ];
+                return Some((sprite, Some(bounds)));
+            }
+        }
+        let native_draw_bounds = self.native_draw_bounds(&params, key.layer);
+
+        // House remap is no longer applied at bake time — the fragment shader
+        // does it via per-instance DrawState::remap_row + house_ramp texture lookup.
+        // The rasterizer outputs post-VPL palette indices directly.
+        let sprite: VxlSprite = match key.layer {
+            VxlLayer::Composite => composite_parts(
+                &self.body,
+                self.body_hva.as_ref(),
+                self.turret.as_ref(),
+                self.barl.as_ref().or(self.barrel.as_ref()),
+                &params,
+                vpl,
+            ),
+            VxlLayer::Shadow => {
+                vxl_raster::render_legacy_vxl_shadow(&self.body, self.body_hva.as_ref(), &params)
+            }
+            VxlLayer::Body | VxlLayer::Turret | VxlLayer::Barrel => {
+                let key_pose = (params.frame, params.facing, params.slope_type, slope_blend);
+                if pose.as_ref().is_none_or(|parts| parts.pose != key_pose) {
+                    let barrel = self.barl.as_ref().or(self.barrel.as_ref());
+                    *pose = Some(PoseParts {
+                        pose: key_pose,
+                        body: vxl_raster::render_vxl(
+                            &self.body,
+                            self.body_hva.as_ref(),
+                            &params,
+                            vpl,
+                        ),
+                        turret: self.turret.as_ref().map(|part| part.render(&params, vpl)),
+                        barrel: barrel.map(|part| part.render(&params, vpl)),
+                    });
+                }
+                let parts = pose.as_ref().expect("the pose was just rendered");
+                let all_layers: Vec<&VxlSprite> = [Some(&parts.body)]
+                    .into_iter()
+                    .chain([parts.turret.as_ref(), parts.barrel.as_ref()])
+                    .flatten()
+                    .collect();
+
+                let requested: &VxlSprite = match key.layer {
+                    VxlLayer::Body => &parts.body,
+                    VxlLayer::Turret => parts.turret.as_ref()?,
+                    VxlLayer::Barrel => parts.barrel.as_ref()?,
+                    _ => unreachable!(),
+                };
+                pad_layer_to_union_bounds(requested, &all_layers)
+            }
+        };
+
+        // Skip tiny/empty sprites (degenerate models).
+        if sprite.width <= 1 && sprite.height <= 1 {
+            log::trace!(
+                "VXL {} produced empty sprite at facing {}",
+                self.type_id,
+                key.facing
+            );
+            return None;
+        }
+
+        Some((sprite, native_draw_bounds))
+    }
+
+    /// Metadata follows the requested VXL, not the union-sized texture canvas
+    /// used to store each separate layer. Composite keys retain their actual
+    /// body/turret/barrel bake order; live independently facing parts are united
+    /// later by presentation at their actual anchors and draw order.
+    fn native_draw_bounds(&self, params: &VxlRenderParams, layer: VxlLayer) -> Option<[i32; 4]> {
+        let body =
+            || vxl_raster::native_vxl_draw_bounds(&self.body, self.body_hva.as_ref(), params);
+        let part = |part: &Option<VoxelPart>| VoxelPart::native_draw_bounds(part.as_ref(), params);
+        match layer {
+            VxlLayer::Shadow => None,
+            VxlLayer::Body => body(),
+            VxlLayer::Turret => part(&self.turret).ok().flatten(),
+            VxlLayer::Barrel => part(&self.barl)
+                .ok()?
+                .or_else(|| part(&self.barrel).ok().flatten()),
+            VxlLayer::Composite => {
+                let mut bounds = Some(body()?);
+                let turret = part(&self.turret).ok()?;
+                let barrel = match part(&self.barl).ok()? {
+                    Some(bounds) => Some(bounds),
+                    None => part(&self.barrel).ok()?,
+                };
+                for part in [turret, barrel].into_iter().flatten() {
+                    vxl_raster::union_native_voxel_draw_bounds(&mut bounds, part);
+                }
+                bounds
+            }
+        }
+    }
+}
+
+/// Load a unit's voxel model and render one key's sprite (slope-transition
+/// frames are rendered one at a time, so no pose is shared).
 pub(crate) fn render_unit_sprite_with_slope_blend(
     asset_manager: &AssetManager,
     key: &UnitSpriteKey,
     rules: Option<&RuleSet>,
     art: Option<&ArtRegistry>,
     vpl: Option<&VplFile>,
-    mut compute: Option<&mut VxlComputeRenderer>,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
     slope_blend: Option<VxlSlopeBlend>,
-) -> Option<(VxlSprite, bool, Option<[i32; 4]>)> {
-    // Resolve image name: type_id → rules.ini Image= → art.ini Image= override.
-    let rules_image: String = rules
-        .and_then(|r| r.object(&key.type_id))
-        .map(|o| o.image.clone())
-        .unwrap_or_else(|| key.type_id.clone());
-    let image: String = art
-        .map(|a| a.resolve_effective_image_id(&key.type_id, &rules_image))
-        .unwrap_or_else(|| rules_image.to_uppercase());
-
-    let (vxl_name, hva_name): (String, String) = art_data::voxel_asset_names(&image);
-
-    let vxl_data = asset_manager.get_ref(&vxl_name)?;
-    let vxl: VxlFile = match VxlFile::from_bytes(vxl_data) {
-        Ok(v) => v,
-        Err(e) => {
-            log::warn!("Failed to parse {}: {}", vxl_name, e);
-            return None;
-        }
-    };
-
-    // HVA is optional — some models don't have animation files.
-    let hva: Option<HvaFile> =
-        asset_manager
-            .get_ref(&hva_name)
-            .and_then(|data| match HvaFile::from_bytes(data) {
-                Ok(h) => Some(h),
-                Err(e) => {
-                    log::trace!("No HVA for {} ({}), using default pose", key.type_id, e);
-                    None
-                }
-            });
-
-    let params: VxlRenderParams = VxlRenderParams {
-        frame: if key.layer == VxlLayer::Shadow && key.frame == LEGACY_SHADOW_FRAME {
-            0
-        } else {
-            key.frame
-        },
-        facing: key.facing, // already quantized by atlas key generation
-        slope_type: key.slope_type,
+) -> Option<(VxlSprite, Option<[i32; 4]>)> {
+    UnitModel::load(asset_manager, &key.type_id, rules, art)?.render(
+        key,
+        vpl,
         slope_blend,
-        ..VxlRenderParams::default()
-    };
-    // Ordinary ground, single-section ShadowIndex/frame-zero geometry. Keep
-    // aircraft scaling and unsupported callers on the existing path.
-    if key.layer == VxlLayer::Shadow
-        && key.frame == 0
-        && rules.and_then(|r| r.object(&key.type_id)).is_some_and(|o| {
-            o.locomotor == crate::rules::locomotor_type::LocomotorKind::Drive
-                && !o.considered_aircraft
-        })
-    {
-        if let Some(sprite) = vxl_raster::shadow::render(&vxl, hva.as_ref(), &params) {
-            let bounds = [
-                sprite.offset_x as i32,
-                sprite.offset_y as i32,
-                sprite.width as i32,
-                sprite.height as i32,
-            ];
-            return Some((sprite, false, Some(bounds)));
-        }
-    }
-    let native_draw_bounds = native_unit_sprite_draw_bounds(
-        asset_manager,
-        &vxl,
-        hva.as_ref(),
-        &image,
-        &params,
-        key.layer,
-    );
-
-    // House remap is no longer applied at bake time — the fragment shader
-    // does it via per-instance DrawState::remap_row + house_ramp texture lookup.
-    // The rasterizer outputs post-VPL palette indices directly.
-
-    // One native VXL draw has one center and section order. Parts keep their
-    // independent native crops and existing CPU composition; merging their
-    // sections into one GPU center has no established native equivalent.
-    let has_parts = ["TUR", "BARL", "BARREL"].iter().any(|suffix| {
-        asset_manager
-            .get_ref(&format!("{image}{suffix}.VXL"))
-            .is_some()
-    });
-    let mut used_gpu = false;
-    let gpu_sprite = if key.layer == VxlLayer::Composite && !has_parts {
-        compute.as_deref_mut().and_then(|renderer| {
-            let draw = vxl_raster::prepare_native_draw(&vxl, hva.as_ref(), &params, vpl)?;
-            renderer.render_native(device, queue, &draw)
-        })
-    } else {
-        None
-    };
-    let sprite: VxlSprite = if let Some(sprite) = gpu_sprite {
-        used_gpu = true;
-        sprite
-    } else {
-        // CPU fallback path.
-        match key.layer {
-            VxlLayer::Composite => {
-                composite_unit_vxl_cpu(asset_manager, &vxl, hva.as_ref(), &image, &params, vpl)
-            }
-            VxlLayer::Shadow => vxl_raster::render_legacy_vxl_shadow(&vxl, hva.as_ref(), &params),
-            VxlLayer::Body | VxlLayer::Turret | VxlLayer::Barrel => {
-                let body_sprite: VxlSprite =
-                    vxl_raster::render_vxl(&vxl, hva.as_ref(), &params, vpl);
-                let turret_sprite: Option<VxlSprite> =
-                    render_optional_layer(asset_manager, &format!("{}TUR", image), &params, vpl);
-                let barrel_sprite: Option<VxlSprite> =
-                    render_optional_layer(asset_manager, &format!("{}BARL", image), &params, vpl)
-                        .or_else(|| {
-                            render_optional_layer(
-                                asset_manager,
-                                &format!("{}BARREL", image),
-                                &params,
-                                vpl,
-                            )
-                        });
-
-                let all_layers: Vec<&VxlSprite> = [Some(&body_sprite)]
-                    .into_iter()
-                    .chain([turret_sprite.as_ref(), barrel_sprite.as_ref()])
-                    .flatten()
-                    .collect();
-
-                let requested: Option<&VxlSprite> = match key.layer {
-                    VxlLayer::Body => Some(&body_sprite),
-                    VxlLayer::Turret => turret_sprite.as_ref(),
-                    VxlLayer::Barrel => barrel_sprite.as_ref(),
-                    _ => unreachable!(),
-                };
-                let requested: &VxlSprite = match requested {
-                    Some(s) => s,
-                    None => return None,
-                };
-
-                pad_layer_to_union_bounds(requested, &all_layers)
-            }
-        }
-    };
-
-    // Skip tiny/empty sprites (degenerate models).
-    if sprite.width <= 1 && sprite.height <= 1 {
-        log::trace!(
-            "VXL {} produced empty sprite at facing {}",
-            key.type_id,
-            key.facing
-        );
-        return None;
-    }
-
-    Some((sprite, used_gpu, native_draw_bounds))
-}
-
-/// Metadata follows the requested VXL, not the union-sized texture canvas
-/// used to store each separate layer. Composite keys retain their actual
-/// body/turret/barrel bake order; live independently facing parts are united
-/// later by presentation at their actual anchors and draw order.
-fn native_unit_sprite_draw_bounds(
-    assets: &AssetManager,
-    body: &VxlFile,
-    hva: Option<&HvaFile>,
-    image: &str,
-    params: &VxlRenderParams,
-    layer: VxlLayer,
-) -> Option<[i32; 4]> {
-    let optional = |base: &str| -> Result<Option<[i32; 4]>, ()> {
-        let Some(data) = assets.get_ref(&format!("{base}.VXL")) else {
-            return Ok(None);
-        };
-        let Ok(vxl) = VxlFile::from_bytes(data) else {
-            // render_optional_layer also omits an unparseable optional file.
-            return Ok(None);
-        };
-        let hva = assets
-            .get_ref(&format!("{base}.HVA"))
-            .and_then(|data| HvaFile::from_bytes(data).ok());
-        vxl_raster::native_vxl_draw_bounds(&vxl, hva.as_ref(), params)
-            .map(Some)
-            .ok_or(())
-    };
-    match layer {
-        VxlLayer::Shadow => None,
-        VxlLayer::Body => vxl_raster::native_vxl_draw_bounds(body, hva, params),
-        VxlLayer::Turret => optional(&format!("{image}TUR")).ok().flatten(),
-        VxlLayer::Barrel => optional(&format!("{image}BARL"))
-            .ok()?
-            .or_else(|| optional(&format!("{image}BARREL")).ok().flatten()),
-        VxlLayer::Composite => {
-            let mut bounds = Some(vxl_raster::native_vxl_draw_bounds(body, hva, params)?);
-            let turret = optional(&format!("{image}TUR")).ok()?;
-            let barrel = match optional(&format!("{image}BARL")).ok()? {
-                Some(bounds) => Some(bounds),
-                None => optional(&format!("{image}BARREL")).ok()?,
-            };
-            for part in [turret, barrel].into_iter().flatten() {
-                vxl_raster::union_native_voxel_draw_bounds(&mut bounds, part);
-            }
-            bounds
-        }
-    }
+        &mut None,
+    )
 }
 
 /// Body plus optional turret and barrel, depth-composited on the CPU.
 ///
 /// Split out of the atlas bake path so headless callers can produce the same
-/// composited sprite the game does. The bake path's own CPU branch calls this,
-/// so the two cannot drift apart.
+/// composited sprite the game does. The bake path composites through the same
+/// `composite_parts`, so the two cannot drift apart.
 ///
 /// Pure CPU: no `GpuContext`, no atlas state, no wgpu. The turret and barrel are
 /// found by the conventional `TUR` / `BARL` / `BARREL` suffixes on the effective
@@ -979,37 +1027,32 @@ pub fn composite_unit_vxl_cpu(
     params: &VxlRenderParams,
     vpl: Option<&VplFile>,
 ) -> VxlSprite {
-    let body_sprite: VxlSprite = vxl_raster::render_vxl(body, body_hva, params, vpl);
-    let mut layers: Vec<VxlSprite> = vec![body_sprite];
-
-    if let Some(turret) = render_optional_layer(asset_manager, &format!("{image}TUR"), params, vpl)
-    {
-        layers.push(turret);
-    }
+    let part = |suffix: &str| VoxelPart::load(asset_manager, &format!("{image}{suffix}"));
+    let turret = part("TUR");
     // BARL is the common spelling; a handful of models use BARREL.
-    if let Some(barrel) = render_optional_layer(asset_manager, &format!("{image}BARL"), params, vpl)
-        .or_else(|| render_optional_layer(asset_manager, &format!("{image}BARREL"), params, vpl))
-    {
-        layers.push(barrel);
-    }
-
-    composite_vxl_layers(&layers)
+    let barrel = part("BARL").or_else(|| part("BARREL"));
+    composite_parts(
+        body,
+        body_hva,
+        turret.as_ref(),
+        barrel.as_ref(),
+        params,
+        vpl,
+    )
 }
 
-fn render_optional_layer(
-    asset_manager: &AssetManager,
-    layer_base: &str,
+fn composite_parts(
+    body: &VxlFile,
+    body_hva: Option<&HvaFile>,
+    turret: Option<&VoxelPart>,
+    barrel: Option<&VoxelPart>,
     params: &VxlRenderParams,
     vpl: Option<&VplFile>,
-) -> Option<VxlSprite> {
-    let vxl_name = format!("{}.VXL", layer_base);
-    let vxl_data = asset_manager.get_ref(&vxl_name)?;
-    let vxl = VxlFile::from_bytes(vxl_data).ok()?;
-    let hva_name = format!("{}.HVA", layer_base);
-    let hva = asset_manager
-        .get_ref(&hva_name)
-        .and_then(|data| HvaFile::from_bytes(data).ok());
-    Some(vxl_raster::render_vxl(&vxl, hva.as_ref(), params, vpl))
+) -> VxlSprite {
+    let mut layers: Vec<VxlSprite> = vec![vxl_raster::render_vxl(body, body_hva, params, vpl)];
+    layers.extend(turret.map(|part| part.render(params, vpl)));
+    layers.extend(barrel.map(|part| part.render(params, vpl)));
+    composite_vxl_layers(&layers)
 }
 
 /// Composite body/turret/barrel layers using depth-correct Z-buffer merging.

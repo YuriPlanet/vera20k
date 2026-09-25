@@ -20,7 +20,6 @@ use crate::map::houses::HouseColorMap;
 use crate::render::batch::BatchRenderer;
 use crate::render::sprite_atlas::{self, ShpPaletteContext, ShpSpriteKey};
 use crate::render::unit_atlas::{self, UnitSpriteKey, VxlLayer};
-use crate::render::vxl_compute::VxlComputeRenderer;
 use crate::rules::house_colors::HouseColorIndex;
 
 fn retail_root() -> PathBuf {
@@ -83,7 +82,6 @@ fn retail_atlas_refresh_costs() {
     let (device, queue) = headless_device();
     let batch =
         BatchRenderer::new_with_device(&device, &queue, wgpu::TextureFormat::Bgra8UnormSrgb);
-    let mut compute = VxlComputeRenderer::new(&device);
 
     let crate::sim::runtime::SimRuntime {
         simulation: sim,
@@ -154,7 +152,6 @@ fn retail_atlas_refresh_costs() {
         Some(rules),
         Some(art),
         None,
-        Some(&mut compute),
         Some(&sim.interner),
     )
     .expect("initial unit atlas");
@@ -307,7 +304,6 @@ fn retail_atlas_refresh_costs() {
         Some(rules),
         Some(art),
         Some(units),
-        Some(&mut compute),
         Some(&sim.interner),
     )
     .expect("refreshed unit atlas");

@@ -1178,7 +1178,6 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
             bound_rules,
             bound_rules.map(|rules| &rules.art_registry),
             existing,
-            state.renderer.vxl_compute.as_mut(),
             Some(&sim.interner),
         ) {
             state.match_state.match_presentation.unit_atlas = Some(new_unit_atlas);
