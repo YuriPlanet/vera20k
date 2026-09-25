@@ -116,6 +116,11 @@ pub(super) enum HashFeature {
     /// its owner's house (DamageArea reads the live Owner); earlier schemas
     /// fold the live source's house in its place.
     InvisoBullet = 204,
+    /// Removes the Chrono Miner's retired dock-phase fold (home refinery,
+    /// dock-queued byte, dock phase, pivot facing) and adds the Techno+0x1F8
+    /// tag. Earlier schemas fold the constructor defaults in their place,
+    /// which every miner outside the retired Chrono phases held.
+    RetiredRefineryDockPhase = 205,
 }
 
 impl HashSchema {
@@ -147,6 +152,7 @@ impl HashSchema {
                     | HashFeature::Gattling
                     | HashFeature::RearmTimer
                     | HashFeature::InvisoBullet
+                    | HashFeature::RetiredRefineryDockPhase
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

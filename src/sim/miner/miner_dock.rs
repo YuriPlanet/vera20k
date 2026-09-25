@@ -93,31 +93,17 @@ pub(crate) fn would_admit(
         })
 }
 
-/// The refinery's HELLO ally gate as a predicate: `refinery_hello` answers
-/// NEGATORY to another house for as long as that holds, so a reservation on
-/// such a refinery can never complete. The FSM drops it and selects again, the
-/// same way it treats a refinery that died. Reached when an engineer captures
-/// the reserved refinery or the miner changes house mid-return.
-pub(crate) fn same_house(sim: &Simulation, refinery_sid: u64, miner_sid: u64) -> bool {
-    let entities = &sim.substrate.entities;
-    match (entities.get(refinery_sid), entities.get(miner_sid)) {
-        (Some(refinery), Some(miner)) => refinery.owner() == miner.owner(),
-        _ => false,
-    }
-}
-
 /// `EventClass::Execute`'s MEGAMISSION arm, `0x004C72E8..0x004C7342`: a unit
 /// that is not tethered (`+0x418` clear) sends OVER_OUT to `Contacts[0]`
 /// (`PUSH 3; CALL [vt+0x274]`, `0x004C72F8`); a tethered one does so only when
 /// that contact is a live `DockUnload=` building (`Type+0x16B3`,
 /// `0x004C730F..0x004C7334`), and then also clears its `+0x418`
-/// (`0x004C7342`). So a retasked War Miner leaves its refinery handshake — or
+/// (`0x004C7342`). So a retasked harvester leaves its refinery handshake — or
 /// its unload, whose contact gate then drops the latch and commences the new
 /// order — while a unit still tethered to its war factory keeps that link.
 ///
 /// Scope: only miners reach this in VERA (the funnel predates the other
-/// units' native radio links). A Chrono Miner outside its unload also
-/// restarts its legacy dock phases from HELLO.
+/// units' native radio links).
 pub(crate) fn break_for_retask(
     sim: &mut Simulation,
     miner_sid: u64,
@@ -126,10 +112,9 @@ pub(crate) fn break_for_retask(
     let Some(entity) = sim.substrate.entities.get(miner_sid) else {
         return;
     };
-    let Some(miner) = entity.miner.as_ref() else {
+    if entity.miner.is_none() {
         return;
-    };
-    let chrono = miner.kind == crate::sim::miner::MinerKind::Chrono;
+    }
     if entity.dock_entered_with.is_none() {
         radio::transmit_to_contact(sim, miner_sid, RadioMessage::Break, rules);
     } else {
@@ -151,47 +136,6 @@ pub(crate) fn break_for_retask(
             }
         }
     }
-    if !chrono {
-        return;
-    }
-    if let Some(miner) = sim
-        .substrate
-        .entities
-        .get_mut(miner_sid)
-        .and_then(|entity| entity.miner.as_mut())
-    {
-        use crate::sim::miner::RefineryDockPhase as Phase;
-        let unloading = matches!(
-            miner.dock_phase,
-            Phase::Pivoting | Phase::Unloading | Phase::DepositCooldown | Phase::Departing
-        );
-        if !unloading {
-            // The handshake restarts from HELLO when the miner next returns.
-            miner.dock_queued = false;
-            miner.dock_phase = Phase::Approach;
-            miner.dock_enter_retry.clear();
-        }
-    }
-}
-
-/// Whether the 0x18 ENTER_DOCK handshake linked this miner to the refinery.
-pub(crate) fn has_entered(sim: &Simulation, refinery_sid: u64, miner_sid: u64) -> bool {
-    sim.substrate
-        .entities
-        .get(miner_sid)
-        .is_some_and(|miner| miner.dock_entered_with == Some(refinery_sid))
-}
-
-/// ENTER_DOCK (0x18) over the bus — sets the miner's `dock_entered_with`.
-pub(crate) fn enter_dock(sim: &mut Simulation, miner_sid: u64, refinery_sid: u64) {
-    let _ = radio::transmit(
-        sim,
-        miner_sid,
-        refinery_sid,
-        RadioMessage::Tether,
-        RadioPayload::default(),
-        None,
-    );
 }
 
 /// BREAK over the bus — drops the contact on both ends and clears the miner's
@@ -215,6 +159,26 @@ pub(crate) mod test_support {
     /// HELLO with the stock single dock; `true` when the refinery admitted.
     pub(crate) fn dock_test_hello(sim: &mut Simulation, refinery_sid: u64, miner_sid: u64) -> bool {
         hello(sim, miner_sid, refinery_sid, 1) == ContactAdmission::Accepted
+    }
+
+    /// Whether the 0x18 ENTER_DOCK handshake linked this miner to the refinery.
+    pub(crate) fn has_entered(sim: &Simulation, refinery_sid: u64, miner_sid: u64) -> bool {
+        sim.substrate
+            .entities
+            .get(miner_sid)
+            .is_some_and(|miner| miner.dock_entered_with == Some(refinery_sid))
+    }
+
+    /// ENTER_DOCK (0x18) over the bus — sets the miner's `dock_entered_with`.
+    pub(crate) fn enter_dock(sim: &mut Simulation, miner_sid: u64, refinery_sid: u64) {
+        let _ = radio::transmit(
+            sim,
+            miner_sid,
+            refinery_sid,
+            RadioMessage::Tether,
+            RadioPayload::default(),
+            None,
+        );
     }
 
     /// Whether any miner holds a contact slot of the refinery.

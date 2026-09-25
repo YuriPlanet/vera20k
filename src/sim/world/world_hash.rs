@@ -1850,6 +1850,14 @@ impl Simulation {
             }
             entity.foot_occupation_enabled.hash(hasher);
             entity.foot_locomotor_swap_active.hash(hasher);
+            // Techno+0x1F8 is up only between the Teleporter arm's can't-end
+            // branch and the next Unit setter call; the tag keeps every
+            // established stream unchanged while it is clear.
+            if schema.includes(HashFeature::RetiredRefineryDockPhase)
+                && entity.setter_force_reassign
+            {
+                0x1f8_u32.hash(hasher);
+            }
 
             #[cfg(test)]
             if !schema.includes(HashFeature::TrackAuthority) {
@@ -2114,16 +2122,24 @@ impl Simulation {
                     (bale.resource_type as u8).hash(hasher);
                     bale.value.hash(hasher);
                 }
-                miner.home_refinery.hash(hasher);
+                let retired_dock_fold = !schema.includes(HashFeature::RetiredRefineryDockPhase);
+                if retired_dock_fold {
+                    // home_refinery: None.
+                    None::<u64>.hash(hasher);
+                }
                 miner.reserved_refinery.hash(hasher);
                 miner.target_ore_cell.hash(hasher);
                 // harvest_timer is now a MissionTimer (start_frame + duration)
                 // — intended one-time re-baseline. unload_timer was deleted.
                 miner.harvest_timer.hash(hasher);
                 miner.forced_return.hash(hasher);
-                miner.dock_queued.hash(hasher);
-                miner.dock_phase.hash(hasher);
-                miner.dock_pivot_facing.hash(hasher);
+                if retired_dock_fold {
+                    // dock_queued false, dock_phase Approach (discriminant 0),
+                    // dock_pivot_facing None.
+                    false.hash(hasher);
+                    0_isize.hash(hasher);
+                    None::<crate::sim::movement::FacingClass>.hash(hasher);
+                }
             } else {
                 0u8.hash(hasher);
             }

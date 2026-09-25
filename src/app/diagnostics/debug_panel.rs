@@ -453,9 +453,6 @@ pub(crate) fn draw_debug_panel(ctx: &egui::Context, state: &AppState) {
                         _ => egui::Color32::from_rgb(80, 80, 80),
                     };
                     ui.colored_label(state_color, format!("State: {miner_state:?}"));
-                    if matches!(miner_state, crate::sim::miner::MinerState::Dock) {
-                        ui.label(format!("  Dock phase: {:?}", miner.dock_phase));
-                    }
                     ui.label(format!(
                         "Cargo: {}/{}",
                         miner.cargo.len(),
@@ -613,10 +610,6 @@ fn format_debug_event_light(
         DebugEventKind::MinerStateChange { from, to } => (
             egui::Color32::from_rgb(160, 110, 0),
             format!("[{tick}] Miner: {from} \u{2192} {to}"),
-        ),
-        DebugEventKind::DockPhaseChange { from, to } => (
-            egui::Color32::from_rgb(180, 100, 20),
-            format!("[{tick}] Dock: {from} \u{2192} {to}"),
         ),
         DebugEventKind::SpecialMovementStart { kind } => (
             egui::Color32::from_rgb(90, 50, 180),

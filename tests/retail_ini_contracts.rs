@@ -233,12 +233,12 @@ fn hermetic_ini_contracts_match_consumed_retail_values() {
         contract_miner.long_scan_radius
     );
     assert_eq!(
-        retail_miner.too_far_threshold_standard,
-        contract_miner.too_far_threshold_standard
+        rules.general.harvester_too_far_distance,
+        miner_contract_rules.general.harvester_too_far_distance
     );
     assert_eq!(
-        retail_miner.too_far_threshold_chrono,
-        contract_miner.too_far_threshold_chrono
+        rules.general.chrono_harv_too_far_distance,
+        miner_contract_rules.general.chrono_harv_too_far_distance
     );
     assert_eq!(
         retail_miner.rescan_cooldown_ticks,
@@ -262,7 +262,7 @@ fn hermetic_ini_contracts_match_consumed_retail_values() {
     assert!(refinery.refinery);
     assert!(refinery.bib);
     assert_eq!(refinery.foundation, "4x3");
-    assert_eq!(refinery.queueing_cell, Some((4, 1)));
+    assert_eq!(refinery.queueing_cell, [4, 1]);
 
     let gacnst = rules.object("GACNST").expect("retail GACNST");
     assert_eq!(gacnst.strength, 1000);

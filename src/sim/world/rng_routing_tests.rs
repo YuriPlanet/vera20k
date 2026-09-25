@@ -221,7 +221,6 @@ assert_routes_scenario!(route_ore_rng, ore_rng);
 assert_routes_scenario!(route_anim_rng, anim_rng);
 assert_routes_scenario!(route_particle_rng, particle_rng);
 assert_routes_scenario!(route_superweapon_rng, superweapon_rng);
-assert_routes_scenario!(route_miner_jitter_rng, miner_jitter_rng);
 
 assert_routes_main!(route_weapon_spread_rng, weapon_spread_rng);
 assert_routes_main!(route_house_ai_rng, house_ai_rng);

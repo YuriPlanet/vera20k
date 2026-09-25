@@ -713,7 +713,13 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0x1256_8F26_12CB_
 // 4 dead at tick 590. The main and mapgen streams are unchanged. Schema 204
 // adds the house ROF bias and bullet OnBridge folds. Old values: the commit
 // that moved them.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x9941_BD3B_AC71_581E;
+// Schema205 drops the retired Chrono dock folds (home refinery, dock-queued
+// byte, dock phase, pivot facing) from the harvester's miner block and tags
+// Techno+0x1F8, which no object here raises: composition only. Before(205)
+// reproduces the v204 pin; the three RNG stream pins, per-tick replay and the
+// miner-engagement tripwire are unchanged.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x2A4E_ADBD_F256_0FA8;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_DOCK_PHASE_V205: u64 = 0x9941_BD3B_AC71_581E;
 const GLOBAL_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0xE77B_8C4E_81A6_7C37;
 const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 7034257082188559193;
 
@@ -1042,6 +1048,11 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     let (_, final_scen, final_main, final_mapgen) =
         *recorded_streams.last().expect("final checkpoint recorded");
     let final_hash = *replayed.last().expect("at least one tick recorded");
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(205)),
+        GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_DOCK_PHASE_V205,
+        "v205 only removes the retired miner dock folds"
+    );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(202)),
         GLOBAL_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202,

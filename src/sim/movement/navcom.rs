@@ -267,9 +267,7 @@ pub(crate) fn set_destination_internal_coord(
     coord: DriveCoord,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
 ) {
-    entity.navigation.nav_com_aux = None;
-    entity.navigation.nav_com = Some(target);
-    entity.navigation.pending_arrival_clear = false;
+    publish_nav_com(entity, target);
 
     if is_drive_locomotor(entity) {
         drive_set_destination(entity, coord, resolved_terrain);
@@ -278,6 +276,15 @@ pub(crate) fn set_destination_internal_coord(
     } else {
         set_walk_destination_coord(entity, coord, resolved_terrain);
     }
+}
+
+/// Foot4D94C7/4D9510: NavComAux cleared and the reference published, before
+/// the locomotor dispatch. The Foot+0x6AC skip (4D9607) stops here, and a
+/// Teleport owner's Move_To is dispatched by the Unit setter.
+pub(super) fn publish_nav_com(entity: &mut GameEntity, target: NavTargetRef) {
+    entity.navigation.nav_com_aux = None;
+    entity.navigation.nav_com = Some(target);
+    entity.navigation.pending_arrival_clear = false;
 }
 
 /// Owner null destination path. Clears the owner and active Drive/Ship destination.
@@ -295,9 +302,9 @@ pub(super) fn set_destination_internal_null(entity: &mut GameEntity) {
     }
 }
 
-/// FootClass::Stop_Moving-equivalent owner clear: zeroes only the owner
-/// destination pair (NavCom and its auxiliary slot), nothing else.
-pub(super) fn foot_stop_moving(entity: &mut GameEntity) {
+/// FootClass::Stop_Moving-equivalent owner clear (`0x004DF0D0`): zeroes only
+/// the owner destination pair (NavCom and its auxiliary slot), nothing else.
+pub(crate) fn foot_stop_moving(entity: &mut GameEntity) {
     entity.navigation.nav_com_aux = None;
     entity.navigation.nav_com = None;
 }

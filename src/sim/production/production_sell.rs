@@ -752,13 +752,11 @@ pub fn sell_building(sim: &mut Simulation, rules: &RuleSet, stable_id: u64) -> b
     let ejected = eject_sell_survivors(sim, rules, &owner_name, obj, position);
     // Eject garrison occupants alive before removing the building (gamemd SellBuilding).
     let garrison_ejected = eject_garrison_occupants(sim, rules, stable_id);
-    // The Chrono Miner's legacy dock phases keep VERA's contact/reset adapter,
-    // which breaks their contacts first so the broadcast below skips them.
-    let interrupted_miners = crate::sim::miner::interrupt_refinery_docked_miners(sim, stable_id);
     // `BuildingClass::Sell` sell state 0 (`0x0044AB5A..0x0044AB68`) broadcasts
-    // RUN_AWAY (0x17) to every contact: a War Miner mid-unload leaves it for
-    // Harvest and scatters off the pad (`radio::receive`). VERA's sale is
-    // synchronous, so it lands just before the removal below.
+    // RUN_AWAY (0x17) to every contact: a harvester mid-unload leaves it for
+    // Harvest and scatters off the pad (`radio::receive`; a Chrono Miner on
+    // Teleport refuses the scatter). VERA's sale is synchronous, so it lands
+    // just before the removal below.
     crate::sim::radio::broadcast(
         sim,
         stable_id,
@@ -801,13 +799,12 @@ pub fn sell_building(sim: &mut Simulation, rules: &RuleSet, stable_id: u64) -> b
             .push(SimSoundEvent::StructureSold { owner: owner_id });
     }
     log::info!(
-        "Building {} sold by {}: refunded {} credits, ejected {} crew + {} garrison, interrupted {} miners",
+        "Building {} sold by {}: refunded {} credits, ejected {} crew + {} garrison",
         type_id,
         owner_name,
         refund,
         ejected,
         garrison_ejected,
-        interrupted_miners
     );
     true
 }

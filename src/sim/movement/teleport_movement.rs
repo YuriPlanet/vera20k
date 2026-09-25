@@ -190,72 +190,87 @@ pub fn issue_teleport_command(
         };
 
         // Legacy helper path: non-migrated callers may still put Teleport over a
-        // non-Teleport base locomotor as a temporary override. CMIN far return uses
-        // `issue_active_teleport_head_to_coord` instead, because Teleport is its
-        // primary active locomotor in gamemd.
+        // non-Teleport base locomotor as a temporary override. A `Teleporter=`
+        // Unit reaches Teleport Move_To through the Unit setter instead
+        // (`teleport_move_to`).
         let physical = super::foot_coordinate::current_coordinate(entity);
-        if let Some(ref mut loco) = entity.locomotor {
-            if loco.kind != LocomotorKind::Teleport {
-                if !loco.begin_piggyback(
-                    crate::rules::locomotor_type::LocomotorKind::Teleport,
-                    crate::sim::movement::locomotor::MovementLayer::Ground,
-                    binary_frame,
-                ) {
-                    return false;
-                }
-                // BEGIN719E90 replaces an interface, not Object+9C. Publish
-                // the outgoing controller's legacy split coordinate before
-                // the new raw-copy +18 receiver can observe the owner.
-                entity.position.exact_z_leptons = Some(physical.z);
-            }
-        }
-    }
-
-    start_teleport_state(entities, entity_id, target, rules, is_harvester)
-}
-
-/// Start a teleport because the active Teleport locomotor received Head_To_Coord.
-///
-/// This is the gamemd-shaped entry point for CMIN far return after the
-/// Set_Destination bridge decides not to activate Drive piggyback.
-pub fn issue_active_teleport_head_to_coord(
-    entities: &mut EntityStore,
-    entity_id: u64,
-    target: (u16, u16),
-    rules: &GeneralRules,
-    is_harvester: bool,
-) -> bool {
-    {
-        let Some(entity) = entities.get(entity_id) else {
-            log::warn!(
-                "issue_active_teleport_head_to_coord: entity {} not found",
-                entity_id
-            );
-            return false;
-        };
-        if !entity
-            .locomotor
-            .as_ref()
-            .is_some_and(|loco| loco.active_kind() == LocomotorKind::Teleport)
+        if let Some(ref mut loco) = entity.locomotor
+            && loco.kind != LocomotorKind::Teleport
         {
-            return false;
+            if !loco.begin_piggyback(
+                crate::rules::locomotor_type::LocomotorKind::Teleport,
+                crate::sim::movement::locomotor::MovementLayer::Ground,
+                binary_frame,
+            ) {
+                return false;
+            }
+            // BEGIN719E90 replaces an interface, not Object+9C. Publish the
+            // outgoing controller's legacy split coordinate before the new
+            // raw-copy +18 receiver can observe the owner.
+            entity.position.exact_z_leptons = Some(physical.z);
         }
     }
-    start_teleport_state(entities, entity_id, target, rules, is_harvester)
-}
 
-fn start_teleport_state(
-    entities: &mut EntityStore,
-    entity_id: u64,
-    target: (u16, u16),
-    rules: &GeneralRules,
-    is_harvester: bool,
-) -> bool {
     let Some(entity) = entities.get_mut(entity_id) else {
-        log::warn!("start_teleport_state: entity {} not found", entity_id);
         return false;
     };
+    arm_teleport(entity, target, rules, is_harvester)
+}
 
+/// `TeleportLocomotionClass::Move_To @ 0x00718100` from the Unit setter's
+/// Foot tail. A timer-locked owner (`vt+0x380`, the Foot+0x6A0 paralysis
+/// timer), one warped out (`vt+0x1D4`, Techno+0x270: a Temporal warp) or one
+/// warping in (`vt+0x1D8`, +0x271: a teleporter's post-warp delay) refuses
+/// with a raw NavCom clear (`0x0071820F`). Otherwise the destination cell's
+/// centre is armed (`0x007181DB`, the +0x30 request) and the same turn's
+/// Process warps there. A request already armed is not warped out: the
+/// ordinary warp never sets +0x270, so Mission_Enter's re-assign re-arms it.
+/// Evidence: tools/spatial_oracle/cmin_dock.json `teleport_move_to` rows.
+///
+/// RESIDUALS: the EMP/death-frame guard (`vt+0x37C`, unrepresented, as for
+/// the Drive Move_To) and the Chronosphere's +0x270 (not represented); the
+/// destination resolution's Can_Enter_Cell refusal and nearby-cell
+/// replacement (`0x00718B70`, rows `pad_cannot_enter*`), reached only for a
+/// cell whose occupy bit another vehicle holds without a Unit in its list;
+/// and that resolution's reservation bit (Unit `vt+0xF0`/`+0xF4`), which the
+/// next resolution clears at the previous destination whoever stands there.
+pub(crate) fn teleport_move_to(
+    entity: &mut crate::sim::game_entity::GameEntity,
+    target: (u16, u16),
+    rules: &GeneralRules,
+    is_harvester: bool,
+    binary_frame: u32,
+) -> bool {
+    if entity.is_paralyzed(binary_frame) || entity.temporal.is_warped() || entity.is_warping_in() {
+        entity.navigation.nav_com = None;
+        return false;
+    }
+    arm_teleport(entity, target, rules, is_harvester)
+}
+
+/// Process `0x00719375..0x007193C1`: an owner whose exact coordinate is
+/// already the armed destination takes `vt+0x480(NULL, 1)` and Stop_Moving
+/// instead of the warp (`0x007197AF`): no animation, sound or PerCell.
+pub(crate) fn warp_destination_reached(
+    entity: &crate::sim::game_entity::GameEntity,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+) -> bool {
+    entity
+        .teleport_state
+        .as_ref()
+        .filter(|state| state.phase == TeleportPhase::Relocate)
+        .is_some_and(|state| {
+            super::ground_pose::position_world_coord(&entity.position)
+                == super::navcom::target_cell_coord(state.target_rx, state.target_ry, terrain)
+        })
+}
+
+fn arm_teleport(
+    entity: &mut crate::sim::game_entity::GameEntity,
+    target: (u16, u16),
+    rules: &GeneralRules,
+    is_harvester: bool,
+) -> bool {
     // Compute distance in leptons (1 cell = 256 leptons) for chrono delay.
     let dx = (entity.position.rx as i32 - target.0 as i32) * 256;
     let dy = (entity.position.ry as i32 - target.1 as i32) * 256;
@@ -343,7 +358,10 @@ pub fn tick_teleport_movement(
             .get(id)
             .and_then(|entity| entity.teleport_state.as_ref())
             .is_some_and(|state| state.phase == TeleportPhase::Relocate);
-        if is_relocating {
+        let reached = entities
+            .get(id)
+            .is_some_and(|entity| warp_destination_reached(entity, terrain));
+        if is_relocating && !reached {
             release_incoming_target_locks(entities, id);
         }
         let Some(entity) = entities.get_mut(id) else {
@@ -357,6 +375,11 @@ pub fn tick_teleport_movement(
         let phase_before = teleport.phase;
 
         match teleport.phase {
+            // 0x007197AF: Stop_Moving only; the caller runs the NULL assign.
+            TeleportPhase::Relocate if reached => {
+                finished.push(id);
+                outcomes.push((id, SpecialMovementOutcome::Abort));
+            }
             TeleportPhase::Relocate => {
                 // Instant relocation in one frame.
                 let old_rx = entity.position.rx;
@@ -505,7 +528,6 @@ mod tests {
     use crate::sim::entity_store::EntityStore;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
-    use crate::sim::pathfinding::PathGrid;
     use crate::util::fixed_math::SimFixed;
 
     fn make_drive_obj() -> ObjectType {
@@ -868,15 +890,6 @@ mod tests {
         }
     }
 
-    fn make_teleport_harvester_obj() -> ObjectType {
-        let mut obj = make_drive_obj();
-        obj.locomotor = LocomotorKind::Teleport;
-        obj.harvester = true;
-        obj.teleporter = true;
-        obj.turret_rot = 5;
-        obj
-    }
-
     fn default_rules() -> GeneralRules {
         GeneralRules::default()
     }
@@ -1135,116 +1148,6 @@ mod tests {
         assert_eq!(loco.kind, LocomotorKind::Drive);
         assert!(!loco.is_overridden());
         assert_eq!(loco.layer, MovementLayer::Ground);
-    }
-
-    #[test]
-    fn teleporter_empty_destination_starts_teleport_without_drive_override() {
-        let mut entities = EntityStore::new();
-        let obj = make_teleport_harvester_obj();
-        let loco = LocomotorState::from_object_type(&obj, 0);
-        let mut e = GameEntity::test_default(1, "CMIN", "Americans", 5, 5);
-        e.locomotor = Some(loco);
-        entities.insert(e);
-        let rules = default_rules();
-
-        assert!(crate::sim::movement::set_destination_for_teleporter_entity(
-            &mut entities,
-            None,
-            1,
-            (20, 20),
-            SimFixed::from_num(6),
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
-            &rules,
-            true,
-            true,
-            false,
-            None,
-            0,
-        ));
-
-        let entity = entities.get(1).expect("entity");
-        assert!(entity.teleport_state.is_some());
-        let loco = entity.locomotor.as_ref().expect("loco");
-        assert_eq!(loco.active_kind(), LocomotorKind::Teleport);
-        assert_eq!(loco.effective_kind(), LocomotorKind::Teleport);
-        assert!(loco.piggyback.is_none());
-        assert!(!loco.is_overridden());
-    }
-
-    #[test]
-    fn teleporter_building_destination_activates_drive_piggyback() {
-        let mut entities = EntityStore::new();
-        let obj = make_teleport_harvester_obj();
-        let loco = LocomotorState::from_object_type(&obj, 0);
-        let mut e = GameEntity::test_default(1, "CMIN", "Americans", 5, 5);
-        e.locomotor = Some(loco);
-        entities.insert(e);
-        let rules = default_rules();
-        let grid = PathGrid::test_all_passable(32, 32);
-
-        assert!(crate::sim::movement::set_destination_for_teleporter_entity(
-            &mut entities,
-            Some(&grid),
-            1,
-            (10, 10),
-            SimFixed::from_num(6),
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
-            &rules,
-            true,
-            true,
-            true,
-            None,
-            0,
-        ));
-
-        let entity = entities.get(1).expect("entity");
-        assert!(entity.teleport_state.is_none());
-        assert!(entity.movement_target.is_some());
-        let loco = entity.locomotor.as_ref().expect("loco");
-        assert_eq!(loco.active_kind(), LocomotorKind::Drive);
-        assert_eq!(loco.effective_kind(), LocomotorKind::Teleport);
-        assert!(loco.piggyback.is_some());
-
-        // gamemd's `Drive::Is_Ok_To_End` asks the ACTIVE locomotor's own
-        // `Is_Moving` (ILocomotion slot 4), and that predicate reads the Drive
-        // locomotor's destination and head-to coords — not the owner's path
-        // queue. Dropping the path alone therefore does NOT unwind the stash.
-        entities.get_mut(1).expect("entity").movement_target = None;
-        assert_eq!(
-            crate::sim::movement::tick_locomotor_piggyback_restore(&mut entities),
-            0,
-            "the Drive locomotor still holds a destination, so it still reports Is_Moving"
-        );
-
-        // Arrival clears the Drive destination and head-to; now the gate opens.
-        {
-            let drive = entities
-                .get_mut(1)
-                .and_then(|entity| entity.drive_locomotion.as_mut())
-                .expect("drive state");
-            drive.destination = None;
-            drive.head_to = None;
-        }
-        assert_eq!(
-            crate::sim::movement::tick_locomotor_piggyback_restore(&mut entities),
-            1
-        );
-        let loco = entities
-            .get(1)
-            .and_then(|entity| entity.locomotor.as_ref())
-            .expect("loco");
-        assert_eq!(loco.active_kind(), LocomotorKind::Teleport);
-        assert!(loco.is_primary_active());
     }
 
     #[test]

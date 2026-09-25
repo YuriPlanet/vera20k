@@ -1297,6 +1297,12 @@ impl Simulation {
         self.track_enter_idle_mode(id, rules)
     }
 
+    /// Unit Per_Cell_Process(2) (`0x00739EC0`) outside a track: the Teleport
+    /// warp's arrival call (`0x0071971C`).
+    pub(crate) fn unit_per_cell_process_arrival(&mut self, id: u64, rules: Option<&RuleSet>) {
+        self.unit_track_per_cell(id, super::track_turn::PerCellReason::Arrival, rules, None);
+    }
+
     pub(super) fn unit_track_per_cell(
         &mut self,
         id: u64,

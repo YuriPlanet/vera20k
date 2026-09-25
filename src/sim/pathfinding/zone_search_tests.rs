@@ -18,7 +18,7 @@ use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::test_interner;
 use crate::sim::miner::miner_system::{issue_move_if_idle, issue_stock_miner_drive_move};
-use crate::sim::miner::{CargoBale, MinerConfig, MinerState, RefineryDockPhase, ResourceType};
+use crate::sim::miner::{CargoBale, MinerConfig, MinerState, ResourceType};
 use crate::sim::movement::{issue_move_command_with_layered, tick_movement_with_grids};
 use crate::sim::occupancy::{CellOccupationGrid, OccupancyGrid};
 use crate::sim::pathfinding::PathGrid;

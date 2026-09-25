@@ -12,7 +12,6 @@ use std::collections::BTreeSet;
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::rules::ruleset::GeneralRules;
 use crate::sim::components::MovementTarget;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::pathfinding::PathGrid;
@@ -29,8 +28,6 @@ use super::{PathfindingContext, facing_from_delta};
 use crate::rules::locomotor_type::MovementZone;
 use crate::sim::components::OrderIntent;
 use crate::sim::game_entity::GameEntity;
-
-use super::teleport_movement;
 
 /// Check if an entity can accept a new movement destination.
 ///
@@ -232,125 +229,6 @@ pub fn issue_move_command(
         None,
         None,
         timing,
-    )
-}
-
-/// Gamemd-shaped Set_Destination bridge for Teleporter units.
-///
-/// `LocomotorState.kind` remains the active locomotor. If the target cell is a
-/// building cell, a Teleport-primary unit activates Drive piggyback and receives
-/// a normal ground movement target. If the target cell is empty and active
-/// Teleport is available, Teleport receives Head_To_Coord and starts the warp.
-#[allow(clippy::too_many_arguments)]
-pub fn set_destination_for_teleporter_entity(
-    entities: &mut EntityStore,
-    grid: Option<&PathGrid>,
-    entity_id: u64,
-    target: (u16, u16),
-    speed: SimFixed,
-    queue: bool,
-    terrain_costs: Option<&TerrainCostGrid>,
-    entity_blocks: Option<&BTreeSet<(u16, u16)>>,
-    resolved_terrain: Option<&ResolvedTerrainGrid>,
-    zone_grid: Option<&ZoneGrid>,
-    entity_block_map: Option<&LayeredEntityBlockMap>,
-    rules: &GeneralRules,
-    is_harvester: bool,
-    is_teleporter: bool,
-    destination_has_building: bool,
-    playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
-    binary_frame: u32,
-) -> bool {
-    let Some(entity) = entities.get(entity_id) else {
-        return false;
-    };
-    if !can_accept_destination(entity) {
-        return false;
-    }
-    let has_teleport_locomotor = entity.locomotor.as_ref().is_some_and(|loco| {
-        loco.effective_kind() == LocomotorKind::Teleport
-            || loco.active_kind() == LocomotorKind::Teleport
-    });
-    if !is_teleporter || !has_teleport_locomotor {
-        let Some(grid) = grid else {
-            return false;
-        };
-        return issue_move_command_with_layered(
-            entities,
-            grid,
-            entity_id,
-            target,
-            speed,
-            queue,
-            terrain_costs,
-            entity_blocks,
-            resolved_terrain,
-            zone_grid,
-            entity_block_map,
-            None,
-            playfield_bounds,
-            None,
-            crate::sim::movement::DestinationTiming::new(
-                binary_frame,
-                rules.blockage_path_delay_ticks,
-            ),
-        );
-    }
-
-    if destination_has_building {
-        let Some(grid) = grid else {
-            return false;
-        };
-        if let Some(entity) = entities.get_mut(entity_id) {
-            super::locomotor_owner::begin_drive_for_teleporter(entity, binary_frame);
-        }
-        return issue_move_command_with_layered(
-            entities,
-            grid,
-            entity_id,
-            target,
-            speed,
-            queue,
-            terrain_costs,
-            entity_blocks,
-            resolved_terrain,
-            zone_grid,
-            entity_block_map,
-            None,
-            playfield_bounds,
-            None,
-            crate::sim::movement::DestinationTiming::new(
-                binary_frame,
-                rules.blockage_path_delay_ticks,
-            ),
-        );
-    }
-
-    if let Some(entity) = entities.get_mut(entity_id) {
-        let should_restore = entity.locomotor.as_ref().is_some_and(|loco| {
-            loco.effective_kind() == LocomotorKind::Teleport
-                && loco.active_kind() != LocomotorKind::Teleport
-        });
-        // `TechnoClass::Set_Destination` @ `0x00741970` unwinds through the
-        // same gated protocol `FootClass::AI` uses — `Is_Ok_To_End` (`+0x14`)
-        // first, transfer only when it returns true — at `0x00742587` and
-        // `0x00742681`. Its third END, `0x00742A7C`, and the war-factory-exit
-        // fragment at `0x0044E014` are gated on `Is_Piggybacking` (`+0x1C`)
-        // alone, so "no ungated END" would be too strong; every native END is
-        // nevertheless part of a *swap*. Here the gated form is the right one:
-        // a Chrono Miner still driving keeps Drive installed and the per-tick
-        // restore picks it up on the frame the drive actually stops.
-        if should_restore {
-            super::locomotor_owner::try_restore_primary(entity);
-        }
-    }
-
-    teleport_movement::issue_active_teleport_head_to_coord(
-        entities,
-        entity_id,
-        target,
-        rules,
-        is_harvester,
     )
 }
 
@@ -927,8 +805,10 @@ pub(crate) fn issue_move_command_with_destination(
 /// (track_destination NavQueue rows). Neither map availability nor an A* result admits the
 /// destination: the first no-queue Process owns the request (Drive 4B28A3,
 /// Ship 6A1EF3). Native evidence: track_destination unit rows and
-/// track_order_path. Complete class preprocessing (radio building, Teleporter
-/// swap, deploy bytes, +1F8 and skip-MoveTo) remains open.
+/// track_order_path. The class preprocessing (the Teleporter arm, +1F8 and
+/// the Foot+0x6AC skip) belongs to `Simulation::set_unit_cell_destination`;
+/// this command-path adapter has none of it, nor the radio-building and
+/// deploy-byte arms.
 pub(crate) fn prepare_track_destination(
     entity: &mut GameEntity,
     target: (u16, u16),
@@ -1029,7 +909,11 @@ pub(super) fn spend_track_route(entity: &mut GameEntity) {
 /// MovementTarget is only the scheduling adapter. Retain a paid head, never
 /// turn or search at order time. The ordinary Process owns the first route
 /// and subsequent head selection for Walk, Drive and Ship.
-fn prepare_destination_execution(entity: &mut GameEntity, target: (u16, u16), speed: SimFixed) {
+pub(super) fn prepare_destination_execution(
+    entity: &mut GameEntity,
+    target: (u16, u16),
+    speed: SimFixed,
+) {
     let committed_head = committed_path_head(entity);
     entity.movement_target = Some(MovementTarget {
         speed,

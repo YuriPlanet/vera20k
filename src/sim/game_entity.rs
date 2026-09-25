@@ -546,8 +546,9 @@ pub struct GameEntity {
     /// gamemd-derived: the constructor clears it at `0x006F2F5B`, Unlimbo
     /// establishes an exact mode-one result at `0x006F6CFE`, ordinary cell
     /// movement promotes false to true without normally demoting it at
-    /// `0x006F511A..0x006F5139`, teleport arrival can clear it at `0x00719A99`,
-    /// and `MapClass::Set_Clipped_LocalSize @ 0x00567230` recomputes every
+    /// `0x006F511A..0x006F5139` (the Teleport warp's PerCell(2) included), the
+    /// Chronosphere warp's arrival state can clear it at `0x00719A99` (not
+    /// represented), and `MapClass::Set_Clipped_LocalSize @ 0x00567230` recomputes every
     /// Techno exactly after a LocalSize writer. Consumers must read this stored
     /// fact; a fresh bounds query would erase the native movement hysteresis.
     #[serde(default)]
@@ -615,6 +616,14 @@ pub struct GameEntity {
     /// This is independent from MCV Unit+68C and infantry deploy animation.
     #[serde(default)]
     pub(crate) foot_locomotor_swap_active: bool,
+    /// Techno+0x1F8, constructor zero (`0x006F2CE1`). The Unit setter's
+    /// Teleporter arm raises it when a Drive cannot end yet (`0x007425C6`), so
+    /// the next setter call runs for an unchanged NavCom (`0x00741A88`); every
+    /// setter call that passes that check clears it (`0x00741A9C`). Unlimbo's
+    /// own raise and clear (`0x006F6E1B`/`0x006F6E34`) bracket one call and
+    /// leave nothing behind.
+    #[serde(default)]
+    pub(crate) setter_force_reassign: bool,
     /// Active attack target — present when entity is firing at something.
     pub attack_target: Option<AttackTarget>,
     /// Generic non-Prism Building delayed-fire latch.
@@ -1455,6 +1464,7 @@ impl GameEntity {
             flight_attitude: Default::default(),
             foot_occupation_enabled: true,
             foot_locomotor_swap_active: false,
+            setter_force_reassign: false,
             attack_target: None,
             pending_building_fire: None,
             current_weapon_index: 0,

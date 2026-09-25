@@ -3014,9 +3014,6 @@ impl Simulation {
     pub(crate) fn superweapon_rng(&mut self) -> &mut SimRng {
         &mut self.scenario_rng
     } // lightning-storm scatter/bolt
-    pub(crate) fn miner_jitter_rng(&mut self) -> &mut SimRng {
-        &mut self.scenario_rng
-    } // dock-entry retry + unload-deploy frame jitter
     /// Capture the process-continuity Scenario cursor when gameplay returns to
     /// the frontend. The app stores this clone until the next successful Start
     /// reseeds the gameplay pair.
@@ -3666,17 +3663,6 @@ impl Simulation {
             && let Some(entity) = self.substrate.entities.get_mut(stable_id)
         {
             entity.in_playfield = true;
-        }
-    }
-
-    /// Teleport arrival's exceptional exact outside clear (`0x00719A99`). An
-    /// inside arrival does not promote a previously-false byte.
-    fn clear_entity_playfield_membership_after_teleport(&mut self, stable_id: u64) {
-        if self.entity_playfield_membership_mode_one(stable_id, self.resolved_terrain.as_ref())
-            == Some(false)
-            && let Some(entity) = self.substrate.entities.get_mut(stable_id)
-        {
-            entity.in_playfield = false;
         }
     }
 
@@ -6852,6 +6838,14 @@ mod refinery_dock_oracle_tests;
 #[cfg(test)]
 #[path = "refinery_dock_cycle_tests.rs"]
 mod refinery_dock_cycle_tests;
+
+#[cfg(test)]
+#[path = "cmin_dock_oracle_tests.rs"]
+mod cmin_dock_oracle_tests;
+
+#[cfg(test)]
+#[path = "cmin_dock_cycle_tests.rs"]
+mod cmin_dock_cycle_tests;
 
 #[cfg(test)]
 #[path = "world_orders_c4_tests.rs"]
