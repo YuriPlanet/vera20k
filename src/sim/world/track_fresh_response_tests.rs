@@ -36,7 +36,7 @@ use std::collections::BTreeMap;
 /// for its SpeedType-2 rows) for both locomotors; O5 carries +22D Crushable
 /// and O6 +2A8 Wall, the two supplied overlay kinds. The Road row (0.75) and
 /// the four slope coefficients are the oracle's.
-const UNITS: &str = "[VehicleTypes]\n0=DRV\n1=SHP\n2=DRW\n3=SHW\n\
+const UNITS: &str = "[VehicleTypes]\n0=DRV\n1=SHP\n2=DRW\n3=SHW\n4=DRC\n5=SHC\n6=DRA\n7=SHA\n\
     [DRV]\nStrength=300\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\n\
     Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
     [SHP]\nStrength=300\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\n\
@@ -44,6 +44,14 @@ const UNITS: &str = "[VehicleTypes]\n0=DRV\n1=SHP\n2=DRW\n3=SHW\n\
     [DRW]\nStrength=300\nSpeed=6\nSpeedType=Wheel\nMovementZone=Normal\n\
     Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
     [SHW]\nStrength=300\nSpeed=6\nSpeedType=Wheel\nMovementZone=Normal\n\
+    Locomotor={2BEA74E1-7CCA-11D3-BE14-00104B62A16C}\n\
+    [DRC]\nStrength=300\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\nCrusher=yes\n\
+    Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+    [SHC]\nStrength=300\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\nCrusher=yes\n\
+    Locomotor={2BEA74E1-7CCA-11D3-BE14-00104B62A16C}\n\
+    [DRA]\nStrength=300\nSpeed=6\nSpeedType=Track\nMovementZone=CrusherAll\n\
+    Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+    [SHA]\nStrength=300\nSpeed=6\nSpeedType=Track\nMovementZone=CrusherAll\n\
     Locomotor={2BEA74E1-7CCA-11D3-BE14-00104B62A16C}\n\
     [O5]\nCrushable=yes\n[O6]\nWall=yes\n\
     [Road]\nTrack=75%\nWheel=75%\n\
@@ -112,10 +120,12 @@ fn unit(
     }
     for overlay in input["overlays"].as_array().into_iter().flatten() {
         let (x, y) = pair(overlay);
-        let id = match (overlay[2] == true, overlay[3] == true) {
-            (true, false) => 5,
-            (false, true) => 6,
-            other => panic!("unmapped overlay flags {other:?}"),
+        let id = match (overlay[2] == true, overlay[3] == true, overlay[4].as_u64()) {
+            // An explicit index keeps its id (O0 carries no flags).
+            (false, false, Some(index)) => index as u8,
+            (true, false, None) => 5,
+            (false, true, None) => 6,
+            other => panic!("unmapped overlay {other:?}"),
         };
         terrain
             .cell_mut(x as u16, y as u16)
@@ -135,13 +145,23 @@ fn unit(
         cell.yr_cell_land_type = 10;
         cell.base_yr_cell_land_type = 10;
     }
-    let wheel = input["speed_type"] == 2;
-    let kind = match (input["family"] == "drive", wheel) {
-        (true, false) => "DRV",
-        (false, false) => "SHP",
-        (true, true) => "DRW",
-        (false, true) => "SHW",
+    // The row's Unit type: SpeedType Wheel, Crusher=yes or CrusherAll.
+    let variant = if input["movement_zone"] == 12 {
+        "A"
+    } else if input["crusher"] == true {
+        "C"
+    } else if input["speed_type"] == 2 {
+        "W"
+    } else {
+        ""
     };
+    let kind = match (input["family"] == "drive", variant) {
+        (true, "") => "DRV".to_string(),
+        (false, "") => "SHP".to_string(),
+        (true, v) => format!("DR{v}"),
+        (false, v) => format!("SH{v}"),
+    };
+    let kind = kind.as_str();
     sim.session.binary_frame = 100;
     let id = sim
         .spawn_object(kind, "Americans", 10, 10, 0, &rules, &heights)
@@ -160,6 +180,13 @@ fn unit(
                 costs.wheel = percent;
             }
         }
+    }
+    // Raw infantry occupation bits (+124 ground, +128 deck).
+    for raw in input["raw"].as_array().into_iter().flatten() {
+        let (x, y) = pair(raw);
+        let occupation = &mut sim.substrate.raw_cell_occupation;
+        occupation.mark_ground(x as u16, y as u16, raw[2].as_u64().unwrap() as u8);
+        occupation.mark_deck(x as u16, y as u16, raw[3].as_u64().unwrap() as u8);
     }
     let e = sim.substrate.entities.get_mut(id).unwrap();
     e.health.current = input["health"].as_i64().unwrap_or(300) as i32;
@@ -440,5 +467,5 @@ fn fresh_arm_rows_match_the_original_responses() {
         compare(&sim, id, &row, out);
         checked += 1;
     }
-    assert_eq!(checked, 94);
+    assert_eq!(checked, 104);
 }

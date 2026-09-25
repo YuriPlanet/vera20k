@@ -48,7 +48,8 @@ def query(case):
     family = case['family']
     u, call, read32 = make_destination_fixture(dict(family=family, head=[0, 0, 0],
                                                     mission=case.get('mission', 2),
-                                                    cells=case.get('cells', [])))
+                                                    cells=case.get('cells', []),
+                                                    raw=case.get('raw', [])))
     # track_destination rewrites its entry Cell (11,10) +140 after the
     # source fixture's per-cell flags; restore the row's.
     for x, y, _level, flags in case.get('cells', []):
@@ -85,8 +86,8 @@ def query(case):
     u.mem_write(0x89EA40, struct.pack('<18f', *([case.get('clear_speed', 1.0)] * 9
                                                 + [case.get('road_speed', 0.75)] * 9)))
     overlays = {}
-    for x, y, crushable, wall in case.get('overlays', []):
-        index = 5 + len(overlays)
+    for x, y, crushable, wall, *explicit in case.get('overlays', []):
+        index = explicit[0] if explicit else 5 + len(overlays)
         overlay_type = EXTRA + 0x28000 + len(overlays) * 0x400
         u.mem_write(overlay_type + 0x22D, bytes([crushable]))
         u.mem_write(overlay_type + 0x2A8, bytes([wall]))
@@ -296,6 +297,18 @@ def generate():
         # an expired one does not.
         rows.append(dict(base, route=east, paralysis=[100, 30]))
         rows.append(dict(base, route=east, codes=[0], paralysis=[50, 30]))
+        # A crusher (Type+D28) scatters a candidate Cell holding infantry
+        # (+124 & 0x1F) unforced through Unit+534 = 0x7416A0(cell, 1); without
+        # infantry it does not. Codes 4/5 on overlay index 0 become 0 for a
+        # crusher (0x4B34F3..0x4B351D). CrusherAll goes straight at a wall.
+        rows.append(dict(base, route=east, codes=[0], crusher=True, raw=[[11, 10, 1, 0]]))
+        rows.append(dict(base, route=east, codes=[0], crusher=True))
+        rows.append(dict(base, route=east, codes=[4], crusher=True,
+                         overlays=[[11, 10, False, False, 0]]))
+        rows.append(dict(base, route=east, codes=[5, 0, 5], find_path=[east],
+                         overlays=[[11, 10, False, False, 0]]))
+        rows.append(dict(base, route=turn, codes=[0], movement_zone=12,
+                         overlays=[[12, 9, False, True]]))
         # A bridge-flagged candidate against OnBridge 0 sets Foot+68B (0x4B3391).
         rows.append(dict(base, route=east, codes=[0], cells=[[11, 10, 0, 0x100]]))
     return [query(row) for row in rows]
