@@ -530,9 +530,10 @@ impl Simulation {
         if self.substrate.entities.get(id).is_none() {
             return Ok(true);
         }
-        //4B3A2D..4B3A3C: found, or the destination is still reachable (+2CC).
+        //4B3A2D..4B3A3C: found, or the destination is still reachable (+2CC
+        //on the live +34, which a core failure's Stop has nulled).
         if found != FindPathResult::Failed
-            || self.foot_path_zone_precheck(id, destination, rules)?
+            || self.foot_path_zone_precheck(id, self.live_track_destination(id), rules)?
         {
             //4B3A59..4B3A8C: +640 = (Frame, PathDelay).
             if let Some(actor) = self.substrate.entities.get_mut(id) {
@@ -596,8 +597,8 @@ impl Simulation {
                     if self.substrate.entities.get(id).is_none() {
                         return Ok(true);
                     }
-                    //4B3F58..4B3F6E: an unreachable destination clears.
-                    if !self.foot_path_zone_precheck(id, destination, rules)? {
+                    //4B3F58..4B3F6E: an unreachable live destination clears.
+                    if !self.foot_path_zone_precheck(id, self.live_track_destination(id), rules)? {
                         self.set_unit_null_destination(id, Some(rules));
                     }
                 }
@@ -974,6 +975,17 @@ impl Simulation {
         if let Some(actor) = self.substrate.entities.get_mut(id) {
             clear_track_head(actor);
         }
+    }
+
+    /// The live Destination (+34) that 0x4B39D6 / 0x4B3E8F address and hand
+    /// to +2CC after Find_Path: Find_Path's core-failure receiver (+500 ->
+    /// locomotor Stop) nulls it, and a null reads as Cell (0,0).
+    fn live_track_destination(&self, id: u64) -> DriveCoord {
+        self.substrate
+            .entities
+            .get(id)
+            .and_then(track_destination)
+            .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 })
     }
 
     /// Foot+5E0 = -1 on the live path word. The scheduling adapter's route is

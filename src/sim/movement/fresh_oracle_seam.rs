@@ -18,6 +18,8 @@ pub(crate) enum SuppliedPath {
     Found(Vec<u8>),
     /// AL = 0 with no writes.
     Failed,
+    /// The original wrapper runs; only its AStar core (0x4CBBA0) is NULL.
+    CoreNull,
 }
 
 /// One substituted call, with the caller's arguments.
@@ -48,6 +50,7 @@ struct Seam {
     codes: VecDeque<u8>,
     paths: VecDeque<SuppliedPath>,
     records: Vec<FreshCallRecord>,
+    core_null: bool,
 }
 
 thread_local! {
@@ -61,6 +64,7 @@ pub(crate) fn install(codes: Vec<u8>, paths: Vec<SuppliedPath>) {
             codes: codes.into(),
             paths: paths.into(),
             records: Vec::new(),
+            core_null: false,
         })
     });
 }
@@ -69,8 +73,29 @@ pub(crate) fn install(codes: Vec<u8>, paths: Vec<SuppliedPath>) {
 pub(crate) fn finish() -> (Vec<FreshCallRecord>, usize) {
     SEAM.with(|seam| {
         seam.borrow_mut().take().map_or((Vec::new(), 0), |seam| {
-            (seam.records, seam.codes.len() + seam.paths.len())
+            (
+                seam.records,
+                seam.codes.len() + seam.paths.len() + usize::from(seam.core_null),
+            )
         })
+    })
+}
+
+/// A `CoreNull` answer arms this for the core search of the same call.
+pub(crate) fn arm_core_null() {
+    SEAM.with(|seam| {
+        if let Some(seam) = seam.borrow_mut().as_mut() {
+            seam.core_null = true;
+        }
+    });
+}
+
+/// True once per armed `CoreNull`: the core search answers NULL.
+pub(crate) fn take_core_null() -> bool {
+    SEAM.with(|seam| {
+        seam.borrow_mut()
+            .as_mut()
+            .is_some_and(|seam| std::mem::take(&mut seam.core_null))
     })
 }
 

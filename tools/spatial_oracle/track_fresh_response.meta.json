@@ -13,10 +13,10 @@
     "Fixture from track_destination (real Unit/Drive/Ship vtables, 32x32 original Cell table, Rules at EXTRA+0x10000 with BlockagePathDelay 22) plus unit_entry owner prestate. Actor Cell 10,10 centre, MovementZone 0 zone table, no NavQueue, TarCom or radio contact.",
     "Rules ConditionYellow 0.5, CloseEnough 576 unless the row sets it, PathDelay 0.01 (9 frames). Land rows: Clear 1.0 and Road 0.75 for every SpeedType unless set. Supplied overlays are indices 5.. with only +22D Crushable and +2A8 Wall.",
     "Setter at frame 100; Process at frame 101. The route words are written after the setter and the body FacingClass rests on the first word octant (timer -1) unless the row sets a facing. Foot+640/+668/+6B7/+64C are supplied after the setter.",
-    "Can_Enter_Cell answers are supplied per call in call order; the recorded arguments are the caller's. Find_Path answers are supplied per call: a list is written to Foot+5E0 with AL=1, failed returns AL=0 with no writes (the destination survives)."
+    "Can_Enter_Cell answers are supplied per call in call order; the recorded arguments are the caller's. Find_Path answers are supplied per call: a list is written to Foot+5E0 with AL=1, failed returns AL=0 with no writes (the destination survives), core_null runs the original wrapper with only the AStar core 0x4CBBA0 answering NULL (stdcall 24)."
   ],
   "substitutions": [
-    "Unit Can_Enter_Cell 0x73F0A0 (stdcall 20) and Foot Find_Path 0x4D3920 (stdcall 12) are supplied at entry.",
+    "Unit Can_Enter_Cell 0x73F0A0 (stdcall 20) and Foot Find_Path 0x4D3920 (stdcall 12) are supplied at entry, except core_null Find_Path calls, whose AStar core 0x4CBBA0 (stdcall 24) alone returns NULL.",
     "Cell Scatter_Objects 0x481670 (thiscall, 16) and Foot::Override_Mission 0x4D8F40 (thiscall, 12) are recorded and returned at entry; their bodies do not run.",
     "Only OS Interlocked imports inherited from the fixture."
   ],
@@ -31,5 +31,5 @@
     "drive_returned": "0x004B0A7E",
     "ship_returned": "0x006A0147"
   },
-  "payload_sha256": "47312342c90e1a9aa5fb0c1ed61739a4d54e50ea2dcfc85d663c27998dbf65d6"
+  "payload_sha256": "566a73204f96aaf903c5719a6ce4bd3a8c038167dda33c3bb5befbcc213ed371"
 }

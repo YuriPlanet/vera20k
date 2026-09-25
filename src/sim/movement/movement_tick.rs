@@ -391,6 +391,8 @@ fn handle_path_exhaustion(
                         ignore_terrain_cost: false,
                         bypass_grid: false,
                         wall_refusal_cell: saved_wall_refusal,
+                        // Drive/Ship publish this route to Foot+5E0 below.
+                        adapter_route: false,
                     };
                     // FootFindPath4D3EB2..3ECA clears only +640 after Mark1.
                     // The no-queue success continuation resets retries at
@@ -780,22 +782,18 @@ pub(crate) enum FootPathCaller {
 
 /// Whether a Rust route adapter, not the retained locomotor state, owns this
 /// visit: `issue_direct_move` (docking pads, grid-less scatter) and component
-/// fixtures install MovementTarget nodes that were never published to
-/// Foot+5E0 and name no locomotor destination; the pass finalizer retires
-/// them, including an exhausted route. Native routes publish both together
-/// (Find_Path 4D3E98 copy and `install_route`), and the track terminal
-/// retires an exhausted native route itself, so a routed adapter above an
-/// empty +5E0 head identifies that lane.
+/// fixtures mark their MovementTarget ([`MovementTarget::adapter_route`]);
+/// the pass finalizer retires it, including an exhausted route. Native routes
+/// keep their cells in both Foot+5E0 and the adapter cache (Find_Path 4D3E98
+/// copy and `install_route`); the NavCom trim and Find_Path's head clear empty
+/// the words alone, so the lane must not be inferred from that cache.
+///
+/// [`MovementTarget::adapter_route`]: crate::sim::components::MovementTarget::adapter_route
 pub(super) fn adapter_route_pending(entity: &crate::sim::game_entity::GameEntity) -> bool {
     entity
         .movement_target
         .as_ref()
-        .is_some_and(|target| !target.path.is_empty())
-        && entity
-            .navigation
-            .path_replay
-            .remaining_directions()
-            .is_empty()
+        .is_some_and(|target| target.adapter_route && !target.path.is_empty())
 }
 
 /// The retained no-queue request of a live Walk Foot with no paid head, whose
@@ -920,6 +918,7 @@ impl FootPathRequest {
         target.next_index = usize::from(!target.path.is_empty());
         target.ignore_terrain_cost = false;
         target.bypass_grid = false;
+        target.adapter_route = false;
         if let Some(next) = target.path.get(target.next_index) {
             let (x, y, len) = crate::util::lepton::cell_delta_to_lepton_dir(
                 i32::from(next.0) - i32::from(current.0),

@@ -215,14 +215,15 @@ impl Simulation {
                 .ok_or("retired Find_Path requester")?
                 .navigation
                 .path_replay;
-            return Ok(match path {
+            match path {
                 SuppliedPath::Found(words) => {
                     queue.directions = words;
                     queue.cursor = 0;
-                    FindPathResult::Route
+                    return Ok(FindPathResult::Route);
                 }
-                SuppliedPath::Failed => FindPathResult::Failed,
-            });
+                SuppliedPath::Failed => return Ok(FindPathResult::Failed),
+                SuppliedPath::CoreNull => super::fresh_oracle_seam::arm_core_null(),
+            }
         }
         //4D392A..393A: append=false clears one head before the +2CC
         //precheck; the backing suffix is retained.
@@ -382,6 +383,14 @@ impl Simulation {
         if let Some(lent) = borrowed {
             self.movement_pass_cache.give_back(owner, lent);
         }
+        #[cfg(test)]
+        let searched = if super::fresh_oracle_seam::take_core_null() {
+            Err(super::movement_path::MovePathFailure::Search(
+                crate::sim::pathfinding::zone_search::PathSearchFailure::CellSearchExhausted,
+            ))
+        } else {
+            searched
+        };
         //4D3EAC restores Mark1 before inspecting the core result.
         self.foot_mark_put(id, Some(rules), fallback, registry);
         let actor = self

@@ -650,6 +650,8 @@ fn terminal_centre_height_commits_before_next_process_turn_without_finalizer() {
     let target = entity.movement_target.as_mut().unwrap();
     target.path = vec![(3, 3), (4, 3)];
     target.path_layers = vec![MovementLayer::Ground; 2];
+    // A component fixture's route, never published to Foot+5E0.
+    target.adapter_route = true;
     target.final_goal = Some((4, 3));
     target.move_dir_x = SimFixed::from_num(256);
     target.move_dir_y = SIM_ZERO;

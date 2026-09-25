@@ -203,6 +203,7 @@ fn supplied(input: &Value) -> (Vec<u8>, Vec<SuppliedPath>) {
         .flatten()
         .map(|path| match path {
             Value::String(failed) if failed == "failed" => SuppliedPath::Failed,
+            Value::String(core) if core == "core_null" => SuppliedPath::CoreNull,
             words_value => SuppliedPath::Found(words(words_value)),
         })
         .collect();
@@ -417,5 +418,5 @@ fn fresh_arm_rows_match_the_original_responses() {
         compare(&sim, id, &row, out);
         checked += 1;
     }
-    assert_eq!(checked, 80);
+    assert_eq!(checked, 86);
 }

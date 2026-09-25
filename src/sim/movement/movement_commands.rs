@@ -406,6 +406,7 @@ pub fn issue_direct_move(
         move_dir_y: dir_y,
         move_dir_len: dir_len,
         ignore_terrain_cost: true,
+        adapter_route: true,
         ..Default::default()
     };
 

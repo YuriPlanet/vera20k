@@ -212,6 +212,39 @@ fn test_facing_zero_delta() {
     assert_eq!(f, 63, "Zero delta follows the native conversion path");
 }
 
+/// The pass lane is the route owner's choice, not an inference from the
+/// cell cache: a native route whose Foot+5E0 head was emptied (the NavCom
+/// trim, Find_Path's head clear) keeps the native lane, and a direct move
+/// keeps the adapter lane even over stale Foot+5E0 words.
+#[test]
+fn adapter_lane_follows_the_route_owner_not_the_cell_cache() {
+    let mut entities = EntityStore::new();
+    let mut e = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
+    // Find_Path's install: cells cached on the adapter, words on Foot+5E0,
+    // then the live head emptied.
+    e.movement_target = Some(MovementTarget {
+        path: vec![(5, 5), (6, 5), (7, 5)],
+        path_layers: vec![MovementLayer::Ground; 3],
+        next_index: 1,
+        ..Default::default()
+    });
+    e.navigation.path_replay.directions = vec![2, 2];
+    e.navigation.path_replay.clear_live_head();
+    assert!(!super::movement_tick::adapter_route_pending(&e));
+    // A direct move over stale words.
+    e.navigation.path_replay.directions = vec![6, 6];
+    entities.insert(e);
+    assert!(issue_direct_move(
+        &mut entities,
+        1,
+        (8, 5),
+        SimFixed::from_num(512),
+        crate::sim::movement::DestinationTiming::new(0, 60),
+    ));
+    let e = entities.get(1).unwrap();
+    assert!(super::movement_tick::adapter_route_pending(e));
+}
+
 // --- Movement tick tests ---
 
 #[test]
@@ -612,6 +645,7 @@ fn drive_slope_boundary_is_detected_on_process_after_ordinary_crossing() {
         ..Default::default()
     });
     entity.movement_target = Some(MovementTarget {
+        adapter_route: true,
         path: vec![(0, 0), (1, 0)],
         path_layers: vec![MovementLayer::Ground; 2],
         next_index: 1,
@@ -1333,6 +1367,7 @@ fn gsi_04_05_production_finish_promotes_endpoint_without_clearing_bit() {
         ..Default::default()
     });
     entity.movement_target = Some(MovementTarget {
+        adapter_route: true,
         path: vec![(3, 2)],
         path_layers: vec![MovementLayer::Ground],
         next_index: 1,
@@ -5059,6 +5094,7 @@ fn ship_high_bridge_ramp_to_body_relinks_after_on_bridge_update() {
     e.bridge_occupancy = None;
     e.locomotor = Some(make_ship_loco(MovementLayer::Bridge));
     e.movement_target = Some(MovementTarget {
+        adapter_route: true,
         path: vec![(1, 1), (2, 1)],
         path_layers: vec![MovementLayer::Bridge, MovementLayer::Bridge],
         next_index: 1,
@@ -5147,6 +5183,7 @@ fn on_bridge_fires_at_ramp_to_body_only() {
     e.on_bridge = false;
     e.locomotor = Some(make_drive_loco(MovementLayer::Bridge));
     e.movement_target = Some(MovementTarget {
+        adapter_route: true,
         path: vec![(1, 1), (2, 1)],
         path_layers: vec![MovementLayer::Bridge, MovementLayer::Bridge],
         next_index: 1,
@@ -5246,6 +5283,7 @@ fn on_bridge_clears_at_ramp_to_ground_only() {
     e.bridge_occupancy = Some(BridgeOccupancy { deck_level: 4 });
     e.locomotor = Some(make_drive_loco(MovementLayer::Bridge));
     e.movement_target = Some(MovementTarget {
+        adapter_route: true,
         path: vec![(1, 1), (2, 1), (3, 1)],
         // body→ramp goes on Ground layer per is_at_bridge_level
         // (parent at deck=4, neighbor h=4 → diff=0 < 2 → not at bridge level).
@@ -5360,6 +5398,7 @@ fn no_bridge_lookahead_pre_claim() {
     e.bridge_occupancy = None;
     e.locomotor = Some(make_drive_loco(MovementLayer::Ground));
     e.movement_target = Some(MovementTarget {
+        adapter_route: true,
         path: vec![(1, 1), (2, 1), (3, 1)],
         path_layers: vec![
             MovementLayer::Ground,
@@ -5483,6 +5522,7 @@ fn multi_crossing_preserves_first_bridge_set_update() {
     e.on_bridge = false;
     e.locomotor = Some(make_drive_loco(MovementLayer::Bridge));
     e.movement_target = Some(MovementTarget {
+        adapter_route: true,
         path: vec![(1, 1), (2, 1), (3, 1)],
         path_layers: vec![
             MovementLayer::Bridge,

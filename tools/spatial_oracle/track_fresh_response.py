@@ -32,6 +32,7 @@ from tools.spatial_oracle.unit_source_scatter import CELLS, MAP
 PROCESS = {'drive': 0x4B0500, 'ship': 0x69FC10}
 RETURNED = {'drive': 0x4B0A7E, 'ship': 0x6A0147}
 CAN_ENTER, FIND_PATH, SCATTER, OVERRIDE = 0x73F0A0, 0x4D3920, 0x481670, 0x4D8F40
+ASTAR = 0x4CBBA0
 RULES = EXTRA + 0x10000
 ZONE_RECORDS, ZONE_TABLE = EXTRA + 0x2C000, EXTRA + 0x2D000
 CELL_VTABLE = 0x7E4EEC
@@ -115,6 +116,7 @@ def query(case):
     events = []
     answers = list(case.get('codes', []))
     paths = list(case.get('find_path', []))
+    cores = []
 
     def ret(cleanup, value):
         sp = u.reg_read(UC_X86_REG_ESP)
@@ -132,7 +134,8 @@ def query(case):
             assert answers, ('unsupplied Can_Enter_Cell', case)
             code = answers.pop(0)
             events.append(['can_enter', coord_of(args[0]), args[1],
-                           struct.unpack('<i', dwords(args[2]))[0], args[3], args[4], code])
+                           struct.unpack('<i', dwords(args[2]))[0], args[3], args[4], code,
+                           hex(read32(sp))])
             ret(20, code)
         elif address == FIND_PATH:
             packed = read32(sp + 4)
@@ -140,6 +143,10 @@ def query(case):
             result = paths.pop(0)
             events.append(['find_path', packed & 0xFFFF, packed >> 16,
                            read32(sp + 8), read32(sp + 12), result if isinstance(result, str) else 'found'])
+            if result == 'core_null':
+                # The original wrapper runs; only its AStar core answers NULL.
+                cores.append(result)
+                return
             if isinstance(result, list):
                 u.mem_write(ACTOR + 0x5E0, dwords(*result, *([-1] * (24 - len(result)))))
             ret(12, int(isinstance(result, list)))
@@ -153,6 +160,13 @@ def query(case):
             named = coord_of(target) if read32(target) == CELL_VTABLE else target
             events.append(['override', mission, named, dest])
             ret(12, 0)
+        elif address == ASTAR:
+            assert cores, ('AStar without a core_null answer', case)
+            cores.pop()
+            events.append('astar_null')
+            ret(24, 0)
+        elif address == 0x4D55C0:
+            events.append('failed_receiver')
         elif address == 0x741970:
             events.append(['unit_destination', read32(sp + 4)])
         elif address == 0x578AD0:
@@ -167,7 +181,7 @@ def query(case):
     u.reg_write(UC_X86_REG_ECX, 0)
     stop = run_checked(u, entry, (RETURNED[family], RET_MAGIC), count=4000000,
                        required_addresses=[entry])
-    assert not answers and not paths, (case, answers, paths)
+    assert not answers and not paths and not cores, (case, answers, paths, cores)
     signed = lambda address, n: list(struct.unpack('<' + 'i' * n, u.mem_read(address, n * 4)))
     nav = read32(ACTOR + 0x5A4)
     state = dict(
@@ -255,6 +269,14 @@ def generate():
         rows.append(dict(base, route=east, codes=[0], health=100))
         rows.append(dict(base, route=east, codes=[0], health=150))
         rows.append(dict(base, route=east, codes=[0], clear_speed=0.0, health=100, **down))
+        # Find_Path's own core failure: the wrapper arms PathDelay and calls the
+        # Unit receiver, whose locomotor Stop nulls +34 before the +2CC recheck.
+        # The wrapper's goal admission (0x4D3A92) asks Can_Enter_Cell first.
+        rows.append(dict(base, route=east, codes=[2, 0], find_path=['core_null']))
+        rows.append(dict(base, route=east, codes=[2, 0], latched=True,
+                         blocked_timer=[50, 0, 22], find_path=['core_null']))
+        rows.append(dict(base, route=[2], codes=[0, 0], destination=[14, 10],
+                         find_path=['core_null']))
     return [query(row) for row in rows]
 
 
@@ -269,10 +291,10 @@ if __name__ == '__main__':
             'Fixture from track_destination (real Unit/Drive/Ship vtables, 32x32 original Cell table, Rules at EXTRA+0x10000 with BlockagePathDelay 22) plus unit_entry owner prestate. Actor Cell 10,10 centre, MovementZone 0 zone table, no NavQueue, TarCom or radio contact.',
             'Rules ConditionYellow 0.5, CloseEnough 576 unless the row sets it, PathDelay 0.01 (9 frames). Land rows: Clear 1.0 and Road 0.75 for every SpeedType unless set. Supplied overlays are indices 5.. with only +22D Crushable and +2A8 Wall.',
             'Setter at frame 100; Process at frame 101. The route words are written after the setter and the body FacingClass rests on the first word octant (timer -1) unless the row sets a facing. Foot+640/+668/+6B7/+64C are supplied after the setter.',
-            'Can_Enter_Cell answers are supplied per call in call order; the recorded arguments are the caller\'s. Find_Path answers are supplied per call: a list is written to Foot+5E0 with AL=1, failed returns AL=0 with no writes (the destination survives).',
+            'Can_Enter_Cell answers are supplied per call in call order; the recorded arguments are the caller\'s. Find_Path answers are supplied per call: a list is written to Foot+5E0 with AL=1, failed returns AL=0 with no writes (the destination survives), core_null runs the original wrapper with only the AStar core 0x4CBBA0 answering NULL (stdcall 24).',
         ],
         substitutions=[
-            'Unit Can_Enter_Cell 0x73F0A0 (stdcall 20) and Foot Find_Path 0x4D3920 (stdcall 12) are supplied at entry.',
+            'Unit Can_Enter_Cell 0x73F0A0 (stdcall 20) and Foot Find_Path 0x4D3920 (stdcall 12) are supplied at entry, except core_null Find_Path calls, whose AStar core 0x4CBBA0 (stdcall 24) alone returns NULL.',
             'Cell Scatter_Objects 0x481670 (thiscall, 16) and Foot::Override_Mission 0x4D8F40 (thiscall, 12) are recorded and returned at entry; their bodies do not run.',
             'Only OS Interlocked imports inherited from the fixture.',
         ]))
