@@ -222,7 +222,7 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
 
     fn reopen_parent(&mut self) {
         // Native caller blocks in A3. Our asynchronous child resumes this
-        // continuation on close, after Back/save or Escape/current-file reload.
+        // continuation when it closes (after its teardown slide).
         if self.state.frontend.keyboard_dialog.is_none() {
             App::open_launcher_options_dialog(self.state);
         }
@@ -567,13 +567,17 @@ impl App {
             }
         }
         match output.result {
-            // Main Menu: 0xD5 slides out (0x0055FD06) before the result is
-            // committed and state 0x12 recreates 0xE2.
-            Some(crate::ui::main_menu_dialogs::options::LauncherParentResult::Back) => {
+            // Main Menu and Keyboard: 0xD5 slides out (0x0055FD06) before
+            // the result is committed and the next page runs. (Network's page
+            // 0xD7 is not ported; its result keeps the old immediate path.)
+            Some(
+                result @ (crate::ui::main_menu_dialogs::options::LauncherParentResult::Back
+                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard),
+            ) => {
                 state.frontend.options_dialog = Some(dialog);
                 Self::leave_shell_dialog(
                     state,
-                    crate::app::frontend::shell_transition::ShellExitThen::OptionsBack,
+                    crate::app::frontend::shell_transition::ShellExitThen::Options(result),
                 );
             }
             Some(result) => {
@@ -588,9 +592,13 @@ impl App {
         }
     }
 
-    /// Main Menu's teardown slide has run: commit the controls and write the
-    /// profile (`0x0055FAA0`, `0x005FAD10`); the next frame builds `0xE2`.
-    pub(super) fn commit_launcher_options_back(state: &mut AppState) {
+    /// `0xD5`'s teardown slide has run: commit the controls (`0x0055FAA0`),
+    /// then write the profile and build `0xE2` (Main Menu, `0x005FAD10`) or
+    /// run the Keyboard page.
+    pub(super) fn commit_launcher_options_result(
+        state: &mut AppState,
+        result: crate::ui::main_menu_dialogs::options::LauncherParentResult,
+    ) {
         let Some(dialog) = state.frontend.options_dialog.take() else {
             return;
         };
@@ -598,7 +606,7 @@ impl App {
         crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
             &mut operations,
             dialog,
-            crate::ui::main_menu_dialogs::options::LauncherParentResult::Back,
+            result,
         );
     }
 
@@ -1010,7 +1018,10 @@ impl App {
             ShellExitThen::SkirmishBack => Self::commit_skirmish_back(state),
             ShellExitThen::CampaignBack => Self::commit_campaign_back(state),
             ShellExitThen::LoadSavedGameBack => Self::commit_load_saved_game_back(state),
-            ShellExitThen::OptionsBack => Self::commit_launcher_options_back(state),
+            ShellExitThen::Options(result) => Self::commit_launcher_options_result(state, result),
+            ShellExitThen::KeyboardClose(exit) => {
+                crate::app::input::keyboard::commit_close(state, exit)
+            }
             ShellExitThen::WolBack => Self::return_from_wol(state),
             ShellExitThen::WolApiMissing => Self::commit_wol_api_missing(state),
         }

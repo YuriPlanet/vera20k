@@ -19,7 +19,7 @@ use crate::render::{
     shell_text::{self, ShellAlign, ShellTextDraw},
 };
 use crate::ui::shell::geom::RectPx;
-use crate::ui::shell::keyboard::{KeyboardButton, KeyboardLayout, KeyboardParent};
+use crate::ui::shell::keyboard::{KEYBOARD_PAGE, KeyboardButton, KeyboardLayout, KeyboardParent};
 use crate::ui::shell::list::ShellListGeometry;
 use crate::ui::shell::static_reveal::Kind1PaintWindow;
 use std::time::Instant;
@@ -100,23 +100,69 @@ pub(crate) fn render_keyboard_shell(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
+    use crate::app::frontend::shell_transition::ShellSlideKind;
     let width = state.renderer.gpu.config.width as i32;
     let height = state.renderer.gpu.config.height as i32;
-    let title_text = localized_label(state, "GUI:KeyboardOptions", "Keyboard Options");
+    let title_text = localized_label(state, KEYBOARD_PAGE.title_key, "Keyboard Options");
     let now = Instant::now();
-    let dialog = state
+    let active = state
         .frontend
         .keyboard_dialog
-        .as_mut()
-        .expect("active A3 state");
-    dialog.title.start(&title_text, now);
-    dialog.title.poll_timer(now);
-    let (title, receipt) = match dialog.title.paint_window() {
-        Kind1PaintWindow::Hidden => (None, None),
-        Kind1PaintWindow::Retained(window) => (Some(window), None),
-        Kind1PaintWindow::Due { window, receipt } => (Some(window), Some(receipt)),
+        .as_ref()
+        .expect("active A3 state")
+        .parent
+        == KeyboardParent::GameControls;
+    // The front-end page slides like its family: the teardown slide repaints
+    // the dialog and pumps no messages until it ends, so every child stays
+    // blank; the entry slide suppresses the heading, status line and Back
+    // (`0x00606800`) while the left-side controls paint.
+    let exit_wave = (!active)
+        .then(|| {
+            crate::app::frontend::shell_transition::shell_exit_wave(state, ShellSlideKind::Keyboard)
+                .cloned()
+        })
+        .flatten();
+    let leaving = exit_wave.is_some();
+    let wave = exit_wave.or_else(|| {
+        (!active)
+            .then(|| state.frontend.shell_first_paint_slide.clone())
+            .flatten()
+    });
+    let sliding = wave.is_some();
+    let (title, receipt) = if active {
+        let dialog = state
+            .frontend
+            .keyboard_dialog
+            .as_mut()
+            .expect("active A3 state");
+        dialog.title.start(&title_text, now);
+        dialog.title.poll_timer(now);
+        match dialog.title.paint_window() {
+            Kind1PaintWindow::Hidden => (None, None),
+            Kind1PaintWindow::Retained(window) => (Some(window), None),
+            Kind1PaintWindow::Due { window, receipt } => (Some(window), Some(receipt)),
+        }
+    } else {
+        // Heading and status line are the family statics: their reveals
+        // start when the entry slide ends.
+        let title = (!sliding)
+            .then(|| state.frontend.shell_page_title.paint(now))
+            .flatten();
+        (title, None)
     };
-    let active = dialog.parent == KeyboardParent::GameControls;
+    let status_label = if active || sliding {
+        None
+    } else {
+        let help = state
+            .frontend
+            .keyboard_dialog
+            .as_ref()
+            .and_then(|dialog| dialog.hovered)
+            .map(|control| localized_label(state, control.help_key(), ""))
+            .unwrap_or_default();
+        let window = KeyboardLayout::new(width, height, None).footer;
+        crate::app::frontend::menu_page_render::paint_shell_status_line(state, help, window)
+    };
     let shell = active
         .then(|| in_game_shell::current_in_game_shell_layout(state).expect("active A3 frame"));
     let layout = KeyboardLayout::new(width, height, shell);
@@ -152,7 +198,15 @@ pub(crate) fn render_keyboard_shell(
     } else {
         super::launcher_options::launcher_background_instances(atlas, width as u32, height as u32)
     };
-    if !active {
+    if let Some(wave) = wave.as_ref() {
+        push_slide_column(
+            &mut art,
+            atlas,
+            &super::compute_layout(width as u32, height as u32),
+            &wave.button_draws(),
+            SHELL_CONTROL_DEPTH,
+        );
+    } else if !active {
         push_right_panel_button_shp(
             &mut art,
             atlas,
@@ -161,6 +215,23 @@ pub(crate) fn render_keyboard_shell(
             false,
             SHELL_CONTROL_DEPTH,
         );
+    }
+    if leaving {
+        in_game_shell::render_shell_frame(
+            state,
+            encoder,
+            destination,
+            InGameShellFrame {
+                art,
+                controls: Vec::new(),
+                texts: Vec::new(),
+                label: "Keyboard A3",
+            },
+            ShellFrameArt::Launcher,
+            ShellFrameOverlay::default(),
+        )?;
+        state.platform.window.request_redraw();
+        return Ok(());
     }
     let mut controls = Vec::new();
     paint_control(
@@ -258,11 +329,19 @@ pub(crate) fn render_keyboard_shell(
             SHELL_CONTROL_TEXT_DEPTH,
         ));
     }
-    for (id, key, fallback) in [
-        (KeyboardButton::Back, "GUI:Back", "Back"),
-        (KeyboardButton::Assign, "GUI:Assign", "Assign"),
-        (KeyboardButton::ResetAll, "GUI:ResetAll", "Reset All"),
-    ] {
+    let captions: &[_] = if sliding {
+        &[
+            (KeyboardButton::Assign, "GUI:Assign", "Assign"),
+            (KeyboardButton::ResetAll, "GUI:ResetAll", "Reset All"),
+        ]
+    } else {
+        &[
+            (KeyboardButton::Back, "GUI:Back", "Back"),
+            (KeyboardButton::Assign, "GUI:Assign", "Assign"),
+            (KeyboardButton::ResetAll, "GUI:ResetAll", "Reset All"),
+        ]
+    };
+    for &(id, key, fallback) in captions {
         let rect =
             super::pause_menu::button_text_rect(layout.button(id), dialog.buttons.is_pressed(id));
         texts.push(text(
@@ -374,7 +453,7 @@ pub(crate) fn render_keyboard_shell(
             SHELL_CONTROL_TEXT_DEPTH,
         ));
     }
-    if let Some(hovered) = dialog.hovered {
+    if let Some(hovered) = dialog.hovered.filter(|_| active) {
         texts.push(text(
             font,
             &localized_label(state, hovered.help_key(), ""),
@@ -383,6 +462,10 @@ pub(crate) fn render_keyboard_shell(
             SHELL_CONTROL_TEXT_DEPTH,
         ));
     }
+    texts.extend(shell_paint::paint_labels(
+        font,
+        &status_label.into_iter().collect::<Vec<_>>(),
+    ));
     let mut overlay = ShellFrameOverlay::default();
     if dialog.category_open {
         let popup = layout.category_popup(dialog.categories.len());
