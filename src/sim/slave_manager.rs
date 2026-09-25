@@ -2,10 +2,11 @@
 //! deployed refinery, and their harvest cycle.
 //!
 //! Evidence: `tools/spatial_oracle/slave_manager.{py,json,meta.json}` runs the
-//! per-slave machine, the manager machine for a building owner, DeploySlaves
-//! (through the original Unlimbo and Scatter), the slave's Mission_Harvest and
-//! its deposit; `world/slave_manager_oracle_tests.rs` replays them through
-//! this owner.
+//! per-slave machine, the manager machine for a building owner and for a
+//! Slave Miner, DeploySlaves (through the original Unlimbo and Scatter), the
+//! slave's Mission_Harvest and its deposit, the Slave Miner's recall rules
+//! and its Guard/AreaGuard kick; `world/slave_manager_oracle_tests.rs`
+//! replays them through this owner.
 //!
 //! - `TechnoClass::Init_Managers` (`0x006F4020..0x006F4077`) builds the manager
 //!   for an `Enslaves=` type (constructor `0x006AF1A0`): `SlavesNumber` slaves,
@@ -34,20 +35,42 @@
 //!   inside die with it.
 //! - Deploying a Slave Miner hands its manager to the refinery (SetOwner
 //!   `0x006AF580`, with the hand-off `0x006B0D10`); undeploying hands it back.
+//! - A Slave Miner hunts for a field: idle on Guard or Area Guard it sets out
+//!   once `SlaveMinerKickFrameDelay` has passed since its mission began and
+//!   ShouldRecallSlaves (`0x006B1020`) answers yes (a computer house always; a
+//!   human's on ore, or with ore within `SlaveMinerShortScan` after the
+//!   delay). State 1 finds the nearest field within `SlaveMinerLongScan` and
+//!   a cell beside it to deploy on (FindDeployCell `0x006B0300`), state 2
+//!   drives there and deploys (`UnitClass::Deploy`, `deploy_mcv`), state 3
+//!   retries, state 4 waits for the deploy, and state 6 recalls its idle
+//!   slaves and hunts again. A player's Harvest order onto a field runs
+//!   HandleReturnedSlaves (`0x006B0DB0`) from the Harvest mission; any other
+//!   order but Attack, and Stop, take it off the hunt (`0x006B0C80`).
 //!
 //! ## Residuals
-//! - The Slave Miner's own hunt for a field is chain 6: manager states 1 to 3
-//!   and 6, a unit owner's state 4 (`0x006AFFD6..0x006B002F`),
-//!   HandleReturnedSlaves (`0x006B0DB0`), the Mission_Guard kick
-//!   (ShouldRecallSlaves `0x006B1020`), the MEGAMISSION recall (`0x006B0C80`)
-//!   and state 5's relocation (`0x006B0062..0x006B01F5`): when no ore lies
-//!   within `SlaveMinerShortScan` of a refinery and a field is
-//!   `SlaveMinerScanCorrection` closer elsewhere, retail sells the refinery
-//!   back into a Slave Miner and drives it there; VERA keeps deploying slaves
-//!   where it stands. Trigger: the ore around a Yuri refinery runs out.
-//!   Effect: the refinery stays put and its slaves walk farther. Frequency:
-//!   every Yuri game past the early field. Downstream: the Selling/undeploy
-//!   chain is not entered.
+//! - The refinery's relocation is chain 6b: state 5's check
+//!   (`0x006B0062..0x006B01F5`) when no ore lies within `SlaveMinerShortScan`
+//!   of a refinery and a field is `SlaveMinerScanCorrection` closer
+//!   elsewhere, where retail queues Selling to undeploy the refinery into a
+//!   Slave Miner (`BuildingClass::Sell`'s SetOwner `0x0044A047`) that hunts
+//!   from state 6, and HandleReturnedSlaves' building arm (an archived
+//!   field). VERA keeps deploying slaves where the refinery stands, and a
+//!   player's undeploy is VERA's direct conversion (`sim::slave_miner`).
+//!   Trigger: the ore around a Yuri refinery runs out. Effect: the refinery
+//!   stays put and its slaves walk farther. Frequency: every Yuri game past
+//!   the early field. Downstream: the Selling/undeploy chain is not entered.
+//! - Two recall sites have no VERA anchor: FootClass::Mission_Hunt's reset
+//!   when it picks a destination (`0x004D553D..0x004D5547`; VERA's Hunt port
+//!   has no destination step) and FootClass::Mission_AreaGuard's hunt start
+//!   on its guard-area return path (`0x004D6D69..0x004D6D73`, absent with
+//!   that path). Trigger: a Slave Miner on Hunt (an AI's failed Unload
+//!   deploy) or on Area Guard past the Unit kick. Effect: retail resets or
+//!   starts the hunt, VERA does not. Frequency: rare. Downstream: none.
+//! - The Slave Miner carries a Miner component (`MinerKind::Slave`) as
+//!   VERA's order marker: input issues HarvestCell for it where native
+//!   `UnitClass::What_Action` gives the Harvest action to a
+//!   ResourceGatherer/ResourceDestination type. The dispatch treats it as
+//!   the plain Unit it is natively (`techno_ai/mission_handlers.rs`).
 //! - Of `InfantryClass::DoType_Sequencer` (`0x00520AE0`) VERA runs only the
 //!   Cheer's end (`Simulation::infantry_action_completed`). A digging slave
 //!   keeps Doing 38 once its mission leaves Harvest, where retail's case 0x26
@@ -583,8 +606,7 @@ impl Simulation {
         }
     }
 
-    /// The manager's own machine (`0x006AFD60`) for the states a deployed
-    /// refinery reaches, and a unit owner's state 5.
+    /// The manager's own machine (`0x006AFD60`, jump table `0x006B0238`).
     pub(crate) fn slave_manager_step(
         &mut self,
         master: u64,
@@ -597,6 +619,9 @@ impl Simulation {
         };
         let building = owner.category == EntityCategory::Structure;
         let unit = owner.category == EntityCategory::Unit;
+        let driving = owner.navigation.nav_com.is_some();
+        let deploy_pending = owner.mcv_deploy_pending;
+        let guarding = owner.mission.current().known() == Some(MissionType::Guard);
         let constructing_or_selling = owner.constructing_or_selling();
         // BState (`+0x534`) is 0, BSTATE_CONSTRUCTION, while the building
         // plays its build-up or build-down.
@@ -612,10 +637,60 @@ impl Simulation {
                     self.set_manager_state(master, ManagerState::Working, i32::MAX);
                 }
             }
+            ManagerState::Scanning => {
+                // 0x006AFDC1..0x006AFDE5: a Slave Miner already driving.
+                if unit && driving {
+                    self.set_manager_state(master, ManagerState::Travelling, i32::MAX);
+                    return;
+                }
+                // 0x006AFDF2..0x006AFEBF: the nearest field within
+                // SlaveMinerLongScan (the owner's Scan_For_Tiberium), a cell
+                // there to deploy on, and the drive to it.
+                let range =
+                    crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_long_scan);
+                let target = crate::sim::miner::ore_scan::scan_for_tiberium(
+                    self, rules, registry, master, range,
+                )
+                .and_then(|field| self.find_deploy_cell(master, field, rules));
+                match target {
+                    None => self.set_manager_state(master, ManagerState::Ready, now),
+                    Some(cell) => {
+                        self.send_slave_master(master, cell, rules);
+                        self.set_manager_state(master, ManagerState::Travelling, i32::MAX);
+                    }
+                }
+            }
+            ManagerState::Travelling => {
+                // 0x006AFEC0..0x006AFF42: a Slave Miner that has arrived
+                // deploys (`UnitClass::Deploy`); a refused deploy retries in
+                // 30 frames.
+                if !unit {
+                    self.set_manager_state(master, ManagerState::Ready, now);
+                } else if !driving && !self.slave_master_deploys(master, rules) {
+                    self.set_manager_state(master, ManagerState::Deploying, i32::MAX);
+                    if let Some(manager) = self.slave_manager_mut(master) {
+                        manager.ai_timer.start(now, 30);
+                    }
+                }
+            }
+            ManagerState::Deploying => {
+                // 0x006AFF43..0x006AFF8D, 0x006B0223: the retry; a second
+                // refusal hunts again.
+                if !unit {
+                    self.set_manager_state(master, ManagerState::Ready, now);
+                } else if !self.slave_master_deploys(master, rules) {
+                    self.set_manager_state(master, ManagerState::Scanning, i32::MAX);
+                }
+            }
             ManagerState::Deployed => {
                 // 0x006AFF8E..0x006AFFC0: a building whose BState is not 0.
                 if building && built {
                     self.set_manager_state(master, ManagerState::Working, i32::MAX);
+                } else if unit && !deploy_pending && guarding {
+                    // 0x006AFFD6..0x006B003B: a Slave Miner whose deploy
+                    // fell through (Unit+0x68C clear, back on Guard) drives
+                    // on and tries again.
+                    self.set_manager_state(master, ManagerState::Travelling, i32::MAX);
                 }
             }
             ManagerState::Working => {
@@ -628,11 +703,298 @@ impl Simulation {
                 // within SlaveMinerShortScan.
                 self.deploy_slaves(master, rules, registry);
             }
-            ManagerState::Scanning
-            | ManagerState::Travelling
-            | ManagerState::Deploying
-            | ManagerState::PackingUp => {}
+            ManagerState::PackingUp => {
+                // 0x006B020F..0x006B022A: a Slave Miner recalls its idle
+                // slaves and hunts.
+                if unit {
+                    self.reset_live_slaves(master, rules);
+                    self.set_manager_state(master, ManagerState::Scanning, i32::MAX);
+                }
+            }
         }
+    }
+
+    /// `UnitClass::Deploy` (`deploy_mcv`) from states 2 and 3, which write
+    /// state 4 (frame MAX) to the manager when it answers yes
+    /// (`0x006AFF02`, `0x006AFF7A`). A deploy that converts moves the manager
+    /// to the refinery during the call (0x00739956), and native writes the
+    /// same manager afterwards; VERA's manager travels with the conversion,
+    /// so state 4 is written first and a refusal overwrites it. The
+    /// hand-off inside acts only on state 0, so it sees no difference.
+    fn slave_master_deploys(&mut self, master: u64, rules: &RuleSet) -> bool {
+        self.set_manager_state(master, ManagerState::Deployed, i32::MAX);
+        self.deploy_mcv(master, rules, &Default::default())
+    }
+
+    /// The Slave Miner's class setter (`vt+0x480(cell, 1)`, the Unit setter
+    /// `0x00741970`) then `Queue_Mission(Move, 0)`.
+    fn send_slave_master(&mut self, master: u64, cell: (u16, u16), rules: &RuleSet) {
+        if !self.set_unit_cell_destination(master, cell, rules) {
+            log::debug!("slave master {master} has no Unit setter for {cell:?}");
+        }
+        self.queue_slave_mission(master, MissionType::Move);
+    }
+
+    /// Every live node's slave (not state 6, not empty), last first, reset
+    /// to Guard (`vt+0x3D0`, `TechnoClass::ResetOrdersToGuard`): the loop
+    /// 0x006B0490, 0x006B0C80, 0x006B0CC0, 0x006B0D10 and
+    /// HandleReturnedSlaves each run.
+    fn reset_live_slaves(&mut self, master: u64, rules: &RuleSet) {
+        let slaves: Vec<u64> = self.slave_manager(master).map_or_else(Vec::new, |manager| {
+            manager
+                .nodes
+                .iter()
+                .rev()
+                .filter(|node| node.state != SlaveState::Dead)
+                .filter_map(|node| node.slave)
+                .collect()
+        });
+        for slave in slaves {
+            self.reset_orders_to_guard(slave, rules);
+        }
+    }
+
+    /// `SlaveManagerClass::ShouldRecallSlaves @ 0x006B1020`: an idle manager
+    /// (state 0) sends its owner out when the owner's house is not human
+    /// (`House+0x1EC`), when the owner stands on Tiberium land (its cell's
+    /// LandType 5), or once `SlaveMinerKickFrameDelay` has passed since the
+    /// manager's frame stamp (`+0x60`; a signed add, strictly before now)
+    /// with ore within `SlaveMinerShortScan` of it.
+    pub(crate) fn should_recall_slaves(
+        &mut self,
+        master: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> bool {
+        let Some(manager) = self.slave_manager(master) else {
+            return false;
+        };
+        if manager.state != ManagerState::Ready {
+            return false;
+        }
+        let stamp = manager.frame;
+        let Some(owner) = self.substrate.entities.get(master) else {
+            return false;
+        };
+        let cell = (owner.position.rx, owner.position.ry);
+        if !self
+            .houses
+            .get(&owner.owner())
+            .is_some_and(|house| house.is_human)
+        {
+            return true;
+        }
+        if crate::sim::miner::ore_scan::cell_is_tiberium_land(self, registry, cell) {
+            return true;
+        }
+        if rules
+            .general
+            .slave_miner_kick_frame_delay
+            .wrapping_add(stamp)
+            < self.now_frame()
+        {
+            let range =
+                crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_short_scan);
+            return crate::sim::miner::ore_scan::scan_for_tiberium(
+                self, rules, registry, master, range,
+            )
+            .is_some();
+        }
+        false
+    }
+
+    /// `0x006B0CC0`: an idle manager (state 0) starts its owner's hunt for a
+    /// field (state 1, frame MAX) and resets its live slaves.
+    pub(crate) fn begin_slave_hunt(&mut self, master: u64, rules: &RuleSet) {
+        if !self
+            .slave_manager(master)
+            .is_some_and(|manager| manager.state == ManagerState::Ready)
+        {
+            return;
+        }
+        self.set_manager_state(master, ManagerState::Scanning, i32::MAX);
+        self.reset_live_slaves(master, rules);
+    }
+
+    /// `0x006B0C80`: back to state 0 at now, with the live slaves reset. The
+    /// order that takes a Slave Miner off its hunt runs it: a MEGAMISSION
+    /// other than Attack (`0x004C73E1..0x004C73EA`), the IDLE event
+    /// (`0x004C769C..0x004C76AC`) and FootClass::Mission_Hunt's new
+    /// destination (`0x004D553D..0x004D5547`).
+    pub(crate) fn reset_slave_manager(&mut self, master: u64, rules: &RuleSet) {
+        if self.slave_manager(master).is_none() {
+            return;
+        }
+        let now = self.now_frame();
+        self.set_manager_state(master, ManagerState::Ready, now);
+        self.reset_live_slaves(master, rules);
+    }
+
+    /// `SlaveManagerClass::HandleReturnedSlaves @ 0x006B0DB0`, the Enslaves
+    /// prologue of `UnitClass::Mission_Harvest` (`0x0073E5E9..0x0073E612`):
+    /// a Slave Miner sent to a field (its NavCom) drives to a cell there it
+    /// can deploy on and hunts (state 2, its live slaves reset); with no
+    /// such cell, or no NavCom, it guards (state 0 at now).
+    ///
+    /// The building arm (an archived field) belongs to the refinery's
+    /// relocation (module residual).
+    pub(crate) fn handle_returned_slaves(&mut self, master: u64, rules: &RuleSet) {
+        let now = self.now_frame();
+        let Some(owner) = self.substrate.entities.get(master) else {
+            return;
+        };
+        let field = (owner.category == EntityCategory::Unit)
+            .then_some(owner.navigation.nav_com)
+            .flatten()
+            .and_then(|target| {
+                crate::sim::movement::nav_target_coordinate(
+                    target,
+                    Some(master),
+                    &self.substrate.entities,
+                    self.resolved_terrain.as_ref(),
+                    Some((rules, &self.interner)),
+                )
+                .ok()
+            })
+            .map(|coord| {
+                // `CDQ; AND EDX,0xFF; ADD; SAR 8` per axis (0x006B0E3E..).
+                let cell =
+                    |leptons: i32| (leptons.wrapping_add((leptons >> 31) & 0xFF) >> 8) as u16;
+                (cell(coord.x), cell(coord.y))
+            });
+        let Some(field) = field else {
+            self.queue_slave_mission(master, MissionType::Guard);
+            self.set_manager_state(master, ManagerState::Ready, now);
+            return;
+        };
+        match self.find_deploy_cell(master, field, rules) {
+            None => {
+                self.set_manager_state(master, ManagerState::Ready, now);
+                self.queue_slave_mission(master, MissionType::Guard);
+            }
+            Some(cell) => {
+                self.send_slave_master(master, cell, rules);
+                self.set_manager_state(master, ManagerState::Travelling, i32::MAX);
+                self.reset_live_slaves(master, rules);
+            }
+        }
+    }
+
+    /// `SlaveManagerClass::FindDeployCell @ 0x006B0300`: a cell near `seed`
+    /// the owner can deploy on. The foundation is a building owner's own,
+    /// else the unit's `DeploysInto=` type's, else 1x1; the search is
+    /// MapClass::Find_Nearby_Passable_Cell (`0x006B0417`) for Track over
+    /// MovementZone Normal in the owner cell's zone (MapClass::GetZoneID
+    /// with MovementZone Normal and no bridge), refusing any cell of the
+    /// footprint with an overlay or an occupant and any bridge cell, nearest
+    /// to `seed`. A foundation wider (taller) than 2 moves the answer one
+    /// cell east (south) (`0x006B0449..0x006B0479`).
+    fn find_deploy_cell(
+        &self,
+        master: u64,
+        seed: (u16, u16),
+        rules: &RuleSet,
+    ) -> Option<(u16, u16)> {
+        use crate::rules::locomotor_type::{MovementZone, SpeedType};
+        use crate::sim::find_nearby_cell::{
+            NearbyAnchorGate, NearbyFootprint, NearbyQuery, NearbySearchOptions, PassabilityArgs,
+            find_nearby_passable_cell_with_options, map_owned_radius_cap,
+        };
+        let owner = self.substrate.entities.get(master)?;
+        let object = self.object_type(owner.type_ref(), rules)?;
+        let (width, height) = if owner.category == EntityCategory::Structure {
+            crate::rules::foundation::foundation_dimensions(&object.foundation)
+        } else if let Some(into) = object.deploys_into.as_deref().and_then(|n| rules.object(n)) {
+            crate::rules::foundation::foundation_dimensions(&into.foundation)
+        } else {
+            (1, 1)
+        };
+        let terrain = self.resolved_terrain.as_ref()?;
+        let origin = owner_cell(owner);
+        let zone = self.zone_grid.as_ref().and_then(|zones| {
+            zones.get_path_zone_id_native(
+                terrain,
+                (origin.0 as u16, origin.1 as u16),
+                MovementZone::Normal,
+                false,
+            )
+        })?;
+        let size = self
+            .playfield_bounds
+            .zip(self.playfield_size_height)
+            .map(|(bounds, height)| (bounds.base, height))
+            .or_else(|| self.bridge_state.as_ref()?.native_zone_source_size())?;
+        let grid = self.path_grid_snapshot();
+        let seed = (i32::from(seed.0), i32::from(seed.1));
+        let found = find_nearby_passable_cell_with_options(
+            seed,
+            &NearbyQuery {
+                native_cells: None,
+                raw_occupation: Some(&self.substrate.raw_cell_occupation),
+                passability: PassabilityArgs {
+                    speed_type: SpeedType::Track,
+                    // Native DWORD -1 disables the comparison; WORD 0xFFFF
+                    // does not.
+                    required_zone_id: u16::try_from(zone).ok(),
+                    movement_zone: MovementZone::Normal,
+                    bridge_aware_zone: false,
+                },
+                footprint: NearbyFootprint::new(i32::from(width), i32::from(height)),
+                anchor_gate: NearbyAnchorGate::NativeHeightAware,
+                allow_bridge_cells: false,
+                check_height: false,
+                check_occupancy: true,
+                radius_cap: map_owned_radius_cap(size.0, size.1),
+                target_cell: Some(seed),
+                path_grid: grid.as_deref(),
+                resolved_terrain: Some(terrain),
+                overlay_grid: self.overlay_grid.as_ref(),
+                occupancy: Some(&self.substrate.occupancy),
+                entities: Some(&self.substrate.entities),
+                zone_grid: self.zone_grid.as_ref(),
+                playfield_bounds: self.playfield_bounds,
+            },
+            NearbySearchOptions {
+                reject_any_overlay: true,
+            },
+            self.session.binary_frame,
+        )?;
+        Some((
+            found.0 + u16::from(width > 2),
+            found.1 + u16::from(height > 2),
+        ))
+    }
+
+    /// The Slave Miner's kick out of Guard or Area Guard
+    /// (`UnitClass::Mission_Guard @ 0x00740815..0x0074084F`,
+    /// `UnitClass::Mission_AreaGuard @ 0x00744103..0x0074416B`): once
+    /// `SlaveMinerKickFrameDelay` has passed since the mission began
+    /// (MissionClass `+0xC0`, strictly before now) and ShouldRecallSlaves
+    /// answers yes, it starts its hunt (`0x006B0CC0`) and the mission
+    /// returns its Rate epilogue. `None` lets the ordinary mission run.
+    pub(crate) fn slave_master_mission_kick(
+        &mut self,
+        id: u64,
+        mission: MissionType,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> Option<i32> {
+        let entity = self.substrate.entities.get(id)?;
+        entity.slave_manager.as_ref()?;
+        let started = entity.mission.mission_start_frame() as i32;
+        if rules
+            .general
+            .slave_miner_kick_frame_delay
+            .wrapping_add(started)
+            >= self.now_frame()
+        {
+            return None;
+        }
+        if !self.should_recall_slaves(id, rules, registry) {
+            return None;
+        }
+        self.begin_slave_hunt(id, rules);
+        Some(self.mission_rate_epilogue_for(rules, id, mission))
     }
 
     fn set_manager_state(&mut self, master: u64, state: ManagerState, frame: i32) {
@@ -1169,26 +1531,13 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
-        if deploying {
-            let reset = self
-                .slave_manager_mut(from)
-                .map_or_else(Vec::new, |manager| {
-                    if manager.state != ManagerState::Ready {
-                        return Vec::new();
-                    }
-                    manager.state = ManagerState::Deployed;
-                    manager.frame = i32::MAX;
-                    manager
-                        .nodes
-                        .iter()
-                        .rev()
-                        .filter(|node| node.state != SlaveState::Dead)
-                        .filter_map(|node| node.slave)
-                        .collect()
-                });
-            for slave in reset {
-                self.reset_orders_to_guard(slave, rules);
-            }
+        if deploying
+            && self
+                .slave_manager(from)
+                .is_some_and(|manager| manager.state == ManagerState::Ready)
+        {
+            self.set_manager_state(from, ManagerState::Deployed, i32::MAX);
+            self.reset_live_slaves(from, rules);
         }
         let Some(manager) = self
             .substrate

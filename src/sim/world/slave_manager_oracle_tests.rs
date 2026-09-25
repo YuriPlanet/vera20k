@@ -11,6 +11,15 @@
 //! - `slave_harvest` rows: `InfantryClass::Mission_Harvest @ 0x00522E70`,
 //!   with the Guard it queues applied as the dispatcher applies it.
 //! - `deposit` rows: the slave's deposit (`0x00522D50`).
+//! - `unit_manager`, `unit_helper` and `unit_mission` rows: a Slave Miner
+//!   owner (SMIN at (15, 15)): the manager machine's unit states,
+//!   ShouldRecallSlaves, the hunt start, the reset, HandleReturnedSlaves and
+//!   the Guard/AreaGuard kick. The oracle answers UnitClass::Deploy and
+//!   Find_Nearby_Passable_Cell; the scene reproduces the answers (a deploy
+//!   that converts, or a structure on the footprint; the supplied deploy
+//!   cell is the one VERA's search finds on the scene, whose own evidence is
+//!   `find_nearby_cell`'s). A converting deploy moves the manager to the
+//!   refinery, which the comparison follows.
 //!
 //! The Scenario RNG is seeded as the oracle seeds it. The oracle hands the
 //! regrown slave out of a supplied `CreateObject`, so the Rust constructor's
@@ -51,6 +60,13 @@ const SKIPPED: &[&str] = &[
     "dep_income_mult",
     // A supplied Unlimbo refusal on an open cell: the Rust Unlimbo places it.
     "d_unlimbo_refused",
+    // FindDeployCell's supplied Find_Nearby_Passable_Cell miss: the scene's
+    // open ground offers a cell, and ground no Track can cross would also
+    // strand the Slave Miner and change its scan. The miss is the manager's
+    // state 0 at now (and HandleReturnedSlaves' Guard), read at 0x006AFE67
+    // and 0x006B0E7B.
+    "mu1_no_deploy_cell",
+    "hr_nav_no_cell",
 ];
 
 /// The slave type and refinery the oracle builds: SLAV (Strength 125, the
@@ -62,7 +78,11 @@ fn slave_rules(input: &Value) -> String {
          [SLAV]\nStrength=125\nStorage={}\nHarvestRate={}\nSpeed=4\nSlaved=yes\n\
          MovementZone=Infantry\nLocomotor={{4A582744-9839-11D1-B709-00A024DDAFD1}}\n\
          [YAREFN]\nFoundation=2x2\nStrength=2000\nEnslaves=SLAV\nSlavesNumber=0\n\
-         SlaveRegenRate={}\nSlaveReloadRate={}\n\
+         SlaveRegenRate={}\nSlaveReloadRate={}\nDeployFacing=0\n\
+         [SMIN]\nStrength=2000\nSpeed=3\nROT=5\nEnslaves=SLAV\nSlavesNumber=0\nDeploysInto=YAREFN\n\
+         ResourceGatherer=yes\nResourceDestination=yes\nMovementZone=Crusher\n\
+         Locomotor={{4A582741-9839-11D1-B709-00A024DDAFD1}}\n\
+         [Area Guard]\nRate=.016\n\
          [Warheads]\n0=KILLWH\n[KILLWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
         input["slave_storage"].as_i64().unwrap_or(4),
         input["harvest_rate"].as_i64().unwrap_or(150),
@@ -92,6 +112,7 @@ fn mission(name: &str) -> MissionType {
         "move" => MissionType::Move,
         "harvest" => MissionType::Harvest,
         "selling" => MissionType::Selling,
+        "area_guard" => MissionType::AreaGuard,
         other => panic!("unmapped mission {other}"),
     }
 }
@@ -101,11 +122,37 @@ fn mission(name: &str) -> MissionType {
 pub(super) struct SlaveScene {
     pub(super) scene: Scene,
     pub(super) master: u64,
+    /// The scene's YAREFN (the master unless a Slave Miner owns the manager).
+    pub(super) refinery: u64,
     /// Oracle slave index -> Rust id.
     pub(super) slaves: BTreeMap<u64, u64>,
 }
 
 impl SlaveScene {
+    /// The entity holding the row's manager: the master, or the refinery a
+    /// Slave Miner's deploy made of it.
+    fn holder(&self) -> u64 {
+        let sim = &self.scene.sim;
+        if sim
+            .substrate
+            .entities
+            .get(self.master)
+            .is_some_and(|entity| entity.slave_manager.is_some())
+        {
+            return self.master;
+        }
+        sim.substrate
+            .entities
+            .values()
+            .find(|entity| {
+                entity.slave_manager.is_some()
+                    && entity.stable_id() != self.refinery
+                    && entity.stable_id() != self.master
+            })
+            .expect("the manager moved to the deployed refinery")
+            .stable_id()
+    }
+
     fn index_of(&self, id: u64) -> u64 {
         self.slaves
             .iter()
@@ -122,8 +169,18 @@ pub(super) fn row_scene(input: &Value) -> SlaveScene {
     // The oracle parks its War Miner at (2, 2); that cell is outside this
     // scene's playfield, so the miner Unlimbos on a free cell no row uses.
     input["miner_cell"] = serde_json::json!([26, 6]);
+    // A Slave Miner row's owner is the oracle's Unit at (15, 15), which the
+    // row strips of Harvester=; the Rust scene's War Miner stays a harvester
+    // and the Slave Miner is an entity of its own.
+    let unit_owner = input["owner"] == "unit";
+    if let Some(fields) = input.as_object_mut() {
+        fields.remove("harvester");
+    }
     let mut scene = row_scene_with(&input, |text| {
         *text = text.replacen("2=GAOREP\n", "2=GAOREP\n3=YAREFN\n", 1);
+        if unit_owner {
+            *text = text.replacen("1=MTNK\n", "1=MTNK\n2=SMIN\n", 1);
+        }
         text.push_str(&slave_rules(&input));
     });
     // The oracle's Rules+0x1780.. (ReadRange leptons), KickFrameDelay and
@@ -153,7 +210,7 @@ pub(super) fn row_scene(input: &Value) -> SlaveScene {
     let sim = &mut scene.sim;
     let frame = sim.session.binary_frame;
     let heights = BTreeMap::new();
-    let master = sim
+    let refinery = sim
         .spawn_object(
             "YAREFN",
             "Americans",
@@ -164,6 +221,34 @@ pub(super) fn row_scene(input: &Value) -> SlaveScene {
             &heights,
         )
         .expect("slave refinery");
+    let master = if unit_owner {
+        // Facing north, YAREFN's DeployFacing, so UnitClass::Deploy converts.
+        let smin = sim
+            .spawn_object_with_overlay_registry(
+                "SMIN",
+                "Americans",
+                15,
+                15,
+                0,
+                rules,
+                &heights,
+                registry(),
+            )
+            .unwrap_or_else(|| panic!("slave miner for {}", input["name"]));
+        let entity = sim.substrate.entities.get_mut(smin).unwrap();
+        entity.mcv_deploy_pending = input["deploy_pending"] == true;
+        if let Some((nx, ny)) = input.get("owner_nav").map(cell) {
+            entity.navigation.nav_com = Some(NavTargetRef::cell(nx, ny));
+        }
+        smin
+    } else {
+        refinery
+    };
+    // A refused UnitClass::Deploy is a structure on the deploy footprint.
+    if input["deploys"] == serde_json::json!([0]) {
+        sim.spawn_object("GAOREP", "Americans", 16, 16, 0, rules, &heights)
+            .expect("footprint blocker");
+    }
     // VERA publishes neither the Construction mission nor a BState: a
     // building that builds up carries `building_up`, which stands for both
     // (`GameEntity::constructing_or_selling`, `slave_manager_step`).
@@ -179,7 +264,9 @@ pub(super) fn row_scene(input: &Value) -> SlaveScene {
         "construction" => MissionType::Guard,
         other => mission(other),
     };
-    sim.mission_assign_exact(master, MissionId::from_known(owner_mission), frame)
+    // The MissionClass start frame (`+0xC0`) the row supplies.
+    let started = (i64::from(frame) + input["mission_start"].as_i64().unwrap_or(0)) as u32;
+    sim.mission_assign_exact(master, MissionId::from_known(owner_mission), started)
         .unwrap();
     let mut slaves = BTreeMap::new();
     let mut nodes = Vec::new();
@@ -199,7 +286,10 @@ pub(super) fn row_scene(input: &Value) -> SlaveScene {
         });
     }
     let manager_state = manager_state(input["manager_state"].as_u64().unwrap_or(5));
-    let manager_frame = input["manager_frame"].as_i64().unwrap_or(0) as i32;
+    let manager_frame = match input["manager_frame_ago"].as_i64() {
+        Some(ago) => (i64::from(frame) - ago) as i32,
+        None => input["manager_frame"].as_i64().unwrap_or(0) as i32,
+    };
     sim.substrate
         .entities
         .get_mut(master)
@@ -217,6 +307,7 @@ pub(super) fn row_scene(input: &Value) -> SlaveScene {
     SlaveScene {
         scene,
         master,
+        refinery,
         slaves,
     }
 }
@@ -348,10 +439,11 @@ fn expected_cursors(seed: u64, native: &Value, extra: usize) -> Value {
 fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
     let native = &row["state"];
     let sim = &s.scene.sim;
+    let holder = s.holder();
     let manager = sim
         .substrate
         .entities
-        .get(s.master)
+        .get(holder)
         .unwrap()
         .slave_manager
         .as_ref()
@@ -380,6 +472,41 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
         "{context}: manager frame"
     );
     assert_eq!(frame, native["frame"].as_i64().unwrap(), "{context}: frame");
+    if !native["ai_timer"].is_null() {
+        let timer = manager.ai_timer();
+        assert_eq!(
+            serde_json::json!([timer.start_frame(), timer.duration()]),
+            native["ai_timer"],
+            "{context}: manager AI timer"
+        );
+    }
+    // The Slave Miner itself, unless its deploy converted it (the oracle
+    // answers UnitClass::Deploy without converting).
+    if !native["owner"].is_null() && holder == s.master {
+        let owner = sim.substrate.entities.get(s.master).unwrap();
+        let expected = &native["owner"];
+        assert_eq!(
+            owner.mission.current().raw() as i64,
+            expected["mission"].as_i64().unwrap(),
+            "{context}: owner mission"
+        );
+        assert_eq!(
+            owner.mission.queued().raw() as i64,
+            expected["queued"].as_i64().unwrap(),
+            "{context}: owner queued mission"
+        );
+        let nav = match owner.navigation.nav_com {
+            Some(NavTargetRef::Cell { rx, ry }) => serde_json::json!([rx, ry]),
+            None => Value::Null,
+            Some(other) => panic!("{context}: owner NavCom {other:?}"),
+        };
+        assert_eq!(nav, expected["nav"], "{context}: owner NavCom");
+        assert_eq!(
+            u64::from(owner.mcv_deploy_pending),
+            expected["deploy_pending"].as_u64().unwrap(),
+            "{context}: owner deploy pending"
+        );
+    }
     let mut compared: Vec<(u64, u64)> = s.slaves.iter().map(|(i, id)| (*i, *id)).collect();
     // A slave the call created stands for the oracle's supplied spare.
     for node in manager.nodes() {
@@ -453,7 +580,7 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
             "{context}: EstimatedHealth"
         );
         assert_eq!(
-            entity.slave.owner() == Some(s.master),
+            entity.slave.owner() == Some(holder),
             expected["owner"].as_bool().unwrap(),
             "{context}: SlaveOwner"
         );
@@ -507,6 +634,9 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
         .iter()
         .filter(|event| event[0] == "create_slave")
         .count();
+    // A deploy that converted constructed the refinery (its TechnoClass
+    // constructor word), which the oracle's answered Deploy does not.
+    let created = created + usize::from(holder != s.master);
     let view = sim.scenario_rng.logical_view();
     assert_eq!(
         serde_json::json!([view.index_a, view.index_b]),
@@ -608,12 +738,86 @@ fn slave_deposit_matches_the_original_payment() {
 }
 
 #[test]
+fn manager_machine_matches_the_original_slave_miner_states() {
+    let corpus = corpus();
+    for (row, name) in rows(&corpus, "unit_manager") {
+        let mut s = row_scene(&row["input"]);
+        s.scene
+            .sim
+            .slave_manager_step(s.master, &s.scene.rules, Some(registry()));
+        compare_state(&s, row, &name);
+    }
+}
+
+#[test]
+fn slave_miner_helpers_match_the_original() {
+    let corpus = corpus();
+    for (row, name) in rows(&corpus, "unit_helper") {
+        let mut s = row_scene(&row["input"]);
+        let (master, rules) = (s.master, &s.scene.rules);
+        let sim = &mut s.scene.sim;
+        match row["input"]["helper"].as_str().unwrap() {
+            "should_recall" => {
+                let answer = sim.should_recall_slaves(master, rules, Some(registry()));
+                assert_eq!(
+                    u64::from(answer),
+                    row["answer"].as_u64().unwrap(),
+                    "{name}: ShouldRecallSlaves"
+                );
+            }
+            "begin_hunt" => sim.begin_slave_hunt(master, rules),
+            "reset" => sim.reset_slave_manager(master, rules),
+            "handle_returned" => sim.handle_returned_slaves(master, rules),
+            other => panic!("{name}: helper {other}"),
+        }
+        compare_state(&s, row, &name);
+    }
+}
+
+#[test]
+fn slave_miner_kick_matches_the_original_guard_and_area_guard() {
+    let corpus = corpus();
+    for (row, name) in rows(&corpus, "unit_mission") {
+        let mut s = row_scene(&row["input"]);
+        let mission = mission(row["input"]["owner_mission"].as_str().unwrap());
+        let kicked = s.scene.sim.slave_master_mission_kick(
+            s.master,
+            mission,
+            &s.scene.rules,
+            Some(registry()),
+        );
+        assert_eq!(
+            kicked.is_some(),
+            row["kicked"].as_bool().unwrap(),
+            "{name}: kicked"
+        );
+        if let Some(delay) = kicked {
+            assert_eq!(
+                i64::from(delay),
+                row["delay"].as_i64().unwrap(),
+                "{name}: delay"
+            );
+        }
+        compare_state(&s, row, &name);
+    }
+}
+
+#[test]
 fn replay_covers_every_row() {
     let corpus = corpus();
-    let total: usize = ["ai_update", "manager", "deploy", "slave_harvest", "deposit"]
-        .iter()
-        .map(|group| corpus[*group].as_array().unwrap().len())
-        .sum();
-    assert_eq!(total, 59);
-    assert_eq!(SKIPPED.len(), 2);
+    let total: usize = [
+        "ai_update",
+        "manager",
+        "deploy",
+        "slave_harvest",
+        "deposit",
+        "unit_manager",
+        "unit_helper",
+        "unit_mission",
+    ]
+    .iter()
+    .map(|group| corpus[*group].as_array().unwrap().len())
+    .sum();
+    assert_eq!(total, 95);
+    assert_eq!(SKIPPED.len(), 4);
 }

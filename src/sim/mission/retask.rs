@@ -168,6 +168,13 @@ impl Simulation {
                 entity.navigation.suspended_nav_com = None;
             }
         }
+        // `0x004C73E1..0x004C73EA`: any order but Attack takes a Slave Miner
+        // off its hunt (`sim::slave_manager`).
+        if mission != MissionType::Attack
+            && let Some(rules) = rules
+        {
+            self.reset_slave_manager(id, rules);
+        }
     }
 
     /// **Open: what a miner does when a Move order it was given finishes.**

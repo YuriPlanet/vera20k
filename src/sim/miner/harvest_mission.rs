@@ -97,6 +97,29 @@ pub(crate) fn dispatch_harvest_for_object(
             return;
         };
         if miner.kind == MinerKind::Slave {
+            // `UnitClass::Mission_Harvest @ 0x0073E5E0`'s prologue
+            // (`0x0073E5E9..0x0073E612`): a ResourceDestination=,
+            // ResourceGatherer= type holding a slave manager runs
+            // HandleReturnedSlaves, then the shared Rate epilogue
+            // (`0x0073EF77`).
+            let slave_master = entity.slave_manager.is_some()
+                && sim
+                    .object_type(entity.type_ref(), rules)
+                    .is_some_and(|object| object.resource_destination && object.resource_gatherer);
+            let due = entity.mission.current().known()
+                == Some(crate::sim::mission::MissionType::Harvest)
+                && entity.mission.dispatch_timer().due(now);
+            if slave_master && due {
+                sim.handle_returned_slaves(id, rules);
+                let delay = sim.mission_rate_epilogue_for(
+                    rules,
+                    id,
+                    crate::sim::mission::MissionType::Harvest,
+                );
+                if let Some(entity) = sim.substrate.entities.get_mut(id) {
+                    entity.mission.write_dispatch_epilogue(now as i32, delay);
+                }
+            }
             return;
         }
         // The native dispatcher routes on the committed mission id, so a miner
