@@ -600,6 +600,370 @@ fn a_death_weapon_detonates_once_without_cluster_draws() {
     );
 }
 
+/// A crashable Jumpjet unit: `TEST` flies the Nighthawk's type block with
+/// `BalloonHover=` as asked (a Kirov's impact fires its current weapon, any
+/// other type's plays its `Explosion=` once more) and seats two `RIDER`s. The
+/// type names an `ImpactLandSound=` the Jumpjet impact must not play.
+fn jumpjet_rules(balloon: bool) -> RuleSet {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[General]\nConditionRed=0.25\n\
+         [AudioVisual]\nImpactLandSound=RulesLand\n\
+         [VehicleTypes]\n0=TEST\n1=VICTIM\n\
+         [InfantryTypes]\n0=RIDER\n\
+         [TEST]\nStrength=300\nArmor=none\nCrashable=yes\nBalloonHover={}\nPassengers=2\n\
+         Locomotor={{92612C46-F71F-11d1-AC9F-006008055BB5}}\nJumpjetHeight=500\n\
+         JumpjetClimb=10\nJumpjetCrash=40\nJumpjetSpeed=30\nJumpjetNoWobbles=yes\n\
+         Primary=CrashGun\nExplosion=BOOM\nCrashingSound=JJDie\nImpactLandSound=TypeLand\n\
+         [VICTIM]\nStrength=1000\nArmor=none\n\
+         [RIDER]\nStrength=100\nArmor=none\n\
+         [CrashGun]\nDamage=150\nWarhead=CrashWH\n\
+         [CrashWH]\nCellSpread=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        if balloon { "yes" } else { "no" },
+    )))
+    .unwrap();
+    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
+        "[BOOM]\nRate=100\n[SGRYSMK1]\nRate=100\n",
+    ));
+    art.bind_anim_frame_count_for_test("BOOM", 20);
+    art.bind_anim_frame_count_for_test("SGRYSMK1", 20);
+    rules.art_registry = art;
+    rules
+}
+
+/// Unit 1 hovers at `JumpjetHeight=` over cell (52, 52) of the aircraft
+/// fixture's map, holding that cell's air slot with the moving byte set, as
+/// the native corpus's kill leaves a hovering Jumpjet; its two riders sit in
+/// its cargo, a `VICTIM` stands below and a Soviet shooter at (40, 40).
+/// Answers the victim's and the shooter's ids.
+fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
+    use crate::sim::house_state::HouseState;
+    use crate::sim::passenger::{PassengerCargo, PassengerRole};
+    let rules = jumpjet_rules(balloon);
+    let mut sim = Simulation::with_seed(0);
+    install_common_raw_terrain(&mut sim, 70, 70, 0, None);
+    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        base: 64,
+        off_fc: 0,
+        off_100: 0,
+        off_104: 64,
+        off_108: 64,
+    });
+    sim.playfield_size_height = Some(64);
+    sim.session.binary_frame = 1000;
+    for (name, human) in [("Americans", true), ("Soviets", false)] {
+        let house = sim.interner.intern(name);
+        sim.houses
+            .insert(house, HouseState::new(house, 0, None, human, 0, 10));
+    }
+    let reveal = |sim: &mut Simulation, id: u64, rx: u16, ry: u16| {
+        assert!(matches!(
+            sim.try_reveal_entity(
+                id,
+                RevealRequest {
+                    position: RevealPosition {
+                        rx,
+                        ry,
+                        z: 0,
+                        sub_x: SimFixed::from_num(128),
+                        sub_y: SimFixed::from_num(128),
+                    },
+                    placement: PlacementEvidence::MarkSucceeded,
+                    logic_eligible: true,
+                }
+            ),
+            RevealOutcome::Revealed { .. }
+        ));
+    };
+    assert_eq!(sim.allocate_stable_id(), 1);
+    insert_entity(&mut sim, 1, EntityCategory::Unit);
+    sim.substrate.entities.get_mut(1).unwrap().locomotor = Some(LocomotorState::from_object_type(
+        rules.object("TEST").unwrap(),
+        0,
+    ));
+    reveal(&mut sim, 1, 52, 52);
+    sim.remove_entity_occupancy(1);
+    {
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        entity.health.current = 300;
+        entity.position.exact_z_leptons = Some(500);
+        entity.body_facing = Some(FacingClass::new(0x4000, 5));
+        let loco = entity.locomotor.as_mut().unwrap();
+        loco.altitude = SimFixed::from_num(500);
+        let runtime = loco.jumpjet_runtime_mut().unwrap();
+        runtime.phase = crate::sim::movement::jumpjet_flight::STATE_HOLD;
+        runtime.moving = true;
+        runtime.destination = DriveCoord {
+            x: START,
+            y: START,
+            z: 0,
+        };
+        runtime.flight.facing.snap(0x4000, 1000);
+        runtime.flight.target_height = 500;
+        entity.passenger_role = PassengerRole::Transport {
+            cargo: PassengerCargo::new(2, 0),
+        };
+    }
+    sim.add_entity_occupancy(1);
+    assert!(sim.substrate.air_slots.claim(52, 52, 1));
+    for _ in 0..2 {
+        let rider = sim
+            .construct_object_limbo_at_height("RIDER", "Americans", 52, 52, 0, 0, &rules)
+            .expect("rider");
+        sim.substrate
+            .entities
+            .get_mut(rider)
+            .unwrap()
+            .passenger_role = PassengerRole::Inside { transport_id: 1 };
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .passenger_role
+            .cargo_mut()
+            .unwrap()
+            .board_forced(rider, 1);
+    }
+    let spawn = |sim: &mut Simulation, owner: &str, rx: u16, ry: u16| {
+        let owner = sim.interner.intern(owner);
+        let type_ref = sim.interner.intern("VICTIM");
+        let id = sim.allocate_stable_id();
+        let mut entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
+            id,
+            rx,
+            ry,
+            0,
+            0,
+            owner,
+            crate::sim::components::Health { current: 1000 },
+            type_ref,
+            EntityCategory::Unit,
+            0,
+            5,
+            true,
+        );
+        entity.lifecycle.in_limbo = true;
+        sim.substrate.entities.insert(entity);
+        reveal(sim, id, rx, ry);
+        id
+    };
+    let victim = spawn(&mut sim, "Americans", 52, 52);
+    let shooter = spawn(&mut sim, "Soviets", 40, 40);
+    (sim, rules, victim, shooter)
+}
+
+/// What a crashed Jumpjet's fall looked like through `advance_tick`.
+struct JumpjetFall {
+    /// The wreck's Z after each frame it survived.
+    heights: Vec<i32>,
+    /// The frame the impact UnInit it.
+    impact_frame: usize,
+    crash_sound_frames: Vec<usize>,
+    impact_sounds: usize,
+    /// `Explosion=` anims built in the impact frame.
+    impact_booms: usize,
+}
+
+fn fall_to_the_impact(sim: &mut Simulation, rules: &RuleSet) -> JumpjetFall {
+    use std::collections::BTreeMap;
+    let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
+    let boom = sim.interner.intern("BOOM");
+    let mut fall = JumpjetFall {
+        heights: Vec::new(),
+        impact_frame: 0,
+        crash_sound_frames: Vec::new(),
+        impact_sounds: 0,
+        impact_booms: 0,
+    };
+    for frame in 1..40 {
+        sim.sound_events.clear();
+        let booms_before = sim
+            .substrate
+            .anims
+            .iter()
+            .filter(|(_, anim)| anim.type_id == boom)
+            .count();
+        sim.advance_tick(&[], Some(rules), &BTreeMap::new(), Some(&grid), None, 67);
+        if sim.sound_events.iter().any(|event| {
+            matches!(
+                event,
+                super::SimSoundEvent::AnimationStarted { anim_id: 1, .. }
+            )
+        }) {
+            fall.crash_sound_frames.push(frame);
+        }
+        fall.impact_sounds += sim
+            .sound_events
+            .iter()
+            .filter(|event| {
+                matches!(event, super::SimSoundEvent::VocAt { sound_id, .. }
+                    if sound_id == "TypeLand" || sound_id == "RulesLand")
+            })
+            .count();
+        match sim.substrate.entities.get(1) {
+            Some(entity) if entity.lifecycle.object_alive => {
+                assert!(entity.crashing && entity.health.current == 0);
+                fall.heights
+                    .push(entity.position.exact_z_leptons.expect("exact Z"));
+            }
+            _ => {
+                fall.impact_frame = frame;
+                fall.impact_booms = sim
+                    .substrate
+                    .anims
+                    .iter()
+                    .filter(|(_, anim)| anim.type_id == boom)
+                    .count()
+                    - booms_before;
+                return fall;
+            }
+        }
+    }
+    panic!("the wreck never reached the ground: {:?}", fall.heights);
+}
+
+/// Kill unit 1 through the production receiver: one area hit from the
+/// Soviet shooter.
+fn shoot_down(sim: &mut Simulation, rules: &RuleSet, shooter: u64) {
+    use crate::sim::combat::combat_aoe::AreaDamageReceiver;
+    let soviets = sim.interner.intern("Soviets");
+    let warhead = sim.interner.intern("CrashWH");
+    let hit =
+        crate::sim::combat::EntityDamageEvent::area(1, 400, 0, shooter, Some(soviets), warhead);
+    sim.commit_noncombat_aoe_receivers(rules, None, &[AreaDamageReceiver::Entity(hit)]);
+}
+
+/// A hovering Nighthawk-like Jumpjet shot down through the production
+/// receiver: `UnitClass::ReceiveDamage` kills its riders with the shooter's
+/// credit above 0xD0 leptons and crashes it instead of its UnInit. Through
+/// `advance_tick` it then falls by `JumpjetClimb=` plus `JumpjetCrash=` a
+/// frame (the native corpus's `SHAD` row), plays `CrashingSound=` on the
+/// edge, and at the ground releases its air slot, plays its `Explosion=` once
+/// more and is UnInit, with no impact sound.
+#[test]
+fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
+    let (mut sim, rules, victim, shooter) = jumpjet_fixture(false);
+    let riders: Vec<u64> = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .passenger_role
+        .cargo()
+        .unwrap()
+        .passengers
+        .clone();
+    shoot_down(&mut sim, &rules, shooter);
+
+    let entity = sim
+        .substrate
+        .entities
+        .get(1)
+        .expect("a crashing unit stays");
+    assert!(entity.crashing && entity.lifecycle.object_alive && !entity.dying);
+    assert_eq!(entity.health.current, 0);
+    assert!(
+        entity
+            .rocking
+            .as_ref()
+            .is_some_and(|r| r.vel_sideways != SimFixed::ZERO),
+        "Crash drew the spin"
+    );
+    assert!(
+        entity.passenger_role.cargo().unwrap().passengers.is_empty(),
+        "KillPassengers emptied the cargo"
+    );
+    for rider in riders {
+        assert!(
+            sim.substrate
+                .entities
+                .get(rider)
+                .is_none_or(|rider| !rider.lifecycle.object_alive),
+            "rider {rider} died with the transport"
+        );
+    }
+    let soviets = sim.interner.intern("Soviets");
+    assert_eq!(
+        sim.houses[&soviets].stats.units_killed, 2,
+        "the riders' kills go to the shooter; the wreck's comes at its UnInit"
+    );
+
+    let fall = fall_to_the_impact(&mut sim, &rules);
+    // Hold's Update leaves the hover alone, State 5 drops 40; then Update's
+    // climb and State 5's crash take 50 a frame to the ground.
+    assert_eq!(
+        fall.heights,
+        vec![460, 410, 360, 310, 260, 210, 160, 110, 60, 10]
+    );
+    assert_eq!(fall.impact_frame, 11);
+    assert_eq!(
+        fall.crash_sound_frames,
+        vec![1],
+        "CrashingSound= on the edge"
+    );
+    assert_eq!(fall.impact_sounds, 0, "a Jumpjet impact plays no sound");
+    assert_eq!(
+        fall.impact_booms, 1,
+        "Death_Explosion once more at the impact"
+    );
+    assert_eq!(sim.substrate.air_slots.holder(52, 52), None);
+    assert_eq!(
+        sim.substrate.entities.get(victim).unwrap().health.current,
+        1000,
+        "an Explosion= anim deals no damage"
+    );
+    assert_eq!(sim.houses[&soviets].stats.units_killed, 3);
+}
+
+/// A `BalloonHover=` wreck (the Kirov) fires its current weapon as its death
+/// weapon at the impact (`0x007461EF`), which strikes the unit below.
+///
+/// A balloon's Update keeps reading the cell top even over its own cell, and
+/// the victim below lifts that by 85 (`CellClass @ 0x00485080`): the first
+/// frame climbs 10 before State 5's drop, and near the ground Update climbs
+/// against the drop again, so the fall takes a frame more than the
+/// Nighthawk's.
+#[test]
+fn a_shot_down_balloon_jumpjet_bombs_its_impact_cell() {
+    let (mut sim, rules, victim, shooter) = jumpjet_fixture(true);
+    shoot_down(&mut sim, &rules, shooter);
+    let fall = fall_to_the_impact(&mut sim, &rules);
+    assert_eq!(
+        fall.heights,
+        vec![470, 420, 370, 320, 270, 220, 170, 120, 70, 40, 10]
+    );
+    assert_eq!(fall.impact_frame, 12);
+    assert_eq!(fall.impact_booms, 0, "no second Explosion= for a balloon");
+    assert_eq!(fall.impact_sounds, 0);
+    assert_eq!(
+        sim.substrate.entities.get(victim).unwrap().health.current,
+        1000 - 150,
+        "the death weapon's CrashGun hit the victim below"
+    );
+}
+
+/// On the ground a crashable unit's Crash refuses, and the receiver UnInits
+/// it as before (`0x00738475..0x0073847F`).
+#[test]
+fn a_landed_jumpjet_dies_where_it_stands() {
+    let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
+    {
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        entity.position.exact_z_leptons = Some(0);
+        let loco = entity.locomotor.as_mut().unwrap();
+        loco.altitude = SimFixed::ZERO;
+        loco.jumpjet_runtime_mut().unwrap().phase =
+            crate::sim::movement::jumpjet_flight::STATE_GROUND;
+    }
+    shoot_down(&mut sim, &rules, shooter);
+    assert!(
+        sim.substrate
+            .entities
+            .get(1)
+            .is_none_or(|entity| !entity.lifecycle.object_alive),
+        "no crash on the ground"
+    );
+}
+
 /// Retail Dustbowl runtime, end to end through production: a Harrier ordered
 /// at three flak tracks takes off, their `FlakTrackAAGun` volleys shoot it
 /// down, and it crashes. `VoiceCrashing=`/`CrashingSound=` play on the edge,

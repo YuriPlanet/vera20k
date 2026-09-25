@@ -1,0 +1,6193 @@
+{
+  "fall": [
+    {
+      "input": {
+        "accel": 2.0,
+        "balloon_hover": true,
+        "can_enter_cells": {},
+        "climb": 6.0,
+        "crash": 12.0,
+        "deploy_to_land": false,
+        "deviation": 40,
+        "facing": 16384,
+        "first_frame": 1000,
+        "flight_frames": 600,
+        "fnpc_cells": null,
+        "height": 750,
+        "hold_frames": 4,
+        "kill_map_size": null,
+        "land_types": [],
+        "map_size": [
+          13,
+          20
+        ],
+        "max_frames": 200,
+        "moving": false,
+        "no_wobbles": true,
+        "occupied_slots": [],
+        "order": [
+          3200,
+          2688,
+          0
+        ],
+        "phase": 0,
+        "piggyback": false,
+        "raw_occupation": [],
+        "rtti": 1,
+        "simple_deployer": false,
+        "speed": 5,
+        "start": [
+          2688,
+          2688,
+          0
+        ],
+        "stop_phase": null,
+        "tarcom": true,
+        "target_height": 0,
+        "terrain": [],
+        "turn_rate": 4,
+        "wobbles": 0.15
+      },
+      "name": "ZEP_shot_down_hovering",
+      "output": {
+        "before": {
+          "bob_phase": 0,
+          "body_facing": 16383,
+          "cell": [
+            12,
+            10
+          ],
+          "coord": [
+            3200,
+            2688,
+            750
+          ],
+          "current_speed": 0,
+          "destination": [
+            3200,
+            2688,
+            0
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "moving": true,
+          "on_bridge": false,
+          "phase": 2,
+          "slot_holder": 536883200,
+          "target_height": 750,
+          "target_speed": 0
+        },
+        "frames": [
+          {
+            "bob_phase": 0,
+            "body_facing": 16383,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              738
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 16386,
+            "facing_destination": 27903,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 17433,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              720
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 17436,
+            "facing_destination": 28953,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 18483,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              702
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 18486,
+            "facing_destination": 30003,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 19533,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              684
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 19536,
+            "facing_destination": 31053,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 20583,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              666
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 20586,
+            "facing_destination": 32103,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 21633,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              648
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 21636,
+            "facing_destination": 33153,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 22683,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              630
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 22686,
+            "facing_destination": 34203,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 23733,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              612
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 23736,
+            "facing_destination": 35253,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 24783,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              594
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 24786,
+            "facing_destination": 36303,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 25833,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              576
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 25836,
+            "facing_destination": 37353,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 26883,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              558
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 26886,
+            "facing_destination": 38403,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 27933,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              540
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 27936,
+            "facing_destination": 39453,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 28983,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              522
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 28986,
+            "facing_destination": 40503,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 30033,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              504
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 30036,
+            "facing_destination": 41553,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 31083,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              486
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 31086,
+            "facing_destination": 42603,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 32133,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              468
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 32136,
+            "facing_destination": 43653,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 33183,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              450
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 33186,
+            "facing_destination": 44703,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 34233,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              432
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 34236,
+            "facing_destination": 45753,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 35283,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              414
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 35286,
+            "facing_destination": 46803,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 36333,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              396
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 36336,
+            "facing_destination": 47853,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 37383,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              378
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 37386,
+            "facing_destination": 48903,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 38433,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              360
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 38436,
+            "facing_destination": 49953,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 39483,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              342
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 39486,
+            "facing_destination": 51003,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 40533,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              324
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 40536,
+            "facing_destination": 52053,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 41583,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              306
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 41586,
+            "facing_destination": 53103,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 42633,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              288
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 42636,
+            "facing_destination": 54153,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 43683,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              270
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 43686,
+            "facing_destination": 55203,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 44733,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              252
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 44736,
+            "facing_destination": 56253,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 45783,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              234
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 45786,
+            "facing_destination": 57303,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 46833,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              216
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 46836,
+            "facing_destination": 58353,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 47883,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              198
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 47886,
+            "facing_destination": 59403,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 48933,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              180
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 48936,
+            "facing_destination": 60453,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 49983,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              162
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 49986,
+            "facing_destination": 61503,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 51033,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              144
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 51036,
+            "facing_destination": 62553,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 52083,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              126
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 52086,
+            "facing_destination": 63603,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 53133,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              108
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 53136,
+            "facing_destination": 64653,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 54183,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              90
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 54186,
+            "facing_destination": 167,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 55233,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              72
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 55236,
+            "facing_destination": 1217,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 56283,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              54
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 56286,
+            "facing_destination": 2267,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 57333,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              36
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 57336,
+            "facing_destination": 3317,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 58383,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              18
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 58386,
+            "facing_destination": 4367,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 59433,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              0
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove",
+              "bucket_remove"
+            ],
+            "facing_current": 59436,
+            "facing_destination": 5417,
+            "moving": true,
+            "notices": [
+              [
+                4476,
+                0
+              ]
+            ],
+            "on_bridge": false,
+            "phase": 6,
+            "slot_events": [
+              [
+                "release",
+                12,
+                10
+              ]
+            ],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 0
+          }
+        ],
+        "killed": {
+          "bob_phase": 0,
+          "body_facing": 16383,
+          "cell": [
+            12,
+            10
+          ],
+          "coord": [
+            3200,
+            2688,
+            750
+          ],
+          "current_speed": 0,
+          "destination": [
+            3200,
+            2688,
+            0
+          ],
+          "events": [
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ]
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "moving": true,
+          "on_bridge": false,
+          "phase": 2,
+          "slot_holder": 536883200,
+          "target_height": 750,
+          "target_speed": 0
+        }
+      }
+    },
+    {
+      "input": {
+        "accel": 2.0,
+        "balloon_hover": false,
+        "can_enter_cells": {},
+        "climb": 10.0,
+        "crash": 40.0,
+        "deploy_to_land": false,
+        "deviation": 1,
+        "facing": 16384,
+        "first_frame": 1000,
+        "flight_frames": 600,
+        "fnpc_cells": null,
+        "height": 500,
+        "hold_frames": 4,
+        "kill_map_size": null,
+        "land_types": [],
+        "map_size": [
+          13,
+          20
+        ],
+        "max_frames": 200,
+        "moving": false,
+        "no_wobbles": false,
+        "occupied_slots": [],
+        "order": [
+          3200,
+          2688,
+          0
+        ],
+        "phase": 0,
+        "piggyback": false,
+        "raw_occupation": [],
+        "rtti": 1,
+        "simple_deployer": false,
+        "speed": 30,
+        "start": [
+          2688,
+          2688,
+          0
+        ],
+        "stop_phase": null,
+        "tarcom": true,
+        "target_height": 0,
+        "terrain": [],
+        "turn_rate": 4,
+        "wobbles": 0.01
+      },
+      "name": "SHAD_shot_down_hovering",
+      "output": {
+        "before": {
+          "bob_phase": 4584990167233234877,
+          "body_facing": 16383,
+          "cell": [
+            12,
+            10
+          ],
+          "coord": [
+            3200,
+            2688,
+            450
+          ],
+          "current_speed": 0,
+          "destination": [
+            3200,
+            2688,
+            0
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "moving": true,
+          "on_bridge": false,
+          "phase": 2,
+          "slot_holder": 536883200,
+          "target_height": 450,
+          "target_speed": 0
+        },
+        "frames": [
+          {
+            "bob_phase": 4585593835507914932,
+            "body_facing": 16383,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              410
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 16386,
+            "facing_destination": 27903,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 17433,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              360
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 17436,
+            "facing_destination": 28953,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 18483,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              310
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 18486,
+            "facing_destination": 30003,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 19533,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              260
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 19536,
+            "facing_destination": 31053,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 20583,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              210
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 20586,
+            "facing_destination": 32103,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 21633,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              160
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 21636,
+            "facing_destination": 33153,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 22683,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              110
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 22686,
+            "facing_destination": 34203,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 23733,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              60
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 23736,
+            "facing_destination": 35253,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 24783,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              10
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 24786,
+            "facing_destination": 36303,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 25833,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              -40
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove",
+              "bucket_remove"
+            ],
+            "facing_current": 25836,
+            "facing_destination": 37353,
+            "moving": true,
+            "notices": [
+              [
+                4476,
+                0
+              ]
+            ],
+            "on_bridge": false,
+            "phase": 6,
+            "slot_events": [
+              [
+                "release",
+                12,
+                10
+              ]
+            ],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 0
+          }
+        ],
+        "killed": {
+          "bob_phase": 4584990167233234877,
+          "body_facing": 16383,
+          "cell": [
+            12,
+            10
+          ],
+          "coord": [
+            3200,
+            2688,
+            450
+          ],
+          "current_speed": 0,
+          "destination": [
+            3200,
+            2688,
+            0
+          ],
+          "events": [
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ]
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "moving": true,
+          "on_bridge": false,
+          "phase": 2,
+          "slot_holder": 536883200,
+          "target_height": 450,
+          "target_speed": 0
+        }
+      }
+    },
+    {
+      "input": {
+        "accel": 2.0,
+        "balloon_hover": false,
+        "can_enter_cells": {},
+        "climb": 50.0,
+        "crash": 60.0,
+        "deploy_to_land": false,
+        "deviation": 1,
+        "facing": 16384,
+        "first_frame": 1000,
+        "flight_frames": 600,
+        "fnpc_cells": null,
+        "height": 500,
+        "hold_frames": 4,
+        "kill_map_size": null,
+        "land_types": [],
+        "map_size": [
+          13,
+          20
+        ],
+        "max_frames": 200,
+        "moving": false,
+        "no_wobbles": false,
+        "occupied_slots": [],
+        "order": [
+          3200,
+          2688,
+          0
+        ],
+        "phase": 0,
+        "piggyback": false,
+        "raw_occupation": [],
+        "rtti": 1,
+        "simple_deployer": false,
+        "speed": 40,
+        "start": [
+          2688,
+          2688,
+          0
+        ],
+        "stop_phase": null,
+        "tarcom": true,
+        "target_height": 0,
+        "terrain": [],
+        "turn_rate": 4,
+        "wobbles": 0.01
+      },
+      "name": "HIND_shot_down_hovering",
+      "output": {
+        "before": {
+          "bob_phase": 4593417610646025721,
+          "body_facing": 16383,
+          "cell": [
+            12,
+            10
+          ],
+          "coord": [
+            3200,
+            2688,
+            500
+          ],
+          "current_speed": 0,
+          "destination": [
+            3200,
+            2688,
+            0
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "moving": true,
+          "on_bridge": false,
+          "phase": 2,
+          "slot_holder": 536883200,
+          "target_height": 500,
+          "target_speed": 0
+        },
+        "frames": [
+          {
+            "bob_phase": 4593695532350635834,
+            "body_facing": 16383,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              440
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 16386,
+            "facing_destination": 27903,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 17433,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              330
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 17436,
+            "facing_destination": 28953,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 18483,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              220
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 18486,
+            "facing_destination": 30003,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 19533,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              110
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 19536,
+            "facing_destination": 31053,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 20583,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              0
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove",
+              "bucket_remove"
+            ],
+            "facing_current": 20586,
+            "facing_destination": 32103,
+            "moving": true,
+            "notices": [
+              [
+                4476,
+                0
+              ]
+            ],
+            "on_bridge": false,
+            "phase": 6,
+            "slot_events": [
+              [
+                "release",
+                12,
+                10
+              ]
+            ],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 0
+          }
+        ],
+        "killed": {
+          "bob_phase": 4593417610646025721,
+          "body_facing": 16383,
+          "cell": [
+            12,
+            10
+          ],
+          "coord": [
+            3200,
+            2688,
+            500
+          ],
+          "current_speed": 0,
+          "destination": [
+            3200,
+            2688,
+            0
+          ],
+          "events": [
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ]
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "moving": true,
+          "on_bridge": false,
+          "phase": 2,
+          "slot_holder": 536883200,
+          "target_height": 500,
+          "target_speed": 0
+        }
+      }
+    },
+    {
+      "input": {
+        "accel": 2.0,
+        "balloon_hover": false,
+        "can_enter_cells": {},
+        "climb": 10.0,
+        "crash": 40.0,
+        "deploy_to_land": false,
+        "deviation": 1,
+        "facing": 16384,
+        "first_frame": 1000,
+        "flight_frames": 600,
+        "fnpc_cells": null,
+        "height": 500,
+        "hold_frames": 4,
+        "kill_map_size": null,
+        "land_types": [],
+        "map_size": [
+          13,
+          20
+        ],
+        "max_frames": 200,
+        "moving": false,
+        "no_wobbles": false,
+        "occupied_slots": [],
+        "order": [
+          3200,
+          2688,
+          0
+        ],
+        "phase": 0,
+        "piggyback": false,
+        "raw_occupation": [],
+        "rtti": 1,
+        "simple_deployer": false,
+        "speed": 30,
+        "start": [
+          2688,
+          2688,
+          0
+        ],
+        "stop_phase": null,
+        "tarcom": true,
+        "target_height": 0,
+        "terrain": [],
+        "turn_rate": 4,
+        "wobbles": 0.01
+      },
+      "name": "SCHP_shot_down_hovering",
+      "output": {
+        "before": {
+          "bob_phase": 4584990167233234877,
+          "body_facing": 16383,
+          "cell": [
+            12,
+            10
+          ],
+          "coord": [
+            3200,
+            2688,
+            450
+          ],
+          "current_speed": 0,
+          "destination": [
+            3200,
+            2688,
+            0
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "moving": true,
+          "on_bridge": false,
+          "phase": 2,
+          "slot_holder": 536883200,
+          "target_height": 450,
+          "target_speed": 0
+        },
+        "frames": [
+          {
+            "bob_phase": 4585593835507914932,
+            "body_facing": 16383,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              410
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 16386,
+            "facing_destination": 27903,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 17433,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              360
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 17436,
+            "facing_destination": 28953,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 18483,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              310
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 18486,
+            "facing_destination": 30003,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 19533,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              260
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 19536,
+            "facing_destination": 31053,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 20583,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              210
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 20586,
+            "facing_destination": 32103,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 21633,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              160
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 21636,
+            "facing_destination": 33153,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 22683,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              110
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 22686,
+            "facing_destination": 34203,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 23733,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              60
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 23736,
+            "facing_destination": 35253,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 24783,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              10
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 24786,
+            "facing_destination": 36303,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 25833,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              -40
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove",
+              "bucket_remove"
+            ],
+            "facing_current": 25836,
+            "facing_destination": 37353,
+            "moving": true,
+            "notices": [
+              [
+                4476,
+                0
+              ]
+            ],
+            "on_bridge": false,
+            "phase": 6,
+            "slot_events": [
+              [
+                "release",
+                12,
+                10
+              ]
+            ],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 0
+          }
+        ],
+        "killed": {
+          "bob_phase": 4584990167233234877,
+          "body_facing": 16383,
+          "cell": [
+            12,
+            10
+          ],
+          "coord": [
+            3200,
+            2688,
+            450
+          ],
+          "current_speed": 0,
+          "destination": [
+            3200,
+            2688,
+            0
+          ],
+          "events": [
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ]
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "moving": true,
+          "on_bridge": false,
+          "phase": 2,
+          "slot_holder": 536883200,
+          "target_height": 450,
+          "target_speed": 0
+        }
+      }
+    },
+    {
+      "input": {
+        "accel": 2.0,
+        "balloon_hover": true,
+        "can_enter_cells": {},
+        "climb": 8.0,
+        "crash": 15.0,
+        "deploy_to_land": false,
+        "deviation": 15,
+        "facing": 16384,
+        "first_frame": 1000,
+        "flight_frames": 600,
+        "fnpc_cells": null,
+        "height": 750,
+        "hold_frames": 4,
+        "kill_map_size": null,
+        "land_types": [],
+        "map_size": [
+          13,
+          20
+        ],
+        "max_frames": 200,
+        "moving": false,
+        "no_wobbles": true,
+        "occupied_slots": [],
+        "order": [
+          3200,
+          2688,
+          0
+        ],
+        "phase": 0,
+        "piggyback": false,
+        "raw_occupation": [],
+        "rtti": 1,
+        "simple_deployer": false,
+        "speed": 16,
+        "start": [
+          2688,
+          2688,
+          0
+        ],
+        "stop_phase": null,
+        "tarcom": true,
+        "target_height": 0,
+        "terrain": [],
+        "turn_rate": 4,
+        "wobbles": 0.1
+      },
+      "name": "DISK_shot_down_hovering",
+      "output": {
+        "before": {
+          "bob_phase": 0,
+          "body_facing": 21911,
+          "cell": [
+            12,
+            10
+          ],
+          "coord": [
+            3200,
+            2688,
+            750
+          ],
+          "current_speed": 0,
+          "destination": [
+            3200,
+            2688,
+            0
+          ],
+          "facing_current": 21911,
+          "facing_destination": 21911,
+          "moving": true,
+          "on_bridge": false,
+          "phase": 2,
+          "slot_holder": 536883200,
+          "target_height": 750,
+          "target_speed": 0
+        },
+        "frames": [
+          {
+            "bob_phase": 0,
+            "body_facing": 21911,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              735
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 21914,
+            "facing_destination": 33431,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 22961,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              712
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 22964,
+            "facing_destination": 34481,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 24011,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              689
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 24014,
+            "facing_destination": 35531,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 25061,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              666
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 25064,
+            "facing_destination": 36581,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 26111,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              643
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 26114,
+            "facing_destination": 37631,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 27161,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              620
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 27164,
+            "facing_destination": 38681,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 28211,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              597
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 28214,
+            "facing_destination": 39731,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 29261,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              574
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 29264,
+            "facing_destination": 40781,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 30311,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              551
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 30314,
+            "facing_destination": 41831,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 31361,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              528
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 31364,
+            "facing_destination": 42881,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 32411,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              505
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 32414,
+            "facing_destination": 43931,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 33461,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              482
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 33464,
+            "facing_destination": 44981,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 34511,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              459
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 34514,
+            "facing_destination": 46031,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 35561,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              436
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 35564,
+            "facing_destination": 47081,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 36611,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              413
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 36614,
+            "facing_destination": 48131,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 37661,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              390
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 37664,
+            "facing_destination": 49181,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 38711,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              367
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 38714,
+            "facing_destination": 50231,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 39761,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              344
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 39764,
+            "facing_destination": 51281,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 40811,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              321
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 40814,
+            "facing_destination": 52331,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 41861,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              298
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 41864,
+            "facing_destination": 53381,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 42911,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              275
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 42914,
+            "facing_destination": 54431,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 43961,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              252
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 43964,
+            "facing_destination": 55481,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 45011,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              229
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 45014,
+            "facing_destination": 56531,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 46061,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              206
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 46064,
+            "facing_destination": 57581,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 47111,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              183
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 47114,
+            "facing_destination": 58631,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 48161,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              160
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 48164,
+            "facing_destination": 59681,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 49211,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              137
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 49214,
+            "facing_destination": 60731,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 50261,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              114
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 50264,
+            "facing_destination": 61781,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 51311,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              91
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 51314,
+            "facing_destination": 62831,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 52361,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              68
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 52364,
+            "facing_destination": 63881,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 53411,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              45
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 53414,
+            "facing_destination": 64931,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 54461,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              22
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 54464,
+            "facing_destination": 445,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 55511,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              -1
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove",
+              "bucket_remove"
+            ],
+            "facing_current": 55514,
+            "facing_destination": 1495,
+            "moving": true,
+            "notices": [
+              [
+                4476,
+                0
+              ]
+            ],
+            "on_bridge": false,
+            "phase": 6,
+            "slot_events": [
+              [
+                "release",
+                12,
+                10
+              ]
+            ],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 0
+          }
+        ],
+        "killed": {
+          "bob_phase": 0,
+          "body_facing": 21911,
+          "cell": [
+            12,
+            10
+          ],
+          "coord": [
+            3200,
+            2688,
+            750
+          ],
+          "current_speed": 0,
+          "destination": [
+            3200,
+            2688,
+            0
+          ],
+          "events": [
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ]
+          ],
+          "facing_current": 21911,
+          "facing_destination": 21911,
+          "moving": true,
+          "on_bridge": false,
+          "phase": 2,
+          "slot_holder": 536883200,
+          "target_height": 750,
+          "target_speed": 0
+        }
+      }
+    },
+    {
+      "input": {
+        "accel": 2.0,
+        "balloon_hover": false,
+        "can_enter_cells": {},
+        "climb": 10.0,
+        "crash": 40.0,
+        "deploy_to_land": false,
+        "deviation": 1,
+        "facing": 16384,
+        "first_frame": 1000,
+        "flight_frames": 0,
+        "fnpc_cells": null,
+        "height": 500,
+        "hold_frames": 4,
+        "kill_map_size": null,
+        "land_types": [],
+        "map_size": [
+          13,
+          20
+        ],
+        "max_frames": 20,
+        "moving": false,
+        "no_wobbles": false,
+        "occupied_slots": [],
+        "order": null,
+        "phase": 2,
+        "piggyback": false,
+        "raw_occupation": [],
+        "rtti": 1,
+        "simple_deployer": false,
+        "speed": 30,
+        "start": [
+          2688,
+          2688,
+          500
+        ],
+        "stop_phase": null,
+        "tarcom": true,
+        "target_height": 500,
+        "terrain": [],
+        "turn_rate": 4,
+        "wobbles": 0.01
+      },
+      "name": "SHAD_hover_without_moving_byte_hangs",
+      "output": {
+        "before": {
+          "bob_phase": 0,
+          "body_facing": 0,
+          "cell": [
+            10,
+            10
+          ],
+          "coord": [
+            2688,
+            2688,
+            500
+          ],
+          "current_speed": 0,
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "facing_current": 16384,
+          "facing_destination": 16384,
+          "moving": false,
+          "on_bridge": false,
+          "phase": 2,
+          "slot_holder": 0,
+          "target_height": 500,
+          "target_speed": 0
+        },
+        "frames": [
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 0,
+            "cell": [
+              10,
+              10
+            ],
+            "coord": [
+              2688,
+              2688,
+              500
+            ],
+            "current_speed": 0,
+            "destination": [
+              0,
+              0,
+              0
+            ],
+            "events": [],
+            "facing_current": 16384,
+            "facing_destination": 16384,
+            "moving": false,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 2,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": 500,
+            "target_speed": 0
+          }
+        ],
+        "killed": {
+          "bob_phase": 0,
+          "body_facing": 0,
+          "cell": [
+            10,
+            10
+          ],
+          "coord": [
+            2688,
+            2688,
+            500
+          ],
+          "current_speed": 0,
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "events": [],
+          "facing_current": 16384,
+          "facing_destination": 16384,
+          "moving": false,
+          "on_bridge": false,
+          "phase": 2,
+          "slot_holder": 0,
+          "target_height": 500,
+          "target_speed": 0
+        }
+      }
+    },
+    {
+      "input": {
+        "accel": 2.0,
+        "balloon_hover": false,
+        "can_enter_cells": {},
+        "climb": 10.0,
+        "crash": 40.0,
+        "deploy_to_land": false,
+        "deviation": 1,
+        "facing": 16384,
+        "first_frame": 1000,
+        "flight_frames": 600,
+        "fnpc_cells": null,
+        "height": 500,
+        "hold_frames": 4,
+        "kill_map_size": [
+          40,
+          20
+        ],
+        "land_types": [],
+        "map_size": [
+          13,
+          20
+        ],
+        "max_frames": 200,
+        "moving": false,
+        "no_wobbles": false,
+        "occupied_slots": [],
+        "order": [
+          3200,
+          2688,
+          0
+        ],
+        "phase": 0,
+        "piggyback": false,
+        "raw_occupation": [],
+        "rtti": 1,
+        "simple_deployer": false,
+        "speed": 30,
+        "start": [
+          2688,
+          2688,
+          0
+        ],
+        "stop_phase": null,
+        "tarcom": true,
+        "target_height": 0,
+        "terrain": [],
+        "turn_rate": 4,
+        "wobbles": 0.01
+      },
+      "name": "SHAD_shot_down_outside_the_map_bounds",
+      "output": {
+        "before": {
+          "bob_phase": 4584990167233234877,
+          "body_facing": 16383,
+          "cell": [
+            12,
+            10
+          ],
+          "coord": [
+            3200,
+            2688,
+            450
+          ],
+          "current_speed": 0,
+          "destination": [
+            3200,
+            2688,
+            0
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "moving": true,
+          "on_bridge": false,
+          "phase": 2,
+          "slot_holder": 536883200,
+          "target_height": 450,
+          "target_speed": 0
+        },
+        "frames": [
+          {
+            "bob_phase": 4585593835507914932,
+            "body_facing": 16383,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              450
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 16386,
+            "facing_destination": 27903,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 17433,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              440
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 17436,
+            "facing_destination": 28953,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 18483,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              430
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 18486,
+            "facing_destination": 30003,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 19533,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              420
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 19536,
+            "facing_destination": 31053,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 20583,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              410
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 20586,
+            "facing_destination": 32103,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 21633,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              400
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 21636,
+            "facing_destination": 33153,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 22683,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              390
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 22686,
+            "facing_destination": 34203,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 23733,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              380
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 23736,
+            "facing_destination": 35253,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 24783,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              370
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 24786,
+            "facing_destination": 36303,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 25833,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              360
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 25836,
+            "facing_destination": 37353,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 26883,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              350
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 26886,
+            "facing_destination": 38403,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 27933,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              340
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 27936,
+            "facing_destination": 39453,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 28983,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              330
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 28986,
+            "facing_destination": 40503,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 30033,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              320
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 30036,
+            "facing_destination": 41553,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 31083,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              310
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 31086,
+            "facing_destination": 42603,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 32133,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              300
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 32136,
+            "facing_destination": 43653,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 33183,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              290
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 33186,
+            "facing_destination": 44703,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 34233,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              280
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 34236,
+            "facing_destination": 45753,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 35283,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              270
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 35286,
+            "facing_destination": 46803,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 36333,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              260
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 36336,
+            "facing_destination": 47853,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 37383,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              250
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 37386,
+            "facing_destination": 48903,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 38433,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              240
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 38436,
+            "facing_destination": 49953,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 39483,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              230
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 39486,
+            "facing_destination": 51003,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 40533,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              220
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 40536,
+            "facing_destination": 52053,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 41583,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              210
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 41586,
+            "facing_destination": 53103,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 42633,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              200
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 42636,
+            "facing_destination": 54153,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 43683,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              190
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 43686,
+            "facing_destination": 55203,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 44733,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              180
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 44736,
+            "facing_destination": 56253,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 45783,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              170
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 45786,
+            "facing_destination": 57303,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 46833,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              160
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 46836,
+            "facing_destination": 58353,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 47883,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              150
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 47886,
+            "facing_destination": 59403,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 48933,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              140
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 48936,
+            "facing_destination": 60453,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 49983,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              130
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 49986,
+            "facing_destination": 61503,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 51033,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              120
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 51036,
+            "facing_destination": 62553,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 52083,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              110
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 52086,
+            "facing_destination": 63603,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 53133,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              100
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 53136,
+            "facing_destination": 64653,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 54183,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              90
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 54186,
+            "facing_destination": 167,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 55233,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              80
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 55236,
+            "facing_destination": 1217,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 56283,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              70
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 56286,
+            "facing_destination": 2267,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 57333,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              60
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 57336,
+            "facing_destination": 3317,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 58383,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              50
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 58386,
+            "facing_destination": 4367,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 59433,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              40
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 59436,
+            "facing_destination": 5417,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 60483,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              30
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 60486,
+            "facing_destination": 6467,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 61533,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              20
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 61536,
+            "facing_destination": 7517,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 62583,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              10
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [],
+            "facing_current": 62586,
+            "facing_destination": 8567,
+            "moving": true,
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 536883200,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 63633,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              0
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "bucket_remove"
+            ],
+            "facing_current": 63636,
+            "facing_destination": 9617,
+            "moving": true,
+            "notices": [
+              [
+                4476,
+                0
+              ]
+            ],
+            "on_bridge": false,
+            "phase": 6,
+            "slot_events": [
+              [
+                "release",
+                12,
+                10
+              ]
+            ],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 0
+          }
+        ],
+        "killed": {
+          "bob_phase": 4584990167233234877,
+          "body_facing": 16383,
+          "cell": [
+            12,
+            10
+          ],
+          "coord": [
+            3200,
+            2688,
+            450
+          ],
+          "current_speed": 0,
+          "destination": [
+            3200,
+            2688,
+            0
+          ],
+          "events": [
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ]
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "moving": true,
+          "on_bridge": false,
+          "phase": 2,
+          "slot_holder": 536883200,
+          "target_height": 450,
+          "target_speed": 0
+        }
+      }
+    }
+  ]
+}

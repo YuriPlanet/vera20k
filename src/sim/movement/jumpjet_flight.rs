@@ -13,6 +13,11 @@
 //!   toward the destination through the retail atan table, four distance speed
 //!   zones with a turn-error slowdown, target-height choice, and arrival below
 //!   20 leptons.
+//! - The crash: `Process`'s latch (`0x0054AF2E..0x0054B02C`) turns a crashing
+//!   owner (`FootClass+0x425`) still above the ground into State 5
+//!   `0x0054CA90`, which drops it by `JumpjetCrash=` a frame on top of
+//!   Update's descent, spins its facing, and at the ground (or on crossing a
+//!   bridge deck) releases its air slot and sends the owner's impact notice.
 //! - The reference height helper `0x0054D820` and the cell top height
 //!   `CellClass @ 0x00485080` (ground at the cell centre, plus a building's
 //!   `Dimension2` height or 85 leptons for any other techno in the cell).
@@ -21,7 +26,9 @@
 //! `tools/spatial_oracle/jumpjet_flight.json` (native Unicorn execution; see the
 //! `.meta.json` scope): speed ramps, zones, turn slowdowns, bob, climb and
 //! descent, the low-altitude speed gate, arrival into state 4 or a claimed hold.
-//! Bridges, building tops and cell objects are Rust-tested only.
+//! The crash fall and its impact are pinned by
+//! `tools/spatial_oracle/jumpjet_crash.json` for every stock Crashable Unit
+//! type. Bridges, building tops and cell objects are Rust-tested only.
 //!
 //! Numeric model: `WinMain` installs x87 control word `0x0E7F` (53-bit
 //! precision, round toward zero; `_controlfp(0x300, 0x300)` at `0x006BBFC1`),
@@ -84,6 +91,17 @@ pub(crate) const STATE_ASCEND: i32 = 1;
 pub(crate) const STATE_HOLD: i32 = 2;
 pub(crate) const STATE_TRANSLATE: i32 = 3;
 pub(crate) const STATE_DESCEND: i32 = 4;
+/// State 5, the crash fall (`0x0054CA90`).
+pub(crate) const STATE_CRASH: i32 = 5;
+/// State 6, set by the crash's impact; the jump table at `0x0054B19C` runs no
+/// body for it.
+pub(crate) const STATE_CRASHED: i32 = 6;
+/// The target height the crash latch sets (`MOV [ESI+0x7C],-5` at
+/// `0x0054B006`), which Update's descent chases below the ground.
+const CRASH_TARGET_HEIGHT: i32 = -5;
+/// `ADD CX,0x2D00` at `0x0054CB24`: State 5 re-aims the facing this far past
+/// its animated current every frame, so it turns at the full turn rate.
+const CRASH_SPIN: u16 = 0x2D00;
 
 /// The type block `Link_To_Object @ 0x0054AD30` copies into the locomotor
 /// (receiver `+0x1C..+0x3C`). Floats keep their binary32 bits.
@@ -299,6 +317,22 @@ pub(crate) trait JumpjetFlightHost {
     /// `Set_Destination(0, 1)` runs, the air slot and bucket are released, the
     /// crate at the cell is picked up and the landing latches are cleared.
     fn touchdown(&mut self);
+
+    // Seams the crash adds.
+    /// Owner `+0x425`, the latch `FootClass::Crash @ 0x004DEBB0` raises.
+    fn crashing(&self) -> bool;
+    /// `MapClass::In_Bounds @ 0x00568300` for a cell.
+    fn in_bounds(&self, cell: (i16, i16)) -> bool;
+    /// State 5's relocation (`0x0054CBCB..0x0054CC0D`): the owner leaves the
+    /// display (`0x004A9770`) and its cell (`Mark(REMOVE)`, vtable `+0x124`),
+    /// moves (`SetLocation`, `+0x1B4`), and is marked (`Mark(PUT)`) and
+    /// submitted (`0x004A9720`) again.
+    fn crash_relocate(&mut self, coord: [i32; 3]);
+    /// The crash impact's owner work after its air slot release
+    /// (`0x0054D06C..0x0054D095`): `AircraftTracker::Remove @ 0x004135D0`, then
+    /// the owner's `INoticeSink` slot 0 with `(0x117C, 0)`, whose handler
+    /// finishes the wreck.
+    fn crash_impact(&mut self);
 }
 
 fn zero() -> X87Value {
@@ -659,12 +693,15 @@ pub(crate) fn is_moving_now(state: i32) -> bool {
     state != STATE_GROUND && state != STATE_HOLD
 }
 
-/// One `Process @ 0x0054AEC0` frame: the Update gate, then the state at
-/// `+0x50` through the jump table at `0x0054B19C`. Returns the new state.
+/// One `Process @ 0x0054AEC0` frame: the Update gate, the crash latch, then the
+/// state at `+0x50` through the jump table at `0x0054B19C`. Returns the new
+/// state.
 ///
-/// Not modelled: the crash latch between the two (`owner+0x425` with
-/// `GetHeight > 0` forces state 5), `0x0053A130`'s constant-false arm, and the
-/// two visibility probes in the tail.
+/// The gate comes first, so a crashing owner idle in the hold (state 2 with the
+/// moving byte clear) never latches and hangs where it is, natively too.
+///
+/// Not modelled: `0x0053A130`'s constant-false arm and the two visibility
+/// probes in the tail.
 pub(crate) fn process(
     moving: bool,
     state: i32,
@@ -677,14 +714,35 @@ pub(crate) fn process(
         return state;
     }
     update_coordinates_and_altitude(state, destination, params, flight, host);
-    match state {
+    match crash_latch(state, flight, host) {
         STATE_GROUND => state0_ground(moving, params, flight, host),
         STATE_ASCEND => state1_ascend(destination, params, flight, host),
         STATE_HOLD => state2_hold(moving, destination, params, flight, host),
         STATE_TRANSLATE => state3_translate(destination, params, flight, host),
         STATE_DESCEND => state4_descend(destination, params, flight, host),
+        STATE_CRASH => state5_crash(params, flight, host),
         other => other,
     }
+}
+
+/// `Process`'s crash latch (`0x0054AF2E..0x0054B02C`), between Update and the
+/// dispatch: a crashing owner above the ground, not already falling, enters
+/// State 5 with the target height at -5.
+///
+/// Not ported: a Magnetron-held owner (`+0x6AD`) first has its destination
+/// moved to its cell's centre and latches only once it stands there
+/// (`0x0054AFE0..0x0054B004`), and an Infantry owner's latch plays sequence
+/// `0x22` (vtable `+0x558`, `0x0054B02C`). VERA never raises `+0x6AD` (the
+/// `IsLocomotor=` warhead is unported) and crashes no Infantry.
+fn crash_latch(state: i32, flight: &mut JumpjetFlight, host: &impl JumpjetFlightHost) -> i32 {
+    if !host.crashing()
+        || matches!(state, STATE_CRASH | STATE_CRASHED)
+        || host.height_above_ground() <= 0
+    {
+        return state;
+    }
+    flight.target_height = CRASH_TARGET_HEIGHT;
+    STATE_CRASH
 }
 
 /// The desired facing toward `destination` (`0x0054C081..C0CD`, and the same
@@ -960,6 +1018,55 @@ pub(crate) fn state4_descend(
     STATE_GROUND
 }
 
+/// `State5_Crash @ 0x0054CA90` for an owner no Magnetron holds. Returns the
+/// new state.
+///
+/// The owner drops by `JumpjetCrash=` below where Update left it, truncated by
+/// `Math::ftol` (`0x0054CAFE..0x0054CB0A`), and the facing is re-aimed
+/// `0x2D00` past its animated current (`0x0054CB0E..0x0054CB39`). Only a cell
+/// inside the map takes the drop (`0x0054CBC2`); outside it Update's descent
+/// alone brings the owner down. The impact is the ground or a crossing of a
+/// high bridge's deck from above (`0x0054CB3E..0x0054CB81`). It releases the
+/// air slot the owner holds (`0x0054D045..0x0054D067`), zeroes the target
+/// speed (`0x0054D07D`) and hands the owner its notice
+/// ([`JumpjetFlightHost::crash_impact`]), leaving State 6.
+///
+/// Not ported: the Magnetron arms. An owner held by one (`+0x6AD`) instead
+/// stops dead and falls ever faster (`0x0054CAD2..0x0054CAFC`), and one being
+/// dropped by it (`+0x427`) lands on and crushes what is below
+/// (`0x0054CC47..0x0054D012`); VERA raises neither byte.
+pub(crate) fn state5_crash(
+    params: &JumpjetFlightParams,
+    flight: &mut JumpjetFlight,
+    host: &mut impl JumpjetFlightHost,
+) -> i32 {
+    let frame = host.binary_frame();
+    let [x, y, old_z] = host.location();
+    let new_z =
+        X87Chop53::ftol_i32_low_masked(X87Chop53::sub(int(old_z), single(params.crash_bits)));
+    let spin = flight.facing.current(frame).wrapping_add(CRASH_SPIN);
+    flight.facing.set(spin, frame);
+
+    // `CMP EBP,ESI` / `CMP EAX,ESI`, both signed: from on or above the deck to
+    // below it.
+    let deck = host.floor_height([x, y]).wrapping_add(BRIDGE_DECK_LEPTONS);
+    let crossed_deck = host.cell_high_bridge([x, y]) && old_z >= deck && new_z < deck;
+    let here = host.cell_of([x, y]);
+    if host.in_bounds(here) {
+        host.crash_relocate([x, y, new_z]);
+    }
+    if host.height_above_ground() > 0 && !crossed_deck {
+        return STATE_CRASH;
+    }
+
+    if host.holds_air_slot_at(here) {
+        host.release_air_slot_at(here);
+    }
+    flight.target_speed_bits = 0;
+    host.crash_impact();
+    STATE_CRASHED
+}
+
 /// `CellClass @ 0x00485080`: ground at the cell centre, plus the first
 /// building's `BuildingTypeClass::Dimension2` height (vtable `+0x7C`,
 /// `0x00464AF0`) or, with no building, 85 leptons when
@@ -1185,6 +1292,19 @@ mod tests {
             self.events.push("touchdown");
             self.held_slot = None;
         }
+        fn crashing(&self) -> bool {
+            false
+        }
+        fn in_bounds(&self, _cell: (i16, i16)) -> bool {
+            true
+        }
+        fn crash_relocate(&mut self, coord: [i32; 3]) {
+            self.events.push("crash_relocate");
+            self.location = coord;
+        }
+        fn crash_impact(&mut self) {
+            self.events.push("crash_impact");
+        }
     }
 
     fn int(value: &Value) -> i64 {
@@ -1349,6 +1469,14 @@ mod tests {
         touched_down: bool,
         /// The air-slot calls this frame, in the corpus's own vocabulary.
         slot_events: Vec<Value>,
+        /// Owner `+0x425`.
+        crashing: bool,
+        /// `MapClass+0xF4/+0xF8`, the `In_Bounds` diamond's width and height.
+        map_size: (i32, i32),
+        /// State 5's owner calls this frame, in the corpus's vocabulary: the
+        /// relocation's display removal, the AircraftTracker removal and the
+        /// `(0x117C, 0)` notice.
+        impact_events: Vec<Value>,
     }
 
     impl StatesHost<'_> {
@@ -1537,6 +1665,20 @@ mod tests {
             }
             self.landing_latched = false;
         }
+        fn crashing(&self) -> bool {
+            self.crashing
+        }
+        fn in_bounds(&self, cell: (i16, i16)) -> bool {
+            crate::map::playfield::size_diamond_contains(self.map_size.0, self.map_size.1, cell)
+        }
+        fn crash_relocate(&mut self, coord: [i32; 3]) {
+            self.impact_events.push(json!("layer_remove"));
+            self.location = coord;
+        }
+        fn crash_impact(&mut self) {
+            self.impact_events.push(json!("bucket_remove"));
+            self.impact_events.push(json!([0x117C, 0]));
+        }
     }
 
     /// Parity with `tools/spatial_oracle/jumpjet_states.json`: the native
@@ -1667,6 +1809,9 @@ mod tests {
                 landing_latched: false,
                 touched_down: false,
                 slot_events: Vec::new(),
+                crashing: false,
+                map_size: (0, 0),
+                impact_events: Vec::new(),
             };
 
             // `Move_To` ran before the first Process frame; take what it left
@@ -1758,6 +1903,162 @@ mod tests {
                 });
                 assert_eq!(produced, native, "{name}: frame {index} differs");
             }
+        }
+    }
+
+    /// Parity with `tools/spatial_oracle/jumpjet_crash.json`: from the state
+    /// the kill leaves (Health 0 and two `Stop_Moving` calls around the
+    /// `+0x425` latch), the native `Process` latch and State 5 `0x0054CA90`
+    /// frame by frame to the impact notice, for every stock Crashable Unit
+    /// type, an idle hover the latch never reaches and a fall outside
+    /// `In_Bounds`.
+    #[test]
+    fn a_crashing_jumpjet_falls_like_the_native_state5() {
+        let (trig, _) = required_math_tables();
+        let atan = required_atan_table();
+        if !trig.matches_retail() || !atan.matches_retail() {
+            assert!(
+                std::env::var_os("RA2_DIR").is_none(),
+                "RA2_DIR is set but the retail sine or atan table does not match"
+            );
+            eprintln!("skipped: set RA2_DIR to the retail install to run this");
+            return;
+        }
+        let corpus: Value = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/jumpjet_crash.json"
+        ))
+        .expect("corpus parses");
+        let rows = corpus["fall"].as_array().expect("fall rows");
+        assert_eq!(rows.len(), 7);
+
+        for row in rows {
+            let name = row["name"].as_str().expect("row name");
+            let input = &row["input"];
+            let float = |key: &str| input[key].as_f64().expect("float field") as f32;
+            let params = JumpjetFlightParams::link(&JumpjetParams {
+                turn_rate: int(&input["turn_rate"]) as i32,
+                speed: SimFixed::from_num(int(&input["speed"])),
+                climb: float("climb"),
+                crash: float("crash"),
+                height: int(&input["height"]) as i32,
+                accel: float("accel"),
+                wobbles: float("wobbles"),
+                deviation: int(&input["deviation"]) as i32,
+                no_wobbles: input["no_wobbles"].as_bool().expect("flag"),
+            });
+            let killed = &row["output"]["killed"];
+            let bits = |value: &Value| value.as_u64().expect("bit field");
+            let triple = |value: &Value| [0, 1, 2].map(|i| int(&value[i]) as i32);
+            // Every row's kill leaves the facing at rest, so a snap reproduces
+            // its animated value from any frame.
+            assert_eq!(
+                killed["facing_current"], killed["facing_destination"],
+                "{name}"
+            );
+            let first_frame = 1000;
+            let mut flight = JumpjetFlight::linked(&params);
+            flight
+                .facing
+                .snap(int(&killed["facing_current"]) as u16, first_frame);
+            flight.current_speed_bits = bits(&killed["current_speed"]);
+            flight.target_speed_bits = bits(&killed["target_speed"]);
+            flight.target_height = int(&killed["target_height"]) as i32;
+            flight.bob_phase_bits = bits(&killed["bob_phase"]);
+            let cell = (
+                int(&killed["cell"][0]) as i16,
+                int(&killed["cell"][1]) as i16,
+            );
+            let map_size = if input["kill_map_size"].is_null() {
+                &input["map_size"]
+            } else {
+                &input["kill_map_size"]
+            };
+            let mut host = StatesHost {
+                frame: first_frame,
+                trig,
+                atan,
+                kind: FlightOwnerKind::Unit,
+                location: triple(&killed["coord"]),
+                balloon_hover: input["balloon_hover"].as_bool().expect("flag"),
+                has_target: input["tarcom"].as_bool().expect("flag"),
+                piggyback: false,
+                simple_deployer: false,
+                deploy_to_land: false,
+                body_facing: int(&killed["body_facing"]) as u16,
+                terrain: Vec::new(),
+                land_types: Vec::new(),
+                can_enter: Vec::new(),
+                slots: if bits(&killed["slot_holder"]) == 0 {
+                    Vec::new()
+                } else {
+                    vec![(cell, 1)]
+                },
+                owner: 1,
+                scatter_direction: 0,
+                scatter_to: None,
+                stop_state: STATE_ASCEND,
+                stop_requested: false,
+                landing_latched: false,
+                touched_down: false,
+                slot_events: Vec::new(),
+                crashing: true,
+                map_size: (int(&map_size[0]) as i32, int(&map_size[1]) as i32),
+                impact_events: Vec::new(),
+            };
+            let mut state = int(&killed["phase"]) as i32;
+            let moving = killed["moving"].as_bool().expect("flag");
+            let destination = triple(&killed["destination"]);
+
+            let frames = row["output"]["frames"].as_array().expect("frames");
+            for (index, expected) in frames.iter().enumerate() {
+                host.frame += 1;
+                host.slot_events.clear();
+                host.impact_events.clear();
+                state = process(moving, state, destination, &params, &mut flight, &mut host);
+                let produced = json!({
+                    "coord": host.location,
+                    "current_speed": flight.current_speed_bits,
+                    "target_speed": flight.target_speed_bits,
+                    "target_height": flight.target_height,
+                    "bob_phase": flight.bob_phase_bits,
+                    "phase": state,
+                    "facing_current": flight.facing.current(host.frame),
+                    "facing_destination": flight.facing.destination(),
+                    "body_facing": host.body_facing,
+                    "slot_events": host.slot_events,
+                    "impact": host.impact_events,
+                });
+                let native_impact: Vec<Value> = expected["events"]
+                    .as_array()
+                    .expect("events")
+                    .iter()
+                    .filter(|event| {
+                        matches!(event.as_str(), Some("layer_remove" | "bucket_remove"))
+                    })
+                    .chain(expected["notices"].as_array().expect("notices"))
+                    .cloned()
+                    .collect();
+                let native = json!({
+                    "coord": expected["coord"],
+                    "current_speed": expected["current_speed"],
+                    "target_speed": expected["target_speed"],
+                    "target_height": expected["target_height"],
+                    "bob_phase": expected["bob_phase"],
+                    "phase": expected["phase"],
+                    "facing_current": expected["facing_current"],
+                    "facing_destination": expected["facing_destination"],
+                    "body_facing": expected["body_facing"],
+                    "slot_events": expected["slot_events"],
+                    "impact": native_impact,
+                });
+                assert_eq!(produced, native, "{name}: frame {index} differs");
+            }
+            let impacts = frames
+                .iter()
+                .filter(|frame| !frame["notices"].as_array().expect("notices").is_empty())
+                .count();
+            let hangs = name == "SHAD_hover_without_moving_byte_hangs";
+            assert_eq!(impacts, usize::from(!hangs), "{name}: impact count");
         }
     }
 

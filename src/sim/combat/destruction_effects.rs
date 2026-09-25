@@ -221,12 +221,43 @@ impl Simulation {
 
     /// `UnitClass::Death_Explosion @ 0x00738680`: one `Explosion=` anim and
     /// then one `DestroyAnim=` anim at the unit's Location, each picked with
-    /// one Scenario `Next()` (`0x007386A7`, `0x0073881D`).
+    /// one Scenario `Next()` (`0x007386A7`, `0x0073881D`), recorded on the
+    /// receiver transaction's anim list.
     pub(crate) fn unit_death_explosion(
         &mut self,
         rules: &RuleSet,
         unit_id: u64,
         anims: &mut Vec<ExplosionEffect>,
+    ) {
+        self.unit_death_explosion_with(rules, unit_id, |world, anim, coord| {
+            world.push_death_anim(anims, anim, coord, 0);
+        });
+    }
+
+    /// [`Self::unit_death_explosion`] outside a receiver transaction (a
+    /// crashed Jumpjet's impact notice): each anim is constructed right after
+    /// its pick, as the native constructor call follows it (`0x0073871E`,
+    /// `0x00738854`).
+    pub(crate) fn unit_death_explosion_now(&mut self, rules: &RuleSet, unit_id: u64) {
+        self.unit_death_explosion_with(rules, unit_id, |world, anim, coord| {
+            let type_id = world.interner.intern(anim);
+            world.admit_death_anim(
+                rules,
+                type_id,
+                DeathAnimSpawn {
+                    coord,
+                    delay: 0,
+                    draws: None,
+                },
+            );
+        });
+    }
+
+    fn unit_death_explosion_with(
+        &mut self,
+        rules: &RuleSet,
+        unit_id: u64,
+        mut emit: impl FnMut(&mut Self, &str, AnimWorldCoord),
     ) {
         let Some(entity) = self.substrate.entities.get(unit_id) else {
             return;
@@ -258,14 +289,14 @@ impl Simulation {
             } else {
                 picked
             };
-            self.push_death_anim(anims, anim, coord, 0);
+            emit(self, anim, coord);
         }
         // `0x00738749..0x007387FC` sums the stored ore's value into a local
         // nothing reads and calls the ShakeScreen stub (`0x0048DED0`, a bare
         // `RET`): no effect.
         if !object.destroy_anims.is_empty() {
             let anim = self.pick_death_anim(&object.destroy_anims);
-            self.push_death_anim(anims, anim, coord, 0);
+            emit(self, anim, coord);
         }
     }
 

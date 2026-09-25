@@ -31,9 +31,10 @@ impl Simulation {
         e.air_spatial_enter_order = order;
     }
 
-    /// `AircraftTracker::Remove @ 0x004135D0`: the Fly leaves the airborne
-    /// index at its touchdown or its crash impact.
-    pub(crate) fn remove_fly_air_tracker(&mut self, id: u64) {
+    /// `AircraftTracker::Remove @ 0x004135D0`: a Fly leaves the airborne index
+    /// at its touchdown or its crash impact, a Jumpjet at its crash impact
+    /// (`0x0054D075`).
+    pub(crate) fn aircraft_tracker_remove(&mut self, id: u64) {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.air_spatial_bucket = None;
             entity.air_spatial_enter_order = 0;
@@ -68,7 +69,9 @@ impl Simulation {
         }
     }
 
-    pub(super) fn set_fly_owner_height(&mut self, id: u64, height: i32) {
+    /// `ObjectClass::SetHeight` (vtable `+0x1CC`): the Location's Z at
+    /// `height` above the floor, or above the deck for an object on a bridge.
+    pub(super) fn set_object_height(&mut self, id: u64, height: i32) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -244,8 +247,8 @@ impl Simulation {
                 self.substrate.entities.get_mut(id).unwrap().on_bridge = true;
             }
         }
-        self.set_fly_owner_height(id, base);
-        self.remove_fly_air_tracker(id);
+        self.set_object_height(id, base);
+        self.aircraft_tracker_remove(id);
         let entity = self.substrate.entities.get_mut(id).unwrap();
         let loco = entity.locomotor.as_mut().unwrap();
         loco.fly_runtime_mut().unwrap().finish_landing();

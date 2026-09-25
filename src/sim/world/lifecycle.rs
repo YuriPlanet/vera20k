@@ -1798,6 +1798,13 @@ impl Simulation {
         self.unmark_entity_remove(stable_id, UninitContext::default());
     }
 
+    /// Mark(REMOVE) around a locomotor's own relocation: native Mark never
+    /// touches the AircraftTracker, which Limbo and the locomotors' touchdown
+    /// and crash impact remove from.
+    pub(crate) fn unmark_entity_remove_keeping_air_tracker(&mut self, stable_id: u64) {
+        self.unmark_entity_remove_impl(stable_id, false, UninitContext::default());
+    }
+
     /// `UnitClass::ReceiveDamage` lifts a dying unit off its cell
     /// (vt+0x124 Mark(UP) at `0x00737F7A`) before its passengers and crew are
     /// placed there. The UnInit that follows finds it already unmarked.
@@ -1905,6 +1912,9 @@ impl Simulation {
         // A cruising Jumpjet runs the native Update/State3 body instead of the
         // air adapter (`world::jumpjet_cruise`).
         let stats = match self.tick_jumpjet_cruise_one(stable_id, rules) {
+            // State 5's impact notice UnInits the wreck, so `Process`'s layer
+            // tail finds it dead (`0x0054B16C`); the object turn commits it.
+            Some(stats) if stats.impact => return stats,
             Some(stats) => stats,
             None => crate::sim::movement::air_movement::tick_air_movement(
                 &mut self.substrate.entities,
@@ -2032,7 +2042,7 @@ impl Simulation {
                     self.substrate.entities.get(id).unwrap(),
                     self.resolved_terrain.as_ref(),
                 );
-                self.set_fly_owner_height(id, height.wrapping_add(10));
+                self.set_object_height(id, height.wrapping_add(10));
                 self.add_entity_occupancy(id);
             } else {
                 self.finish_fly_layer_transition(id, after, rules);

@@ -15,14 +15,35 @@
 //! Claims and releases are collected as effects while the substrate stays
 //! borrowed immutably, then applied once the frame's states have run.
 //!
+//! A crashing owner (`FootClass+0x425`) takes no orders: the kill's own
+//! `Stop_Moving` calls are the last the locomotor hears, and `Process` latches
+//! it into State 5, whose impact the object turn finishes
+//! (`Simulation::jumpjet_crash_impact`).
+//!
 //! Residuals: `Stop_Moving 0x0054B4D0` has no FNPC search here, so a refused
 //! landing stays in the descent and re-tests admission every frame instead of
 //! re-targeting a nearby cell; `Move_To`'s FNPC relocation of the ordered cell
 //! is not applied; `Can_Enter_Cell`'s graded answer collapses to clear or
 //! refused; `Process`'s owner `+0x90` dispatch gate, the owner missions that
-//! skip landing admission, `RulesClass+0x48`'s deploy facing, owner `+0x134`,
-//! the `JumpJetTurn=` hold facing and State 5's crash (`0x0054CA90`) are
-//! unmodelled.
+//! skip landing admission, `RulesClass+0x48`'s deploy facing, owner `+0x134`
+//! and the `JumpJetTurn=` hold facing are unmodelled.
+//!
+//! RESIDUAL: the kill's `Stop_Moving` calls (`FootClass::Stun @ 0x004D5660`
+//! through `Stop_Driver`, once for the death arm and once inside Crash)
+//! re-target a moving locomotor through FNPC and `Move_To` (`0x0054B5DF`,
+//! `0x0054B683`); here the wreck keeps the destination it was flying to. An
+//! owner that still has a NavCom also runs the Unit's NULL `Set_Destination
+//! @ 0x00741970`, whose locomotor calls are untraced. Trigger: a Jumpjet shot
+//! down on its way somewhere, or while descending. Effect: its fall's Update
+//! reads the old destination cell for the reference height and the
+//! low-altitude speed gate (native: the FNPC cell, usually the one under the
+//! wreck), and a wreck killed in its descent skips the one frame of climb
+//! `Move_To`'s lift into State 1 gives it, so it can land a frame or two
+//! early. Frequency: common (a Kirov shot down en route). Risk: the fall's
+//! last frames and the impact frame; the spin, the fall rate and the wreck's
+//! drift at its cruise target speed are unchanged. A hovering wreck (FNPC
+//! answering its own cell) matches: `tools/spatial_oracle/jumpjet_crash.json`
+//! runs the real kill calls.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on map/, rules/ and sim/ only.
@@ -98,6 +119,14 @@ struct CruiseHost<'a> {
     landing_latched: bool,
     /// Touchdown ran, so the owner must be put back on the ground.
     touched_down: bool,
+    /// Owner `+0x425`.
+    crashing: bool,
+    /// `MapClass+0xF4/+0xF8`; no map size admits no cell.
+    map_size: Option<(i32, i32)>,
+    /// State 5 moved the owner through its Mark/display transaction.
+    crash_relocated: bool,
+    /// State 5 reached the ground: the owner's impact notice is due.
+    impact: bool,
 }
 
 impl CruiseHost<'_> {
@@ -409,6 +438,28 @@ impl JumpjetFlightHost for CruiseHost<'_> {
             self.release_air_slot_at(here);
         }
     }
+
+    fn crashing(&self) -> bool {
+        self.crashing
+    }
+
+    fn in_bounds(&self, cell: (i16, i16)) -> bool {
+        self.map_size.is_some_and(|(width, height)| {
+            crate::map::playfield::size_diamond_contains(width, height, cell)
+        })
+    }
+
+    fn crash_relocate(&mut self, coord: [i32; 3]) {
+        // The Mark and display calls run on the committed move below.
+        self.location = coord;
+        self.crash_relocated = true;
+    }
+
+    fn crash_impact(&mut self) {
+        // The tracker removal and the notice are the owner's; the object turn
+        // runs them once the frame's states are committed.
+        self.impact = true;
+    }
 }
 
 /// Write a world-lepton coordinate back into the cell/sub-cell position and
@@ -449,6 +500,8 @@ struct HostEffects {
     stop_requested: bool,
     landing_latched: bool,
     touched_down: bool,
+    crash_relocated: bool,
+    impact: bool,
 }
 
 impl Simulation {
@@ -471,6 +524,7 @@ impl Simulation {
         }
         // Taken before the substrate borrows so the host can hold the rest.
         let path_grid = self.path_grid_snapshot();
+        let map_size = self.map_size_diamond();
         let terrain = self.resolved_terrain.as_ref();
 
         let (state, flight, location, effects) = {
@@ -481,7 +535,9 @@ impl Simulation {
             // The observable effect of `Move_To 0x0054B1C0`: a fresh order
             // stores the destination, sets the moving byte and lifts a descent
             // back into the climb. Its FNPC relocation is a recorded residual.
+            // A wreck takes no orders.
             let goal = entity.movement_target.as_ref().and_then(|t| t.final_goal);
+            let ordered = !entity.crashing;
             let mut moving = runtime.moving;
             let mut state = runtime.phase;
             let mut lift_from_descent = false;
@@ -491,7 +547,7 @@ impl Simulation {
                 runtime.destination.y,
                 runtime.destination.z,
             ];
-            if let Some(goal) = goal {
+            if ordered && let Some(goal) = goal {
                 // Infantry keep the subcell their own Move_To selected.
                 let ordered = if entity.category == EntityCategory::Infantry
                     && runtime.moving
@@ -513,7 +569,7 @@ impl Simulation {
                         lift_from_descent = true;
                     }
                 }
-            } else if moving && state == STATE_TRANSLATE {
+            } else if ordered && moving && state == STATE_TRANSLATE {
                 // The order dropped mid-cruise. Native `Stop_Moving` re-targets
                 // a nearby cell and keeps flying; VERA holds (recorded residual).
                 moving = false;
@@ -569,6 +625,10 @@ impl Simulation {
                 stop_requested: false,
                 landing_latched: runtime.landing_latched,
                 touched_down: false,
+                crashing: entity.crashing,
+                map_size,
+                crash_relocated: false,
+                impact: false,
             };
 
             let params = runtime.params;
@@ -606,6 +666,8 @@ impl Simulation {
                 stop_requested: host.stop_requested,
                 landing_latched: host.landing_latched,
                 touched_down: host.touched_down,
+                crash_relocated: host.crash_relocated,
+                impact: host.impact,
             };
             (state, flight, host.location, effects)
         };
@@ -619,6 +681,11 @@ impl Simulation {
             }
         }
 
+        if effects.crash_relocated {
+            // State 5's Mark(REMOVE) before its SetLocation. Mark leaves the
+            // AircraftTracker alone; the impact removes the wreck from it.
+            self.unmark_entity_remove_keeping_air_tracker(stable_id);
+        }
         let entity = self.substrate.entities.get_mut(stable_id)?;
         commit_world_location(&mut entity.position, location);
         if effects.grounded_reset {
@@ -629,6 +696,11 @@ impl Simulation {
             if let Some(body) = entity.body_facing.as_mut() {
                 body.snap(facing, frame);
             }
+        }
+        if effects.crash_relocated {
+            // Mark(PUT) and the display resubmission after it.
+            self.add_entity_occupancy(stable_id);
+            self.submit_entity_display(stable_id, rules, None);
         }
 
         // Jumpjet54C8F0 calls PerCell(2) only at accepted touchdown, before
@@ -653,9 +725,10 @@ impl Simulation {
             });
             moving = true;
         }
-        // A cruise that leaves State 3 has reached the ordered cell: the order
-        // is done, and the descent or hold that follows needs no goal.
-        let ended_cruise = effects.entry_state == STATE_TRANSLATE && state != STATE_TRANSLATE;
+        // A cruise that leaves State 3 for the hold or the descent has reached
+        // the ordered cell: the order is done, and what follows needs no goal.
+        let ended_cruise =
+            effects.entry_state == STATE_TRANSLATE && matches!(state, STATE_HOLD | STATE_DESCEND);
         if effects.stop_requested || effects.touched_down || ended_cruise {
             entity.movement_target = None;
         }
@@ -684,7 +757,7 @@ impl Simulation {
         Some(AirMovementTickStats {
             air_movers: 1,
             arrivals: u32::from(arrived),
-            impact: false,
+            impact: effects.impact,
         })
     }
 }

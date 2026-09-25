@@ -596,12 +596,19 @@ impl Simulation {
         let air = sim.tick_air_movement_with_cell_lists_one(stable_id, rules);
         if air.impact {
             // The impact UnInits the object; `FootClass::AI` returns on the
-            // cleared Object+90 (`0x004DA87E`) and `AircraftClass::AI` after
-            // it (`0x00414DAA`).
-            if let Some(rules) = rules {
-                sim.fly_crash_impact(stable_id, rules, overlay_registry);
-            } else {
-                sim.uninit(stable_id);
+            // cleared Object+90 (`0x004DA87E`) and the class AI after it
+            // (`AircraftClass::AI 0x00414DAA`).
+            let jumpjet = sim.substrate.entities.get(stable_id).is_some_and(|entity| {
+                entity.locomotor.as_ref().is_some_and(|locomotor| {
+                    locomotor.active_kind() == crate::rules::locomotor_type::LocomotorKind::Jumpjet
+                })
+            });
+            match rules {
+                Some(rules) if jumpjet => {
+                    sim.jumpjet_crash_impact(stable_id, rules, overlay_registry);
+                }
+                Some(rules) => sim.fly_crash_impact(stable_id, rules, overlay_registry),
+                None => sim.uninit(stable_id),
             }
             return Ok(outcome);
         }

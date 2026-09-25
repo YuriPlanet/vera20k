@@ -16,9 +16,9 @@
 
 pub(crate) mod authored_load_host;
 mod bridge_hut_scatter;
-mod crash;
 pub(crate) mod bridge_orchestrator;
 pub(crate) mod building_anim;
+mod crash;
 pub mod edge_cell;
 mod gap_generator;
 mod hash_schema;
@@ -68,11 +68,11 @@ mod world_spawn;
 #[cfg(test)]
 mod aircraft_deployment_tests;
 #[cfg(test)]
+mod crash_tests;
+#[cfg(test)]
 mod damage_consequence_tests;
 #[cfg(test)]
 mod eva_dispatch_tests;
-#[cfg(test)]
-mod crash_tests;
 #[cfg(test)]
 mod fly_height_tests;
 #[cfg(test)]
@@ -1735,6 +1735,17 @@ impl Simulation {
                                 .object(self.interner.resolve(entity.type_ref()))
                                 .is_some_and(|object| object.infantry_absorb || object.unit_absorb)
                         });
+                // A `Crashable=` unit's passengers stay for its own death arm,
+                // which kills them (`world_receiver::finish_concrete_death`).
+                let crashable = category == EntityCategory::Unit
+                    && self
+                        .substrate
+                        .entities
+                        .get(stable_id)
+                        .is_some_and(|entity| {
+                            self.object_type(entity.type_ref(), rules)
+                                .is_some_and(|object| object.crashable)
+                        });
                 if let Some(event) = garrison {
                     production::eject_destruction_garrison_with_context(
                         self,
@@ -1742,7 +1753,7 @@ impl Simulation {
                         &event,
                         uninit_context,
                     );
-                } else if !absorbs {
+                } else if !absorbs && !crashable {
                     self.purge_carried_passengers_for_fatal(stable_id, uninit_context);
                 }
                 if category == EntityCategory::Structure {
@@ -1752,6 +1763,16 @@ impl Simulation {
             }
             crate::sim::combat::FatalLifecycleStage::AfterDeathEffects => {
                 if !matches!(category, EntityCategory::Unit | EntityCategory::Structure) {
+                    return;
+                }
+                // A crashing unit's receiver returns without the UnInit
+                // (`0x00738475`); its impact takes it.
+                if self
+                    .substrate
+                    .entities
+                    .get(stable_id)
+                    .is_some_and(|entity| entity.crashing)
+                {
                     return;
                 }
                 if category == EntityCategory::Structure
@@ -3314,17 +3335,10 @@ impl Simulation {
             self.session.binary_frame,
         );
         // `0x004DAA38`/`0x004DAA3E`: falling (`+0x8D`) or crashing (`+0x425`).
+        // A Jumpjet's ordinary descent is neither: it keeps its move sound.
         let falling_or_crashing = entity.object_is_falling_down != 0
             || entity.crashing
-            || entity.parachute_state.is_some()
-            || entity.locomotor.as_ref().is_some_and(|locomotor| {
-                // A Jumpjet in its descent state (the only locomotor with a
-                // crash speed). Read from the locomotor's own state field.
-                locomotor.jumpjet_crash_speed > crate::util::fixed_math::SIM_ZERO
-                    && locomotor.jumpjet_runtime().is_some_and(|runtime| {
-                        runtime.phase == crate::sim::movement::jumpjet_flight::STATE_DESCEND
-                    })
-            });
+            || entity.parachute_state.is_some();
         let active = entity.move_sound_active;
         let countdown = entity.move_sound_countdown;
         let type_ref = entity.type_ref();
@@ -3467,29 +3481,27 @@ impl Simulation {
         }
     }
 
+    /// `MapClass::In_Bounds @ 0x00568300` — the active diamond test against
+    /// `MapClass+0xF4` (size width) and `MapClass+0xF8` (size height). No map
+    /// size (a headless fixture) admits nothing.
+    pub(crate) fn map_cell_in_bounds(&self, cell: (i16, i16)) -> bool {
+        self.map_size_diamond().is_some_and(|(width, height)| {
+            crate::map::playfield::size_diamond_contains(width, height, cell)
+        })
+    }
+
+    /// `MapClass+0xF4/+0xF8`, the `In_Bounds` diamond's width and height.
+    pub(crate) fn map_size_diamond(&self) -> Option<(i32, i32)> {
+        self.playfield_bounds
+            .zip(self.playfield_size_height)
+            .map(|(bounds, height)| (bounds.base, height))
+    }
+
     /// Install the initial normalized MapClass playfield authority.
     ///
     /// `MapClass::Set_Clipped_LocalSize @ 0x00567230` establishes the five
     /// predicate fields. Size height is retained separately because later
     /// action-40 writers normalize another raw LocalSize against the same Size.
-    /// `MapClass::In_Bounds @ 0x00568300` — the active diamond test against
-    /// `MapClass+0xF4` (size width) and `MapClass+0xF8` (size height). No map
-    /// size (a headless fixture) admits nothing.
-    pub(crate) fn map_cell_in_bounds(&self, cell: (i16, i16)) -> bool {
-        let (Some(bounds), Some(height)) = (self.playfield_bounds, self.playfield_size_height)
-        else {
-            return false;
-        };
-        let x = i32::from(cell.0);
-        let y = i32::from(cell.1);
-        let sum = x.wrapping_add(y);
-        let width = bounds.base;
-        width < sum
-            && x.wrapping_sub(y) < width
-            && y.wrapping_sub(x) < width
-            && sum <= width.wrapping_add(height.wrapping_mul(2))
-    }
-
     pub(crate) fn install_playfield_from_map_header(
         &mut self,
         header: &crate::map::map_file::MapHeader,
