@@ -1,37 +1,22 @@
 //! Scheduler-owned ordinary SHP animation objects.
 //!
 //! `AnimStore` owns animation storage while `world::LogicVector` owns live AI
-//! order. This module implements the verified ordinary non-bouncer AnimClass
-//! lifecycle: constructor/reveal, first-AI guard, start delay and its `Start`
-//! edge, logic-frame timing, loops, reverse/ping-pong, Next, trailer, sound
-//! identity, owner attachment, conceal, and deferred deletion. Its producers
-//! are building slots and damage fires, tile and crate animations, combat
-//! explosions, weapon and occupant muzzle flashes, parachute canopies,
-//! teleport warps,
-//! superweapon invokes, Lightning Storm bolts, bridge collapse explosions,
-//! wakes and ore twinkles.
+//! order. This module implements the verified AnimClass lifecycle:
+//! constructor/reveal, first-AI guard, start delay and its `Start` edge,
+//! `Middle`'s scorch and crater, logic-frame timing, loops, reverse/ping-pong,
+//! Next, trailer, sound identity, owner attachment, conceal, deferred
+//! deletion, and the `Bouncer=` chunk: its constructor launch, its
+//! `BounceClass` flight and its landing (`Simulation::anim_bounce_step`). Its
+//! producers are building slots and damage fires, tile and crate animations,
+//! combat explosions, death debris, weapon and occupant muzzle flashes,
+//! parachute canopies, teleport warps, superweapon invokes, Lightning Storm
+//! bolts, bridge collapse explosions, wakes and ore twinkles.
 //!
-//! ## Residuals — two `AnimClass::AI` arms are not built
+//! ## Residuals
 //!
-//! RESIDUAL (M11b) — **the bouncing-debris landing arm.** `AnimClass::AI
-//! 0x00423E28..0x00423F37` runs when `AnimClass+0x194` (set by the constructor
-//! for `Bouncer=` or `IsMeteor=`) is live and
-//! `AnimClass::ProcessBounceResult @ 0x00423930` reports landed or gone. It
-//! constructs the type's `ExpireAnim=` and calls `Apply_area_damage` with the
-//! type's own `Damage=`/`Warhead=`/`DamageRadius=`, walks the impact cell's
-//! occupant list for `ReceiveDamage`, and spawns `Spawns=` behind two
-//! `RandomRanged` draws. `BounceState` (`src/sim/bounce.rs`) is ported but no
-//! `AnimClass` hosts one.
-//! - Trigger: every building death and every heavy-vehicle death, through
-//!   `[General] MetallicDebris=` (20 stock `DBRIS*` types, all `Bouncer=yes`).
-//! - Player effect: debris chunks neither damage what they land on
-//!   (`Damage=10..20`, warhead `HE`, `DamageRadius=50..80`) nor leave their
-//!   `TWLT026`/`TWLT036` landing explosions.
-//! - Frequency: continuous in ordinary skirmish — the higher-weight of the two
-//!   missing arms by a wide margin.
-//! - Downstream risk: the constructor fork draws two or three RNG values per
-//!   chunk on the scenario stream, so wiring it moves the lockstep stream and
-//!   needs its own `SNAPSHOT_VERSION` move and fixture re-record.
+//! The `IsMeteor=` constructor arm and a dry landing's `Spawns=`/`IsTiberium=`
+//! work are recorded at [`anim_constructor_draws`] and
+//! `Simulation::anim_bounce_step`; no death or weapon produces them.
 //!
 //! RESIDUAL (M11b) — **the per-frame damage arm.** `AnimClass::AI
 //! 0x00424507..0x0042464C` accumulates the type's `Damage=` (parsed, see
@@ -69,6 +54,7 @@ use thiserror::Error;
 use crate::rules::art_data::AnimTypeRuntimeConfig;
 use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::bounce::{BounceOutcome, BounceState};
 use crate::sim::components::AnimClassSpawnDescriptor;
 use crate::sim::intern::InternedId;
 use crate::sim::occupancy::{RawCellOccupationGrid, infantry_raw_occupation_mask};
@@ -76,6 +62,7 @@ use crate::sim::timer::CdTimer;
 use crate::sim::world::{LifecycleOutput, SimSoundEvent, Simulation};
 use crate::util::fixed_math::SimFixed;
 use crate::util::lepton::{BRIDGE_HEIGHT_DELTA_LEPTONS, ground_height_leptons};
+use crate::util::native_x87::{NativeF64Bits, NativeX87Error, X87Chop53};
 
 pub type AnimId = u64;
 
@@ -400,6 +387,10 @@ pub struct AnimObject {
     pub start_sound_active: bool,
     pub stop_sound_id: Option<InternedId>,
     pub(crate) display: AnimDisplayState,
+    /// `AnimClass+0x128`: a `Bouncer=` chunk's BounceClass body. Its presence
+    /// is `+0x194` for the ported arm (the `IsMeteor=` arm is not built).
+    #[serde(default)]
+    pub bounce: Option<BounceState>,
 }
 
 impl AnimObject {
@@ -526,6 +517,8 @@ pub enum AnimSpawnError {
     UnboundType(String),
     #[error("animation stable id {0} collided with an existing object")]
     DuplicateId(AnimId),
+    #[error("bouncing animation [{0}] launched outside the verified x87 domain: {1}")]
+    LaunchOutOfDomain(String, NativeX87Error),
 }
 
 enum VisitAction {
@@ -734,6 +727,18 @@ impl Simulation {
         descriptor: AnimClassSpawnDescriptor,
         world_coord: AnimWorldCoord,
     ) -> Result<AnimId, AnimSpawnError> {
+        self.spawn_anim_at_world_with_draws(rules, descriptor, world_coord, None)
+    }
+
+    /// [`Self::spawn_anim_at_world`] for a producer that already took the
+    /// constructor's draws at its native point (the death debris loop).
+    pub(crate) fn spawn_anim_at_world_with_draws(
+        &mut self,
+        rules: &RuleSet,
+        descriptor: AnimClassSpawnDescriptor,
+        world_coord: AnimWorldCoord,
+        draws: Option<AnimConstructorDraws>,
+    ) -> Result<AnimId, AnimSpawnError> {
         let type_name = self
             .interner
             .resolve(descriptor.type_name)
@@ -745,7 +750,12 @@ impl Simulation {
             .ok_or(AnimSpawnError::MissingType(descriptor.type_name))?;
         let (effective_end, effective_loop_end) = effective_bounds(&type_name, &config)?;
         let reverse = descriptor.reverse || config.reverse;
-        let rate_reload = self.choose_anim_rate(&config);
+        let draws = match draws {
+            Some(draws) => draws,
+            None => anim_constructor_draws(&config, world_coord, &mut self.scenario_rng)
+                .map_err(|error| AnimSpawnError::LaunchOutOfDomain(type_name.clone(), error))?,
+        };
+        let rate_reload = self.anim_rate(&config, draws.random_rate);
         let frame_timer =
             CdTimer::started(self.session.binary_frame as i32, i32::from(rate_reload));
         let stop_sound_id = config
@@ -797,6 +807,7 @@ impl Simulation {
                 marked_on_map: false,
                 y_sort_adjust: config.y_sort_adjust,
             },
+            bounce: draws.bounce,
         };
         // The insert must run in every build profile: wrapped in
         // `debug_assert!` it was compiled out of release binaries and no
@@ -882,6 +893,7 @@ impl Simulation {
                 marked_on_map: false,
                 y_sort_adjust: config.y_sort_adjust,
             },
+            bounce: None,
         };
         // The insert must run in every build profile: wrapped in
         // `debug_assert!` it was compiled out of release binaries and no
@@ -1022,6 +1034,7 @@ impl Simulation {
                 marked_on_map: false,
                 y_sort_adjust: config.y_sort_adjust,
             },
+            bounce: None,
         };
         debug_assert!(
             self.substrate
@@ -1128,6 +1141,18 @@ impl Simulation {
             self.destroy_anim(id, rules);
             return;
         }
+
+        // `AnimClass::AI 0x00423C24`: a bouncing chunk flies its body before
+        // the trailer and the first-AI guard; touching down ends it.
+        if self.anim(id).is_some_and(|anim| anim.bounce.is_some())
+            && self.anim_bounce_step(id, &config, rules, overlay_registry)
+        {
+            return;
+        }
+        // The trailer spawns at GetCoords after the body moved the anim.
+        let Some(world_coord) = self.anim_absolute_coord(id) else {
+            return;
+        };
 
         if let Some(trailer_name) = config.trailer_anim.as_deref() {
             if trailer_cadence_matches(
@@ -1761,16 +1786,264 @@ impl Simulation {
     }
 
     fn choose_anim_rate(&mut self, config: &AnimTypeRuntimeConfig) -> u16 {
-        let delay = config
-            .random_rate_logic_frames
-            .map_or(config.rate_logic_frames, |(a, b)| {
-                self.scenario_rng
-                    .next_range_u32_inclusive(u32::from(a), u32::from(b)) as u16
-            });
+        let drawn = anim_random_rate(config, &mut self.scenario_rng);
+        self.anim_rate(config, drawn)
+    }
+
+    /// The frame delay from `Rate=` or a drawn `RandomRate=` pick, normalized
+    /// to the game speed for `Normalized=` types.
+    fn anim_rate(&self, config: &AnimTypeRuntimeConfig, random_rate: Option<u16>) -> u16 {
+        let delay = random_rate.unwrap_or(config.rate_logic_frames);
         if config.normalized {
             self.session.game_options.normalized_anim_delay(delay)
         } else {
             delay
+        }
+    }
+
+    /// `AnimClass::ProcessBounceResult @ 0x00423930` and the landing arm of
+    /// `AnimClass::AI` (`0x00423C3C..0x00424298`). Returns true when the chunk
+    /// touched down, which always destroys it: Bounced and Stopped both take
+    /// the landing arm.
+    ///
+    /// Each tick the body integrates (`BounceClass::Update`) and the anim's
+    /// Location follows it, truncated (`vtable+0x1B4`, `0x00423AA8`). Bounced
+    /// first builds `BounceAnim=` and hits every object in the landing cell
+    /// within `DamageRadius=` (Manhattan leptons) directly; Stopped destroys
+    /// the anim there (`0x00423976`), before the landing arm. Then:
+    /// - in water (`CellClass+0xEC == 2`) below the deck plane (ground +
+    ///   416): `Wake=` at the Location and the first `SplashList=` 3 leptons
+    ///   up, no damage;
+    /// - otherwise, only when the type names an `ExpireAnim=`: that anim
+    ///   (flags `0x2600`, zAdjust -30), then `Apply_area_damage @ 0x00489280`
+    ///   with `ftol(Damage=)` and the type's `Warhead=`, sourceless and
+    ///   houseless, then the combat light (`0x0048A620`, not forced).
+    ///
+    /// RESIDUAL: the `Spawns=`/`SpawnCount=` burst (two `RandomRanged` draws,
+    /// `0x00423F37..0x00423FC4`) and the `IsTiberium=` ring (`0x00423FC6..`)
+    /// that follow a dry landing are not built. Trigger: METDEBRI and the
+    /// CRYSTAL chunks (meteor showers); no stock `Bouncer=` death chunk sets
+    /// either key.
+    fn anim_bounce_step(
+        &mut self,
+        id: AnimId,
+        config: &AnimTypeRuntimeConfig,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    ) -> bool {
+        let Some(mut body) = self.anim(id).and_then(|anim| anim.bounce) else {
+            return false;
+        };
+        let outcome = self.anim_bounce_update(&mut body, rules);
+        let position = body.position_leptons();
+        if let Some(anim) = self.anim_mut_by_id(id) {
+            anim.bounce = Some(body);
+        }
+        match outcome {
+            BounceOutcome::Falling => {}
+            BounceOutcome::Bounced => {
+                self.anim_bounce_contact(id, config, rules, overlay_registry, position)
+            }
+            BounceOutcome::Stopped => self.destroy_anim(id, rules),
+        }
+        if let Some(anim) = self.anim_mut_by_id(id) {
+            anim.world_coord = AnimWorldCoord {
+                x: position.x,
+                y: position.y,
+                z: position.z,
+            };
+        }
+        if outcome == BounceOutcome::Falling {
+            return false;
+        }
+        self.anim_bounce_landing(config, rules, overlay_registry, position);
+        self.destroy_anim(id, rules);
+        true
+    }
+
+    /// The Bounced arm of `AnimClass::ProcessBounceResult` (`0x00423981..
+    /// 0x00423A88`): `BounceAnim=` at GetCoords, then a direct
+    /// `ReceiveDamage(ftol(Damage=), AdjustForZ(distance), Warhead=)` on each
+    /// object of the landing cell's FirstObject list within `DamageRadius=`,
+    /// measured `|dx| + |dy|` from the body to the object's GetCoords.
+    fn anim_bounce_contact(
+        &mut self,
+        id: AnimId,
+        config: &AnimTypeRuntimeConfig,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+        position: glam::IVec3,
+    ) {
+        if let (Some(bounce_anim), Some(coord)) =
+            (config.bounce_anim.as_deref(), self.anim_absolute_coord(id))
+        {
+            self.spawn_bounce_anim(rules, bounce_anim, coord, BOUNCE_CONTACT_DRAW_FLAGS, 0);
+        }
+        let (Some(warhead_name), Ok(rx), Ok(ry)) = (
+            config.warhead.as_deref(),
+            u16::try_from(position.x >> 8),
+            u16::try_from(position.y >> 8),
+        ) else {
+            return;
+        };
+        let damage = match X87Chop53::load_f64(config.damage).and_then(X87Chop53::ftol_i64) {
+            Ok(damage) => damage as i32,
+            Err(_) => return,
+        };
+        let warhead_ref = self.interner.intern(warhead_name);
+        let residents: Vec<u64> = self
+            .substrate
+            .occupancy
+            .get(rx, ry)
+            .map(|cell| {
+                cell.iter_layer(crate::sim::movement::locomotor::MovementLayer::Ground)
+                    .map(|occupant| occupant.entity_id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut receivers = Vec::new();
+        for target in residents {
+            let Some(entity) = self.substrate.entities.get(target) else {
+                continue;
+            };
+            let Some(object_type) = rules.object(self.interner.resolve(entity.type_ref())) else {
+                continue;
+            };
+            let center =
+                crate::sim::movement::ground_pose::object_center_coord(entity, object_type);
+            let distance = position
+                .x
+                .wrapping_sub(center.x)
+                .wrapping_abs()
+                .wrapping_add(position.y.wrapping_sub(center.y).wrapping_abs());
+            if distance > config.damage_radius {
+                continue;
+            }
+            receivers.push(crate::sim::combat::combat_aoe::AreaDamageReceiver::Entity(
+                crate::sim::combat::EntityDamageEvent::direct_receiver(
+                    target,
+                    damage,
+                    crate::util::native_x87::adjust_for_z_standard(distance),
+                    crate::sim::combat::RAD_NO_ATTACKER,
+                    None,
+                    warhead_ref,
+                    crate::sim::combat::ReceiverCallFlags {
+                        ignore_defenses: false,
+                        arg6: false,
+                    },
+                ),
+            ));
+        }
+        for receiver in receivers {
+            self.commit_noncombat_aoe_receivers(rules, overlay_registry, &[receiver]);
+        }
+    }
+
+    /// The landing arm proper (`0x00423C4A..0x00423EF8`); see
+    /// [`Self::anim_bounce_step`].
+    fn anim_bounce_landing(
+        &mut self,
+        config: &AnimTypeRuntimeConfig,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+        position: glam::IVec3,
+    ) {
+        let location = AnimWorldCoord {
+            x: position.x,
+            y: position.y,
+            z: position.z,
+        };
+        let ground = crate::sim::projectile::projectile_ground_z(
+            self.resolved_terrain.as_ref(),
+            &self.effective_shared_cell_dummy(),
+            crate::sim::projectile::ProjectileCoord::new(position.x, position.y, position.z),
+        );
+        let above_deck = position.z >= ground.wrapping_add(BRIDGE_HEIGHT_DELTA_LEPTONS as i32);
+        if self.bounce_cell_is_water(position, rules) && !above_deck {
+            let wake = rules.general.wake.name.clone();
+            self.spawn_bounce_anim(rules, &wake, location, BOUNCE_CONTACT_DRAW_FLAGS, 0);
+            if let Some(splash) = rules.combat_damage.splash_list.first() {
+                let splash_coord = AnimWorldCoord {
+                    z: location.z.wrapping_add(BOUNCE_SPLASH_LIFT_LEPTONS),
+                    ..location
+                };
+                self.spawn_bounce_anim(rules, splash, splash_coord, BOUNCE_CONTACT_DRAW_FLAGS, 0);
+            }
+            return;
+        }
+        let Some(expire) = config.expire_anim.as_deref() else {
+            return;
+        };
+        self.spawn_bounce_anim(
+            rules,
+            expire,
+            location,
+            BOUNCE_EXPIRE_DRAW_FLAGS,
+            BOUNCE_EXPIRE_Z_ADJUST,
+        );
+        let Some(warhead_name) = config.warhead.as_deref() else {
+            return;
+        };
+        let (Some(warhead), Ok(damage)) = (
+            rules.warhead(warhead_name),
+            X87Chop53::load_f64(config.damage).and_then(X87Chop53::ftol_i64),
+        ) else {
+            return;
+        };
+        let damage = damage as i32;
+        let warhead_ref = self.interner.intern(warhead_name);
+        let impact =
+            crate::sim::projectile::ProjectileCoord::new(position.x, position.y, position.z);
+        let (rx, ry, sub_x, sub_y, z_leptons) = crate::sim::combat::projectile_impact_cell(impact);
+        let aoe = crate::sim::combat::world_receiver::collect_area(
+            self,
+            rules,
+            overlay_registry,
+            (rx, ry),
+            damage,
+            warhead,
+            (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
+            Some(crate::sim::combat::combat_aoe::AoEAirImpact {
+                sub_x,
+                sub_y,
+                z_leptons,
+            }),
+            z_leptons.div_euclid(crate::util::lepton::LEPTONS_PER_LEVEL as i32),
+        );
+        self.commit_noncombat_aoe_receivers(rules, overlay_registry, &aoe.receivers);
+        self.combat_light_requests
+            .push(crate::sim::combat::CombatLightRequest {
+                target_id: None,
+                damage,
+                warhead_ref,
+                coord: impact,
+                force_create: false,
+                flags: 0,
+            });
+    }
+
+    /// `new AnimClass(type, coord, 0, 1, flags, zAdjust, 0)` for a landing
+    /// chunk's follow-up anims.
+    fn spawn_bounce_anim(
+        &mut self,
+        rules: &RuleSet,
+        type_name: &str,
+        coord: AnimWorldCoord,
+        draw_flags: u32,
+        z_adjust: i32,
+    ) {
+        let type_id = self.interner.intern(type_name);
+        let (rx, ry, sub_x, sub_y, z) = coord.to_cell_sub_z();
+        let descriptor = AnimClassSpawnDescriptor {
+            delay: 0,
+            loop_count: 1,
+            draw_flags,
+            z_adjust,
+            reverse: false,
+            ..AnimClassSpawnDescriptor::new(type_id, rx, ry, sub_x, sub_y, z)
+        };
+        if let Err(error) = self.spawn_anim_at_world(rules, descriptor, coord) {
+            log::debug!("landing anim [{type_name}] did not construct: {error}");
         }
     }
 
@@ -1790,12 +2063,8 @@ impl Simulation {
     /// reads `Report=` into it only when `StartSound=` resolved to `-1`, which
     /// is what `start_sound.or(report)` reproduces.
     ///
-    /// The particle/scorch/crater half (`0x00424F00`) is not wired — see the
-    /// module header.
-    /// `AnimClass::Start @ 0x00424CE0`: the start sound, then Middle when the
-    /// type has no middle frame (`+0x298 == 0`, `0x00424D48..0x00424D5A`).
     /// Constructor-time starts pass no overlay registry; no retail marking
-    /// anim has fewer than two frames, so none marks from here.
+    /// anim has fewer than two frames, so none marks from there.
     fn anim_start(
         &mut self,
         id: AnimId,
@@ -1960,6 +2229,124 @@ fn effective_bounds(
         config.loop_end
     };
     Ok((effective_end, effective_loop_end))
+}
+
+/// `AnimTypeClass+0x320` MaxZVel: no INI key reads it; the AnimType
+/// constructor writes 3.5 (`0x00427627`).
+const BOUNCER_MAX_Z_VEL: NativeF64Bits = NativeF64Bits::from_bits(0x400c_0000_0000_0000);
+/// The gravity the Bouncer arm hands `BounceClass::Init` as two literal pushes
+/// (`0x3FF66666`/`0x60000000`, the double 1.4).
+const BOUNCER_GRAVITY: NativeF64Bits = NativeF64Bits::from_bits(0x3ff6_6666_6000_0000);
+/// The `+ 1.0` bias of the Z divisor (`0x007E1718`).
+const BOUNCER_Z_RANGE_BIAS: NativeF64Bits = NativeF64Bits::from_bits(0x3ff0_0000_0000_0000);
+/// The body starts this far above the anim's coordinate.
+const BOUNCER_LAUNCH_LIFT_LEPTONS: i32 = 10;
+/// `AnimClass` constructor `drawFlags` for the anims a landing chunk makes:
+/// `BounceAnim=`, `Wake=` and the splash (`0x600`), `ExpireAnim=` (`0x2600`,
+/// zAdjust -30).
+const BOUNCE_CONTACT_DRAW_FLAGS: u32 = 0x600;
+const BOUNCE_EXPIRE_DRAW_FLAGS: u32 = 0x2600;
+const BOUNCE_EXPIRE_Z_ADJUST: i32 = -30;
+/// A water splash rises 3 leptons above the chunk (`ADD EDI, 3`, `0x00423DBE`).
+const BOUNCE_SPLASH_LIFT_LEPTONS: i32 = 3;
+
+/// The Scenario draws `AnimClass::AnimClass @ 0x00421EA0` takes, in order:
+/// the `RandomRate=` pick (`0x004221F5`; none when the clamped bounds are
+/// equal, as for every stock debris chunk), then the `Bouncer=` arm's launch
+/// (`0x004224D9..0x00422648`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AnimConstructorDraws {
+    /// The drawn `RandomRate=` delay in logic frames, before normalization.
+    pub random_rate: Option<u16>,
+    pub bounce: Option<BounceState>,
+}
+
+/// Take the constructor's draws for an anim of `config` at `coord`.
+///
+/// RESIDUAL: the `IsMeteor=` arm (`0x004222FF`: three draws at `0x0042230B`,
+/// `0x0042231F`, `0x004223C4`, and its per-tick gravity add) is not built; a
+/// meteor type constructs as a plain anim. Trigger: meteor showers only
+/// (scenario triggers); no death or weapon produces one.
+pub(crate) fn anim_constructor_draws(
+    config: &AnimTypeRuntimeConfig,
+    coord: AnimWorldCoord,
+    rng: &mut crate::sim::rng::SimRng,
+) -> Result<AnimConstructorDraws, NativeX87Error> {
+    let random_rate = anim_random_rate(config, rng);
+    let bounce = if config.bouncer && !config.is_meteor {
+        Some(bouncer_launch(config, coord, rng)?)
+    } else {
+        None
+    };
+    Ok(AnimConstructorDraws {
+        random_rate,
+        bounce,
+    })
+}
+
+fn anim_random_rate(
+    config: &AnimTypeRuntimeConfig,
+    rng: &mut crate::sim::rng::SimRng,
+) -> Option<u16> {
+    config
+        .random_rate_logic_frames
+        .map(|(low, high)| rng.next_range_u32_inclusive(u32::from(low), u32::from(high)) as u16)
+}
+
+/// The `Bouncer=` arm of `AnimClass::AnimClass` (`0x004224D9..0x00422648`):
+/// three `Random__Next()` draws, Z then Y then X, each taken as `|draw| %
+/// divisor` (`CDQ/XOR/SUB`, `IDIV`):
+/// - `Velocity.Z = |a| % ftol(MaxZVel - MinZVel + 1.0) + MinZVel`
+/// - `Velocity.Y = |b| % ftol(MaxXYVel + MaxXYVel) - MaxXYVel`, X likewise;
+///
+/// then `BounceClass::Init` from 10 leptons above the coordinate with the
+/// type's `Elasticity=`, gravity 1.4 and no spin, which draws three more.
+/// With the stock chunks' `MinZVel` above the fixed `MaxZVel` 3.5, the Z
+/// divisor is negative (-20 large, -15 small).
+///
+/// Native execution: `tools/spatial_oracle/anim_bouncer_launch.py`.
+fn bouncer_launch(
+    config: &AnimTypeRuntimeConfig,
+    coord: AnimWorldCoord,
+    rng: &mut crate::sim::rng::SimRng,
+) -> Result<BounceState, NativeX87Error> {
+    use crate::sim::voxel_anim::raw_abs_modulo;
+
+    let z_draw = rng.next_u32();
+    let y_draw = rng.next_u32();
+    let x_draw = rng.next_u32();
+    let max_xy = X87Chop53::load_f64(config.max_xy_vel)?;
+    let min_z = X87Chop53::load_f64(config.min_z_vel)?;
+    let xy_divisor = X87Chop53::ftol_i64(X87Chop53::add(max_xy, max_xy))? as i32;
+    let z_divisor = X87Chop53::ftol_i64(X87Chop53::add(
+        X87Chop53::sub(X87Chop53::load_f64(BOUNCER_MAX_Z_VEL)?, min_z),
+        X87Chop53::load_f64(BOUNCER_Z_RANGE_BIAS)?,
+    ))? as i32;
+    let velocity_z = X87Chop53::store_f32(X87Chop53::add(
+        X87Chop53::load_i32(raw_abs_modulo(z_draw, z_divisor)),
+        min_z,
+    ))?;
+    let velocity_y = X87Chop53::store_f32(X87Chop53::sub(
+        X87Chop53::load_i32(raw_abs_modulo(y_draw, xy_divisor)),
+        max_xy,
+    ))?;
+    let velocity_x = X87Chop53::store_f32(X87Chop53::sub(
+        X87Chop53::load_i32(raw_abs_modulo(x_draw, xy_divisor)),
+        max_xy,
+    ))?;
+    BounceState::init(
+        glam::IVec3::new(
+            coord.x,
+            coord.y,
+            coord.z.wrapping_add(BOUNCER_LAUNCH_LIFT_LEPTONS),
+        ),
+        config.elasticity,
+        BOUNCER_GRAVITY,
+        NativeF64Bits::POSITIVE_ZERO,
+        [velocity_x, velocity_y, velocity_z],
+        NativeF64Bits::POSITIVE_ZERO,
+        rng,
+    )
 }
 
 /// `AnimClass::Middle @ 0x00424F00`'s height gate (`0x00425057`).
@@ -3093,6 +3480,202 @@ mod tests {
             "height-only clear targets deck after a nonstructural ground mark"
         );
         assert_eq!(grid.deck_bits(7, 8), 0);
+    }
+
+    /// `AnimClass::AnimClass @ 0x00421EA0`'s `RandomRate=` pick and `Bouncer=`
+    /// launch (`tools/spatial_oracle/anim_bouncer_launch.py`, the whole
+    /// constructor executed): the rate draw, the three velocity draws and
+    /// Init's three, state for state, and the body's position, velocity,
+    /// elasticity, gravity and clamp bits. `RandomRate=` goes through the
+    /// production reader; the oracle writes the three doubles into the type
+    /// directly, so they are set exactly (`ReadDouble` would round them
+    /// through `%f`; the stock values are integers either way).
+    #[test]
+    fn bouncer_launch_matches_the_original() {
+        let golden: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tools/spatial_oracle/anim_bouncer_launch.json"
+        ))
+        .unwrap();
+        let rows = golden["ctor"].as_array().unwrap();
+        assert!(rows.len() >= 150);
+        for row in rows {
+            let input = &row["input"];
+            let rate = input["random_rate"]
+                .as_array()
+                .map(|pair| format!("RandomRate={},{}\n", pair[0], pair[1]))
+                .unwrap_or_default();
+            let art =
+                ArtRegistry::from_ini(&IniFile::from_str(&format!("[T]\nBouncer=yes\n{rate}")));
+            let mut config = art.anim_runtime_config("T").unwrap().clone();
+            let exact =
+                |key: &str| NativeF64Bits::from_bits(input[key].as_f64().unwrap().to_bits());
+            config.elasticity = exact("elasticity");
+            config.max_xy_vel = exact("max_xy");
+            config.min_z_vel = exact("min_z");
+            let coord = input["coord"].as_array().unwrap();
+            let at = |i: usize| coord[i].as_i64().unwrap() as i32;
+            let mut rng = crate::sim::rng::SimRng::new(input["seed"].as_u64().unwrap());
+            assert_eq!(
+                rng.native_state_hex(),
+                row["rng_before"].as_str().unwrap(),
+                "{input}"
+            );
+            let draws = anim_constructor_draws(
+                &config,
+                AnimWorldCoord {
+                    x: at(0),
+                    y: at(1),
+                    z: at(2),
+                },
+                &mut rng,
+            )
+            .unwrap();
+            assert_eq!(
+                rng.native_state_hex(),
+                row["rng_after"].as_str().unwrap(),
+                "{input}"
+            );
+            let rate_pick = row["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|event| event["site"] == "0x004221F5")
+                .map(|event| event["result"].as_u64().unwrap() as u16);
+            assert_eq!(draws.random_rate, rate_pick, "{input}");
+            let body = draws.bounce.expect("a Bouncer= type launches");
+            let native = &row["bounce"];
+            let bits = |key: &str, i: usize| native[key][i].as_u64().unwrap() as u32;
+            for axis in 0..3 {
+                assert_eq!(
+                    body.position[axis].bits(),
+                    bits("position_bits", axis),
+                    "{input}"
+                );
+                assert_eq!(
+                    body.velocity[axis].bits(),
+                    bits("velocity_bits", axis),
+                    "{input}"
+                );
+            }
+            assert_eq!(
+                body.elasticity.bits(),
+                native["elasticity_bits"].as_u64().unwrap(),
+                "{input}"
+            );
+            assert_eq!(
+                body.gravity.bits(),
+                native["gravity_bits"].as_u64().unwrap(),
+                "{input}"
+            );
+            assert_eq!(
+                body.angular_velocity_magnitude.bits(),
+                native["clamp_bits"].as_u64().unwrap(),
+                "{input}"
+            );
+        }
+    }
+
+    /// A stock-shaped debris chunk (`DBRIS1LG` numbers, `MaxXYVel` cut to 0.5
+    /// so it lands in its own cell) launched over a flat arena beside a tank:
+    /// it flies its body, then on touching down (`BounceClass::Update`
+    /// reports Stopped on flat ground) constructs its `ExpireAnim=`, blasts
+    /// the tank through `Apply_area_damage` with its HE `Damage=`, and is
+    /// destroyed. Its Location follows the body every tick.
+    #[test]
+    fn a_debris_chunk_lands_and_blasts_what_is_under_it() {
+        let mut rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nDamageFireTypes=\n\
+             [AudioVisual]\nConditionYellow=50%\nConditionRed=25%\n\
+             [InfantryTypes]\n[VehicleTypes]\n0=TANK\n[AircraftTypes]\n[BuildingTypes]\n\
+             [TANK]\nStrength=300\nArmor=heavy\nSpeed=4\n\
+             [Warheads]\n0=HE\n\
+             [HE]\nCellSpread=.5\nPercentAtMax=.5\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        ))
+        .unwrap();
+        let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+            "[CHUNK]\nBouncer=yes\nElasticity=0.0\nMaxXYVel=0.5\nMinZVel=25.0\n\
+             ExpireAnim=BOOM\nDamage=20\nDamageRadius=80\nWarhead=HE\n\
+             LoopEnd=15\nLoopCount=-1\nRandomRate=220,600\n\
+             [BOOM]\nRate=900\n",
+        ));
+        art.bind_anim_frame_count_for_test("CHUNK", 30);
+        art.bind_anim_frame_count_for_test("BOOM", 17);
+        rules.art_registry = art;
+        let mut sim = Simulation::with_seed(3);
+        let americans = sim.interner.intern("Americans");
+        sim.houses.insert(
+            americans,
+            crate::sim::house_state::HouseState::new(americans, 0, None, true, 0, 10),
+        );
+        sim.session.house_order.push(americans);
+        crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+        let tank = sim
+            .spawn_object_at_height("TANK", "Americans", 8, 8, 0, 0, &rules)
+            .unwrap();
+        let chunk_type = sim.interner.intern("CHUNK");
+        let center = crate::util::lepton::CELL_CENTER_LEPTON;
+        let chunk = sim
+            .spawn_anim_at_world(
+                &rules,
+                AnimClassSpawnDescriptor {
+                    delay: 0,
+                    loop_count: 1,
+                    draw_flags: 0x600,
+                    z_adjust: 0,
+                    reverse: false,
+                    ..AnimClassSpawnDescriptor::new(chunk_type, 8, 8, center, center, 0)
+                },
+                AnimWorldCoord {
+                    x: 8 * 256 + 128,
+                    y: 8 * 256 + 128,
+                    z: 20,
+                },
+            )
+            .unwrap();
+        let launch = sim
+            .anim(chunk)
+            .unwrap()
+            .bounce
+            .expect("a Bouncer= chunk has a body");
+        assert_eq!(
+            launch.position_leptons().z,
+            30,
+            "10 leptons above its coordinate"
+        );
+
+        let mut landed_at = None;
+        for frame in 1..200 {
+            sim.session.binary_frame = frame;
+            sim.visit_anim(chunk, &rules, None);
+            let anim = sim.anim(chunk).unwrap();
+            let body = anim.bounce.unwrap().position_leptons();
+            assert_eq!(
+                [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
+                [body.x, body.y, body.z]
+            );
+            if sim.substrate.pending_delete.contains(&chunk) {
+                landed_at = Some(body);
+                break;
+            }
+        }
+        let landed_at = landed_at.expect("the chunk comes down");
+        assert_eq!(landed_at.z, 0, "it rests on the flat ground");
+        assert_eq!((landed_at.x >> 8, landed_at.y >> 8), (8, 8));
+        let boom = sim.interner.intern("BOOM");
+        assert_eq!(
+            sim.anims()
+                .filter(|(_, anim)| anim.type_id == boom)
+                .map(|(_, anim)| [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z])
+                .collect::<Vec<_>>(),
+            vec![[landed_at.x, landed_at.y, landed_at.z]]
+        );
+        let health = sim.substrate.entities.get(tank).unwrap().health.current;
+        assert!(
+            health < 300 && health >= 280,
+            "HE splash of 20 at most, got {health}"
+        );
+        assert_eq!(sim.combat_light_requests.len(), 1);
     }
 
     /// A world whose flat 8x8 map takes a 1x1 crater and a 1x1 scorch.

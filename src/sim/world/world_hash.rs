@@ -1006,7 +1006,7 @@ impl Simulation {
             if schema.includes(HashFeature::InvisoBullet) {
                 projectile.on_bridge.hash(hasher);
             }
-            if schema.includes(HashFeature::BulletArcing) {
+            if schema.includes(HashFeature::BouncingDebris) {
                 projectile.collision.arcing.hash(hasher);
             }
         }
@@ -2311,16 +2311,22 @@ impl Simulation {
 
     /// Scheduler-owned ordinary animations in stable-ID order. Render caches and
     /// transient sound events are deliberately excluded.
-    fn hash_anims(&self, hasher: &mut impl Hasher, _schema: HashSchema) {
+    fn hash_anims(&self, hasher: &mut impl Hasher, schema: HashSchema) {
         self.substrate.anims.iter().count().hash(hasher);
         for (id, anim) in self.substrate.anims.iter() {
             id.hash(hasher);
             #[cfg(test)]
-            if !_schema.includes(HashFeature::AnimationDisplay) {
+            if !schema.includes(HashFeature::AnimationDisplay) {
                 anim.hash_before_display(hasher);
                 continue;
             }
             anim.hash(hasher);
+            if schema.includes(HashFeature::BouncingDebris) {
+                anim.bounce.is_some().hash(hasher);
+                if let Some(body) = &anim.bounce {
+                    body.hash_bits(hasher);
+                }
+            }
         }
     }
 
@@ -2366,16 +2372,7 @@ impl Simulation {
             debris.duration.hash(hasher);
             debris.marked_for_deletion.hash(hasher);
             debris.owner_house.hash(hasher);
-            let bounce = &debris.bounce;
-            bounce.elasticity.bits().hash(hasher);
-            bounce.gravity.bits().hash(hasher);
-            bounce.angular_velocity_magnitude.bits().hash(hasher);
-            for axis in 0..3 {
-                bounce.position[axis].bits().hash(hasher);
-                bounce.velocity[axis].bits().hash(hasher);
-                bounce.spin_axis[axis].bits().hash(hasher);
-            }
-            bounce.spin_angle.bits().hash(hasher);
+            debris.bounce.hash_bits(hasher);
         }
     }
 }

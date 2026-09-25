@@ -787,7 +787,7 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         trailer_anim: parse_anim_ref(section, "TrailerAnim"),
         trailer_seperation: section.get_i32("TrailerSeperation").unwrap_or(0),
         random_loop_delay: section.get("RandomLoopDelay").and_then(parse_u16_pair),
-        random_rate_logic_frames: section.get("RandomRate").and_then(parse_random_rate_pair),
+        random_rate_logic_frames: read_random_rate(section),
         y_draw_offset: section.get_i32("YDrawOffset").unwrap_or(0),
         z_adjust: section.get_i32("ZAdjust").unwrap_or(0),
         // AnimType ctor42765B initializes0; ReadINI428147 uses ReadInt5276D0.
@@ -860,14 +860,22 @@ fn parse_u16_pair(value: &str) -> Option<(u16, u16)> {
     Some((a, b))
 }
 
-fn parse_random_rate_pair(value: &str) -> Option<(u16, u16)> {
-    let mut parts = value.split(',').map(str::trim);
-    let mut low = art_rate_to_logic_frames(parts.next()?.parse::<i32>().ok()?);
-    let high = art_rate_to_logic_frames(parts.next()?.parse::<i32>().ok()?);
-    if high < low {
-        low = high;
-    }
-    Some((low, high))
+/// `RandomRate=` as `AnimTypeClass::ReadINI` stores it
+/// (`0x00428772..0x004287DC`): `ReadMinMax` with `-1,-1` defaults, each
+/// field that read something other than -1 becomes `900 / value` (0 when not
+/// positive) over the constructor's 0 (`0x004275C0`), the max is floored at
+/// 0 and the min clamped down to it. The constructor picks only when the max
+/// is non-zero (`0x004221D5`), so `None` stands for a zero max.
+fn read_random_rate(section: &IniSection) -> Option<(u16, u16)> {
+    let [low, high] = section.read_minmax("RandomRate", [-1, -1]);
+    let stored = |value: i32| match value {
+        -1 => 0,
+        value if value > 0 => 900 / value,
+        _ => 0,
+    };
+    let high = stored(high).max(0);
+    let low = stored(low).min(high);
+    (high != 0).then_some((low as u16, high as u16))
 }
 
 /// Default native frame delay when art.ini section has no `Rate=` key.
@@ -1435,6 +1443,8 @@ impl ArtRegistry {
                     if let Some(config) = self.anim_runtime_configs.get(&name) {
                         pending.extend(config.next.iter().cloned());
                         pending.extend(config.trailer_anim.iter().cloned());
+                        pending.extend(config.bounce_anim.iter().cloned());
+                        pending.extend(config.expire_anim.iter().cloned());
                     }
                     self.scheduler_anim_types.insert(name);
                 }
@@ -1530,6 +1540,15 @@ impl ArtRegistry {
             }
             if let Some(trailer) = config.trailer_anim {
                 pending.push_back(trailer);
+            }
+            // A bouncing chunk's `BounceAnim=` and `ExpireAnim=`
+            // (`AnimClass::ProcessBounceResult 0x004239CE`, `AnimClass::AI
+            // 0x00423E70`).
+            if let Some(bounce) = config.bounce_anim {
+                pending.push_back(bounce);
+            }
+            if let Some(expire) = config.expire_anim {
+                pending.push_back(expire);
             }
         }
 

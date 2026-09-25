@@ -1812,6 +1812,7 @@ fn insert_anim(sim: &mut Simulation, stable_id: u64, inactive: bool) {
         start_sound_active: false,
         stop_sound_id: None,
         display: Default::default(),
+        bounce: None,
     };
     assert!(sim.substrate.anims.insert(anim).is_none());
 }

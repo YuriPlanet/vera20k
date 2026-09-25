@@ -2635,7 +2635,7 @@ impl AbilityFlags {
 
 /// Parse a CSV string list, trimming each entry and dropping empties. Returns
 /// an empty Vec for `None` or whitespace-only input.
-fn parse_csv_string_list(raw: Option<&str>) -> Vec<String> {
+pub(crate) fn parse_csv_string_list(raw: Option<&str>) -> Vec<String> {
     let Some(raw) = raw else {
         return Vec::new();
     };

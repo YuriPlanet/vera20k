@@ -125,6 +125,22 @@ pub enum BounceOutcome {
 }
 
 impl BounceState {
+    /// Fold the whole body, field bits in store order per axis. Every field
+    /// is simulation state: the spin axis and angle come off the shared
+    /// stream in `Init` even though the physics never reads them back.
+    pub(crate) fn hash_bits(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        self.elasticity.bits().hash(hasher);
+        self.gravity.bits().hash(hasher);
+        self.angular_velocity_magnitude.bits().hash(hasher);
+        for axis in 0..3 {
+            self.position[axis].bits().hash(hasher);
+            self.velocity[axis].bits().hash(hasher);
+            self.spin_axis[axis].bits().hash(hasher);
+        }
+        self.spin_angle.bits().hash(hasher);
+    }
+
     /// The host's world coordinate, in leptons.
     ///
     /// `VoxelAnimClass::AI` refreshes its `ObjectClass` coordinate from these
@@ -330,6 +346,15 @@ const BUILDING_LOOKUP_PROXIMITY_LEPTONS: f32 = 150.0;
 /// `ftol`-truncated integer, so that is `< 3`.
 const STOP_MAGNITUDE_THRESHOLD: f32 = 2.5;
 
+/// The cliff-face entry test's pre-tick Z-velocity bounds (`0x007E3DA0`,
+/// `0x007E3D98`, doubles) and its one-lepton margin (`0x007E2AC8`, float).
+const CLIFF_FALLING_VZ: NativeF64Bits = NativeF64Bits::from_bits((-0.0002f64).to_bits());
+const CLIFF_RISING_VZ: NativeF64Bits = NativeF64Bits::from_bits((-0.0003f64).to_bits());
+const CLIFF_RISE_MARGIN: NativeF32Bits = NativeF32Bits::from_bits(1.0f32.to_bits());
+/// A cliff face is a step of at least this many height levels
+/// (`CMP EDX, 0x2`, `0x00439F5E`).
+const CLIFF_FACE_LEVELS: i32 = 2;
+
 /// The map facts one `BounceClass::Update` reads.
 ///
 /// `BounceClass` itself calls `CellClass::GetGroundHeight`,
@@ -531,12 +556,17 @@ impl BounceState {
     ///    otherwise the tick returns `Falling` with no reflection at all.
     /// 8. The reflection round trip, then the stop test.
     ///
-    /// Two arms are NOT modelled, each recorded where it is skipped: the slope
-    /// re-bounce (step 8 of the module spec) and the quaternion integration.
+    /// 9. The cliff face: a step of two levels or more restores the pre-tick
+    ///    body (native execution: `tools/spatial_oracle/anim_bouncer_flight.py`).
+    ///
+    /// Two arms are NOT modelled, each recorded where it is skipped: the
+    /// cliff-face mirror for a bouncy body and the quaternion integration.
     pub fn update(
         &mut self,
         terrain: &impl BounceTerrain,
     ) -> Result<BounceOutcome, NativeX87Error> {
+        // The pre-tick body, velocity before gravity (`0x00439B26..0x00439B62`).
+        let snapshot = (self.position, self.velocity);
         self.velocity[2] = X87Chop53::store_f32(X87Chop53::sub(
             X87Chop53::load_f32(self.velocity[2])?,
             X87Chop53::load_f64(self.gravity)?,
@@ -611,29 +641,67 @@ impl BounceState {
             terrain.ramp(new_coord),
         )?;
 
-        // RESIDUAL (GSI-05.14) — the slope re-bounce is not modelled. Its
-        // decisive test is `SUB EDX,ESI / CMP EDX,0x2` at `0x00439F5C`, over the
-        // two cells' `+0x11B` height levels read at `0x00439F3F` and
-        // `0x00439F55`. When `cell(new).level - cell(old).level >= 2` and the
-        // entry-tick velocity conditions against `-0.0002` / `-0.0003` hold,
-        // native rolls the body back to the pre-tick snapshot and REPLACES the
-        // reflection above with one of four planar mirror matrices from
-        // `FUN_00755C60 @ 0x00755C60`, scaling by `Elasticity` as a double
-        // rather than the f32 narrowing. Those matrices are built at runtime
-        // and are unreadable through this instrument for the same reason as the
-        // ramp table.
-        // - Trigger: a piece crossing two or more height levels in one tick and
-        //   still rising at the cell boundary — a cliff face, not a ramp.
-        // - Player effect: the piece reflects off the flat plane and can end up
-        //   on top of the cliff where retail bounces it off the face.
-        // - Frequency: rare. It needs a two-level step inside one tick's travel.
-        // - Downstream risk: none to the stream; no draws are involved.
-        // Native439F3A then439F50: OLD first, then newly captured post-snap
-        // coordinates. Preserve miss stamps even though cliff response is open.
-        let _old_level = terrain.cell_height_level(old_coord);
-        let _new_level = terrain.cell_height_level(ftol_coord(self.position)?);
+        // The cliff face (`0x00439F3A..0x0043A05A`): the OLD then the post-snap
+        // coordinate's cell height levels. A step of two levels or more whose
+        // entry test holds restores the pre-tick body, then replaces the
+        // velocity with a planar mirror of the restored one, scaled by the
+        // double `Elasticity`. The entry test: the pre-tick Z velocity below
+        // -0.0002 with the body now above where it was, or else not below
+        // -0.0003 with the body now more than `vz + 1` above it.
+        let old_level = terrain.cell_height_level(old_coord);
+        let new_level = terrain.cell_height_level(ftol_coord(self.position)?);
+        if new_level.wrapping_sub(old_level) >= CLIFF_FACE_LEVELS
+            && Self::enters_cliff_face(snapshot, self.position[2])?
+        {
+            (self.position, self.velocity) = snapshot;
+            // RESIDUAL (GSI-05.14): the mirror is one of the planar matrices
+            // `FUN_00755C60` builds for the face's direction (`0x004848B0`),
+            // unreadable through this instrument. `Elasticity=0` — every
+            // stock SHP debris chunk — zeroes it whatever the matrix (the
+            // sign of each zero is not modelled); any other elasticity keeps
+            // the flat reflection of the restored velocity.
+            // - Trigger: a bouncing body entering a cell two or more levels up.
+            // - Player effect: a bouncy piece rebounds off the face vertically
+            //   instead of away from it.
+            // - Frequency: rare; only `[TIRE]` (0.8) bounces among stock types.
+            // - Downstream risk: none to the stream; no draws are involved.
+            self.velocity = if self.elasticity.bits() & !(1 << 63) == 0 {
+                [NativeF32Bits::POSITIVE_ZERO; 3]
+            } else {
+                Self::reflect_off_ground_or_flat(
+                    self.velocity,
+                    self.elasticity,
+                    terrain.ramp(new_coord),
+                )?
+            };
+        }
 
         self.finish_tick(terrain, BounceOutcome::Bounced)
+    }
+
+    /// The cliff-face entry test (`0x00439F67..0x00439FB1`) on the pre-tick
+    /// body and the post-snap Z.
+    fn enters_cliff_face(
+        (position, velocity): ([NativeF32Bits; 3], [NativeF32Bits; 3]),
+        now_z: NativeF32Bits,
+    ) -> Result<bool, NativeX87Error> {
+        use crate::util::native_x87::X87Ordering::{Greater, Less};
+        let vz = X87Chop53::load_f32(velocity[2])?;
+        let was_z = X87Chop53::load_f32(position[2])?;
+        let now_z = X87Chop53::load_f32(now_z)?;
+        if X87Chop53::compare(vz, X87Chop53::load_f64(CLIFF_FALLING_VZ)?) == Less
+            && X87Chop53::compare(now_z, was_z) == Greater
+        {
+            return Ok(true);
+        }
+        if X87Chop53::compare(vz, X87Chop53::load_f64(CLIFF_RISING_VZ)?) == Less {
+            return Ok(false);
+        }
+        let risen = X87Chop53::add(
+            X87Chop53::add(vz, was_z),
+            X87Chop53::load_f32(CLIFF_RISE_MARGIN)?,
+        );
+        Ok(X87Chop53::compare(risen, now_z) == Less)
     }
 
     /// `LAB_0043A066` — the tail both the contact and the no-contact arms reach.

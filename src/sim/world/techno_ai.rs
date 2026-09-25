@@ -240,6 +240,34 @@ impl Simulation {
         }
     }
 
+    /// `BounceClass::Update @ 0x00439B00` for an `AnimClass` chunk's body over
+    /// the live terrain. A body that leaves the verified x87 domain lands.
+    pub(crate) fn anim_bounce_update(
+        &self,
+        body: &mut crate::sim::bounce::BounceState,
+        rules: &RuleSet,
+    ) -> crate::sim::bounce::BounceOutcome {
+        let terrain = bounce_terrain::ResolvedBounceTerrain {
+            sim: self,
+            rules: Some(rules),
+        };
+        body.update(&terrain).unwrap_or_else(|error| {
+            log::warn!("bouncing anim left the verified x87 domain: {error}");
+            crate::sim::bounce::BounceOutcome::Stopped
+        })
+    }
+
+    /// The water test a landing chunk makes: the cell's LandType is Water
+    /// (`CellClass+0xEC == 2`, `AnimClass::AI 0x00423C75`).
+    pub(crate) fn bounce_cell_is_water(&self, coord: glam::IVec3, rules: &RuleSet) -> bool {
+        use crate::sim::bounce::BounceTerrain;
+        bounce_terrain::ResolvedBounceTerrain {
+            sim: self,
+            rules: Some(rules),
+        }
+        .is_water(coord)
+    }
+
     /// Dispatch one current LogicVector slot. A finishing death sequence calls
     /// UnInit synchronously here, so compacting removal is visible before the
     /// scheduler increments its cursor.

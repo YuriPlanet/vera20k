@@ -1378,10 +1378,9 @@ pub struct ExplosionEffect {
     /// Aircraft death arm, `DestructionEffects`): `AnimClass(type, coord,
     /// delay, 1, 0x600, 0, 0)` at an exact coordinate. `None` rows construct
     /// with the warhead impact's `(0, 1, 0x2600, -15)` at a level-rounded
-    /// coordinate: the impact anim, the InfDeath anims and the TechnoClass
-    /// debris anims. Natively the debris anims take `(center + 0x14 Z, 0, 1,
-    /// 0x600, 0, 0)` (`0x007024AA`, `0x00702566`); on stock their rows are
-    /// dropped as unbound art (GSI-05.14).
+    /// coordinate: the impact anim and the InfDeath anims. The TechnoClass
+    /// debris anims are death constructions at `center + 0x14 Z` (`0x007024AA`,
+    /// `0x00702566`) that already took their constructor draws.
     pub death: Option<destruction_effects::DeathAnimSpawn>,
 }
 
@@ -2016,39 +2015,20 @@ impl DeathEffects {
 /// from a drop-in therefore has the byte clear, so an ordinary death over water
 /// DOES throw debris and consumes the block's draws.
 ///
-/// RESIDUAL (GSI-05.14) — the SHP half pushes `ExplosionEffect` rows, and with
-/// stock data nothing comes of them: `spawn_combat_explosion_anim` constructs
-/// only art types the loader bound, `anim_class_roots` lists neither
-/// `DebrisAnims=` nor `MetallicDebris=`, and no stock warhead, `Explosion=` or
-/// `DestroyAnim=` names a debris type, so every row is dropped. The draws are
-/// taken; no chunk is drawn. Binding them without the bouncer arm would be
-/// worse, because `LoopCount=-1` chunks would play in place forever. Native
-/// builds a bouncing `AnimClass` (`0x00421EA0`): every stock
-/// debris AnimType is `Bouncer=yes` — all 26 named by `[General]
-/// MetallicDebris=` or by any `DebrisAnims=` line carry it, authored in
-/// `artmd.ini` rather than `rulesmd.ini` (`AnimTypeClass+0x35A`, read at
-/// `0x004286A7`) — so native's constructor enters its own `BounceClass::Init`
-/// arm and the chunk flies an arc before landing.
-/// - Trigger: every death that reaches either SHP arm — in gamemd, 324 of the
-///   356 stock sections that throw (of 439 authoring `MaxDebris=` in gamemd's
-///   own spelling, 83 author 0).
-/// - Player effect: no debris chunk appears at all, and its
-///   `Damage=`/`Warhead=` on landing is not applied.
-/// - Frequency: continuous — every building death (no `[BuildingTypes]` section
-///   authors `DebrisTypes=`, so all 292 that throw land here) plus 18 of the 50
-///   registered `[VehicleTypes]` that throw and 11 of the 12 `[AircraftTypes]`.
-///   The other 32 vehicle types take the voxel arm instead. Those counts are on
-///   gamemd's case-exact key read, which `ObjectType::from_ini_section` matches
-///   (`CCINIClass::ReadInt @ 0x005276D0` CRCs the raw key bytes): the 17
-///   `[VehicleTypes]` spelling `Maxdebris=` take the constructor default 0 here
-///   as they do in retail and never reach this arm.
-/// - Downstream risk: the constructor's own draws are not consumed either —
-///   one `RandomRanged` for `RandomRate=`, three `Random__Next()` for the
-///   launch velocity and three `RandomRanged(-0xFFFF, 0xFFFF)` inside
-///   `BounceClass::Init`, so seven per anim. Every debris producer in the
-///   engine shares that gap today; closing it belongs with the AnimClass
-///   bouncer owner, not here, because the same seven draws are missing from
-///   the `Explosion=`/`DestroyAnim=` producer beside this one.
+/// The SHP half constructs a bouncing `AnimClass` per piece (`0x00421EA0`):
+/// every stock debris AnimType is `Bouncer=yes` — all 26 named by `[General]
+/// MetallicDebris=` or by any `DebrisAnims=` line, authored in `artmd.ini`
+/// (`AnimTypeClass+0x35A`, read at `0x004286A7`). Each piece's constructor
+/// draws (`RandomRate=`, none for the stock chunks, then three velocity draws
+/// and `BounceClass::Init`'s three) are taken right after its pick, as native
+/// constructs it before picking the next; the row carries them to the
+/// deferred construction. Native execution:
+/// `tools/spatial_oracle/anim_bouncer_launch.py` (`debris_loop` rows).
+/// Counts on gamemd's case-exact key read, which `ObjectType::from_ini_section`
+/// matches (`CCINIClass::ReadInt @ 0x005276D0` CRCs the raw key bytes): 324 of
+/// the 356 stock sections that throw reach an SHP arm (of 439 authoring
+/// `MaxDebris=`, 83 author 0); the 17 `[VehicleTypes]` spelling `Maxdebris=`
+/// (the Rhino among them) take the constructor default 0 and throw nothing.
 #[allow(clippy::too_many_arguments)]
 fn throw_debris_for_death(
     object_type: &ObjectType,
@@ -2095,11 +2075,33 @@ fn throw_debris_for_death(
         debris_anim_count: object_type.debris_anims.len(),
         metallic_debris_count: rules.general.metallic_debris.len(),
     };
+    // Native lifts the anim coordinate by 20 leptons (`ADD EAX, 0x14` at
+    // `0x00702443`/`0x0070254B`) and constructs `AnimClass(type, coord, 0, 1,
+    // 0x600, 0, 0)` there, exactly.
+    let anim_coord = crate::sim::anim_class::AnimWorldCoord {
+        x: world_x,
+        y: world_y,
+        z: world_z_leptons.wrapping_add(0x14),
+    };
+    let debris_name = |source: ShpDebrisSource, index: usize| match source {
+        ShpDebrisSource::TypeDebrisAnims => object_type.debris_anims.get(index),
+        ShpDebrisSource::RulesMetallicDebris => rules.general.metallic_debris.get(index),
+    };
     let Ok(thrown) = throw_death_debris(
         &data,
         Some(owner),
         glam::IVec3::new(world_x, world_y, world_z_leptons),
         scenario_rng,
+        &mut |source, index, rng| {
+            let Some(config) = debris_name(source, index).and_then(|name| {
+                rules
+                    .art_registry
+                    .anim_runtime_config(&name.to_ascii_uppercase())
+            }) else {
+                return Ok(None);
+            };
+            crate::sim::anim_class::anim_constructor_draws(config, anim_coord, rng).map(Some)
+        },
     ) else {
         // A launch velocity outside the verified x87 domain needs a modded
         // `[VoxelAnims]` value far past any stock one; the draws are already
@@ -2108,13 +2110,7 @@ fn throw_debris_for_death(
     };
     voxel_debris.extend(thrown.voxels);
     for row in thrown.anims {
-        let name = match row.source {
-            ShpDebrisSource::TypeDebrisAnims => object_type.debris_anims.get(row.index),
-            ShpDebrisSource::RulesMetallicDebris => rules.general.metallic_debris.get(row.index),
-        };
-        // Native lifts the anim coordinate by 20 leptons (`ADD EAX, 0x14` at
-        // `0x00702443`).
-        if let Some(name) = name {
+        if let Some(name) = debris_name(row.source, row.index) {
             let shp_name = interner.intern(name);
             explosion_effects.push(ExplosionEffect {
                 shp_name,
@@ -2123,8 +2119,12 @@ fn throw_debris_for_death(
                 sub_x,
                 sub_y,
                 z,
-                world_z: world_z_leptons.wrapping_add(0x14),
-                death: None,
+                world_z: anim_coord.z,
+                death: Some(destruction_effects::DeathAnimSpawn {
+                    coord: anim_coord,
+                    delay: 0,
+                    draws: row.draws,
+                }),
             });
         }
     }
@@ -2617,7 +2617,9 @@ pub(crate) struct CombatEmit {
     pub(crate) drain_links: Vec<(u64, u64)>,
 }
 
-fn projectile_impact_cell(impact: ProjectileCoord) -> (u16, u16, SimFixed, SimFixed, i32) {
+pub(crate) fn projectile_impact_cell(
+    impact: ProjectileCoord,
+) -> (u16, u16, SimFixed, SimFixed, i32) {
     let rx = impact.x.div_euclid(256).clamp(0, i32::from(u16::MAX)) as u16;
     let ry = impact.y.div_euclid(256).clamp(0, i32::from(u16::MAX)) as u16;
     (
@@ -3370,6 +3372,103 @@ mod impact_height_tests {
                 ),
                 (7, 8, 2, 208)
             );
+        }
+    }
+
+    /// `TechnoClass::ReceiveDamage`'s metallic debris loop
+    /// (`0x007024E0..0x0070256B`, `tools/spatial_oracle/anim_bouncer_launch.py`,
+    /// executed with the whole AnimClass constructor per piece) on retail
+    /// rules and art: each piece's `MetallicDebris=` pick, then that piece's
+    /// constructor draws, before the next pick. The budget is pinned (equal
+    /// bounds take no draw) so the rows start at the loop.
+    #[test]
+    fn debris_pieces_construct_between_picks_as_the_original() {
+        let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let Some(art) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
+            return;
+        };
+        let mut rules =
+            crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+        rules.merge_art_data(&crate::rules::art_data::ArtRegistry::from_ini(&art));
+        let golden: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/anim_bouncer_launch.json"
+        ))
+        .unwrap();
+        let rows = golden["debris_loop"].as_array().unwrap();
+        assert_eq!(rows.len(), 9);
+        for row in rows {
+            let input = &row["input"];
+            let pieces = input["pieces"].as_i64().unwrap() as i32;
+            let mut object_type = rules.object("MTNK").unwrap().clone();
+            object_type.max_debris = pieces + 1;
+            object_type.min_debris = pieces;
+            object_type.debris_types.clear();
+            object_type.debris_anims.clear();
+            let coord = input["coord"].as_array().unwrap();
+            let at = |i: usize| coord[i].as_i64().unwrap() as i32;
+            let mut interner = test_interner();
+            let owner = interner.intern("Americans");
+            let mut rng = SimRng::new(input["seed"].as_u64().unwrap());
+            assert_eq!(rng.native_state_hex(), row["rng_before"].as_str().unwrap());
+            let mut voxels = Vec::new();
+            let mut effects = Vec::new();
+            throw_debris_for_death(
+                &object_type,
+                &rules,
+                &mut interner,
+                owner,
+                (at(0) / 256) as u16,
+                (at(1) / 256) as u16,
+                SimFixed::from_num(at(0) % 256),
+                SimFixed::from_num(at(1) % 256),
+                0,
+                at(2),
+                &mut rng,
+                &mut voxels,
+                &mut effects,
+            );
+            assert_eq!(
+                rng.native_state_hex(),
+                row["rng_after"].as_str().unwrap(),
+                "{input}"
+            );
+            let names: Vec<String> = row["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|event| event["call"] == "anim_ctor")
+                .map(|event| event["type"].as_str().unwrap().to_string())
+                .collect();
+            assert_eq!(
+                effects
+                    .iter()
+                    .map(|effect| interner.resolve(effect.shp_name).to_string())
+                    .collect::<Vec<_>>(),
+                names,
+                "{input}"
+            );
+            for (effect, native) in effects.iter().zip(row["anims"].as_array().unwrap()) {
+                let spawn = effect
+                    .death
+                    .expect("a debris piece is an exact construction");
+                let location = native["location"].as_array().unwrap();
+                assert_eq!(
+                    [spawn.coord.x, spawn.coord.y, spawn.coord.z],
+                    std::array::from_fn(|i| location[i].as_i64().unwrap() as i32),
+                    "{input}"
+                );
+                let body = spawn
+                    .draws
+                    .and_then(|draws| draws.bounce)
+                    .expect("a bouncing chunk");
+                let bits = |key: &str, i: usize| native["bounce"][key][i].as_u64().unwrap() as u32;
+                for axis in 0..3 {
+                    assert_eq!(body.position[axis].bits(), bits("position_bits", axis));
+                    assert_eq!(body.velocity[axis].bits(), bits("velocity_bits", axis));
+                }
+            }
         }
     }
 

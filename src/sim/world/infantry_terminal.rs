@@ -337,6 +337,7 @@ impl Simulation {
                     z: location.z,
                 },
                 delay: 0,
+                draws: None,
             },
         );
         Some(body)
