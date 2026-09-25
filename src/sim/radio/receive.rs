@@ -318,6 +318,11 @@ fn unit_receive(
             RadioResponse::Roger
         }
         RadioMessage::PrepareToDock => unit_prepare_to_dock(sim, unit, sender, payload, rules),
+        // 0x00737A98: a harvester mid-unload leaves it, then the Foot arm.
+        RadioMessage::RunAway => {
+            unit_run_away(sim, unit, rules);
+            foot_receive(sim, unit, sender, msg, payload, rules)
+        }
         // 7, 0xE, 0xF and 0x15: the transport/service arms have no
         // represented sender.
         RadioMessage::DockingComplete
@@ -389,6 +394,66 @@ fn unit_prepare_to_dock(
     RadioResponse::Roger
 }
 
+/// RUN_AWAY, `UnitClass::Receive_Radio` case 0x17 (`0x00737A98..0x00737AF6`):
+/// a `Harvester=`/`Weeder=` unit with its unload latch up drops it, scatters
+/// (forced, not no-kidding — the Unit Scatter refuses while Unload is still
+/// current), queues Harvest and commences it when ready.
+fn unit_run_away(sim: &mut Simulation, unit: u64, rules: Option<&RuleSet>) {
+    let Some(rules) = rules else {
+        return;
+    };
+    let latched_harvester = sim.substrate.entities.get(unit).is_some_and(|entity| {
+        entity
+            .miner
+            .as_ref()
+            .is_some_and(|miner| miner.unload_active)
+            && sim
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|object| object.harvester || object.weeder)
+    });
+    if !latched_harvester {
+        return;
+    }
+    crate::sim::miner::clear_unload_latch(sim, unit);
+    scatter(sim, unit, rules);
+    let now = sim.session.binary_frame;
+    let _ = sim.mission_queue_exact(
+        unit,
+        MissionId::from_known(MissionType::Harvest),
+        0,
+        now,
+        &EntityReadyInputProvider,
+    );
+    sim.mission_host_promote(unit, now, rules);
+}
+
+/// `TechnoClass::Scatter` (vt+0x174) with a null source and the force byte,
+/// through the shared blocked-cell adapter (its displacement and RNG
+/// residuals apply).
+fn scatter(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    let Some(layer) = sim
+        .substrate
+        .entities
+        .get(id)
+        .and_then(|entity| entity.occupancy_list_layer())
+    else {
+        return;
+    };
+    let grid = sim.path_grid_snapshot();
+    crate::sim::movement::bump_crush::scatter_blocker(
+        &mut sim.substrate.entities,
+        id,
+        grid.as_deref(),
+        sim.resolved_terrain.as_ref(),
+        &sim.substrate.occupancy,
+        layer,
+        &mut sim.scenario_rng,
+        Some(rules),
+        &sim.interner,
+        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, rules.into()),
+    );
+}
+
 /// `AircraftClass::Receive_Radio @ 0x004190B0`: its own arms for 8, 0xE,
 /// 0xF, 0x12, 0x13, 0x15, 0x17, 0x1D, 0x1F and 0x21 are not represented; the
 /// rest (TETHER/UNTETHER included, table `0x0041957C`) take the Foot path.
@@ -407,6 +472,7 @@ fn aircraft_receive(
         | RadioMessage::MoveToCell
         | RadioMessage::NeedToMove
         | RadioMessage::DockNow
+        | RadioMessage::RunAway
         | RadioMessage::HelipadReserveAck
         | RadioMessage::LinkPassenger => RadioResponse::None,
         _ => foot_receive(sim, aircraft, sender, msg, payload, rules),
@@ -425,6 +491,10 @@ fn foot_receive(
     match msg {
         RadioMessage::MoveToCell => foot_move_here(sim, foot, payload, rules),
         RadioMessage::NeedToMove => foot_need_to_move(sim, foot),
+        RadioMessage::RunAway => {
+            foot_run_away(sim, foot, rules);
+            techno_receive(sim, foot, sender, msg, payload, rules)
+        }
         // 0x11, 0x1C and 0x23 have no represented sender.
         RadioMessage::IsUnitLinked | RadioMessage::RepairTick | RadioMessage::IsOccupied => {
             RadioResponse::None
@@ -489,6 +559,71 @@ fn foot_move_here(
         entity.mission.write_dispatch_epilogue(now as i32, 0);
     }
     RadioResponse::Roger
+}
+
+/// RUN_AWAY, Foot case 0x17 (`0x004D902B..0x004D90C6`): a NavCom aimed at
+/// the first contact is dropped; a unit asleep queues Guard and commences it
+/// when ready, one on Enter queues Guard; one with no NavCom and no turret
+/// swing (`+0x6AF`) scatters (forced, no-kidding). The Techno receiver follows.
+fn foot_run_away(sim: &mut Simulation, foot: u64, rules: Option<&RuleSet>) {
+    let Some(rules) = rules else {
+        return;
+    };
+    let now = sim.session.binary_frame;
+    let Some(entity) = sim.substrate.entities.get(foot) else {
+        return;
+    };
+    // 0x004D902D..0x004D904F: In_Radio_Contact and NavCom == Contact(0).
+    let aimed_at_contact = match (entity.navigation.nav_com, entity.radio_contacts.slot(0)) {
+        (
+            Some(
+                NavTargetRef::Entity { id }
+                | NavTargetRef::Object { id }
+                | NavTargetRef::Building { id },
+            ),
+            Some(contact),
+        ) => id == contact,
+        _ => false,
+    };
+    if aimed_at_contact {
+        sim.assign_null_destination(foot, Some(rules));
+    }
+    let mission = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(foot)
+            .map_or(MissionId::NONE, |entity| entity.mission.effective())
+    };
+    // 0x004D9055..0x004D9082: Sleep → Queue(Guard), Ready → Commence.
+    if mission(sim) == MissionId::from_known(MissionType::Sleep) {
+        let _ = sim.mission_queue_exact(
+            foot,
+            MissionId::from_known(MissionType::Guard),
+            0,
+            now,
+            &EntityReadyInputProvider,
+        );
+        sim.mission_host_promote(foot, now, rules);
+    }
+    // 0x004D9088..0x004D909F: Enter → Queue(Guard).
+    if mission(sim) == MissionId::from_known(MissionType::Enter) {
+        let _ = sim.mission_queue_exact(
+            foot,
+            MissionId::from_known(MissionType::Guard),
+            0,
+            now,
+            &EntityReadyInputProvider,
+        );
+    }
+    // 0x004D90A5..0x004D90C6.
+    if sim
+        .substrate
+        .entities
+        .get(foot)
+        .is_some_and(|entity| !entity.turret_rotation_latch && entity.navigation.nav_com.is_none())
+    {
+        scatter(sim, foot, rules);
+    }
 }
 
 /// NEED_TO_MOVE, Foot case 0x13 (`0x004D90E8`): ROGER with no NavCom or a
@@ -1067,6 +1202,48 @@ mod tests {
     #[test]
     fn dock_pad_is_anchor_plus_three_one() {
         assert_eq!(dock_pad_cell(10, 10), (13, 11));
+    }
+
+    /// TETHER on an `AirportBound=` aircraft takes the default path
+    /// (`0x006F4B1F`, AircraftType+0xE0D): the landing broadcast leaves its
+    /// airfield tethered to it and the aircraft itself untethered.
+    #[test]
+    fn airport_bound_aircraft_stays_untethered_when_it_lands() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[AircraftTypes]\n0=ORCA\n[BuildingTypes]\n0=GAAIRC\n\
+             [ORCA]\nAirportBound=yes\n[GAAIRC]\nHelipad=yes\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        spawn_refinery(&mut sim, 2, "Americans", 1);
+        sim.substrate.entities.get_mut(2).unwrap().type_ref = sim.interner.intern("GAAIRC");
+        spawn_miner(&mut sim, 1, "Americans");
+        {
+            let plane = sim.substrate.entities.get_mut(1).unwrap();
+            plane.category = EntityCategory::Aircraft;
+            plane.type_ref = sim.interner.intern("ORCA");
+        }
+        for (id, partner) in [(1, 2), (2, 1)] {
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .radio_contacts
+                .set_slot(0, partner);
+        }
+
+        crate::sim::radio::broadcast(&mut sim, 1, RadioMessage::Tether, Some(&rules));
+
+        assert_eq!(
+            sim.substrate.entities.get(1).unwrap().dock_entered_with,
+            None
+        );
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().dock_entered_with,
+            Some(1)
+        );
     }
 
     #[test]

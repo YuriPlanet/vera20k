@@ -18,7 +18,7 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::BaleDepositEvent;
-use crate::sim::miner::{MinerConfig, MinerKind, MinerState, RefineryDockPhase};
+use crate::sim::miner::{MinerConfig, MinerState, RefineryDockPhase};
 use crate::sim::mission::MissionType;
 use crate::sim::movement;
 use crate::sim::movement::facing_class::FacingClass;
@@ -169,23 +169,18 @@ fn clear_unload_cluster(snap: &mut MinerSnapshot) {
 /// later queued order until its next dock completes. Does nothing outside an
 /// unload phase.
 pub(crate) fn abandon_unload_for_direct_retask(sim: &mut Simulation, miner_sid: u64) {
+    if super::native_dock_miner(sim, miner_sid) {
+        // The War Miner's unload is the Unload mission; Harvest replaces it
+        // here, so its contact gate never runs to drop the +0x6D1 latch.
+        super::clear_unload_latch(sim, miner_sid);
+        return;
+    }
     let Some(entity) = sim.substrate.entities.get_mut(miner_sid) else {
         return;
     };
     let Some(miner) = entity.miner.as_mut() else {
         return;
     };
-    if miner.kind == MinerKind::War {
-        // The War Miner's unload is the Unload mission; Harvest replaces it
-        // here, so its contact gate never runs to drop the +0x6D1 latch.
-        if miner.unload_active {
-            miner.unload_active = false;
-            miner.unload_cluster_repeat = 0;
-            miner.unload_cluster_timer.clear();
-            entity.display_type_override = None;
-        }
-        return;
-    }
     if !matches!(
         miner.dock_phase,
         RefineryDockPhase::Pivoting
@@ -259,23 +254,19 @@ pub(super) fn refinery_pad_cell(
 /// `find_nearby_passable_cell_with_index` provides a fallback when
 /// the queue cell is blocked (e.g., another miner already waiting
 /// there): ring 1+ picks an adjacent cell, typically still east of
-/// the foundation. Falls back to the art.ini `QueueingCell`
-/// (or the geometric default from [`refinery_queue_cell`]) when no
-/// passable cell exists within [`EXIT_SEARCH_MAX_RADIUS`] or no path
-/// grid is available.
+/// the foundation. Falls back to the art `QueueingCell=` cell itself
+/// ([`refinery_queue_cell`]) when no passable cell exists within
+/// [`EXIT_SEARCH_MAX_RADIUS`] or no path grid is available.
 ///
 #[cfg(test)]
 pub(super) fn refinery_exit_cell(
     rx: u16,
     ry: u16,
-    width: u16,
-    height: u16,
     queueing_cell: [i32; 2],
     path_grid: Option<&PathGrid>,
     occupancy: Option<&OccupancyGrid>,
     tick: u64,
 ) -> (u16, u16) {
-    let _ = (width, height);
     let queue = refinery_queue_cell(rx, ry, queueing_cell);
 
     if let Some(grid) = path_grid {
@@ -469,18 +460,19 @@ fn dock_abort_state_from_miner(miner: &super::Miner) -> MinerState {
     }
 }
 
-/// VERA's refinery-sale adapter: release contacts/reservations and reset the
-/// miner cursor/timers, preserving cargo and locomotor state. Returns the
-/// number of miners whose adapter state was cleared.
+/// VERA's refinery-sale adapter for the Chrono Miner's legacy dock phases:
+/// release contacts/reservations and reset the miner cursor/timers,
+/// preserving cargo and locomotor state. Returns the number of miners whose
+/// adapter state was cleared. The War Miner answers the sale's native
+/// RUN_AWAY broadcast instead (`radio::receive`, Unit `0x00737A98`) and never
+/// holds a `reserved_refinery` here.
 ///
 /// Native Sell44AAA4 calls release4593A0 only through the reciprocal bunker
 /// link (+2E4), whose producer is gated by Bunker at 44B797..44B7A3. Refinery
 /// contacts are not that link and cannot authorize Force_Track(0x47) or
-/// SetSpeedFraction(1). Native sale's radio0x17 receiver737A98 has its own
-/// mission/scatter timing; this eager reset remains an unfinished VERA
-/// adapter. Refinery death no longer uses it: the exact-zero Destroy broadcast
-/// (`Simulation::object_destroy_callback`) drops the reservation at the kill
-/// and the miner's own dock visit aborts to Approach.
+/// SetSpeedFraction(1). Refinery death does not use it: the exact-zero Destroy
+/// broadcast (`Simulation::object_destroy_callback`) drops the reservation at
+/// the kill and the miner's own dock visit aborts to Approach.
 pub(crate) fn interrupt_refinery_docked_miners(sim: &mut Simulation, ref_sid: u64) -> usize {
     // The refinery's own contact slots name every miner it admitted, so no
     // world scan is needed. Ascending id keeps the former visiting order.

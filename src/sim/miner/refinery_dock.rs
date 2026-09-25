@@ -31,6 +31,15 @@
 //!   VERA 900 — `unload_gate_income_mult` row).
 //! - Storage is VERA's two resource kinds, not native's four tiberium slots
 //!   (`miner_system::handle_harvest`); no stock map places TIB2/TIB3.
+//! - The Per_Cell DOCK_NOW refusal's Unit Scatter (`0x0073A5CE..0x0073A5E4`,
+//!   answered by a refinery in its Selling mission) is not wired. Frequency:
+//!   zero today — VERA's sale is synchronous, so no refinery is ever seen
+//!   mid-sell-down; the sale's RUN_AWAY broadcast carries the miner instead.
+//!
+//! A refinery sold (`BuildingClass::Sell`) or destroyed (the NowDead contact
+//! loop, `Simulation::building_now_dead_contacts`) under an unloading miner
+//! sends it RUN_AWAY (0x17): the latch drops and Harvest takes over
+//! (`radio::receive`, Unit `0x00737A98`).
 //!
 //! ## Dependency rules
 //! - Part of sim/ — sim/radio, sim/mission, sim/movement, sim/world.
@@ -126,13 +135,7 @@ pub(crate) fn mission_enter(sim: &mut Simulation, rules: &RuleSet, id: u64) -> i
     }
     // 0x004D946C..0x004D9497: the CURRENT mission's Rate (a Commence above may
     // have changed it).
-    let current = sim
-        .substrate
-        .entities
-        .get(id)
-        .and_then(|entity| entity.mission.current().known())
-        .unwrap_or(MissionType::Enter);
-    sim.mission_rate_epilogue(rules, current)
+    sim.mission_rate_epilogue_for(rules, id, MissionType::Enter)
 }
 
 /// `0x004D92ED..0x004D93E3`: with no NavCom and a waypoint queued, the class
@@ -375,33 +378,51 @@ pub(crate) fn per_cell_dock_now(sim: &mut Simulation, rules: &RuleSet, id: u64) 
         Some(rules),
     );
     // 0x0073A5CE..0x0073A5E4: an answer other than 1 or 5 scatters the unit
-    // (a refinery being sold). RESIDUAL: the Unit Scatter here is not wired.
+    // (a refinery being sold) — RESIDUAL, module doc.
     let _ = reply;
 }
 
 /// Unit+0x6D1 with the image it selects: `UnitClass::Draw` (`0x0073D2BA`)
 /// draws `UnloadingClass=` while the latch is set.
 fn set_unload_latch(sim: &mut Simulation, rules: &RuleSet, id: u64, active: bool) {
-    let image = active
-        .then(|| {
-            sim.substrate.entities.get(id).and_then(|entity| {
-                sim.object_type(entity.type_ref(), rules)
-                    .and_then(|object| object.unloading_class.clone())
-            })
+    if !active {
+        clear_unload_latch(sim, id);
+        return;
+    }
+    let image = sim
+        .substrate
+        .entities
+        .get(id)
+        .and_then(|entity| {
+            sim.object_type(entity.type_ref(), rules)
+                .and_then(|object| object.unloading_class.clone())
         })
-        .flatten()
         .map(|name| sim.interner.intern(&name));
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return;
     };
     if let Some(miner) = entity.miner.as_mut() {
-        miner.unload_active = active;
-        if !active {
-            miner.unload_cluster_repeat = 0;
-            miner.unload_cluster_timer.clear();
-        }
+        miner.unload_active = true;
     }
     entity.display_type_override = image;
+}
+
+/// Drop Unit+0x6D1: the ordinary image returns and the unload stage stops
+/// (`tick_unload_stage` has no reader until the next first pass re-arms it).
+/// Returns whether the latch was set.
+pub(crate) fn clear_unload_latch(sim: &mut Simulation, id: u64) -> bool {
+    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+        return false;
+    };
+    let Some(miner) = entity.miner.as_mut() else {
+        return false;
+    };
+    let was_set = miner.unload_active;
+    miner.unload_active = false;
+    miner.unload_cluster_repeat = 0;
+    miner.unload_cluster_timer.clear();
+    entity.display_type_override = None;
+    was_set
 }
 
 /// The building `0x0047C520` finds in the cell west of the miner
@@ -436,9 +457,7 @@ fn stop_if_moving(sim: &mut Simulation, id: u64) {
 
 /// `Ready_To_Commence` (`vt+0x200`) then `Commence` (`vt+0x1EC`).
 fn commence_if_ready(sim: &mut Simulation, rules: &RuleSet, id: u64) {
-    if sim.mission_ready_to_commence(id, rules) {
-        let _ = sim.mission_commence_exact(id, sim.session.binary_frame);
-    }
+    sim.mission_host_promote(id, sim.session.binary_frame, rules);
 }
 
 fn set_status(sim: &mut Simulation, id: u64, status: u32) {
@@ -448,13 +467,7 @@ fn set_status(sim: &mut Simulation, id: u64, status: u32) {
 }
 
 fn epilogue(sim: &mut Simulation, rules: &RuleSet, id: u64) -> i32 {
-    let current = sim
-        .substrate
-        .entities
-        .get(id)
-        .and_then(|entity| entity.mission.current().known())
-        .unwrap_or(MissionType::Unload);
-    sim.mission_rate_epilogue(rules, current)
+    sim.mission_rate_epilogue_for(rules, id, MissionType::Unload)
 }
 
 /// `FindFirstUsedSlot` (`0x006C9820`) and `RemoveAmount` (`0x006C96B0`) on

@@ -866,9 +866,23 @@ impl Simulation {
                             | crate::map::entities::EntityCategory::Infantry
                     ) && e.mission.current().known() == Some(MissionType::Attack)
                 });
+                // The IDLE event writes no mission of its own
+                // (`0x004C74CB..0x004C76BB`). A War Miner on its native Enter
+                // or Unload keeps it: after the radio break below, the next
+                // Mission_Enter finds no target and idles it (Guard for a
+                // human miner off ore, `0x00738C0A`), so VERA's queued Stop,
+                // which the Harvest dispatcher would run from state 0 and
+                // re-dock, is not written.
+                let native_dock = crate::sim::miner::native_dock_miner(self, *entity_id)
+                    && self.substrate.entities.get(*entity_id).is_some_and(|e| {
+                        matches!(
+                            e.mission.current().known(),
+                            Some(MissionType::Enter) | Some(MissionType::Unload)
+                        )
+                    });
                 // Event6 retains an ordinary MCV's mission and runtime +0x68C.
                 // Its null-destination operation still runs below.
-                if mcv {
+                if mcv || native_dock {
                     self.run_dock_teardown(*entity_id, DockTeardown::All);
                 } else {
                     self.queue_mission_with_teardown(
@@ -1490,6 +1504,15 @@ impl Simulation {
                     }
                     None => None,
                 };
+                // A War Miner's dock is its native Enter/Unload missions: the
+                // order's MEGAMISSION radio break (`0x004C72E8`) leaves the
+                // refinery link, and because the Harvest assign below replaces
+                // Unload without its contact gate (`0x0073DEE0`), the unload
+                // latch drops here too — as for `Command::HarvestCell`.
+                if crate::sim::miner::native_dock_miner(self, *entity_id) {
+                    crate::sim::miner::miner_dock::break_for_retask(self, *entity_id, rules);
+                    crate::sim::miner::abandon_unload_for_direct_retask(self, *entity_id);
+                }
                 let previous_refinery = self
                     .substrate
                     .entities
@@ -3622,20 +3645,27 @@ mod tests {
         spawn_miner(&mut sim, 1);
         spawn_refinery(&mut sim, 2, "GAREFN", 10, 10);
         spawn_refinery(&mut sim, 3, "GAREFN", 30, 30);
-        {
-            let miner = sim
-                .substrate
-                .entities
-                .get_mut(1)
-                .unwrap()
-                .miner
-                .as_mut()
-                .unwrap();
-            miner.reserved_refinery = Some(2);
-            miner.dock_queued = true;
-            miner.dock_phase = RefineryDockPhase::Unloading;
+        // Docked and unloading at refinery 2: linked and tethered both ways,
+        // Unload current with its latch raised.
+        for (id, partner) in [(1, 2), (2, 1)] {
+            let entity = sim.substrate.entities.get_mut(id).unwrap();
+            entity.radio_contacts.set_slot(0, partner);
+            entity.dock_entered_with = Some(partner);
         }
-        assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, 1));
+        let now = sim.session.binary_frame;
+        sim.mission_assign_exact(
+            1,
+            crate::sim::mission::MissionId::from_known(MissionType::Unload),
+            now,
+        )
+        .unwrap();
+        {
+            let entity = sim.substrate.entities.get_mut(1).unwrap();
+            entity.display_type_override = Some(sim.interner.intern("HORV"));
+            let miner = entity.miner.as_mut().unwrap();
+            miner.unload_active = true;
+            miner.unload_cluster_repeat = 1;
+        }
 
         let applied = sim.apply_command(
             "Americans",
@@ -3649,29 +3679,21 @@ mod tests {
         );
 
         assert!(applied);
-        let miner = sim
-            .substrate
-            .entities
-            .get(1)
-            .unwrap()
-            .miner
-            .as_ref()
-            .unwrap();
+        let miner_entity = sim.substrate.entities.get(1).unwrap();
+        let miner = miner_entity.miner.as_ref().unwrap();
         assert_eq!(miner.reserved_refinery, Some(3));
         assert!(miner.forced_return);
-        assert_eq!(
-            sim.substrate.entities.get(1).unwrap().miner_state(),
-            Some(MinerState::ForcedReturn)
-        );
-        assert!(!miner.dock_queued);
-        assert_eq!(miner.dock_phase, RefineryDockPhase::Approach);
-        // The redirect BREAKs both ends. A contact left on the miner would keep
-        // the old refinery's footprint enterable for it; one left on the
-        // refinery would refuse every later miner.
-        assert!(!crate::sim::miner::miner_dock::test_support::dock_test_is_occupied(&sim, 2));
-        let miner_entity = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(miner_entity.miner_state(), Some(MinerState::ForcedReturn));
+        // The order's radio break leaves the old refinery on both ends and
+        // the unload latch with it; a latch left up would refuse every later
+        // Ready_To_Commence (0x007442AB) and hold the miner in place.
+        assert!(!miner.unload_active);
+        assert_eq!(miner_entity.display_type_override, None);
         assert!(!miner_entity.radio_contacts.contains(2));
         assert_eq!(miner_entity.dock_entered_with, None);
+        let refinery = sim.substrate.entities.get(2).unwrap();
+        assert!(!refinery.radio_contacts.contains(1));
+        assert_eq!(refinery.dock_entered_with, None);
         spawn_miner(&mut sim, 7);
         assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, 7));
     }

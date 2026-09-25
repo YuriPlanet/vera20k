@@ -71,11 +71,17 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
         let miner_enter_depot = mission == Some(MissionType::Enter) && depot_dock_state;
         // A War Miner's refinery dock runs the native Enter and Unload
         // handlers (`miner::refinery_dock`); the Harvest handler declines
-        // both selectors, so the timer keeps one writer.
+        // both selectors, so the timer keeps one writer. A miner boarding a
+        // transport keeps VERA's passenger boarding flow, as every other unit
+        // does.
         let war_miner_dock = !depot_dock_state
             && matches!(
                 mission,
                 Some(MissionType::Enter) | Some(MissionType::Unload)
+            )
+            && !matches!(
+                entity.passenger_role,
+                crate::sim::passenger::PassengerRole::Boarding { .. }
             )
             && crate::sim::miner::native_dock_miner(sim, id);
         if entity.miner.is_some()

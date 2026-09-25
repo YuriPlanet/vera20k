@@ -752,9 +752,19 @@ pub fn sell_building(sim: &mut Simulation, rules: &RuleSet, stable_id: u64) -> b
     let ejected = eject_sell_survivors(sim, rules, &owner_name, obj, position);
     // Eject garrison occupants alive before removing the building (gamemd SellBuilding).
     let garrison_ejected = eject_garrison_occupants(sim, rules, stable_id);
-    // Existing VERA contact/reset adapter. Native sale separately broadcasts
-    // radio0x17 at44AB68; its miner scatter/mission receiver is still incomplete.
+    // The Chrono Miner's legacy dock phases keep VERA's contact/reset adapter,
+    // which breaks their contacts first so the broadcast below skips them.
     let interrupted_miners = crate::sim::miner::interrupt_refinery_docked_miners(sim, stable_id);
+    // `BuildingClass::Sell` sell state 0 (`0x0044AB5A..0x0044AB68`) broadcasts
+    // RUN_AWAY (0x17) to every contact: a War Miner mid-unload leaves it for
+    // Harvest and scatters off the pad (`radio::receive`). VERA's sale is
+    // synchronous, so it lands just before the removal below.
+    crate::sim::radio::broadcast(
+        sim,
+        stable_id,
+        crate::sim::radio::RadioMessage::RunAway,
+        Some(rules),
+    );
     // This reciprocal bunker link is distinct from refinery contacts.
     // Native44AAB0 ->4593A0 uses Power_On, Force_Track, a separate owner-speed
     // setter, link clear and radio BREAK. The current reveal/place adapter

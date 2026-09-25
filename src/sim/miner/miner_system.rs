@@ -507,40 +507,18 @@ mod gsi_04_03b_tests {
 /// the default `[Harvest] Rate` epilogue or the fixed no-ore wait below.
 pub(super) const DISPATCH_NEXT_FRAME: i32 = 1;
 
-/// Jitter ceiling of the default handler epilogue: `RandomRanged(0, 2)`.
-///
-/// Visible to the sibling test modules so a fixture mirroring the epilogue draw
-/// cannot silently desync from the implementation.
-pub(super) const RATE_EPILOGUE_JITTER_MAX_FRAMES: u32 = 2;
-
-/// Keyless-`[Harvest]` fallback for the epilogue base; the stock `Rate=.016`
-/// resolves to `ftol(.016 × 900) = 14` from the mission-control table, so this
-/// is only reached when a mod strips the section. The gamemd MissionControl
-/// ctor default for that case is UNCHECKED.
-///
-/// Visible to the sibling test modules for the same reason as the jitter
-/// ceiling above: a fixture that recomputes the epilogue base must read the
-/// same fallback the production path does.
-pub(super) const HARVEST_RATE_FALLBACK_FRAMES: u8 = 14;
-
 /// Install the native default handler epilogue as the dispatch delay:
 /// `ftol([Harvest] Rate × 900)` plus one `RandomRanged(0, 2)` drawn on the
-/// scenario stream. Paths that take it: the return/finding-home state on
-/// every dispatch, the idle state on every dispatch, the search state's
-/// archive-consume and still-driving returns, and any cursor outside the
-/// native handler's switch. The base lookup consumes no RNG, so the single
-/// draw here keeps the scenario stream position aligned with the native
-/// epilogue.
+/// scenario stream ([`Simulation::mission_rate_epilogue_for`]). Paths that
+/// take it: the return/finding-home state on every dispatch, the idle state
+/// on every dispatch, the search state's archive-consume and still-driving
+/// returns, and any cursor outside the native handler's switch.
 pub(super) fn arm_rate_epilogue(sim: &mut Simulation, rules: &RuleSet, snap: &mut MinerSnapshot) {
-    let base = super::miner_dock_sequence::mission_base_frames(
+    snap.dispatch_delay = sim.mission_rate_epilogue_for(
         rules,
+        snap.entity_id,
         crate::sim::mission::MissionType::Harvest,
-        HARVEST_RATE_FALLBACK_FRAMES,
     );
-    let jitter = sim
-        .miner_jitter_rng()
-        .next_range_u32_inclusive(0, RATE_EPILOGUE_JITTER_MAX_FRAMES);
-    snap.dispatch_delay = i32::from(base) + jitter as i32;
 }
 
 /// Snapshot of one miner entity for one Harvest dispatch.
@@ -1479,7 +1457,7 @@ fn handle_return(
         return;
     };
 
-    let dock = refinery_dock_for_sid(sim, rules, ref_sid)
+    let dock = refinery_dock_for_sid(sim, ref_sid)
         .filter(|_| miner_dock::same_house(sim, ref_sid, snap.entity_id));
     let Some(dock) = dock else {
         miner_dock::break_contact(sim, snap.entity_id, ref_sid);
@@ -2352,12 +2330,11 @@ fn refinery_zone_reachable(
 }
 
 /// Resolve a refinery's dock cell from its stable_id.
-fn refinery_dock_for_sid(sim: &Simulation, rules: &RuleSet, ref_sid: u64) -> Option<(u16, u16)> {
+fn refinery_dock_for_sid(sim: &Simulation, ref_sid: u64) -> Option<(u16, u16)> {
     let entity = sim.substrate.entities.get(ref_sid)?;
     if entity.dying || entity.health.current == 0 {
         return None;
     }
-    let _ = rules;
     Some(refinery_dock_cell(entity.position.rx, entity.position.ry))
 }
 
@@ -3030,14 +3007,11 @@ mod harvest_scan_dispatch_tests {
             scenario_before,
             "the Rate epilogue's RandomRanged(0, 2) belongs to the scan dispatch"
         );
-        let base = i32::from(crate::sim::miner::miner_dock_sequence::mission_base_frames(
-            &rules,
-            MissionType::Harvest,
-            HARVEST_RATE_FALLBACK_FRAMES,
-        ));
+        let base = rules.mission_control.rate_frames(MissionType::Harvest) as i32;
         let delay = entity.mission.dispatch_timer().delay();
         assert!(
-            (base..=base + RATE_EPILOGUE_JITTER_MAX_FRAMES as i32).contains(&delay),
+            (base..=base + crate::sim::mission::authority::RATE_EPILOGUE_JITTER_MAX_FRAMES as i32)
+                .contains(&delay),
             "a productive scan returns the Rate epilogue, not the per-frame return \
              (delay {delay}, base {base})"
         );
@@ -3394,10 +3368,7 @@ mod harvest_scan_dispatch_tests {
         );
         assert_eq!((entity.position.rx, entity.position.ry), (16, 11));
         assert!(
-            !is_adjacent_or_at(
-                (16, 11),
-                refinery_dock_for_sid(&sim, &rules, REFINERY_ID).unwrap()
-            ),
+            !is_adjacent_or_at((16, 11), refinery_dock_for_sid(&sim, REFINERY_ID).unwrap()),
             "the hand-off happened without adjacency to the CAN_DOCK cell"
         );
     }

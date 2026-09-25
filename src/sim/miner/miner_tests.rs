@@ -1837,15 +1837,13 @@ fn wait_no_ore_queues_guard_when_the_wait_expires() {
 
     // Until the host promotes the queue, every further dispatch re-runs
     // state 4 on the Rate cadence — still no scan.
-    let base = super::miner_dock_sequence::mission_base_frames(
-        &rules,
-        crate::sim::mission::MissionType::Harvest,
-        super::miner_system::HARVEST_RATE_FALLBACK_FRAMES,
-    );
+    let base = rules
+        .mission_control
+        .rate_frames(crate::sim::mission::MissionType::Harvest);
     tick_miners_n(
         &mut sim,
         &rules,
-        usize::from(base) + super::miner_system::RATE_EPILOGUE_JITTER_MAX_FRAMES as usize,
+        (base + crate::sim::mission::authority::RATE_EPILOGUE_JITTER_MAX_FRAMES) as usize,
     );
     let m = get_miner(&sim, miner_id);
     assert_eq!(m.state, MinerState::WaitNoOre);
@@ -2040,7 +2038,7 @@ fn refinery_pad_and_conditional_release_cells() {
     assert_eq!(refinery_queue_cell(10, 10, [4, 1]), (14, 11));
     assert_eq!(refinery_pad_cell(10, 10, 4, 3, None), (13, 11));
     assert_eq!(
-        refinery_exit_cell(10, 10, 4, 3, [4, 1], Some(&grid), None, 0),
+        refinery_exit_cell(10, 10, [4, 1], Some(&grid), None, 0),
         (14, 11),
     );
     // Without QueueingCell= the native ReadMinMax default (0, 0) keeps the
@@ -2053,10 +2051,7 @@ fn refinery_pad_and_conditional_release_cells() {
         "the DOCKING receiver's pad is NW+(3,1), not art QueueingCell=4,1",
     );
     // No path grid → the queue cell itself.
-    assert_eq!(
-        refinery_exit_cell(10, 10, 4, 3, [3, 2], None, None, 0),
-        (13, 12)
-    );
+    assert_eq!(refinery_exit_cell(10, 10, [3, 2], None, None, 0), (13, 12));
 }
 
 /// gamemd parity: credits from a harvester deposit go to the REFINERY OWNER,
@@ -2636,7 +2631,7 @@ fn conditional_release_anchors_at_queue_cell() {
     // ring 0 returns it deterministically for every tick.
     for tick in 0..6 {
         assert_eq!(
-            refinery_exit_cell(10, 10, 4, 3, [4, 1], Some(&grid_garefn), None, tick),
+            refinery_exit_cell(10, 10, [4, 1], Some(&grid_garefn), None, tick),
             (14, 11),
             "exit must land at queue cell when it is passable (tick {tick})"
         );
@@ -2653,28 +2648,28 @@ fn conditional_release_anchors_at_queue_cell() {
     grid_blocked_queue.set_blocked(14, 11, true);
 
     assert_eq!(
-        refinery_exit_cell(10, 10, 4, 3, [4, 1], Some(&grid_blocked_queue), None, 0),
+        refinery_exit_cell(10, 10, [4, 1], Some(&grid_blocked_queue), None, 0),
         (14, 10)
     );
     assert_eq!(
-        refinery_exit_cell(10, 10, 4, 3, [4, 1], Some(&grid_blocked_queue), None, 1),
+        refinery_exit_cell(10, 10, [4, 1], Some(&grid_blocked_queue), None, 1),
         (14, 12)
     );
     assert_eq!(
-        refinery_exit_cell(10, 10, 4, 3, [4, 1], Some(&grid_blocked_queue), None, 2),
+        refinery_exit_cell(10, 10, [4, 1], Some(&grid_blocked_queue), None, 2),
         (15, 10)
     );
     assert_eq!(
-        refinery_exit_cell(10, 10, 4, 3, [4, 1], Some(&grid_blocked_queue), None, 3),
+        refinery_exit_cell(10, 10, [4, 1], Some(&grid_blocked_queue), None, 3),
         (15, 12)
     );
     assert_eq!(
-        refinery_exit_cell(10, 10, 4, 3, [4, 1], Some(&grid_blocked_queue), None, 4),
+        refinery_exit_cell(10, 10, [4, 1], Some(&grid_blocked_queue), None, 4),
         (15, 11)
     );
     // tick=5 → wraps (5 % 5 = 0) → (14, 10).
     assert_eq!(
-        refinery_exit_cell(10, 10, 4, 3, [4, 1], Some(&grid_blocked_queue), None, 5),
+        refinery_exit_cell(10, 10, [4, 1], Some(&grid_blocked_queue), None, 5),
         (14, 10)
     );
 
@@ -2683,17 +2678,17 @@ fn conditional_release_anchors_at_queue_cell() {
     let clean_grid = PathGrid::test_all_passable(64, 64);
     // 4×3 at (10, 10): queue (14, 11).
     assert_eq!(
-        refinery_exit_cell(10, 10, 4, 3, [4, 1], Some(&clean_grid), None, 0),
+        refinery_exit_cell(10, 10, [4, 1], Some(&clean_grid), None, 0),
         (14, 11)
     );
     // 3×3 at (5, 5): queue (8, 6).
     assert_eq!(
-        refinery_exit_cell(5, 5, 3, 3, [3, 1], Some(&clean_grid), None, 0),
+        refinery_exit_cell(5, 5, [3, 1], Some(&clean_grid), None, 0),
         (8, 6)
     );
     // 2×2 at (12, 8): queue (14, 9).
     assert_eq!(
-        refinery_exit_cell(12, 8, 2, 2, [2, 1], Some(&clean_grid), None, 0),
+        refinery_exit_cell(12, 8, [2, 1], Some(&clean_grid), None, 0),
         (14, 9)
     );
 
@@ -2706,7 +2701,7 @@ fn conditional_release_anchors_at_queue_cell() {
         }
     }
     assert_eq!(
-        refinery_exit_cell(10, 10, 4, 3, [3, 2], Some(&fully_blocked), None, 0),
+        refinery_exit_cell(10, 10, [3, 2], Some(&fully_blocked), None, 0),
         (13, 12),
         "exhausted spiral must fall back to art.ini QueueingCell"
     );
@@ -3809,38 +3804,37 @@ fn unload_pays_the_west_cell_building_not_the_radio_contact() {
     assert_eq!(drained[0].building_id, 3);
 }
 
+/// No building west of the miner (`0x0073E311..0x0073E350`): the dump state
+/// sends OVER_OUT and queues Harvest; nothing is paid and no deposit event
+/// fires, whatever the radio contact is.
 #[test]
 fn missing_west_cell_building_does_not_credit_or_emit_deposit_event() {
     let mut sim = Simulation::new();
     let rules = miner_rules();
 
-    let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 13, 11);
     spawn_refinery(&mut sim, 2, 30, 30);
-
-    {
-        let entity = sim
-            .substrate
-            .entities
-            .get_mut(miner_id)
-            .expect("miner entity");
-        let miner = entity.miner.as_mut().expect("miner component");
-        miner.cargo.push(CargoBale {
-            resource_type: ResourceType::Ore,
-            value: 100,
-        });
-        entity.mission.set_handler_state(MinerState::Dock.cursor());
-        miner.dock_phase = RefineryDockPhase::Unloading;
-        miner.reserved_refinery = Some(2);
-    }
-    assert!(crate::sim::miner::miner_dock::test_support::dock_test_hello(&mut sim, 2, miner_id));
+    let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 13, 11);
+    load_cargo(&mut sim, miner_id, &[(ResourceType::Ore, 100)]);
+    dock_for_unload(&mut sim, miner_id, 2);
 
     let credits_before = credits_for_owner(&sim, "Americans");
-    tick_miners_n(&mut sim, &rules, 1);
+    for _ in 0..60 {
+        visit_miner(&mut sim, &rules, miner_id);
+    }
 
-    let miner = get_miner(&sim, miner_id);
-    assert_eq!(miner.cargo.len(), 1);
+    let entity = sim.substrate.entities.get(miner_id).expect("miner");
+    assert_eq!(entity.miner.as_ref().unwrap().cargo.len(), 1);
     assert_eq!(credits_for_owner(&sim, "Americans"), credits_before);
     assert!(sim.bale_events.is_empty());
+    assert!(
+        !entity.radio_contacts.contains(2),
+        "OVER_OUT left the contact"
+    );
+    assert_ne!(
+        entity.mission.current().known(),
+        Some(crate::sim::mission::MissionType::Unload),
+        "Harvest was queued and took over"
+    );
 }
 
 /// `House+0x538C` is incremented only by `BuildingClass::OnConstructionComplete`
@@ -4569,13 +4563,18 @@ fn move_to_ore_holds_target_while_destination_is_held() {
     // position is the thing lockstep actually depends on.
     let expected_scenario = {
         let mut probe = sim.miner_jitter_rng().clone();
-        let _ =
-            probe.next_range_u32_inclusive(0, super::miner_system::RATE_EPILOGUE_JITTER_MAX_FRAMES);
+        let _ = probe.next_range_u32_inclusive(
+            0,
+            crate::sim::mission::authority::RATE_EPILOGUE_JITTER_MAX_FRAMES,
+        );
         probe.logical_state()
     };
     let jitter = {
         let mut probe = sim.miner_jitter_rng().clone();
-        probe.next_range_u32_inclusive(0, super::miner_system::RATE_EPILOGUE_JITTER_MAX_FRAMES)
+        probe.next_range_u32_inclusive(
+            0,
+            crate::sim::mission::authority::RATE_EPILOGUE_JITTER_MAX_FRAMES,
+        )
     };
 
     super::miner_system::tick_miners(&mut sim, &rules, &config, Some(&grid));
@@ -4596,11 +4595,9 @@ fn move_to_ore_holds_target_while_destination_is_held() {
     // every frame: the dispatch timer is re-anchored at this dispatch with the
     // [Harvest] Rate base plus the drawn jitter, so the next frame carries no
     // Harvest dispatch at all.
-    let base = super::miner_dock_sequence::mission_base_frames(
-        &rules,
-        crate::sim::mission::MissionType::Harvest,
-        super::miner_system::HARVEST_RATE_FALLBACK_FRAMES,
-    );
+    let base = rules
+        .mission_control
+        .rate_frames(crate::sim::mission::MissionType::Harvest);
     let timer = sim
         .substrate
         .entities
@@ -4615,7 +4612,7 @@ fn move_to_ore_holds_target_while_destination_is_held() {
     );
     assert_eq!(
         timer.delay(),
-        i32::from(base) + jitter as i32,
+        base as i32 + jitter as i32,
         "held-destination return arms the [Harvest] Rate base plus the drawn jitter",
     );
     assert_eq!(
@@ -5806,13 +5803,12 @@ fn damaged_refinery_ore_only_unload_smokes_twice_without_special_anim() {
 
 /// A refinery killed under an unloading miner: `ObjectClass::ReceiveDamage`'s
 /// exact-zero Destroy (`0x005F57AF`, Detach_All(1)) drops the radio slot at
-/// the killing hit, touching neither cargo, motion nor credits, and the
-/// miner's next Unload dispatch finds no contact (`0x0073DEE0`) and drops its
-/// unload latch. Native4424A2
+/// the killing hit, and the Building NowDead contact loop (`0x00442511`, the
+/// pre-hit contact copy, 0x100 leptons or more from the centre) sends the
+/// miner RUN_AWAY: the unload latch drops, it scatters off the pad and Harvest
+/// takes over (`0x00737A98`) — cargo and credits untouched. Native4424A2
 /// gates Force release4593A0 on reciprocal bunker+2E4, which refinery contacts
-/// do not satisfy. The building NowDead contact loop (`0x00442511`: radio 0x17,
-/// or a C4 kill within 0x100 leptons of the centre or on a Helipad=yes
-/// building, over the pre-hit contact copy) is not ported yet.
+/// do not satisfy.
 #[test]
 fn refinery_death_drops_the_unloading_miner_at_the_kill() {
     use crate::sim::combat::EntityDamageEvent;
@@ -5857,12 +5853,11 @@ fn refinery_death_drops_the_unloading_miner_at_the_kill() {
     run_unload(&mut sim, &rules, miner_id, 1);
     assert!(get_miner(&sim, miner_id).unload_active);
     let credits_before = credits_for_owner(&sim, "Americans");
-    let (position_before, drive_before, speed_before, cargo_before) = {
+    let (position_before, drive_before, cargo_before) = {
         let entity = sim.substrate.entities.get(miner_id).unwrap();
         (
             crate::sim::movement::ground_pose::position_world_coord(&entity.position),
             entity.drive_locomotion.clone(),
-            entity.foot_speed.clone(),
             entity.miner.as_ref().unwrap().cargo.clone(),
         )
     };
@@ -5900,34 +5895,29 @@ fn refinery_death_drops_the_unloading_miner_at_the_kill() {
         crate::sim::movement::ground_pose::position_world_coord(&miner_entity.position),
         position_before
     );
-    assert_eq!(miner_entity.drive_locomotion, drive_before);
-    assert_eq!(miner_entity.foot_speed, speed_before);
+    assert_ne!(
+        miner_entity.drive_locomotion, drive_before,
+        "RUN_AWAY scattered the miner off the pad"
+    );
     assert_eq!(miner.cargo, cargo_before);
+    assert!(!miner.unload_active, "RUN_AWAY dropped the latch");
+    assert_eq!(miner_entity.display_type_override, None);
+    assert!(
+        miner_entity.mission.current()
+            == crate::sim::mission::MissionId::from_known(
+                crate::sim::mission::MissionType::Harvest
+            )
+            || miner_entity.mission.queued()
+                == crate::sim::mission::MissionId::from_known(
+                    crate::sim::mission::MissionType::Harvest
+                ),
+        "Harvest queued for the miner"
+    );
     assert_eq!(
         credits_for_owner(&sim, "Americans"),
         credits_before,
         "the cargo on the pad is not deposited"
     );
-
-    // The next Unload dispatch finds no contact (`0x0073DEE0`): the latch and
-    // image drop and the cargo stays aboard. Enter_Idle_Mode queues nothing
-    // while Unload is current (`0x00738D0A`), so the miner waits in Unload,
-    // re-dispatching every frame, for its next order.
-    run_unload(&mut sim, &rules, miner_id, 30);
-    let entity = sim.substrate.entities.get(miner_id).expect("miner");
-    assert_eq!(
-        entity.mission.current().known(),
-        Some(crate::sim::mission::MissionType::Unload)
-    );
-    assert_eq!(
-        entity.mission.queued(),
-        crate::sim::mission::MissionId::NONE
-    );
-    assert_eq!(entity.mission.dispatch_timer().delay(), 1);
-    assert_eq!(entity.display_type_override, None, "the unload image drops");
-    let miner = get_miner(&sim, miner_id);
-    assert!(!miner.unload_active, "no deposit continues");
-    assert_eq!(miner.cargo.len(), 4, "remaining cargo stays aboard");
 
     // Nothing pays the bales later either: no refinery is left to dock at.
     for _ in 0..60 {
@@ -5936,7 +5926,6 @@ fn refinery_death_drops_the_unloading_miner_at_the_kill() {
     assert_eq!(credits_for_owner(&sim, "Americans"), credits_before);
     assert_eq!(get_miner(&sim, miner_id).cargo.len(), 4);
 }
-
 /// One object-AI visit of `id` with the miner config wired (the Harvest
 /// dispatch needs it), rules present.
 fn visit_object_ai(sim: &mut Simulation, rules: &RuleSet, id: u64) {

@@ -630,6 +630,9 @@ fn commence_leaf(entity: &mut crate::sim::game_entity::GameEntity, now: u32) -> 
     verb::commence_base(&mut entity.mission, now)
 }
 
+/// The `RandomRanged(0, 2)` ceiling of the Rate epilogue.
+pub(crate) const RATE_EPILOGUE_JITTER_MAX_FRAMES: u32 = 2;
+
 impl Simulation {
     /// The handler return every `ftol(Rate × 900) + RandomRanged(0, 2)` exit
     /// shares — Mission_Harvest (`0x0073EF77`), Mission_Enter (`0x004D946C`),
@@ -649,7 +652,27 @@ impl Simulation {
             .mission_control
             .rate_frames(mission)
             .min(i32::MAX as u32) as i32;
-        base.saturating_add(self.scenario_rng.next_range_u32_inclusive(0, 2) as i32)
+        base.saturating_add(
+            self.scenario_rng
+                .next_range_u32_inclusive(0, RATE_EPILOGUE_JITTER_MAX_FRAMES) as i32,
+        )
+    }
+
+    /// [`Self::mission_rate_epilogue`] on `receiver`'s current mission as the
+    /// handler leaves it (`dispatched` when the object is gone or holds none).
+    pub(crate) fn mission_rate_epilogue_for(
+        &mut self,
+        rules: &RuleSet,
+        receiver: u64,
+        dispatched: super::MissionType,
+    ) -> i32 {
+        let current = self
+            .substrate
+            .entities
+            .get(receiver)
+            .and_then(|entity| entity.mission.current().known())
+            .unwrap_or(dispatched);
+        self.mission_rate_epilogue(rules, current)
     }
 
     pub(crate) fn mission_assign_exact(
@@ -702,32 +725,26 @@ impl Simulation {
     /// Infantry firing/falling/Doing gates, the Aircraft and Building latches
     /// — evaluates exactly. Any other unavailable input blocks promotion.
     pub(crate) fn mission_host_promote(&mut self, receiver: u64, now: u32, rules: &RuleSet) {
-        let Some(entity) = self.substrate.entities.get(receiver) else {
-            return;
-        };
-        if entity.mission.queued() == MissionId::NONE {
-            return;
-        }
-        // Degraded moving-gate: absent locomotor producers read as "not
-        // moving now" so every later exact gate still evaluates; a residual
-        // Locomotor/SignedHeight error (a live producer without a height
-        // owner) degrades to the branch's pass outcome.
-        let ready = match evaluate_ready(self, receiver, &entity.mission, Some(rules), true) {
-            Ok(ready) => ready,
-            Err(ReadyUnavailable::Locomotor | ReadyUnavailable::SignedHeight) => true,
-            Err(_) => false,
-        };
-        if ready {
-            if let Some(entity) = self.substrate.entities.get_mut(receiver) {
-                commence_leaf(entity, now);
-            }
+        let queued = self
+            .substrate
+            .entities
+            .get(receiver)
+            .is_some_and(|entity| entity.mission.queued() != MissionId::NONE);
+        if queued
+            && self.mission_ready_to_commence(receiver, rules)
+            && let Some(entity) = self.substrate.entities.get_mut(receiver)
+        {
+            commence_leaf(entity, now);
         }
     }
 
-    /// `Ready_To_Commence` (vt+0x200) as a query, for handlers that act
+    /// `Ready_To_Commence` (vt+0x200) as a query, also for handlers that act
     /// between the answer and the Commence (Mission_Unload state 4 sends
-    /// OVER_OUT first, `0x0073E264..0x0073E279`). Same degraded moving gate
-    /// as [`Self::mission_host_promote`].
+    /// OVER_OUT first, `0x0073E264..0x0073E279`). Degraded moving gate:
+    /// absent locomotor producers read as "not moving now" so every later
+    /// exact gate still evaluates; a residual Locomotor/SignedHeight error (a
+    /// live producer without a height owner) degrades to the branch's pass
+    /// outcome.
     pub(crate) fn mission_ready_to_commence(&self, receiver: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(receiver) else {
             return false;

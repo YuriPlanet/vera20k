@@ -16,30 +16,41 @@ struct Sample {
     mission: MissionId,
     contact: Option<u64>,
     tethered: bool,
+    unloading: bool,
     facing: u16,
     ore: usize,
 }
 
 fn sample(s: &Scene, id: u64) -> Sample {
     let miner = s.sim.substrate.entities.get(id).unwrap();
+    let state = miner.miner.as_ref().unwrap();
     Sample {
         cell: (miner.position.rx, miner.position.ry),
         mission: miner.mission.current(),
         contact: miner.radio_contacts.slot(0),
         tethered: miner.dock_entered_with.is_some(),
+        unloading: state.unload_active,
         facing: miner
             .body_facing
             .as_ref()
             .map_or(0, |f| f.current(s.sim.session.binary_frame)),
-        ore: miner
-            .miner
-            .as_ref()
-            .unwrap()
+        ore: state
             .cargo
             .iter()
             .filter(|b| b.resource_type == ResourceType::Ore)
             .count(),
     }
+}
+
+/// Run frames until the miner's unload latch is up (the Unload first pass).
+fn run_until_unloading(s: &mut Scene) {
+    for _ in 0..1500 {
+        frame(s);
+        if sample(s, s.miner).unloading {
+            return;
+        }
+    }
+    panic!("the miner never started unloading");
 }
 
 fn credits(s: &Scene) -> i32 {
@@ -124,10 +135,23 @@ fn assert_whole_visit(s: &mut Scene) {
         .expect("the miner tethers to the refinery");
     assert_eq!(docked.cell, (9, 10), "tethered on the pad");
     assert_eq!(docked.contact, Some(s.refinery));
-    let (first_pay, _) = samples
+    let latch = samples
         .iter()
-        .find(|(_, paid)| *paid > 0)
+        .position(|(x, _)| x.unloading)
+        .expect("the Unload first pass raises the latch");
+    let first_pay_frame = samples
+        .iter()
+        .position(|(_, paid)| *paid > 0)
         .expect("the unload pays");
+    // The first pass arms the StageClass at rate 1; the stage ticks after each
+    // dispatch (0x006FABC4), so the dump dispatch sees Value 15 sixteen frames
+    // after the first pass (`stage_tick` oracle rows).
+    assert_eq!(
+        first_pay_frame - latch,
+        16,
+        "first dump at the first pass + 16"
+    );
+    let (first_pay, _) = &samples[first_pay_frame];
     assert_eq!(
         first_pay.mission,
         MissionId::from_known(MissionType::Unload)
@@ -213,4 +237,150 @@ fn a_second_war_miner_docks_after_the_first_leaves() {
         first_docked < first_left && first_left <= next_docked,
         "one miner on the pad at a time: {tethered:?} / {untethered:?}"
     );
+}
+
+/// Mixed cargo: one slot per dump, ore first, the second dump fifteen frames
+/// after the first (the stage restarts at 0 on each dump).
+#[test]
+fn mixed_cargo_dumps_ore_then_gems_fifteen_frames_apart() {
+    let mut input = returning_input();
+    input["storage"] = serde_json::json!([5.0, 3.0]);
+    let mut s = scene(&input);
+    let mut paid = Vec::new();
+    for n in 0..1500 {
+        let credits = frame(&mut s);
+        if paid
+            .last()
+            .map_or(credits > 0, |&(_, last)| credits != last)
+        {
+            paid.push((n, credits));
+        }
+    }
+    assert_eq!(
+        paid.iter().map(|&(_, c)| c).collect::<Vec<_>>(),
+        vec![125, 125 + 150],
+        "ore slot (5 x 25), then the gem slot (3 x 50)"
+    );
+    assert_eq!(paid[1].0 - paid[0].0, 15);
+}
+
+/// A player refinery order in the middle of an unload (`Command::MinerReturn`)
+/// leaves the dock and the unload latch; the miner docks again and pays the
+/// load it still carries, and the refinery's slot ends free.
+#[test]
+fn a_refinery_order_mid_unload_redocks_and_pays() {
+    let mut s = returning_scene();
+    run_until_unloading(&mut s);
+    assert!(s.sim.apply_command(
+        "Americans",
+        &crate::sim::command::Command::MinerReturn {
+            entity_id: s.miner,
+            target_refinery_id: Some(s.refinery),
+        },
+        Some(&s.rules),
+        None,
+        &BTreeMap::new(),
+    ));
+    let after_order = sample(&s, s.miner);
+    assert!(!after_order.unloading && !after_order.tethered);
+    let mut paid = 0;
+    for _ in 0..1500 {
+        paid = frame(&mut s);
+        if paid == 1000 && !sample(&s, s.miner).tethered {
+            break;
+        }
+    }
+    assert_eq!(paid, 1000, "the whole load is paid after the re-dock");
+    let refinery = s.sim.substrate.entities.get(s.refinery).unwrap();
+    assert!(refinery.radio_contacts.is_empty());
+    assert_eq!(refinery.dock_entered_with, None);
+}
+
+/// Selling the refinery under an unloading miner: the sale's RUN_AWAY
+/// (`0x0044AB5A`) drops the latch and hands the miner to Harvest
+/// (`0x00737A98`); it keeps its cargo and is not left idle on Unload.
+#[test]
+fn selling_the_refinery_mid_unload_hands_the_miner_to_harvest() {
+    let mut s = returning_scene();
+    run_until_unloading(&mut s);
+    let refinery = s.refinery;
+    assert!(crate::sim::production::sell_building(
+        &mut s.sim, &s.rules, refinery
+    ));
+    let after = sample(&s, s.miner);
+    assert!(!after.unloading, "RUN_AWAY dropped the latch");
+    assert!(!after.tethered);
+    assert_eq!(after.contact, None);
+    assert_eq!(after.ore, 40, "nothing was dumped");
+    assert_eq!(
+        after.mission,
+        MissionId::from_known(MissionType::Harvest),
+        "Harvest queued and commenced"
+    );
+    assert_eq!(
+        s.sim
+            .substrate
+            .entities
+            .get(s.miner)
+            .unwrap()
+            .display_type_override,
+        None
+    );
+}
+
+/// A refinery destroyed under an unloading miner: the NowDead contact loop
+/// (`0x00442511`) sends it RUN_AWAY, so it leaves Unload for Harvest with its
+/// cargo instead of waiting on the rubble.
+#[test]
+fn a_refinery_destroyed_mid_unload_hands_the_miner_to_harvest() {
+    let mut s = returning_scene();
+    run_until_unloading(&mut s);
+    let refinery = s.refinery;
+    {
+        let building = s.sim.substrate.entities.get_mut(refinery).unwrap();
+        building.health.current = 0;
+    }
+    s.sim.object_destroy_callback(
+        refinery,
+        crate::sim::world::UninitContext::with_rules(&s.rules),
+    );
+    let after = sample(&s, s.miner);
+    assert!(!after.unloading);
+    assert!(!after.tethered);
+    assert_eq!(after.ore, 40);
+    assert_eq!(after.mission, MissionId::from_known(MissionType::Harvest));
+}
+
+/// Stop while the miner drives onto the pad (Enter, not yet tethered): the
+/// IDLE event breaks the link and clears the NavCom without writing a
+/// mission (`0x004C74CB..0x004C76BB`); the next Mission_Enter finds no target
+/// and parks the human player's miner on Guard. It does not dock again.
+#[test]
+fn stop_on_the_pad_approach_parks_the_miner() {
+    let mut s = returning_scene();
+    for _ in 0..1500 {
+        frame(&mut s);
+        let now = sample(&s, s.miner);
+        if now.mission == MissionId::from_known(MissionType::Enter) && !now.tethered {
+            break;
+        }
+    }
+    assert_eq!(
+        sample(&s, s.miner).mission,
+        MissionId::from_known(MissionType::Enter)
+    );
+    assert!(s.sim.apply_command(
+        "Americans",
+        &crate::sim::command::Command::Stop { entity_id: s.miner },
+        Some(&s.rules),
+        None,
+        &BTreeMap::new(),
+    ));
+    for _ in 0..200 {
+        frame(&mut s);
+    }
+    let end = sample(&s, s.miner);
+    assert_eq!(end.mission, MissionId::from_known(MissionType::Guard));
+    assert!(!end.tethered && end.contact.is_none());
+    assert_eq!(end.ore, 40, "it did not dock and unload");
 }

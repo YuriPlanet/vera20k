@@ -1565,7 +1565,6 @@ mod tests {
         let mut saw_dock_or_unload = false;
         let mut saw_dock_reservation = false;
         let mut saw_unload = false;
-        let mut saw_home_refinery = false;
 
         // Needs enough ticks for: harvest + return + unload.
         // Unload alone: up to 20 bales × 57 ticks/bale = 1140 ticks at 60Hz.
@@ -1577,7 +1576,6 @@ mod tests {
                 .entities
                 .get(miner_sid)
                 .expect("miner entity should exist");
-            let miner = entity.miner.as_ref().expect("miner component should exist");
             match entity.miner_state().expect("miner cursor") {
                 MinerState::Harvest => saw_harvest = true,
                 MinerState::ReturnToRefinery => saw_return = true,
@@ -1589,9 +1587,6 @@ mod tests {
                 saw_dock_or_unload = true;
                 saw_unload = true;
             }
-            if miner.home_refinery == Some(refinery_sid) {
-                saw_home_refinery = true;
-            }
 
             if crate::sim::miner::miner_dock::has_contact(&sim, refinery_sid, miner_sid) {
                 saw_dock_reservation = true;
@@ -1599,18 +1594,10 @@ mod tests {
 
             if saw_unload
                 && production::credits_for_owner(&sim, "Americans") > credits_before_unload
-                && saw_home_refinery
             {
                 break;
             }
         }
-
-        let miner = sim
-            .substrate
-            .entities
-            .get(miner_sid)
-            .and_then(|e| e.miner.as_ref())
-            .expect("miner component should exist");
 
         assert!(saw_harvest, "miner should harvest ore");
         assert!(saw_return, "miner should return to refinery");
@@ -1624,10 +1611,6 @@ mod tests {
         );
         assert!(saw_unload, "miner should reach unload state");
         assert!(
-            saw_home_refinery,
-            "miner should complete unloading at the refinery"
-        );
-        assert!(
             production::credits_for_owner(&sim, "Americans") > credits_before_unload,
             "unloading should increase owner credits"
         );
@@ -1635,7 +1618,6 @@ mod tests {
             crate::sim::tiberium::test_support::bales_at(&sim, 19, 12) == 0,
             "the single ore bale should be consumed during harvesting"
         );
-        assert_eq!(miner.home_refinery, Some(refinery_sid));
         assert_eq!(count_refineries(&sim, "Americans", &rules), 1);
     }
 

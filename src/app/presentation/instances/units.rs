@@ -395,9 +395,21 @@ pub(crate) fn build_unit_instances(
         // foundation bottom and it draws behind. We offset depth_y in screen-space
         // (not depth-space) so the correction scales naturally with map size.
         // One full tile height pushes the sort point past the foundation bottom.
-        let dock_depth_y_offset: f32 = if entity
-            .miner_state()
-            .is_some_and(|s| matches!(s, crate::sim::miner::MinerState::Dock))
+        // The condition is the miner standing in a building's cell — the pad,
+        // from rolling in through the turn and the unload until it leaves —
+        // not a dock phase: the War Miner docks through its Enter and Unload
+        // missions. VERA-internal draw-order heuristic, not a port of the
+        // native display sort.
+        let dock_depth_y_offset: f32 = if entity.miner.is_some()
+            && sim
+                .substrate
+                .occupancy
+                .first_building_on_layer(
+                    pos.rx,
+                    pos.ry,
+                    crate::sim::movement::locomotor::MovementLayer::Ground,
+                )
+                .is_some()
         {
             TILE_HEIGHT
         } else {

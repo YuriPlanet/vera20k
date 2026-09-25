@@ -126,7 +126,7 @@ pub(crate) fn mission_unload(sim: &mut Simulation, id: u64, rules: &RuleSet) -> 
         }
         _ => {}
     }
-    sim.mission_rate_epilogue(rules, MissionType::Unload)
+    sim.mission_rate_epilogue_for(rules, id, MissionType::Unload)
 }
 
 // Kept as the production result seam so original interior-block oracle outputs

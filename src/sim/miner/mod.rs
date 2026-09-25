@@ -30,7 +30,8 @@ pub(crate) use self::miner_dock_sequence::{
 pub(crate) use self::miner_dock_sequence::find_nearby_passable_cell_with_index;
 pub(crate) use self::miner_system::extract_bale;
 pub(crate) use self::refinery_dock::{
-    mission_enter, mission_unload, native_dock_miner, per_cell_dock_now, tick_unload_stage,
+    clear_unload_latch, mission_enter, mission_unload, native_dock_miner, per_cell_dock_now,
+    tick_unload_stage,
 };
 
 use crate::rules::object_type::ObjectType;

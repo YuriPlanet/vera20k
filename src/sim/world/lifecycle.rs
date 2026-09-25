@@ -2783,7 +2783,17 @@ impl Simulation {
             return;
         };
         match category {
-            EntityCategory::Structure => crate::sim::radio::broadcast_break(self, stable_id, None),
+            EntityCategory::Structure => {
+                // The pre-hit contact copy the NowDead loop walks.
+                let contacts: Vec<u64> = self
+                    .substrate
+                    .entities
+                    .get(stable_id)
+                    .map(|building| building.radio_contacts.iter_live().collect())
+                    .unwrap_or_default();
+                crate::sim::radio::broadcast_break(self, stable_id, None);
+                self.building_now_dead_contacts(stable_id, &contacts, context.rules());
+            }
             EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft => {
                 if let Some(contact) = self
                     .substrate
@@ -2815,6 +2825,68 @@ impl Simulation {
         #[cfg(test)]
         self.trace_lifecycle_for_test(LifecycleTestEvent::DestroyNotifyBoundary { stable_id });
         self.notify_pointer_expired(stable_id, context);
+    }
+
+    /// The Building NowDead contact loop (`BuildingClass::ReceiveDamage`,
+    /// `0x00442511..0x004425F4`) over the contacts the building held before
+    /// the hit: one at least 0x100 leptons from the building's `GetCoords`
+    /// centre, on a building that is not a `Helipad=`, is sent RUN_AWAY (0x17),
+    /// so a War Miner on a destroyed refinery's pad leaves its unload for
+    /// Harvest (`radio::receive`). RESIDUALS: the `+0x500` pending-entry clear
+    /// (no represented writer) and the other arm — a nearer contact, or any
+    /// contact of a helipad, takes the C4 kill (`vt+0x16C` with `Rules+0xFA8`,
+    /// `0x004425B6..0x004425EE`), not wired (units at a building's centre and
+    /// aircraft docked on a destroyed helipad survive).
+    fn building_now_dead_contacts(
+        &mut self,
+        building_id: u64,
+        contacts: &[u64],
+        rules: Option<&RuleSet>,
+    ) {
+        let Some(rules) = rules else {
+            return;
+        };
+        let Some((centre, helipad)) = self.substrate.entities.get(building_id).and_then(|b| {
+            let object = self.object_type(b.type_ref(), rules)?;
+            let (w, h) = crate::sim::production::foundation_dimensions(&object.foundation);
+            let nw = crate::sim::movement::ground_pose::position_world_coord(&b.position);
+            // BuildingClass::GetCoords 0x00447AC0: Location + ((w-1), (h-1)) * 128.
+            let centre = [
+                i64::from(nw.x) + (i64::from(w) - 1) * 128,
+                i64::from(nw.y) + (i64::from(h) - 1) * 128,
+                i64::from(nw.z),
+            ];
+            Some((centre, object.helipad))
+        }) else {
+            return;
+        };
+        for &contact in contacts {
+            let Some(at) = self
+                .substrate
+                .entities
+                .get(contact)
+                .map(|c| crate::sim::movement::ground_pose::position_world_coord(&c.position))
+            else {
+                continue;
+            };
+            let d = [
+                i64::from(at.x) - centre[0],
+                i64::from(at.y) - centre[1],
+                i64::from(at.z) - centre[2],
+            ];
+            // `0x00442586`: the truncated length against 0x100.
+            let far = d.iter().map(|v| v * v).sum::<i64>() >= 0x100 * 0x100;
+            if far && !helipad {
+                crate::sim::radio::transmit(
+                    self,
+                    building_id,
+                    contact,
+                    crate::sim::radio::RadioMessage::RunAway,
+                    crate::sim::radio::RadioPayload::default(),
+                    Some(rules),
+                );
+            }
+        }
     }
 
     /// `SpawnManagerClass::PointerExpired @ 0x006B7C60`, owner arm

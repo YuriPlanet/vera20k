@@ -826,6 +826,14 @@ fn per_cell_dock_now_matches_the_original_track_end_arm() {
     for row in corpus["per_cell"].as_array().unwrap() {
         let input = &row["input"];
         let context = input["name"].as_str().unwrap().to_string();
+        // The refusal's Scatter is the recorded residual (`refinery_dock`
+        // module doc); it must stay confined to the selling row.
+        let scatters = row["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e[0] == "scatter");
+        assert_eq!(scatters, context == "per_cell_pad_selling", "{context}");
         let mut s = scene(input);
         radio::take_transmit_log();
         crate::sim::miner::per_cell_dock_now(&mut s.sim, &s.rules, s.miner);
