@@ -167,12 +167,18 @@ fn unit_render_slope_state(
     if entity.category == EntityCategory::Aircraft {
         return UnitRenderSlopeState::Stable(0);
     }
+    // `JumpjetLocomotionClass` Draw_Matrix (`0x0054DCC0`) is the facing matrix
+    // of `LocomotionClass::Draw_Matrix @ 0x0055A730`, tilted only by its
+    // `TiltCrashJumpjet=` arm: a Jumpjet body never takes a cell slope, landed
+    // or airborne.
+    let jumpjet = entity.locomotor.as_ref().is_some_and(|locomotor| {
+        locomotor.kind == crate::rules::locomotor_type::LocomotorKind::Jumpjet
+    });
     // A body that has left the floor has no cell slope to sit on, so it never
     // enters the drive-track tilt transition. This also keeps every Top-band
     // body on the stable-atlas path, which is the only path the Top stream
-    // carries. (VERA-internal; no stock YR voxel unit uses Jumpjet, so the
-    // gamemd equivalent for an airborne tilt is UNCHECKED.)
-    if band == EntityDrawBand::Top {
+    // carries.
+    if jumpjet || band == EntityDrawBand::Top {
         return UnitRenderSlopeState::Stable(0);
     }
 
@@ -444,7 +450,11 @@ pub(crate) fn build_unit_instances(
             EntityDrawBand::Ground => (&mut *instances, &mut *instance_pages),
         };
 
-        let body = body_draw(entity, band, sim.session.binary_frame);
+        let tilt_crash_jumpjet = state
+            .rules()
+            .and_then(|rules| rules.object(type_str))
+            .is_some_and(|object| object.tilt_crash_jumpjet);
+        let body = body_draw(entity, band, sim.session.binary_frame, tilt_crash_jumpjet);
         if let BodyDraw::CrashPose(tilt) = body {
             let key = UnitSpriteKey {
                 type_id: type_str.to_string(),
@@ -650,8 +660,9 @@ pub(crate) const POSE_PAGE: usize = usize::MAX;
 /// How an object's body is drawn this frame.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum BodyDraw {
-    /// A crashing Fly body at its roll and pitch, on the per-frame pose page.
-    CrashPose([f32; 2]),
+    /// A tilted body at its locomotor arm's roll and pitch, on the per-frame
+    /// pose page.
+    CrashPose(crate::render::unit_atlas::CrashTilt),
     /// Body, turret and barrel sprites, the turret at this facing.
     Turret(u16),
     /// One composite atlas sprite.
@@ -660,13 +671,15 @@ enum BodyDraw {
 
 /// The crash pose is decided before the turret split: every Fly carries a
 /// Secondary facing in `barrel_facing`, which would otherwise send a crashing
-/// aircraft down the turret path.
+/// aircraft down the turret path. `tilt_crash_jumpjet` is the type's
+/// `TiltCrashJumpjet=`.
 fn body_draw(
     entity: &crate::sim::game_entity::GameEntity,
     band: EntityDrawBand,
     binary_frame: u32,
+    tilt_crash_jumpjet: bool,
 ) -> BodyDraw {
-    if let Some(tilt) = crash_body_tilt(entity, band) {
+    if let Some(tilt) = crash_body_tilt(entity, band, tilt_crash_jumpjet) {
         return BodyDraw::CrashPose(tilt);
     }
     match entity.barrel_facing.as_ref() {
@@ -675,25 +688,36 @@ fn body_draw(
     }
 }
 
-/// A crashing Fly body's roll and pitch (`TechnoClass+0x328`/`+0x32C`), which
-/// Fly Draw_Matrix applies while the body is airborne (`0x004CF6A3`): every
-/// airborne Fly body is in the Top band (`In_Which_Layer @ 0x004CFCF0`).
-/// Other locomotors' Draw_Matrix keep their own crash arms.
+/// A tilted body's arm and its roll and pitch (`TechnoClass+0x328`/`+0x32C`).
+/// Fly Draw_Matrix applies them to a crashing body while it is airborne
+/// (`0x004CF6A3`): every airborne Fly body is in the Top band
+/// (`In_Which_Layer @ 0x004CFCF0`). Jumpjet Draw_Matrix applies them to a
+/// `TiltCrashJumpjet=` type whenever either angle passes its gate
+/// (`0x0054DCDA..0x0054DD13`), crashing or not.
 fn crash_body_tilt(
     entity: &crate::sim::game_entity::GameEntity,
     band: EntityDrawBand,
-) -> Option<[f32; 2]> {
-    let fly = entity.locomotor.as_ref().is_some_and(|locomotor| {
-        locomotor.kind == crate::rules::locomotor_type::LocomotorKind::Fly
-    });
-    if !entity.crashing || !fly || band != EntityDrawBand::Top {
-        return None;
-    }
+    tilt_crash_jumpjet: bool,
+) -> Option<crate::render::unit_atlas::CrashTilt> {
+    use crate::render::unit_atlas::CrashTilt;
+    use crate::rules::locomotor_type::LocomotorKind;
+    let kind = entity.locomotor.as_ref()?.kind;
     let rocking = entity.rocking.as_ref()?;
-    Some([
+    let angles = [
         rocking.angle_sideways.to_num::<f32>(),
         rocking.angle_forwards.to_num::<f32>(),
-    ])
+    ];
+    match kind {
+        LocomotorKind::Fly if entity.crashing && band == EntityDrawBand::Top => {
+            Some(CrashTilt::Fly(angles))
+        }
+        LocomotorKind::Jumpjet
+            if tilt_crash_jumpjet && crate::render::vxl_raster::jumpjet_tilt_applies(angles) =>
+        {
+            Some(CrashTilt::Jumpjet(angles))
+        }
+        _ => None,
+    }
 }
 
 /// One crashing body drawn at its current pose on this frame's pose page. It
@@ -706,7 +730,7 @@ fn emit_crash_pose_sprite(
     instance_pages: &mut Vec<usize>,
     entity: &crate::sim::game_entity::GameEntity,
     key: &UnitSpriteKey,
-    tilt: [f32; 2],
+    tilt: crate::render::unit_atlas::CrashTilt,
     [center_x, center_y]: [f32; 2],
     z: u8,
     tint: [f32; 3],
@@ -1449,6 +1473,7 @@ pub(super) fn house_color_to_remap_row(hc: HouseColorIndex) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::unit_atlas::CrashTilt;
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::InternedId;
@@ -1520,7 +1545,7 @@ mod tests {
         entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Fly));
         crate::sim::movement::air_movement::ensure_fly_facings(&mut entity);
         assert!(matches!(
-            body_draw(&entity, EntityDrawBand::Top, 0),
+            body_draw(&entity, EntityDrawBand::Top, 0, false),
             BodyDraw::Turret(_)
         ));
         entity.crashing = true;
@@ -1530,17 +1555,32 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(
-            body_draw(&entity, EntityDrawBand::Top, 0),
-            BodyDraw::CrashPose([0.5, -0.25])
+            body_draw(&entity, EntityDrawBand::Top, 0, false),
+            BodyDraw::CrashPose(CrashTilt::Fly([0.5, -0.25]))
         );
-        // Only the airborne (Top) Fly body is posed, and only a Fly's.
+        // Only the airborne (Top) Fly body is posed.
         assert!(matches!(
-            body_draw(&entity, EntityDrawBand::Ground, 0),
+            body_draw(&entity, EntityDrawBand::Ground, 0, false),
             BodyDraw::Turret(_)
         ));
+        // A Jumpjet tilts only for `TiltCrashJumpjet=`, then in any band.
         entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Jumpjet));
         assert!(matches!(
-            body_draw(&entity, EntityDrawBand::Top, 0),
+            body_draw(&entity, EntityDrawBand::Top, 0, false),
+            BodyDraw::Turret(_)
+        ));
+        assert_eq!(
+            body_draw(&entity, EntityDrawBand::Ground, 0, true),
+            BodyDraw::CrashPose(CrashTilt::Jumpjet([0.5, -0.25]))
+        );
+        // Under 0.005 on both axes the Jumpjet draws its plain facing matrix.
+        entity.rocking = Some(crate::sim::components::RockingState {
+            angle_sideways: crate::util::fixed_math::SimFixed::from_num(0.004),
+            angle_forwards: crate::util::fixed_math::SimFixed::from_num(-0.004),
+            ..Default::default()
+        });
+        assert!(matches!(
+            body_draw(&entity, EntityDrawBand::Top, 0, true),
             BodyDraw::Turret(_)
         ));
     }

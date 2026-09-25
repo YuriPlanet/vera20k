@@ -1,4 +1,4 @@
-//! A crashing object: `FootClass::Crash`, the Fly fall's impact, and the
+//! A crashing object: `FootClass::Crash`, the Fly and Jumpjet impacts, and the
 //! crash-only work of the object's own AI (the crash voice/sound edge and the
 //! red-health smoke).
 //!
@@ -11,9 +11,16 @@
 //! `FlyLocomotionClass::Process` until the frame its height reaches zero,
 //! where it fires its death weapon, plays the impact sound and UnInits.
 //!
+//! A `Crashable=` Unit crashes the same way from `UnitClass::ReceiveDamage @
+//! 0x00737C90` (`0x00738457..0x00738475`), after its `Death_Explosion`, its
+//! passengers and its crew; a Jumpjet falls under the locomotor's State 5
+//! (`movement::jumpjet_flight`) and its impact notice finishes it
+//! ([`Simulation::jumpjet_crash_impact`]).
+//!
 //! Native evidence: `tools/spatial_oracle/aircraft_crash.{py,json}` runs Crash,
 //! the per-frame fall to the impact, the crashing RockingUpdate and the smoke
-//! block on the original executable.
+//! block on the original executable; `jumpjet_crash.{py,json}` runs the
+//! Jumpjet kill and fall to its notice.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -199,12 +206,57 @@ impl Simulation {
         if !self.substrate.entities.contains(id) {
             return;
         }
-        self.remove_fly_air_tracker(id);
-        self.set_fly_owner_height(id, 0);
+        self.aircraft_tracker_remove(id);
+        self.set_object_height(id, 0);
         self.fire_death_weapon(id, rules, overlay_registry);
         self.play_crash_impact_sound(id, rules);
         // `FootClass::~FootClass` releases the crash sound the object holds
         // (`0x004D3677`): a one-shot plays out.
+        self.sound_events
+            .push(super::SimSoundEvent::ObjectSoundReleased { owner: id });
+        self.release_move_sound(id);
+        self.uninit_with_rules(id, rules);
+    }
+
+    /// A crashed Jumpjet's impact: State 5's owner work (`AircraftTracker::
+    /// Remove @ 0x004135D0`, `0x0054D075`), then its `(0x117C, 0)` notice to
+    /// `UnitClass`'s `INoticeSink` (`0x00746100`). A `Crashable=` type
+    /// (`+0xD95`, `0x0074619D`) answers it (`0x007461A7..0x00746206`):
+    /// `SetHeight(0)` (vtable `+0x1CC`), then `Fire_Death_Weapon(0)` for a
+    /// `BalloonHover=` type (`0x007461EF`, the Kirov's bomb) or
+    /// `UnitClass::Death_Explosion` once more for any other (`0x007461D1`),
+    /// and UnInit (vtable `+0xF8`). The impact plays no sound; the crash
+    /// sound the wreck holds plays out as it goes (`FootClass::~FootClass`,
+    /// `0x004D3677`).
+    ///
+    /// Only Units crash on this locomotor in VERA; a crashing Jumpjet
+    /// Infantry (`InfantryClass`'s notice, the Rocketeer's) is not wired.
+    pub(crate) fn jumpjet_crash_impact(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        debug_assert_eq!(entity.category, EntityCategory::Unit);
+        let (crashable, balloon_hover) = self
+            .object_type(entity.type_ref(), rules)
+            .map_or((false, false), |object| {
+                (object.crashable, object.balloon_hover)
+            });
+        self.aircraft_tracker_remove(id);
+        if !crashable {
+            // The notice goes unanswered: the wreck rests in State 6.
+            return;
+        }
+        self.set_object_height(id, 0);
+        if balloon_hover {
+            self.fire_death_weapon(id, rules, overlay_registry);
+        } else {
+            self.unit_death_explosion_now(rules, id);
+        }
         self.sound_events
             .push(super::SimSoundEvent::ObjectSoundReleased { owner: id });
         self.release_move_sound(id);
@@ -392,7 +444,12 @@ impl Simulation {
     ///
     /// RESIDUAL: the Team removal (`TeamClass::Remove_Member @ 0x006EA870`) is
     /// not ported, as for every other VERA death (`object_destroy_callback`).
-    fn kill_passengers(&mut self, transport: u64, attacker: Option<u64>, rules: &RuleSet) {
+    pub(crate) fn kill_passengers(
+        &mut self,
+        transport: u64,
+        attacker: Option<u64>,
+        rules: &RuleSet,
+    ) {
         loop {
             let Some(passenger) = self
                 .substrate

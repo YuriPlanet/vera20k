@@ -743,6 +743,7 @@ mod tests {
             zfudge_bridge: 7,
             too_big_to_fit_under_bridge: false,
             crashable: false,
+            tilt_crash_jumpjet: false,
             move_to_shroud: true,
             teleporter: true,
             hover_attack: false,

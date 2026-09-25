@@ -5,7 +5,6 @@
 //! Current world Z is authoritative in Object coordinates. `altitude` is its
 //! bounded cache, while Fly's integer target lives in its own payload.
 
-use crate::rules::jumpjet_params::JumpjetParams;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
 use crate::rules::object_type::ObjectType;
 use crate::sim::movement::locomotion::LocomotorSlot;
@@ -13,7 +12,7 @@ use crate::sim::movement::locomotion::piggyback::{
     self, EndGateContext, LocomotorRuntimePayload, StashedLocomotor,
 };
 use crate::sim::movement::slope_transition::SlopeTransitionState;
-use crate::util::fixed_math::{SIM_ZERO, SimFixed, sim_from_f32};
+use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 
 /// Which spatial layer the unit currently occupies.
 ///
@@ -149,23 +148,11 @@ pub struct LocomotorState {
     /// Actual flight speed fraction (0.0–1.0) for Fly aircraft.
     /// Ramps toward `speed_fraction` (which acts as target) by +/-0.1 per tick,
     /// matching the original engine's TargetSpeed/CurrentSpeed system.
-    /// Jumpjets use their own `jumpjet_current_speed` instead.
+    /// A Jumpjet keeps its speeds in its own runtime (`JumpjetFlight`).
     pub fly_current_speed: SimFixed,
     /// Bounded altitude cache for movement/presentation adapters. Fly's exact
     /// current height comes from Object Z and terrain; its target is in FlyRuntime.
     pub altitude: SimFixed,
-    /// Cached jumpjet flight speed (only for Jumpjet locomotor).
-    pub jumpjet_speed: SimFixed,
-    /// Jumpjet acceleration rate (JumpjetAccel). Deceleration = accel * 1.5.
-    pub jumpjet_accel: SimFixed,
-    /// Current speed during jumpjet flight (ramps via accel/decel).
-    pub jumpjet_current_speed: SimFixed,
-    /// Max lateral deviation in leptons during hover wobble (JumpjetDeviation).
-    pub jumpjet_deviation: i32,
-    /// Combined crash descent speed: climb + crash (leptons/sec, scaled).
-    pub jumpjet_crash_speed: SimFixed,
-    /// Facing change rate per tick while airborne (JumpjetTurnRate).
-    pub jumpjet_turn_rate: i32,
     /// Stay airborne after reaching destination (BalloonHover=yes).
     pub balloon_hover: bool,
     /// Can attack while hovering in place (HoverAttack=yes).
@@ -260,34 +247,6 @@ impl LocomotorState {
             LocomotorKind::Parachute => (MovementLayer::Air, sim_one),
         };
 
-        let jj_speed = if kind == LocomotorKind::Jumpjet {
-            obj.jumpjet_params.speed
-        } else {
-            SIM_ZERO
-        };
-
-        // gamemd-derived: every `TechnoType` carries the `+0xD70`..`+0xD90`
-        // jumpjet block, but only the Jumpjet locomotor ever copies it out —
-        // the parameter copy at `0x0054AD30` pulls `+0xD70` (turn rate),
-        // `+0xD74` (speed), `+0xD78` (climb), `+0xD7C` (crash), `+0xD80`
-        // (height), `+0xD84` (accel), `+0xD88` (wobbles), `+0xD90`
-        // (deviation) and `+0xD8C` (no-wobbles) off the type in one run. A
-        // Drive/Fly/Hover locomotor has no such fields in gamemd and never
-        // reads the type's, so they stay inert here for every other kind.
-        // VERA-internal: this one struct serves every locomotor kind, so the
-        // non-jumpjet arms still need *a* value. Zero for the three that mean
-        // "off", and 4 for the turn rate — the `TechnoTypeClass::Constructor`
-        // seed at `0x007115AE`, which is also what this line produced before
-        // the block became unconditional.
-        let jj: Option<&JumpjetParams> =
-            (kind == LocomotorKind::Jumpjet).then_some(&obj.jumpjet_params);
-        let jj_accel: SimFixed = jj.map_or(SIM_ZERO, |p| sim_from_f32(p.accel));
-        let jj_deviation: i32 = jj.map_or(0, |p| p.deviation);
-        let jj_crash_speed: SimFixed = jj.map_or(SIM_ZERO, |p| {
-            (sim_from_f32(p.climb) + sim_from_f32(p.crash)) * SimFixed::from_num(15)
-        });
-        let jj_turn_rate: i32 = jj.map_or(4, |p| p.turn_rate);
-
         Self {
             kind,
             slot: LocomotorSlot::from_kind(kind),
@@ -320,12 +279,6 @@ impl LocomotorState {
             fly_current_speed: SIM_ZERO,
             altitude: SIM_ZERO,
 
-            jumpjet_speed: jj_speed,
-            jumpjet_accel: jj_accel,
-            jumpjet_current_speed: SIM_ZERO,
-            jumpjet_deviation: jj_deviation,
-            jumpjet_crash_speed: jj_crash_speed,
-            jumpjet_turn_rate: jj_turn_rate,
             balloon_hover: obj.balloon_hover,
             hover_attack: obj.hover_attack,
             speed_type: obj.speed_type,
@@ -374,12 +327,6 @@ impl LocomotorState {
             fly_current_speed: SIM_ZERO,
             altitude: SIM_ZERO,
 
-            jumpjet_speed: SIM_ZERO,
-            jumpjet_accel: SIM_ZERO,
-            jumpjet_current_speed: SIM_ZERO,
-            jumpjet_deviation: 0,
-            jumpjet_crash_speed: SIM_ZERO,
-            jumpjet_turn_rate: 4,
             balloon_hover: false,
             hover_attack: false,
             speed_type: SpeedType::Track,

@@ -47,12 +47,6 @@ pub struct LocomotorCommonRuntime {
     pub speed_fraction: SimFixed,
     pub fly_current_speed: SimFixed,
     pub altitude: SimFixed,
-    pub jumpjet_speed: SimFixed,
-    pub jumpjet_accel: SimFixed,
-    pub jumpjet_current_speed: SimFixed,
-    pub jumpjet_deviation: i32,
-    pub jumpjet_crash_speed: SimFixed,
-    pub jumpjet_turn_rate: i32,
     pub balloon_hover: bool,
     pub hover_attack: bool,
     pub speed_type: SpeedType,
@@ -147,12 +141,6 @@ impl LocomotorRuntime {
                 speed_fraction: state.speed_fraction,
                 fly_current_speed: state.fly_current_speed,
                 altitude: state.altitude,
-                jumpjet_speed: state.jumpjet_speed,
-                jumpjet_accel: state.jumpjet_accel,
-                jumpjet_current_speed: state.jumpjet_current_speed,
-                jumpjet_deviation: state.jumpjet_deviation,
-                jumpjet_crash_speed: state.jumpjet_crash_speed,
-                jumpjet_turn_rate: state.jumpjet_turn_rate,
                 balloon_hover: state.balloon_hover,
                 hover_attack: state.hover_attack,
                 speed_type: state.speed_type,
@@ -179,8 +167,7 @@ impl LocomotorRuntime {
     /// untouched in the stash. This clones the displaced runtime and resets only
     /// `phase` and `payload`, so the temporary inherits
     /// `altitude`, the hover throttle/speed/bob fields, `subcell_dest`, the two
-    /// speed fractions, `fly_current_speed`, the jumpjet fields **and
-    /// `powered`** — and [`install_into`] copies `powered` back on restore, so a
+    /// speed fractions, `fly_current_speed` **and `powered`** — and [`install_into`] copies `powered` back on restore, so a
     /// powered-off flag survives a swap in both directions, which native cannot
     /// do.
     ///
@@ -213,12 +200,6 @@ impl LocomotorRuntime {
         state.speed_fraction = self.common.speed_fraction;
         state.fly_current_speed = self.common.fly_current_speed;
         state.altitude = self.common.altitude;
-        state.jumpjet_speed = self.common.jumpjet_speed;
-        state.jumpjet_accel = self.common.jumpjet_accel;
-        state.jumpjet_current_speed = self.common.jumpjet_current_speed;
-        state.jumpjet_deviation = self.common.jumpjet_deviation;
-        state.jumpjet_crash_speed = self.common.jumpjet_crash_speed;
-        state.jumpjet_turn_rate = self.common.jumpjet_turn_rate;
         state.balloon_hover = self.common.balloon_hover;
         state.hover_attack = self.common.hover_attack;
         state.speed_type = self.common.speed_type;

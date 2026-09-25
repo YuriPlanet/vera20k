@@ -892,6 +892,15 @@ impl Simulation {
                         DockTeardown::All,
                     );
                 }
+                // The event's null Set_Destination (`0x004C75ED`) reaches a
+                // Jumpjet's Stop_Moving through Foot's null arm, except that
+                // the Unit setter returns first without a NavCom unless its
+                // `+0x1F8` override is up (`0x00741A80`).
+                let jumpjet_stops = self.substrate.entities.get(*entity_id).is_some_and(|e| {
+                    e.category != crate::map::entities::EntityCategory::Unit
+                        || e.navigation.nav_com.is_some()
+                        || e.setter_force_reassign
+                });
                 if let Some(e) = self.substrate.entities.get_mut(*entity_id) {
                     movement::stop_navigation_at_committed_head(e);
                     // Event Stop4C75F8 invokes the same virtual target setter.
@@ -903,7 +912,9 @@ impl Simulation {
                 if releases_beam {
                     self.temporal_release_if_warping(*entity_id);
                 }
-                if !self.stop_jumpjet_infantry_destination(*entity_id, rules, overlay_registry) {
+                if jumpjet_stops
+                    && !self.jumpjet_null_destination(*entity_id, rules, overlay_registry)
+                {
                     return false;
                 }
                 if let Some(entity) = self.substrate.entities.get_mut(*entity_id) {

@@ -680,9 +680,10 @@ impl CrushTarget {
 /// tools/spatial_oracle/unit_entry and cell_entry_crush_tail.
 /// NO-DIFF (GSI-08.17) — pass 1's named gap is not one. A crushed unit's
 /// `DeathWeapon=` does not fire in gamemd either:
-/// `TechnoClass::Fire_Death_Weapon @ 0x0070D690` has exactly two callers,
-/// `ReceiveDamage @ 0x00701900` and `FlyLocomotionClass::Process @ 0x004CD600`,
-/// and the crush loop at `0x007416A0` enters neither. Detonating a crushed
+/// `TechnoClass::Fire_Death_Weapon @ 0x0070D690` has exactly three callers,
+/// `ReceiveDamage @ 0x00701900`, `FlyLocomotionClass::Process @ 0x004CD600`
+/// and the Unit's crash notice (`0x007461EF`), and the crush loop at
+/// `0x007416A0` enters none of them. Detonating a crushed
 /// Terrorist would be a regression, not a fix. Native's crush consequences are
 /// the crusher-positioned `CrushSound`, the victim's `vt+0x170` (`0x007418E5`:
 /// Infantry `0x00710460` `FreeAllMindControlCaptures`; Unit `0x00746D60`,

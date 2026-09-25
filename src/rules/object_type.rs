@@ -875,8 +875,15 @@ pub struct ObjectType {
     pub zfudge_bridge: i32,
     /// Prevents naval/large units from traversing under bridge structural cells.
     pub too_big_to_fit_under_bridge: bool,
-    /// Whether this unit shows a visible crash animation on death (Crashable=).
+    /// `Crashable=` (`TechnoTypeClass+0xD95`): a Unit killed in the air crashes
+    /// instead of vanishing (`UnitClass::ReceiveDamage 0x00738457`), and only
+    /// such a type answers its Jumpjet's impact notice (`0x0074619D`).
     pub crashable: bool,
+    /// `TiltCrashJumpjet=` (`TechnoTypeClass+0xD22`, constructor false at
+    /// `0x007114CA`, `TechnoTypeClass::ReadINI 0x00713377..0x00713391`, key
+    /// string `0x00844118`): the Jumpjet Draw_Matrix tilts the body by its
+    /// rocking angles (`0x0054DCDA`). Stock sets it on the Floating Disc.
+    pub tilt_crash_jumpjet: bool,
     /// Whether this unit can use chrono teleport movement (Teleporter=).
     pub teleporter: bool,
     /// TechnoType+0xC8D: the constructor stores true at 0x711387 and the
@@ -2171,6 +2178,7 @@ impl ObjectType {
                 .get_bool("TooBigToFitUnderBridge")
                 .unwrap_or(false),
             crashable: section.get_bool("Crashable").unwrap_or(false),
+            tilt_crash_jumpjet: section.get_bool("TiltCrashJumpjet").unwrap_or(false),
             teleporter: section.get_bool("Teleporter").unwrap_or(false),
             move_to_shroud: section
                 .get_bool("MoveToShroud")

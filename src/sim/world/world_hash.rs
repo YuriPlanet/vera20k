@@ -2424,12 +2424,9 @@ fn hash_locomotor_runtime(
     common.altitude.to_bits().hash(hasher);
     0i32.hash(hasher);
     0i32.hash(hasher);
-    common.jumpjet_speed.to_bits().hash(hasher);
-    common.jumpjet_accel.to_bits().hash(hasher);
-    common.jumpjet_current_speed.to_bits().hash(hasher);
-    common.jumpjet_deviation.hash(hasher);
-    common.jumpjet_crash_speed.to_bits().hash(hasher);
-    common.jumpjet_turn_rate.hash(hasher);
+    if !schema.includes(HashFeature::RetiredJumpjetLegacyBlock) {
+        hash_retired_jumpjet_legacy_block(hasher);
+    }
     common.balloon_hover.hash(hasher);
     common.hover_attack.hash(hasher);
     common.speed_type.hash(hasher);
@@ -2445,6 +2442,22 @@ fn hash_locomotor_runtime(
     common.hover_speed_request.to_bits().hash(hasher);
     common.hover_bob_offset.to_bits().hash(hasher);
     hash_locomotor_payload(&runtime.payload, hasher, schema);
+}
+
+/// The retired VERA copy of the Jumpjet type block in the common locomotor
+/// runtime (speed, accel, current speed, deviation, crash speed, turn rate).
+/// It never followed the payload: every stashed runtime in stock play (only
+/// the Chrono Miner piggybacks) and in the pinned fixtures held a
+/// non-Jumpjet's zeros and the constructor's turn rate 4, which is what
+/// earlier schemas fold here.
+fn hash_retired_jumpjet_legacy_block(hasher: &mut impl Hasher) {
+    use crate::util::fixed_math::SIM_ZERO;
+    for _ in 0..3 {
+        SIM_ZERO.to_bits().hash(hasher);
+    }
+    0i32.hash(hasher);
+    SIM_ZERO.to_bits().hash(hasher);
+    4i32.hash(hasher);
 }
 
 fn hash_locomotor_payload(

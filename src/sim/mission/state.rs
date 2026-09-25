@@ -207,7 +207,8 @@ impl MissionCom {
         self.movement_bypass_latch = 1;
     }
 
-    #[cfg(test)]
+    /// `+0xB8 = 1` after an exact `Queue_Mission` its caller verified
+    /// (`JumpjetLocomotionClass::Move_To`'s lift tail, `0x0054B496`).
     pub(super) fn set_movement_bypass_after_verified_queue(&mut self) {
         self.set_movement_bypass_latch();
     }
