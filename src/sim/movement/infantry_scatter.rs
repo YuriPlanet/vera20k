@@ -40,6 +40,25 @@ impl Simulation {
         ) {
             return Ok(None);
         }
+        self.select_infantry_scatter_away_from(id, source, rules, registry)
+    }
+
+    /// The away-from-a-coordinate arm of `InfantryClass::Scatter @
+    /// 0x0051D0D0` once its gates have passed (`0x0051D258..0x0051D6BA`):
+    /// the heading away from `source` rounded to an octant plus
+    /// `RandomRanged(0, 4) - 2`, then the eight-neighbour search from the
+    /// navigation cell. Shared by the damage receiver and the forced
+    /// Scatter (`scatter_infantry_forced_from`).
+    pub(crate) fn select_infantry_scatter_away_from(
+        &mut self,
+        id: u64,
+        source: (i32, i32),
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> Result<Option<InfantryDamageScatter>, String> {
+        let Some(infantry) = self.substrate.entities.get(id) else {
+            return Ok(None);
+        };
         let current = super::foot_coordinate::current_coordinate(infantry);
         let start = super::scatter_cell::source_start_direction(
             (current.x, current.y),
@@ -102,16 +121,20 @@ impl Simulation {
 }
 
 impl Simulation {
-    /// Source-aware Scatter51D6E0 -> Infantry51AA40 -> Foot4D94B0 -> Walk75ACB0.
-    /// The accepted damage caller already requires Fraidycat, so the human
-    /// same-destination/prone DoAction7 arm cannot run. The Cell target cannot
-    /// enter the Techno dock arm. No Process runs until the ordinary object turn.
+    /// The Infantry class setter `vt+0x480(cell, 1)` (`0x0051AA40`) for a
+    /// Walk infantryman: Infantry51AA40 -> Foot4D94B0 -> Walk75ACB0. Reached
+    /// from Scatter (`0x0051D6E0`) and from the slave manager's sends. The
+    /// human same-destination/prone DoAction7 arm (`0x0051ABD7..`) needs the
+    /// requested cell to already be the NavCom: the damage caller requires
+    /// Fraidycat, and the slave sends replace a missing or different NavCom.
+    /// The Cell target cannot enter the Techno dock arm. No Process runs until
+    /// the ordinary object turn.
     /// Native comparisons: infantry_scatter_destination.{py,json,meta.json}.
     ///
     /// Returns false for the still-unmigrated non-Walk/JumpJet class setters.
     /// DirectRocker reciprocal links, lifted-unit release, retained fire particles
     /// and the Unit-produced +6AC latch still lack their production owners here.
-    pub(crate) fn assign_damage_scatter_walk_destination(
+    pub(crate) fn assign_infantry_walk_cell_destination(
         &mut self,
         id: u64,
         scatter: InfantryDamageScatter,
@@ -175,6 +198,34 @@ impl Simulation {
             super::DestinationTiming::from_rules(self.session.binary_frame, Some(rules)),
         );
         Ok(true)
+    }
+
+    /// [`Self::assign_infantry_walk_cell_destination`] at the mover's own
+    /// movement speed (`GetCurrentSpeed`, as an ordinary Move order).
+    pub(crate) fn set_infantry_cell_destination(
+        &mut self,
+        id: u64,
+        cell: (u16, u16),
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> Result<bool, String> {
+        let speed = {
+            let infantry = self
+                .substrate
+                .entities
+                .get(id)
+                .ok_or("cell destination lost actor")?;
+            scatter_movement_speed(infantry, Some(rules), &self.interner)
+        };
+        self.assign_infantry_walk_cell_destination(
+            id,
+            InfantryDamageScatter {
+                destination: cell,
+                speed,
+            },
+            rules,
+            registry,
+        )
     }
 
     /// 51AB73..51ABA7 passes (SpeedType,1,0,-1,Normal,-1,true) to4834A0.

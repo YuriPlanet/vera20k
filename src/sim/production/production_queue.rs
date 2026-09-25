@@ -11,7 +11,6 @@ use crate::sim::world::Simulation;
 
 use super::PRODUCTION_STEPS;
 use super::factory_lifecycle::{self, enqueue_by_type};
-use super::production_economy::tick_resource_economy;
 use super::production_spawn::{
     ProductionDeliveryKind, find_helipad_for_aircraft, find_spawn_selection_for_owner_with_type,
     mark_war_factory_spawn_contact, unlimbo_held_naval_unit,
@@ -312,8 +311,6 @@ fn tick_production_impl(
     path_grid: Option<&crate::sim::pathfinding::PathGrid>,
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
 ) -> bool {
-    let miner_config = crate::sim::miner::MinerConfig::from_rules(rules);
-    tick_resource_economy(sim, rules, &miner_config, path_grid, overlay_registry);
     // P5d: the registry is the queue-of-record + completion authority. Collect the
     // (owner, category) keys whose active build has completed (progress == 54, object held,
     // not paused), in deterministic temporal (insertion_seq) order — the SAME order

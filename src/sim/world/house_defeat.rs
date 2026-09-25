@@ -43,12 +43,13 @@
 //!   which matches for every source VERA constructs in native order.
 //! - Slave release: a Slave Miner killed with no attacker hands its slaves on
 //!   the map to the Civilian-side house and UnInits those in limbo (the
-//!   ReceiveDamage death arm's `0x006B0AE0` call at `0x00702065`); the sweep
-//!   reaches the miner before its slaves and then skips them. VERA has no slave
-//!   release on any master's death. Trigger: a Yuri house defeated while it
-//!   owns a Slave Miner with slaves. Effect: its slaves die in the sweep, with
-//!   their receivers' death effects and draws, instead of staying on the map
-//!   as civilians.
+//!   ReceiveDamage death arm's `0x006B0AE0` call at `0x00702065`,
+//!   `sim::slave_manager`). A master constructed before its slaves (its own
+//!   constructor builds them) is reached first, and the sweep then skips
+//!   them, as they no longer belong to the defeated house; a refinery
+//!   deployed from a Slave Miner comes after the slaves it took over, so the
+//!   sweep kills those first as the defeated house's own, in the same
+//!   TechnoClass::Array order.
 //! - The IsToDie path (`Flag_To_Die @ 0x004FC980`: DESTRUCT, REMOVEPLAYER, a
 //!   last human's EXIT) has no VERA producer; offline skirmish cannot reach
 //!   it.
@@ -304,6 +305,19 @@ impl Simulation {
         !self.set_original_owner_to_civilian(controller, id, rules)
     }
 
+    /// The first house in HouseClass::Array order whose side is `Civilian`
+    /// (`SideClass::FindIndex("Civilian") @ 0x006A46D0` against each
+    /// house type's side), as `SetOriginalOwnerToCivilian` and the slave
+    /// release (`0x006B0B0B..0x006B0B38`) look it up.
+    pub(crate) fn civilian_side_house(&self, rules: &RuleSet) -> Option<InternedId> {
+        let civilian_side = rules.side_index("Civilian")?;
+        self.session.house_order.iter().copied().find(|owner| {
+            self.houses
+                .get(owner)
+                .is_some_and(|house| house.side_index == civilian_side.0)
+        })
+    }
+
     /// `CaptureManagerClass::SetOriginalOwnerToCivilian @ 0x00472330`: the
     /// first house in HouseClass::Array order whose side is `Civilian`
     /// (`0x006A46D0`) becomes the victim's original owner in every node of
@@ -314,14 +328,7 @@ impl Simulation {
         victim: u64,
         rules: &RuleSet,
     ) -> bool {
-        let Some(civilian_side) = rules.side_index("Civilian") else {
-            return false;
-        };
-        let Some(civilian) = self.session.house_order.iter().copied().find(|owner| {
-            self.houses
-                .get(owner)
-                .is_some_and(|house| house.side_index == civilian_side.0)
-        }) else {
+        let Some(civilian) = self.civilian_side_house(rules) else {
             return false;
         };
         if let Some(manager) = self

@@ -139,18 +139,26 @@ fn slave_conversions_reset_master_health_but_preserve_retained_slave_state() {
     let source = sim
         .spawn_object_at_height("SMIN", "Neutral", 10, 10, 0, 0, &rules)
         .unwrap();
-    let slaves = sim.production.slave_bindings[&source].clone();
+    let pool = |sim: &Simulation, master: u64| -> Vec<u64> {
+        sim.substrate
+            .entities
+            .get(master)
+            .and_then(|entity| entity.slave_manager.as_ref())
+            .map(|manager| manager.slaves().collect())
+            .unwrap_or_default()
+    };
+    let slaves = pool(&sim, source);
     for &slave in &slaves {
         damage(&mut sim, slave, 100);
     }
     damage(&mut sim, source, 25);
     let building = crate::sim::slave_miner::deploy_slave_miner(&mut sim, source, &rules).unwrap();
     assert_health(&sim, building, 250);
-    assert_eq!(sim.production.slave_bindings[&building], slaves);
+    assert_eq!(pool(&sim, building), slaves);
     damage(&mut sim, building, 500);
     let unit = crate::sim::slave_miner::undeploy_slave_miner(&mut sim, building, &rules).unwrap();
     assert_health(&sim, unit, 50);
-    assert_eq!(sim.production.slave_bindings[&unit], slaves);
+    assert_eq!(pool(&sim, unit), slaves);
     for slave in slaves {
         let child = sim.substrate.entities.get(slave).unwrap();
         assert_eq!(child.health.current, 100);

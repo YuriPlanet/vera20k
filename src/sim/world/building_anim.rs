@@ -111,6 +111,27 @@ pub(crate) fn begin_refinery_unload_gate(sim: &mut Simulation, rules: &RuleSet, 
         object.strength,
         rules.general.condition_yellow,
     );
+    emit_refinery_smoke(sim, rules, building_id);
+    if sim
+        .entities()
+        .get(building_id)
+        .is_some_and(|entity| entity.building_anim_slots[10].is_none())
+    {
+        sim.set_building_anim_slot(building_id, 10, damaged, false, 0, rules);
+    }
+}
+
+/// `BuildingClass` `vt+0x468` (`0x00459900`): a particle system of the
+/// type's `RefinerySmokeParticleSystem=` at each set `RefinerySmokeOffset`,
+/// each living `RefinerySmokeFrames`. Reached from the unload gate and from
+/// a slave's deposit (`0x00522E55`).
+pub(crate) fn emit_refinery_smoke(sim: &mut Simulation, rules: &RuleSet, building_id: u64) {
+    let Some(building) = sim.entities().get(building_id) else {
+        return;
+    };
+    let Some(object) = rules.object(sim.interner.resolve(building.type_ref())) else {
+        return;
+    };
     let raw = crate::sim::movement::ground_pose::position_world_coord(&building.position);
     let origin = glam::IVec3::new(raw.x, raw.y, raw.z);
     let lifetime = object.refinery_smoke_frames;
@@ -134,13 +155,6 @@ pub(crate) fn begin_refinery_unload_gate(sim: &mut Simulation, rules: &RuleSet, 
                 sim.particle_systems_mut().get_mut(system).unwrap().lifetime = lifetime;
             }
         }
-    }
-    if sim
-        .entities()
-        .get(building_id)
-        .is_some_and(|entity| entity.building_anim_slots[10].is_none())
-    {
-        sim.set_building_anim_slot(building_id, 10, damaged, false, 0, rules);
     }
 }
 

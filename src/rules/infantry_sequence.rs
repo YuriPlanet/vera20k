@@ -464,6 +464,7 @@ pub fn sequence_kind_from_ini_key(key: &str) -> Option<SequenceKind> {
         "WETATTACK" => Some(SequenceKind::WetAttack),
         "WETIDLE1" => Some(SequenceKind::WetIdle1),
         "WETIDLE2" => Some(SequenceKind::WetIdle2),
+        "SHOVEL" => Some(SequenceKind::Shovel),
         _ => None,
     }
 }
@@ -480,8 +481,8 @@ pub fn sequence_kind_from_ini_key(key: &str) -> Option<SequenceKind> {
 /// a specific frame of the fire sequence rather than at its start, that slowed
 /// the Brute's building-smash rate to a third.
 ///
-/// Ids 20/21 (WetDie1/WetDie2), 25 (Tumble), 34–36 (AirDeath*) and 38/39
-/// (Shovel/Carry) have no `SequenceKind` yet and so are absent below.
+/// Ids 20/21 (WetDie1/WetDie2), 25 (Tumble), 34–36 (AirDeath*) and 39
+/// (Carry) have no `SequenceKind` yet and so are absent below.
 pub(crate) fn action_id(kind: SequenceKind) -> u8 {
     match kind {
         SequenceKind::Stand => 0,
@@ -515,6 +516,7 @@ pub(crate) fn action_id(kind: SequenceKind) -> u8 {
         SequenceKind::Cheer => 32,
         SequenceKind::Paradrop => 33,
         SequenceKind::Panic => 37,
+        SequenceKind::Shovel => 38,
         SequenceKind::SecondaryFire => 40,
         SequenceKind::SecondaryProne => 41,
     }
@@ -540,7 +542,8 @@ fn default_loop_mode(kind: SequenceKind) -> LoopMode {
         | SequenceKind::Swim
         | SequenceKind::Fly
         | SequenceKind::Hover
-        | SequenceKind::Tread => LoopMode::Loop,
+        | SequenceKind::Tread
+        | SequenceKind::Shovel => LoopMode::Loop,
         SequenceKind::Die1
         | SequenceKind::Die2
         | SequenceKind::Die3

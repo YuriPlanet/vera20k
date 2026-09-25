@@ -253,7 +253,7 @@ pub(crate) fn responder_peek_fire_error(
     target_object: &ObjectType,
     rules: &RuleSet,
 ) -> ResponderPeekFireError {
-    if candidate.slave_harvester.is_some()
+    if candidate.slave.owner().is_some()
         || target.lifecycle.in_limbo
         || candidate
             .passenger_role
@@ -359,7 +359,7 @@ pub(super) fn candidate_admitted(
     if candidate.category == EntityCategory::Unit
         && (candidate_object.resource_gatherer
             || candidate.bunker_link.installed_in().is_some()
-            || target.slave_harvester.is_some())
+            || target.slave.owner().is_some())
     {
         return false;
     }

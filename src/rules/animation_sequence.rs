@@ -107,6 +107,9 @@ pub enum SequenceKind {
     WetIdle1,
     /// Idle fidget while swimming variant 2 (WetIdle2= in INI).
     WetIdle2,
+    /// A slave digging ore (Shovel= in INI, native action 38): the Doing its
+    /// `InfantryClass::Mission_Harvest @ 0x00522E70` requests while it cuts.
+    Shovel,
 }
 
 /// How a sequence behaves when it reaches its last frame.

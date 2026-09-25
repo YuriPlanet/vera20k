@@ -209,7 +209,15 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
 #[test]
 fn factory_restore_rejects_unrelated_ready_projection_before_match_commit() {
     let (mut saved, rules, owner, parent) = factory_fixture("PARENT", ProductionCategory::Building);
-    assert_eq!(saved.production.slave_bindings[&parent].len(), 2);
+    assert_eq!(
+        saved
+            .substrate
+            .entities
+            .get(parent)
+            .and_then(|entity| entity.slave_manager.as_ref())
+            .map(|manager| manager.nodes().len()),
+        Some(2)
+    );
     let missing = saved.interner.intern("REMOVED_TYPE");
     saved
         .production
@@ -338,7 +346,8 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                             .map(|slot| slot.spawn)
                             .collect::<Vec<_>>()
                     }),
-                    entity.slave_harvester.as_ref().map(|slave| slave.master_id),
+                    entity.slave.owner(),
+                    entity.slave_manager.clone(),
                 )
             })
             .collect();
@@ -385,14 +394,11 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                         .iter()
                         .map(|slot| slot.spawn)
                         .collect::<Vec<_>>()),
-                    entity.slave_harvester.as_ref().map(|slave| slave.master_id),
+                    entity.slave.owner(),
+                    entity.slave_manager.clone(),
                 ))
                 .collect::<Vec<_>>(),
             identities,
-            "{label}"
-        );
-        assert_eq!(
-            restored.production.slave_bindings, saved.production.slave_bindings,
             "{label}"
         );
     }
@@ -608,7 +614,18 @@ fn factory_restore_rejects_inconsistent_roots_and_ready_relationships() {
                     .spawn_owner_id = Some(parent)
             }
             "child-root-alias" => {
-                saved.production.slave_bindings.get_mut(&parent).unwrap()[0] = parent
+                let manager = saved
+                    .substrate
+                    .entities
+                    .get_mut(parent)
+                    .unwrap()
+                    .slave_manager
+                    .as_mut()
+                    .unwrap();
+                let mut nodes = manager.nodes().to_vec();
+                nodes[0].slave = Some(parent);
+                let (state, frame, timer) = (manager.state(), manager.frame(), manager.ai_timer());
+                manager.set_for_test(state, frame, nodes, timer);
             }
             "tail-without-head" => {
                 saved.production.factory_shadow.test_enqueue_kernel(

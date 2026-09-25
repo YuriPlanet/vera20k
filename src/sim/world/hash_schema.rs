@@ -134,6 +134,11 @@ pub(super) enum HashFeature {
     /// Fly fall counter (`FlyLocomotionClass+0x58`). Earlier schemas fold
     /// nothing: no object crashed before, so every latch and counter was zero.
     AircraftCrash = 208,
+    /// The SlaveManagerClass on its master (`TechnoClass+0x2D8`), a slave's
+    /// SlaveOwner (`+0x2DC`) and Storage replace the retired constructor
+    /// slave pool and slave harvester cursor. Earlier schemas fold the pool
+    /// from the manager's live slaves; the retired cursor has no counterpart.
+    SlaveManager = 209,
 }
 
 impl HashSchema {
@@ -169,6 +174,7 @@ impl HashSchema {
                     | HashFeature::RetiredRefineryDockPhase
                     | HashFeature::NativeOreField
                     | HashFeature::AircraftCrash
+                    | HashFeature::SlaveManager
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

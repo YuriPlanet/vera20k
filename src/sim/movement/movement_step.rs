@@ -1238,7 +1238,8 @@ pub(super) fn process_cell_crossings(
                                 snap.speed_type,
                                 resolved_terrain,
                                 cost_grid,
-                                target.bypass_grid,
+                                target.bypass_grid
+                                    || snap.slave_deposit_cells.contains(&Some((nx, ny))),
                                 crate::sim::pathfinding::cell_entry::TerrainEntryMode::RuntimeTransition,
                                 category == EntityCategory::Infantry,
                                 snap.crush_capability().wall_arm_crusher(),

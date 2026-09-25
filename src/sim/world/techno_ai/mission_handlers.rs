@@ -533,6 +533,14 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
         (EntityCategory::Infantry, Some(MissionType::Guard)) => {
             evaluate_foot_guard_cadence(sim, rules, id, MissionType::Guard, input.bunker_delegate)
         }
+        // `InfantryClass::Mission_Harvest @ 0x00522E70` (Infantry `vt+0x224`),
+        // the slave's dig (`sim::slave_manager`).
+        (EntityCategory::Infantry, Some(MissionType::Harvest)) => {
+            match sim.infantry_mission_harvest(id, rules, ctx.overlay_registry) {
+                (delay, true) => MissionHandlerEvaluation::queue(delay, MissionType::Guard),
+                (delay, false) => MissionHandlerEvaluation::cadence(delay),
+            }
+        }
         // Sticky dispatches through the SAME slot as Guard — one handler, two
         // selectors — so it runs the Guard body. The cadence still comes from
         // the object's own mission slot (the timer lookup indexes on the
@@ -556,9 +564,9 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
         // RESIDUAL (GSI-07.16) — `UnitClass::Mission_AreaGuard @ 0x00744100` is
         // the slave-miner recall and returns `RandomRanged(0, 2)` where the Foot
         // body returns `RandomRanged(1, 5)` — an RNG fork, not just a different
-        // delay. Frequency: zero today (no slave miners), continuous once they
-        // land. The Foot body's own slave-recall arm is absent for the same
-        // reason.
+        // delay. Frequency: a Slave Miner on Area Guard; its recall belongs to
+        // the manager's field hunt (`sim::slave_manager` residual, chain 6).
+        // The Foot body's own slave-recall arm is absent for the same reason.
         (EntityCategory::Unit | EntityCategory::Infantry, Some(MissionType::AreaGuard)) => {
             evaluate_foot_area_guard(sim, id, rules, ctx)
         }

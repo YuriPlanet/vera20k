@@ -553,7 +553,8 @@ pub(super) fn build_miner_snapshot(
         return None;
     }
     let miner = entity.miner.as_ref()?;
-    // Slave Miners use their own system (slave_miner.rs) — never dispatched here.
+    // A Slave Miner's own Mission_Harvest is HandleReturnedSlaves
+    // (`0x0073E5E9`, chain 6); its slaves harvest through `slave_manager`.
     if miner.kind == MinerKind::Slave {
         return None;
     }

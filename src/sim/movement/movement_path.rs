@@ -538,6 +538,23 @@ pub(super) fn find_move_path_with_marker_detailed(
     let wall_cost = wall_classifier
         .as_ref()
         .map(|c| c as &dyn crate::sim::pathfinding::SearchCellCostClassifier);
+    // A slave's deposit Cells answer through its own `Can_Enter_Cell` arm,
+    // ahead of the wall arm (`sim::slave_deposit`).
+    let slave_classifier = (facts.slave_deposit_cells != [None, None]).then_some(
+        crate::sim::pathfinding::cell_entry::SlaveDepositSearchClassifier {
+            cells: facts.slave_deposit_cells,
+            inner: wall_cost,
+            path_grid: Some(grid),
+            resolved_terrain,
+            terrain_costs,
+            movement_zone,
+            speed_type: facts.speed_type,
+        },
+    );
+    let wall_cost = slave_classifier
+        .as_ref()
+        .map(|c| c as &dyn crate::sim::pathfinding::SearchCellCostClassifier)
+        .or(wall_cost);
     if layered_pathing {
         let layered_result = zone_search::find_layered_path_zoned_marker_detailed(
             grid,
@@ -1400,6 +1417,7 @@ mod tests {
             is_armed: true,
             warhead_wall: true,
             warhead_wood: false,
+            slave_deposit_cells: [None, None],
         };
         let (path, _layers) = search(armed).expect(
             "a mover that can shoot the wall must be given a route through it, not refused",
@@ -1491,6 +1509,7 @@ mod tests {
             is_armed: true,
             warhead_wall: true,
             warhead_wood: false,
+            slave_deposit_cells: [None, None],
         };
         let path = find_move_path(
             PathfindingContext {

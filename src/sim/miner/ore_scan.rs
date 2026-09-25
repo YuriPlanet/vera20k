@@ -21,7 +21,7 @@ use crate::sim::world::Simulation;
 /// A `[General]` scan radius in leptons as Mission_Harvest hands it on:
 /// `CDQ; AND EDX,0xFF; ADD EAX,EDX; SAR EAX,8`, the signed division by 256
 /// (`0x0073E851`, `0x0073EAA6`).
-pub(super) fn scan_cells(leptons: i32) -> i32 {
+pub(crate) fn scan_cells(leptons: i32) -> i32 {
     leptons.wrapping_add((leptons >> 31) & 0xFF) >> 8
 }
 
@@ -30,7 +30,7 @@ pub(super) fn scan_cells(leptons: i32) -> i32 {
 /// authority; a fixture with no resolved terrain reads the overlay's own
 /// `Land=`, the value `CellClass::RecalcAttributes @ 0x0047D2B0` writes for a
 /// tiberium overlay (`NoUseTileLandType` is set).
-pub(super) fn cell_is_tiberium_land(
+pub(crate) fn cell_is_tiberium_land(
     sim: &Simulation,
     overlay_registry: Option<&OverlayTypeRegistry>,
     cell: (u16, u16),
