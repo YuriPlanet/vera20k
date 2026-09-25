@@ -91,7 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate_sequence = commands.add_parser(
         "validate-entry-sequence",
-        help="validate an immutable 14-frame 0xE2 entry-sequence bundle",
+        help="validate an immutable 18-frame 0xE2 entry-sequence bundle",
     )
     validate_sequence.add_argument("--capture", required=True, type=Path)
 

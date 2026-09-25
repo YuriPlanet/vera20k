@@ -1,7 +1,7 @@
-//! Production-only main-menu family capture routes (Movies & Credits and the
-//! Exit confirmation). Route actions go through the ordinary main-menu,
-//! `0x101` and `0x129` handlers after a presented frame; no shell state or
-//! renderer is cloned.
+//! Production-only main-menu family capture routes (Movies & Credits, the
+//! Exit confirmation and campaign selection). Route actions go through the
+//! ordinary main-menu, `0x100`, `0x101`, `0x129` and `0x94` handlers after a
+//! presented frame; no shell state or renderer is cloned.
 
 use super::*;
 use crate::app::App;
@@ -42,6 +42,18 @@ pub(super) enum MoviesTarget {
     /// Back on `0x129`, read back on the first frame after its teardown: the
     /// recreated `0x101` must already show its entry slide at tick 0.
     ListBackFirstFrame,
+    /// Single Player -> New Campaign: dialog `0x94` settled, optionally after a
+    /// press on the difficulty slider at `press`, or held at `entry_tick` of
+    /// its entry slide.
+    Campaign0x94 {
+        press: Option<(i32, i32)>,
+        entry_tick: Option<u32>,
+    },
+    /// Single Player -> Load Saved Game: dialog `0xB7` settled, or held at
+    /// `entry_tick` of its entry slide.
+    LoadSavedGame0xB7 {
+        entry_tick: Option<u32>,
+    },
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -54,6 +66,9 @@ enum Phase {
     Movie,
     Exit,
     SlideOut,
+    SinglePlayerPage,
+    Campaign,
+    LoadSavedGame,
     Settling(u32),
 }
 
@@ -107,6 +122,20 @@ impl MoviesCapture {
                         } => Some(Phase::SlideOut),
                         _ => None,
                     };
+                    if matches!(
+                        self.target,
+                        MoviesTarget::Campaign0x94 { .. } | MoviesTarget::LoadSavedGame0xB7 { .. }
+                    ) {
+                        self.route.push(
+                            json!({"dialog": 0xe2, "frame": frame, "action": "SinglePlayer"}),
+                        );
+                        App::handle_main_menu_shell_action(
+                            state,
+                            crate::ui::main_menu_shell::MainMenuShellAction::SinglePlayer,
+                        );
+                        self.phase = Phase::SinglePlayerPage;
+                        return Ok(());
+                    }
                     if let Some(next) = exit_phase {
                         self.route
                             .push(json!({"dialog": 0xe2, "frame": frame, "action": "ExitGame"}));
@@ -165,7 +194,10 @@ impl MoviesCapture {
                             self.phase = Phase::Movie;
                             crate::ui::movies_credits_shell::MoviesCreditsAction::SneakPeeks
                         }
-                        MoviesTarget::ExitConfirm | MoviesTarget::SlideOut { .. } => {
+                        MoviesTarget::ExitConfirm
+                        | MoviesTarget::SlideOut { .. }
+                        | MoviesTarget::Campaign0x94 { .. }
+                        | MoviesTarget::LoadSavedGame0xB7 { .. } => {
                             bail!("{:?} capture reached the 0x101 page", self.target)
                         }
                     };
@@ -173,6 +205,128 @@ impl MoviesCapture {
                         json!({"dialog": 0x101, "frame": frame, "action": format!("{action:?}")}),
                     );
                     App::handle_movies_credits_action(state, action);
+                }
+            }
+            (Phase::SinglePlayerPage, PresentedShell::SinglePlayer) => {
+                if Self::slide_settled(state, ShellSlideKind::SinglePlayer) {
+                    use crate::ui::single_player_shell::SinglePlayerShellAction;
+                    let (action, phase) = match self.target {
+                        MoviesTarget::LoadSavedGame0xB7 { .. } => {
+                            ensure!(
+                                state
+                                    .frontend
+                                    .single_player_shell_state
+                                    .load_saved_game_enabled,
+                                "Load Saved Game is disabled: no readable save in the saves directory"
+                            );
+                            (SinglePlayerShellAction::LoadSavedGame, Phase::LoadSavedGame)
+                        }
+                        _ => (SinglePlayerShellAction::NewCampaign, Phase::Campaign),
+                    };
+                    self.route.push(
+                        json!({"dialog": 0x100, "frame": frame, "action": format!("{action:?}")}),
+                    );
+                    // The page button through the production teardown.
+                    App::leave_shell_dialog(
+                        state,
+                        crate::app::frontend::shell_transition::ShellExitThen::SinglePlayer(action),
+                    );
+                    self.phase = phase;
+                }
+            }
+            // Entry-slide frames present through the generic slide renderer.
+            (Phase::Campaign, PresentedShell::Other | PresentedShell::Campaign)
+                if matches!(
+                    self.target,
+                    MoviesTarget::Campaign0x94 {
+                        entry_tick: Some(_),
+                        ..
+                    }
+                ) =>
+            {
+                let MoviesTarget::Campaign0x94 {
+                    entry_tick: Some(target),
+                    ..
+                } = self.target
+                else {
+                    unreachable!("matched above");
+                };
+                let tick = state
+                    .frontend
+                    .shell_first_paint_slide
+                    .as_ref()
+                    .filter(|_| {
+                        state.frontend.shell_slide_active_shell == Some(ShellSlideKind::Campaign)
+                    })
+                    .and_then(|wave| wave.compatibility_tick());
+                if let Some(tick) = tick {
+                    ensure!(tick <= target, "entry slide passed tick {target}");
+                    if tick == target {
+                        if let Some(wave) = state.frontend.shell_first_paint_slide.as_mut() {
+                            wave.hold_for_capture();
+                        }
+                        self.route.push(json!({"dialog": 0x94, "frame": frame,
+                            "action": "hold entry slide", "tick": tick}));
+                        self.phase = Phase::Settling(SETTLE_FRAMES);
+                    }
+                }
+            }
+            (Phase::LoadSavedGame, PresentedShell::Other | PresentedShell::LoadSavedGame) => {
+                let MoviesTarget::LoadSavedGame0xB7 { entry_tick } = self.target else {
+                    bail!("load phase without a load target");
+                };
+                if let Some(target) = entry_tick {
+                    let tick = state
+                        .frontend
+                        .shell_first_paint_slide
+                        .as_ref()
+                        .filter(|_| {
+                            state.frontend.shell_slide_active_shell
+                                == Some(ShellSlideKind::LoadSavedGame)
+                        })
+                        .and_then(|wave| wave.compatibility_tick());
+                    if let Some(tick) = tick {
+                        ensure!(tick <= target, "entry slide passed tick {target}");
+                        if tick == target {
+                            if let Some(wave) = state.frontend.shell_first_paint_slide.as_mut() {
+                                wave.hold_for_capture();
+                            }
+                            self.route.push(json!({"dialog": 0xb7, "frame": frame,
+                                "action": "hold entry slide", "tick": tick}));
+                            self.phase = Phase::Settling(SETTLE_FRAMES);
+                        }
+                    }
+                } else if rendered == PresentedShell::LoadSavedGame
+                    && Self::slide_settled(state, ShellSlideKind::LoadSavedGame)
+                {
+                    Self::restore_neutral_pointer(state);
+                    App::handle_load_saved_game_mouse_move(state);
+                    self.route.push(
+                        json!({"dialog": 0xb7, "frame": frame, "action": "pointer at neutral"}),
+                    );
+                    self.phase = Phase::Settling(SETTLE_FRAMES);
+                }
+            }
+            (Phase::Campaign, PresentedShell::Campaign) => {
+                if Self::slide_settled(state, ShellSlideKind::Campaign) {
+                    if let MoviesTarget::Campaign0x94 {
+                        press: Some(point), ..
+                    } = self.target
+                    {
+                        // The native helper clicks, then recenters the pointer.
+                        state.match_state.input.cursor_x = point.0 as f32;
+                        state.match_state.input.cursor_y = point.1 as f32;
+                        App::handle_campaign_mouse_down(state);
+                        App::handle_campaign_mouse_up(state);
+                        self.route.push(json!({"dialog": 0x94, "frame": frame,
+                            "action": "press slider", "point": [point.0, point.1]}));
+                    }
+                    Self::restore_neutral_pointer(state);
+                    App::handle_campaign_mouse_move(state);
+                    self.route.push(
+                        json!({"dialog": 0x94, "frame": frame, "action": "pointer at neutral"}),
+                    );
+                    self.phase = Phase::Settling(SETTLE_FRAMES);
                 }
             }
             (Phase::List, PresentedShell::MovieList) => {
@@ -332,7 +486,21 @@ impl MoviesCapture {
             MoviesTarget::Page0x101
             | MoviesTarget::List0x129
             | MoviesTarget::List0x129Selected
-            | MoviesTarget::FullList { .. } => {
+            | MoviesTarget::FullList { .. }
+            | MoviesTarget::Campaign0x94 {
+                entry_tick: None, ..
+            } => {
+                state.frontend.shell_page_title.is_terminal()
+                    && state.frontend.shell_status_line.is_terminal()
+            }
+            MoviesTarget::Campaign0x94 {
+                entry_tick: Some(_),
+                ..
+            }
+            | MoviesTarget::LoadSavedGame0xB7 {
+                entry_tick: Some(_),
+            } => true,
+            MoviesTarget::LoadSavedGame0xB7 { entry_tick: None } => {
                 state.frontend.shell_page_title.is_terminal()
                     && state.frontend.shell_status_line.is_terminal()
             }
@@ -359,6 +527,30 @@ impl MoviesCapture {
                 crate::app::frontend::shell_transition::shell_exit_wave(state, kind)
                     .and_then(|wave| wave.compatibility_tick())
                     == Some(tick)
+            }
+            MoviesTarget::Campaign0x94 { entry_tick, .. } => {
+                state.frontend.shell_route.campaign()
+                    && state.frontend.campaign.is_some()
+                    && entry_tick.is_none_or(|target| {
+                        state
+                            .frontend
+                            .shell_first_paint_slide
+                            .as_ref()
+                            .and_then(|wave| wave.compatibility_tick())
+                            == Some(target)
+                    })
+            }
+            MoviesTarget::LoadSavedGame0xB7 { entry_tick } => {
+                state.frontend.shell_route.load_saved_game()
+                    && state.frontend.load_saved_game.is_some()
+                    && entry_tick.is_none_or(|target| {
+                        state
+                            .frontend
+                            .shell_first_paint_slide
+                            .as_ref()
+                            .and_then(|wave| wave.compatibility_tick())
+                            == Some(target)
+                    })
             }
             MoviesTarget::ListBackFirstFrame => unreachable!("handled above"),
         };

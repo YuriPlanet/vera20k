@@ -22,6 +22,10 @@ pub(crate) enum ShellRoute {
     MoviesAndCredits,
     /// Movie list `0x129`, reached from Movies & Credits.
     MovieList,
+    /// Campaign selection `0x94`, reached from Single Player.
+    Campaign,
+    /// Load Saved Game `0xB7`, reached from Single Player.
+    LoadSavedGame,
     /// The native skirmish shell. `return_to_single_player` is the return
     /// arrow: entered from the single-player shell, Back returns there
     /// instead of the main menu.
@@ -41,6 +45,16 @@ impl ShellRoute {
     /// Movie list `0x129`.
     pub(crate) fn movie_list(self) -> bool {
         matches!(self, Self::MovieList)
+    }
+
+    /// Campaign selection `0x94`.
+    pub(crate) fn campaign(self) -> bool {
+        matches!(self, Self::Campaign)
+    }
+
+    /// Load Saved Game `0xB7`.
+    pub(crate) fn load_saved_game(self) -> bool {
+        matches!(self, Self::LoadSavedGame)
     }
 
     pub(crate) fn skirmish(self) -> bool {
@@ -71,6 +85,8 @@ mod tests {
             ShellRoute::SinglePlayer,
             ShellRoute::MoviesAndCredits,
             ShellRoute::MovieList,
+            ShellRoute::Campaign,
+            ShellRoute::LoadSavedGame,
             ShellRoute::Skirmish {
                 return_to_single_player: false,
             },
@@ -83,6 +99,8 @@ mod tests {
                 route.single_player(),
                 route.movies_and_credits(),
                 route.movie_list(),
+                route.campaign(),
+                route.load_saved_game(),
                 route.skirmish(),
             ];
             assert!(active.iter().filter(|&&on| on).count() <= 1);

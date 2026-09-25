@@ -2,6 +2,8 @@
 //! session/settings, every shell render surface, quit cascade, startup
 //! options/splash, and shell slide transitions.
 
+pub(crate) mod campaign_shell_render;
+pub(crate) mod load_saved_game_render;
 pub(crate) mod credits_roll;
 pub(crate) mod fullscreen_movie;
 pub mod launch;

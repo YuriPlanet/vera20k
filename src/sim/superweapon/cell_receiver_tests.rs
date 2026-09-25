@@ -357,7 +357,8 @@ fn infantry_terminal_same_frame_firer_death_keeps_electric_consequences() {
         let (mut sim, mut rules) = fixture_with_extra(&format!(
             "[VehicleTypes]\n1=TESLA\n[E1]\nPrimary=Rifle\nSight=8\n\
          [TESLA]\nStrength=300\nSpeed=6\nSight=8\nPrimary=Coil\n\
-         [Rifle]\nDamage=1\nROF=50\nRange=10\nWarhead=KILL\n\
+         [Rifle]\nDamage=1\nROF=50\nRange=10\nProjectile=SlowShot\nSpeed=10\nWarhead=KILL\n\
+         [SlowShot]\nImage=none\n\
          [Coil]\nDamage=1000\nROF=50\nRange=10\nWarhead=KILL\nIsElectricBolt=yes\n\
          [Warheads]\n3=KILL\n[KILL]\nInfDeath={inf_death}\nCellSpread=0\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
          [CombatDamage]\nDefaultSparkSystem=SparkSys\n[ParticleSystems]\n0=SparkSys\n\
@@ -402,6 +403,10 @@ fn infantry_terminal_same_frame_firer_death_keeps_electric_consequences() {
         let tesla = sim
             .spawn_object_at_height("TESLA", "Russians", 6, 5, tesla_facing, 0, &rules)
             .unwrap();
+        // The Rifle's bullet is still flying at the tail, so the Tesla's
+        // (Inviso) bullet takes its first AI this frame. Had the Rifle's
+        // landed first, its removal would shift the Tesla's into its Logic
+        // slot and skip it until the next frame.
         for (source, target) in [(infantry, tesla), (tesla, infantry)] {
             assert!(crate::sim::combat::issue_attack_command(
                 &mut sim.substrate.entities,

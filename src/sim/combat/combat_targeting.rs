@@ -75,8 +75,8 @@ pub(crate) struct AttackerSnapshot {
     pub owner: InternedId,
     pub category: EntityCategory,
     /// What the attacker is firing at — entity ID or cell coord.
-    /// Cell targets skip auto-retarget and friendly-fire checks (the player
-    /// explicitly chose this cell).
+    /// Cell targets skip friendly-fire checks (the player explicitly chose
+    /// this cell).
     pub target: super::TargetKind,
     pub pos_rx: u16,
     pub pos_ry: u16,

@@ -4070,7 +4070,6 @@ pub(super) fn gsi_05_02_projectile(source_id: u64, fuse_frames: Option<u16>) -> 
             base_damage: 1,
             warhead: crate::sim::intern::InternedId::from_index(0),
             weapon: crate::sim::intern::InternedId::from_index(0),
-            owner: crate::sim::intern::InternedId::from_index(0),
         },
         speed_leptons_per_frame: 64,
         velocity: ProjectileVelocity::new(64, 0, 0),
@@ -4120,7 +4119,6 @@ fn persistent_bullet_logic_slot_publishes_native_wall_dirty_visits() {
             base_damage: 1,
             warhead: sim.interner.intern("WALLWH"),
             weapon: sim.interner.intern("MISSINGWEAPON"),
-            owner: sim.interner.intern("Americans"),
         };
         sim.admit_projectile(projectile_id, spawn);
 
@@ -4300,7 +4298,6 @@ fn homing_ground_impact_reaches_damage_and_cleanup_through_runtime_frame() {
             base_damage: 1,
             warhead: sim.interner.intern("WALLWH"),
             weapon: sim.interner.intern("MISSINGWEAPON"),
-            owner: sim.interner.intern("Americans"),
         };
         let id = sim.allocate_stable_id();
         sim.admit_projectile(id, shot);
@@ -5120,7 +5117,6 @@ fn gsi_05_04_intact_bridge_cell_target_reaches_shrapnel_consumer() {
             base_damage: 0,
             warhead: sim.interner.intern("WH"),
             weapon: sim.interner.intern("PARENT"),
-            owner: sim.interner.intern("Americans"),
         },
         reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
     };
@@ -5198,7 +5194,6 @@ fn gsi_05_04_combat_fatal_expiry_keeps_authoritative_cell_target() {
             base_damage: 10,
             warhead: sim.interner.intern("KILLWH"),
             weapon: sim.interner.intern("MISSINGWEAPON"),
-            owner: sim.interner.intern("Americans"),
         },
         reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
     };
@@ -5321,7 +5316,6 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
             base_damage: 10,
             warhead: sim.interner.intern("KILLWH"),
             weapon: sim.interner.intern("MISSINGWEAPON"),
-            owner: sim.interner.intern("Americans"),
         },
         reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
     };
@@ -5908,7 +5902,6 @@ fn gsi_01_05_lethal_bullet_commits_receiver_before_retirement_and_double_compact
         base_damage: 10,
         warhead: sim.interner.intern("KILLWH"),
         weapon: sim.interner.intern("MISSINGWEAPON"),
-        owner: sim.interner.intern("Americans"),
     };
     sim.admit_projectile(projectile_id, spawn);
     sim.set_logic_order_for_test(vec![projectile_id, victim_id, successor_id]);

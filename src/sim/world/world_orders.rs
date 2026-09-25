@@ -677,11 +677,12 @@ impl Simulation {
             // with `GetROF(1)` (`InfantryClass::PerCellProcess
             // 0x0051A60B..0x0051A65F`), and so does a second planter entering an
             // already charged building (`0x0051A546..0x0051A5A0`), which VERA's
-            // walk-up leaves hovering outside. GetROF draws on the Scenario RNG
-            // unless weapon slot 1 is empty (then it returns 1 without a draw,
-            // `0x006FCFD4`). Trigger: every C4 plant. Effect: the planter can
-            // fire a reload early, and a draw per plant can be missing. Needs
-            // GetROF as a callable owner.
+            // walk-up leaves hovering outside. Outside FireAt the burst index is
+            // below `Burst=`, so `combat::rof::get_rof` takes its mid-burst arm:
+            // one Scenario `RandomRanged(3, 5)` (an empty slot 1 returns 1
+            // without a draw, `0x006FCFD4`). Trigger: every C4 plant. Effect: the
+            // planter can fire up to 5 frames early, and one draw per plant is
+            // missing. Belongs to the C4 plant mechanism.
             if let Some(b) = self.substrate.entities.get_mut(target_id) {
                 b.pending_c4_detonation = Some(PendingC4Detonation {
                     start_frame: self.session.binary_frame as i32,
@@ -1164,6 +1165,16 @@ impl Simulation {
                 continue;
             }
             if entity.passively_acquired_target {
+                continue;
+            }
+            // `FootClass::Mission_Guard @ 0x004D5070` has no approach call
+            // (vt+0x53C): an object committed to Guard fires at what it holds
+            // from where it stands, whoever assigned it. A player "guard this
+            // spot" order is VERA's Area Guard stand-in (`OrderIntent::Guard`)
+            // and still approaches.
+            if entity.mission.current().known() == Some(crate::sim::mission::MissionType::Guard)
+                && entity.order_intent.is_none()
+            {
                 continue;
             }
             if entity.category == EntityCategory::Structure {

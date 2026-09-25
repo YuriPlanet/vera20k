@@ -1993,7 +1993,34 @@ const REVEAL_MIRROR: [(i8, i8); 309] = [
     (0, -1), (0, -1), (0, -1), (0, -1), (0, -1), (0, -1), (0, -1),
 ];
 
-/// Public version of reveal_radius for use by external systems (e.g., RevealOnFire).
+/// `MapClass::IsShrouded @ 0x00586360`: the Cell under `point`, projected up
+/// by its height level, is not yet mapped (`open` answers the Cell's
+/// ground-open bit, `+0x12C & 0x08`); an odd level also tests the next cell
+/// (`0x00481810(3)`).
+pub(crate) fn coordinate_is_shrouded(
+    cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
+    point: crate::sim::components::DriveCoord,
+    open: &impl Fn(crate::map::cell_index::NativeCellIdentity) -> Result<bool, String>,
+) -> Result<bool, String> {
+    let level = point.z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
+    let shift = level / 2 + i32::from(level & 1 != 0);
+    let first = cells.lookup((
+        ((point.x / 256) as i16).wrapping_sub(shift as i16),
+        ((point.y / 256) as i16).wrapping_sub(shift as i16),
+    ));
+    if open(first)? {
+        return Ok(false);
+    }
+    if level & 1 != 0 {
+        let (x, y) = cells.coord(first);
+        let next = cells.lookup((x.wrapping_add(1), y.wrapping_add(1)));
+        return open(next).map(|open| !open);
+    }
+    Ok(true)
+}
+
+/// A flat fire-leaf reveal of `range` cells around a cell, with no height
+/// shift or height line of sight (fixtures and flat callers).
 pub fn reveal_radius(
     fog: &mut FogState,
     owner: InternedId,
@@ -2001,6 +2028,46 @@ pub fn reveal_radius(
     center_ry: u16,
     range: u16,
 ) {
+    let cells = collect_reveal_cells(
+        center_rx, center_ry, range, 0, false, None, fog.width, fog.height,
+    );
+    fire_reveal_cells(fog, owner, cells);
+}
+
+/// `MapClass::RevealShroud @ 0x005673A0` as FireAt's RevealOnFire calls it
+/// (`0x006FF6F2`): radius 3 around the firer's coordinate, centred on its
+/// height-shifted cell, with `RevealByHeight=`'s line of sight (arg 7 = 1),
+/// for `house`'s map. Each cell takes the fire leaf `0x004876F0`.
+pub(crate) fn reveal_shroud_on_fire(
+    fog: &mut FogState,
+    house: InternedId,
+    coord: crate::sim::components::DriveCoord,
+    reveal_by_height: bool,
+    height_grid: Option<&[u8]>,
+) {
+    if coord.x < 0 || coord.y < 0 {
+        return;
+    }
+    let cells = collect_reveal_cells(
+        (coord.x / 256) as u16,
+        (coord.y / 256) as u16,
+        REVEAL_ON_FIRE_RADIUS,
+        coord.z,
+        reveal_by_height,
+        height_grid,
+        fog.width,
+        fog.height,
+    );
+    fire_reveal_cells(fog, house, cells);
+}
+
+/// FireAt's reveal radius (`PUSH 0x3` at `0x006FF6E0`).
+const REVEAL_ON_FIRE_RADIUS: u16 = 3;
+
+/// The fire leaf `0x004876F0` over collected cells: unlike Psychic's
+/// reduce/increase pair, it never changes the shroud counter and tests
+/// counter > 0 for pending.
+fn fire_reveal_cells(fog: &mut FogState, owner: InternedId, cells: Vec<(u16, u16)>) {
     let width = fog.width;
     let height = fog.height;
     if width == 0 || height == 0 {
@@ -2010,10 +2077,7 @@ pub fn reveal_radius(
         .by_owner
         .entry(owner)
         .or_insert_with(|| OwnerVisibility::new(width, height));
-    // Selected admitted fire leaf4876F0: unlike Psychic's reduce/increase pair,
-    // this never changes the shroud counter and tests counter>0 for pending.
-    for (rx, ry) in collect_reveal_cells(center_rx, center_ry, range, 0, false, None, width, height)
-    {
+    for (rx, ry) in cells {
         vis.mark_visible_with_fog_of_war(rx, ry, true);
         let index = vis.index(rx, ry).expect("collected cell is in bounds");
         vis.shroud_knowledge[index].fire_unshroud();

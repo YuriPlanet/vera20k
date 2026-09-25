@@ -28,6 +28,12 @@ impl EstimatedHealth {
         self.0 = self.0.wrapping_add(amount);
     }
 
+    /// `SUB [target+0x70], estimate`: the target scan (`0x007099B5`) and
+    /// FireAt (`0x006FE622`) reserve the damage a shot is expected to deal.
+    pub(crate) fn debit(&mut self, estimate: i32) {
+        self.0 = self.0.wrapping_sub(estimate);
+    }
+
     /// Original TechnoAI6F9F6E: signed clamp, then frame-mask recovery. This is
     /// an actor visit, not a once-per-global-tick sweep or a modulo-four pulse.
     pub(crate) fn recover(&mut self, actual_health: i32, binary_frame: u32) {

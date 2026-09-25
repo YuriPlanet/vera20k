@@ -56,30 +56,15 @@
 //! cloak/sensor test at `0x006F7DA9` and the "discovered by the local player"
 //! test at `0x006F81B8`, and the latter is behind `g_GameMode == 0` — campaign
 //! only, since a skirmish runs mode 5. Retail therefore lets a skirmish unit
-//! acquire an enemy standing in unexplored ground, and refuses the SHOT
-//! instead (`GetFireError` returns the shrouded code, which the passive driver
-//! at `0x00709820` turns into a target drop on the next cadence).
-//!
-//! RESIDUAL — VERA has the acquire half of that and not the drop half.
-//! - Trigger: an enemy inside weapon range but in a cell this house has not
-//!   explored. Common for the long-range artillery, whose `Sight=` is far
-//!   *below* its weapon range: `[V3]` sees 7 and shoots 18, `[DRED]` sees 7 and
-//!   shoots 25, and `HowitzerGun` reaches 12. Those types scan well past their
-//!   own sight on every cadence.
-//! - Player effect: small even so. Native drops the target on
-//!   `GetFireError == 6` and then re-runs this same scan **inside the same
-//!   call**, so it re-picks the same shrouded candidate; the end state is a
-//!   unit holding a target it cannot fire on in both engines. What VERA loses
-//!   is the one-cadence flicker, not the choice.
-//! - Frequency: every artillery scan whose radius crosses unexplored ground.
-//! - Downstream risk: closing it belongs with the passive driver's stale-target
-//!   check, which needs VERA's fire-error query to report the shrouded case.
+//! acquire an enemy standing in unexplored ground, and fires on it: no fire
+//! path reads shroud either (GetFireError `0x006FC0B0` has no shroud code, and
+//! `IsFogged @ 0x005865E0` is a constant false).
 //!
 //! ## Other residuals
 //!
-//! - The garrisoned-building auto-acquire scan in `combat/mod.rs` still uses
+//! - The garrisoned-building auto-acquire scan in `world_receiver.rs` still uses
 //!   the retired nearest-first key, and still carries the invented
-//!   `FogState::is_cell_visible` gate (`combat/mod.rs:5388`) that this scan no
+//!   friendly and `FogState::is_cell_visible` gates that this scan no
 //!   longer has — so "the fog gate is gone" is true of passive acquisition and
 //!   not of the garrison path. It is a separate caller with its own
 //!   `OccupyWeapon` selection ladder; folding it into this walk is follow-up

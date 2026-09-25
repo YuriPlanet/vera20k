@@ -17,13 +17,14 @@ use crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION;
 
 const ATLAS_PADDING: u32 = 2;
 const OWNER_DRAW_FLAG_TRANSPARENT_RGB: [u8; 3] = [255, 0, 255];
-const PRIMITIVE_BEVEL_COLOR_A_RGB: [u8; 3] = [0xC5, 0xBE, 0xA7];
-const PRIMITIVE_BEVEL_COLOR_B_RGB: [u8; 3] = [0x80, 0x7A, 0x68];
+/// Shell bevel colours `0x00C5BEA7` and `0x00807A68` (`0x0060FA81..0x0060FA9B`),
+/// packed `0x00BBGGRR`.
+const PRIMITIVE_BEVEL_COLOR_A_RGB: [u8; 3] = [0xA7, 0xBE, 0xC5];
+const PRIMITIVE_BEVEL_COLOR_B_RGB: [u8; 3] = [0x68, 0x7A, 0x80];
 const TRACKBAR_CONTROL_W: u32 = 128;
 const TRACKBAR_CONTROL_H: u32 = 21;
 const TRACKBAR_VALUE_PLAQUE_W: i32 = 50;
 const TRACKBAR_FRAME_BORDER: i32 = 2;
-const TRACKBAR_VALUE_FRAME_INSET: i32 = 2;
 const SKIRMISH_FLAG_PCX_NAMES: [&str; 12] = [
     "usai.pcx", "japi.pcx", "frai.pcx", "geri.pcx", "gbri.pcx", "djbi.pcx", "arbi.pcx", "lati.pcx",
     "rusi.pcx", "yrii.pcx", "obsi.pcx", "rani.pcx",
@@ -52,6 +53,12 @@ pub struct SkirmishShellChromeAtlas {
     /// D5 static71C: 6038F7->6039EF selects SDWRNANM through SHELL2.PAL.
     pub launcher_warning_frames: Vec<SkirmishShellChromeEntry>,
     pub sd_map_button: Option<SkirmishShellChromeEntry>,
+    /// SDMPBTN.SHP frames 0..=6: the map button in place (0) to only its rail
+    /// left (6), drawn by the slide engine (`0x006071E0`).
+    pub sd_map_button_frames: [Option<SkirmishShellChromeEntry>; 7],
+    /// SDWRNTMP.SHP frames 0..=5: the top panel's warning display moving while
+    /// the slide engine runs (SHELL.PAL, `0x0072E280`).
+    pub sd_warning_frames: [Option<SkirmishShellChromeEntry>; 6],
     pub background_640_mnscrns: Option<SkirmishShellChromeEntry>,
     pub background_800_coop_game_setup: Option<SkirmishShellChromeEntry>,
     pub choose_map_background_800_customize_battle: Option<SkirmishShellChromeEntry>,
@@ -336,6 +343,25 @@ pub fn build_skirmish_shell_chrome_atlas(
         0,
         "SHELL.PAL",
     )?);
+    // The slide engine's map-button and warning-display frames.
+    for frame in 1..=6 {
+        rendered.extend(render_shp_entry_labeled(
+            assets,
+            "SDMPBTN.SHP",
+            &format!("sdmpbtn.shp#{frame}"),
+            &shell_palette,
+            frame,
+        ));
+    }
+    for frame in 0..=5 {
+        rendered.extend(render_shp_entry_labeled(
+            assets,
+            "SDWRNTMP.SHP",
+            &format!("sdwrntmp.shp#{frame}"),
+            &shell_palette,
+            frame,
+        ));
+    }
     rendered.push(mandatory_shp(
         assets,
         "LWSCRNS.SHP",
@@ -511,6 +537,13 @@ pub fn build_skirmish_shell_chrome_atlas(
         }),
         right_panel_bottom_sdbtm: by_label.get("sdbtm.shp").copied(),
         sd_map_button: by_label.get("sdmpbtn.shp").copied(),
+        sd_map_button_frames: std::array::from_fn(|frame| match frame {
+            0 => by_label.get("sdmpbtn.shp").copied(),
+            frame => by_label.get(&format!("sdmpbtn.shp#{frame}")).copied(),
+        }),
+        sd_warning_frames: std::array::from_fn(|frame| {
+            by_label.get(&format!("sdwrntmp.shp#{frame}")).copied()
+        }),
         background_640_mnscrns: by_label.get("mnscrns.shp").copied(),
         background_800_coop_game_setup: by_label.get("mnscrnlcoopgamesetup.shp").copied(),
         choose_map_background_800_customize_battle: by_label
@@ -787,8 +820,11 @@ fn render_trackbar_frame_entry(label: &str) -> RenderedShellEntry {
     )
 }
 
-/// Original 61E1B9..61E269: draw the rail frame at the current control size;
-/// only a plaque-enabled control draws the adjacent value frame. Both use
+/// Original 61E1B9..61E269: draw the rail frame at the current control size,
+/// then the value frame `reserve - inset` wide past it, where the inset is 2
+/// with the value plaque on and 1 without (`0x0061E22A..0x0061E235`). A
+/// plaque-less control still draws that second box, one pixel wide negative,
+/// which leaves three extra columns at the rail's right end. Both use
 /// 6208F0's two-pixel outside expansion. Never stretch a split-frame bitmap.
 fn render_trackbar_frame_geometry(
     label: &str,
@@ -804,8 +840,9 @@ fn render_trackbar_frame_geometry(
     let control_w = control_width as i32;
     let control_h = control_height as i32;
     let left_frame_w = control_w - reserve;
-    let value_frame_x = left_frame_w + TRACKBAR_VALUE_FRAME_INSET;
-    let value_frame_w = reserve - TRACKBAR_VALUE_FRAME_INSET;
+    let inset = if reserve > 0 { 2 } else { 1 };
+    let value_frame_x = left_frame_w + inset;
+    let value_frame_w = reserve - inset;
 
     // `OwnerDraw_Trackbar_0061D950` supplies control-relative boxes and
     // FUN_006208F0 expands each by two pixels. Shift both inputs by the canvas
@@ -817,15 +854,13 @@ fn render_trackbar_frame_geometry(
         [border, border, left_frame_w, control_h],
         border,
     );
-    if reserve > 0 {
-        draw_primitive_bevel(
-            &mut rgba,
-            width,
-            height,
-            [border + value_frame_x, border, value_frame_w, control_h],
-            border,
-        );
-    }
+    draw_primitive_bevel(
+        &mut rgba,
+        width,
+        height,
+        [border + value_frame_x, border, value_frame_w, control_h],
+        border,
+    );
 
     RenderedShellEntry {
         label: label.to_ascii_lowercase(),
@@ -835,8 +870,23 @@ fn render_trackbar_frame_geometry(
     }
 }
 
+/// A trackbar frame canvas (`width`, `height`, RGBA) for a control of
+/// `control_width` x `control_height`, the control at `(2, 2)` inside it.
+pub(crate) fn trackbar_frame_rgba(
+    control_width: u32,
+    control_height: u32,
+    reserve: i32,
+) -> (u32, u32, Vec<u8>) {
+    let entry = render_trackbar_frame_geometry("trackbar", control_width, control_height, reserve);
+    (entry.width, entry.height, entry.rgba)
+}
+
+/// `0x006208F0`: `border` rings outside `box_xywh`, light top-left and dark
+/// bottom-right (swapped on the inner ring of a two-pixel border), averaged
+/// corners. Like the original it draws whatever its edges give, a box of
+/// width -1 included.
 fn draw_primitive_bevel(rgba: &mut [u8], width: u32, height: u32, box_xywh: [i32; 4], border: i32) {
-    if border <= 0 || box_xywh[2] <= 0 || box_xywh[3] <= 0 {
+    if border <= 0 {
         return;
     }
 
@@ -1043,10 +1093,10 @@ fn pack_entries(
 mod tests {
     use super::{
         AssetManager, OWNER_DRAW_FLAG_TRANSPARENT_RGB, PRIMITIVE_BEVEL_COLOR_A_RGB,
-        PRIMITIVE_BEVEL_COLOR_B_RGB, RenderedShellEntry, ShellAssetRole, average_rgb,
-        classify_shell_asset, draw_axis_line_inclusive_clipped, load_named_palette,
+        PRIMITIVE_BEVEL_COLOR_B_RGB, RenderedShellEntry, ShellAssetRole, TRACKBAR_FRAME_BORDER,
+        average_rgb, classify_shell_asset, draw_axis_line_inclusive_clipped, load_named_palette,
         load_parent_background_palette, render_primitive_bevel_entry, render_shp_entry,
-        render_trackbar_frame_entry, rgba_color,
+        render_trackbar_frame_entry, rgba_color, trackbar_frame_rgba,
     };
 
     fn pixel(entry: &RenderedShellEntry, x: u32, y: u32) -> [u8; 4] {
@@ -1235,11 +1285,64 @@ mod tests {
             PRIMITIVE_BEVEL_COLOR_B_RGB,
         ));
 
-        assert_eq!(mixed, [0xA2, 0x9C, 0x87, 255]);
+        assert_eq!(mixed, [0x87, 0x9C, 0xA2, 255]);
         assert_eq!(pixel(&entry, 5, 0), mixed);
         assert_eq!(pixel(&entry, 0, 5), mixed);
         assert_eq!(pixel(&entry, 4, 1), mixed);
         assert_eq!(pixel(&entry, 1, 4), mixed);
+    }
+
+    /// `0x006208F0` executed for both frame boxes of a plaque-less and a
+    /// plaque trackbar (`tools/storage_oracle/shell_bevel.py`): replaying its
+    /// lines and pixels in order gives exactly the frame canvas, in RGB565.
+    #[test]
+    fn trackbar_frames_match_the_executed_bevel() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../tools/storage_oracle/shell_bevel.json"))
+                .unwrap();
+        for case in fixture["cases"].as_array().unwrap() {
+            let label = case["trackbar"].as_str().unwrap();
+            let width = case["width"].as_u64().unwrap() as u32;
+            let height = case["height"].as_u64().unwrap() as u32;
+            let reserve = case["reserve"].as_i64().unwrap() as i32;
+            let (canvas_w, canvas_h, rgba) = trackbar_frame_rgba(width, height, reserve);
+            let border = TRACKBAR_FRAME_BORDER;
+            let mut expected = vec![None; (canvas_w * canvas_h) as usize];
+            let mut plot = |x: i64, y: i64, color: u64| {
+                let (x, y) = (x + i64::from(border), y + i64::from(border));
+                if (0..i64::from(canvas_w)).contains(&x) && (0..i64::from(canvas_h)).contains(&y) {
+                    expected[(y as u32 * canvas_w + x as u32) as usize] = Some(color as u16);
+                }
+            };
+            for bevel in case["boxes"].as_array().unwrap() {
+                for op in bevel["ops"].as_array().unwrap() {
+                    let op = op.as_array().unwrap();
+                    let n = |i: usize| op[i].as_i64().unwrap();
+                    match op[0].as_str().unwrap() {
+                        "line" => {
+                            let color = op[5].as_u64().unwrap();
+                            let (x0, y0, x1, y1) = (n(1), n(2), n(3), n(4));
+                            for y in y0.min(y1)..=y0.max(y1) {
+                                for x in x0.min(x1)..=x0.max(x1) {
+                                    plot(x, y, color);
+                                }
+                            }
+                        }
+                        _ => plot(n(1), n(2), op[3].as_u64().unwrap()),
+                    }
+                }
+            }
+            for (index, want) in expected.iter().enumerate() {
+                let texel = &rgba[index * 4..index * 4 + 4];
+                let got = (texel[3] != 0).then(|| {
+                    (u16::from(texel[0] >> 3) << 11)
+                        | (u16::from(texel[1] >> 2) << 5)
+                        | u16::from(texel[2] >> 3)
+                });
+                let (x, y) = (index as u32 % canvas_w, index as u32 / canvas_w);
+                assert_eq!(got, *want, "{label}: canvas pixel ({x}, {y})");
+            }
+        }
     }
 
     #[test]

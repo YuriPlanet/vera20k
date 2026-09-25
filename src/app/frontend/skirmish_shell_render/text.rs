@@ -520,12 +520,18 @@ pub(super) fn push_player_name_edit_text_draw(
     out.push(ShellTextDraw { instances, scissor });
 }
 
+/// The dialog's text. While a slide runs (`sliding`) the right panel shows only
+/// the slide engine's art (the captions and the title, game-type and map
+/// statics are overdrawn every tick), and the heading and status line stay
+/// validate-only (`0x00606800`, `0x00601360`); the left-side controls keep
+/// what they painted.
 pub(super) fn build_shell_text_draws(
     state: &AppState,
     layout: &SkirmishShellLayout,
     validation_layout: Option<&ValidationModalLayout>,
     shell: &SkirmishShellState,
     maps: &[MapMenuEntry],
+    sliding: bool,
 ) -> (Vec<ShellTextDraw>, Vec<SpriteInstance>) {
     let mut shell_draws: Vec<ShellTextDraw> = Vec::new();
     let bare_instances: Vec<SpriteInstance> = Vec::new();
@@ -540,35 +546,8 @@ pub(super) fn build_shell_text_draws(
         covering_overlays.push(validation_layout.dialog);
     }
 
-    let start = localized_label(state, "GUI:StartGame", "Start Game");
-    let choose = localized_label(state, "GUI:ChooseMap", "Choose Map");
-    let back = localized_label(state, "GUI:Back", "Back");
-
-    for (label, rect, button) in [
-        (
-            start.as_str(),
-            layout.start_button,
-            OwnerDrawButton::StartGame0x617,
-        ),
-        (
-            choose.as_str(),
-            layout.choose_map_button,
-            OwnerDrawButton::ChooseMap0x5aa,
-        ),
-        (
-            back.as_str(),
-            layout.back_button,
-            OwnerDrawButton::Back0x5c0,
-        ),
-    ] {
-        push_button_label_draw(
-            &mut shell_draws,
-            state,
-            label,
-            rect,
-            shell.pressed_owner_draw_button == Some(button),
-            0.00041,
-        );
+    if !sliding {
+        push_right_panel_text_draws(&mut shell_draws, state, layout, shell);
     }
 
     for (key, fallback, rect) in [
@@ -587,38 +566,6 @@ pub(super) fn build_shell_text_draws(
             SHELL_CONTROL_TEXT_DEPTH,
         );
     }
-
-    // Resolve all three static strings from the single shared source so the
-    // reveal-start trigger (`frontend::shell_transition`) and this renderer agree on the
-    // exact text whose length sets the reveal target.
-    let (title, game_type, map_label) = skirmish_right_panel_label_strings(state);
-    push_static_label_draw(
-        &mut shell_draws,
-        state,
-        &title,
-        layout.right_panel_text.title,
-        ShellAlign::H_CENTER,
-        SHELL_CONTROL_TEXT_DEPTH,
-        static_reveal_window(&shell.title_reveal),
-    );
-    push_static_label_draw(
-        &mut shell_draws,
-        state,
-        &game_type,
-        layout.right_panel_text.game_type,
-        ShellAlign::H_CENTER,
-        SHELL_CONTROL_TEXT_DEPTH,
-        static_reveal_window(&shell.game_type_reveal),
-    );
-    push_static_label_draw(
-        &mut shell_draws,
-        state,
-        &map_label,
-        layout.right_panel_text.map_label,
-        ShellAlign::H_CENTER,
-        SHELL_CONTROL_TEXT_DEPTH,
-        static_reveal_window(&shell.map_label_reveal),
-    );
 
     push_player_name_edit_text_draw(&mut shell_draws, state, shell, layout);
 
@@ -660,7 +607,7 @@ pub(super) fn build_shell_text_draws(
         );
     }
 
-    if let Some(status_help_text) = parent_shell_status_help_text(shell) {
+    if let Some(status_help_text) = parent_shell_status_help_text(shell).filter(|_| !sliding) {
         push_label_draw(
             &mut shell_draws,
             state,
@@ -797,6 +744,78 @@ pub(super) fn build_shell_text_draws(
     }
 
     (shell_draws, bare_instances)
+}
+
+/// The right panel's text: the three button captions and the title, game-type
+/// and map statics (`0x694`, `0x6EC`, `0x5A8`).
+fn push_right_panel_text_draws(
+    shell_draws: &mut Vec<ShellTextDraw>,
+    state: &AppState,
+    layout: &SkirmishShellLayout,
+    shell: &SkirmishShellState,
+) {
+    let start = localized_label(state, "GUI:StartGame", "Start Game");
+    let choose = localized_label(state, "GUI:ChooseMap", "Choose Map");
+    let back = localized_label(state, "GUI:Back", "Back");
+
+    for (label, rect, button) in [
+        (
+            start.as_str(),
+            layout.start_button,
+            OwnerDrawButton::StartGame0x617,
+        ),
+        (
+            choose.as_str(),
+            layout.choose_map_button,
+            OwnerDrawButton::ChooseMap0x5aa,
+        ),
+        (
+            back.as_str(),
+            layout.back_button,
+            OwnerDrawButton::Back0x5c0,
+        ),
+    ] {
+        push_button_label_draw(
+            shell_draws,
+            state,
+            label,
+            rect,
+            shell.pressed_owner_draw_button == Some(button),
+            0.00041,
+        );
+    }
+
+    // Resolve all three static strings from the single shared source so the
+    // reveal-start trigger (`frontend::shell_transition`) and this renderer agree on the
+    // exact text whose length sets the reveal target.
+    let (title, game_type, map_label) = skirmish_right_panel_label_strings(state);
+    push_static_label_draw(
+        shell_draws,
+        state,
+        &title,
+        layout.right_panel_text.title,
+        ShellAlign::H_CENTER,
+        SHELL_CONTROL_TEXT_DEPTH,
+        static_reveal_window(&shell.title_reveal),
+    );
+    push_static_label_draw(
+        shell_draws,
+        state,
+        &game_type,
+        layout.right_panel_text.game_type,
+        ShellAlign::H_CENTER,
+        SHELL_CONTROL_TEXT_DEPTH,
+        static_reveal_window(&shell.game_type_reveal),
+    );
+    push_static_label_draw(
+        shell_draws,
+        state,
+        &map_label,
+        layout.right_panel_text.map_label,
+        ShellAlign::H_CENTER,
+        SHELL_CONTROL_TEXT_DEPTH,
+        static_reveal_window(&shell.map_label_reveal),
+    );
 }
 
 pub(super) fn parent_shell_status_help_text(shell: &SkirmishShellState) -> Option<&str> {

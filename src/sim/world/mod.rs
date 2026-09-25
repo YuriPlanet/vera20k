@@ -54,6 +54,7 @@ mod techno_ai;
 #[cfg(test)]
 pub(crate) use techno_ai::ObjectAiCtx;
 pub(crate) use techno_ai::harvester_enter_idle_mode_selector;
+pub(crate) use techno_ai::infantry_unlimbo_idle_mode;
 pub(crate) use techno_ai::queue_foot_enter_idle_mode;
 mod command_schedule;
 pub(crate) mod techno_ai_cloak;
@@ -1818,6 +1819,13 @@ impl Simulation {
             let stable_id = self.allocate_stable_id();
             self.admit_projectile(stable_id, projectile);
         }
+        #[cfg(test)]
+        if let Some(fixture) = self.receiver_fixture.as_mut() {
+            fixture
+                .tail_effects
+                .push((commit.effects, commit.under_attack_events));
+            return;
+        }
         self.absorb_noncombat_damage_effects(
             rules,
             overlay_registry,
@@ -1938,19 +1946,28 @@ impl Simulation {
     }
 
     /// Finish the live Logic pass after combat has modeled the pre-existing
-    /// Techno callbacks. FireAt registers each Wave immediately, preserving
-    /// its actual tail position; the live-length walk reaches those new slots
-    /// only after every object that was already ahead of them has fired.
-    fn visit_combat_appended_wave_tail(
+    /// Techno callbacks. FireAt appends each bullet, muzzle anim and wave to
+    /// the Logic vector as it fires, and `LogicClass::PerTickUpdate` re-reads
+    /// the vector's length after every AI call (`0x0055B613`), so those objects
+    /// take their first AI later in the same pass, in append order; an Inviso
+    /// bullet detonates on that visit. Anything they append in turn (explosion
+    /// anims) follows. A detonated bullet leaves the vector
+    /// (`LogicClass::Remove @ 0x0055BAE0`), which shifts the next entry into
+    /// its slot, and the cursor moves past it: that entry waits a frame.
+    ///
+    /// RESIDUAL: a Techno created in this window (a crew survivor, a spawned
+    /// aircraft) still takes its first AI next frame; VERA's Techno AI runs its
+    /// fire routine in the combat phase, not in its Logic visit.
+    pub(crate) fn visit_combat_tail(
         &mut self,
-        preexisting_wave_ids: &BTreeSet<u64>,
+        first_tail_id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     ) {
         let mut index = 0;
         while index < self.substrate.logic.len() {
             let stable_id = self.substrate.logic.as_slice()[index];
-            if !preexisting_wave_ids.contains(&stable_id) && self.waves.get(stable_id).is_some() {
+            if stable_id >= first_tail_id && !self.substrate.entities.contains(stable_id) {
                 let _ = self.object_ai_visit_one(
                     stable_id,
                     Some(rules),
@@ -3753,8 +3770,23 @@ impl Simulation {
     /// must not own independent counters.
     pub(crate) fn allocate_stable_id(&mut self) -> u64 {
         let id = self.substrate.next_stable_object_id;
-        self.substrate.next_stable_object_id =
-            self.substrate.next_stable_object_id.saturating_add(1);
+        // Test fixtures insert objects with hand-picked ids without advancing
+        // the allocator; production always allocates. Skip those ids so a
+        // fixture's first bullet cannot collide with its own units.
+        #[cfg(test)]
+        let id = {
+            let mut id = id;
+            while self.substrate.entities.contains(id) {
+                id += 1;
+            }
+            id
+        };
+        #[cfg(not(test))]
+        debug_assert!(
+            !self.substrate.entities.contains(id),
+            "stable id {id} is already live"
+        );
+        self.substrate.next_stable_object_id = id.saturating_add(1);
         id
     }
 
@@ -6259,11 +6291,7 @@ impl Simulation {
             for request in sonic_damage_requests {
                 self.commit_logic_wave_damage_request(rules, overlay_registry, &request);
             }
-            let preexisting_wave_ids = self
-                .waves
-                .iter()
-                .map(|(&stable_id, _)| stable_id)
-                .collect::<BTreeSet<_>>();
+            let first_tail_id = self.substrate.next_stable_object_id;
             let fire_suppressed = tube_turn_owned_ids.clone();
             let combat_result = self.tick_combat_with_fatal_lifecycle(
                 rules,
@@ -6279,7 +6307,7 @@ impl Simulation {
                 let stable_id = self.allocate_stable_id();
                 self.admit_projectile(stable_id, projectile);
             }
-            self.visit_combat_appended_wave_tail(&preexisting_wave_ids, rules, overlay_registry);
+            self.visit_combat_tail(first_tail_id, rules, overlay_registry);
             let post_combat_path_grid = self.path_grid_snapshot();
             let active_post_combat_path_grid =
                 post_combat_path_grid.as_deref().or(active_path_grid);

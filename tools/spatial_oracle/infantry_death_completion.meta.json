@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "InfantryClass sequence completion 0x00520AE0 for Die1/Die2/Die5 and WetDie1/2 Doings: stage against the DoControls count, the corpse pick from the type or Rules DeadBodies (NotHuman), the Scenario Random() draw, the AnimClass constructor arguments and UnInit.",
+  "assumptions": [
+    "x87 control word 0x0E7F, the harness default.",
+    "DoControls sound entries are 0, so the post-switch tail plays no sound.",
+    "The InfantryType and Rules vectors are supplied; their readers are not run."
+  ],
+  "substitutions": [
+    "operator new 0x7C8E17 returns a buffer or NULL; the AnimClass constructor 0x421EA0 records its arguments; GetCoords, UnInit and Do_Action are vtable stubs."
+  ],
+  "entry_points": {
+    "completion": "0x00520AE0"
+  },
+  "payload_sha256": "d3344a45f00cf7f07870727ddd0a0c05da6cb21532fbd12f82ff16bfc825c2d9"
+}

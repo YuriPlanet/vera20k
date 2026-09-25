@@ -21,6 +21,7 @@
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 
 pub(crate) mod attacker;
+pub(crate) mod estimate;
 pub(crate) mod gates;
 pub(crate) mod kernel;
 pub(crate) mod receive;

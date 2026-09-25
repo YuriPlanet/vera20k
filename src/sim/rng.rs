@@ -108,6 +108,21 @@ impl SimRng {
         }
     }
 
+    /// The native Random2Class object bytes (`+0x00` disabled dword, the two
+    /// indices, then the table), as hex: the form the Unicorn oracles record
+    /// Scenario RNG states in.
+    #[cfg(test)]
+    pub(crate) fn native_state_hex(&self) -> String {
+        let mut bytes = Vec::with_capacity(0x3f4);
+        bytes.extend_from_slice(&u32::from(self.disabled).to_le_bytes());
+        bytes.extend_from_slice(&self.index_a.to_le_bytes());
+        bytes.extend_from_slice(&self.index_b.to_le_bytes());
+        for word in &self.state {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
     /// Copy every logical field into immutable boundary evidence.
     pub fn logical_state(&self) -> SimRngLogicalState {
         let mut words = [0; RNG_TABLE_LEN];

@@ -1,16 +1,14 @@
 //! Main-menu modal dialogs reachable from the native main-menu shell.
 //!
 //! The native shell (`ui::main_menu_shell`) emits owner-draw button actions on
-//! mouse-up. Four of those actions open modal dialogs that the original game
+//! mouse-up. Two of those actions open modal dialogs that the original game
 //! pops on top of the menu rather than acting immediately (Movies & Credits
-//! is the native page in `ui::movies_credits_shell`):
+//! is the native page in `ui::movies_credits_shell`, campaign selection the
+//! native dialog in `ui::campaign_shell`):
 //!
 //! - Exit Game -> a confirm message box ("are you sure?") with confirm/cancel.
 //!   The game does NOT quit on the first click; it quits only on confirm.
 //! - Options -> the retained launcher Options parent in `options`.
-//! - Single Player -> New Campaign -> a campaign selector (Allied/Soviet +
-//!   difficulty + Back); the side/difficulty -> scenario mapping and the first
-//!   mission launch are not yet decoded.
 //!
 //! These render as egui overlays in the shell's per-frame egui pass, mirroring
 //! the save/load panel. State lives on `AppState` as `Option<...>` fields so it
@@ -120,130 +118,6 @@ pub(crate) fn draw_exit_confirm_modal(
 }
 
 // ---------------------------------------------------------------------------
-// Campaign selector (Single Player -> New Campaign, original dialog 0x94)
-// ---------------------------------------------------------------------------
-
-/// Faction choice on the campaign selector. The original distinguishes Allied
-/// vs Soviet campaign sides; the mapping into scenario parameters is not yet
-/// decoded, so these are presentation-only here.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CampaignSide {
-    Allied,
-    Soviet,
-}
-
-/// Difficulty choice on the campaign selector (Easy/Normal/Hard).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CampaignDifficulty {
-    Easy,
-    Normal,
-    Hard,
-}
-
-/// State for the campaign-selector dialog. Tracks the in-progress side and
-/// difficulty pick. The launch mapping is not wired (decode of the dialog proc
-/// is pending), so picking a side does not start a mission yet.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CampaignSelectState {
-    pub side: Option<CampaignSide>,
-    pub difficulty: CampaignDifficulty,
-}
-
-impl Default for CampaignSelectState {
-    fn default() -> Self {
-        Self {
-            side: None,
-            difficulty: CampaignDifficulty::Normal,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CampaignSelectAction {
-    None,
-    /// Back pressed — return to the Single Player shell.
-    Back,
-}
-
-pub(crate) fn draw_campaign_select(
-    ctx: &egui::Context,
-    csf: &CsfLookup<'_>,
-    state: &mut CampaignSelectState,
-) -> CampaignSelectAction {
-    let palette = client_theme::apply_client_theme(ctx);
-    let mut action = CampaignSelectAction::None;
-
-    // Per-control CSF labels for dialog 0x94 are not decoded; use descriptive
-    // fallbacks rather than inventing keys. GUI:Back is a verified shared label.
-    let back = csf("GUI:Back", "Back");
-
-    draw_backdrop(ctx, "campaign_select_backdrop");
-
-    egui::Window::new("")
-        .title_bar(false)
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-        .frame(client_theme::card_frame(palette.panel, palette.line))
-        .min_width(420.0)
-        .show(ctx, |ui| {
-            ui.set_max_width(420.0);
-            ui.vertical(|ui| {
-                client_theme::section_label(ui, "NEW CAMPAIGN", palette);
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    if ui
-                        .selectable_label(state.side == Some(CampaignSide::Allied), "Allied")
-                        .clicked()
-                    {
-                        state.side = Some(CampaignSide::Allied);
-                    }
-                    if ui
-                        .selectable_label(state.side == Some(CampaignSide::Soviet), "Soviet")
-                        .clicked()
-                    {
-                        state.side = Some(CampaignSide::Soviet);
-                    }
-                });
-                ui.add_space(10.0);
-                ui.label(
-                    egui::RichText::new("Difficulty")
-                        .size(13.0)
-                        .color(palette.text_muted),
-                );
-                ui.horizontal(|ui| {
-                    for (diff, label) in [
-                        (CampaignDifficulty::Easy, "Easy"),
-                        (CampaignDifficulty::Normal, "Normal"),
-                        (CampaignDifficulty::Hard, "Hard"),
-                    ] {
-                        if ui
-                            .selectable_label(state.difficulty == diff, label)
-                            .clicked()
-                        {
-                            state.difficulty = diff;
-                        }
-                    }
-                });
-                ui.add_space(12.0);
-                // The side+difficulty -> scenario parameter mapping and first
-                // mission launch are not decoded; no launch button is wired.
-                ui.label(
-                    egui::RichText::new("Mission launch is not implemented yet.")
-                        .size(12.0)
-                        .color(palette.text_muted),
-                );
-                ui.add_space(12.0);
-                if ui.button(&back).clicked() {
-                    action = CampaignSelectAction::Back;
-                }
-            });
-        });
-
-    action
-}
-
-// ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
 
@@ -289,12 +163,5 @@ mod tests {
         assert_eq!(modal.title, EXIT_CONFIRM_TITLE_KEY);
         assert_eq!(modal.confirm, EXIT_CONFIRM_OK_KEY);
         assert_eq!(modal.cancel, EXIT_CONFIRM_CANCEL_KEY);
-    }
-
-    #[test]
-    fn campaign_select_defaults_to_no_side_normal_difficulty() {
-        let state = CampaignSelectState::default();
-        assert_eq!(state.side, None);
-        assert_eq!(state.difficulty, CampaignDifficulty::Normal);
     }
 }

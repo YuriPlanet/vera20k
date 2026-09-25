@@ -11,7 +11,6 @@ use crate::app::frontend::shell_pass::{
     ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
     software_cursor,
 };
-use crate::app::frontend::shell_transition::{ButtonGroup, ShellFrameWave};
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_paint::{
     self, ArtFit, ButtonPolicy, CURSOR_DEPTH, MOVIE_DEPTH, PaintButton, PaintLabel,
@@ -66,27 +65,19 @@ fn page_input(state: &AppState, spec: &MenuPageSpec) -> PageInput {
     }
 }
 
-/// Owner-draw button list for the paint pass. A disabled control can never
-/// paint pressed; during a first-paint slide every button rides Group A's ramp.
-fn paint_buttons(
-    layout: &MenuPageLayout,
-    input: PageInput,
-    disabled: &[u16],
-    wave: Option<&ShellFrameWave>,
-) -> Vec<PaintButton> {
+/// Owner-draw button list for the steady paint pass. A disabled control can
+/// never paint pressed.
+fn paint_buttons(layout: &MenuPageLayout, input: PageInput, disabled: &[u16]) -> Vec<PaintButton> {
     layout
         .buttons
         .iter()
-        .enumerate()
-        .map(|(slot, button)| {
+        .map(|button| {
             let enabled = !disabled.contains(&button.id);
-            let wave_frame = wave.map(|w| w.sdbtnanm_frame(slot as u32, ButtonGroup::A));
             PaintButton {
                 rect: button.rect,
                 pressed: enabled && input.pressed == Some(button.id),
                 hovered: enabled && input.hovered == Some(button.id),
                 enabled,
-                wave_frame,
             }
         })
         .collect()
@@ -216,6 +207,10 @@ pub(crate) fn active_page_title_text(
             crate::ui::movies_credits_shell::MOVIES_CREDITS_PAGE.title_key
         }
         ShellSlideKind::MovieList => crate::ui::movies_credits_shell::MOVIE_LIST_PAGE.title_key,
+        ShellSlideKind::Campaign => crate::ui::campaign_shell::CAMPAIGN_PAGE.title_key,
+        ShellSlideKind::LoadSavedGame => {
+            crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE.title_key
+        }
         ShellSlideKind::MainMenu | ShellSlideKind::Skirmish => return String::new(),
     };
     resolve_csf(state, key).into_owned()
@@ -399,7 +394,19 @@ pub(crate) fn render_menu_page(
     chrome_instances.extend(monitor_frame.and_then(|frame| {
         shell_paint::paint_warning_monitor(chrome, layout.warning_monitor, frame)
     }));
-    let buttons = paint_buttons(&layout, input, view.disabled, wave.as_ref());
+    // While a slide runs the engine draws the whole tile column in place of
+    // the buttons (`0x006071E0`).
+    let buttons = match wave.as_ref() {
+        Some(wave) => {
+            chrome_instances.extend(shell_paint::paint_slide_column(
+                chrome,
+                layout.right_panel,
+                &wave.button_draws(),
+            ));
+            Vec::new()
+        }
+        None => paint_buttons(&layout, input, view.disabled),
+    };
     let button_instances = shell_paint::paint_buttons(
         chrome,
         &buttons,
@@ -477,7 +484,7 @@ mod tests {
             pressed: Some(0x0689),
             hovered: Some(0x0689),
         };
-        let buttons = paint_buttons(&layout, input, &[0x0689], None);
+        let buttons = paint_buttons(&layout, input, &[0x0689]);
         let load = buttons
             .iter()
             .zip(&layout.buttons)

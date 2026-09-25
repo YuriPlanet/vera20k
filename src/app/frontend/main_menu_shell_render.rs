@@ -8,7 +8,7 @@ use anyhow::Result;
 use crate::app::AppState;
 use crate::app::frontend::shell_pass::{owner_draw_button_label_rect, resolve_csf};
 use crate::app::frontend::shell_transition::{
-    ButtonGroup, MainMenuEntryPaintFrame, MainMenuEntryPresentToken, ShellFrameWave,
+    ColumnDraw, MainMenuEntryPaintFrame, MainMenuEntryPresentToken, ShellFrameWave,
 };
 use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::{MainMenuShellChromeAtlas, MainMenuShellChromeEntry};
@@ -141,33 +141,31 @@ enum MainMenuSlide {
     Exit(ShellFrameWave),
 }
 
-/// Map the layout + shell state into the owner-draw button list for the paint
-/// pass. 0xE2 never disables a control, so every button is `enabled: true`;
-/// during either slide each button rides Group A's ramp.
+impl MainMenuSlide {
+    /// The slide engine's column draws, which replace the buttons while it runs.
+    fn column_draws(&self) -> Option<Vec<ColumnDraw>> {
+        match self {
+            MainMenuSlide::Steady => None,
+            MainMenuSlide::Entry(frame) => Some(frame.button_draws()),
+            MainMenuSlide::Exit(wave) => Some(wave.button_draws()),
+        }
+    }
+}
+
+/// Map the layout + shell state into the owner-draw button list for the steady
+/// paint pass. 0xE2 never disables a control, so every button is `enabled: true`.
 fn main_menu_paint_buttons(
     layout: &MainMenuShellLayout,
     pressed_button: Option<MainMenuControlId>,
-    slide: &MainMenuSlide,
 ) -> Vec<PaintButton> {
     layout
         .buttons
         .iter()
-        .map(|button| {
-            let resource_id = button.id.resource_id();
-            let wave_frame = match slide {
-                MainMenuSlide::Steady => None,
-                MainMenuSlide::Entry(frame) => frame.sdbtnanm_frame(resource_id, ButtonGroup::A),
-                MainMenuSlide::Exit(wave) => {
-                    wave.main_menu_sdbtnanm_frame(resource_id, ButtonGroup::A)
-                }
-            };
-            PaintButton {
-                rect: button.rect,
-                pressed: pressed_button == Some(button.id),
-                hovered: false, // 0xE2 never flashes; hover state is unused on art
-                enabled: true,
-                wave_frame,
-            }
+        .map(|button| PaintButton {
+            rect: button.rect,
+            pressed: pressed_button == Some(button.id),
+            hovered: false, // 0xE2 never flashes; hover state is unused on art
+            enabled: true,
         })
         .collect()
 }
@@ -563,23 +561,29 @@ fn render_main_menu_shell_to_target_inner(
     chrome_instances.extend(monitor_frame.and_then(|frame| {
         shell_paint::paint_warning_monitor(chrome, layout.warning_monitor, frame)
     }));
-    if backdrop {
-        chrome_instances.extend(shell_paint::paint_shuttered_tiles(
-            chrome,
-            layout.right_panel,
-        ));
-    }
-    let buttons = if backdrop {
-        Vec::new()
+    // The slide engine and the empty backdrop draw the whole tile column in
+    // place of the buttons.
+    let column = if backdrop {
+        Some(shell_paint::shuttered_column(layout.right_panel))
     } else {
-        main_menu_paint_buttons(
+        slide.column_draws()
+    };
+    let buttons = match column {
+        Some(draws) => {
+            chrome_instances.extend(shell_paint::paint_slide_column(
+                chrome,
+                layout.right_panel,
+                &draws,
+            ));
+            Vec::new()
+        }
+        None => main_menu_paint_buttons(
             &layout,
             state
                 .frontend
                 .main_menu_shell_state
                 .pressed_owner_draw_button,
-            &slide,
-        )
+        ),
     };
     // 0xE2 never flashes, so the hover clock is unused (None) — keep the call
     // shape uniform with 0x100, which threads its hover_started_at.
@@ -921,45 +925,38 @@ mod tests {
     use super::*;
     use crate::ui::main_menu_shell::compute_layout;
     use crate::ui::shell::geom::RectPx;
-    use crate::ui::shell::slide::{PresentedPoll, ShellFrameWave};
-    use std::time::Duration;
+    use crate::ui::shell::slide::ShellFrameWave;
 
     #[test]
-    fn options_and_exit_share_the_fifth_main_menu_entry_tick() {
-        let start = Instant::now();
-        let mut wave = ShellFrameWave::new_presented_main_menu(1);
-        assert!(wave.activate_after_acquire());
-        for tick in 0..6_u64 {
-            let frame = wave.current_main_menu_frame().expect("ready frame");
-            let token = wave.mint_present_token(frame).expect("matching token");
-            let accepted_at = start + Duration::from_millis(30 * tick);
-            wave.record_presented(token, accepted_at).expect("accept");
-            assert_eq!(
-                wave.poll_presented(accepted_at + Duration::from_millis(30)),
-                Some(PresentedPoll::Acquire)
+    fn slide_column_button_rows_are_where_the_layout_puts_the_buttons() {
+        // 0x0060A180 counts the five top buttons and 0x0060A250 the bottom
+        // Exit button; the column's settled button frames (1) land exactly on
+        // the rects the layout gives the six 0xE2 buttons.
+        for (w, h) in [(640, 480), (800, 600), (1024, 768)] {
+            let layout = compute_layout(w, h);
+            let panel = layout.right_panel;
+            let column = crate::app::frontend::shell_transition::ShellSlideKind::MainMenu
+                .column(panel.tile_count as u32);
+            let mut wave = ShellFrameWave::new_presented_main_menu(3, column);
+            assert!(wave.activate_after_acquire());
+            let settled = column.button_draws(
+                column.total_ticks() - 1,
+                crate::ui::shell::slide::WaveDirection::SlideIn,
             );
-        }
-        let frame = wave.current_main_menu_frame().expect("tick 6");
-        let buttons = main_menu_paint_buttons(
-            &compute_layout(800, 600),
-            None,
-            &MainMenuSlide::Entry(frame),
-        );
-        assert_eq!(buttons[4].wave_frame, buttons[5].wave_frame);
-    }
-
-    #[test]
-    fn main_menu_entry_schedule_is_resource_keyed_not_vector_keyed() {
-        let mut layout = compute_layout(800, 600);
-        layout.buttons.reverse();
-        let mut wave = ShellFrameWave::new_presented_main_menu(2);
-        assert!(wave.activate_after_acquire());
-        let frame = wave.current_main_menu_frame().expect("tick 0");
-        let painted = main_menu_paint_buttons(&layout, None, &MainMenuSlide::Entry(frame));
-        for (button, paint) in layout.buttons.iter().zip(painted.iter()) {
+            let mut column_rows: Vec<i32> = settled
+                .iter()
+                .filter(|draw| draw.frame == 1)
+                .map(|draw| panel.tile.y + draw.row as i32 * panel.tile.h)
+                .collect();
+            column_rows.sort_unstable();
+            let mut button_rows: Vec<i32> =
+                layout.buttons.iter().map(|button| button.rect.y).collect();
+            button_rows.sort_unstable();
+            assert_eq!(column_rows, button_rows, "{w}x{h}");
             assert_eq!(
-                paint.wave_frame,
-                frame.sdbtnanm_frame(button.id.resource_id(), ButtonGroup::A)
+                wave.current_main_menu_frame()
+                    .map(|frame| frame.button_draws()),
+                Some(column.button_draws(0, crate::ui::shell::slide::WaveDirection::SlideIn)),
             );
         }
     }

@@ -1016,14 +1016,14 @@ impl Simulation {
         )
     }
 
-    /// `TechnoClass::Fire @ 0x006FF749..0x006FF872`, the LimboLaunch block.
-    /// The bullet is already built and launched; VERA's pending projectile
-    /// keeps its source, which is what native's bullet Limbo/re-Init restores.
+    /// `TechnoClass::Fire @ 0x006FF749..0x006FF872`, the LimboLaunch block,
+    /// after the shot's `bullet` was launched.
     pub(crate) fn parasite_limbo_launch(
         &mut self,
         firer: u64,
         target: super::TargetKind,
         weapon: &crate::rules::weapon_type::WeaponType,
+        bullet: Option<u64>,
         rules: &RuleSet,
     ) {
         let frame = self.session.binary_frame;
@@ -1076,6 +1076,24 @@ impl Simulation {
             )
         {
             target.parasite_launch_lock = frame.wrapping_add(LAUNCH_LOCK_FRAMES);
+        }
+        // 0x006FF825..0x006FF86C: the firer's Limbo detached the bullet's
+        // Owner, so the bullet is Limboed, re-Constructed (`0x004664C0`) with
+        // the firer, the same target, damage, warhead, speed and bright, and
+        // re-fired (vtable `+0x1F0`) from the same launch coordinate and
+        // velocity. The state it rebuilds is the launch's own, except the
+        // Owner and the Logic slot, which moves to the tail. An Inviso one
+        // (`[SQDJUMP]`) is re-placed on its target and keeps the OnBridge
+        // flag FireAt copied (`0x006FF0B0`): Limbo `0x005F4D30`, Fire and
+        // Unlimbo's own body never write `+0x8C`.
+        if parasite && let Some(bullet) = bullet {
+            let flat = self.substrate.display.layer_of(bullet)
+                == Some(crate::sim::world::display_layers::DisplayLayer::SURFACE);
+            if self.unregister_non_entity_object(bullet) {
+                self.projectiles.set_owner(bullet, firer);
+                let registered = self.register_projectile(bullet, flat);
+                debug_assert!(registered);
+            }
         }
     }
 

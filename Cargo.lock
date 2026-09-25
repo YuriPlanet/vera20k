@@ -4265,6 +4265,7 @@ dependencies = [
  "fixed",
  "glam",
  "image",
+ "libc",
  "log",
  "memmap2",
  "nom 7.1.3",

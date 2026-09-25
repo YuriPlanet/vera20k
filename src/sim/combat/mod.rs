@@ -42,10 +42,10 @@ pub(crate) use receiver_fixture::{
     BaseDefenseResponseTraceEntry, FixtureTrace, commit_area_damage_receivers,
     commit_damage_events, emit_projectile_detonations, handle_entity_deaths, resolve_attacker_fire,
     tick_combat, tick_combat_with_fog, tick_combat_with_fog_and_main_rng,
-    tick_combat_with_fog_and_main_rng_with_terrain_area,
 };
 pub(crate) mod line_of_fire;
 pub(crate) mod parasite;
+pub(crate) mod rof;
 pub mod smudge_dispatch;
 pub(crate) mod threat_range;
 pub(crate) mod veterancy;
@@ -130,7 +130,7 @@ use crate::sim::terrain_object::TerrainAreaState;
 use crate::sim::vision::FogState;
 use crate::sim::wave::WaveDamageEvent;
 use crate::sim::world::{FireOriginSnapshot, SimFireEvent, SimSoundEvent};
-use crate::util::fixed_math::{SIM_ZERO, SimFixed, sim_to_i32};
+use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 use crate::util::lepton::{LEPTONS_PER_LEVEL, ground_height_leptons};
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53};
 
@@ -139,9 +139,6 @@ use super::game_entity::{GameEntity, PendingBuildingFire};
 use super::occupancy::OccupancyGrid;
 use super::production::foundation_dimensions;
 
-/// RA2 runs at 15 logical frames per second. ROF values are in frames.
-/// Radius in cells that RevealOnFire clears shroud around the fire location.
-const REVEAL_ON_FIRE_RADIUS: u16 = 3;
 /// Step size for selecting explosion anim from a warhead's AnimList: idx = damage / 25.
 const ANIM_LIST_DAMAGE_STEP: u16 = 25;
 
@@ -193,41 +190,49 @@ fn projectile_arm_delay(arm: i32, target: ProjectileTarget, entities: &EntitySto
     }
 }
 
-/// Explicitly classified delivery decision at weapon fire.
-///
-/// Unsupported projectile behaviors intentionally remain on the established
-/// immediate path until their own native trajectory contracts are ported.
+/// The BulletType facts FireAt and `BulletClass::Fire` read for one shot.
+/// Every shot is a bullet; an `Inviso=` one is placed at its target and
+/// detonates on its first AI visit (`Projectile` `fire_inviso`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProjectileDelivery {
-    Persistent {
-        arm_frames: i32,
-        tracks_target: bool,
-        collision: ProjectileCollisionPolicy,
-        ballistic: bool,
-        /// `Vertical=` (`BulletTypeClass+0x2C0`) selects the third
-        /// `BulletClass::AI` arm. Carries `DetonationAltitude=` (`+0x2BC`).
-        vertical: Option<i32>,
-        /// `BulletTypeClass::Acceleration` (`+0x2D0`), constructor default 3.
-        acceleration: i32,
-        /// `Inaccurate= && Arcing=` — the launch-time scatter gate at
-        /// `TechnoClass::FireAt 0x006FE67D`/`0x006FE68B`. `Some(true)` takes
-        /// the range-scaled flak arm, `Some(false)` the plain arm.
-        launch_scatter_is_flak: Option<bool>,
-        guidance: Option<ProjectileGuidance>,
-    },
-    Immediate(ImmediateProjectileReason),
+struct ProjectileDelivery {
+    arm_frames: i32,
+    tracks_target: bool,
+    collision: ProjectileCollisionPolicy,
+    ballistic: bool,
+    /// `Vertical=` (`BulletTypeClass+0x2C0`) selects the third
+    /// `BulletClass::AI` arm. Carries `DetonationAltitude=` (`+0x2BC`).
+    vertical: Option<i32>,
+    /// `BulletTypeClass::Acceleration` (`+0x2D0`), constructor default 3.
+    acceleration: i32,
+    /// `Inaccurate= && Arcing=` — the launch-time scatter gate at
+    /// `TechnoClass::FireAt 0x006FE67D`/`0x006FE68B`. `Some(true)` takes
+    /// the range-scaled flak arm, `Some(false)` the plain arm.
+    launch_scatter_is_flak: Option<bool>,
+    guidance: Option<ProjectileGuidance>,
+    /// `Inviso=` (`+0x29E`): `BulletClass::Fire` places the bullet on its
+    /// target with no speed (`0x004688B7..0x00468A39`).
+    inviso: bool,
 }
 
-/// The bounded lifecycle never silently treats an unsupported bullet as a
-/// straight ordinary shot.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ImmediateProjectileReason {
-    NoProjectile,
-    MissingProjectileType,
-    Invisible,
+/// VERA-internal: a weapon naming no BulletType, or one that does not
+/// resolve, never occurs in retail rules (native would dereference NULL at
+/// `0x006FE55D`). Such a shot is fired as a default BulletType with
+/// `Inviso=yes`, so fixtures land in the firing frame like the small-arms shots
+/// they stand for; its detonation takes no scatter or cluster draws.
+fn missing_projectile_fallback() -> &'static crate::rules::projectile_type::ProjectileType {
+    static FALLBACK: std::sync::OnceLock<crate::rules::projectile_type::ProjectileType> =
+        std::sync::OnceLock::new();
+    FALLBACK.get_or_init(|| {
+        let ini = crate::rules::ini_parser::IniFile::from_str("[MissingBulletType]\nInviso=yes\n");
+        crate::rules::projectile_type::ProjectileType::from_ini_section(
+            "MissingBulletType",
+            ini.section("MissingBulletType").expect("fallback section"),
+            None,
+        )
+    })
 }
 
-/// Which delivery path a weapon's shot takes.
+/// The BulletType facts a weapon's shot is fired with, and its flight arm.
 ///
 /// gamemd-derived: `BulletClass::AI @ 0x004666E0` has exactly two branches,
 /// keyed on `ROT < 1`; the non-homing arm then splits on `Vertical` (`+0x2C0`).
@@ -260,35 +265,22 @@ enum ImmediateProjectileReason {
 /// - `Elasticity=` (`+0x2C8`) is live in the ARM B reflection block but has
 ///   zero stock projectile users (the `[PIECE]`/`[TIRE]` hits are VoxelAnims).
 ///
-/// RESIDUAL (GSI-08.07) — the second scatter site is not modelled, because one
-/// of its operands is unidentified. `BulletClass::Fire @ 0x004687B4` offsets an
-/// `Inviso && FlakScatter` bullet's already-resolved target coordinate, drawing
-/// `Random__RandomRanged(0, RulesClass+0x1734 << 1)` for the magnitude and
-/// `Random__RandomRanged(0, 0x7FFFFFFE)` for the angle. **The blocker is the
-/// divisor.** The magnitude is `(roll * ftol(dist)) / *(*(Bullet+0x130) + 0xB4)`
-/// — `0x004687D9 IMUL ESI,EAX`, `0x004687DC MOV ECX,[EBX+0x130]`,
-/// `0x004687E5 IDIV dword ptr [ECX+0xB4]` — and neither `Bullet+0x130`'s
-/// referent nor its `+0xB4` field has been identified, so the offset cannot be
-/// computed at all today. It is NOT the weapon `Range=`; an earlier note here
-/// said so and was wrong.
-///
-/// Two facts for whoever implements it. First, the site OFFSETS, walked in
-/// assembly this session: `0x00468884 CALL Math__CosFromTable / 0x00468889 FMUL
-/// <mag> / 0x00468890 FIADD dword ptr [ESP+0x44]` and `0x00468864 CALL
-/// Math__SinFromTable / 0x00468869 FMUL <mag> / 0x0046886D FSUBR double ptr
-/// [ESP+0x38]` — `x += cos(theta)*mag`, `y -= sin(theta)*mag`, the same shape as
-/// the verified launch site at `0x006FE7E5`/`0x006FE7C0`. The decompiler renders
-/// it as a plain assignment (the dropped-`FIADD` artifact that made the mapping
-/// ledger wrong at the launch site); do not follow that rendering. Second, VERA
-/// resolves an `Inviso` shot on the immediate path, where the impact coordinate
-/// feeds area damage, wall routing, bridge damage, radiation and animation
-/// placement, so wiring the offset in touches all of those consumers.
+/// RESIDUAL (GSI-08.07) — the second scatter site is not ported.
+/// `BulletClass::Fire @ 0x0046874E..0x004688A9` offsets an
+/// `Inviso && FlakScatter` bullet's placement before the Inviso body
+/// ([`crate::sim::projectile::ProjectileStore::fire_inviso`]): magnitude
+/// `(RandomRanged(0, RulesClass+0x1734 << 1) * ftol(dist)) / Range`, angle
+/// `RandomRanged(0, 0x7FFFFFFE)`, then `x += cos*mag`, `y -= sin*mag`
+/// (`0x00468864..0x00468890`, the launch site's shape at
+/// `0x006FE7E5`/`0x006FE7C0`; the decompiler drops the `FIADD`). The divisor
+/// is the weapon's `Range=` in leptons: `Bullet+0x130` is the WeaponType
+/// FireAt installs through `SetWeaponType @ 0x0046B260` (`0x006FE573`), and
+/// WeaponType `+0xB4` is `Range=` (`ReadRange` at `0x00772336`). The x87
+/// distance, magnitude and angle conversion want a native oracle first.
 ///
 /// Trigger: every Flak Cannon / Flak Track shot at an aircraft (`[FlakProj]`,
-/// 6 weapons). Player effect: flak never misses — the miss distance itself is
-/// not yet derivable. Frequency: any skirmish with air units. Downstream risk:
-/// two Scenario RNG draws are missing from that path, so the draw sequence
-/// differs from native for those six weapons.
+/// 6 weapons). Player effect: flak never misses. Frequency: any skirmish with
+/// air units. Downstream risk: two Scenario RNG draws are missing per shot.
 ///
 /// Ordinary `ROT < 1, Vertical = no` AI subtracts gravity every visit
 /// (467402..467429), independently of `Arcing`. Production gives all such
@@ -299,20 +291,17 @@ fn classify_projectile_delivery(
     weapon: &crate::rules::weapon_type::WeaponType,
     rules: &RuleSet,
 ) -> ProjectileDelivery {
-    let Some(projectile_id) = weapon.projectile.as_deref() else {
-        return ProjectileDelivery::Immediate(ImmediateProjectileReason::NoProjectile);
-    };
-    let Some(projectile) = rules.projectile(projectile_id) else {
-        return ProjectileDelivery::Immediate(ImmediateProjectileReason::MissingProjectileType);
-    };
-    if projectile.inviso {
-        return ProjectileDelivery::Immediate(ImmediateProjectileReason::Invisible);
-    }
+    let projectile = weapon
+        .projectile
+        .as_deref()
+        .and_then(|projectile_id| rules.projectile(projectile_id))
+        .unwrap_or_else(|| missing_projectile_fallback());
     // `BulletClass::AI @ 0x004666E0` selects an arm exactly twice: `ROT < 1` at
     // `0x004668D1`, then `Vertical` (`+0x2C0`) at `0x004671D0`. Nothing else
     // participates.
     let ballistic = projectile.arcing;
-    ProjectileDelivery::Persistent {
+    ProjectileDelivery {
+        inviso: projectile.inviso,
         arm_frames: projectile.arm,
         tracks_target: projectile.rot > 0,
         collision: ProjectileCollisionPolicy {
@@ -380,15 +369,14 @@ mod projectile_delivery_tests {
         );
         let rules = RuleSet::from_ini(&ini).expect("projectile fixture parses");
 
-        for weapon_name in ["ProxGun", "CliffGun"] {
+        // Only ROT picks the homing arm; Proximity= and SubjectToCliffs= pick
+        // no flight arm at all.
+        for (weapon_name, homing) in [("ProxGun", true), ("CliffGun", false)] {
             let weapon = rules.weapon(weapon_name).expect("weapon");
-            assert!(
-                matches!(
-                    classify_projectile_delivery(weapon, &rules),
-                    ProjectileDelivery::Persistent { .. }
-                ),
-                "{weapon_name} must stay on the tracked path"
-            );
+            let delivery = classify_projectile_delivery(weapon, &rules);
+            assert_eq!(delivery.tracks_target, homing, "{weapon_name}");
+            assert_eq!(delivery.vertical, None, "{weapon_name}");
+            assert!(!delivery.inviso, "{weapon_name}");
         }
     }
 
@@ -402,7 +390,8 @@ mod projectile_delivery_tests {
 
         assert_eq!(
             classify_projectile_delivery(weapon, &rules),
-            ProjectileDelivery::Persistent {
+            ProjectileDelivery {
+                inviso: false,
                 arm_frames: 0,
                 tracks_target: false,
                 collision: ProjectileCollisionPolicy {
@@ -442,21 +431,19 @@ mod projectile_delivery_tests {
              [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
         );
         let rules = RuleSet::from_ini(&ini).expect("projectile fixture parses");
-        for weapon_name in ["W0", "W1", "W2", "W3"] {
+        // Bouncy=, Degenerates=, Inaccurate=/FlakScatter= and Dropping= select
+        // no flight arm: ROT alone does.
+        for (weapon_name, homing) in [("W0", false), ("W1", false), ("W2", false), ("W3", true)] {
             let weapon = rules.weapon(weapon_name).expect("weapon");
-            assert!(
-                matches!(
-                    classify_projectile_delivery(weapon, &rules),
-                    ProjectileDelivery::Persistent { .. }
-                ),
-                "{weapon_name} must stay on the tracked path"
-            );
+            let delivery = classify_projectile_delivery(weapon, &rules);
+            assert_eq!(delivery.tracks_target, homing, "{weapon_name}");
+            assert_eq!(delivery.vertical, None, "{weapon_name}");
         }
         // The flak arm is only selected when `FlakScatter && !Inviso`.
         let flak = rules.weapon("W2").expect("weapon");
         assert!(matches!(
             classify_projectile_delivery(flak, &rules),
-            ProjectileDelivery::Persistent {
+            ProjectileDelivery {
                 launch_scatter_is_flak: Some(true),
                 ..
             }
@@ -465,7 +452,7 @@ mod projectile_delivery_tests {
         let bouncy = rules.weapon("W0").expect("weapon");
         assert!(matches!(
             classify_projectile_delivery(bouncy, &rules),
-            ProjectileDelivery::Persistent {
+            ProjectileDelivery {
                 ballistic: true,
                 launch_scatter_is_flak: None,
                 ..
@@ -487,7 +474,7 @@ mod projectile_delivery_tests {
         let weapon = rules.weapon("NUKE").expect("weapon");
         assert!(matches!(
             classify_projectile_delivery(weapon, &rules),
-            ProjectileDelivery::Persistent {
+            ProjectileDelivery {
                 vertical: Some(20000),
                 acceleration: 1,
                 arm_frames: 2,
@@ -497,14 +484,6 @@ mod projectile_delivery_tests {
             }
         ));
     }
-}
-
-/// A cell area to reveal due to a RevealOnFire weapon firing.
-pub struct RevealEvent {
-    pub owner: InternedId,
-    pub rx: u16,
-    pub ry: u16,
-    pub radius: u16,
 }
 
 /// Armor type name → Verses index mapping.
@@ -743,13 +722,6 @@ pub struct AttackTarget {
     #[serde(default)]
     pub pending_infantry_fire: Option<PendingInfantryFire>,
 }
-
-/// The inclusive bounds of the mid-burst delay draw.
-///
-/// gamemd-derived: `TechnoClass::GetROF @ 0x006FCFA0` — the mid-burst branch
-/// (`burst index < Burst=`) returns `Random::RandomRanged(3, 5)`.
-const BURST_INTER_SHOT_DELAY_MIN: i32 = 3;
-const BURST_INTER_SHOT_DELAY_MAX: i32 = 5;
 
 fn infantry_fire_sequence(
     obj: &ObjectType,
@@ -1202,40 +1174,79 @@ pub fn issue_attack_command(
     true
 }
 
-/// Swing an existing attack onto a different entity in place.
+/// `TechnoClass::EstimateDamage @ 0x006FDB80` for `attacker_id` shooting
+/// `target_id` with `weapon` (see [`damage::estimate`]): the target house's
+/// category multiplier for the attacker's type, the attacker's
+/// `ArmorMultiplier`, the attacker's FIREPOWER and the target's STRONGER ranks.
 ///
-/// The weapon's reload is the object's own timer
-/// ([`GameEntity::rearm_timer`], `TechnoClass+0x2EC`) and the burst index is
-/// `weapon_burst`; the original's target assignment writes neither, so no
-/// swing restarts the weapon.
-///
-/// This is the one owner of that operation: combat's own auto-retarget and the
-/// passive scanner's re-pick both go through it. Only the pending infantry shot
-/// is dropped, because it was latched against the old victim.
-///
-/// RESIDUAL: this does NOT perform the infantry firing-sequence and animation
-/// reset that the full target setter does. That was unreachable in practice
-/// before the passive scanner existed; it is now reachable on every infantry
-/// re-pick, roughly every 28 frames. Deterministic and visual only — the fire
-/// decision does not read the sequence — so it is recorded rather than fixed
-/// here.
-///
-/// **Target provenance is preserved on purpose.** Swinging onto a new victim
-/// continues whatever acquisition installed the target in the first place — an
-/// auto-retarget after the old victim died is not a new order — so
-/// `passively_acquired_target` carries over. Clearing it here would leave the
-/// object holding a live target with the flag false, and that state is exactly
-/// what the passive block, the pursuit skip and the release-on-range-loss path
-/// all key off: the object would stop re-evaluating, start being chased across
-/// the map, and never let go of a target that walked out of range. The
-/// flag-clearing that the original's target ASSIGNMENT performs lives in the
-/// target setter, which is the assignment's counterpart; this in-place swing has
-/// no counterpart there.
-pub(crate) fn retarget_in_place(entity: &mut GameEntity, new_target_sid: u64) {
-    if let Some(ref mut attack) = entity.attack_target {
-        attack.target = TargetKind::Entity(new_target_sid);
-        attack.pending_infantry_fire = None;
-    }
+/// RESIDUAL: `House+0x188` and `Techno+0x160` are 1.0, as in FireAt's damage
+/// build (`world_receiver::fireat_damage`).
+pub(crate) fn estimated_damage_on(
+    sim: &crate::sim::world::Simulation,
+    rules: &RuleSet,
+    attacker_id: u64,
+    target_id: u64,
+    weapon: &crate::rules::weapon_type::WeaponType,
+) -> i32 {
+    use crate::rules::object_type::Ability;
+    use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
+    let entities = &sim.substrate.entities;
+    let (Some(attacker), Some(target)) = (entities.get(attacker_id), entities.get(target_id))
+    else {
+        return 0;
+    };
+    let Some(attacker_obj) = rules.object(sim.interner.resolve(attacker.type_ref())) else {
+        return 0;
+    };
+    let target_obj = rules.object(sim.interner.resolve(target.type_ref()));
+    let house_type_armor = sim.houses.get(&target.owner()).map_or(1.0, |house| {
+        let country = house
+            .country
+            .map(|country| sim.interner.resolve(country))
+            .unwrap_or_else(|| sim.interner.resolve(target.owner()));
+        rules.country_armor_mult_for_type(country, attacker_obj)
+    });
+    let rank_firepower = self::veterancy::has_weapon_ability(
+        self::veterancy::rank_from_u16(attacker.veterancy),
+        attacker_obj,
+        Ability::Firepower,
+    )
+    .then(|| NativeF64Bits::from_bits(rules.general.veteran_combat.to_bits()));
+    let rank_armor = target_obj
+        .is_some_and(|object| {
+            self::veterancy::has_weapon_ability(
+                self::veterancy::rank_from_u16(target.veterancy),
+                object,
+                Ability::Stronger,
+            )
+        })
+        .then(|| NativeF64Bits::from_bits(rules.general.veteran_armor.to_bits()));
+    let warhead = combat_weapon::warhead_of(rules, weapon);
+    damage::estimate::estimated_damage(&damage::estimate::EstimateInputs {
+        damage: weapon.damage,
+        zeroed: weapon.is_sonic || weapon.use_fire_particles,
+        stages: damage::attacker::FireDamageStages {
+            house_firepower: NativeF64Bits::ONE,
+            unit_firepower: NativeF64Bits::ONE,
+            rank_firepower,
+            occupied: None,
+            bunkered: None,
+            open_topped: None,
+        },
+        divisors: damage::DefenceDivisors {
+            house_type_armor: NativeF32Bits::from_bits(house_type_armor.to_bits()),
+            unit_armor: attacker.armor_multiplier,
+            rank_armor,
+        },
+        warhead: warhead.map(|warhead| damage::estimate::EstimateWarhead {
+            cell_spread: warhead.cell_spread_f64,
+            percent_at_max: warhead.percent_at_max_f64,
+            verses: &warhead.verses_f64,
+        }),
+        armor: damage::ArmorClass(target_obj.map_or(0, |object| armor_index(&object.armor) as u8)),
+        scenario_no_damage: sim.session.no_damage,
+        max_damage: rules.combat_damage.max_damage,
+    })
 }
 
 /// Issue a force-fire-on-cell command: make `attacker` fire at a ground cell.
@@ -1326,7 +1337,7 @@ pub(crate) fn cell_distance(ax: u16, ay: u16, bx: u16, by: u16) -> f32 {
     (dx * dx + dy * dy).sqrt()
 }
 
-use self::combat_targeting::{AttackerSnapshot, GarrisonSnapshot, acquire_best_target};
+use self::combat_targeting::{AttackerSnapshot, GarrisonSnapshot};
 
 /// A `CanBeOccupied` building destroyed in combat with live occupants —
 /// gamemd routes this through `BuildingClass::SellBuilding @ 0x00457DE0`, the
@@ -1552,7 +1563,9 @@ pub struct TiberiumReductionRequest {
 /// The frame admits bullets and applies facing before committing the packet at
 /// its existing post-SpawnManager boundary.
 pub struct CombatTickResult {
-    /// Bullets admitted after the current BulletClass pass; no recursive advance.
+    /// Shrapnel bullets from detonations the combat pass committed; the frame
+    /// admits them before its Logic tail visits the new objects. FireAt admits
+    /// its own bullets directly.
     pub projectile_spawns: Vec<ProjectileSpawn>,
     /// Phase-2 entry facing slots, amended by explicit retarget/removal and
     /// Fire_At_Target hull turns, applied by unit_post before SpawnManager.
@@ -1762,30 +1775,6 @@ pub(crate) fn attack_impact_z(
             .and_then(|grid| grid.cell(rx, ry))
             .map(|cell| i32::from(cell.level))
             .unwrap_or(0),
-    }
-}
-
-fn attack_air_impact(
-    target: TargetKind,
-    impact_rx: u16,
-    impact_ry: u16,
-    impact_sub_x: SimFixed,
-    impact_sub_y: SimFixed,
-    entities: &EntityStore,
-    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-) -> Option<combat_aoe::AoEAirImpact> {
-    match target {
-        TargetKind::Entity(entity_id) => {
-            combat_aoe::air_impact_from_entity(entities.get(entity_id)?, terrain)
-        }
-        TargetKind::Cell(_, _) => combat_aoe::air_impact_from_layer_z(
-            terrain,
-            impact_rx,
-            impact_ry,
-            impact_sub_x,
-            impact_sub_y,
-            attack_impact_z(target, entities, terrain),
-        ),
     }
 }
 
@@ -2619,10 +2608,7 @@ pub(crate) struct CombatEmit {
     /// Native-order ReceiveDamage calls, including raw area records.
     pub(crate) damage_events: Vec<combat_aoe::AreaDamageReceiver>,
     pub(crate) remove_attack: Vec<u64>,
-    /// (attacker_id, new_target_id)
-    pub(crate) retarget_events: Vec<(u64, u64)>,
     pub(crate) fire_events: Vec<SimFireEvent>,
-    pub(crate) reveal_events: Vec<RevealEvent>,
     /// aircraft that fired this tick
     pub(crate) ammo_deduct: Vec<u64>,
     pub(crate) pending_infantry_updates: Vec<(u64, Option<PendingInfantryFire>)>,
@@ -2871,7 +2857,6 @@ fn emit_projectile_shrapnel(
                 base_damage: child_weapon.damage,
                 warhead: interner.intern(child_warhead_name),
                 weapon: interner.intern(child_weapon_name),
-                owner: detonation.payload.owner,
             },
             speed_leptons_per_frame: child_weapon.speed.clamp(1, i32::from(u16::MAX)) as u16,
             velocity: crate::sim::projectile::launch::shrapnel_launch_velocity(
@@ -3298,79 +3283,6 @@ pub(crate) fn is_within_range_leptons(dist_sq_leptons: i64, range_cells: SimFixe
     let range_leptons: i64 = (i64::from(range_cells.to_bits()) * 256) >> 16;
     let range_sq: i64 = range_leptons * range_leptons;
     dist_sq_leptons <= range_sq
-}
-
-/// The end-of-burst reload, from `TechnoClass::GetROF @ 0x006FCFA0`.
-///
-/// gamemd-derived: the full-ROF branch computes
-/// `ftol(ROF * house difficulty ROF + Random::RandomRanged(0, 2))`. `ROF=` is
-/// already a native frame count, and the jitter is an ADDED integer, not a
-/// scale — a shot's reload is `ROF`, `ROF + 1` or `ROF + 2`. The draw is
-/// unconditional on this branch, so it must stay in the same slice as the
-/// mid-burst draw or the scenario stream shifts twice.
-///
-/// The `VeteranROF=` arm follows in `veteran_rof_frames`.
-///
-/// RESIDUAL (GSI-08.05) — arms of the native function still absent:
-/// - Returns with no draw (`0x006FCFA9..0x006FD036`, `0x006FD1FA`): an empty
-///   weapon slot returns 1; a building with more than one Ammo returns 1
-///   (dormant); `IsSonic=`, and a weapon whose spark, fire or railgun particle
-///   system is live on the firer (`+0x308/+0x304/+0x314`, which FireAt creates
-///   before it calls GetROF), return the raw `ROF=` with no draw, no house
-///   multiplier, no `VeteranROF=` and no garrison divide. Triggers: every
-///   Dolphin (`SonicZap`), IFV repair (`RepairBullet`), `FireballLauncher` and
-///   `LtRail` shot. Effect: VERA draws one extra Scenario value per shot and
-///   can apply `VeteranROF=`.
-/// - The per-house difficulty multiplier, `ftol(ROF * House+0x1A8 + r)` with
-///   the draw taken first (`0x006FD09E..0x006FD0CF`; the house value comes
-///   from `HouseClass::SetDifficulty @ 0x004F6EC0`). VERA plumbs no per-house
-///   difficulty to this site, and AI houses now carry one, so every AI shot
-///   is affected.
-/// - The tank-bunker divide (`BunkerROFMultiplier=`, `Rules+0xF50`,
-///   `0x006FD1B1..0x006FD1EF`) for a non-building inside a bunker (`+0x2E4`):
-///   parsed, never applied, so a bunkered unit reloads slower than native.
-/// - The garrison `OccupyROFMultiplier=` divide is fixed-point here, not the
-///   native single (`0x006FD19C`).
-/// - `RadialFireSegments=` (`TechnoTypeClass+0x6A4`) is not parsed. One stock
-///   author, `[AEGIS]`, which is buildable in an ordinary skirmish: native
-///   replaces the launch direction with
-///   `body facing + (PI * counter / segments - PI / 2)`, cycling a counter at
-///   `TechnoClass+0x43C`. Player effect: the Aegis Cruiser fires straight at
-///   one target instead of sweeping its flak arc. Frequency: every Aegis
-///   engagement in an Allied naval match.
-/// - Downstream risk: each changes firing cadence, draws or direction, so each
-///   moves combat-timing fixtures and the pinned replay hashes.
-fn rof_to_cooldown_frames(rof_frames: i32, scenario_rng: &mut SimRng) -> u16 {
-    let jitter = scenario_rng.next_range_u32_inclusive(0, 2) as i32;
-    rof_frames.saturating_add(jitter).clamp(1, u16::MAX as i32) as u16
-}
-
-/// The `VeteranROF=` arm of `TechnoClass::GetROF @ 0x006FCFA0`.
-///
-/// gamemd-derived: `0x006FD0E2..0x006FD14C` — the inline `HasWeaponAbility(4)`
-/// (veteran byte `+0x2A0`, elite byte `+0x2B2`) selects
-/// `ftol(rof * Rules.VeteranROF)` (`FILD; FMUL [Rules+0x690]; ftol`) on the
-/// already-jittered integer. Applied ONCE — there is no `EliteROF` key in the
-/// binary. Stock `0.6` turns the elite Grizzly's 50..=52 into 30, 30, 31.
-///
-/// The `.max(1)` is VERA-internal: native stores whatever `ftol` yields, and
-/// a zero reload is only reachable with `ROF=1`/`ROF=0` weapons, which no
-/// stock type authors; it keeps the existing floor `rof_to_cooldown_frames`
-/// applies (gamemd equivalent UNCHECKED).
-fn veteran_rof_frames(
-    rof_ticks: u16,
-    rank: self::veterancy::VeterancyRank,
-    object: &ObjectType,
-    veteran_rof: f64,
-) -> u16 {
-    self::veterancy::scale_if_ability(
-        i32::from(rof_ticks),
-        rank,
-        object,
-        crate::rules::object_type::Ability::Rof,
-        veteran_rof,
-    )
-    .clamp(1, i32::from(u16::MAX)) as u16
 }
 
 pub(crate) use self::combat_targeting::acquire_best_target_for_entity;

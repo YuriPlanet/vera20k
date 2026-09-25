@@ -999,6 +999,9 @@ impl Simulation {
         } else {
             false
         };
+        if let Some(rules) = context.rules {
+            super::infantry_unlimbo_idle_mode(self, stable_id, rules);
+        }
         RevealOutcome::Revealed { logic_registered }
     }
 
@@ -3341,6 +3344,13 @@ impl Simulation {
             )
         {
             listener.suspended_attack_target = None;
+        }
+        // `0x00707AE7..0x00707B03`: on a nonzero control the ArchiveTarget
+        // (`+0x218`) that names the expiring object is cleared too.
+        if control == PointerExpiryControl::Uninit
+            && listener.base_defense_response.archive_target == Some(TargetKind::Entity(expired_id))
+        {
+            listener.base_defense_response.set_archive_target(None);
         }
 
         // FootClass clears SuspendedNavCom first, then its current/aux target,

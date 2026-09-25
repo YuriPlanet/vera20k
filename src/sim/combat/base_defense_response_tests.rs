@@ -165,6 +165,7 @@ fn gsi_04_05_zero_budget_still_suspends_low_priority_teams_before_scan_exit() {
         priority: 0,
         is_base_defense: false,
         suicide: false,
+        aggressive: false,
         combined_movement_zone: crate::rules::locomotor_type::MovementZone::Fly,
         base_zone_relation_enforced: true,
         transport_crossing_required: false,

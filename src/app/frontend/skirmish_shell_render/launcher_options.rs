@@ -240,7 +240,7 @@ pub(super) fn launcher_background_instances(
     if let Some(background) = background {
         push_entry_native(&mut out, background, 0, 0, SHELL_PARENT_BACKGROUND_DEPTH);
     }
-    push_right_panel_base_instances(&mut out, atlas, &common, 0, false);
+    push_right_panel_base_instances(&mut out, atlas, &common, false);
     push_lower_strip_instance(&mut out, atlas, &common);
     out
 }

@@ -15,10 +15,13 @@
 //! (invariant #2).
 
 mod mission_handlers;
+mod target_scan;
 pub(crate) use mission_handlers::harvester_enter_idle_mode_selector;
+pub(crate) use mission_handlers::infantry_unlimbo_idle_mode;
 pub(crate) use mission_handlers::queue_foot_enter_idle_mode;
 
 use mission_handlers::*;
+use target_scan::{can_acquire_target, passive_acquire_step};
 
 use super::Simulation;
 use crate::map::entities::EntityCategory;
@@ -388,7 +391,7 @@ impl Simulation {
             return false;
         };
         if entity.infantry_terminal.is_some() {
-            return self.visit_infantry_terminal(id, rules);
+            return self.visit_infantry_terminal(id, rules, ctx);
         }
         if entity.dying {
             let Some(rules) = rules else {
@@ -557,7 +560,7 @@ fn techno_ai_shell(
             // clear, then the counter/promotion, then the passive block. There
             // is deliberately no Guard→Attack mission flip at the dispatch point
             // between them — see the block comment above
-            // `passive_target_scan`'s neighbours for why.
+            // `clear_passive_target_off_mission`'s neighbours for why.
             //
             // The clear is DEAD for structures as things stand, and is kept only
             // so the arm keeps the body's shape: a structure never carries a
@@ -880,6 +883,7 @@ fn techno_common_steps(
 ) -> bool {
     veterancy_promotion_step(sim, id, rules);
     crate::sim::credit_income::drain_common_step(sim, id, rules);
+    allied_target_drop_step(sim, id, rules);
     illegal_target_drop_step(sim, id, rules);
     sim.capture_manager_update(id, rules, overlay_registry);
     if !sim.substrate.entities.get(id).is_some_and(|e| e.is_alive()) {
@@ -896,7 +900,7 @@ fn techno_common_steps(
 /// Sabotage (0x11). A Unit's and an Infantry's own fire routines keep an
 /// illegal target; this is where they let go of it.
 fn illegal_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
-    use crate::sim::combat::{TargetKind, combat_weapon, fire_error::FireError};
+    use crate::sim::combat::{TargetKind, fire_error::FireError};
     if !sim.session.binary_frame.is_multiple_of(16) {
         return;
     }
@@ -917,55 +921,133 @@ fn illegal_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     if matches!(entity.mission.current().raw(), 8 | 0x11) {
         return;
     }
-    let Some(obj) = rules.object(sim.interner.resolve(entity.type_ref())) else {
-        return;
-    };
-    let terrain = sim.resolved_terrain.as_ref();
-    let target_facts = match target {
-        TargetKind::Entity(target_id) => sim.substrate.entities.get(target_id).and_then(|target| {
-            rules
-                .object(sim.interner.resolve(target.type_ref()))
-                .map(|target_obj| {
-                    combat_weapon::techno_target_facts(
-                        target,
-                        target_obj,
-                        terrain,
-                        combat_weapon::is_ally_by_object(
-                            Some(&sim.fog.alliances),
-                            &sim.interner,
-                            entity.owner(),
-                            target.owner(),
-                        ),
-                    )
-                })
-        }),
-        TargetKind::Cell(rx, ry) => Some(combat_weapon::cell_target_facts(rx, ry, terrain)),
-    };
-    let weapon_index = combat_weapon::what_weapon_should_i_use(
-        rules,
-        obj,
-        &combat_weapon::attacker_facts(entity, obj),
-        target_facts.as_ref(),
-    );
-    let code = crate::sim::combat::fire_error_world::FireSubject {
-        world: sim,
-        rules,
-        overlay_registry: None,
-        fog: Some(&sim.fog),
-        firer: entity,
-        obj,
-        target: Some(target),
-        weapon_index,
-        garrison: crate::sim::combat::fire_error_world::garrison_weapon(
-            sim, rules, entity, obj, target,
-        ),
-    }
-    .fire_error(false);
+    let weapon = target_scan::select_weapon(sim, rules, id, Some(target));
+    let code = target_scan::fire_error_at(sim, rules, id, Some(target), weapon, false);
     if matches!(code, FireError::Illegal | FireError::Cant)
         && let Some(entity) = sim.substrate.entities.get_mut(id)
     {
         crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
     }
+}
+
+/// `TechnoClass::AI_Update @ 0x006FA30C..0x006FA46C`, every frame after the
+/// drain blocks: a computer house's object lets go of a target its house is
+/// allied with (`HouseClass::Is_Ally_ByObject @ 0x004F9AF0`). The deciding
+/// house is the controller's when the object rides a mind-controlled
+/// `OpenTopped=` transport (`+0x11C`, `+0x5E4`, `+0x2C0`), else its own; a
+/// human house never drops (`0x0050B730`). It keeps the target when
+/// - it is an infantryman and the target a building that would admit it as an
+///   occupant (`0x00457CE0`);
+/// - it is an `Engineer=` infantryman (`+0xEC3`);
+/// - its weapon 1's warhead is `ElectricAssault=` (`+0x158`) and the target a
+///   building whose type is `Overpowerable=` (`+0x1575`);
+/// - it is berserk (`+0x298`).
+///
+/// Otherwise Assign_Target(NULL). No draw, no retarget.
+fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    use crate::sim::combat::{TargetKind, combat_weapon};
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    let controller_house = entity
+        .passenger_role
+        .inside_transport_id()
+        .and_then(|transport_id| sim.substrate.entities.get(transport_id))
+        .filter(|transport| {
+            rules
+                .object(sim.interner.resolve(transport.type_ref()))
+                .is_some_and(|obj| obj.open_topped)
+        })
+        .and_then(|transport| transport.mind_control.controller())
+        .and_then(|controller| sim.substrate.entities.get(controller))
+        .map(|controller| controller.owner());
+    let house = controller_house.unwrap_or(entity.owner());
+    if sim
+        .houses
+        .get(&house)
+        .is_some_and(|state| state.is_controlled_by_human(sim.session.game_mode_nonzero))
+    {
+        return;
+    }
+    // `0x004F9AF0` tests the target's Object flag first: a cell is never
+    // allied.
+    let Some(TargetKind::Entity(target_id)) =
+        entity.attack_target.as_ref().map(|attack| attack.target)
+    else {
+        return;
+    };
+    let Some(target) = sim.substrate.entities.get(target_id) else {
+        return;
+    };
+    if !combat_weapon::is_ally_by_object(
+        Some(&sim.fog.alliances),
+        &sim.interner,
+        house,
+        target.owner(),
+    ) {
+        return;
+    }
+    let (Some(obj), Some(target_obj)) = (
+        rules.object(sim.interner.resolve(entity.type_ref())),
+        rules.object(sim.interner.resolve(target.type_ref())),
+    ) else {
+        return;
+    };
+    let infantry = entity.category == EntityCategory::Infantry;
+    let target_building = target.category == EntityCategory::Structure;
+    let occupiable = infantry
+        && target_building
+        && target.passenger_role.cargo().is_some_and(|cargo| {
+            crate::sim::passenger::can_dock_occupier_garrison(
+                entity,
+                target,
+                obj,
+                target_obj,
+                cargo,
+                rules,
+                &sim.houses,
+                None,
+            )
+        });
+    let engineer = infantry && obj.engineer;
+    let overpowers = target_building
+        && target_obj.overpowerable
+        && target_scan::weapon_at_index(sim, rules, id, 1)
+            .and_then(|weapon| combat_weapon::warhead_of(rules, weapon))
+            .is_some_and(|warhead| warhead.electric_assault);
+    if engineer || overpowers || occupiable || entity.berserk.active {
+        return;
+    }
+    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+        crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+    }
+}
+
+/// The Techno AI a Die1/Die2 corpse still runs. `InfantryClass::AI` keeps
+/// calling `FootClass::AI` (`0x0051BC9F`) until the sequence completes, and
+/// `TechnoClass::AI_Update` has no health gate on these steps: the estimate
+/// recovery (`0x006F9F6E`), the allied and illegal target drops
+/// (`0x006FA30C`, `0x006FA472`) and the passive block (`0x006FA65A`), whose
+/// scan draws and can acquire. Mission dispatch alone skips a Health-0
+/// object (`0x005B30A7`). The corpse's own fire routine is refused CANT for
+/// its death Doing (`0x0051C8B8`).
+///
+/// RESIDUAL: the rest of the subset (veterancy, drains, CaptureManager,
+/// self-heal, cloak, bomb) does nothing for a GI corpse and is not run.
+pub(super) fn dying_infantry_techno_ai(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    ctx: ObjectAiCtx<'_>,
+) {
+    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+        entity
+            .estimated_health
+            .recover(entity.health.current, sim.session.binary_frame);
+    }
+    allied_target_drop_step(sim, id, rules);
+    illegal_target_drop_step(sim, id, rules);
+    passive_acquire_step(sim, id, Some(rules), ctx);
 }
 
 /// The bomb fuse's slot in `TechnoClass::AI_Update` (`0x006FA6F5..
@@ -1258,19 +1340,10 @@ fn unit_techno_bracket(
 
 // ===== Passive / opportunity target acquisition =====
 //
-// This is what makes an idle Grizzly shoot a tank that drives past and a
-// Patriot Missile engage on its own. The original runs it inside the common
-// Techno AI body, after mission dispatch and before the object's locomotion,
-// behind a per-object cadence timer: when the timer expires and the object is
-// on Move, Harvest or Guard, the shared target scanner runs, re-arms the timer
-// and (with no target already installed) installs one.
-//
-// The whole block is behind the object's OWN mission and type flags — no
-// order, no prior damage, and no player input is involved.
-
-/// Largest value of the scanner's timer jitter draw (`RandomRanged(0, 2)` —
-/// three outcomes, inclusive).
-const PASSIVE_SCAN_DELAY_JITTER_MAX: u32 = 2;
+// What makes an idle Grizzly shoot a tank that drives past: the passive block
+// of TechnoClass::AI_Update (`0x006FA65A`) asks the gate and runs
+// Retaliate_And_Scan. Both live in `target_scan`; this section keeps the
+// mission-change drop of a scanner-installed target.
 
 /// Missions on which a passively-acquired target is dropped, before the AI
 /// counter runs. Meaning: the moment an object takes a job that should not be
@@ -1291,393 +1364,6 @@ const PASSIVE_TARGET_CLEAR_MISSIONS: [MissionType; 12] = [
     MissionType::Open,
     MissionType::Deliberate,
 ];
-
-/// The passive-acquire gate predicate (pure; the testable core).
-///
-/// An object reaches the target scanner iff its mission is one of
-/// {Move, Harvest, Guard}, it passes the base can-acquire check, AND
-/// (`OpportunityFire` OR mission == Guard). The Guard term is the verified
-/// behavior and the one that matters most: an object sitting on Guard acquires
-/// even with `OpportunityFire=no`, which is why idle units and base defences
-/// engage at all (no stock base defence carries `OpportunityFire`).
-///
-/// The three-mission admission is the caller's, and it is exhaustive: the
-/// original tests the mission slot against 2, then 10, then 5, and skips the
-/// whole block otherwise. **Area Guard is not in that set on purpose** — its
-/// own handler owns its acquisition (see `evaluate_foot_area_guard`), so
-/// widening this predicate would scan such an object twice per cadence and
-/// double its scanner RNG draw.
-///
-/// Deferred, deliberately (recorded, not approximated): the AI-team Move
-/// shortcut at the head of the original's gate (needs a live team; there is no
-/// AI opponent yet), the two Move sub-branches whose INI keys are unresolved,
-/// and the weapon sub-clause on the no-`OpportunityFire` Guard arm (its weapon
-/// flag is unresolved).
-fn passive_acquire_gate(mission: MissionType, can_acquire: bool, opportunity_fire: bool) -> bool {
-    matches!(
-        mission,
-        MissionType::Move | MissionType::Guard | MissionType::Harvest
-    ) && can_acquire
-        && (opportunity_fire || mission == MissionType::Guard)
-}
-
-/// The base can-acquire check every passive path sits behind.
-///
-/// gamemd-derived: `TechnoClass::CanAcquireTarget @ 0x007091D0`, consumed by
-/// `TechnoClass::PassiveAcquireGate @ 0x00709290`.
-///
-/// VERIFIED and modelled: the type-level `CanPassiveAquire` opt-out (the INI
-/// key and its default were read out of the binary's key table), and the
-/// equipped-weapon requirement — which the native performs as its **last**
-/// test, `cVar2 = (**(code **)(*param_1 + 0x2ac))()`, i.e.
-/// `TechnoClass::Is_Armed` through vtable `+0x2AC`. Reading `Primary=`/
-/// `Secondary=` here instead answered "unarmed" for every `TurretCount>0` type
-/// that keeps its weapons in `Weapon1..N` — `[SREF]` and `[YAGGUN]` on stock
-/// data — so the Prism Tank and the Gattling Cannon never scanned at all. All
-/// the terms here are pure predicates ANDed together, so VERA's ordering does
-/// not change the answer.
-///
-/// SUBSTITUTED, not verified: the building arm. The original tests a building-
-/// type flag whose INI key was NOT resolved, combined with a virtual whose slot
-/// role is UNCHECKED — the pair reads as "an unpowered defence". VERA uses a
-/// DIFFERENT predicate here, `Powered=` plus the owner's low-power state, which
-/// is the same predicate that already blocks such a building from firing. The
-/// intent matches; the exact condition is UNCHECKED and the two can disagree
-/// (for example on a building disabled by something other than low power).
-///
-/// The capture term is `CaptureManager && IsFull` of the scanner itself
-/// (`0x00709230..0x00709268`, `0x004722A0`): a controller at its limit does
-/// not acquire.
-///
-/// The player-control term (`0x0070924D`) is the Engineer refusal below: its
-/// virtual, `vt+0x330`, reads InfantryType `Engineer=` for infantry and is
-/// false for every other class.
-///
-/// Not modelled (recorded): the first disabled/limbo-ish virtual and the
-/// second early-out field.
-///
-/// NEWLY ADMITTED by the `Is_Armed` correction, and deliberate: an **occupied**
-/// building. `BuildingClass::Is_Armed @ 0x00458DB0` returns 1 unconditionally
-/// once `IsOccupied (vt+0x400)` holds, so a garrisoned civilian building passes
-/// this gate natively; the old `Primary=` reading blocked it, because no stock
-/// `CanBeOccupied=yes` section authors a weapon. It now reaches
-/// `passive_target_scan` and takes that routine's scenario-RNG cadence draw,
-/// which is what native does. It still installs no target from there: VERA does
-/// not model `BuildingClass::GetWeapon @ 0x004526F0`'s occupant substitution in
-/// the generic path, so every candidate fails weapon selection and the pick is
-/// `None`. The target is installed by the dedicated garrison auto-acquire scan
-/// in `combat/mod.rs` instead, which does model the substitution — so there is
-/// exactly one install and exactly one draw, but the install happens in the
-/// combat phase rather than here. Recorded, not approximated.
-fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
-    let Some(entity) = sim.substrate.entities.get(id) else {
-        return false;
-    };
-    // `TechnoClass::CanAcquireTarget`'s first test (`0x007091D6`, vtable
-    // `+0x1DC`): an object whose TemporalClass holds a target acquires none.
-    if entity.temporal.is_warping_someone() {
-        return false;
-    }
-    let Some(obj) = rules.object(sim.interner.resolve(entity.type_ref())) else {
-        return false;
-    };
-    if !obj.can_passive_acquire {
-        return false;
-    }
-    if entity.category == EntityCategory::Structure
-        && !crate::sim::power_system::is_building_powered(
-            &sim.power_states,
-            rules,
-            entity,
-            &sim.interner,
-        )
-    {
-        return false;
-    }
-    if entity
-        .capture_manager
-        .as_ref()
-        .is_some_and(|manager| manager.is_full())
-    {
-        return false;
-    }
-    // `0x0070924D..0x00709264`: `vt+0x330` of a house that
-    // `HouseClass::IsControlledByHuman @ 0x0050B730` admits refuses. The slot
-    // is the InfantryType `Engineer=` flag for infantry (`0x005224D0`) and
-    // false for every other class (`0x0041BF30`): a player's Engineer never
-    // picks its own target, so it neither defuses on its own nor takes the
-    // scan's cadence draw.
-    if entity.category == EntityCategory::Infantry
-        && obj.engineer
-        && sim
-            .houses
-            .get(&entity.owner())
-            .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero))
-    {
-        return false;
-    }
-    // `TechnoClass::CanAcquireTarget 0x007091D0`'s final term: `vt+0x2AC`.
-    crate::sim::combat::combat_weapon::is_armed(entity, obj)
-}
-
-/// The shared passive target scanner — the same routine every Techno class
-/// reaches through the same slot, buildings included.
-///
-/// Entry order, and the RNG contract, both matter for lockstep:
-/// 1. stamp the last-scan frame;
-/// 2. re-arm the cadence timer to `[General]`'s targeting delay for this
-///    mission **plus one `RandomRanged(0, 2)` draw on the scenario RNG**. That
-///    draw is UNCONDITIONAL — it happens here, before any target work, whether
-///    or not a target is found and whether or not one already exists. It is a
-///    *separate, additional* draw from the mission-dispatch epilogue jitter
-///    that also runs on the scenario stream; the two must never be folded;
-/// 3. drop a stale target the scanner itself installed;
-/// 4. with no target installed, install one.
-///
-/// Steps 3 and 4 are merged below. The original drops the pointer and
-/// immediately re-acquires, which lands back on the same value whenever the
-/// same candidate still wins; installing the scan result directly is the same
-/// observable outcome, since the target setter is a no-op when the pick is
-/// unchanged. (The reload is the object's own timer,
-/// [`GameEntity::rearm_timer`](crate::sim::game_entity::GameEntity::rearm_timer),
-/// so neither form touches it.)
-///
-/// The Area Guard delay branch is written because it belongs to the scanner,
-/// but Area Guard is not one of the three missions that reach here from the AI
-/// body — it becomes live when the Area Guard mission handler (a separate
-/// caller of this scanner) lands.
-fn passive_target_scan(
-    sim: &mut Simulation,
-    id: u64,
-    rules: &RuleSet,
-    mission: MissionType,
-    ctx: ObjectAiCtx<'_>,
-) {
-    let now = sim.session.binary_frame;
-    let base_delay = if mission == MissionType::AreaGuard {
-        rules.general.guard_area_targeting_delay
-    } else {
-        rules.general.normal_targeting_delay
-    };
-    let jitter = sim
-        .scenario_rng
-        .next_range_u32_inclusive(0, PASSIVE_SCAN_DELAY_JITTER_MAX);
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.last_target_scan_frame = now;
-        entity
-            .passive_scan_timer
-            .arm(now, base_delay.saturating_add(jitter));
-    }
-
-    // An ordered or retaliation target is never touched here — the original
-    // only re-evaluates a target its own scanner installed.
-    let Some((has_target, holds_passive_target)) = sim
-        .substrate
-        .entities
-        .get(id)
-        .map(|e| (e.attack_target.is_some(), e.passively_acquired_target))
-    else {
-        return;
-    };
-    if has_target && !holds_passive_target {
-        return;
-    }
-    // A `DistributedFire` type takes the spread-fire assignment instead of this
-    // single-target one. That mechanism is not implemented, and approximating it
-    // with a single target would be a different behavior, so those types install
-    // nothing here. Stock YR: the Aegis Cruiser only.
-    //
-    // The divert happens at the ASSIGNMENT, after the drop — so a spread-fire
-    // type still lets go of a target it had picked up, it just does not take a
-    // new single one. Returning ahead of the drop instead would let it sit on a
-    // stale victim forever.
-    let spreads_fire = sim
-        .substrate
-        .entities
-        .get(id)
-        .and_then(|e| rules.object(sim.interner.resolve(e.type_ref())))
-        .is_some_and(|obj| obj.distributed_fire);
-    if spreads_fire {
-        if holds_passive_target {
-            let _ = sim.set_archive_target_represented(id, None);
-        }
-        if let Some(entity) = sim.substrate.entities.get_mut(id) {
-            entity.passively_acquired_target = false;
-        }
-        return;
-    }
-
-    // Re-evaluate. The original gates its drop on three action codes whose
-    // meanings are UNCHECKED, so this drops and re-picks on every cadence,
-    // which is what it does whenever it drops at all.
-    //
-    // Target choice is `TechnoClass::Greatest_Threat @ 0x006F8DF0` — the
-    // expanding-ring cell walk and the weighted score, in
-    // `combat::greatest_threat`. It used to be a nearest-first key invented
-    // here; that is retired.
-    //
-    // RESIDUAL — scan-side RNG. This scan draws NOTHING; the whole per-scan
-    // cost is the one timer-jitter draw above. The original's candidate
-    // evaluation has one `RandomRanged(0, 99)` callsite, in the disguise arm at
-    // `0x006F8525`. The M5 mapping pass showed that draw to be unreachable in
-    // YR for every attacker, human or AI: the blink timer it depends on
-    // (`TechnoClass+0x1EC`/`+0x1F4`) is written only by
-    // `TechnoClass::Constructor @ 0x006F2CDB`, with start = creation frame and
-    // duration = 0, so the `elapsed >= duration` reject always fires first. The
-    // per-scan RNG cost is therefore 1 in both engines. The residual is only
-    // that an instruction search cannot exclude a computed-pointer writer of
-    // those two fields.
-    let Some(scan_mask) = sim
-        .substrate
-        .entities
-        .get(id)
-        .map(crate::sim::combat::scan_mission_for)
-    else {
-        return;
-    };
-    let pick = crate::sim::combat::acquire_best_target_for_entity(
-        &sim.substrate.entities,
-        &sim.substrate.occupancy,
-        rules,
-        &sim.interner,
-        id,
-        Some(&sim.fog),
-        sim.resolved_terrain.as_ref(),
-        sim.playfield_bounds.is_some(),
-        // The passive callsite's own literal: `1` from the common Techno AI
-        // body for Move/Guard/Harvest, `2` from `FootClass::Mission_AreaGuard`.
-        // `scan_mission_for` is that choice, and this is the site that makes it.
-        scan_mask,
-        sim.zone_grid.as_ref(),
-        crate::sim::combat::line_of_fire::LineOfFireInputs {
-            overlay_grid: sim.overlay_grid.as_ref(),
-            overlay_registry: ctx.overlay_registry,
-            alliances: Some(&sim.fog.alliances),
-        },
-        Some(&*sim),
-    );
-    // Install the target only — no mission, no destination, and nothing fires
-    // this tick. A unit that acquires while driving keeps driving, and an idle
-    // unit that acquires does NOT walk toward what it found.
-    //
-    // Swinging an existing attack onto a different victim goes through the
-    // shared in-place retarget, which keeps the attack record. The reload and
-    // burst position are the object's (`rearm_timer`, `weapon_burst`), so a
-    // re-pick cannot hand out a free shot either way.
-    let pick_kind = pick.map(crate::sim::combat::TargetKind::Entity);
-    let current_kind = sim
-        .substrate
-        .entities
-        .get(id)
-        .and_then(|e| e.attack_target.as_ref().map(|t| t.target));
-    match (current_kind, pick) {
-        (Some(current), Some(sid)) if current != crate::sim::combat::TargetKind::Entity(sid) => {
-            if let Some(entity) = sim.substrate.entities.get_mut(id) {
-                crate::sim::combat::retarget_in_place(entity, sid);
-            }
-        }
-        // Fresh install, or a clear.
-        _ => {
-            let _ = sim.set_archive_target_represented(id, pick_kind);
-        }
-    }
-    // DRIFT — passive-flag set condition, and VERA-INTERNAL by decision.
-    //
-    // Original: the target assignment clears the flag on every call (modelled in
-    // the shared target setter), and the scanner's CALLER re-sets it only when
-    // the scan actually CHANGED the target. An object whose rescan re-picks the
-    // same victim therefore ends with the flag false, drops out of the drop step
-    // from then on, and settles on that victim.
-    //
-    // VERA: the flag is set whenever a target is installed, so the object keeps
-    // re-evaluating every cadence.
-    //
-    // Trigger and player effect: any object that holds a scanner target for more
-    // than one cadence — so every idle unit, infantryman and defence in a
-    // standing engagement. The original settles on its first re-picked victim;
-    // VERA re-picks nearest-first every ~28 frames and can swing onto a closer
-    // enemy mid-reload. Frequency: continuous while anything is idle near a
-    // contact, which in ordinary play is most of a match.
-    //
-    // Why it is kept: this one step stands in for BOTH the scanner and the
-    // mission-handler re-evaluation the original splits into its Guard and
-    // Attack building/foot missions, and VERA has neither handler. Adopting the
-    // native set condition reintroduces a permanent target latch (a defence
-    // holds a scout that walked out of range for the rest of the match) and
-    // un-gates pursuit, since the flag is what keeps a scanner target from being
-    // chased. Both are covered by tests that go red when it is adopted.
-    // Downstream risk: retiring this DRIFT means adding the real mission
-    // handlers first, not flipping this line. The drop step's own action-code
-    // gate is UNCHECKED either way.
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.passively_acquired_target = pick.is_some();
-    }
-}
-
-/// The passive-acquire block, at its position in the common Techno AI body:
-/// after mission dispatch, before the object's own movement.
-///
-/// Order is the original's: cadence-timer expiry, then the mission test, then
-/// the gate, then the scanner. Nothing before the scanner draws RNG.
-///
-/// Not modelled: the divert gate the original checks between the timer and the
-/// mission test — for a foot unit it means "a pending player attack-order
-/// handoff skips passive acquire this tick", and buildings never divert (their
-/// slot is a constant false).
-///
-/// Recorded residuals, all VERA-side and none of them acted on here:
-/// - A building still in its `building_up` deployment animation reaches the
-///   scanner and burns its jitter draw. It cannot fire (the fire gate blocks it)
-///   and the window is a few seconds once per building, but the draw is real.
-/// - Holding a scanner target suppresses retaliation, because the retaliation
-///   pass skips anything that already has a target. So an idle unit that has
-///   picked something up will not switch to whatever shoots it in the back. The
-///   original's equivalent is UNCHECKED and worth a dedicated pass.
-/// - This scan runs in the object-AI pass, ahead of the order-intent
-///   acquisition stage later in the tick, so it wins for any object that would
-///   have been served by both. Consequence: a unit put on guard stance no longer
-///   walks out to close on a target it cannot reach — the scanner installs an
-///   in-range target first, and pursuit skips scanner targets by design.
-/// - A deployed Desolator that picks something up on its own suppresses its own
-///   radiation self-target re-arm, because that path only fires for a structure
-///   or unit with no target installed.
-fn passive_acquire_step(
-    sim: &mut Simulation,
-    id: u64,
-    rules: Option<&RuleSet>,
-    ctx: ObjectAiCtx<'_>,
-) {
-    let Some(rules) = rules else {
-        return;
-    };
-    let Some(entity) = sim.substrate.entities.get(id) else {
-        return;
-    };
-    if entity.dying {
-        return;
-    }
-    if !entity.passive_scan_timer.due(sim.session.binary_frame) {
-        return;
-    }
-    let mission = entity.passive_acquire_mission();
-    if !matches!(
-        mission,
-        MissionType::Move | MissionType::Guard | MissionType::Harvest
-    ) {
-        return;
-    }
-    let opportunity_fire = rules
-        .object(sim.interner.resolve(entity.type_ref()))
-        .is_some_and(|obj| obj.opportunity_fire);
-    if !passive_acquire_gate(
-        mission,
-        can_acquire_target(sim, id, rules),
-        opportunity_fire,
-    ) {
-        return;
-    }
-    passive_target_scan(sim, id, rules, mission, ctx);
-}
 
 /// The off-mission clear, which runs before the AI counter: a passively
 /// acquired target is dropped the moment the object takes a job that should not
@@ -1719,12 +1405,11 @@ fn clear_passive_target_off_mission(sim: &mut Simulation, id: u64) {
 // after it backed off to 8 and stayed in vision — silent for the rest of the
 // match, for near-certain in the first minutes of any game.
 //
-// VERA-INTERNAL: the flip is deliberately omitted, so a building stays on the
-// bridged Guard reading and the scanner's own cadence owns target selection —
-// re-picking the best in-range candidate every ~28 frames and clearing the
-// target when nothing is in range. That reproduces the observable result of the
-// original's re-evaluating Attack mission more closely than the latch would.
-// Restoring the flip requires a real Mission_Attack handler first.
+// RESIDUAL: the flip is omitted, so a building stays on the bridged Guard
+// reading and the passive scan owns its target: it keeps a scanner target until
+// GetFireError answers ILLEGAL, CANT or RANGE, then picks again
+// (`target_scan`). Restoring the flip requires a real building Mission_Attack
+// handler first.
 
 // ===== P2 (factory substrate) — Structure-arm read-only shadow trace (FIT a) =====
 //
@@ -1913,6 +1598,7 @@ mod tests {
     fn entity_of(id: u64, category: EntityCategory) -> GameEntity {
         let mut e = GameEntity::test_default(id, "TEST", "Americans", 5, 5);
         e.category = category;
+        e.mission_leaf = crate::sim::mission::leaf::MissionLeafState::for_entity_category(category);
         e
     }
 
@@ -2148,44 +1834,6 @@ mod tests {
         );
     }
 
-    // ===== Passive-acquire gate predicate =====
-
-    #[test]
-    fn passive_gate_move_with_opportunity_fire_and_weapon_eligible() {
-        assert!(passive_acquire_gate(MissionType::Move, true, true));
-    }
-
-    #[test]
-    fn passive_gate_guard_with_weapon_eligible_without_opportunity_fire() {
-        // Guard objects auto-acquire regardless of OpportunityFire — the arm
-        // every stock base defence and every idle vehicle relies on.
-        assert!(passive_acquire_gate(MissionType::Guard, true, false));
-    }
-
-    #[test]
-    fn passive_gate_harvest_with_opportunity_fire_eligible() {
-        assert!(passive_acquire_gate(MissionType::Harvest, true, true));
-    }
-
-    #[test]
-    fn passive_gate_move_without_opportunity_fire_not_eligible() {
-        assert!(!passive_acquire_gate(MissionType::Move, true, false));
-    }
-
-    #[test]
-    fn passive_gate_cannot_acquire_not_eligible_even_on_guard() {
-        // The base can-acquire check applies to ALL paths, including Guard.
-        assert!(!passive_acquire_gate(MissionType::Guard, false, true));
-        assert!(!passive_acquire_gate(MissionType::Move, false, true));
-    }
-
-    #[test]
-    fn passive_gate_off_mission_not_eligible() {
-        // Missions outside {Move,Guard,Harvest} never reach the passive block.
-        assert!(!passive_acquire_gate(MissionType::Attack, true, true));
-        assert!(!passive_acquire_gate(MissionType::Sleep, true, true));
-    }
-
     // ===== Passive acquisition — production line =====
 
     /// Rules for the passive-acquire tests. `MTNK` is an ordinary armed tank
@@ -2196,8 +1844,10 @@ mod tests {
         RuleSet::from_ini(&IniFile::from_str(
             "[General]\nNormalTargetingDelay=27\nGuardAreaTargetingDelay=36\n\n\
              [InfantryTypes]\n0=GI\n[AircraftTypes]\n\
-             [VehicleTypes]\n0=MTNK\n1=NOACQ\n2=UNARM\n\
-             [BuildingTypes]\n0=NASAM\n1=GAPOWR\n\n\
+             [VehicleTypes]\n0=MTNK\n1=NOACQ\n2=UNARM\n3=OPPTNK\n4=SPRAY\n\
+             [BuildingTypes]\n0=NASAM\n1=GAPOWR\n2=GARR\n\n\
+             [GARR]\nStrength=750\nArmor=wood\nFoundation=2x2\nSight=5\nCanBeOccupied=yes\n\
+             MaxNumberOccupants=5\nPrimary=105mm\n\n\
              [GAPOWR]\nStrength=750\nArmor=wood\nFoundation=2x2\nSight=5\nPower=100\n\n\
              [GI]\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
              Strength=125\nArmor=none\nSpeed=4\nSight=10\nPrimary=105mm\n\n\
@@ -2205,6 +1855,11 @@ mod tests {
              Strength=300\nArmor=heavy\nSpeed=6\nSight=10\nPrimary=105mm\n\n\
              [NOACQ]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
              Strength=300\nArmor=heavy\nSpeed=6\nSight=10\nPrimary=105mm\nCanPassiveAquire=no\n\n\
+             [OPPTNK]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             Strength=300\nArmor=heavy\nSpeed=6\nSight=10\nPrimary=105mm\nOpportunityFire=yes\n\n\
+             [SPRAY]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             Strength=300\nArmor=heavy\nSpeed=6\nSight=10\nPrimary=AFIRE\nSprayAttack=yes\n\n\
+             [AFIRE]\nDamage=10\nROF=50\nRange=2\nWarhead=AP\nAreaFire=yes\n\n\
              [UNARM]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
              Strength=300\nArmor=heavy\nSpeed=6\nSight=10\n\n\
              [NASAM]\nStrength=1000\nArmor=wood\nFoundation=1x1\nSight=10\n\
@@ -2565,10 +2220,10 @@ mod tests {
     }
 
     #[test]
-    fn rescan_that_changes_target_also_preserves_the_weapon_cooldown() {
-        // The sibling of the test above: a CHANGED pick must not restart the
-        // weapon either, or two enemies trading places as nearest every
-        // ~28-frame scan would hand out free shots.
+    fn a_scanner_target_is_kept_when_a_closer_enemy_arrives() {
+        // `Retaliate_And_Scan` drops a scanner target only on ILLEGAL, CANT or
+        // RANGE (`0x007098EC..0x0070990A`); a nearer enemy is no reason. The
+        // tank keeps the farther victim, its reload untouched.
         let rules = passive_rules();
         let heights: std::collections::BTreeMap<(u16, u16), u8> = std::collections::BTreeMap::new();
         let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
@@ -2576,7 +2231,6 @@ mod tests {
         sim.spawn_from_map(
             &[
                 passive_map_entity("Americans", "MTNK", 20, 20, EntityCategory::Unit),
-                // Two candidates; the nearer one (id 3) is what a rescan picks.
                 passive_map_entity("Soviet", "UNARM", 24, 20, EntityCategory::Unit),
                 passive_map_entity("Soviet", "UNARM", 21, 20, EntityCategory::Unit),
             ],
@@ -2586,36 +2240,32 @@ mod tests {
         let _ = sim.advance_tick(&[], Some(&rules), &heights, Some(&grid), None, 67);
         let rearm = crate::sim::timer::CdTimer::started(sim.session.binary_frame as i32, 40);
         {
-            // Hold the FARTHER one, mid-reload, so the rescan must swing over.
             let e = sim.substrate.entities.get_mut(1).unwrap();
             e.attack_target = Some(AttackTarget::new(2));
             e.rearm_timer = rearm;
             e.passively_acquired_target = true;
             e.passive_scan_timer.clear();
         }
+        let before = sim.scenario_rng.state();
         passive_acquire_step(&mut sim, 1, Some(&rules), ObjectAiCtx::default());
+        assert_ne!(sim.scenario_rng.state(), before, "the scan still draws");
         let e = sim.substrate.entities.get(1).unwrap();
-        let attack = e.attack_target.as_ref().expect("target retained");
         assert_eq!(
-            attack.target,
-            TargetKind::Entity(3),
-            "precondition: the rescan swung onto the nearer candidate"
+            e.attack_target.as_ref().map(|attack| attack.target),
+            Some(TargetKind::Entity(2)),
+            "the victim in range is kept"
         );
-        assert_eq!(
-            e.rearm_timer, rearm,
-            "swinging onto a new target must not restart the weapon"
-        );
+        assert!(e.passively_acquired_target);
+        assert_eq!(e.rearm_timer, rearm);
     }
 
     #[test]
-    fn auto_retarget_after_a_scanner_victim_dies_keeps_the_target_scanner_owned() {
-        // The state that must never exist: a live target with the provenance
-        // flag false on an object that was never given an order. Combat's own
-        // auto-retarget fires when the current victim dies and a second
-        // candidate is in range — it is a continuation of the same unordered
-        // acquisition, so the flag has to carry over. If it does not, the object
-        // silently leaves the passive block, starts getting chased by pursuit,
-        // and never releases a target that walks out of range.
+    fn after_a_kill_the_next_passive_scan_picks_again() {
+        // Native has no retarget on a kill: pointer expiry clears the killer's
+        // target (`0x007077C0`) and the next passive scan picks again, marking
+        // the new target as its own (`0x006FA6EE`). The invariant is checked
+        // every tick: a target the tank was never ordered onto is always
+        // scanner-owned, or pursuit would chase it.
         let rules = passive_rules();
         let heights: std::collections::BTreeMap<(u16, u16), u8> = std::collections::BTreeMap::new();
         let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
@@ -2671,36 +2321,6 @@ mod tests {
             tank.attack_target.is_some() && tank.passively_acquired_target,
             "precondition: the second candidate is still in range and was taken up"
         );
-    }
-
-    #[test]
-    fn the_shared_retarget_preserves_provenance_and_rearm() {
-        // The contract at the one function that owns swinging an attack onto a
-        // new victim. Combat's auto-retarget is a continuation of whatever
-        // acquisition installed the target, so provenance carries over; and the
-        // rearm state must survive (covered end-to-end elsewhere, pinned here).
-        let mut e = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
-        let rearm = crate::sim::timer::CdTimer::started(0, 33);
-        e.rearm_timer = rearm;
-        e.weapon_burst.complete_shot(3);
-        e.attack_target = Some(AttackTarget::new(2));
-        e.passively_acquired_target = true;
-
-        crate::sim::combat::retarget_in_place(&mut e, 7);
-
-        let attack = e.attack_target.as_ref().expect("target retained");
-        assert_eq!(attack.target, TargetKind::Entity(7));
-        assert_eq!(e.rearm_timer, rearm, "rearm must survive the swing");
-        assert_eq!(e.weapon_burst.index(), 1, "burst must survive the swing");
-        assert!(
-            e.passively_acquired_target,
-            "an auto-retarget is not a new order — the target stays scanner-owned"
-        );
-
-        // An ordered target stays ordered through the same swing.
-        e.passively_acquired_target = false;
-        crate::sim::combat::retarget_in_place(&mut e, 9);
-        assert!(!e.passively_acquired_target);
     }
 
     #[test]
@@ -3021,7 +2641,7 @@ mod tests {
         insert_scannable(&mut sim, 1, "Americans", "MTNK", EntityCategory::Unit);
 
         let mut probe = sim.scenario_rng.clone();
-        let expected_jitter = probe.next_range_u32_inclusive(0, PASSIVE_SCAN_DELAY_JITTER_MAX);
+        let expected_jitter = probe.next_range_u32_inclusive(0, 2);
 
         passive_acquire_step(&mut sim, 1, Some(&rules), ObjectAiCtx::default());
 
@@ -3052,7 +2672,7 @@ mod tests {
         insert_scannable(&mut sim, 1, "Americans", "MTNK", EntityCategory::Unit);
 
         let mut expected_scenario = sim.scenario_rng.clone();
-        expected_scenario.next_range_u32_inclusive(0, PASSIVE_SCAN_DELAY_JITTER_MAX);
+        expected_scenario.next_range_u32_inclusive(0, 2);
         let main_before = sim.main_rng.state();
         let mapgen_before = sim.mapgen_rng.state();
 
@@ -3093,14 +2713,166 @@ mod tests {
         );
     }
 
+    /// `TechnoClass::PassiveAcquireGate @ 0x00709290`, arm by arm, through
+    /// the passive block. The scan's first act is its draw, so a draw means
+    /// the gate passed.
     #[test]
-    fn unpowered_defence_never_reaches_the_scanner() {
-        // An unpowered base defence does not look for targets. Observable
-        // without a hostile present: the scan's unconditional draw is the FIRST
-        // thing the scanner does, so zero draws means the gate held.
+    fn passive_gate_arms_follow_the_original() {
+        let rules = passive_rules();
+        let mut sim = Simulation::new();
+        let mut scans = |sim: &mut Simulation, id: u64| {
+            let before = sim.scenario_rng.state();
+            passive_acquire_step(sim, id, Some(&rules), ObjectAiCtx::default());
+            sim.scenario_rng.state() != before
+        };
+        let on_move = |sim: &mut Simulation, id: u64| {
+            let entity = sim.substrate.entities.get_mut(id).unwrap();
+            update_mission_test_fixture(&mut entity.mission, |fixture| {
+                fixture.current = MissionId::from_known(MissionType::Move);
+            });
+            entity.navigation.nav_com =
+                Some(crate::sim::components::NavTargetRef::Cell { rx: 30, ry: 30 });
+        };
+
+        // Guard passes without OpportunityFire.
+        insert_scannable(&mut sim, 1, "Americans", "MTNK", EntityCategory::Unit);
+        assert!(scans(&mut sim, 1));
+        // Move needs OpportunityFire (`0x007093DF`).
+        insert_scannable(&mut sim, 2, "Americans", "MTNK", EntityCategory::Unit);
+        on_move(&mut sim, 2);
+        assert!(!scans(&mut sim, 2));
+        insert_scannable(&mut sim, 3, "Americans", "OPPTNK", EntityCategory::Unit);
+        on_move(&mut sim, 3);
+        assert!(scans(&mut sim, 3));
+        // On Guard, a SprayAttack type's slot-0 AreaFire weapon that
+        // SelectWeapon picks refuses (`0x007093F8..0x00709449`).
+        insert_scannable(&mut sim, 4, "Americans", "SPRAY", EntityCategory::Unit);
+        assert!(!scans(&mut sim, 4));
+        // A computer Foot with no target, on Move in an Aggressive, non-Suicide
+        // team, passes without CanAcquireTarget (`0x0070929A..0x007092EC`):
+        // here a `CanPassiveAquire=no` type.
+        insert_scannable(&mut sim, 5, "Soviet", "NOACQ", EntityCategory::Unit);
+        on_move(&mut sim, 5);
+        assert!(
+            !scans(&mut sim, 5),
+            "outside a team CanAcquireTarget refuses"
+        );
+        crate::sim::team_script_vm::join_one_member_team_for_test(&mut sim, 5, false, true);
+        sim.substrate
+            .entities
+            .get_mut(5)
+            .unwrap()
+            .passive_scan_timer
+            .clear();
+        assert!(scans(&mut sim, 5));
+        // The same arm is closed to a human house.
+        insert_scannable(&mut sim, 6, "Americans", "NOACQ", EntityCategory::Unit);
+        on_move(&mut sim, 6);
+        let americans = sim.interner.intern("Americans");
+        sim.houses.insert(
+            americans,
+            crate::sim::house_state::HouseState::new(americans, 0, None, true, 0, 10),
+        );
+        crate::sim::team_script_vm::join_one_member_team_for_test(&mut sim, 6, false, true);
+        assert!(!scans(&mut sim, 6));
+    }
+
+    /// `TechnoClass::AI_Update @ 0x006FA30C..0x006FA46C`: a computer house's
+    /// object drops a target its house is allied with, unless it is berserk;
+    /// a human house's keeps it.
+    #[test]
+    fn a_computer_object_drops_an_allied_target() {
+        let rules = passive_rules();
+        let mut sim = Simulation::new();
+        insert_scannable(&mut sim, 1, "Soviet", "MTNK", EntityCategory::Unit);
+        insert_scannable(&mut sim, 2, "Soviet", "MTNK", EntityCategory::Unit);
+        let soviet = sim.interner.intern("Soviet");
+        sim.houses.insert(
+            soviet,
+            crate::sim::house_state::HouseState::new(soviet, 0, None, false, 0, 10),
+        );
+        let aim = |sim: &mut Simulation| {
+            sim.substrate.entities.get_mut(1).unwrap().attack_target = Some(AttackTarget::new(2));
+        };
+        let held = |sim: &Simulation| {
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .attack_target
+                .is_some()
+        };
+
+        aim(&mut sim);
+        sim.substrate.entities.get_mut(1).unwrap().berserk.active = true;
+        allied_target_drop_step(&mut sim, 1, &rules);
+        assert!(held(&sim), "a berserk object keeps it");
+
+        sim.substrate.entities.get_mut(1).unwrap().berserk.active = false;
+        allied_target_drop_step(&mut sim, 1, &rules);
+        assert!(!held(&sim), "a computer house drops it");
+
+        aim(&mut sim);
+        sim.houses.get_mut(&soviet).unwrap().is_human = true;
+        allied_target_drop_step(&mut sim, 1, &rules);
+        assert!(held(&sim), "a human house keeps it");
+    }
+
+    /// `TechnoClass::Unlimbo @ 0x006F6E2A`: an infantryman leaving limbo with
+    /// nowhere to go commits Guard at once, so the retaliation gate and the
+    /// passive block read a truthful mission.
+    #[test]
+    fn a_produced_infantryman_enters_the_map_on_guard() {
+        let rules = passive_rules();
+        let heights: std::collections::BTreeMap<(u16, u16), u8> = std::collections::BTreeMap::new();
+        let mut sim = Simulation::new();
+        let id = sim
+            .spawn_object("GI", "Americans", 10, 10, 0, &rules, &heights)
+            .expect("GI spawns");
+        let entity = sim.substrate.entities.get(id).unwrap();
+        assert_eq!(
+            entity.mission.current(),
+            MissionId::from_known(MissionType::Guard)
+        );
+        assert_eq!(entity.mission.queued(), MissionId::NONE);
+    }
+
+    /// A Die1 corpse keeps running `TechnoClass::AI_Update` through
+    /// `FootClass::AI` (`0x0051BC9F`): its passive block scans (one Scenario
+    /// `RandomRanged(0, 2)`) on the visit that removes it.
+    #[test]
+    fn a_dying_infantryman_still_takes_its_passive_scan() {
+        let rules = passive_rules();
+        let mut sim = Simulation::new();
+        insert_scannable(&mut sim, 1, "Americans", "GI", EntityCategory::Infantry);
+        sim.substrate.entities.get_mut(1).unwrap().mission_leaf =
+            crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+                EntityCategory::Infantry,
+            );
+        sim.begin_infantry_death_sequence(
+            1,
+            super::super::infantry_terminal::InfantryDeathSequence::Die1,
+        );
+        let mut expected = sim.clone_scenario_rng();
+        let _ = expected.next_range_u32_inclusive(0, 2);
+        sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+        assert_eq!(
+            sim.scenario_rng.logical_state(),
+            expected.logical_state(),
+            "the corpse's scan drew once"
+        );
+    }
+
+    #[test]
+    fn power_does_not_gate_the_scan_but_an_empty_garrison_does() {
+        // `CanAcquireTarget @ 0x007091D0` has no power term: an unpowered
+        // defence still scans (its own fire routine refuses the shot). Its
+        // building arm refuses a `CanBeOccupied=` building with no occupants
+        // (`0x0070920D..0x0070922E`). The scan's first act is its draw.
         let rules = passive_rules();
         let mut sim = Simulation::new();
         insert_scannable(&mut sim, 1, "Americans", "NASAM", EntityCategory::Structure);
+        insert_scannable(&mut sim, 2, "Americans", "GARR", EntityCategory::Structure);
         let owner = sim.interner.intern("Americans");
         sim.power_states.insert(
             owner,
@@ -3113,28 +2885,18 @@ mod tests {
 
         let before = sim.scenario_rng.state();
         passive_acquire_step(&mut sim, 1, Some(&rules), ObjectAiCtx::default());
-        assert_eq!(
-            sim.scenario_rng.state(),
-            before,
-            "an unpowered defence must not reach the scanner"
-        );
-
-        // Control: with power restored the same defence scans.
-        sim.power_states
-            .get_mut(&owner)
-            .expect("power state present")
-            .total_output = 100;
-        sim.substrate
-            .entities
-            .get_mut(1)
-            .unwrap()
-            .passive_scan_timer
-            .clear();
-        passive_acquire_step(&mut sim, 1, Some(&rules), ObjectAiCtx::default());
         assert_ne!(
             sim.scenario_rng.state(),
             before,
-            "a powered defence reaches the scanner"
+            "an unpowered defence still reaches the scanner"
+        );
+
+        let before = sim.scenario_rng.state();
+        passive_acquire_step(&mut sim, 2, Some(&rules), ObjectAiCtx::default());
+        assert_eq!(
+            sim.scenario_rng.state(),
+            before,
+            "an empty garrisonable building does not"
         );
     }
 
@@ -3492,6 +3254,10 @@ mod tests {
         let mut target = entity_of(2, EntityCategory::Unit);
         target.lifecycle.in_limbo = false;
         register_entity(&mut sim, target);
+        // An enemy: a computer house drops an allied target every frame
+        // (`0x006FA30C`).
+        let soviet = sim.interner.intern("Soviet");
+        sim.substrate.entities.get_mut(2).unwrap().owner = soviet;
         sim
     }
 
@@ -3711,14 +3477,6 @@ mod tests {
             sim.scenario_rng.logical_state(),
             expected_rng.logical_state(),
             "the idle exit consumes no extra RNG"
-        );
-        assert!(
-            passive_acquire_gate(MissionType::Guard, true, false),
-            "the replacement mission is one the passive-acquire gate admits"
-        );
-        assert!(
-            !passive_acquire_gate(MissionType::Attack, true, true),
-            "Attack itself is not, which is why the exit is load-bearing"
         );
     }
 
@@ -4376,6 +4134,8 @@ mod tests {
         let mut target = entity_of(2, EntityCategory::Unit);
         target.lifecycle.in_limbo = false;
         register_entity(&mut sim, target);
+        let soviet = sim.interner.intern("Soviet");
+        sim.substrate.entities.get_mut(2).unwrap().owner = soviet;
 
         let mut expected_rng = sim.clone_scenario_rng();
         let jitter = expected_rng.next_range_u32_inclusive(0, 2) as i32;

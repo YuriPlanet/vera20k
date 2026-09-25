@@ -14,6 +14,8 @@ pub(crate) enum PresentedShell {
     FullscreenMovie,
     CreditsRoll,
     Skirmish,
+    Campaign,
+    LoadSavedGame,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -22,6 +24,8 @@ enum Phase {
     MainMenu,
     SinglePlayer,
     Skirmish,
+    /// Back pressed: the teardown slide runs toward the held tick.
+    SlideOut,
 }
 
 #[derive(Default)]
@@ -30,6 +34,13 @@ pub(super) struct SkirmishCapture {
     route: Vec<Value>,
     selected_scene: Option<Value>,
     last_presented: Option<PresentedShell>,
+    /// Capture Back's teardown slide held at this tick instead of the steady
+    /// dialog.
+    slide_out_tick: Option<u32>,
+    /// Capture the entry slide held at this tick instead of the steady dialog.
+    entry_tick: Option<u32>,
+    entry_seen: bool,
+    entry_held: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -143,7 +154,33 @@ fn selected_scene(state: &AppState) -> Result<Value> {
     }))
 }
 
+/// The tick of the Skirmish entry slide, while it runs.
+fn entry_wave_tick(state: &AppState) -> Option<u32> {
+    if state.frontend.shell_slide_active_shell != Some(ShellSlideKind::Skirmish) {
+        return None;
+    }
+    state
+        .frontend
+        .shell_first_paint_slide
+        .as_ref()
+        .and_then(|wave| wave.compatibility_tick())
+}
+
 impl SkirmishCapture {
+    pub(super) fn slide_out(tick: u32) -> Self {
+        Self {
+            slide_out_tick: Some(tick),
+            ..Self::default()
+        }
+    }
+
+    pub(super) fn entry(tick: u32) -> Self {
+        Self {
+            entry_tick: Some(tick),
+            ..Self::default()
+        }
+    }
+
     /// Called only after an ordinary production frame has been presented. Route
     /// actions run here, never between frame acquisition and shell dispatch.
     pub(super) fn after_present(
@@ -192,9 +229,62 @@ impl SkirmishCapture {
                     self.phase = Phase::Skirmish;
                 }
             }
+            // The first-paint slide frames present through the generic slide
+            // renderer, so they arrive as `Other`.
+            (Phase::Skirmish, PresentedShell::Other | PresentedShell::Skirmish)
+                if self.entry_tick.is_some() =>
+            {
+                let target = self.entry_tick.context("entry phase without a tick")?;
+                match entry_wave_tick(state) {
+                    Some(tick) => {
+                        self.entry_seen = true;
+                        ensure!(tick <= target, "entry slide passed tick {target}");
+                        if tick == target && !self.entry_held {
+                            if let Some(wave) = state.frontend.shell_first_paint_slide.as_mut() {
+                                wave.hold_for_capture();
+                            }
+                            self.entry_held = true;
+                            self.route.push(json!({"dialog": 0x102, "frame": frame,
+                                "action": "hold entry slide", "tick": tick}));
+                        }
+                    }
+                    None => ensure!(
+                        !self.entry_seen,
+                        "Skirmish entry slide ended before capture"
+                    ),
+                }
+            }
             (Phase::Skirmish, PresentedShell::Skirmish) => {
                 if self.settled(state)? && self.selected_scene.is_none() {
                     self.selected_scene = Some(selected_scene(state)?);
+                } else if self.selected_scene.is_some() && self.slide_out_tick.is_some() {
+                    ensure!(
+                        App::handle_skirmish_back(state)
+                            == crate::app::shell_skirmish::SkirmishBackOutcome::Leaving
+                            && state.frontend.shell_exit.is_some(),
+                        "Skirmish Back did not start its teardown slide"
+                    );
+                    self.route
+                        .push(json!({"dialog": 0x102, "frame": frame, "action": "Back"}));
+                    self.phase = Phase::SlideOut;
+                }
+            }
+            (Phase::SlideOut, PresentedShell::Skirmish) => {
+                let target = self
+                    .slide_out_tick
+                    .context("slide-out phase without a tick")?;
+                let tick = crate::app::frontend::shell_transition::shell_exit_wave(
+                    state,
+                    ShellSlideKind::Skirmish,
+                )
+                .context("Skirmish teardown ended before capture")?
+                .compatibility_tick()
+                .context("teardown slide without a tick clock")?;
+                ensure!(tick <= target, "teardown slide passed tick {target}");
+                if tick == target {
+                    crate::app::frontend::shell_transition::hold_shell_exit_for_capture(state);
+                    self.route.push(json!({"dialog": 0x102, "frame": frame,
+                        "action": "hold teardown slide", "tick": tick}));
                 }
             }
             _ => {}
@@ -229,6 +319,19 @@ impl SkirmishCapture {
 
     pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
         guard(state)?;
+        if let Some(target) = self.entry_tick {
+            return Ok(self.entry_held && entry_wave_tick(state) == Some(target));
+        }
+        if let Some(target) = self.slide_out_tick {
+            return Ok(self.phase == Phase::SlideOut
+                && self.last_presented == Some(PresentedShell::Skirmish)
+                && crate::app::frontend::shell_transition::shell_exit_wave(
+                    state,
+                    ShellSlideKind::Skirmish,
+                )
+                .and_then(|wave| wave.compatibility_tick())
+                    == Some(target));
+        }
         if self.phase != Phase::Skirmish
             || self.last_presented != Some(PresentedShell::Skirmish)
             || self.selected_scene.is_none()
@@ -259,7 +362,8 @@ impl SkirmishCapture {
                 "pixel_layout": "BGRA8", "row_order": "top-left", "row_stride": request.width * 4},
             "cursor": {"x": request.cursor_x, "y": request.cursor_y, "policy": "software-composited"},
             "route": self.route, "dialog_resource_id": 0x102, "capture_frame": frame,
-            "selection": self.selected_scene, "reveals_completed": true, "ordinary_skirmish_frame": true,
+            "selection": self.selected_scene, "reveals_completed": self.entry_tick.is_none(),
+            "ordinary_skirmish_frame": true,
             "input_enrollment": "UNENROLLED; asset/profile bytes require enrollment before native comparison",
             "frame": {"path": FRAME_FILE_NAME, "byte_length": pixels.len(),
                 "sha256": crate::util::sha256::sha256_hex(pixels)}

@@ -81,6 +81,11 @@ pub struct TeamTypeDefinition {
     /// 0x00708A2C..0x00708A54`).
     #[serde(default)]
     pub suicide: bool,
+    /// TeamType `Aggressive=` (`+0xAD`, read at `0x006F12A9`, constructor 0 at
+    /// `0x006F0741`): a computer member on Move with no target passes the
+    /// passive-acquire gate without CanAcquireTarget (`0x0070929A..0x007092EC`).
+    #[serde(default)]
+    pub aggressive: bool,
     /// `TeamTypeClass+0xEC`: post-load fold of resolved TaskForce movement rows.
     pub combined_movement_zone: MovementZone,
     /// `TeamTypeClass+0xF0`: whether AI eligibility compares House base zones.
@@ -852,6 +857,68 @@ fn script_action_at(
     script?.actions.get(index).copied()
 }
 
+/// Puts `member` in a one-member team whose TeamType has `Suicide=suicide`
+/// and `Aggressive=aggressive`.
+#[cfg(test)]
+pub(crate) fn join_one_member_team_for_test(
+    sim: &mut crate::sim::world::Simulation,
+    member: u64,
+    suicide: bool,
+    aggressive: bool,
+) {
+    use crate::rules::object_type::ObjectCategory;
+    use crate::rules::team_ai_ini::TeamAiDefinitionSource;
+    use crate::sim::team_script_vm::{
+        TeamMemberTypeIdentity, TeamScriptDefinition, TeamScriptMember, TeamTaskForceDefinition,
+        TeamTaskForceEntry, TeamTypeDefinition,
+    };
+    let owner = sim.substrate.entities.get(member).unwrap().owner();
+    let member_type = TeamMemberTypeIdentity {
+        category: ObjectCategory::Vehicle,
+        id: sim.substrate.entities.get(member).unwrap().type_ref(),
+    };
+    let script_id = sim.interner.intern("TEST_SCRIPT");
+    let task_force_id = sim.interner.intern("TEST_TASK_FORCE");
+    let team_type_id = sim.interner.intern("TEST_TEAM");
+    let teams = &mut sim.team_script_vm;
+    teams.register_script(TeamScriptDefinition {
+        id: script_id,
+        source: TeamAiDefinitionSource::FixedAimd,
+        actions: Vec::new(),
+    });
+    teams.register_task_force(TeamTaskForceDefinition {
+        id: task_force_id,
+        source: TeamAiDefinitionSource::FixedAimd,
+        group: -1,
+        entries: vec![TeamTaskForceEntry {
+            member_type,
+            count: 1,
+        }],
+    });
+    teams.register_team_type(TeamTypeDefinition {
+        id: team_type_id,
+        script_id,
+        task_force_id,
+        priority: 0,
+        is_base_defense: false,
+        suicide,
+        aggressive,
+        combined_movement_zone: crate::rules::locomotor_type::MovementZone::Normal,
+        base_zone_relation_enforced: true,
+        transport_crossing_required: false,
+    });
+    teams.create_team_from_type(
+        owner,
+        team_type_id,
+        &[TeamScriptMember {
+            entity_id: member,
+            member_type,
+        }],
+        None,
+        0,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1044,6 +1111,7 @@ mod tests {
             priority: 0,
             is_base_defense: false,
             suicide: false,
+            aggressive: false,
             combined_movement_zone: MovementZone::Fly,
             base_zone_relation_enforced: true,
             transport_crossing_required: false,
@@ -1112,6 +1180,7 @@ mod tests {
             priority: 0,
             is_base_defense: false,
             suicide: false,
+            aggressive: false,
             combined_movement_zone: MovementZone::Fly,
             base_zone_relation_enforced: true,
             transport_crossing_required: false,
@@ -1182,6 +1251,7 @@ mod tests {
                 priority,
                 is_base_defense,
                 suicide: false,
+                aggressive: false,
                 combined_movement_zone: MovementZone::Fly,
                 base_zone_relation_enforced: !is_base_defense,
                 transport_crossing_required: false,
@@ -1285,6 +1355,7 @@ mod tests {
             priority: 0,
             is_base_defense: false,
             suicide: false,
+            aggressive: false,
             combined_movement_zone: MovementZone::Fly,
             base_zone_relation_enforced: true,
             transport_crossing_required: false,
@@ -1352,6 +1423,7 @@ mod tests {
             priority: 0,
             is_base_defense: false,
             suicide: false,
+            aggressive: false,
             combined_movement_zone: MovementZone::Fly,
             base_zone_relation_enforced: true,
             transport_crossing_required: false,

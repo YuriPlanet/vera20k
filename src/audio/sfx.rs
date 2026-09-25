@@ -1234,6 +1234,12 @@ impl SfxPlayer {
         self.arbiter.clear_loop_handle(anim_id);
     }
 
+    /// Whether `owner`'s handle still holds a live event: `0x00406130` on a
+    /// VocHandle, as a shell polls its voice.
+    pub fn owner_sound_live(&mut self, owner: u64) -> bool {
+        self.arbiter.validate_loop_handle(owner).is_some()
+    }
+
     /// Release only the handle owned by `anim_id`. Idempotent.
     pub fn stop_animation_sound(&mut self, anim_id: u64) {
         if let Some(event) = self.arbiter.validate_loop_handle(anim_id) {
