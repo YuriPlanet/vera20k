@@ -179,6 +179,10 @@ pub fn available_effect_anim_frame_count(
 /// Animation types `Simulation`'s cliff-collapse producer names literally.
 pub(crate) const CLIFF_COLLAPSE_ANIMS: [&str; 3] = ["XGRYMED1", "XGRYMED2", "XGRYSML1"];
 
+/// The smoke a burning or crashing aircraft trails: `AircraftClass::AI` finds
+/// it by this literal (`0x004150EF..0x00415102`), no rules key names it.
+pub(crate) const AIRCRAFT_SMOKE_ANIM: &str = "SGRYSMK1";
+
 /// Every animation name the simulation can turn into an `AnimClass` instance,
 /// which the loader must bind before the match starts.
 ///
@@ -274,6 +278,9 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     for name in CLIFF_COLLAPSE_ANIMS {
         insert(name);
     }
+    // The aircraft smoke (`sim::world::crash`): without this root SGRYSMK1
+    // never bound and every puff failed to construct.
+    insert(AIRCRAFT_SMOKE_ANIM);
     roots.into_iter().collect()
 }
 

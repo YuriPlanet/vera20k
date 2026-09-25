@@ -250,7 +250,12 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 75618554545049050
 // starts its move one frame earlier: every cell is entered one tick sooner and
 // the final cell and health are unchanged; main/mapgen streams unchanged. With
 // that hook disabled every old pin reproduces. Old values: the moving commit.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x9D26_63FE_1130_9E06;
+// Schema208 folds every object's crash latch and its AI edge (Foot+0x425/
+// +0x426) and a Fly's fall counter: composition only. Before(208) reproduces
+// the v207 pin (the ore-field schema moved nothing here);
+// per-tick replay and the route tripwires are unchanged.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x8186_0D2B_AC68_26D5;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_CRASH_V208: u64 = 0x9D26_63FE_1130_9E06;
 const BRIDGE_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0xD647_5869_EE05_41D7;
 const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 4350841866948950648;
 
@@ -868,6 +873,11 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(202)),
         BRIDGE_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202,
         "v202 only folds the object's rearm timer in place of the target's counters"
+    );
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(208)),
+        BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_CRASH_V208,
+        "v208 only folds the crash latch, its AI edge and the Fly fall counter"
     );
     assert_eq!(
         final_hash, BRIDGE_HARNESS_FINAL_HASH,

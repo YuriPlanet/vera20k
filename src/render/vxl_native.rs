@@ -406,11 +406,8 @@ pub(super) fn prepare_draw(
     if params.scale != 1.0 || vxl.limbs.iter().any(|limb| limb.native_spans.is_none()) {
         return None;
     }
-    let draw_matrix = super::voxel_draw_rotation_for_state(
-        params.slope_type,
-        params.slope_blend,
-        super::voxel_facing_step(params.facing),
-    );
+    let draw_matrix =
+        super::voxel_params_draw_rotation(params, super::voxel_facing_step(params.facing));
     let geometry = prepare_geometry(vxl, hva, params.frame, draw_matrix)?;
     // 706ED0 calls 753D00 once for the VXL, before submitting its sections.
     // Its normal mode is read from limb zero, not switched for every limb.

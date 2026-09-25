@@ -35,6 +35,10 @@ pub struct FlyRuntime {
     /// Landing reads this instance value; BeginLanding separately reads live type.
     #[serde(default)]
     airport_bound: bool,
+    /// Fly+58, the fall counter: the constructor clears it (`0x004CCA06`) and
+    /// only Process's fall block writes it (`0x004CD6C6`), never resetting it.
+    #[serde(default)]
+    fall_counter: i32,
 }
 
 /// Techno-owned approach pitch. Native stores f32; the engine uses SimFixed.
@@ -112,6 +116,18 @@ impl FlyRuntime {
 
     pub(crate) fn landing_effect_latched(&self) -> bool {
         self.landing_effect_latched
+    }
+
+    /// Process `0x004CD6B1..0x004CD6E4`: an unpowered or dead Fly above the
+    /// ground adds 1 a frame to its fall counter when dead, 3 when alive, and
+    /// drops by the new counter. Returns the counter.
+    pub(crate) fn advance_fall(&mut self, dead: bool) -> i32 {
+        self.fall_counter = self.fall_counter.wrapping_add(if dead { 1 } else { 3 });
+        self.fall_counter
+    }
+
+    pub(crate) fn fall_counter(&self) -> i32 {
+        self.fall_counter
     }
 
     ///4CEB53..4CEB90, once per admitted BeginLanding, strictly below300.

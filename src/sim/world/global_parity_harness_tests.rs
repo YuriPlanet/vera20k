@@ -753,7 +753,13 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xB9B4_2173_0C3C_
 // duel's timing shifts and tank 4 takes its seventh hit and dies at tick
 // 586..590 (tank 6 ends at 12 HP). Only the Scenario stream moves. Every
 // projection moves with the scenario. Old values: the moving commit.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x3D39_36E9_B57B_E3C2;
+// 2026-09-25 combat chain 3 (snapshot 208): schema 208 folds every object's
+// crash latch and its AI edge (Foot+0x425/+0x426) and a Fly's fall counter,
+// composition only (nothing here flies or crashes): Before(208) reproduces the
+// ore-field pin, and the RNG stream pins, per-tick replay and every older
+// projection are unchanged.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x3145_96E2_22E1_1ACE;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_CRASH_V208: u64 = 0x3D39_36E9_B57B_E3C2;
 const GLOBAL_HARNESS_FINAL_HASH_PRE_NATIVE_ORE_FIELD_V207: u64 = 0xE6BB_5A84_AF8A_DF6D;
 const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_DOCK_PHASE_V206: u64 = 0xEDDB_A0A6_FE66_6D17;
 const GLOBAL_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0x9511_CDAA_E7A1_E538;
@@ -1100,6 +1106,11 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     let (_, final_scen, final_main, final_mapgen) =
         *recorded_streams.last().expect("final checkpoint recorded");
     let final_hash = *replayed.last().expect("at least one tick recorded");
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(208)),
+        GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_CRASH_V208,
+        "v208 only folds the crash latch, its AI edge and the Fly fall counter"
+    );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(207)),
         GLOBAL_HARNESS_FINAL_HASH_PRE_NATIVE_ORE_FIELD_V207,

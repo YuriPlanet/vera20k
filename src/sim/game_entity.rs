@@ -629,6 +629,12 @@ pub struct GameEntity {
     pub current_weapon_index: u8,
     /// Actual weapon identity returned by the most recent live selection.
     /// Class overrides can make this differ from the type's static slot.
+    ///
+    /// No simulation reader remains: the death weapon reads
+    /// `GetCurrentWeapon` (`combat_weapon::current_weapon`) like native. It is
+    /// kept only because every historical hash projection folds its per-fire
+    /// value, which no earlier schema can reconstruct; retiring it re-pins
+    /// those ratchet probes and is left to a dedicated change.
     #[serde(default)]
     pub current_weapon_ref: Option<InternedId>,
     /// RadioClass-style live contacts for this entity, stored as stable IDs.
@@ -955,6 +961,19 @@ pub struct GameEntity {
     /// Remaining stopped AI visits before an active MoveSound is released.
     #[serde(default)]
     pub move_sound_countdown: u8,
+    /// `FootClass+0x425`, the crash latch: set by `FootClass::Crash @
+    /// 0x004DEBB0` (`0x004DEC7F`) and by a Magnetron dropping an airborne
+    /// object (`0x0070FF25`); cleared by the constructor (`0x006F2FF9`) and a
+    /// Jumpjet Descend touchdown (`0x0054CA12`). A crashing object is alive
+    /// (Object+90) with Health 0 and falls under its locomotor until the
+    /// impact UnInits it. VERA ports no Magnetron, so its one writer is
+    /// `Simulation::foot_crash` (`sim::world::crash`).
+    #[serde(default)]
+    pub crashing: bool,
+    /// `FootClass+0x426`, the latch as the previous `FootClass::AI` saw it: the
+    /// rising edge plays the crash voice and sound (`0x004DACDD..0x004DADC2`).
+    #[serde(default)]
+    pub crashing_seen: bool,
 
     // --- Passenger/transport system ---
     /// Original owner of a CanBeOccupied building, saved when the first garrison
@@ -1554,6 +1573,8 @@ impl GameEntity {
             blocked_scatter_timer: 0,
             move_sound_active: false,
             move_sound_countdown: 0,
+            crashing: false,
+            crashing_seen: false,
             garrison_original_owner: None,
             passenger_role: PassengerRole::None,
             weapon_override: None,

@@ -55,6 +55,7 @@ pub(super) fn dispatch_draw_passes(
 ) {
     let pool: &InstanceBufferPool = &state.renderer.instance_pool;
     let transition_cache = state.renderer.vxl_slope_transition_cache.borrow();
+    let pose_cache = state.renderer.vxl_pose_frame_cache.borrow();
     let mut pass = begin_main_pass(encoder, view, &state.renderer.depth_view);
 
     // Everything from here to the screen-fixed chrome block is battlefield: it
@@ -339,6 +340,7 @@ pub(super) fn dispatch_draw_passes(
                     data.top_unit_pages,
                     0,
                     count,
+                    pose_cache.texture(),
                 );
             }
         }

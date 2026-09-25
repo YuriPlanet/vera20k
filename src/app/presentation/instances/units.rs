@@ -444,11 +444,29 @@ pub(crate) fn build_unit_instances(
             EntityDrawBand::Ground => (&mut *instances, &mut *instance_pages),
         };
 
-        if let Some(turret_facing) = entity
-            .barrel_facing
-            .as_ref()
-            .map(|f| f.current(sim.session.binary_frame))
-        {
+        let body = body_draw(entity, band, sim.session.binary_frame);
+        if let BodyDraw::CrashPose(tilt) = body {
+            let key = UnitSpriteKey {
+                type_id: type_str.to_string(),
+                facing: canonical_unit_facing(entity.facing),
+                layer: VxlLayer::Composite,
+                frame: anim_frame,
+                slope_type: stable_slope_for_key(slope_state),
+            };
+            emit_crash_pose_sprite(
+                state,
+                target_instances,
+                target_instance_pages,
+                entity,
+                &key,
+                tilt,
+                [center_x, center_y],
+                interp_z,
+                tint,
+                palette_light,
+                draw_state,
+            );
+        } else if let BodyDraw::Turret(turret_facing) = body {
             // Turret unit: emit body, turret, and barrel as separate sprites.
             emit_turret_unit_sprites(
                 target_instances,
@@ -623,6 +641,109 @@ pub(crate) fn build_unit_instances(
             }
         }
     }
+}
+
+/// The page index a Top-band instance carries when it was drawn on this
+/// frame's crash-pose page (`render::unit_pose_cache`) instead of the atlas.
+pub(crate) const POSE_PAGE: usize = usize::MAX;
+
+/// How an object's body is drawn this frame.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BodyDraw {
+    /// A crashing Fly body at its roll and pitch, on the per-frame pose page.
+    CrashPose([f32; 2]),
+    /// Body, turret and barrel sprites, the turret at this facing.
+    Turret(u16),
+    /// One composite atlas sprite.
+    Composite,
+}
+
+/// The crash pose is decided before the turret split: every Fly carries a
+/// Secondary facing in `barrel_facing`, which would otherwise send a crashing
+/// aircraft down the turret path.
+fn body_draw(
+    entity: &crate::sim::game_entity::GameEntity,
+    band: EntityDrawBand,
+    binary_frame: u32,
+) -> BodyDraw {
+    if let Some(tilt) = crash_body_tilt(entity, band) {
+        return BodyDraw::CrashPose(tilt);
+    }
+    match entity.barrel_facing.as_ref() {
+        Some(facing) => BodyDraw::Turret(facing.current(binary_frame)),
+        None => BodyDraw::Composite,
+    }
+}
+
+/// A crashing Fly body's roll and pitch (`TechnoClass+0x328`/`+0x32C`), which
+/// Fly Draw_Matrix applies while the body is airborne (`0x004CF6A3`): every
+/// airborne Fly body is in the Top band (`In_Which_Layer @ 0x004CFCF0`).
+/// Other locomotors' Draw_Matrix keep their own crash arms.
+fn crash_body_tilt(
+    entity: &crate::sim::game_entity::GameEntity,
+    band: EntityDrawBand,
+) -> Option<[f32; 2]> {
+    let fly = entity.locomotor.as_ref().is_some_and(|locomotor| {
+        locomotor.kind == crate::rules::locomotor_type::LocomotorKind::Fly
+    });
+    if !entity.crashing || !fly || band != EntityDrawBand::Top {
+        return None;
+    }
+    let rocking = entity.rocking.as_ref()?;
+    Some([
+        rocking.angle_sideways.to_num::<f32>(),
+        rocking.angle_forwards.to_num::<f32>(),
+    ])
+}
+
+/// One crashing body drawn at its current pose on this frame's pose page. It
+/// joins the Top band in emission order like an atlas body; aircraft cast no
+/// VERA shadow (recorded on the draw passes).
+#[allow(clippy::too_many_arguments)]
+fn emit_crash_pose_sprite(
+    state: &AppState,
+    instances: &mut Vec<SpriteInstance>,
+    instance_pages: &mut Vec<usize>,
+    entity: &crate::sim::game_entity::GameEntity,
+    key: &UnitSpriteKey,
+    tilt: [f32; 2],
+    [center_x, center_y]: [f32; 2],
+    z: u8,
+    tint: [f32; 3],
+    palette_light: crate::render::palette_light::PaletteLight,
+    draw_state: DrawState,
+) {
+    let Some(assets) = state.process_assets.manager() else {
+        return;
+    };
+    let Some(entry) = state.renderer.vxl_pose_frame_cache.borrow_mut().render(
+        assets,
+        state.rules(),
+        state.rules().map(|rules| &rules.art_registry),
+        key,
+        tilt,
+    ) else {
+        return;
+    };
+    let depth_y = center_y + entry.offset_y + entry.pixel_size[1];
+    let depth = body_sort_depth(state, entity, EntityDrawBand::Top, depth_y, z);
+    let voxel_adjust = super::foot_depth::unit_z_adjust(state, entity, true) as f32;
+    let (composite_rect, split) = composite_depth_rect([(entry, [center_x, center_y])], false);
+    instances.push(SpriteInstance {
+        position: [center_x + entry.offset_x, center_y + entry.offset_y],
+        size: entry.pixel_size,
+        uv_origin: entry.uv_origin,
+        uv_size: entry.uv_size,
+        depth,
+        tint,
+        palette_light,
+        alpha: 1.0,
+        draw_state: composite_draw_state(state, draw_state, split),
+        z_adjust: voxel_adjust,
+        z_gradient: pack_voxel_z_gradient(ZGradient::Vertical, split),
+        zshape_origin: composite_rect,
+    });
+    instance_pages.push(POSE_PAGE);
 }
 
 /// Compute the screen-space offset for a turret pivot point from art.ini TurretOffset.
@@ -1387,6 +1508,40 @@ mod tests {
             cloak,
             UnitRenderSlopeState::Stable(0),
             EntityDrawBand::Ground
+        ));
+    }
+
+    /// A Fly carries a Secondary facing in `barrel_facing` from its first air
+    /// tick, so a crashing aircraft must take the pose before the turret split.
+    #[test]
+    fn a_crashing_fly_body_takes_its_pose_before_the_turret_split() {
+        let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 0, 0);
+        entity.category = EntityCategory::Aircraft;
+        entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Fly));
+        crate::sim::movement::air_movement::ensure_fly_facings(&mut entity);
+        assert!(matches!(
+            body_draw(&entity, EntityDrawBand::Top, 0),
+            BodyDraw::Turret(_)
+        ));
+        entity.crashing = true;
+        entity.rocking = Some(crate::sim::components::RockingState {
+            angle_sideways: crate::util::fixed_math::SimFixed::from_num(0.5),
+            angle_forwards: crate::util::fixed_math::SimFixed::from_num(-0.25),
+            ..Default::default()
+        });
+        assert_eq!(
+            body_draw(&entity, EntityDrawBand::Top, 0),
+            BodyDraw::CrashPose([0.5, -0.25])
+        );
+        // Only the airborne (Top) Fly body is posed, and only a Fly's.
+        assert!(matches!(
+            body_draw(&entity, EntityDrawBand::Ground, 0),
+            BodyDraw::Turret(_)
+        ));
+        entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Jumpjet));
+        assert!(matches!(
+            body_draw(&entity, EntityDrawBand::Top, 0),
+            BodyDraw::Turret(_)
         ));
     }
 

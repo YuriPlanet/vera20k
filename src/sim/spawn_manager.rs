@@ -1249,6 +1249,10 @@ pub struct MissileDetonation {
     pub firer_id: u64,
     /// House the missile carried, for the area-damage owner argument.
     pub owner: InternedId,
+    /// The exact impact coordinate (world leptons) of a missile that
+    /// exploded in flight ([`detonate_dead_missile`]); `None` detonates on
+    /// the ground of the target cell `(rx, ry)`.
+    pub impact: Option<crate::sim::projectile::ProjectileCoord>,
 }
 
 /// Consume every missile that reached its target during this tick's movement
@@ -1286,66 +1290,70 @@ pub fn detonate_missiles(sim: &mut Simulation, detonated: &[u64]) {
                 damage: payload.damage,
                 firer_id: payload.firer_id,
                 owner,
+                impact: None,
             });
         }
         sim.uninit(missile_id);
     }
 }
 
-/// Tear down a parent's whole pool.
+/// `RocketLocomotion::Detonate` (`0x00663030`) for a missile that lost its
+/// Health in flight. `ILoco::Process` checks its owner after the flight step
+/// (`0x00662FD5..0x00662FE1`), so a missile shot down by AA — latched
+/// crashing by `FootClass::Crash`, which only a Fly locomotor then drops —
+/// explodes where it is on its next turn instead of flying on to its target.
+/// The payload is the one its launch selected, and the impact joins the
+/// arrival queue ([`detonate_missiles`], with the same within-tick drift).
 ///
-/// `SpawnManagerClass::Kill_All_Spawns` (`decompile_function 0x006B7100`,
-/// re-read 2026-08-03) walks the slots backwards, skips any already in
-/// `Regenerating`, and has exactly three arms:
+/// RESIDUAL: native explodes `BodyLength=` ahead of the missile along its nose
+/// (`0x006630F7..0x006631C7`: X and Y by the facing, Z by the pitch `+0x54`);
+/// VERA's rocket flight keeps no native pitch, so the blast is at the
+/// missile's own coordinate. Trigger: AA kills a V3, Dreadnought or Boomer
+/// missile. Effect: the blast centre sits up to BodyLength behind native
+/// (stock 256 leptons for V3, 128 for the others). Frequency: every such
+/// shot-down. Downstream: the area damage's reach shifts by that distance.
 ///
-/// - **`ReadyDocked` / `Reloading`** — call the child's destroy slot
-///   (`vtable+0xF8`), null the slot pointer, arm the regen timer.
-/// - **`KamikazeWait`** — a missile that has *already left the launcher*:
-///   remove it from the retreat list, then call the same destroy slot. The
-///   in-flight missile dies with its launcher; the salvo does **not** land.
-/// - **everything else** (`InFlight` / `ReturningToDock` / `LandingAtDock`,
-///   i.e. the aircraft states) — push the child onto the global retreat list so
-///   it keeps flying toward the last target. This is the "Hornets keep going
-///   after the Carrier sinks" behaviour.
-///
-/// The regen duration is `SpawnRegenRate` when the owner is dead
-/// (`owner.Health < 1 || !owner.IsAlive`) and **zero** when it is still alive —
-/// so an ownership change or a deploy rebuilds the pool on the next AI pass
-/// rather than after a full regen wait.
-///
-/// VERA has no global retreat list, so the aircraft arm releases the child
-/// (clears `spawn_owner_id`) and leaves it flying instead of re-issuing a
-/// destination each tick. **VERA-internal; the retreat list's per-tick
-/// re-issue and its `HP = 1` marking are UNCHECKED.**
-///
-/// This routine never touches `CurrentTarget`/`QueuedTarget`; the caller
-/// decides. `Simulation::spawn_manager_owner_expired` pairs it with
-/// `ClearAllTargets`, matching the owner arm of
-/// `SpawnManagerClass::PointerExpired`, while
-/// `Simulation::change_owner` calls only this one. The *target* arm of the same
-/// native routine also clears targets and is a separate path entirely — see
-/// [`notify_pointer_expired`].
-///
-/// Native callers of this routine, and which are wired here:
-/// - `SpawnManagerClass::PointerExpired(owner)` — WIRED, via
-///   `Simulation::spawn_manager_owner_expired` at the killing hit's Destroy
-///   broadcast and again at UnInit, together with the `ClearAllTargets` it
-///   pairs with. Conceal's Destroy(1) broadcast would reach it too; VERA's
-///   conceal does not run it (RESIDUAL, see `object_conceal_with_context`).
-/// - `TechnoClass::ChangeOwner` (`0x0070157E`) — WIRED, via
-///   `Simulation::change_owner`; this is the mind-control path.
-/// - `TemporalClass::InitiateWarp` (`0x0071AF39`) — **not wired.** A
-///   chrono-warped V3/Dreadnought keeps its pool across the warp. Fires only
-///   when a Chrono Legionnaire targets one of the five spawner units.
-/// - `TechnoClass::ImbueLocomotor` (`0x00710021`), the Magnetron lift reached
-///   only from the IsLocomotor arm of `BulletClass::DetonateAtCoord`
-///   (`0x004696FB`) — **not wired**; VERA does not port that arm. A Magnetron
-///   lifting a V3 Launcher reaches it.
-/// - `TechnoClass::Stun` (`0x006FCD40`, entered from `FootClass::Stun @
-///   0x004D5660`) — WIRED for the death arm via `Simulation::techno_death_stun`.
-///   Its gate, Foot+0x6AD, is set only by `TechnoClass::ImbueLocomotor @
-///   0x00710000` (a Magnetron lift), which VERA does not port.
-/// - The destructor — covered by the `uninit` hook.
+/// RESIDUAL: the area damage's source is the launcher (the queued impact's
+/// owner, for kill credit), where native passes the missile itself
+/// (`0x006632B8`); `Apply_area_damage` leaves its source out of the ground
+/// list. Trigger: a missile shot down within its warhead's CellSpread of its
+/// launcher. Effect: the launcher is spared the blast. Frequency: rare (AA
+/// covering the launcher). Downstream: that launcher's health.
+pub(crate) fn detonate_dead_missile(sim: &mut Simulation, missile_id: u64) {
+    let Some((impact, rx, ry, payload, owner)) =
+        sim.substrate.entities.get(missile_id).and_then(|entity| {
+            let coord = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+            entity.rocket_state.as_ref().map(|rocket| {
+                (
+                    crate::sim::projectile::ProjectileCoord {
+                        x: coord.x,
+                        y: coord.y,
+                        z: coord.z,
+                    },
+                    entity.position.rx,
+                    entity.position.ry,
+                    rocket.payload,
+                    entity.owner(),
+                )
+            })
+        })
+    else {
+        return;
+    };
+    if let Some(payload) = payload {
+        sim.pending_missile_detonations.push(MissileDetonation {
+            rx,
+            ry,
+            warhead: payload.warhead,
+            damage: payload.damage,
+            firer_id: payload.firer_id,
+            owner,
+            impact: Some(impact),
+        });
+    }
+    sim.uninit(missile_id);
+}
+
 /// `SpawnManagerClass::PointerExpired` (`decompile_function 0x006B7C60`) for
 /// one listening manager, minus the owner arm.
 ///
@@ -1372,7 +1380,7 @@ pub fn detonate_missiles(sim: &mut Simulation, detonated: &[u64]) {
 /// hover until the player issues a fresh order.
 ///
 /// The owner arm is handled by `Simulation::spawn_manager_owner_expired`, which
-/// calls [`kill_all_spawns`] and [`clear_all_spawn_targets`] directly.
+/// calls [`kill_all_spawns_with_context`] and [`clear_all_spawn_targets`] directly.
 ///
 /// **Slot-arm alive-child guard** (`0x006B7CDD..0x006B7CF2`): the slot is
 /// kept, and nothing else happens, while `child+0x6C > 0 && child+0x6CA == 0
@@ -1447,7 +1455,7 @@ pub fn notify_pointer_expired(sim: &mut Simulation, listener_id: u64, expired_id
 
 /// `SpawnManagerClass::ClearAllTargets` (`0x006B7BB0`) as a standalone call.
 ///
-/// Kept separate from [`kill_all_spawns`] because the two are separate native
+/// Kept separate from [`kill_all_spawns_with_context`] because the two are separate native
 /// calls: the owner-expired path makes both, the ownership-change path makes
 /// only the kill.
 ///
@@ -1472,10 +1480,65 @@ pub fn clear_all_spawn_targets(sim: &mut Simulation, owner_id: u64) {
     with_manager(sim, owner_id, |m| m.clear_all_targets());
 }
 
-pub fn kill_all_spawns(sim: &mut Simulation, owner_id: u64) {
-    kill_all_spawns_with_context(sim, owner_id, UninitContext::default());
-}
-
+/// Tear down a parent's whole pool.
+///
+/// `SpawnManagerClass::Kill_All_Spawns` (`decompile_function 0x006B7100`,
+/// re-read 2026-08-03) walks the slots backwards, skips any already in
+/// `Regenerating`, and has exactly three arms:
+///
+/// - **`ReadyDocked` / `Reloading`** — call the child's destroy slot
+///   (`vtable+0xF8`), null the slot pointer, arm the regen timer.
+/// - **`KamikazeWait`** — a missile that has *already left the launcher*:
+///   remove it from the retreat list, then call the same destroy slot. The
+///   in-flight missile dies with its launcher; the salvo does **not** land.
+/// - **everything else** (`InFlight` / `ReturningToDock` / `LandingAtDock`,
+///   i.e. the aircraft states) — the slot is marked regenerating, then
+///   `SpawnRetreat__Push @ 0x0054E3B0` (`0x006B71B7`). A child whose type is
+///   not `MissileSpawn=` (`+0xD68`, read at `0x00714F37`) crashes there
+///   (`Crash(0)`, `0x0054E3CA..0x0054E3D2`): the Hornets of a sunk Carrier
+///   fall out of the sky like shot-down aircraft (`Simulation::foot_crash`),
+///   and one already on the ground is refused and stays. A missile joins the
+///   global retreat list and flies on toward the last target.
+///
+/// The regen duration is `SpawnRegenRate` when the owner is dead
+/// (`owner.Health < 1 || !owner.IsAlive`) and **zero** when it is still alive —
+/// so an ownership change or a deploy rebuilds the pool on the next AI pass
+/// rather than after a full regen wait.
+///
+/// VERA has no global retreat list, so the missile arm releases the child
+/// (clears `spawn_owner_id`) and leaves it flying instead of re-issuing a
+/// destination each tick. **VERA-internal; the retreat list's per-tick
+/// re-issue and its `HP = 1` marking are UNCHECKED.** Crash needs the rules;
+/// the rules-less UnInit adapters (tests and fixtures only) release a crashing
+/// child the same way.
+///
+/// This routine never touches `CurrentTarget`/`QueuedTarget`; the caller
+/// decides. `Simulation::spawn_manager_owner_expired` pairs it with
+/// `ClearAllTargets`, matching the owner arm of
+/// `SpawnManagerClass::PointerExpired`, while
+/// `Simulation::change_owner` calls only this one. The *target* arm of the same
+/// native routine also clears targets and is a separate path entirely — see
+/// [`notify_pointer_expired`].
+///
+/// Native callers of this routine, and which are wired here:
+/// - `SpawnManagerClass::PointerExpired(owner)` — WIRED, via
+///   `Simulation::spawn_manager_owner_expired` at the killing hit's Destroy
+///   broadcast and again at UnInit, together with the `ClearAllTargets` it
+///   pairs with. Conceal's Destroy(1) broadcast would reach it too; VERA's
+///   conceal does not run it (RESIDUAL, see `object_conceal_with_context`).
+/// - `TechnoClass::ChangeOwner` (`0x0070157E`) — WIRED, via
+///   `Simulation::change_owner`; this is the mind-control path.
+/// - `TemporalClass::InitiateWarp` (`0x0071AF39`) — WIRED, via
+///   `sim::temporal`: a chrono-warped spawner loses its pool first.
+/// - `TechnoClass::ImbueLocomotor` (`0x00710021`), the Magnetron lift reached
+///   only from the IsLocomotor arm of `BulletClass::DetonateAtCoord`
+///   (`0x004696FB`) — **not wired**; VERA does not port that arm. A Magnetron
+///   lifting a V3 Launcher reaches it.
+/// - `TechnoClass::Stun` (`0x006FCD40`, entered from `FootClass::Stun @
+///   0x004D5660`) — WIRED for the death arm via `Simulation::techno_death_stun`.
+///   Its gate, Foot+0x6AD, is set only by `TechnoClass::ImbueLocomotor @
+///   0x00710000` (a Magnetron lift), which VERA does not port.
+/// - The destructor — covered by the `uninit` hook.
 pub(crate) fn kill_all_spawns_with_context(
     sim: &mut Simulation,
     owner_id: u64,
@@ -1501,7 +1564,9 @@ pub(crate) fn kill_all_spawns_with_context(
     // not touched at all. Nothing in this routine reads or writes the manager's
     // targets either — `ClearAllTargets` is a separate call that only the
     // owner-expired path makes alongside this one.
-    for (index, slot) in slots.into_iter().enumerate() {
+    // Backwards, as native (`0x006B7123` from the last slot, `0x006B7218`):
+    // each crashing Hornet takes its three Scenario draws in that order.
+    for (index, slot) in slots.into_iter().enumerate().rev() {
         if slot.state == SpawnSlotState::Regenerating {
             continue;
         }
@@ -1514,12 +1579,23 @@ pub(crate) fn kill_all_spawns_with_context(
                 | SpawnSlotState::KamikazeWait => {
                     sim.uninit_with_context(child_id, context);
                 }
-                // Aircraft already out: released, not destroyed.
+                // Aircraft already out: `SpawnRetreat__Push`, which crashes
+                // anything but a missile.
                 SpawnSlotState::InFlight
                 | SpawnSlotState::ReturningToDock
                 | SpawnSlotState::LandingAtDock => {
                     if let Some(child) = sim.substrate.entities.get_mut(child_id) {
                         child.spawn_owner_id = None;
+                    }
+                    if let Some(rules) = context.rules()
+                        && sim
+                            .substrate
+                            .entities
+                            .get(child_id)
+                            .and_then(|child| sim.object_type(child.type_ref(), rules))
+                            .is_some_and(|child_type| !child_type.missile_spawn)
+                    {
+                        sim.foot_crash(child_id, None, rules);
                     }
                 }
                 SpawnSlotState::Regenerating => unreachable!("skipped above"),

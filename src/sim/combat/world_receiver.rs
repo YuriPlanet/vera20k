@@ -1026,7 +1026,6 @@ pub(crate) fn handle_death(
                 e.category,
                 e.veterancy,
                 e.current_weapon_index,
-                e.current_weapon_ref,
             )
         });
 
@@ -1043,7 +1042,6 @@ pub(crate) fn handle_death(
             category,
             veterancy,
             current_weapon_index,
-            current_weapon_ref,
         )) = dead_info
         {
             // `0x00702112`: the death arm frees a controller's captives before
@@ -1102,12 +1100,19 @@ pub(crate) fn handle_death(
                     &mut voxel_debris,
                     &mut explosion_effects,
                 );
+                // `Fire_Death_Weapon` fires the object's GetCurrentWeapon
+                // (vtable `+0x3F4`, `0x0070D6C6`).
+                let current_weapon = world
+                    .substrate
+                    .entities
+                    .get(dead_id)
+                    .and_then(|entity| super::combat_weapon::current_weapon(entity, obj));
                 if let Some((dmg, wh_id, weapon_id)) = death_weapon_aoe(
                     rules,
                     obj,
                     veterancy,
                     current_weapon_index,
-                    current_weapon_ref,
+                    current_weapon,
                     &mut world.interner,
                 ) {
                     // Fire_Death_Weapon @ 0x0070D690 detonates a real bullet at
@@ -1462,6 +1467,18 @@ fn finish_concrete_death(
         // arm's OVER_OUT to every contact (`techno_death_stun`) already
         // released its dock slots.
         effects.despawned_ids.push(dead_id);
+    } else if category == EntityCategory::Aircraft
+        && callbacks_enabled(world)
+        && world.foot_crash(
+            dead_id,
+            killing_attacker(world, damage_events, dead_id),
+            rules,
+        )
+    {
+        // `AircraftClass::ReceiveDamage` (`0x00416694..0x004166A3`): an
+        // airborne aircraft crashes instead of its UnInit. It stays alive and
+        // represented, with Health 0, until its fall's impact.
+        effects.despawned_ids.push(dead_id);
     } else {
         effects.immediate_uninit_ids.push(dead_id);
         effects.despawned_ids.push(dead_id);
@@ -1508,6 +1525,23 @@ fn finish_concrete_death(
             }
         }
     }
+}
+
+/// The killing ReceiveDamage call's attacker (its fourth argument), when it
+/// names an object.
+fn killing_attacker(
+    world: &Simulation,
+    damage_events: &[EntityDamageEvent],
+    dead_id: u64,
+) -> Option<u64> {
+    damage_events
+        .iter()
+        .rfind(|event| event.target_id == dead_id)
+        .map(|event| event.attacker_id)
+        .filter(|&attacker| {
+            attacker != crate::sim::combat::RAD_NO_ATTACKER
+                && world.substrate.entities.contains(attacker)
+        })
 }
 
 /// What a special arm of `BulletClass::DetonateAtCoord` reads as its target:
@@ -1829,8 +1863,9 @@ fn emit_detonation_anim(
 /// loop (`0x00469020..0x00469091`): per cluster the receivers commit, the anim
 /// tail runs, and every cluster (the last included) draws its successor
 /// around the impact, `RandomRanged(0x100, 0x200)` plus one raw draw. An
-/// `Airburst=` bullet detonates once and draws nothing, and so (VERA-internal,
-/// never in retail) does one whose weapon names no BulletType.
+/// `Airburst=` bullet detonates once and draws nothing, as does a death
+/// weapon's bare `DetonateAtCoord` (`ProjectileDetonationReason::DeathWeapon`)
+/// and (VERA-internal, never in retail) a weapon that names no BulletType.
 ///
 /// RESIDUAL: the anims and smudges are admitted when the caller commits the
 /// detonation's effects, after the cluster draws, where native constructs them
@@ -1864,8 +1899,12 @@ pub(crate) fn commit_projectile_detonations_inline(
         let bright = rules
             .weapon(world.interner.resolve(detonation.payload.weapon))
             .is_some_and(|weapon| weapon.bright);
+        let death_weapon =
+            detonation.reason == crate::sim::projectile::ProjectileDetonationReason::DeathWeapon;
         let (clusters, cluster_draws) = match projectile_type {
-            Some(projectile) if !projectile.airburst => (projectile.cluster.max(0), true),
+            Some(projectile) if !projectile.airburst && !death_weapon => {
+                (projectile.cluster.max(0), true)
+            }
             _ => (1, false),
         };
         let mut coordinate = detonation.impact;
@@ -1959,26 +1998,53 @@ fn emit_missile_detonations(
             continue;
         };
         let wh_iid = world.interner.intern(&warhead.id);
-        let impact_z =
-            combat_aoe::bridge_adjusted_impact_z(world.resolved_terrain.as_ref(), det.rx, det.ry);
-        let air_impact = combat_aoe::air_impact_from_layer_z(
-            world.resolved_terrain.as_ref(),
-            det.rx,
-            det.ry,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-            impact_z,
-        );
+        // A missile that exploded in flight carries its own coordinate; an
+        // arrival detonates on the ground of its target cell's centre.
+        let (rx, ry, sub_x, sub_y, impact_z, air_impact) = match det.impact {
+            Some(impact) => {
+                let (rx, ry, sub_x, sub_y, z_leptons) = projectile_impact_cell(impact);
+                let air_impact = combat_aoe::AoEAirImpact {
+                    sub_x,
+                    sub_y,
+                    z_leptons,
+                };
+                let impact_z = z_leptons.div_euclid(LEPTONS_PER_LEVEL as i32);
+                (rx, ry, sub_x, sub_y, impact_z, Some(air_impact))
+            }
+            None => {
+                let impact_z = combat_aoe::bridge_adjusted_impact_z(
+                    world.resolved_terrain.as_ref(),
+                    det.rx,
+                    det.ry,
+                );
+                let air_impact = combat_aoe::air_impact_from_layer_z(
+                    world.resolved_terrain.as_ref(),
+                    det.rx,
+                    det.ry,
+                    crate::util::lepton::CELL_CENTER_LEPTON,
+                    crate::util::lepton::CELL_CENTER_LEPTON,
+                    impact_z,
+                );
+                (
+                    det.rx,
+                    det.ry,
+                    crate::util::lepton::CELL_CENTER_LEPTON,
+                    crate::util::lepton::CELL_CENTER_LEPTON,
+                    impact_z,
+                    air_impact,
+                )
+            }
+        };
         let world_z_leptons = air_impact
             .map(|impact| impact.z_leptons)
             .unwrap_or_else(|| impact_z.wrapping_mul(LEPTONS_PER_LEVEL as i32));
         emit_warhead_detonation_effects(
             warhead,
             det.damage,
-            det.rx,
-            det.ry,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-            crate::util::lepton::CELL_CENTER_LEPTON,
+            rx,
+            ry,
+            sub_x,
+            sub_y,
             impact_z_byte(impact_z),
             world_z_leptons,
             &mut world.interner,
@@ -1992,8 +2058,8 @@ fn emit_missile_detonations(
             damage: det.damage,
             warhead_ref: wh_iid,
             coord: ProjectileCoord::new(
-                i32::from(det.rx) * 256 + crate::util::lepton::CELL_CENTER_LEPTON.to_num::<i32>(),
-                i32::from(det.ry) * 256 + crate::util::lepton::CELL_CENTER_LEPTON.to_num::<i32>(),
+                i32::from(rx) * 256 + sub_x.to_num::<i32>(),
+                i32::from(ry) * 256 + sub_y.to_num::<i32>(),
                 world_z_leptons,
             ),
             force_create: false,
@@ -2004,7 +2070,7 @@ fn emit_missile_detonations(
                 world,
                 rules,
                 overlay_registry,
-                (det.rx, det.ry),
+                (rx, ry),
                 det.damage,
                 warhead,
                 (det.firer_id, Some(det.owner), wh_iid),

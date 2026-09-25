@@ -2074,6 +2074,7 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
             damage: 100,
             firer_id: crate::sim::combat::RAD_NO_ATTACKER,
             owner,
+            impact: None,
         });
     let before_rng = sim.scenario_rng.state();
 

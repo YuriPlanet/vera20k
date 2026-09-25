@@ -130,6 +130,10 @@ pub(super) enum HashFeature {
     /// defaults) and adds the harvester's Unit+0x6D1/+0x6D2 bytes and its
     /// +0xF8 StageClass (value, timer, rate).
     NativeOreField = 207,
+    /// The crash latch and its AI edge (`FootClass+0x425`/`+0x426`) and the
+    /// Fly fall counter (`FlyLocomotionClass+0x58`). Earlier schemas fold
+    /// nothing: no object crashed before, so every latch and counter was zero.
+    AircraftCrash = 208,
 }
 
 impl HashSchema {
@@ -164,6 +168,7 @@ impl HashSchema {
                     | HashFeature::BouncingDebris
                     | HashFeature::RetiredRefineryDockPhase
                     | HashFeature::NativeOreField
+                    | HashFeature::AircraftCrash
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

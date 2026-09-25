@@ -983,6 +983,36 @@ impl UnitModel {
     /// used to store each separate layer. Composite keys retain their actual
     /// body/turret/barrel bake order; live independently facing parts are united
     /// later by presentation at their actual anchors and draw order.
+    /// One crashing Fly body's composite at `tilt` (roll, pitch in radians):
+    /// Fly Draw_Matrix's crashing arm (`0x004CF610`), rendered afresh because
+    /// native keys that draw -1 and never caches it.
+    pub(crate) fn render_crash_pose(
+        &self,
+        key: &UnitSpriteKey,
+        vpl: Option<&VplFile>,
+        tilt: [f32; 2],
+    ) -> (VxlSprite, Option<[i32; 4]>) {
+        let params = VxlRenderParams {
+            frame: key.frame,
+            facing: key.facing,
+            slope_type: key.slope_type,
+            body_tilt: Some(tilt),
+            ..VxlRenderParams::default()
+        };
+        let sprite = composite_parts(
+            &self.body,
+            self.body_hva.as_ref(),
+            self.turret.as_ref(),
+            self.barl.as_ref().or(self.barrel.as_ref()),
+            &params,
+            vpl,
+        );
+        (
+            sprite,
+            self.native_draw_bounds(&params, VxlLayer::Composite),
+        )
+    }
+
     fn native_draw_bounds(&self, params: &VxlRenderParams, layer: VxlLayer) -> Option<[i32; 4]> {
         let body =
             || vxl_raster::native_vxl_draw_bounds(&self.body, self.body_hva.as_ref(), params);

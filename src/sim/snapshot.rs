@@ -600,7 +600,9 @@ use crate::sim::world::Simulation;
 // 206 -> 207: a miner keeps Unit+0x6D2 and one +0xF8 StageClass (the unload
 // counter renamed) instead of its target-ore cell, harvest timer, rescan
 // cooldown and archive copy (the archive is Techno+0x218).
-const SNAPSHOT_VERSION: u32 = 207;
+// 207 -> 208: an entity keeps the crash latch and its AI edge (Foot+0x425/
+// +0x426) and a Fly its fall counter (+0x58).
+const SNAPSHOT_VERSION: u32 = 208;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3548,7 +3550,8 @@ mod tests {
         // 204 -> 205: bullet `Arcing=`; an anim's bounce body.
         // 205 -> 206: the retired Chrono dock phases; Techno+0x1F8.
         // 206 -> 207: the native ore field (Unit+0x6D2, the StageClass).
-        assert_eq!(super::SNAPSHOT_VERSION, 207);
+        // 207 -> 208: the crash latch and edge; the Fly fall counter.
+        assert_eq!(super::SNAPSHOT_VERSION, 208);
     }
 
     #[test]

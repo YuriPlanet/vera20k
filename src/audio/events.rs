@@ -482,13 +482,19 @@ impl GameSoundEvent {
 /// device-free decision module and `sim/` never learns about audio.
 ///
 /// **Still absent on the voice side.** `VoiceDeploy=`/`VoiceUndeploy=`
-/// (deploy/unload orders), `VoiceCrashing=` (7) and
-/// `VoiceSinking=`/`VoiceFalling=` are not parsed, and taunts reach an empty
-/// match arm. The native consumers of those slots were not isolated, so no
-/// mapping is asserted.
+/// (deploy/unload orders) and `VoiceSinking=`/`VoiceFalling=` are not parsed,
+/// and taunts reach an empty match arm. The native consumers of those slots
+/// were not isolated, so no mapping is asserted.
 /// - Player effect: those orders and states stay silent.
-/// - Frequency: deploy orders are common; crashing/sinking lines need an
-///   aircraft or ship kill.
+/// - Frequency: deploy orders are common; sinking lines need a ship kill.
+///
+/// `VoiceCrashing=` and `CrashingSound=` are landed: `FootClass::AI`'s crash
+/// edge (`0x004DACDD`) plays the voice as a [`GameSoundEvent::VocAt`] for a
+/// human player's object and the sound on the object's own handle, keyed by
+/// its id ([`GameSoundEvent::AnimationStarted`]), released as the object goes
+/// ([`GameSoundEvent::AnimationReleased`]); the Fly impact plays `ImpactLandSound=` /
+/// `ImpactWaterSound=` with their `[AudioVisual]` fallbacks
+/// (`sim::world::crash`).
 ///
 /// `VoiceFeedback=` (133 stock authors) is **no longer among them** — see
 /// [`Self::VoiceFeedback`].
@@ -589,11 +595,12 @@ impl GameSoundEvent {
 ///   beacons, so there is no producer to wire. (`MindClearedSound`,
 ///   `MasterMindOverloadDeathSound` and `YuriMindControlSound` are landed as
 ///   [`GameSoundEvent::VocAt`] from `sim/capture_manager.rs`.)
-/// - `ImpactWaterSound` (`+0x200`): no producer; the native reader was not
-///   isolated. (`CreditTicks` (`+0x6D0`, count `+0x6DC`) is landed as
-///   [`GameSoundEvent::CreditTick`] — reader `CreditsClass::Draw @ 0x004A24F4`.)
-/// - **Dead on retail data, so not parsed:** `ImpactLandSound` (`+0x204`) and
-///   `IceCrackSounds` (`+0x644`) are both **empty** in stock `rulesmd.ini`;
+/// - (`CreditTicks` (`+0x6D0`, count `+0x6DC`) is landed as
+///   [`GameSoundEvent::CreditTick`] — reader `CreditsClass::Draw @ 0x004A24F4`;
+///   `ImpactWaterSound`/`ImpactLandSound` (`+0x200`/`+0x204`) are the crash
+///   impact's fallbacks, see above.)
+/// - **Dead on retail data, so not parsed:** `IceCrackSounds` (`+0x644`) is
+///   **empty** in stock `rulesmd.ini`;
 ///   `GateUp`/`GateDown` (`+0x404`/`+0x408`) and `Construction` (`+0x6C8`) are
 ///   `Dummy`; `CreateUnitSound`/`CreateInfantrySound`/`CreateAircraftSound`
 ///   (`+0x178`..`+0x180`) and `LeaveGrinderSound` are empty. `Dummy` is one of

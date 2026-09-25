@@ -1892,6 +1892,16 @@ impl Simulation {
 
         self.materialize_legacy_fly_coordinate(stable_id);
 
+        // Fly Process opens with a dead Fly's fall (`0x004CD67F`); reaching
+        // the ground ends it in the impact, which the object turn commits.
+        if transact_fly && self.fly_crash_fall(stable_id) {
+            return crate::sim::movement::air_movement::AirMovementTickStats {
+                air_movers: 1,
+                arrivals: 0,
+                impact: true,
+            };
+        }
+
         // A cruising Jumpjet runs the native Update/State3 body instead of the
         // air adapter (`world::jumpjet_cruise`).
         let stats = match self.tick_jumpjet_cruise_one(stable_id, rules) {
@@ -2909,17 +2919,20 @@ impl Simulation {
     /// (`0x00725947`) does not skip the announcer, so the dying owner's own
     /// `TechnoClass::PointerExpired` reaches its SpawnManager forward
     /// (`0x00707B24`). Docked/reloading children and any missile still in its
-    /// post-launch window die with the parent; aircraft already out are
-    /// released. The target clear is the second, separate call —
-    /// `Kill_All_Spawns` alone never touches the targets.
+    /// post-launch window die with the parent; aircraft already out crash
+    /// (`SpawnRetreat__Push`) unless they are missiles. The target clear is the
+    /// second, separate call — `Kill_All_Spawns` alone never touches the
+    /// targets.
     ///
     /// RESIDUAL: VERA runs this self-visit ahead of the listener walk; native
     /// reaches it at the owner's roster slot, after the listeners before it.
-    /// Trigger: a launcher dies while a lower-roster listener targets it and
-    /// another listener targets one of its missiles still in the post-launch
-    /// window. Effect: those two passive-scan re-arm draws (`RandomRanged(4,8)`
-    /// at `0x00707A0D`) swap order on the Scenario stream. Frequency: rare.
-    /// Risk: Scenario-stream order only.
+    /// Trigger: a spawner dies while a lower-roster listener targets it, and
+    /// either another listener targets one of its missiles still in the
+    /// post-launch window or one of its Hornets is airborne. Effect: that
+    /// listener's passive-scan re-arm draw (`RandomRanged(4,8)` at
+    /// `0x00707A0D`) moves after the missile's re-arm or the Hornets' Crash
+    /// spin draws on the Scenario stream. Frequency: occasional — any Carrier
+    /// sunk under attack with its wing out. Risk: Scenario-stream order only.
     fn spawn_manager_owner_expired(&mut self, stable_id: u64, context: UninitContext<'_>) {
         if self
             .substrate
