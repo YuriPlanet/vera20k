@@ -10173,6 +10173,50 @@ fn gsi_05_14_a_dying_building_uses_its_own_debris_anims() {
     );
 }
 
+/// A dying building throws its debris from its GetCoords (`vtable+0x48` at
+/// `0x007024FC`), which for a building is the foundation centre
+/// (`BuildingClass::GetCoords @ 0x00447AC0`: Location + (W*128 - 128,
+/// H*128 - 128)), 20 leptons up — not from its top-left cell.
+#[test]
+fn a_dying_buildings_debris_leaves_from_its_centre() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nMetallicDebris=DBRIS1LG\n\
+         [VehicleTypes]\n0=MTNK\n\
+         [BuildingTypes]\n0=BIG\n\
+         [MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nCost=700\nPrimary=105mm\n\
+         [BIG]\nStrength=1\nArmor=heavy\nFoundation=3x3\nMinDebris=1\nMaxDebris=2\n\
+         [105mm]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\n\
+         [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .expect("building debris fixture parses");
+
+    let mut store = EntityStore::new();
+    let _ = test_intern("BIG");
+    let building = make_structure_entity(2, "BIG", 8, 5, 0, 1);
+    let location = (
+        8 * 256 + building.position.sub_x.to_num::<i32>(),
+        5 * 256 + building.position.sub_y.to_num::<i32>(),
+    );
+    store.insert(building);
+    let mut interner = test_interner();
+
+    let effects = run_combat_death_handoff(&mut store, &rules, &mut interner, &[2]);
+
+    let debris = interner.intern("DBRIS1LG");
+    let spawns: Vec<_> = effects
+        .explosion_effects
+        .iter()
+        .filter(|effect| effect.shp_name == debris)
+        .map(|effect| effect.death.expect("an exact construction").coord)
+        .collect();
+    assert_eq!(spawns.len(), 1, "MinDebris=1, MaxDebris=2 pins one piece");
+    assert_eq!(
+        (spawns[0].x, spawns[0].y),
+        (location.0 + 256, location.1 + 256),
+        "one cell in from the top-left for a 3x3"
+    );
+}
+
 /// A destroyed harvester throws `[VoxelAnims]` tyres, and its budget never
 /// reaches the SHP arms.
 ///
