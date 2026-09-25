@@ -4,8 +4,8 @@
 //! Drive 0x4B2630 and Ship 0x6A1C80 are instruction twins in these arms
 //! (aligned in the track-process-path handoff R1); each Drive address below
 //! is followed by its Ship twin. Order within one Process call:
-//! - 0x4B281C..0x4B2845 / 0x6A1E6C..0x6A1E95: the Foot+640 exact-zero wait,
-//!   owned by the mover visit (`movement_tick::no_queue_path_request`);
+//! - 0x4B281C..0x4B2845 / 0x6A1E6C..0x6A1E95: the Foot+640 exact-zero wait
+//!   (`track_fresh::track_no_queue_arm`);
 //! - 0x4B284B..0x4B286D / 0x6A1EA0..0x6A1EBD: +640 = (Frame, PathDelay);
 //! - 0x4B28A3 / 0x6A1EF3: `Find_Path(cell(dest), 0, 0)` (`foot_path.rs`);
 //! - success 0x4B2F45..0x4B32A1 / 0x6A2595..0x6A28F1: the tube return, the
@@ -440,6 +440,40 @@ impl Simulation {
         }
     }
 
+    /// `CellClass::Find_Nearest_Object 0x47C3D0` with the (0,0) sub-point over
+    /// `layer`'s list of `cell`: ranked by each object's vt+0x48 coordinate (a
+    /// building's centre), the first in list order on a tie.
+    pub(super) fn nearest_cell_object(
+        &self,
+        cell: (u16, u16),
+        layer: MovementLayer,
+        rules: &RuleSet,
+    ) -> Option<u64> {
+        crate::sim::cell_kernel::nearest_eligible_in_order(
+            crate::sim::cell_kernel::CellQueryPoint { x: 0, y: 0 },
+            self.substrate
+                .occupancy
+                .get(cell.0, cell.1)
+                .into_iter()
+                .flat_map(|list| list.iter_layer(layer))
+                .filter_map(|entry| self.substrate.entities.get(entry.entity_id))
+                .map(|entity| {
+                    let coord = self.object_type(entity.type_ref(), rules).map_or_else(
+                        || ground_pose::position_world_coord(&entity.position),
+                        |kind| ground_pose::object_center_coord(entity, kind),
+                    );
+                    (
+                        entity.stable_id(),
+                        true,
+                        crate::sim::cell_kernel::CellQueryPoint {
+                            x: coord.x,
+                            y: coord.y,
+                        },
+                    )
+                }),
+        )
+    }
+
     /// The code-6 arm (0x4B2B4B..0x4B2DC0 / 0x4B302D..0x4B327D and the Ship
     /// twins): the nearest Techno of the selected list (0x47C3D0 with the
     /// (0,0) sub-point) that is an ally of a non-train owner either ends the
@@ -477,30 +511,7 @@ impl Simulation {
             MovementLayer::Ground
         };
         let key = (cell.0 as u16, cell.1 as u16);
-        let blocker = crate::sim::cell_kernel::nearest_eligible_in_order(
-            crate::sim::cell_kernel::CellQueryPoint { x: 0, y: 0 },
-            self.substrate
-                .occupancy
-                .get(key.0, key.1)
-                .into_iter()
-                .flat_map(|list| list.iter_layer(layer))
-                .filter_map(|entry| self.substrate.entities.get(entry.entity_id))
-                .map(|entity| {
-                    let coord = self.object_type(entity.type_ref(), rules).map_or_else(
-                        || ground_pose::position_world_coord(&entity.position),
-                        |kind| ground_pose::object_center_coord(entity, kind),
-                    );
-                    (
-                        entity.stable_id(),
-                        true,
-                        crate::sim::cell_kernel::CellQueryPoint {
-                            x: coord.x,
-                            y: coord.y,
-                        },
-                    )
-                }),
-        );
-        let Some(blocker) = blocker else {
+        let Some(blocker) = self.nearest_cell_object(key, layer, rules) else {
             return Ok(false);
         };
         let allied = self.substrate.entities.get(blocker).is_some_and(|b| {

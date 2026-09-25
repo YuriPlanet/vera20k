@@ -1081,47 +1081,9 @@ impl Simulation {
                 );
                 return Ok(false);
             }
-            //4B1EC0..4B1F43: Scatter_Objects(Null, 1, 1, deck) on the cell,
-            //the deck list when it is structural and the Foot is more than
-            //two levels from it.
+            //4B1EC0..4B1F43: the forced deck-aware Scatter_Objects on the cell.
             6 => {
-                let terrain = self
-                    .resolved_terrain
-                    .as_ref()
-                    .ok_or("Drive/Ship chain query requires map cells")?;
-                let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-                let level = i32::from(cells.ground_fields(native).0 as i8);
-                let z = self
-                    .substrate
-                    .entities
-                    .get(id)
-                    .map_or(0, |actor| position_world_coord(&actor.position).z);
-                let deck = cells.flags(native) & 0x100 != 0
-                    && (z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS - level).abs() > 2;
-                if target.0 >= 0 && target.1 >= 0 {
-                    let grid = self.path_grid_snapshot();
-                    super::bump_crush::scatter_cell_objects(
-                        &mut self.substrate.entities,
-                        &self.substrate.occupancy,
-                        (target.0 as u16, target.1 as u16),
-                        if deck {
-                            MovementLayer::Bridge
-                        } else {
-                            MovementLayer::Ground
-                        },
-                        true,
-                        grid.as_deref().or(fallback_grid),
-                        self.resolved_terrain.as_ref(),
-                        &mut self.scenario_rng,
-                        Some(rules),
-                        &self.interner,
-                        &self.houses,
-                        crate::sim::movement::DestinationTiming::from_rules(
-                            self.session.binary_frame,
-                            Some(rules),
-                        ),
-                    );
-                }
+                self.scatter_blocked_track_cell(id, target, rules, fallback_grid);
                 return Ok(false);
             }
             _ => return Ok(false),

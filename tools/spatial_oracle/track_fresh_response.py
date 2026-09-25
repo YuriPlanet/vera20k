@@ -110,6 +110,9 @@ def query(case):
     u.mem_write(ACTOR + 0x668, dwords(*case.get('blocked_timer', [100, 0, 22])))
     u.mem_write(ACTOR + 0x6B7, bytes([case.get('latched', False)]))
     u.mem_write(ACTOR + 0x64C, dwords(case.get('retries', 10)))
+    # A retained selector with the valid byte clear: no active-track dispatch.
+    if 'selector' in case:
+        u.mem_write(LOCO + 0x58, dwords(case['selector']))
     if 'z' in case:
         u.mem_write(ACTOR + 0xA4, dwords(case['z']))
 
@@ -277,6 +280,9 @@ def generate():
                          blocked_timer=[50, 0, 22], find_path=['core_null']))
         rows.append(dict(base, route=[2], codes=[0, 0], destination=[14, 10],
                          find_path=['core_null']))
+        # +58 is written before the second query (0x4B401D): a second-stage
+        # retry's publish sees the new selector, not the retained one.
+        rows.append(dict(base, route=turn, codes=[0, 2, 0], selector=0x41))
     return [query(row) for row in rows]
 
 

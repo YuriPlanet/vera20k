@@ -300,7 +300,6 @@ impl Simulation {
             &self.substrate.entities,
             call.id,
             destination,
-            call.family,
             urgency,
             self.playfield_bounds,
             Some(&self.type_handles),
@@ -628,9 +627,13 @@ impl Simulation {
                     let (crushable, wall) = self
                         .overlay_flags(call.registry, overlay)
                         .unwrap_or((false, false));
+                    //4B3FE1..4B4000: the Unit arm is Drive-only; Ship
+                    //6A35E7..6A362C tests the crushable and wall bytes alone.
                     crushable
                         || (object.movement_zone == MovementZone::CrusherAll
-                            && (wall || self.cell_first_unit(next_cell).is_some()))
+                            && (wall
+                                || (call.family == TrackFamily::Drive
+                                    && self.cell_first_unit(next_cell).is_some())))
                 }
                 None => false,
             }
@@ -638,12 +641,26 @@ impl Simulation {
         if straight {
             second = i32::from(direction);
         }
-        //4B4016..4B4034: the turn table, with the from*9 fallback.
+        //4B4016..4B4034: the turn table, with the from*9 fallback; +58 and
+        //+60 = 0 are written now, before the crate question and the second
+        //query, so a second-stage stop or retry keeps the new selector.
         let turn_index = super::drive_track::fresh_turn_index(
             direction,
             second as u8,
             call.family == TrackFamily::Ship,
         );
+        if let Some(actor) = self.substrate.entities.get_mut(id) {
+            let kind = actor
+                .locomotor
+                .as_ref()
+                .map_or(LocomotorKind::Drive, |l| l.kind);
+            super::track_head::select_fresh_progress(
+                kind,
+                &mut actor.drive_locomotion,
+                &mut actor.ship_locomotion,
+                turn_index,
+            );
+        }
         let two_node = super::drive_track::turn_track_at(turn_index)
             .is_some_and(|turn| turn.flags & super::drive_track::TURN_TRACK_TURNS_FLAG != 0);
         if !two_node {
@@ -701,7 +718,7 @@ impl Simulation {
             FreshDispatch::ClearSecondThenRetry(retry) => {
                 //4B41B3..4B41F7: clear, then recurse with arg3 = 1.
                 self.clear_path_head(id);
-                self.track_retire_selector_only(id);
+                self.track_retire_selector(id);
                 self.track_process_movement(&call.with_args(ProcessMovementArgs {
                     allow_retry: retry.allow_retry,
                     force_single: retry.force_single_direction,
@@ -761,7 +778,7 @@ impl Simulation {
     /// recurse, then the finalize tail with a null candidate.
     fn track_second_refused(&mut self, call: &FreshCall<'_>) -> Result<bool, String> {
         self.clear_path_head(call.id);
-        self.track_retire_selector_only(call.id);
+        self.track_retire_selector(call.id);
         self.track_fresh_finalize(call, None, 0, 0)
     }
 
@@ -830,7 +847,7 @@ impl Simulation {
 
     /// 0x4B4740..0x4B4764: selector -1, path word -1, SetSpeedFraction(0).
     fn track_finalize_stop(&mut self, id: u64) -> Result<bool, String> {
-        self.track_retire_selector_only(id);
+        self.track_retire_selector(id);
         self.clear_path_head(id);
         if let Some(actor) = self.substrate.entities.get_mut(id) {
             actor.foot_speed.applied_fraction = crate::util::fixed_math::SIM_ZERO;
@@ -1010,12 +1027,9 @@ impl Simulation {
         }
     }
 
-    /// Foot+68A = 0 (no writer sets it) and class selector +58 = -1.
+    /// Class selector +58 = -1 (Foot+68A, cleared beside it, has no
+    /// nonzero writer in the program).
     fn track_retire_selector(&mut self, id: u64) {
-        self.track_retire_selector_only(id);
-    }
-
-    fn track_retire_selector_only(&mut self, id: u64) {
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return;
         };
@@ -1212,7 +1226,7 @@ impl Simulation {
             return;
         }
         let key = (cell.0 as u16, cell.1 as u16);
-        match self.find_blocking_object(key) {
+        match self.find_blocking_object(key, call.rules) {
             Some(BlockingObject::Entity(blocker)) => {
                 let (Some(actor), Some(target)) = (
                     self.substrate.entities.get(call.id),
@@ -1260,7 +1274,7 @@ impl Simulation {
     /// `CellClass::Find_Blocking_Object 0x47C5A0` with the zero point: the
     /// first Aircraft of the ground list, else `Find_Nearest_Object`
     /// (0x47C3D0), else the first terrain object.
-    fn find_blocking_object(&self, cell: (u16, u16)) -> Option<BlockingObject> {
+    fn find_blocking_object(&self, cell: (u16, u16), rules: &RuleSet) -> Option<BlockingObject> {
         let list = self.substrate.occupancy.get(cell.0, cell.1);
         if let Some(aircraft) = list
             .into_iter()
@@ -1274,23 +1288,7 @@ impl Simulation {
         {
             return Some(BlockingObject::Entity(aircraft.entity_id));
         }
-        let nearest = crate::sim::cell_kernel::nearest_eligible_in_order(
-            crate::sim::cell_kernel::CellQueryPoint { x: 0, y: 0 },
-            list.into_iter()
-                .flat_map(|list| list.iter_layer(MovementLayer::Ground))
-                .filter_map(|entry| self.substrate.entities.get(entry.entity_id))
-                .map(|entity| {
-                    let coord = ground_pose::position_world_coord(&entity.position);
-                    (
-                        entity.stable_id(),
-                        true,
-                        crate::sim::cell_kernel::CellQueryPoint {
-                            x: coord.x,
-                            y: coord.y,
-                        },
-                    )
-                }),
-        );
+        let nearest = self.nearest_cell_object(cell, MovementLayer::Ground, rules);
         if let Some(object) = nearest {
             return Some(BlockingObject::Entity(object));
         }

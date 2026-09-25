@@ -399,6 +399,15 @@ fn fresh_arm_rows_match_the_original_responses() {
         runtime.start_blocked(blocked[0] as u32, blocked[2] as i32);
         runtime.path_blocked = input["latched"] == true;
         runtime.retries_left = input["retries"].as_u64().unwrap_or(10) as u32;
+        // A retained selector with the valid byte clear.
+        if let Some(selector) = input["selector"].as_i64() {
+            if let Some(drive) = e.drive_locomotion.as_mut() {
+                drive.track.turn_index = selector as i32;
+            }
+            if let Some(ship) = e.ship_locomotion.as_mut() {
+                ship.track.turn_index = selector as i32;
+            }
+        }
         sim.session.binary_frame = 101;
         let (codes, paths) = supplied(input);
         fresh_oracle_seam::install(codes, paths);
@@ -418,5 +427,5 @@ fn fresh_arm_rows_match_the_original_responses() {
         compare(&sim, id, &row, out);
         checked += 1;
     }
-    assert_eq!(checked, 86);
+    assert_eq!(checked, 88);
 }

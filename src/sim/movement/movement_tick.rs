@@ -763,21 +763,10 @@ struct OrdinaryMoverVisit {
 pub(crate) struct FootPathRequest {
     pub(crate) entity_id: u64,
     pub(crate) destination: crate::sim::components::DriveCoord,
-    pub(crate) caller: FootPathCaller,
     /// Find_Path's third argument: 0 for an ordinary request, 1 or 2 from the
     /// Drive/Ship code-2 ladder (0x4B3A0E), read by the edge cost (+3C).
     pub(crate) urgency: u8,
     visit: OrdinaryMoverVisit,
-}
-
-/// The locomotor Process that issued a no-queue `Find_Path(cell, 0, 0)`.
-/// Each owns its timer arm and its continuation after the shared body.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FootPathCaller {
-    /// Walk75AFC5, continuation 0x75AFD3.
-    Walk,
-    /// Drive4B28A3 / Ship6A1EF3, continuations 0x4B28A8 / 0x6A1EF8.
-    Track(super::track_process::TrackFamily),
 }
 
 /// Whether a Rust route adapter, not the retained locomotor state, owns this
@@ -801,7 +790,7 @@ pub(super) fn adapter_route_pending(entity: &crate::sim::game_entity::GameEntity
 /// their Process_Movement (`track_fresh`).
 fn no_queue_path_request(
     entity: &crate::sim::game_entity::GameEntity,
-) -> Option<(crate::sim::components::DriveCoord, FootPathCaller)> {
+) -> Option<crate::sim::components::DriveCoord> {
     if !entity
         .navigation
         .path_replay
@@ -812,9 +801,7 @@ fn no_queue_path_request(
     }
     let loco = entity.locomotor.as_ref()?;
     match loco.kind {
-        LocomotorKind::Walk if loco.step_head().is_none() => {
-            Some((loco.walk_destination()?, FootPathCaller::Walk))
-        }
+        LocomotorKind::Walk if loco.step_head().is_none() => loco.walk_destination(),
         _ => None,
     }
 }
@@ -828,7 +815,6 @@ impl FootPathRequest {
         entities: &EntityStore,
         entity_id: u64,
         destination: crate::sim::components::DriveCoord,
-        family: super::track_process::TrackFamily,
         urgency: u8,
         playfield_bounds: Option<PlayfieldBounds>,
         type_handles: Option<&TypeHandleTable>,
@@ -838,7 +824,6 @@ impl FootPathRequest {
         Some(Self {
             entity_id,
             destination,
-            caller: FootPathCaller::Track(family),
             urgency,
             visit: OrdinaryMoverVisit {
                 snap,
@@ -1132,7 +1117,7 @@ fn advance_ordinary_mover(
         && playfield_bounds.is_some();
     if !resumed_path_request
         && native_path_inputs
-        && let Some((destination, caller)) = entities.get(entity_id).and_then(no_queue_path_request)
+        && let Some(destination) = entities.get(entity_id).and_then(no_queue_path_request)
     {
         let entity = entities.get(entity_id).expect("same mover request");
         //Walk75AF3C..55 observes a frame-anchored exact-zero remainder. No
@@ -1152,7 +1137,6 @@ fn advance_ordinary_mover(
         *foot_path_request = Some(FootPathRequest {
             entity_id,
             destination,
-            caller,
             urgency: 0,
             visit,
         });

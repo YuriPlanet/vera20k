@@ -13,7 +13,7 @@
 use super::block_index::LentOwnerBlockSet;
 use super::ground_pose;
 use super::infantry_entry::InfantryEntryArgs;
-use super::movement_tick::{FootPathCaller, FootPathRequest};
+use super::movement_tick::FootPathRequest;
 use crate::map::entities::EntityCategory;
 use crate::map::overlay_types::OverlayTypeRegistry;
 use crate::map::resolved_terrain::NativeCellQuery;
@@ -164,8 +164,10 @@ pub(crate) enum FootPathOutcome {
 }
 
 impl Simulation {
-    /// Dispatch a suspended no-queue request to its locomotor caller. `lent`
-    /// is the requester's owner block set held by the pending pass.
+    /// Run a suspended Walk no-queue request (Walk75AFC5, continuation
+    /// 0x75AFD3); `lent` is the requester's owner block set held by the
+    /// pending pass. Drive/Ship requests are made inside their
+    /// Process_Movement (`track_fresh`).
     pub(crate) fn run_foot_path_request(
         &mut self,
         request: &FootPathRequest,
@@ -174,20 +176,14 @@ impl Simulation {
         fallback: Option<&PathGrid>,
         registry: Option<&OverlayTypeRegistry>,
     ) -> Result<FootPathOutcome, String> {
-        match request.caller {
-            FootPathCaller::Walk => self
-                .run_walk_path_request(request, lent, rules, fallback, registry)
-                .map(|resumed| {
-                    if resumed {
-                        FootPathOutcome::Resume
-                    } else {
-                        FootPathOutcome::Returned
-                    }
-                }),
-            FootPathCaller::Track(_) => {
-                self.run_track_path_request(request, lent, rules, fallback, registry)
-            }
-        }
+        self.run_walk_path_request(request, lent, rules, fallback, registry)
+            .map(|resumed| {
+                if resumed {
+                    FootPathOutcome::Resume
+                } else {
+                    FootPathOutcome::Returned
+                }
+            })
     }
 
     /// `Find_Path(cell, 0, 0)` for a no-queue caller whose own movement
