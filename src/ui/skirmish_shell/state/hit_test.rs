@@ -6,7 +6,7 @@ use crate::skirmish_launch::SKIRMISH_PLAYER_SLOT_COUNT;
 use super::super::layout::{
     COMBO_DROPDOWN_ROW_H, ChooseMapModalButton, ChooseMapModalLayout, ColorComboId, RectPx,
     SKIRMISH_AI_ROW_COUNT, SkirmishCheckboxId, SkirmishShellLayout, SkirmishTrackbarId,
-    choose_map_listbox_row_at, combo_face_rect,
+    combo_face_rect,
 };
 use super::trackbars::{trackbar_ids, trackbar_rect};
 use super::{
@@ -182,7 +182,6 @@ pub fn status_help_key_for_hover(target: SkirmishHoverTarget) -> Option<&'static
 pub fn hovered_choose_map_modal_control(
     layout: &ChooseMapModalLayout,
     modal: &ChooseMapModalState,
-    mode_count: usize,
     x: i32,
     y: i32,
 ) -> Option<ChooseMapHoverTarget> {
@@ -196,10 +195,13 @@ pub fn hovered_choose_map_modal_control(
         return Some(ChooseMapHoverTarget::Preview0x468);
     }
     if layout.mode_list.contains(x, y) {
-        if let Some(mode_index) =
-            choose_map_listbox_row_at(layout.mode_list, mode_count, modal.mode_top_index, x, y)
+        let rows = modal.mode_rows();
+        if let Some(row) =
+            modal
+                .mode_geometry(layout)
+                .row_at(rows.len(), modal.mode_top_index, x, y)
         {
-            return Some(ChooseMapHoverTarget::ModeListRow0x6eb { mode_index });
+            return Some(ChooseMapHoverTarget::ModeListRow0x6eb { mode_id: rows[row] });
         }
         return Some(ChooseMapHoverTarget::ModeList0x6eb);
     }

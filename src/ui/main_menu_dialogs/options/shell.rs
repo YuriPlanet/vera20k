@@ -285,7 +285,7 @@ impl OptionsDialogState {
         // 74 DLU (120px) allocated, admitting five 23px rows. Actual HWND
         // border adjustments remain outside this resource-derived bound.
         let model = ScrollModel::combo(5);
-        let visible_rows = model.visible_rows(self.resolution_rows.len(), 0);
+        let visible_rows = model.visible_rows(self.resolution_rows.len());
         let rect = RectPx::new(
             layout.resolution.x,
             layout.resolution.y + COMBO_FACE_H + 1,
@@ -302,15 +302,14 @@ impl OptionsDialogState {
                 rect.h,
             )
         });
-        let thumb = scrollbar.and_then(|scrollbar| {
-            let height =
-                model.thumb_height(visible_rows, self.resolution_rows.len(), scrollbar.h)?;
-            Some(RectPx::new(
+        let thumb = scrollbar.map(|scrollbar| {
+            let height = model.thumb_height(visible_rows, self.resolution_rows.len(), scrollbar.h);
+            RectPx::new(
                 scrollbar.x,
                 model.thumb_y(scrollbar, height, first_row, max_top),
                 scrollbar.w,
                 height,
-            ))
+            )
         });
         Some(LauncherResolutionPopup {
             rect,

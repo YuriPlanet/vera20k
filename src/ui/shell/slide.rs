@@ -7,8 +7,8 @@
 //! row (buttons and empty tiles), and on Skirmish the map button and the top
 //! panel's warning display. Nothing moves. This module owns the two
 //! render-agnostic halves of that behaviour:
-//!   * **eligibility data** — the dialog-id allow-list (`is_slide_eligible`) and
-//!     each rendered dialog's slide column (`slide_spec_for`), and
+//!   * **eligibility data** — each rendered dialog's slide column
+//!     (`slide_spec_for`; `is_slide_eligible`), and
 //!   * **the frame schedule** — [`ShellFrameWave`] over a [`SlideColumn`]: the
 //!     SDBTNANM frame of every right-panel tile row, the map button and the top
 //!     panel per tick, with the native cadence and loop bound, pinned to an
@@ -138,7 +138,10 @@ impl SlideDialogSpec {
 /// (`0x686`). `0xD5` (launcher Options): Keyboard (`0x5CE`) and Network
 /// (`0x5CD`), then Main Menu (`0x686`). `0x10E` (Westwood Online welcome):
 /// six top buttons, then Main Menu (`0x686`). `0xA3` (Options' Keyboard):
-/// Back (`0x686`) only; Assign and Reset All sit on the left side.
+/// Back (`0x686`) only; Assign and Reset All sit on the left side. `0x6B`
+/// (Choose Map): Use Map and Create Random Map (`0x6C5`, `0x583`, counted
+/// even while disabled), Cancel (`0x5C0`), the top panel (`+0xD5`,
+/// `0x00622915`) and no map button.
 pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
     SlideDialogSpec {
         dialog_id: 0x00E2,
@@ -210,33 +213,28 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         map_button: false,
         top_panel: false,
     },
+    SlideDialogSpec {
+        dialog_id: 0x006B,
+        top_buttons: 2,
+        bottom_button: true,
+        map_button: false,
+        top_panel: true,
+    },
 ];
 
-/// Front-end shell dialog ids that slide on first paint (the eligibility
-/// allow-list, scoped to the front-end shells). The rendered shells
-/// (`RENDERED_SHELL_SLIDES`) plus the front-end dialogs documented as
-/// allow-listed but not yet rendered here (`0x6B` per
-/// `docs/research/skirmish-ui/SHELL_FIRST_PAINT_SLIDE_GENERIC_TRIGGER_GHIDRA_REPORT.md`
-/// §3); it slides once a renderer maps to it and it gains a
-/// `RENDERED_SHELL_SLIDES` entry. The original's full list
-/// (`0x0060C540`, 55 ids) also marks Options' Keyboard `0xA3` and Network
-/// `0xD7`, Score `0x108`, the in-game menu dialogs (`0xB5`, `0xB6`, `0xB8`, `0xBBA`,
-/// `0xBBB`) and the LAN/WOL setup dialogs; none of them slides here yet.
-/// `0xB7` slides only outside a suspended game (`0x00612690`), which is the
-/// only place it is rendered as a family page. Message boxes (`0x120`
-/// confirm, `0xCE` body-ok) are not in it.
-pub(crate) const SHELL_SLIDE_ALLOW_LIST: &[u16] = &[
-    0x00E2, 0x0094, 0x00A3, 0x006B, 0x00B7, 0x00D5, 0x0100, 0x0101, 0x0102, 0x010E, 0x0129,
-];
-
-/// Whether a dialog plays the first-paint controls-reveal slide.
+/// Whether a dialog plays the first-paint controls-reveal slide: every
+/// front-end shell with a `RENDERED_SHELL_SLIDES` column. The original's full
+/// list (`0x0060C540`, 55 ids) also marks Options' Network `0xD7`, Score
+/// `0x108`, the in-game menu dialogs (`0xB5`, `0xB6`, `0xB8`, `0xBBA`, `0xBBB`)
+/// and the LAN/WOL setup dialogs; none of them slides here yet. `0xB7` slides
+/// only outside a suspended game (`0x00612690`), which is the only place it is
+/// rendered as a family page. Message boxes (`0x120` confirm, `0xCE` body-ok)
+/// are not in it.
 pub(crate) fn is_slide_eligible(id: DialogId) -> bool {
-    SHELL_SLIDE_ALLOW_LIST.contains(&id.0)
+    slide_spec_for(id).is_some()
 }
 
-/// The slide column spec of a rendered shell dialog. `None` for an
-/// allow-listed dialog that has no renderer here yet — the app layer only ever
-/// drives the slide for dialogs it actually paints.
+/// The slide column spec of a rendered shell dialog.
 pub(crate) fn slide_spec_for(id: DialogId) -> Option<SlideDialogSpec> {
     RENDERED_SHELL_SLIDES
         .iter()
@@ -732,14 +730,6 @@ impl ShellFrameWave {
         };
         tick
     }
-
-    #[cfg(test)]
-    fn add_compatibility_ticks_for_test(&mut self, amount: u32) {
-        let WaveClock::Compatibility { tick, .. } = &mut self.clock else {
-            panic!("expected compatibility wave");
-        };
-        *tick += amount;
-    }
 }
 
 fn frame_for_tick(
@@ -813,7 +803,7 @@ mod tests {
         ))
         .unwrap();
         let cases = fixture["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 54);
+        assert_eq!(cases.len(), 60);
         for case in cases {
             let dialog = case["dialog"].as_str().unwrap();
             let dialog_id = u16::from_str_radix(dialog.trim_start_matches("0x"), 16).unwrap();
@@ -927,18 +917,6 @@ mod tests {
         // A 1-second gap must still advance only ONE index (no catch-up).
         w.advance(t0 + Duration::from_millis(1030));
         assert_eq!(w.compatibility_tick_for_test(), 2);
-    }
-
-    #[test]
-    fn rendered_shells_are_all_eligible() {
-        for spec in RENDERED_SHELL_SLIDES {
-            assert!(
-                is_slide_eligible(DialogId(spec.dialog_id)),
-                "rendered shell {:#06x} must be on the allow-list",
-                spec.dialog_id
-            );
-            assert_eq!(slide_spec_for(DialogId(spec.dialog_id)), Some(*spec));
-        }
     }
 
     #[test]
@@ -1089,13 +1067,5 @@ mod tests {
             assert!(!is_slide_eligible(DialogId(id)), "{id:#06x} must not slide");
             assert_eq!(slide_spec_for(DialogId(id)), None);
         }
-    }
-
-    #[test]
-    fn allow_listed_but_unrendered_dialogs_have_no_column() {
-        // 0x6B is eligible per research but has no renderer yet, so the app
-        // layer never drives it.
-        assert!(is_slide_eligible(DialogId(0x006B)));
-        assert_eq!(slide_spec_for(DialogId(0x006B)), None);
     }
 }

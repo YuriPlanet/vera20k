@@ -28,6 +28,21 @@ enum Phase {
     Skirmish,
     /// Back pressed: the teardown slide runs toward the held tick.
     SlideOut,
+    /// Choose Map pressed: `0x102` slides out and `0x6B` slides in.
+    Chooser,
+    /// Cancel pressed on `0x6B`: it slides out and `0x102` slides in again.
+    ChooserReturn,
+}
+
+/// What a Choose Map checkpoint captures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ChooserTarget {
+    /// `0x6B` settled after its entry slide.
+    Steady,
+    /// `0x6B`'s entry slide held at a tick.
+    Entry(u32),
+    /// Cancel on `0x6B`, then `0x102` settled after its new entry slide.
+    Return,
 }
 
 #[derive(Default)]
@@ -43,6 +58,10 @@ pub(super) struct SkirmishCapture {
     entry_tick: Option<u32>,
     entry_seen: bool,
     entry_held: bool,
+    chooser: Option<ChooserTarget>,
+    /// The steady chooser got the production mouse move at the resting
+    /// pointer, as the retail helper's pointer rests over the map list.
+    pointer_rested: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -80,7 +99,7 @@ impl CaptureGuard {
     }
 }
 
-fn guard(state: &AppState) -> Result<()> {
+fn guard(state: &AppState, chooser: bool) -> Result<()> {
     let shell = &state.frontend.skirmish_shell_state;
     CaptureGuard {
         main_menu_screen: state.frontend.screen == GameScreen::MainMenu,
@@ -95,7 +114,11 @@ fn guard(state: &AppState) -> Result<()> {
         interaction_active: state.main_menu_dialog_open()
             || state.frontend.quit_cascade.is_some()
             || state.match_state.match_presentation.show_save_load_panel
-            || shell.choose_map_modal.is_some()
+            || (shell.choose_map_modal.is_some() && !chooser)
+            || shell
+                .choose_map_modal
+                .as_ref()
+                .is_some_and(|modal| modal.eject_prompt.is_some())
             || shell.validation_modal.is_some()
             || shell.random_map_setup_modal.is_some()
             || shell.saved_seed_browser.is_some()
@@ -156,9 +179,9 @@ fn selected_scene(state: &AppState) -> Result<Value> {
     }))
 }
 
-/// The tick of the Skirmish entry slide, while it runs.
-fn entry_wave_tick(state: &AppState) -> Option<u32> {
-    if state.frontend.shell_slide_active_shell != Some(ShellSlideKind::Skirmish) {
+/// The tick of `kind`'s entry slide, while it runs.
+fn entry_wave_tick(state: &AppState, kind: ShellSlideKind) -> Option<u32> {
+    if state.frontend.shell_slide_active_shell != Some(kind) {
         return None;
     }
     state
@@ -183,6 +206,27 @@ impl SkirmishCapture {
         }
     }
 
+    pub(super) fn chooser(target: ChooserTarget) -> Self {
+        Self {
+            chooser: Some(target),
+            ..Self::default()
+        }
+    }
+
+    /// `0x6B` shows with no slide and its heading and status line revealed.
+    fn chooser_settled(state: &AppState) -> bool {
+        state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .is_some()
+            && state.frontend.shell_first_paint_slide.is_none()
+            && state.frontend.shell_exit.is_none()
+            && state.frontend.shell_slide_active_shell == Some(ShellSlideKind::ChooseMap)
+            && state.frontend.shell_page_title.is_terminal()
+            && state.frontend.shell_status_line.is_terminal()
+    }
+
     /// Called only after an ordinary production frame has been presented. Route
     /// actions run here, never between frame acquisition and shell dispatch.
     pub(super) fn after_present(
@@ -191,7 +235,7 @@ impl SkirmishCapture {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
-        guard(state)?;
+        guard(state, self.chooser.is_some())?;
         self.last_presented = Some(rendered);
         match (self.phase, rendered) {
             (Phase::MainMenu, PresentedShell::MainMenu) => {
@@ -237,7 +281,7 @@ impl SkirmishCapture {
                 if self.entry_tick.is_some() =>
             {
                 let target = self.entry_tick.context("entry phase without a tick")?;
-                match entry_wave_tick(state) {
+                match entry_wave_tick(state, ShellSlideKind::Skirmish) {
                     Some(tick) => {
                         self.entry_seen = true;
                         ensure!(tick <= target, "entry slide passed tick {target}");
@@ -269,6 +313,73 @@ impl SkirmishCapture {
                     self.route
                         .push(json!({"dialog": 0x102, "frame": frame, "action": "Back"}));
                     self.phase = Phase::SlideOut;
+                } else if self.selected_scene.is_some() && self.chooser.is_some() {
+                    App::leave_shell_dialog(
+                        state,
+                        crate::app::frontend::shell_transition::ShellExitThen::SkirmishChooseMap,
+                    );
+                    ensure!(
+                        state.frontend.shell_exit.is_some(),
+                        "Choose Map did not start 0x102's teardown slide"
+                    );
+                    self.route
+                        .push(json!({"dialog": 0x102, "frame": frame, "action": "ChooseMap"}));
+                    self.phase = Phase::Chooser;
+                }
+            }
+            (Phase::Chooser, PresentedShell::Other | PresentedShell::Skirmish) => {
+                match self.chooser {
+                    Some(ChooserTarget::Entry(target)) => {
+                        match entry_wave_tick(state, ShellSlideKind::ChooseMap) {
+                            Some(tick) => {
+                                self.entry_seen = true;
+                                ensure!(tick <= target, "0x6B entry slide passed tick {target}");
+                                if tick == target && !self.entry_held {
+                                    if let Some(wave) =
+                                        state.frontend.shell_first_paint_slide.as_mut()
+                                    {
+                                        wave.hold_for_capture();
+                                    }
+                                    self.entry_held = true;
+                                    self.route.push(json!({"dialog": 0x6b, "frame": frame,
+                                        "action": "hold entry slide", "tick": tick}));
+                                }
+                            }
+                            None => ensure!(
+                                !self.entry_seen
+                                    || state.frontend.shell_slide_active_shell
+                                        != Some(ShellSlideKind::ChooseMap),
+                                "0x6B entry slide ended before capture"
+                            ),
+                        }
+                    }
+                    Some(ChooserTarget::Steady)
+                        if !self.pointer_rested
+                            && state.frontend.shell_first_paint_slide.is_none()
+                            && state.frontend.shell_slide_active_shell
+                                == Some(ShellSlideKind::ChooseMap) =>
+                    {
+                        App::handle_skirmish_shell_mouse_move(state);
+                        self.pointer_rested = true;
+                        self.route.push(json!({"dialog": 0x6b, "frame": frame,
+                            "action": "pointer rests", "point": [
+                                state.match_state.input.cursor_x,
+                                state.match_state.input.cursor_y]}));
+                    }
+                    Some(ChooserTarget::Return) if Self::chooser_settled(state) => {
+                        App::leave_shell_dialog(
+                            state,
+                            crate::app::frontend::shell_transition::ShellExitThen::ChooseMapCancel,
+                        );
+                        ensure!(
+                            state.frontend.shell_exit.is_some(),
+                            "Cancel did not start 0x6B's teardown slide"
+                        );
+                        self.route
+                            .push(json!({"dialog": 0x6b, "frame": frame, "action": "Cancel"}));
+                        self.phase = Phase::ChooserReturn;
+                    }
+                    _ => {}
                 }
             }
             (Phase::SlideOut, PresentedShell::Skirmish) => {
@@ -295,7 +406,7 @@ impl SkirmishCapture {
     }
 
     fn settled(&self, state: &AppState) -> Result<bool> {
-        guard(state)?;
+        guard(state, self.chooser.is_some())?;
         ensure!(
             state
                 .frontend
@@ -320,9 +431,34 @@ impl SkirmishCapture {
     }
 
     pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
-        guard(state)?;
+        guard(state, self.chooser.is_some())?;
         if let Some(target) = self.entry_tick {
-            return Ok(self.entry_held && entry_wave_tick(state) == Some(target));
+            return Ok(
+                self.entry_held && entry_wave_tick(state, ShellSlideKind::Skirmish) == Some(target)
+            );
+        }
+        match self.chooser {
+            Some(ChooserTarget::Steady) => {
+                return Ok(self.phase == Phase::Chooser
+                    && self.pointer_rested
+                    && Self::chooser_settled(state));
+            }
+            Some(ChooserTarget::Entry(target)) => {
+                return Ok(self.phase == Phase::Chooser
+                    && self.entry_held
+                    && entry_wave_tick(state, ShellSlideKind::ChooseMap) == Some(target));
+            }
+            Some(ChooserTarget::Return) => {
+                return Ok(self.phase == Phase::ChooserReturn
+                    && state
+                        .frontend
+                        .skirmish_shell_state
+                        .choose_map_modal
+                        .is_none()
+                    && self.last_presented == Some(PresentedShell::Skirmish)
+                    && self.settled(state)?);
+            }
+            None => {}
         }
         if let Some(target) = self.slide_out_tick {
             return Ok(self.phase == Phase::SlideOut
@@ -363,7 +499,12 @@ impl SkirmishCapture {
             "surface": {"width": request.width, "height": request.height, "format": format!("{format:?}"),
                 "pixel_layout": "BGRA8", "row_order": "top-left", "row_stride": request.width * 4},
             "cursor": {"x": request.cursor_x, "y": request.cursor_y, "policy": "software-composited"},
-            "route": self.route, "dialog_resource_id": 0x102, "capture_frame": frame,
+            "route": self.route,
+            "dialog_resource_id": match self.chooser {
+                Some(ChooserTarget::Steady | ChooserTarget::Entry(_)) => 0x6b,
+                _ => 0x102,
+            },
+            "capture_frame": frame,
             "selection": self.selected_scene, "reveals_completed": self.entry_tick.is_none(),
             "ordinary_skirmish_frame": true,
             "input_enrollment": "UNENROLLED; asset/profile bytes require enrollment before native comparison",

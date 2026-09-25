@@ -902,6 +902,10 @@ impl App {
         };
         // Reuse the modal helper: it upserts the single sentinel, honours the
         // mode's random-map admission, and refreshes the filtered record list.
+        let chooser_layout = crate::ui::skirmish_shell::compute_choose_map_modal_layout(
+            state.render_width(),
+            state.render_height(),
+        );
         let Some(modal) = state
             .frontend
             .skirmish_shell_state
@@ -920,6 +924,7 @@ impl App {
                 &state.frontend.skirmish_modes,
                 display,
                 options.num_players,
+                &chooser_layout,
             )
         };
         let mode_id = modal.selected_mode_id;
@@ -929,6 +934,11 @@ impl App {
                 mode_id,
                 record_index: Some(index),
             };
+            // Success runs Use Map (`0x005E6B2F`): its eject box can keep the
+            // chooser (`0x005E6B47`).
+            if Self::prompt_choose_map_eject(state, selection) {
+                return Ok(());
+            }
             let _ = Self::commit_choose_map_selection(state, selection);
             Self::close_choose_map_modal(state);
         }

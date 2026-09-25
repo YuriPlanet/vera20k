@@ -480,6 +480,7 @@ mod tests {
     #[test]
     fn choose_map_filter_ignores_ui_label_and_category() {
         let battle = SkirmishGameMode {
+            class: crate::skirmish_modes::MpModeClass::Battle,
             id: 42,
             ui_name_key: "GUI:TeamGame".to_string(),
             tooltip_key: String::new(),

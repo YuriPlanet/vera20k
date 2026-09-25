@@ -647,6 +647,7 @@ impl App {
                 shell_preview_overlay_registry: None,
                 dev_skirmish_shell_enabled,
                 skirmish_shell_state,
+                choose_map_last_mode_row: None,
                 offline_skirmish_runtime,
                 skirmish_shell_last_painted_pressed_button: None,
                 skirmish_shell_chrome,

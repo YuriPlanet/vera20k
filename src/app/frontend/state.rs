@@ -18,6 +18,10 @@ pub(crate) struct FrontendState {
     /// Opt-in research shell path. Defaults off so the egui Skirmish setup is visible.
     pub(crate) dev_skirmish_shell_enabled: bool,
     pub(crate) skirmish_shell_state: crate::ui::skirmish_shell::SkirmishShellState,
+    /// Choose Map's last clicked game-type row `[0x008316FC]`: starts at -1,
+    /// written only by a game-type click and never reset, so it outlives
+    /// every chooser visit.
+    pub(crate) choose_map_last_mode_row: Option<usize>,
     /// Process-lifetime offline shell snapshot, Scenario cursor, and
     /// Cooperative progress authority.
     pub(crate) offline_skirmish_runtime: crate::app::frontend::skirmish_session::OfflineSkirmishRuntime,

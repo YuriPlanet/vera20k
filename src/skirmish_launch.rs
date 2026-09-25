@@ -635,6 +635,7 @@ mod tests {
     #[test]
     fn launch_mode_carries_selected_mpmode_data() {
         let mode = SkirmishGameMode {
+            class: crate::skirmish_modes::MpModeClass::Battle,
             id: 9,
             ui_name_key: "GUI:TeamGame".to_string(),
             tooltip_key: "STT:ModeTeamGame".to_string(),
