@@ -355,8 +355,9 @@ captures of retail YR at 800x600 (SHA-256 prefixes: `to-mm.png` `71ad979c`,
   again, then plays the remaining ticks; on Skirmish Start the match launch
   waits with it. Retail gives up after 5000 ms (`0x0060822B`) and destroys the
   dialog.
-- **Single Player substitute panels.** New Campaign and Load Saved Game still
-  open substitute panels over `0x100`, so they do not slide it out.
+- **Single Player substitute panel.** Load Saved Game still opens a substitute
+  panel over `0x100`, so it does not slide it out. New Campaign slides it out
+  into `0x94` ([campaign selection note](2026-09-25-campaign-select-evidence.md)).
 - **Unported routes.** Network and Internet have no ported route, so there is no
   teardown there.
 - **Keyboard flush.** `WWKeyboard__Clear` has no counterpart: VERA20k blocks

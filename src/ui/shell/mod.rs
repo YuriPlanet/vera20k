@@ -27,6 +27,8 @@ pub mod button;
 
 pub mod sound;
 
+pub mod trackbar;
+
 pub mod list;
 
 pub mod keyboard;

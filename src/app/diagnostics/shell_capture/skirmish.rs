@@ -14,6 +14,7 @@ pub(crate) enum PresentedShell {
     FullscreenMovie,
     CreditsRoll,
     Skirmish,
+    Campaign,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

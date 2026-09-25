@@ -312,7 +312,7 @@ impl App {
             .load_saved_game_enabled = !state.persistence.save_list_cache.entries().is_empty();
     }
 
-    fn open_single_player_shell(state: &mut AppState) {
+    pub(super) fn open_single_player_shell(state: &mut AppState) {
         Self::enter_shell_window_mode(state);
         // Native destroys 0xE2 (including child 0x71A) before constructing
         // 0x100. Invalidate at the route edge rather than waiting for a paint:
@@ -878,10 +878,12 @@ impl App {
                     .map(crate::ui::single_player_shell::action_for_control)
                 {
                     match action {
-                        // States 0x12 and 0xB destroy 0x100. New Campaign and
-                        // Load Saved Game still open substitute panels over the
-                        // page, so they keep it.
-                        SinglePlayerShellAction::MainMenu | SinglePlayerShellAction::Skirmish => {
+                        // States 0x12, 8 and 0xB destroy 0x100. Load Saved Game
+                        // still opens a substitute panel over the page, so it
+                        // keeps it.
+                        SinglePlayerShellAction::MainMenu
+                        | SinglePlayerShellAction::NewCampaign
+                        | SinglePlayerShellAction::Skirmish => {
                             Self::leave_shell_dialog(state, ShellExitThen::SinglePlayer(action));
                         }
                         _ => Self::handle_single_player_shell_action(state, action),
@@ -968,6 +970,7 @@ impl App {
             ShellExitThen::MovieListBack => Self::open_movies_credits_page(state),
             ShellExitThen::SkirmishStart(session) => Self::commit_skirmish_start(state, *session),
             ShellExitThen::SkirmishBack => Self::commit_skirmish_back(state),
+            ShellExitThen::CampaignBack => Self::commit_campaign_back(state),
         }
     }
 
@@ -1040,13 +1043,7 @@ impl App {
                     state.persistence.invalidate_save_list();
                 }
             }
-            SinglePlayerShellAction::NewCampaign => {
-                // The original opens the campaign selector (Allied/Soviet +
-                // difficulty). Open the selector shell; the side/difficulty ->
-                // scenario mapping and first-mission launch are not decoded yet.
-                state.frontend.campaign_select =
-                    Some(crate::ui::main_menu_dialogs::CampaignSelectState::default());
-            }
+            SinglePlayerShellAction::NewCampaign => Self::open_campaign_page(state),
         }
     }
 
@@ -1112,13 +1109,12 @@ impl App {
         state.main_menu_dialog_open()
     }
 
-    /// Close the egui-only main-menu dialogs (options/campaign — never on
-    /// the controller stack). The exit-confirm modal closes through
+    /// Close the egui-only main-menu dialogs (options — never on the
+    /// controller stack). The exit-confirm modal closes through
     /// close_exit_confirm_modal_from_controller (D-B3).
     pub(crate) fn close_main_menu_dialogs(state: &mut AppState) {
         state.frontend.exit_confirm_modal = None;
         state.frontend.options_dialog = None;
-        state.frontend.campaign_select = None;
     }
 
     /// Controller-routed exit-confirm teardown (D-B3): dismiss the modal UI
@@ -1191,21 +1187,6 @@ impl App {
                 &mut dialog,
             );
             Self::dispatch_launcher_options_output(state, dialog, output);
-            return false;
-        }
-
-        if let Some(mut campaign) = state.frontend.campaign_select.take() {
-            let csf = |key: &str, fallback: &str| Self::csf_label(state, key, fallback);
-            let action =
-                dialogs::draw_campaign_select(&state.renderer.egui.ctx, &csf, &mut campaign);
-            match action {
-                // The side/difficulty -> scenario mapping and first-mission
-                // launch are not decoded; Back returns to the SP shell.
-                dialogs::CampaignSelectAction::Back => {}
-                dialogs::CampaignSelectAction::None => {
-                    state.frontend.campaign_select = Some(campaign);
-                }
-            }
             return false;
         }
 

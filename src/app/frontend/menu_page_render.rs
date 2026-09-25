@@ -207,6 +207,7 @@ pub(crate) fn active_page_title_text(
             crate::ui::movies_credits_shell::MOVIES_CREDITS_PAGE.title_key
         }
         ShellSlideKind::MovieList => crate::ui::movies_credits_shell::MOVIE_LIST_PAGE.title_key,
+        ShellSlideKind::Campaign => crate::ui::campaign_shell::CAMPAIGN_PAGE.title_key,
         ShellSlideKind::MainMenu | ShellSlideKind::Skirmish => return String::new(),
     };
     resolve_csf(state, key).into_owned()
