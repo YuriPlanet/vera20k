@@ -3872,8 +3872,7 @@ mod rally_hash_tests {
         let mut changed = Simulation::new();
         let mut entity = entity;
         entity.base_defense_response.recruitable_b = false;
-        entity.base_defense_response.archive_target =
-            Some(crate::sim::combat::TargetKind::Entity(7));
+        entity.set_archive_target(Some(crate::sim::combat::TargetKind::Entity(7)));
         entity.base_defense_response.cooldown_start_frame = 12;
         entity.base_defense_response.cooldown_duration_frames = 225;
         changed.substrate.entities.insert(entity);

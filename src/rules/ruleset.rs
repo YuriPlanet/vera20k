@@ -849,12 +849,14 @@ pub struct GeneralRules {
     /// Guard duration before deployed Slave Miner re-scans for ore (SlaveMinerKickFrameDelay=).
     /// In game frames (15 fps). Default 150 (~10 seconds).
     pub slave_miner_kick_frame_delay: u32,
-    /// Standard harvester "too far" threshold in cells (HarvesterTooFarDistance=).
-    /// If the nearest refinery is farther than this, the harvester drives next to it
-    /// before reserving a dock. Default 5.
+    /// `Rules+0xD78`, `[General] HarvesterTooFarDistance=` in cells: a
+    /// refinery farther than this is approached before the dock is reserved.
+    /// `RulesClass::ReadGeneral` reads it through `CCINIClass::ReadInt
+    /// 0x005276D0` at `0x0066FFEB`; the constructor writes 5 (`0x00666835`).
     pub harvester_too_far_distance: i32,
-    /// Chrono harvester "too far" threshold in cells (ChronoHarvTooFarDistance=).
-    /// Larger than standard because chrono miners teleport back. Default 50.
+    /// `Rules+0xD7C`, `[General] ChronoHarvTooFarDistance=` in cells, the
+    /// Chrono Miner's threshold. Read through `ReadInt` at `0x0067000B`; the
+    /// constructor writes 50 (`0x00666846`).
     pub chrono_harv_too_far_distance: i32,
 
     // -- Harvester timing --
@@ -2372,8 +2374,8 @@ impl GeneralRules {
                 .get_i32("SlaveMinerKickFrameDelay")
                 .unwrap_or(150)
                 .max(0) as u32,
-            harvester_too_far_distance: general.get_i32("HarvesterTooFarDistance").unwrap_or(5),
-            chrono_harv_too_far_distance: general.get_i32("ChronoHarvTooFarDistance").unwrap_or(50),
+            harvester_too_far_distance: general.read_int("HarvesterTooFarDistance", 5),
+            chrono_harv_too_far_distance: general.read_int("ChronoHarvTooFarDistance", 50),
             harvester_load_rate: general.read_int("HarvesterLoadRate", 2),
             harvester_dump_frames: {
                 // gamemd reads HarvesterDumpRate with ReadDouble and gates on

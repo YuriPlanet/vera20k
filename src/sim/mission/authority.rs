@@ -833,7 +833,7 @@ impl Simulation {
         self.mission_restore_exact_with_effects(receiver, &mut effects)
     }
 
-    pub(crate) fn set_archive_target_represented(
+    pub(crate) fn assign_target_represented(
         &mut self,
         receiver: u64,
         requested: Option<TargetKind>,

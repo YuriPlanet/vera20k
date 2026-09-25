@@ -793,6 +793,8 @@ impl Simulation {
         sim.pending_lifecycle_requests = lifecycle_requests;
 
         sim.tick_move_sound_after_process(stable_id, before_movement, rules);
+        // UnitClass::AI after FootClass::AI, before its second Ready/Commence.
+        crate::sim::miner::miner_system::unit_ai_clear_harvesting(sim, stable_id);
         sim.object_ai_post_movement_promote_one(stable_id, rules);
         Ok(outcome)
     }

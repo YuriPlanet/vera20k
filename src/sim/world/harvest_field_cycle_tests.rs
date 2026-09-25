@@ -215,3 +215,102 @@ fn war_miner_gate_on_retail_rules() {
     }
     assert_eq!(gaps, vec![19, 19, 19], "three bales, one per gate");
 }
+
+/// Frames until a War Miner on `field` has cut its first bale, still cutting.
+fn until_first_bale(s: &mut Scene) {
+    for _ in 0..60 {
+        let sample = frame(s);
+        if sample.bales > 0 {
+            assert!(sample.harvesting && sample.state == Some(MinerState::Harvest));
+            return;
+        }
+    }
+    panic!("no bale");
+}
+
+fn order(s: &mut Scene, command: crate::sim::command::Command) {
+    let grid = s.sim.path_grid_snapshot();
+    assert!(s.sim.apply_command_with_overlays(
+        "Americans",
+        &command,
+        Some(&s.rules),
+        grid.as_deref(),
+        &BTreeMap::new(),
+        Some(registry()),
+    ));
+}
+
+/// A player return order on a cutting miner: its mission becomes the
+/// return's (VERA's ForcedReturn cursor for the native Enter), and
+/// `UnitClass::AI` (`0x007365BB..0x007365D8`) clears Unit+0x6D2 on the next
+/// frame, so OREGATH is gone while the miner waits at rest for its dock.
+#[test]
+fn a_return_order_ends_the_harvesting_byte_and_oregath() {
+    let mut s = field((15, 15), serde_json::json!([[15, 15, 0, 0, 5]]));
+    until_first_bale(&mut s);
+    let miner = s.miner;
+    order(
+        &mut s,
+        crate::sim::command::Command::MinerReturn {
+            entity_id: miner,
+            target_refinery_id: None,
+        },
+    );
+    let sample = frame(&mut s);
+    assert!(!sample.harvesting, "Unit+0x6D2 cleared by the unit AI");
+    let miner = s.sim.substrate.entities.get(s.miner).unwrap();
+    assert!(
+        miner.harvest_overlay.as_ref().is_none_or(|ho| !ho.visible),
+        "OREGATH hidden with the byte"
+    );
+}
+
+/// A harvest order on a miner already cutting (`Queue_Mission` keeps the
+/// same mission, `0x005B3601..0x005B3612`): state 1 carries on, treats the
+/// drive to the clicked cell as a hop and cuts on arrival; the gate it had
+/// already counted is not re-armed.
+#[test]
+fn a_harvest_order_on_a_cutting_miner_keeps_state_one_and_cuts_on_arrival() {
+    let mut s = field(
+        (15, 15),
+        serde_json::json!([[15, 15, 0, 0, 5], [19, 15, 0, 0, 5]]),
+    );
+    until_first_bale(&mut s);
+    // Four cells away: the drive outlasts the gate armed by the first cut.
+    let miner = s.miner;
+    order(
+        &mut s,
+        crate::sim::command::Command::HarvestCell {
+            entity_id: miner,
+            target_rx: 19,
+            target_ry: 15,
+        },
+    );
+    let mut samples = Vec::new();
+    for _ in 0..200 {
+        samples.push(frame(&mut s));
+    }
+    assert!(
+        samples
+            .iter()
+            .all(|sample| sample.state == Some(MinerState::Harvest)),
+        "state 1 throughout: {samples:?}"
+    );
+    let arrival = samples
+        .iter()
+        .position(|sample| sample.cell == (19, 15) && !sample.driving)
+        .expect("reaches the clicked cell");
+    let cut = samples
+        .iter()
+        .position(|sample| sample.cell == (19, 15) && sample.bales > samples[0].bales)
+        .expect("cuts there");
+    assert!(
+        cut <= arrival + 1,
+        "cuts on arrival (arrival {arrival}, cut {cut})"
+    );
+    assert_eq!(
+        bales_at(&s, (15, 15)),
+        Some(4),
+        "the first cell kept its ore"
+    );
+}

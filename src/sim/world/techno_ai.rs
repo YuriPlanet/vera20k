@@ -1405,7 +1405,7 @@ fn clear_passive_target_off_mission(sim: &mut Simulation, id: u64) {
     if !drop {
         return;
     }
-    let _ = sim.set_archive_target_represented(id, None);
+    let _ = sim.assign_target_represented(id, None);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.passively_acquired_target = false;
     }

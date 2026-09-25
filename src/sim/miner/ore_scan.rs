@@ -115,7 +115,7 @@ pub(crate) fn search_for_tiberium_and_move(
 /// becomes the best, and the first ring with a hit ends the scan. `None` is
 /// the `(0,0)` no-cell answer (`0x008B3D88`).
 pub(crate) fn scan_for_tiberium(
-    sim: &Simulation,
+    sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
@@ -126,6 +126,7 @@ pub(crate) fn scan_for_tiberium(
     if cell_is_tiberium_land(sim, overlay_registry, own) {
         return Some(own);
     }
+    let reach = harvest_reach(sim, rules, id)?;
     let (x, y) = (i32::from(own.0), i32::from(own.1));
     let mut best_value = -1;
     let mut best = None;
@@ -138,7 +139,7 @@ pub(crate) fn scan_for_tiberium(
                 (x + r, y + i),
             ] {
                 let Some(cell) =
-                    is_cell_harvestable(sim, rules, overlay_registry, id, own, candidate)
+                    is_cell_harvestable(sim, rules, overlay_registry, id, reach, candidate)
                 else {
                     continue;
                 };
@@ -156,27 +157,63 @@ pub(crate) fn scan_for_tiberium(
     best
 }
 
-/// `FootClass::Is_Cell_Harvestable @ 0x004DCE80`, in order: the cell is in
-/// the playfield (`0x00578460(cell, 1)`); the mover can reach its zone
-/// (`MapClass::Can_Reach_Zone @ 0x0056D100` from the mover's cell, with its
-/// type's MovementZone and its ShouldBeOnBridge answer, no destination
-/// bridge and no fringe shortcut); it is Tiberium land; and Can_Enter_Cell
-/// answers MOVE_OK (`vt+0x1AC(cell, -1, -1, 0, 1)`). Answers the cell.
+/// The `MapClass::Can_Reach_Zone @ 0x0056D100` request Is_Cell_Harvestable
+/// makes for every candidate of one scan (`0x004DCF26..0x004DCF92`): the
+/// cell of the mover's `vt+0x4C` coordinate (`FootClass::GetDestination @
+/// 0x004DBDF0`: a tube's exit, else the locomotor's head-to, else the mover's
+/// own coordinate), its type's MovementZone (`TechnoType+0x5B4`) and its
+/// ShouldBeOnBridge answer (`vt+0xBC`, `0x004DDC40`: the OnBridge byte).
+/// Is_Cell_Harvestable passes no destination bridge and no fringe shortcut,
+/// the same shape as the base-defence response.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HarvestReach {
+    pub(crate) source: (i32, i32),
+    pub(crate) movement_zone: Option<MovementZone>,
+    pub(crate) source_on_bridge: bool,
+}
+
+pub(crate) fn harvest_reach(sim: &Simulation, rules: &RuleSet, id: u64) -> Option<HarvestReach> {
+    let entity = sim.substrate.entities.get(id)?;
+    // `CDQ; AND EDX,0xFF; ADD; SAR 8` (`0x004DCF3E..0x004DCF5D`).
+    let cell = |leptons: i32| leptons.wrapping_add((leptons >> 31) & 0xFF) >> 8;
+    let source = match sim.foot_navigation_coordinate(id) {
+        Ok(coord) => (cell(coord.x), cell(coord.y)),
+        // VERA builds a Drive's runtime on its first move: until then it
+        // holds no head-to, and Head_To_Coord answers the mover's own
+        // coordinate (`0x004AFD0B`).
+        Err(_) if entity.low_bridge_tube_state.is_none() => {
+            (i32::from(entity.position.rx), i32::from(entity.position.ry))
+        }
+        Err(_) => return None,
+    };
+    Some(HarvestReach {
+        source,
+        movement_zone: sim
+            .object_type(entity.type_ref(), rules)
+            .map(|object| object.movement_zone)
+            .filter(|&zone| zone != MovementZone::Invalid),
+        source_on_bridge: entity.on_bridge,
+    })
+}
+
+/// `FootClass::Is_Cell_Harvestable @ 0x004DCE80`: the cell is in the
+/// playfield (`0x00578460(cell, 1)`); the mover can reach its zone
+/// ([`HarvestReach`]); it is Tiberium land; and the class's own
+/// Can_Enter_Cell answers MOVE_OK (`vt+0x1AC(cell, -1, -1, 0, 1)`,
+/// [`Simulation::foot_can_enter`]). Answers the cell.
 ///
-/// The source cell is the mover's `vt+0x4C` coordinate, its NavCom
-/// destination when it holds one; every caller scans without a NavCom, so
-/// it is the mover's own cell, and ShouldBeOnBridge (`0x005F6A70` through
-/// `0x004DDC40`) answers the mover's OnBridge byte.
+/// Every test is a pure query, so the cheap LandType test runs before the
+/// zone lookup; the answer is the native conjunction's.
 ///
 /// RESIDUAL: a campaign (GameMode 0) player-owned mover (`Techno+0x41A`)
 /// skips a shrouded cell (`0x004DCEA0..0x004DCF20`); not represented, so a
 /// campaign miner may head for ore under the shroud. Skirmish never reads it.
 fn is_cell_harvestable(
-    sim: &Simulation,
+    sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
-    own: (u16, u16),
+    reach: HarvestReach,
     candidate: (i32, i32),
 ) -> Option<(u16, u16)> {
     let terrain = sim.resolved_terrain.as_ref();
@@ -191,35 +228,40 @@ fn is_cell_harvestable(
         u16::try_from(candidate.0).ok()?,
         u16::try_from(candidate.1).ok()?,
     );
-    let entity = sim.substrate.entities.get(id)?;
-    if let Some(zones) = sim.zone_grid.as_ref() {
-        let source = (i32::from(own.0), i32::from(own.1));
-        let movement_zone = sim
-            .object_type(entity.type_ref(), rules)
-            .map(|object| object.movement_zone)
-            .filter(|&zone| zone != MovementZone::Invalid);
-        // The exact Can_Reach_Zone surface; Is_Cell_Harvestable passes the
-        // same argument shape as the base-defence response.
-        if !zones.can_reach_base_defense_response(
-            movement_zone,
-            source,
+    if !cell_is_tiberium_land(sim, overlay_registry, cell) {
+        return None;
+    }
+    if let Some(zones) = sim.zone_grid.as_ref()
+        && !zones.can_reach_base_defense_response(
+            reach.movement_zone,
+            reach.source,
             candidate,
-            entity.on_bridge,
+            reach.source_on_bridge,
             crate::sim::cell_rect::cell_is_in_playfield_height_aware(
-                source,
+                reach.source,
                 sim.playfield_bounds,
                 terrain,
             ),
             i32::from(sim.session.map_width),
             i32::from(sim.session.map_height),
-        ) {
-            return None;
-        }
-    }
-    if !cell_is_tiberium_land(sim, overlay_registry, cell) {
+        )
+    {
         return None;
     }
-    (crate::sim::movement::unit_can_enter_cell_standing(sim, id, cell, rules) == 0).then_some(cell)
+    let native_cell = sim
+        .resolved_terrain
+        .as_ref()?
+        .native_cell_identity((cell.0 as i16, cell.1 as i16));
+    let code = sim
+        .foot_can_enter(
+            id,
+            native_cell,
+            crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
+            rules,
+            overlay_registry,
+        )
+        .ok()?;
+    (code == 0).then_some(cell)
 }
 
 #[cfg(test)]

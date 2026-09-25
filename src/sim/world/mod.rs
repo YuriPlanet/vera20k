@@ -4589,7 +4589,7 @@ impl Simulation {
             entity.movement_target = None;
             entity.order_intent = None;
             if !unit_deploying {
-                entity.base_defense_response.set_archive_target(None);
+                entity.set_archive_target(None);
             }
         }
         let readiness = crate::sim::mission::authority::LiveReadyInputProvider { rules };

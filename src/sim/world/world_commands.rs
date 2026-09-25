@@ -1913,9 +1913,8 @@ impl Simulation {
                 }
                 // A harvest order is a MEGAMISSION like any other: it ends a
                 // refinery handshake in progress (`miner_dock::break_for_retask`).
-                // This arm assigns the mission below instead of queueing it, so
-                // an unload in progress is abandoned here rather than by the
-                // Unload mission's contact gate.
+                // An unload in progress is abandoned here rather than by the
+                // Unload mission's contact gate (`0x0073DEE0`).
                 crate::sim::miner::miner_dock::break_for_retask(self, *entity_id, rules);
                 crate::sim::miner::clear_unload_latch(self, *entity_id);
                 // Native (EventClass::Execute MEGAMISSION, disassembled
@@ -1925,19 +1924,32 @@ impl Simulation {
                 // clears SuspendedNavCom/SuspendedTarCom, clears the
                 // ArchiveTarget (`0x004C7448`) and hands the clicked cell to
                 // the class setter (`vt+0x480(cell, 1)`, `0x004C747C`).
-                // Mission_Harvest state 0 then waits out the drive and cuts
-                // where it ends. VERA assigns instead of queueing — the miner
-                // leaves Guard on this frame rather than at the host's next
-                // Ready-to-Commence step (a one-frame shape difference,
-                // VERA-internal). RESIDUAL: `0x004DA1C0` after the archive
-                // clear and the Assign_Target of the event's target are not
-                // represented.
+                // Queue_Mission (`0x005B35E0`) leaves a miner already on
+                // Harvest alone (`0x005B3601..0x005B3612`): its state, stage
+                // and Unit+0x6D2 carry on, so state 1 waits out the drive as
+                // a hop and cuts where it ends. Any other mission queues
+                // Harvest for the host's next Ready/Commence, and state 0
+                // cuts where the drive ends. VERA's ForcedReturn cursor
+                // stands for the return order's Enter mission, which Queue
+                // replaces, so that miner restarts at state 0 here.
+                // RESIDUAL: `0x004DA1C0` after the archive clear and the
+                // Assign_Target of the event's target are not represented.
                 let now = self.session.binary_frame;
-                let _ = self.mission_assign_exact(
-                    *entity_id,
-                    crate::sim::mission::MissionId::from_known(MissionType::Harvest),
-                    now,
-                );
+                let harvest = crate::sim::mission::MissionId::from_known(MissionType::Harvest);
+                let forced_return = self.substrate.entities.get(*entity_id).is_some_and(|e| {
+                    e.miner_state() == Some(crate::sim::miner::MinerState::ForcedReturn)
+                });
+                if forced_return {
+                    let _ = self.mission_assign_exact(*entity_id, harvest, now);
+                } else {
+                    let _ = self.mission_queue_exact(
+                        *entity_id,
+                        harvest,
+                        0,
+                        now,
+                        &crate::sim::mission::authority::EntityReadyInputProvider,
+                    );
+                }
                 if let Some(e) = self.substrate.entities.get_mut(*entity_id) {
                     e.set_archive_target(None);
                     // Clear in-progress movement so the miner re-paths.

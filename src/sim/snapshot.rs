@@ -4369,8 +4369,7 @@ mod tests {
             crate::sim::game_entity::GameEntity::test_default(1, "E1", "Computer1", 4, 5);
         responder.base_defense_response.recruitable_a = false;
         responder.base_defense_response.recruitable_b = true;
-        responder.base_defense_response.archive_target =
-            Some(crate::sim::combat::TargetKind::Entity(9));
+        responder.set_archive_target(Some(crate::sim::combat::TargetKind::Entity(9)));
         responder.base_defense_response.cooldown_start_frame = -11;
         responder.base_defense_response.cooldown_duration_frames = 225;
         sim.substrate.entities.insert(responder);
@@ -4472,16 +4471,12 @@ mod tests {
         assert!(emergency.all_to_hunt_bias());
         assert_eq!(emergency.last_building_attack_frame(), -17);
         assert_eq!(emergency.last_attacker_house_index(), 3);
-        let response = restored
-            .substrate
-            .entities
-            .get(1)
-            .unwrap()
-            .base_defense_response;
+        let restored_responder = restored.substrate.entities.get(1).unwrap();
+        let response = restored_responder.base_defense_response;
         assert!(!response.recruitable_a);
         assert!(response.recruitable_b);
         assert_eq!(
-            response.archive_target,
+            restored_responder.archive_target(),
             Some(crate::sim::combat::TargetKind::Entity(9))
         );
         assert_eq!(response.cooldown_start_frame, -11);

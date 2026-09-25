@@ -611,12 +611,16 @@ pub(super) fn commit_miner_snapshot(sim: &mut Simulation, snap: &MinerSnapshot, 
             },
         );
     }
-    // Drive VoxelAnimation + HarvestOverlay (oregath.shp) from Unit+0x6D2 —
-    // render-side flags, never hashed. The overlay draw also needs a
-    // locomotor at rest (`UnitClass::DrawExtras 0x0073CEC0`, presentation).
-    // RESIDUAL: the voxel HVA cycle keyed on this byte has no native source
-    // established (UNCHECKED).
-    let is_harvesting: bool = snap.miner.harvesting;
+    sync_harvest_visuals(entity);
+}
+
+/// The render-side flags that follow Unit+0x6D2 (never hashed): the
+/// HarvestOverlay (oregath.shp), which `UnitClass::DrawExtras @ 0x0073CEC0`
+/// draws only with the locomotor at rest (presentation), and the voxel
+/// harvest cycle. RESIDUAL: the voxel HVA cycle keyed on this byte has no
+/// native source established (UNCHECKED).
+fn sync_harvest_visuals(entity: &mut crate::sim::game_entity::GameEntity) {
+    let is_harvesting = entity.miner.as_ref().is_some_and(|miner| miner.harvesting);
     if let Some(ref mut va) = entity.voxel_animation {
         va.playing = is_harvesting;
         if !is_harvesting {
@@ -635,6 +639,35 @@ pub(super) fn commit_miner_snapshot(sim: &mut Simulation, snap: &MinerSnapshot, 
             ho.elapsed_frames = 0;
         }
     }
+}
+
+/// Whether the unit's native mission is Harvest. VERA's ForcedReturn cursor
+/// stands for the Enter mission a player return order gives, so it is not.
+pub(crate) fn native_mission_is_harvest(entity: &crate::sim::game_entity::GameEntity) -> bool {
+    entity.mission.current().known() == Some(MissionType::Harvest)
+        && entity.miner_state() != Some(MinerState::ForcedReturn)
+}
+
+/// `UnitClass::AI` once `FootClass::AI` returns (`0x007365BB..0x007365D8`):
+/// a live unit whose mission is not Harvest clears Unit+0x6D2, every frame.
+/// Mission_Move, Mission_Patrol and Mission_Repair also clear it on entry
+/// (`0x00740A99`, `0x00740B1A`, `0x00740F10`); they run inside FootClass::AI
+/// and nothing reads the byte in between, so this clear covers them.
+pub(crate) fn unit_ai_clear_harvesting(sim: &mut Simulation, id: u64) {
+    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+        return;
+    };
+    if entity.dying
+        || entity.category != EntityCategory::Unit
+        || native_mission_is_harvest(entity)
+        || !entity.miner.as_ref().is_some_and(|miner| miner.harvesting)
+    {
+        return;
+    }
+    if let Some(miner) = entity.miner.as_mut() {
+        miner.harvesting = false;
+    }
+    sync_harvest_visuals(entity);
 }
 
 /// Test-only mirror of the production Harvest dispatch walk: the same
@@ -755,11 +788,9 @@ pub(super) fn process_miner(
 
 /// True if the cell has no static blocker (terrain object, building
 /// footprint set in PathGrid) and no non-self vehicle/structure occupant
-/// (OccupancyGrid). Infantry are not blockers.
-///
-/// Used by ring-1+ scan candidates only — ring 0 is always allowed (the
-/// harvester is allowed to harvest its own cell even if it appears as a
-/// blocker to itself).
+/// (OccupancyGrid). Infantry are not blockers. VERA-internal: only the Slave
+/// Miner's slave scan (`slave_miner::build_slave_scan_filter`) uses it; the
+/// War and Chrono Miners use native `Is_Cell_Harvestable` (`ore_scan`).
 pub(crate) fn is_cell_path_clear_for_scan(
     occupancy: &OccupancyGrid,
     path_grid: Option<&PathGrid>,
@@ -1705,8 +1736,7 @@ fn refinery_accepts_can_load(
 /// `ZONE_INVALID`, so the probe targets the refinery's dock cell and its 8
 /// neighbours instead of the foundation centre — VERA-internal
 /// approximation, gamemd equivalent UNCHECKED for the exact probed cell.
-/// Without a zone grid or a valid miner anchor the gate is skipped, as the
-/// ore-scan filter does.
+/// Without a zone grid or a valid miner anchor the gate is skipped.
 fn refinery_zone_reachable(
     sim: &Simulation,
     miner: &crate::sim::game_entity::GameEntity,
@@ -1722,7 +1752,7 @@ fn refinery_zone_reachable(
     };
     let layer = miner.movement_layer_or_ground();
     zone_grid.can_reach(mz, anchor, layer, dock, layer)
-        || ore_reachable(zone_grid, mz, layer, anchor, dock)
+        || neighbour_reachable(zone_grid, mz, layer, anchor, dock)
 }
 
 fn refinery_dock_capacity_for_sid(
@@ -1746,7 +1776,7 @@ pub(crate) fn refinery_dock_cell(rx: u16, ry: u16) -> (u16, u16) {
 }
 
 /// 8-neighbor offsets in clockwise order starting from north. Used by the
-/// effective-zone-cell probe and the ore-reachability check.
+/// refinery-dock zone gate's anchor and neighbour probes.
 const ADJACENT_8: [(i32, i32); 8] = [
     (0, -1),
     (1, -1),
@@ -1758,13 +1788,13 @@ const ADJACENT_8: [(i32, i32); 8] = [
     (-1, -1),
 ];
 
-/// Return a cell whose zone serves as the harvester's reachability anchor.
+/// Return a cell whose zone serves as the harvester's anchor for the
+/// refinery-dock zone gate.
 ///
 /// The harvester's own cell may be on Tiberium (impassable in the path grid,
 /// hence `ZONE_INVALID`); when so, probe its 8 neighbors and return the
 /// first cell with a valid zone. Returns `None` if neither the harvester's
-/// cell nor any neighbor has a valid zone — caller falls back to no-filter
-/// behavior for that tick.
+/// cell nor any neighbor has a valid zone — the gate is then skipped.
 fn effective_zone_cell(
     zone_grid: &ZoneGrid,
     mz: MovementZone,
@@ -1789,21 +1819,19 @@ fn effective_zone_cell(
     None
 }
 
-/// True if any 8-neighbor of `ore_cell` is in the harvester's connected zone
-/// component. Ore cells themselves are `ZONE_INVALID` because Tiberium is
-/// blocked in the path grid (so A* doesn't path through ore fields), so we
-/// probe the ore's neighbors instead — mirroring how a harvester actually
-/// approaches an ore patch.
-fn ore_reachable(
+/// True if any 8-neighbor of `cell` is in the harvester's connected zone
+/// component: the refinery-dock gate probes the dock cell's neighbours, as
+/// VERA's zone map marks building footprint cells `ZONE_INVALID`.
+fn neighbour_reachable(
     zone_grid: &ZoneGrid,
     mz: MovementZone,
     layer: MovementLayer,
     harvester_zone_cell: (u16, u16),
-    ore_cell: (u16, u16),
+    cell: (u16, u16),
 ) -> bool {
     for &(dx, dy) in &ADJACENT_8 {
-        let nx = (ore_cell.0 as i32) + dx;
-        let ny = (ore_cell.1 as i32) + dy;
+        let nx = (cell.0 as i32) + dx;
+        let ny = (cell.1 as i32) + dy;
         if nx < 0 || ny < 0 || nx > u16::MAX as i32 || ny > u16::MAX as i32 {
             continue;
         }
@@ -2273,8 +2301,11 @@ mod harvest_scan_dispatch_tests {
             });
     }
 
+    /// Six bales on a flat map (the scan reads the ore cell's LandType).
     fn seed_ore(sim: &mut Simulation, cell: (u16, u16)) {
-        crate::sim::tiberium::test_support::place_stock_amount(sim, cell, ResourceType::Ore, 720);
+        sim.resolved_terrain
+            .get_or_insert_with(|| crate::map::resolved_terrain::test_flat_ground_grid(64));
+        crate::sim::tiberium::test_support::place_tiberium_on_map(sim, cell, ResourceType::Ore, 6);
     }
 
     fn ore_authority_rules() -> (RuleSet, OverlayTypeRegistry, u8) {
@@ -2602,9 +2633,10 @@ mod harvest_scan_dispatch_tests {
     /// The production re-order path: a war miner parked on Guard goes back to
     /// work only through a player order. `Command::HarvestCell` (the right
     /// click on ore) is the MEGAMISSION Harvest assignment
-    /// (`Queue_Mission(mission, 0)` @ 0x004C73B9 natively; VERA assigns) with
-    /// the clicked cell as its destination (`0x004C747C`), after which the
-    /// Harvest dispatch gate re-engages on state 0.
+    /// (`Queue_Mission(mission, 0)` @ 0x004C73B9, promoted at the host's next
+    /// Ready/Commence) with the clicked cell as its destination
+    /// (`0x004C747C`), after which the Harvest dispatch gate re-engages on
+    /// state 0.
     #[test]
     fn player_harvest_order_returns_a_parked_war_miner_to_work() {
         let rules = scan_rules();
@@ -2643,13 +2675,26 @@ mod harvest_scan_dispatch_tests {
         );
         assert!(applied);
         let entity = sim.substrate.entities.get(MINER_ID).expect("miner");
-        assert_eq!(entity.mission.current().known(), Some(MissionType::Harvest));
-        assert_eq!(entity.miner_state(), Some(MinerState::SearchOre));
+        assert_eq!(
+            entity.mission.current().known(),
+            Some(MissionType::Guard),
+            "Queue_Mission leaves Guard current"
+        );
+        assert_eq!(
+            entity.mission.queued(),
+            crate::sim::mission::MissionId::from_known(MissionType::Harvest)
+        );
         assert_eq!(
             entity.navigation.nav_com,
             Some(crate::sim::components::NavTargetRef::cell(10, 14)),
             "the order hands the clicked cell to the class setter"
         );
+        // The host's next Ready/Commence starts Harvest at state 0.
+        let now = sim.session.binary_frame;
+        sim.mission_host_promote(MINER_ID, now, &rules);
+        let entity = sim.substrate.entities.get(MINER_ID).expect("miner");
+        assert_eq!(entity.mission.current().known(), Some(MissionType::Harvest));
+        assert_eq!(entity.miner_state(), Some(MinerState::SearchOre));
 
         // The Harvest handler dispatches again and drives to the ordered cell.
         sim.session.binary_frame += 1;

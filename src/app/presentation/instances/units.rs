@@ -579,10 +579,13 @@ pub(crate) fn build_unit_instances(
         // OREGATH is an SHP sprite from sprite_atlas, but remains an owned piece
         // of its harvester's Ground slot so atlas identity cannot re-sort it.
         // `UnitClass::DrawExtras @ 0x0073CEC0` draws it from Unit+0x6D2 only
-        // while the locomotor is not moving (`vt+0x80`), so a miner hopping
-        // to its next ore cell shows none. RESIDUAL: native frames it from
-        // `(Unit+0x538 + frame) % 15`; this overlay keeps its own counter.
-        let moving = crate::sim::movement::motion_query::is_moving(entity).unwrap_or(false);
+        // while the locomotor is not moving now (`[loco+0x80]` at
+        // `0x0073D114`: Drive `0x004AFC20`, rotating or moving with speed),
+        // so a miner hopping to its next ore cell shows none. RESIDUAL:
+        // native frames it from `(Unit+0x538 + frame) % 15`; this overlay
+        // keeps its own counter.
+        let moving =
+            crate::sim::movement::ready_producer::is_moving_now_for(entity, display_binary_frame);
         if let Some(ref ho) = entity.harvest_overlay
             && ho.visible
             && !moving

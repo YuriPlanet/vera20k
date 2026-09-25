@@ -34,7 +34,7 @@
 //!   .25); a non-exact IncomeMult differs (native 0.9f pays 899 per 1000 ore,
 //!   VERA 900 — `unload_gate_income_mult` row).
 //! - Storage is VERA's two resource kinds, not native's four tiberium slots
-//!   (`miner_system::handle_harvest`); no stock map places TIB2/TIB3.
+//!   (`miner_system::harvest_ore_tick`); no stock map places TIB2/TIB3.
 //! - The Per_Cell DOCK_NOW refusal's Unit Scatter (`0x0073A5CE..0x0073A5E4`,
 //!   answered by a refinery in its Selling mission) is not wired. Frequency:
 //!   zero today — VERA's sale is synchronous, so no refinery is ever seen
@@ -85,14 +85,13 @@ pub(crate) fn mission_enter(sim: &mut Simulation, rules: &RuleSet, id: u64) -> i
         return 1;
     };
     // 0x004D9294..0x004D92AC: Contacts[0], else the Techno behind ArchiveTarget.
-    let target =
-        entity
-            .radio_contacts
-            .slot(0)
-            .or(match entity.base_defense_response.archive_target {
-                Some(crate::sim::combat::TargetKind::Entity(archived)) => Some(archived),
-                _ => None,
-            });
+    let target = entity
+        .radio_contacts
+        .slot(0)
+        .or(match entity.archive_target() {
+            Some(crate::sim::combat::TargetKind::Entity(archived)) => Some(archived),
+            _ => None,
+        });
     match target {
         None => {
             // 0x004D9425..0x004D9466: unless the NavCom is a Unit or an

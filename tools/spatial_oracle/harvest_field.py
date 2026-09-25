@@ -86,6 +86,43 @@ def place_tiberium(u, read32, case):
         u.mem_write(cell(x, y) + 0xEC, dwords(5))
 
 
+# Other objects on the row's cells, laid out as unit_entry.py builds them.
+OCCUPANTS = FIELD + 0x40000
+
+
+def place_occupants(u, call, case):
+    """An allied standing Unit on each `units` cell (first in the object list,
+    vehicle bit 0x20 at +0x124, as Mark leaves it) and a bare vehicle bit on
+    each `reserved` cell (a Drive holding it as its next cell)."""
+    units = case.get('units', [])
+    if not units and not case.get('reserved'):
+        return
+    u.mem_map(OCCUPANTS, 0x5000 * max(1, len(units)))
+    for index, (x, y) in enumerate(units):
+        address = OCCUPANTS + index * 0x5000
+        typ, loco = address + 0x1000, address + 0x3000
+        u.mem_write(address, dwords(0x7F5C70))
+        u.mem_write(address + 0x6C4, dwords(typ))
+        u.mem_write(typ, dwords(0x7F6218))
+        u.mem_write(address + 0x14, dwords(5))
+        u.mem_write(address + 0x21C, dwords(HOUSE))
+        u.mem_write(address + 0x9C, dwords(x * 256 + 128, y * 256 + 128, 0))
+        u.mem_write(address + 0xAC, dwords(5))
+        u.mem_write(address + 0xB4, dwords(-1))
+        call(0x4AF540, loco, [])  # the original Drive constructor
+        u.mem_write(loco + 0xC, dwords(address))
+        u.mem_write(address + 0x674, dwords(loco + 4))
+        u.mem_write(address + 0x6B6, b'\x01')
+        u.mem_write(address + 0x30, dwords(read32_of(u, cell(x, y) + 0xE4)))
+        u.mem_write(cell(x, y) + 0xE4, dwords(address))
+    for x, y in units + case.get('reserved', []):
+        u.mem_write(cell(x, y) + 0x124, bytes([u.mem_read(cell(x, y) + 0x124, 1)[0] | 0x20]))
+
+
+def read32_of(u, address):
+    return struct.unpack('<I', u.mem_read(address, 4))[0]
+
+
 def bitmap_index(x, y, width=16):
     """FUN_0042B1C0 over the fixture's MapClass width (bounds[0])."""
     return (x - width + y - 1) * width + ((x - y + width - 1) >> 1)
@@ -163,15 +200,28 @@ def field_state(u, read32, case):
 def fixture(case):
     # At the ore field the miner holds no radio contact (the dock fixture
     # links it to the refinery unless told otherwise).
-    u, call, read32 = make_dock_fixture(dict(case, linked=case.get('linked', False)))
-    events, unused = observe_dock(u, read32, case)
+    base = dict(case, linked=case.get('linked', False))
+    if case.get('cmin'):
+        # A Chrono Miner: cmin_dock's original Teleport locomotor as the
+        # Foot's, or a Drive piggybacked over it (`loco='drive_piggy'`).
+        from tools.spatial_oracle.cmin_dock import make_cmin_fixture
+        u, call, read32 = make_cmin_fixture(base)
+        from tools.spatial_oracle.cmin_dock import observe as observe_cmin
+        # Its hooks run the original Drive constructor for the setter's
+        # piggyback (CoCreateInstance) and observe the locomotors.
+        events, unused = observe_cmin(u, read32, dict(case, ore=[], native_search=True))
+    else:
+        u, call, read32 = make_dock_fixture(base)
+        events, unused = observe_dock(u, read32, case)
     place_tiberium(u, read32, case)
+    place_occupants(u, call, case)
     reach_args = []
     observe_field(u, read32, case, events, reach_args)
     # [General] TiberiumShortScan/TiberiumLongScan (leptons) and HarvesterLoadRate.
     u.mem_write(RULES + 0x1778, dwords(case.get('short_scan', 6 * 256), case.get('long_scan', 48 * 256)))
     u.mem_write(RULES + 0x1520, dwords(case.get('load_rate', 2)))
     u.mem_write(TYPE + 0x800, dwords(case.get('capacity', 40)))
+    u.mem_write(TYPE + 0x5B4, dwords(1))  # MovementZone=Crusher (retail [HARV])
     u.mem_write(TYPE + 0xE0F, bytes([case.get('weeder', False)]))
     u.mem_write(ACTOR + 0x6D2, bytes([case.get('harvesting', False)]))
     archive = case.get('archive')
@@ -301,6 +351,13 @@ def scan_cases():
         dict(at, name='scan_contact_building_cell_admitted', miner_cell=[10, 12], linked=True,
              ore=[[9, 11, 0, 0, 9], [11, 12, 0, 0, 2]]),
         dict(at, name='scan_flag_set', flag=1, ore=[[16, 16, 0, 0, 2]]),
+        # Can_Enter_Cell on an occupied candidate: an allied Unit standing on
+        # the richer cell (object list and vehicle bit), and the vehicle bit
+        # alone (another Drive's next cell) with no object in the list.
+        dict(at, name='scan_unit_on_richest_skipped', ore=[[16, 15, 0, 0, 7], [14, 15, 0, 0, 2]],
+             units=[[16, 15]]),
+        dict(at, name='scan_reserved_richest_skipped', ore=[[16, 15, 0, 0, 7], [14, 15, 0, 0, 2]],
+             reserved=[[16, 15]]),
     ]
 
 
@@ -364,6 +421,11 @@ def harvest_cases():
              storage=[20, 0, 0, 0], archive=[20, 12]),
         dict(s1, name='s1_off_ore_hop', ore=[[16, 16, 1, 0, 4]], stage=ready),
         dict(s1, name='s1_gems_full', ore=[[15, 15, 1, 0, 5]], stage=ready, storage=[30, 10, 0, 0]),
+        # Chrono Miner: state 0 cancels a Teleport's NavCom (0x73E818..0x73E83E)
+        # before it searches; a Drive piggybacked over the Teleport keeps it.
+        dict(s0, name='s0_cmin_teleport_nav', cmin=True, ore=[[15, 15, 0, 0, 3]], nav=[18, 18]),
+        dict(s0, name='s0_cmin_drive_nav', cmin=True, loco='drive_piggy', ore=[[15, 15, 0, 0, 3]],
+             nav=[18, 18]),
     ]
 
 
@@ -389,7 +451,7 @@ if __name__ == '__main__':
                       'add_to_spread_queue': ADD_SPREAD, 'add_to_growth_queue': ADD_GROWTH},
         assumptions=['refinery_dock fixture: original Unit vtable over a constructed Drive, 32x32 map, '
                      'House, Rules, Scenario RNG seeded through the original seeder; a 4x3 DockUnload '
-                     'refinery at NW (6,9) listed in its foundation cells but the pad, a second at (20,20) '
+                     'refinery at NW (6,9) listed in all 12 foundation cells, a second at (20,20) '
                      'listed in none.',
                      'MapClass MapSize 16x16 (+0xF4/+0xF8): Cell_in_bounds_check and the queue capacity '
                      'read it. Ground speed table rows LandType 0 and 5 (Tiberium) passable for every '

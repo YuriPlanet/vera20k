@@ -81,6 +81,8 @@ fn miner_rules() -> RuleSet {
          Foundation=4x3\n\
          Refinery=yes\nDockUnload=yes\n\
          FreeUnit=CMIN\n\
+         [TerrainTypes]\n0=TREE01\n\
+         [TREE01]\nStrength=800\nArmor=wood\n\
          [General]\n\
          TiberiumShortScan=6\n\
          TiberiumLongScan=48\n",
@@ -302,12 +304,17 @@ fn occupy_structure_cells(
 /// Place ore on a cell. `amount` is in the 120-per-bale units the fixtures
 /// were written in; the cell receives the matching bale count (1..=11), which
 /// is all a native overlay cell can yield.
+/// Ore from an amount in the retired stock units (120 per bale) on a map:
+/// the harvest scan reads an ore cell through its map cell (LandType 5,
+/// `Is_Cell_Harvestable`), so a fixture without one gets flat ground.
 fn place_ore(sim: &mut Simulation, rx: u16, ry: u16, amount: u16) {
-    crate::sim::tiberium::test_support::place_stock_amount(
+    sim.resolved_terrain
+        .get_or_insert_with(|| crate::map::resolved_terrain::test_flat_ground_grid(64));
+    crate::sim::tiberium::test_support::place_tiberium_on_map(
         sim,
         (rx, ry),
         ResourceType::Ore,
-        amount,
+        amount.div_ceil(120).clamp(1, 11) as u8,
     );
 }
 
@@ -998,9 +1005,6 @@ fn unloading_credits_refinery_owner_under_mind_control() {
 /// unreachable cell.
 #[test]
 fn unreachable_ore_filtered_out() {
-    use crate::sim::pathfinding::zone_map::ZoneGrid;
-    use std::collections::BTreeMap;
-
     let mut sim = Simulation::new();
 
     spawn_inert_dock_instance(&mut sim);
@@ -1046,9 +1050,6 @@ fn unreachable_ore_filtered_out() {
 /// rather than fall through to WaitNoOre.
 #[test]
 fn reachable_ore_picked_over_closer_unreachable() {
-    use crate::sim::pathfinding::zone_map::ZoneGrid;
-    use std::collections::BTreeMap;
-
     let mut sim = Simulation::new();
 
     spawn_inert_dock_instance(&mut sim);
@@ -1303,7 +1304,7 @@ fn extract_max_node_remaining_zero() {
 }
 
 // ==========================================================================
-// Per-bite extraction integration tests (parity contract for handle_harvest)
+// Per-bite extraction integration tests (parity contract for harvest_ore_tick)
 //
 // `UnitClass::Harvest_Ore_Tick` @ 0x0073D450 requests
 // `ftol(min(1.0f, Storage - GetTotalAmount()))` from `Reduce_Tiberium`
@@ -1513,6 +1514,21 @@ fn harvester_clears_density_zero_overlay_without_bale_and_moves_on() {
         overlay.place_overlay(cell.0, cell.1, tib01, 11);
         // A neighbouring patch so the post-exhaustion short scan has a hit.
         overlay.place_overlay(next.0, next.1, tib01, 3);
+    }
+    // Map cells: the scan and the ore tick read the ore cells' LandType.
+    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_flat_ground_grid(64));
+    for at in [cell, next] {
+        let (Some(overlay), Some(terrain)) =
+            (sim.overlay_grid.as_mut(), sim.resolved_terrain.as_mut())
+        else {
+            unreachable!("both installed above");
+        };
+        overlay.recalculate_runtime_cell(
+            terrain,
+            crate::sim::tiberium::test_support::overlay_registry_with_land(),
+            at,
+            crate::sim::overlay_grid::NavigationPublication::FrameBoundary,
+        );
     }
 
     let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, cell.0, cell.1);
@@ -2246,23 +2262,19 @@ fn full_miner_return_passes_over_a_dying_refinery() {
 /// scan; harvester targets the next-best clear cell instead.
 #[test]
 fn scan_skips_tree_blocked_ore_cell() {
-    use crate::sim::pathfinding::zone_map::ZoneGrid;
-    use std::collections::BTreeMap;
-
     let mut sim = Simulation::new();
 
     spawn_inert_dock_instance(&mut sim);
     let rules = miner_rules();
 
-    // 32×32 all-passable grid except for one tree on the would-be best ore
-    // cell at (10, 10). The other ore at (12, 10) is also reachable but
-    // farther, so without the path-grid filter the scan would pick (10, 10).
-    let mut grid = PathGrid::new(32, 32);
-    grid.set_blocked(10, 10, true);
-
+    // A tree on the would-be best ore cell at (10, 10). The other ore at
+    // (12, 10) is also reachable but farther, so without the tree the scan
+    // would pick (10, 10).
+    let grid = PathGrid::new(32, 32);
     let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 5, 10);
     place_ore(&mut sim, 10, 10, 1200);
     place_ore(&mut sim, 12, 10, 1200);
+    plant_tree(&mut sim, (10, 10));
 
     {
         let entity = sim
@@ -2275,8 +2287,6 @@ fn scan_skips_tree_blocked_ore_cell() {
             .set_handler_state(MinerState::SearchOre.cursor());
     }
 
-    // Can_Enter_Cell reads the world's path grid, so the tree is the world's.
-    sim.path_grid = Some(std::sync::Arc::new(grid.clone()));
     let config = MinerConfig::default();
     super::miner_system::tick_miners(&mut sim, &rules, &config, Some(&grid));
 
@@ -2287,14 +2297,39 @@ fn scan_skips_tree_blocked_ore_cell() {
     );
 }
 
+/// A live TREE01 on `cell`, as map loading plants one: the Terrain object
+/// the cell lists (`terrain_object_cells`) and its raw occupation, which the
+/// Unit Can_Enter_Cell of Is_Cell_Harvestable reads.
+fn plant_tree(sim: &mut Simulation, cell: (u16, u16)) {
+    use crate::sim::terrain_object::{
+        TerrainObjectLifecycle, TerrainObjectState, mark_terrain_raw_occupation,
+    };
+    let id = 900;
+    let type_ref = sim.interner.intern("TREE01");
+    sim.production.terrain_objects.insert(
+        id,
+        TerrainObjectState {
+            stable_id: id,
+            native_unique_id: None,
+            in_logic_vector: false,
+            type_ref,
+            rx: cell.0,
+            ry: cell.1,
+            health: 800,
+            max_health: 800,
+            occupation_bits: 4,
+            lifecycle: TerrainObjectLifecycle::Live,
+        },
+    );
+    sim.production.terrain_object_cells.insert(cell, id);
+    mark_terrain_raw_occupation(&mut sim.substrate.raw_cell_occupation, cell, 4);
+}
+
 /// An ore cell occupied by another vehicle (e.g. a war miner sitting on
 /// it harvesting) is rejected by ring 1+ scan; harvester targets a
 /// different cell.
 #[test]
 fn scan_skips_cell_occupied_by_other_miner() {
-    use crate::sim::pathfinding::zone_map::ZoneGrid;
-    use std::collections::BTreeMap;
-
     let mut sim = Simulation::new();
 
     spawn_inert_dock_instance(&mut sim);

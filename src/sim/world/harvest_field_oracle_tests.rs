@@ -13,13 +13,13 @@
 //! Compared per row: the returned value (removed amount, found cell, search
 //! answer, tick answer, dispatch delay); each row cell's overlay, density and
 //! LandType; the spread queue entries with their priorities; the RNG
-//! cursors; and for the miner its NavCom, Harvest cursor, archive target,
-//! Unit+0x6D2, StageClass, cargo and the house's +0x242 byte.
+//! cursors; the Can_Reach_Zone arguments (`ore_scan::harvest_reach`); and for
+//! the miner its NavCom, Harvest cursor, archive target, Unit+0x6D2,
+//! StageClass, cargo, the house's +0x242 byte and, for the Chrono Miner rows,
+//! the active locomotor.
 //!
 //! Not compared: the per-probe Can_Reach_Zone call list (the oracle observes
-//! it; its argument shape is recorded on `ore_scan::is_cell_harvestable`),
-//! and the one row whose supplied zone answer the scene cannot reproduce
-//! (`scan_unreachable_skipped`), listed in `SKIPPED`.
+//! it), and the rows listed in `SKIPPED`.
 
 use super::refinery_dock_oracle_tests::{Scene, cell, scene_with};
 use crate::rules::ini_parser::IniFile;
@@ -66,6 +66,11 @@ fn rules_for(input: &Value) -> (RuleSet, IniFile) {
         );
     if input["harvester"] == false {
         text = text.replacen("Harvester=yes", "Harvester=no", 1);
+    }
+    if input["cmin"] == true {
+        // cmin_dock's Chrono Miner (a Teleport locomotor) and its twin.
+        text = text.replacen("1=MTNK\n", "1=MTNK\n2=CMIN\n3=CTNK\n", 1);
+        text.push_str(super::cmin_dock_oracle_tests::CMIN);
     }
     let overlays = test_support::tiberium_rules_text();
     text.push_str(&overlays[overlays.find("[OverlayTypes]").unwrap()..]);
@@ -119,8 +124,40 @@ pub(super) fn row_scene(input: &Value) -> Scene {
     if input.get("linked").is_none() {
         input["linked"] = false.into();
     }
+    // Every row's miner stands off the refinery foundations, so it
+    // Unlimbos on its own cell: the scan's Can_Enter_Cell reads raw
+    // occupation, which a relocated spawn would leave on the spawn cell.
+    if input.get("unlimbo_at_cell").is_none() {
+        input["unlimbo_at_cell"] = true.into();
+    }
     let (rules, ini) = rules_for(&input);
-    let mut s = scene_with(&input, rules, &ini);
+    let cmin = input["cmin"] == true;
+    let mut s = if cmin {
+        let mut s = scene_with(
+            &super::cmin_dock_oracle_tests::cmin_base_input(&input),
+            rules,
+            &ini,
+        );
+        super::cmin_dock_oracle_tests::dress_cmin(&mut s, &input);
+        s
+    } else {
+        scene_with(&input, rules, &ini)
+    };
+    // Other objects on the row's cells, before the ore lands on them: an
+    // allied Unit standing there (Unlimbo lists it and sets its vehicle
+    // bit), or only the raw vehicle bit (`+0x124` 0x20), as a Drive holding
+    // the cell as its next one.
+    let heights = std::collections::BTreeMap::new();
+    for at in input["units"].as_array().into_iter().flatten() {
+        let (x, y) = cell(at);
+        s.sim
+            .spawn_object("MTNK", "Americans", x, y, 0, &s.rules, &heights)
+            .expect("standing unit");
+    }
+    for at in input["reserved"].as_array().into_iter().flatten() {
+        let (x, y) = cell(at);
+        s.sim.substrate.raw_cell_occupation.mark_ground(x, y, 0x20);
+    }
     let registry = registry();
     for ore in input["ore"].as_array().unwrap() {
         let at = (
@@ -321,14 +358,34 @@ fn reduce_tiberium_matches_the_original_cell_reduction() {
     }
 }
 
+/// The Can_Reach_Zone arguments the oracle records on every probe of a row
+/// (source cell, MovementZone, ShouldBeOnBridge, destination bridge, fringe)
+/// against the request the Rust scan derives, taken before the row runs.
+fn compare_reach(s: &Scene, row: &Value, context: &str) {
+    let Some(native) = row["reach_args"].as_array().and_then(|args| args.first()) else {
+        return;
+    };
+    let reach = crate::sim::miner::ore_scan::harvest_reach(&s.sim, &s.rules, s.miner)
+        .expect("reach request");
+    let rust = serde_json::json!([
+        [reach.source.0, reach.source.1],
+        reach.movement_zone.map_or(-1, |zone| zone as i32),
+        u8::from(reach.source_on_bridge),
+        0,
+        0
+    ]);
+    assert_eq!(&rust, native, "{context}: Can_Reach_Zone arguments");
+}
+
 #[test]
 fn scan_for_tiberium_matches_the_original_ring_scan() {
     let corpus = corpus();
     for (row, context) in rows(&corpus, "scan") {
         let input = &row["input"];
-        let s = row_scene(input);
+        let mut s = row_scene(input);
+        compare_reach(&s, row, &context);
         let found = crate::sim::miner::ore_scan::scan_for_tiberium(
-            &s.sim,
+            &mut s.sim,
             &s.rules,
             Some(registry()),
             s.miner,
@@ -348,6 +405,7 @@ fn search_for_tiberium_matches_the_original_search_and_move() {
     for (row, context) in rows(&corpus, "search") {
         let input = &row["input"];
         let mut s = row_scene(input);
+        compare_reach(&s, row, &context);
         let grid = s.sim.path_grid.clone();
         let ok = crate::sim::miner::ore_scan::search_for_tiberium_and_move(
             &mut s.sim,
@@ -393,6 +451,7 @@ fn mission_harvest_states_zero_and_one_match_the_original_dispatch() {
     for (row, context) in rows(&corpus, "harvest") {
         let input = &row["input"];
         let mut s = row_scene(input);
+        compare_reach(&s, row, &context);
         let config = crate::sim::miner::MinerConfig::from_rules(&s.rules);
         let grid = s.sim.path_grid.clone();
         let frame = s.sim.session.binary_frame;
@@ -422,6 +481,22 @@ fn mission_harvest_states_zero_and_one_match_the_original_dispatch() {
             row["state"]["miner_status"].as_u64(),
             "{context}: Harvest cursor"
         );
+        if input["cmin"] == true {
+            // The Unit setter's NULL destination on a Teleporter piggybacks
+            // a Drive over the Teleport (the oracle's `begin_piggyback`).
+            let piggybacked = input["loco"] == "drive_piggy"
+                || row["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|event| event[0] == "begin_piggyback");
+            assert_eq!(
+                entity.locomotor.as_ref().unwrap().active_kind()
+                    == crate::rules::locomotor_type::LocomotorKind::Drive,
+                piggybacked,
+                "{context}: active locomotor"
+            );
+        }
         compare_state(&s, row, &context);
     }
 }
@@ -431,8 +506,8 @@ fn replay_covers_every_row() {
     let corpus = corpus();
     let count = |group: &str| corpus[group].as_array().unwrap().len();
     assert_eq!(count("reduce"), 16);
-    assert_eq!(count("scan"), 17);
+    assert_eq!(count("scan"), 19);
     assert_eq!(count("search"), 4);
     assert_eq!(count("ore_tick"), 11);
-    assert_eq!(count("harvest"), 21);
+    assert_eq!(count("harvest"), 23);
 }

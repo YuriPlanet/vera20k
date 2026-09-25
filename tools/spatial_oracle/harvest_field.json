@@ -449,7 +449,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -4544,7 +4544,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -8636,7 +8636,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -9285,7 +9285,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -11075,7 +11075,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -11363,7 +11363,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -12551,7 +12551,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -12748,7 +12748,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -12913,6 +12913,216 @@
         "storage": [
           30.0,
           10.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          null,
+          1
+        ],
+        [
+          "cocreate",
+          "drive1",
+          7
+        ],
+        [
+          "begin_piggyback",
+          "drive1",
+          "teleport"
+        ],
+        [
+          "stop_moving",
+          "drive1"
+        ]
+      ],
+      "input": {
+        "cmin": true,
+        "long_scan": 3072,
+        "miner_cell": [
+          15,
+          15
+        ],
+        "mission": "harvest",
+        "name": "s0_cmin_teleport_nav",
+        "nav": [
+          18,
+          18
+        ],
+        "ore": [
+          [
+            15,
+            15,
+            0,
+            0,
+            3
+          ]
+        ],
+        "status": 0
+      },
+      "reach_args": [],
+      "state": {
+        "archive": null,
+        "balance": 0,
+        "cells": {
+          "15,15": [
+            102,
+            3,
+            5
+          ]
+        },
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "flag_3d0": 0,
+        "harvesting": 1,
+        "house_no_ore": 0,
+        "miner_contact": null,
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 1,
+        "miner_tether": 0,
+        "other_contact": null,
+        "random_indices": [
+          0,
+          103
+        ],
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "spread": [
+          [],
+          []
+        ],
+        "stage": [
+          0,
+          200,
+          2,
+          2
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "cmin": true,
+        "loco": "drive_piggy",
+        "long_scan": 3072,
+        "miner_cell": [
+          15,
+          15
+        ],
+        "mission": "harvest",
+        "name": "s0_cmin_drive_nav",
+        "nav": [
+          18,
+          18
+        ],
+        "ore": [
+          [
+            15,
+            15,
+            0,
+            0,
+            3
+          ]
+        ],
+        "status": 0
+      },
+      "reach_args": [],
+      "state": {
+        "archive": null,
+        "balance": 0,
+        "cells": {
+          "15,15": [
+            102,
+            3,
+            5
+          ]
+        },
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "flag_3d0": 0,
+        "harvesting": 0,
+        "house_no_ore": 0,
+        "miner_contact": null,
+        "miner_mission": 10,
+        "miner_nav": [
+          18,
+          18
+        ],
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "random_indices": [
+          1,
+          104
+        ],
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "spread": [
+          [],
+          []
+        ],
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
           0.0,
           0.0
         ],
@@ -18175,7 +18385,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -18350,7 +18560,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -18545,7 +18755,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -18743,7 +18953,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -18943,7 +19153,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -19141,7 +19351,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -19474,7 +19684,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -19667,7 +19877,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -20749,7 +20959,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -21826,7 +22036,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -22014,7 +22224,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -22298,7 +22508,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -22491,7 +22701,7 @@
             10,
             12
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -22685,7 +22895,7 @@
             10,
             12
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -22872,7 +23082,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -22885,6 +23095,404 @@
           "16,16": [
             102,
             2,
+            5
+          ]
+        },
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "flag_3d0": 0,
+        "harvesting": 0,
+        "house_no_ore": 0,
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "random_indices": [
+          0,
+          103
+        ],
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "spread": [
+          [],
+          []
+        ],
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "reach",
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "reach",
+          [
+            14,
+            16
+          ]
+        ],
+        [
+          "reach",
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "reach",
+          [
+            16,
+            14
+          ]
+        ],
+        [
+          "reach",
+          [
+            15,
+            14
+          ]
+        ],
+        [
+          "reach",
+          [
+            15,
+            16
+          ]
+        ],
+        [
+          "reach",
+          [
+            14,
+            15
+          ]
+        ],
+        [
+          "reach",
+          [
+            16,
+            15
+          ]
+        ],
+        [
+          "reach",
+          [
+            16,
+            14
+          ]
+        ],
+        [
+          "reach",
+          [
+            16,
+            16
+          ]
+        ],
+        [
+          "reach",
+          [
+            14,
+            16
+          ]
+        ],
+        [
+          "reach",
+          [
+            16,
+            16
+          ]
+        ]
+      ],
+      "found": [
+        14,
+        15
+      ],
+      "input": {
+        "miner_cell": [
+          15,
+          15
+        ],
+        "name": "scan_unit_on_richest_skipped",
+        "ore": [
+          [
+            16,
+            15,
+            0,
+            0,
+            7
+          ],
+          [
+            14,
+            15,
+            0,
+            0,
+            2
+          ]
+        ],
+        "range": 6,
+        "units": [
+          [
+            16,
+            15
+          ]
+        ]
+      },
+      "reach_args": [
+        [
+          [
+            15,
+            15
+          ],
+          1,
+          0,
+          0,
+          0
+        ]
+      ],
+      "state": {
+        "archive": null,
+        "balance": 0,
+        "cells": {
+          "14,15": [
+            102,
+            2,
+            5
+          ],
+          "16,15": [
+            102,
+            7,
+            5
+          ]
+        },
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "flag_3d0": 0,
+        "harvesting": 0,
+        "house_no_ore": 0,
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "random_indices": [
+          0,
+          103
+        ],
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "spread": [
+          [],
+          []
+        ],
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "reach",
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "reach",
+          [
+            14,
+            16
+          ]
+        ],
+        [
+          "reach",
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "reach",
+          [
+            16,
+            14
+          ]
+        ],
+        [
+          "reach",
+          [
+            15,
+            14
+          ]
+        ],
+        [
+          "reach",
+          [
+            15,
+            16
+          ]
+        ],
+        [
+          "reach",
+          [
+            14,
+            15
+          ]
+        ],
+        [
+          "reach",
+          [
+            16,
+            15
+          ]
+        ],
+        [
+          "reach",
+          [
+            16,
+            14
+          ]
+        ],
+        [
+          "reach",
+          [
+            16,
+            16
+          ]
+        ],
+        [
+          "reach",
+          [
+            14,
+            16
+          ]
+        ],
+        [
+          "reach",
+          [
+            16,
+            16
+          ]
+        ]
+      ],
+      "found": [
+        14,
+        15
+      ],
+      "input": {
+        "miner_cell": [
+          15,
+          15
+        ],
+        "name": "scan_reserved_richest_skipped",
+        "ore": [
+          [
+            16,
+            15,
+            0,
+            0,
+            7
+          ],
+          [
+            14,
+            15,
+            0,
+            0,
+            2
+          ]
+        ],
+        "range": 6,
+        "reserved": [
+          [
+            16,
+            15
+          ]
+        ]
+      },
+      "reach_args": [
+        [
+          [
+            15,
+            15
+          ],
+          1,
+          0,
+          0,
+          0
+        ]
+      ],
+      "state": {
+        "archive": null,
+        "balance": 0,
+        "cells": {
+          "14,15": [
+            102,
+            2,
+            5
+          ],
+          "16,15": [
+            102,
+            7,
             5
           ]
         },
@@ -23143,7 +23751,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0
@@ -24212,7 +24820,7 @@
             15,
             15
           ],
-          0,
+          1,
           0,
           0,
           0

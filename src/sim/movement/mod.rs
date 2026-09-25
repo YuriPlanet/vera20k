@@ -82,7 +82,6 @@ mod movement_blocked;
 pub(crate) mod movement_bridge;
 mod movement_commands;
 mod movement_occupancy;
-pub(crate) use movement_occupancy::unit_can_enter_cell_standing;
 mod movement_path;
 mod movement_step;
 pub(crate) mod movement_tick;

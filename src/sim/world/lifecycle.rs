@@ -3157,7 +3157,7 @@ impl Simulation {
 
             let target_cleared = self.listener_targets(listener_id, detach_id);
             if target_cleared {
-                self.set_archive_target_represented(listener_id, None)
+                self.assign_target_represented(listener_id, None)
                     .expect("detach sweep listener remains present for the target clear");
             }
 
@@ -3334,7 +3334,7 @@ impl Simulation {
         }
 
         if clears_current_target {
-            self.set_archive_target_represented(listener_id, None)
+            self.assign_target_represented(listener_id, None)
                 .expect("expiry listener remains present");
             if mission_is_suspended {
                 self.mission_restore_after_target_expiry(listener_id, rules)
@@ -3358,9 +3358,9 @@ impl Simulation {
         // `0x00707AE7..0x00707B03`: on a nonzero control the ArchiveTarget
         // (`+0x218`) that names the expiring object is cleared too.
         if control == PointerExpiryControl::Uninit
-            && listener.base_defense_response.archive_target == Some(TargetKind::Entity(expired_id))
+            && listener.archive_target() == Some(TargetKind::Entity(expired_id))
         {
-            listener.base_defense_response.set_archive_target(None);
+            listener.set_archive_target(None);
         }
 
         // FootClass clears SuspendedNavCom first, then its current/aux target,

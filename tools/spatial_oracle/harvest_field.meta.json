@@ -9,7 +9,7 @@
   ],
   "scope": "69 original executions at the ore field: 16 CellClass::Reduce_Tiberium calls (with the TiberiumClass growth/spread queue inserts and their Scenario draws), 17 FootClass::Scan_For_Tiberium scans (with Is_Cell_Harvestable), 4 Search_For_Tiberium_And_Move calls, 11 UnitClass::Harvest_Ore_Tick calls and 21 UnitClass::Mission_Harvest dispatches in states 0 and 1.",
   "assumptions": [
-    "refinery_dock fixture: original Unit vtable over a constructed Drive, 32x32 map, House, Rules, Scenario RNG seeded through the original seeder; a 4x3 DockUnload refinery at NW (6,9) listed in its foundation cells but the pad, a second at (20,20) listed in none.",
+    "refinery_dock fixture: original Unit vtable over a constructed Drive, 32x32 map, House, Rules, Scenario RNG seeded through the original seeder; a 4x3 DockUnload refinery at NW (6,9) listed in all 12 foundation cells, a second at (20,20) listed in none.",
     "MapClass MapSize 16x16 (+0xF4/+0xF8): Cell_in_bounds_check and the queue capacity read it. Ground speed table rows LandType 0 and 5 (Tiberium) passable for every SpeedType, as the Rust scene.",
     "Overlay ordinals: Riparius TIB01..TIB12 at 102.. (+8 extra), Cruentus GEM01..GEM12 at 27..; each row cell is (x, y, tiberium, variant, OverlayData) with LandType 5. TiberiumClass Values 25/50/25/25, SpreadPercentage 0.1 unless the row says, spread and growth queues empty with 64 slots, Scenario flag 0x80 (spreads) unless the row says.",
     "[General] TiberiumShortScan 6 cells, TiberiumLongScan 48 cells (12 in the dispatch rows), HarvesterLoadRate 2 unless the row says; Storage 40; retail [Harvest] Rate."
@@ -29,5 +29,5 @@
     "add_to_spread_queue": "0x00722AF0",
     "add_to_growth_queue": "0x007235A0"
   },
-  "payload_sha256": "ee20c9641223184a51007d3c400add1fe4028e0a8c08ec07decfc06a7511132d"
+  "payload_sha256": "c9c7690a0b9bccff5106ebe5831e73609a44fcb7636a9edfff7d21ebfb930333"
 }
