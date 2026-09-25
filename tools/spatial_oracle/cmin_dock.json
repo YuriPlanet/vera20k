@@ -1,0 +1,7462 @@
+{
+  "assign_destination": [
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ],
+        [
+          "move_to",
+          "teleport",
+          [
+            2432,
+            2688,
+            0
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "can_enter_cell",
+          [
+            9,
+            10
+          ],
+          [
+            -1,
+            -1,
+            0,
+            1
+          ],
+          0
+        ],
+        [
+          "unreserve",
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "reserve",
+          [
+            9,
+            10
+          ]
+        ],
+        [
+          "reserve",
+          [
+            9,
+            10
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          9,
+          10
+        ],
+        "name": "pad_teleport_active"
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": [
+          9,
+          10
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [
+          [
+            9,
+            10
+          ]
+        ],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            2432,
+            2688,
+            0
+          ],
+          "moving": 1,
+          "refs": 1,
+          "resolved": [
+            2432,
+            2688,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ],
+        [
+          "cocreate",
+          "drive1",
+          7
+        ],
+        [
+          "begin_piggyback",
+          "drive1",
+          "teleport"
+        ],
+        [
+          "move_to",
+          "drive1",
+          [
+            2432,
+            2688,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          9,
+          10
+        ],
+        "name": "pad_unit_present",
+        "pad_unit": true
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "drive1",
+          "destination": [
+            2432,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": [
+          9,
+          10
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          [
+            14,
+            12
+          ],
+          1
+        ],
+        [
+          "cocreate",
+          "drive1",
+          7
+        ],
+        [
+          "begin_piggyback",
+          "drive1",
+          "teleport"
+        ],
+        [
+          "move_to",
+          "drive1",
+          [
+            3712,
+            3200,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          14,
+          12
+        ],
+        "linked": false,
+        "name": "no_contact"
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "drive1",
+          "destination": [
+            3712,
+            3200,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": null,
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": [
+          14,
+          12
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ],
+        [
+          "cocreate",
+          "drive1",
+          7
+        ],
+        [
+          "begin_piggyback",
+          "drive1",
+          "teleport"
+        ],
+        [
+          "move_to",
+          "drive1",
+          [
+            2432,
+            2688,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          9,
+          10
+        ],
+        "dock_unload": false,
+        "name": "contact_not_dockunload"
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "drive1",
+          "destination": [
+            2432,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": [
+          9,
+          10
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          [
+            14,
+            12
+          ],
+          1
+        ],
+        [
+          "move_to",
+          "teleport",
+          [
+            3712,
+            3200,
+            0
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "can_enter_cell",
+          [
+            14,
+            12
+          ],
+          [
+            -1,
+            -1,
+            0,
+            1
+          ],
+          0
+        ],
+        [
+          "unreserve",
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "reserve",
+          [
+            14,
+            12
+          ]
+        ],
+        [
+          "reserve",
+          [
+            14,
+            12
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          14,
+          12
+        ],
+        "name": "contact_other_cell"
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": [
+          14,
+          12
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [
+          [
+            14,
+            12
+          ]
+        ],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            3712,
+            3200,
+            0
+          ],
+          "moving": 1,
+          "refs": 1,
+          "resolved": [
+            3712,
+            3200,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          null,
+          1
+        ],
+        [
+          "cocreate",
+          "drive1",
+          7
+        ],
+        [
+          "begin_piggyback",
+          "drive1",
+          "teleport"
+        ],
+        [
+          "stop_moving",
+          "drive1"
+        ]
+      ],
+      "input": {
+        "dest": null,
+        "name": "null_dest_in_contact",
+        "nav": [
+          12,
+          12
+        ]
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "drive1",
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          null,
+          1
+        ]
+      ],
+      "input": {
+        "dest": null,
+        "name": "null_dest_no_nav"
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ],
+        [
+          "end_piggyback",
+          "drive"
+        ],
+        [
+          "delete",
+          "drive"
+        ],
+        [
+          "move_to",
+          "teleport",
+          [
+            2432,
+            2688,
+            0
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "can_enter_cell",
+          [
+            9,
+            10
+          ],
+          [
+            -1,
+            -1,
+            0,
+            1
+          ],
+          0
+        ],
+        [
+          "unreserve",
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "reserve",
+          [
+            9,
+            10
+          ]
+        ],
+        [
+          "reserve",
+          [
+            9,
+            10
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          9,
+          10
+        ],
+        "loco": "drive_piggy",
+        "name": "drive_piggy_stopped"
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": [
+          9,
+          10
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [
+          [
+            9,
+            10
+          ]
+        ],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            2432,
+            2688,
+            0
+          ],
+          "moving": 1,
+          "refs": 1,
+          "resolved": [
+            2432,
+            2688,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ],
+        [
+          "stop_moving",
+          "drive"
+        ],
+        [
+          "assign_mission",
+          "miner",
+          -1
+        ],
+        [
+          "queue",
+          "miner",
+          7,
+          0
+        ]
+      ],
+      "input": {
+        "dest": [
+          9,
+          10
+        ],
+        "loco": "drive_piggy",
+        "moving": true,
+        "name": "drive_piggy_moving",
+        "nav": [
+          12,
+          12
+        ]
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          200,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 1,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "drive",
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "head": [
+            2688,
+            2688,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": -1,
+        "nav": [
+          9,
+          10
+        ],
+        "on_bridge": 0,
+        "queued": 7,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          [
+            14,
+            12
+          ],
+          1
+        ],
+        [
+          "move_to",
+          "drive",
+          [
+            3712,
+            3200,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          14,
+          12
+        ],
+        "linked": false,
+        "loco": "drive_piggy",
+        "name": "drive_piggy_no_contact"
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "drive",
+          "destination": [
+            3712,
+            3200,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": null,
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": [
+          14,
+          12
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ],
+        [
+          "move_to",
+          "teleport",
+          [
+            2432,
+            2688,
+            0
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "can_enter_cell",
+          [
+            9,
+            10
+          ],
+          [
+            -1,
+            -1,
+            0,
+            1
+          ],
+          0
+        ],
+        [
+          "unreserve",
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "reserve",
+          [
+            9,
+            10
+          ]
+        ],
+        [
+          "reserve",
+          [
+            9,
+            10
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          9,
+          10
+        ],
+        "force_reassign": true,
+        "name": "force_same_nav",
+        "nav": [
+          9,
+          10
+        ]
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": [
+          9,
+          10
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [
+          [
+            9,
+            10
+          ]
+        ],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            2432,
+            2688,
+            0
+          ],
+          "moving": 1,
+          "refs": 1,
+          "resolved": [
+            2432,
+            2688,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ]
+      ],
+      "input": {
+        "dest": [
+          9,
+          10
+        ],
+        "name": "same_nav_no_force",
+        "nav": [
+          9,
+          10
+        ]
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": [
+          9,
+          10
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          [
+            14,
+            12
+          ],
+          1
+        ],
+        [
+          "move_to",
+          "teleport",
+          [
+            3712,
+            3200,
+            0
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "reserve",
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "reserve",
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "assign_destination",
+          "miner",
+          null,
+          1
+        ],
+        [
+          "stop_moving",
+          "teleport"
+        ]
+      ],
+      "input": {
+        "dest": [
+          14,
+          12
+        ],
+        "latch_27c": true,
+        "linked": false,
+        "name": "latch_27c"
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": null,
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [
+          [
+            0,
+            0
+          ],
+          [
+            10,
+            10
+          ]
+        ],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          [
+            14,
+            12
+          ],
+          1
+        ],
+        [
+          "move_to",
+          "teleport",
+          [
+            3712,
+            3200,
+            0
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "can_enter_cell",
+          [
+            14,
+            12
+          ],
+          [
+            -1,
+            -1,
+            0,
+            1
+          ],
+          0
+        ],
+        [
+          "unreserve",
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "reserve",
+          [
+            14,
+            12
+          ]
+        ],
+        [
+          "reserve",
+          [
+            14,
+            12
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          14,
+          12
+        ],
+        "lifted": true,
+        "linked": false,
+        "name": "lifted_2b0"
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": null,
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": [
+          14,
+          12
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [
+          [
+            14,
+            12
+          ]
+        ],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            3712,
+            3200,
+            0
+          ],
+          "moving": 1,
+          "refs": 1,
+          "resolved": [
+            3712,
+            3200,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          [
+            14,
+            12
+          ],
+          1
+        ]
+      ],
+      "input": {
+        "dest": [
+          14,
+          12
+        ],
+        "linked": false,
+        "name": "swap_6ad",
+        "swap_6ad": true
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": null,
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ],
+        [
+          "move_to",
+          "teleport",
+          [
+            2432,
+            2688,
+            0
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "can_enter_cell",
+          [
+            9,
+            10
+          ],
+          [
+            -1,
+            -1,
+            0,
+            1
+          ],
+          2
+        ],
+        [
+          "movement_zone_type",
+          [
+            9,
+            10
+          ],
+          1,
+          0,
+          7
+        ],
+        [
+          "teleport_fnpc_args",
+          [
+            9,
+            10
+          ],
+          [
+            2,
+            7,
+            1,
+            0,
+            1,
+            1,
+            0,
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            9,
+            10
+          ],
+          2,
+          [
+            8,
+            11
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "reserve",
+          [
+            8,
+            11
+          ]
+        ],
+        [
+          "reserve",
+          [
+            8,
+            11
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          9,
+          10
+        ],
+        "name": "pad_cannot_enter",
+        "passable": [
+          [
+            8,
+            11
+          ]
+        ],
+        "reserved": [
+          [
+            9,
+            10
+          ]
+        ]
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": [
+          9,
+          10
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [
+          [
+            9,
+            10
+          ],
+          [
+            8,
+            11
+          ]
+        ],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            2176,
+            2944,
+            0
+          ],
+          "moving": 1,
+          "refs": 1,
+          "resolved": [
+            2176,
+            2944,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ],
+        [
+          "move_to",
+          "teleport",
+          [
+            2432,
+            2688,
+            0
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "can_enter_cell",
+          [
+            9,
+            10
+          ],
+          [
+            -1,
+            -1,
+            0,
+            1
+          ],
+          2
+        ],
+        [
+          "movement_zone_type",
+          [
+            9,
+            10
+          ],
+          1,
+          0,
+          7
+        ],
+        [
+          "teleport_fnpc_args",
+          [
+            9,
+            10
+          ],
+          [
+            2,
+            7,
+            1,
+            0,
+            1,
+            1,
+            0,
+            0,
+            0,
+            1
+          ]
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            9,
+            10
+          ],
+          2,
+          null
+        ],
+        [
+          "reserve",
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "assign_destination",
+          "miner",
+          null,
+          1
+        ],
+        [
+          "cocreate",
+          "drive1",
+          7
+        ],
+        [
+          "begin_piggyback",
+          "drive1",
+          "teleport"
+        ],
+        [
+          "stop_moving",
+          "drive1"
+        ]
+      ],
+      "input": {
+        "dest": [
+          9,
+          10
+        ],
+        "name": "pad_cannot_enter_no_cell",
+        "passable": [
+          null
+        ],
+        "reserved": [
+          [
+            9,
+            10
+          ]
+        ]
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "drive1",
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [
+          [
+            9,
+            10
+          ],
+          [
+            10,
+            10
+          ]
+        ],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ],
+  "mission_enter": [
+    {
+      "delay": 15,
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          1
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ],
+        [
+          "move_to",
+          "teleport",
+          [
+            2432,
+            2688,
+            0
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "can_enter_cell",
+          [
+            9,
+            10
+          ],
+          [
+            -1,
+            -1,
+            0,
+            1
+          ],
+          0
+        ],
+        [
+          "unreserve",
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "reserve",
+          [
+            9,
+            10
+          ]
+        ],
+        [
+          "reserve",
+          [
+            9,
+            10
+          ]
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ],
+        [
+          "move_to",
+          "teleport",
+          [
+            2432,
+            2688,
+            0
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            9,
+            10
+          ]
+        ],
+        [
+          "can_enter_cell",
+          [
+            9,
+            10
+          ],
+          [
+            -1,
+            -1,
+            0,
+            1
+          ],
+          0
+        ],
+        [
+          "unreserve",
+          [
+            9,
+            10
+          ]
+        ],
+        [
+          "reserve",
+          [
+            9,
+            10
+          ]
+        ],
+        [
+          "reserve",
+          [
+            9,
+            10
+          ]
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "name": "enter_off_pad"
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          200,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": [
+          9,
+          10
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [
+          [
+            9,
+            10
+          ]
+        ],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            2432,
+            2688,
+            0
+          ],
+          "moving": 1,
+          "refs": 1,
+          "resolved": [
+            2432,
+            2688,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          20
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          0
+        ],
+        [
+          "send",
+          "refinery",
+          22,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          0
+        ],
+        [
+          "do_turn",
+          16384
+        ],
+        [
+          "assign_destination",
+          "miner",
+          null,
+          1
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "miner_cell": [
+          9,
+          10
+        ],
+        "name": "enter_after_warp"
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 25,
+          "start": 49152,
+          "timer_start": 200
+        },
+        "force_reassign": 0,
+        "location": [
+          2432,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 1,
+        "mission": 7,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          20
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          0
+        ],
+        [
+          "send",
+          "refinery",
+          22,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          0
+        ],
+        [
+          "send",
+          "miner",
+          21,
+          "refinery",
+          1
+        ],
+        [
+          "queue",
+          "miner",
+          16,
+          0
+        ],
+        [
+          "assign_destination",
+          "miner",
+          null,
+          1
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "miner_tether": true,
+        "name": "enter_on_pad_east_tethered",
+        "refinery_tether": true
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2432,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 1,
+        "mission": 7,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": 16,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            12,
+            12
+          ],
+          0
+        ],
+        [
+          "cocreate",
+          "drive1",
+          7
+        ],
+        [
+          "begin_piggyback",
+          "drive1",
+          "teleport"
+        ],
+        [
+          "move_to",
+          "drive1",
+          [
+            3200,
+            3200,
+            0
+          ]
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "dock_unload": false,
+        "name": "enter_nav_queue_teleport",
+        "nav_queue": [
+          [
+            12,
+            12
+          ],
+          [
+            13,
+            13
+          ]
+        ]
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "drive1",
+          "destination": [
+            3200,
+            3200,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": [
+          12,
+          12
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "end_piggyback",
+          "drive"
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            12,
+            12
+          ],
+          0
+        ],
+        [
+          "cocreate",
+          "drive1",
+          7
+        ],
+        [
+          "begin_piggyback",
+          "drive1",
+          "teleport"
+        ],
+        [
+          "move_to",
+          "drive1",
+          [
+            3200,
+            3200,
+            0
+          ]
+        ],
+        [
+          "delete",
+          "drive"
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "dock_unload": false,
+        "loco": "drive_piggy",
+        "name": "enter_nav_queue_drive_stopped",
+        "nav_queue": [
+          [
+            12,
+            12
+          ],
+          [
+            13,
+            13
+          ]
+        ]
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "drive1",
+          "destination": [
+            3200,
+            3200,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": [
+          12,
+          12
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ],
+  "mission_harvest": [
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "distance",
+          "harvest_narrow",
+          640
+        ],
+        [
+          "send",
+          "miner",
+          2,
+          "refinery",
+          1
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "bays": [
+          "refinery"
+        ],
+        "linked": false,
+        "mission": "harvest",
+        "name": "hello_close",
+        "status": 2
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 10,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 3,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "distance",
+          "harvest_narrow",
+          640
+        ],
+        [
+          "send",
+          "miner",
+          2,
+          "refinery",
+          1
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "bays": [
+          "refinery"
+        ],
+        "mission": "harvest",
+        "name": "hello_linked",
+        "status": 2
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 10,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 3,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "distance",
+          "harvest_narrow",
+          2560
+        ],
+        [
+          "send",
+          "miner",
+          2,
+          "refinery",
+          1
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "bays": [
+          "refinery"
+        ],
+        "linked": false,
+        "miner_coord": [
+          4608,
+          2688,
+          0
+        ],
+        "mission": "harvest",
+        "name": "hello_edge",
+        "status": 2
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          4608,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 10,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 3,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "distance",
+          "harvest_narrow",
+          2560
+        ],
+        [
+          "send",
+          "miner",
+          2,
+          "refinery",
+          1
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "bays": [
+          "refinery"
+        ],
+        "linked": false,
+        "miner_coord": [
+          4609,
+          2688,
+          0
+        ],
+        "mission": "harvest",
+        "name": "hello_edge_sqrt_approx",
+        "status": 2
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          4609,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 10,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 3,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "distance",
+          "harvest_narrow",
+          2561
+        ],
+        [
+          "find_docking_bay",
+          0,
+          1,
+          1,
+          "refinery"
+        ],
+        [
+          "distance",
+          "harvest_wide",
+          2561
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            10,
+            10
+          ],
+          2,
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            10,
+            10
+          ],
+          1
+        ],
+        [
+          "cocreate",
+          "drive1",
+          7
+        ],
+        [
+          "begin_piggyback",
+          "drive1",
+          "teleport"
+        ],
+        [
+          "move_to",
+          "drive1",
+          [
+            2688,
+            2688,
+            0
+          ]
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "bays": [
+          "refinery",
+          "refinery"
+        ],
+        "linked": false,
+        "miner_coord": [
+          4610,
+          2688,
+          0
+        ],
+        "mission": "harvest",
+        "name": "too_far_edge",
+        "passable": [
+          [
+            10,
+            10
+          ]
+        ],
+        "status": 2
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          4610,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "drive1",
+          "destination": [
+            2688,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": null,
+        "miner_tether": 0,
+        "mission": 10,
+        "nav": [
+          10,
+          10
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 2,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          null
+        ],
+        [
+          "find_docking_bay",
+          0,
+          1,
+          1,
+          "refinery"
+        ],
+        [
+          "distance",
+          "harvest_wide",
+          640
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            10,
+            10
+          ],
+          2,
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            10,
+            10
+          ],
+          1
+        ],
+        [
+          "cocreate",
+          "drive1",
+          7
+        ],
+        [
+          "begin_piggyback",
+          "drive1",
+          "teleport"
+        ],
+        [
+          "move_to",
+          "drive1",
+          [
+            2688,
+            2688,
+            0
+          ]
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "bays": [
+          null,
+          "refinery"
+        ],
+        "linked": false,
+        "mission": "harvest",
+        "name": "busy_close",
+        "passable": [
+          [
+            10,
+            10
+          ]
+        ],
+        "refinery_contact": "other",
+        "status": 2
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "drive1",
+          "destination": [
+            2688,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": null,
+        "miner_tether": 0,
+        "mission": 10,
+        "nav": [
+          10,
+          10
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "other",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 2,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "distance",
+          "harvest_narrow",
+          2663
+        ],
+        [
+          "find_docking_bay",
+          0,
+          1,
+          1,
+          "refinery"
+        ],
+        [
+          "distance",
+          "harvest_wide",
+          2663
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            10,
+            10
+          ],
+          2,
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            10,
+            10
+          ],
+          1
+        ],
+        [
+          "cocreate",
+          "drive1",
+          7
+        ],
+        [
+          "begin_piggyback",
+          "drive1",
+          "teleport"
+        ],
+        [
+          "move_to",
+          "drive1",
+          [
+            2688,
+            2688,
+            0
+          ]
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "bays": [
+          "refinery",
+          "refinery"
+        ],
+        "linked": false,
+        "miner_cell": [
+          16,
+          16
+        ],
+        "mission": "harvest",
+        "name": "too_far",
+        "passable": [
+          [
+            10,
+            10
+          ]
+        ],
+        "status": 2
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          4224,
+          4224,
+          0
+        ],
+        "locomotor": {
+          "active": "drive1",
+          "destination": [
+            2688,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": null,
+        "miner_tether": 0,
+        "mission": 10,
+        "nav": [
+          10,
+          10
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 2,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "distance",
+          "harvest_narrow",
+          2663
+        ],
+        [
+          "find_docking_bay",
+          0,
+          1,
+          1,
+          "refinery"
+        ],
+        [
+          "distance",
+          "harvest_wide",
+          2663
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            10,
+            10
+          ],
+          2,
+          null
+        ],
+        [
+          "assign_destination",
+          "miner",
+          null,
+          1
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "bays": [
+          "refinery",
+          "refinery"
+        ],
+        "linked": false,
+        "miner_cell": [
+          16,
+          16
+        ],
+        "mission": "harvest",
+        "name": "too_far_no_cell",
+        "passable": [
+          null
+        ],
+        "status": 2
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          4224,
+          4224,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": null,
+        "miner_tether": 0,
+        "mission": 10,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 2,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          null
+        ],
+        [
+          "find_docking_bay",
+          0,
+          1,
+          1,
+          null
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "bays": [
+          null,
+          null
+        ],
+        "linked": false,
+        "mission": "harvest",
+        "name": "no_bay",
+        "status": 2
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": null,
+        "miner_tether": 0,
+        "mission": 10,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 2,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "clear_nav",
+          "miner"
+        ],
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "distance",
+          "harvest_narrow",
+          640
+        ],
+        [
+          "send",
+          "miner",
+          2,
+          "refinery",
+          1
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "bays": [
+          "refinery",
+          "refinery"
+        ],
+        "linked": false,
+        "loco": "drive_piggy",
+        "mission": "harvest",
+        "moving": true,
+        "name": "driving_bay_free",
+        "nav": [
+          12,
+          12
+        ],
+        "status": 2
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "drive",
+          "destination": [
+            3200,
+            3200,
+            0
+          ],
+          "head": [
+            2688,
+            2688,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 10,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 3,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "clear_nav",
+          "miner"
+        ],
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "distance",
+          "harvest_narrow",
+          2663
+        ],
+        [
+          "find_docking_bay",
+          0,
+          1,
+          1,
+          "refinery"
+        ],
+        [
+          "distance",
+          "harvest_wide",
+          2663
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            10,
+            10
+          ],
+          2,
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            10,
+            10
+          ],
+          1
+        ],
+        [
+          "move_to",
+          "drive",
+          [
+            2688,
+            2688,
+            0
+          ]
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "bays": [
+          "refinery",
+          "refinery",
+          "refinery"
+        ],
+        "linked": false,
+        "loco": "drive_piggy",
+        "miner_cell": [
+          16,
+          16
+        ],
+        "mission": "harvest",
+        "moving": true,
+        "name": "driving_bay_free_far",
+        "nav": [
+          12,
+          12
+        ],
+        "passable": [
+          [
+            10,
+            10
+          ]
+        ],
+        "status": 2
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          4224,
+          4224,
+          0
+        ],
+        "locomotor": {
+          "active": "drive",
+          "destination": [
+            2688,
+            2688,
+            0
+          ],
+          "head": [
+            4224,
+            4224,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": null,
+        "miner_tether": 0,
+        "mission": 10,
+        "nav": [
+          10,
+          10
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 2,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          null
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "bays": [
+          null
+        ],
+        "linked": false,
+        "loco": "drive_piggy",
+        "mission": "harvest",
+        "moving": true,
+        "name": "driving_no_bay",
+        "nav": [
+          12,
+          12
+        ],
+        "status": 2
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "drive",
+          "destination": [
+            3200,
+            3200,
+            0
+          ],
+          "head": [
+            2688,
+            2688,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": null,
+        "miner_tether": 0,
+        "mission": 10,
+        "nav": [
+          12,
+          12
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 2,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "queue",
+          "miner",
+          7,
+          0
+        ]
+      ],
+      "input": {
+        "mission": "harvest",
+        "name": "handoff",
+        "status": 3
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 10,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": 7,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 3,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 105,
+      "events": [
+        [
+          "assign_destination",
+          "miner",
+          null,
+          1
+        ],
+        [
+          "cocreate",
+          "drive1",
+          7
+        ],
+        [
+          "begin_piggyback",
+          "drive1",
+          "teleport"
+        ],
+        [
+          "stop_moving",
+          "drive1"
+        ],
+        [
+          "search_for_tiberium",
+          48,
+          1,
+          null,
+          0
+        ]
+      ],
+      "input": {
+        "linked": false,
+        "mission": "harvest",
+        "name": "state0_teleport_navcom",
+        "nav": [
+          12,
+          12
+        ],
+        "ore": [
+          0
+        ],
+        "status": 0
+      },
+      "state": {
+        "aux": null,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "drive1",
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": null,
+        "miner_tether": 0,
+        "mission": 10,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 4,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "search_for_tiberium",
+          48,
+          1,
+          [
+            12,
+            12
+          ],
+          0
+        ],
+        [
+          "random",
+          0,
+          2,
+          1
+        ]
+      ],
+      "input": {
+        "linked": false,
+        "loco": "drive_piggy",
+        "mission": "harvest",
+        "moving": true,
+        "name": "state0_drive_navcom",
+        "nav": [
+          12,
+          12
+        ],
+        "ore": [
+          0
+        ],
+        "status": 0
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "drive",
+          "destination": [
+            3200,
+            3200,
+            0
+          ],
+          "head": [
+            2688,
+            2688,
+            0
+          ],
+          "kind": "drive",
+          "refs": 1,
+          "stash": "teleport"
+        },
+        "miner_contact": null,
+        "miner_tether": 0,
+        "mission": 10,
+        "nav": [
+          12,
+          12
+        ],
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ],
+  "mission_unload": [
+    {
+      "delay": 5,
+      "events": [
+        [
+          "do_turn",
+          16384
+        ]
+      ],
+      "input": {
+        "facing": 49152,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_teleport_facing_west"
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 25,
+          "start": 49152,
+          "timer_start": 200
+        },
+        "force_reassign": 0,
+        "location": [
+          2432,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 16,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ],
+  "per_cell": [
+    {
+      "events": [],
+      "input": {
+        "miner_cell": [
+          9,
+          10
+        ],
+        "name": "per_cell_pad_teleport_arrival_untethered"
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2432,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          21,
+          "refinery",
+          1
+        ],
+        [
+          "queue",
+          "miner",
+          16,
+          0
+        ]
+      ],
+      "input": {
+        "miner_cell": [
+          9,
+          10
+        ],
+        "miner_tether": true,
+        "name": "per_cell_pad_teleport_tethered",
+        "refinery_tether": true
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2432,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 1,
+        "mission": 7,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": 16,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ],
+  "source": "unicorn/gamemd.exe",
+  "teleport_move_to": [
+    {
+      "events": [
+        [
+          "move_to",
+          "teleport",
+          [
+            2432,
+            2688,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "deploy_6d8": 0,
+        "dest": [
+          9,
+          10
+        ],
+        "name": "move_to_guard_deploying",
+        "nav": [
+          9,
+          10
+        ]
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "move_to",
+          "teleport",
+          [
+            2432,
+            2688,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          9,
+          10
+        ],
+        "locked": true,
+        "name": "move_to_guard_locked",
+        "nav": [
+          9,
+          10
+        ]
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "move_to",
+          "teleport",
+          [
+            2432,
+            2688,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          9,
+          10
+        ],
+        "name": "move_to_guard_warp_out",
+        "nav": [
+          9,
+          10
+        ],
+        "warp_out": true
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          1,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "events": [
+        [
+          "move_to",
+          "teleport",
+          [
+            2432,
+            2688,
+            0
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          9,
+          10
+        ],
+        "name": "move_to_guard_warp_in",
+        "nav": [
+          9,
+          10
+        ],
+        "warp_in": true
+      },
+      "state": {
+        "aux": [
+          0,
+          0
+        ],
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "force_reassign": 0,
+        "location": [
+          2688,
+          2688,
+          0
+        ],
+        "locomotor": {
+          "active": "teleport",
+          "kind": "teleport"
+        },
+        "miner_contact": "refinery",
+        "miner_tether": 0,
+        "mission": 7,
+        "nav": null,
+        "on_bridge": 0,
+        "queued": -1,
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "reserved": [],
+        "reserved_deck": [],
+        "skip_move_to": 0,
+        "status": 0,
+        "teleport": {
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "moving": 0,
+          "refs": 1,
+          "resolved": [
+            0,
+            0,
+            0
+          ],
+          "stash": null,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        "warp": [
+          0,
+          1,
+          0
+        ]
+      }
+    }
+  ],
+  "teleport_process": [
+    {
+      "arm": [
+        [
+          "move_to",
+          "teleport",
+          [
+            2432,
+            2688,
+            0
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "can_enter_cell",
+          [
+            9,
+            10
+          ],
+          [
+            -1,
+            -1,
+            0,
+            1
+          ],
+          0
+        ],
+        [
+          "unreserve",
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "reserve",
+          [
+            9,
+            10
+          ]
+        ],
+        [
+          "reserve",
+          [
+            9,
+            10
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          9,
+          10
+        ],
+        "name": "warp_harvester",
+        "nav": [
+          9,
+          10
+        ]
+      },
+      "ticks": [
+        {
+          "end_step": [
+            [
+              "end_piggyback",
+              "drive1"
+            ],
+            [
+              "delete",
+              "drive1"
+            ]
+          ],
+          "events": [
+            [
+              "anim",
+              "warpout",
+              [
+                2688,
+                2688,
+                0
+              ],
+              [
+                0,
+                1,
+                1536,
+                0,
+                0
+              ]
+            ],
+            [
+              "distance",
+              "teleport",
+              256
+            ],
+            [
+              "mark",
+              "miner",
+              0
+            ],
+            [
+              "map_remove",
+              [
+                10,
+                10
+              ],
+              "miner"
+            ],
+            [
+              "sound",
+              66,
+              [
+                2688,
+                2688,
+                0
+              ],
+              0
+            ],
+            [
+              "mark",
+              "miner",
+              1
+            ],
+            [
+              "map_place",
+              [
+                9,
+                10
+              ],
+              "miner"
+            ],
+            [
+              "sound",
+              65,
+              [
+                2432,
+                2688,
+                0
+              ],
+              0
+            ],
+            [
+              "per_cell_process",
+              "miner",
+              2
+            ],
+            [
+              "stop_moving",
+              "teleport"
+            ],
+            [
+              "crate",
+              [
+                9,
+                10
+              ],
+              "miner"
+            ],
+            [
+              "assign_destination",
+              "miner",
+              null,
+              1
+            ],
+            [
+              "cocreate",
+              "drive1",
+              7
+            ],
+            [
+              "begin_piggyback",
+              "drive1",
+              "teleport"
+            ],
+            [
+              "stop_moving",
+              "drive1"
+            ],
+            [
+              "anim",
+              "warpout",
+              [
+                2432,
+                2688,
+                0
+              ],
+              [
+                0,
+                1,
+                1536,
+                0,
+                0
+              ]
+            ]
+          ],
+          "frame": 200,
+          "result": 0,
+          "state": {
+            "aux": null,
+            "dispatch_timer": [
+              0,
+              0
+            ],
+            "facing": {
+              "desired": 49152,
+              "duration": 0,
+              "start": 49152,
+              "timer_start": -1
+            },
+            "force_reassign": 0,
+            "location": [
+              2432,
+              2688,
+              0
+            ],
+            "locomotor": {
+              "active": "teleport",
+              "kind": "teleport"
+            },
+            "miner_contact": "refinery",
+            "miner_tether": 0,
+            "mission": 7,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "refinery_contact": "miner",
+            "refinery_queued": -1,
+            "refinery_tether": 0,
+            "reserved": [
+              [
+                9,
+                10
+              ]
+            ],
+            "reserved_deck": [],
+            "skip_move_to": 0,
+            "status": 0,
+            "teleport": {
+              "destination": [
+                0,
+                0,
+                0
+              ],
+              "moving": 0,
+              "refs": 1,
+              "resolved": [
+                2432,
+                2688,
+                0
+              ],
+              "stash": null,
+              "timer": [
+                200,
+                0
+              ]
+            },
+            "warp": [
+              0,
+              0,
+              0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "arm": [
+        [
+          "move_to",
+          "teleport",
+          [
+            6528,
+            6784,
+            0
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "can_enter_cell",
+          [
+            25,
+            26
+          ],
+          [
+            -1,
+            -1,
+            0,
+            1
+          ],
+          0
+        ],
+        [
+          "unreserve",
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "reserve",
+          [
+            25,
+            26
+          ]
+        ],
+        [
+          "reserve",
+          [
+            25,
+            26
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          25,
+          26
+        ],
+        "linked": false,
+        "name": "warp_harvester_no_contact",
+        "nav": [
+          25,
+          26
+        ]
+      },
+      "ticks": [
+        {
+          "end_step": [
+            [
+              "end_piggyback",
+              "drive1"
+            ],
+            [
+              "delete",
+              "drive1"
+            ]
+          ],
+          "events": [
+            [
+              "anim",
+              "warpout",
+              [
+                2688,
+                2688,
+                0
+              ],
+              [
+                0,
+                1,
+                1536,
+                0,
+                0
+              ]
+            ],
+            [
+              "distance",
+              "teleport",
+              5614
+            ],
+            [
+              "mark",
+              "miner",
+              0
+            ],
+            [
+              "map_remove",
+              [
+                10,
+                10
+              ],
+              "miner"
+            ],
+            [
+              "sound",
+              66,
+              [
+                2688,
+                2688,
+                0
+              ],
+              0
+            ],
+            [
+              "mark",
+              "miner",
+              1
+            ],
+            [
+              "map_place",
+              [
+                25,
+                26
+              ],
+              "miner"
+            ],
+            [
+              "sound",
+              65,
+              [
+                6528,
+                6784,
+                0
+              ],
+              0
+            ],
+            [
+              "per_cell_process",
+              "miner",
+              2
+            ],
+            [
+              "stop_moving",
+              "teleport"
+            ],
+            [
+              "crate",
+              [
+                25,
+                26
+              ],
+              "miner"
+            ],
+            [
+              "assign_destination",
+              "miner",
+              null,
+              1
+            ],
+            [
+              "cocreate",
+              "drive1",
+              7
+            ],
+            [
+              "begin_piggyback",
+              "drive1",
+              "teleport"
+            ],
+            [
+              "stop_moving",
+              "drive1"
+            ],
+            [
+              "anim",
+              "warpout",
+              [
+                6528,
+                6784,
+                0
+              ],
+              [
+                0,
+                1,
+                1536,
+                0,
+                0
+              ]
+            ]
+          ],
+          "frame": 200,
+          "result": 0,
+          "state": {
+            "aux": null,
+            "dispatch_timer": [
+              0,
+              0
+            ],
+            "facing": {
+              "desired": 49152,
+              "duration": 0,
+              "start": 49152,
+              "timer_start": -1
+            },
+            "force_reassign": 0,
+            "location": [
+              6528,
+              6784,
+              0
+            ],
+            "locomotor": {
+              "active": "teleport",
+              "kind": "teleport"
+            },
+            "miner_contact": null,
+            "miner_tether": 0,
+            "mission": 7,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "refinery_contact": null,
+            "refinery_queued": -1,
+            "refinery_tether": 0,
+            "reserved": [
+              [
+                25,
+                26
+              ]
+            ],
+            "reserved_deck": [],
+            "skip_move_to": 0,
+            "status": 0,
+            "teleport": {
+              "destination": [
+                0,
+                0,
+                0
+              ],
+              "moving": 0,
+              "refs": 1,
+              "resolved": [
+                6528,
+                6784,
+                0
+              ],
+              "stash": null,
+              "timer": [
+                200,
+                0
+              ]
+            },
+            "warp": [
+              0,
+              0,
+              0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "arm": [
+        [
+          "move_to",
+          "teleport",
+          [
+            6528,
+            6784,
+            0
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "can_enter_cell",
+          [
+            25,
+            26
+          ],
+          [
+            -1,
+            -1,
+            0,
+            1
+          ],
+          0
+        ],
+        [
+          "unreserve",
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "reserve",
+          [
+            25,
+            26
+          ]
+        ],
+        [
+          "reserve",
+          [
+            25,
+            26
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          25,
+          26
+        ],
+        "frames": [
+          200,
+          315,
+          316
+        ],
+        "harvester": false,
+        "linked": false,
+        "name": "warp_non_harvester",
+        "nav": [
+          25,
+          26
+        ]
+      },
+      "ticks": [
+        {
+          "end_step": [
+            [
+              "end_piggyback",
+              "drive1"
+            ],
+            [
+              "delete",
+              "drive1"
+            ]
+          ],
+          "events": [
+            [
+              "anim",
+              "warpout",
+              [
+                2688,
+                2688,
+                0
+              ],
+              [
+                0,
+                1,
+                1536,
+                0,
+                0
+              ]
+            ],
+            [
+              "distance",
+              "teleport",
+              5614
+            ],
+            [
+              "mark",
+              "miner",
+              0
+            ],
+            [
+              "map_remove",
+              [
+                10,
+                10
+              ],
+              "miner"
+            ],
+            [
+              "sound",
+              66,
+              [
+                2688,
+                2688,
+                0
+              ],
+              0
+            ],
+            [
+              "mark",
+              "miner",
+              1
+            ],
+            [
+              "map_place",
+              [
+                25,
+                26
+              ],
+              "miner"
+            ],
+            [
+              "sound",
+              65,
+              [
+                6528,
+                6784,
+                0
+              ],
+              0
+            ],
+            [
+              "per_cell_process",
+              "miner",
+              2
+            ],
+            [
+              "stop_moving",
+              "teleport"
+            ],
+            [
+              "crate",
+              [
+                25,
+                26
+              ],
+              "miner"
+            ],
+            [
+              "assign_destination",
+              "miner",
+              null,
+              1
+            ],
+            [
+              "cocreate",
+              "drive1",
+              7
+            ],
+            [
+              "begin_piggyback",
+              "drive1",
+              "teleport"
+            ],
+            [
+              "stop_moving",
+              "drive1"
+            ],
+            [
+              "anim",
+              "warpout",
+              [
+                6528,
+                6784,
+                0
+              ],
+              [
+                0,
+                1,
+                1536,
+                0,
+                0
+              ]
+            ]
+          ],
+          "frame": 200,
+          "result": 0,
+          "state": {
+            "aux": null,
+            "dispatch_timer": [
+              0,
+              0
+            ],
+            "facing": {
+              "desired": 49152,
+              "duration": 0,
+              "start": 49152,
+              "timer_start": -1
+            },
+            "force_reassign": 0,
+            "location": [
+              6528,
+              6784,
+              0
+            ],
+            "locomotor": {
+              "active": "teleport",
+              "kind": "teleport"
+            },
+            "miner_contact": null,
+            "miner_tether": 0,
+            "mission": 7,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "refinery_contact": null,
+            "refinery_queued": -1,
+            "refinery_tether": 0,
+            "reserved": [
+              [
+                25,
+                26
+              ]
+            ],
+            "reserved_deck": [],
+            "skip_move_to": 0,
+            "status": 0,
+            "teleport": {
+              "destination": [
+                0,
+                0,
+                0
+              ],
+              "moving": 0,
+              "refs": 1,
+              "resolved": [
+                6528,
+                6784,
+                0
+              ],
+              "stash": null,
+              "timer": [
+                200,
+                116
+              ]
+            },
+            "warp": [
+              0,
+              1,
+              0
+            ]
+          }
+        },
+        {
+          "end_step": [],
+          "events": [
+            [
+              "teleport_delay_tick"
+            ]
+          ],
+          "frame": 315,
+          "result": 0,
+          "state": {
+            "aux": null,
+            "dispatch_timer": [
+              0,
+              0
+            ],
+            "facing": {
+              "desired": 49152,
+              "duration": 0,
+              "start": 49152,
+              "timer_start": -1
+            },
+            "force_reassign": 0,
+            "location": [
+              6528,
+              6784,
+              0
+            ],
+            "locomotor": {
+              "active": "teleport",
+              "kind": "teleport"
+            },
+            "miner_contact": null,
+            "miner_tether": 0,
+            "mission": 7,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "refinery_contact": null,
+            "refinery_queued": -1,
+            "refinery_tether": 0,
+            "reserved": [
+              [
+                25,
+                26
+              ]
+            ],
+            "reserved_deck": [],
+            "skip_move_to": 0,
+            "status": 0,
+            "teleport": {
+              "destination": [
+                0,
+                0,
+                0
+              ],
+              "moving": 0,
+              "refs": 1,
+              "resolved": [
+                6528,
+                6784,
+                0
+              ],
+              "stash": null,
+              "timer": [
+                200,
+                116
+              ]
+            },
+            "warp": [
+              0,
+              1,
+              0
+            ]
+          }
+        },
+        {
+          "end_step": [],
+          "events": [
+            [
+              "teleport_delay_tick"
+            ],
+            [
+              "enter_idle_mode",
+              0,
+              1
+            ]
+          ],
+          "frame": 316,
+          "result": 0,
+          "state": {
+            "aux": null,
+            "dispatch_timer": [
+              0,
+              0
+            ],
+            "facing": {
+              "desired": 49152,
+              "duration": 0,
+              "start": 49152,
+              "timer_start": -1
+            },
+            "force_reassign": 0,
+            "location": [
+              6528,
+              6784,
+              0
+            ],
+            "locomotor": {
+              "active": "teleport",
+              "kind": "teleport"
+            },
+            "miner_contact": null,
+            "miner_tether": 0,
+            "mission": 7,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "refinery_contact": null,
+            "refinery_queued": -1,
+            "refinery_tether": 0,
+            "reserved": [
+              [
+                25,
+                26
+              ]
+            ],
+            "reserved_deck": [],
+            "skip_move_to": 0,
+            "status": 0,
+            "teleport": {
+              "destination": [
+                0,
+                0,
+                0
+              ],
+              "moving": 0,
+              "refs": 1,
+              "resolved": [
+                6528,
+                6784,
+                0
+              ],
+              "stash": null,
+              "timer": [
+                200,
+                116
+              ]
+            },
+            "warp": [
+              0,
+              0,
+              0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "arm": [
+        [
+          "move_to",
+          "teleport",
+          [
+            2432,
+            2688,
+            0
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "can_enter_cell",
+          [
+            9,
+            10
+          ],
+          [
+            -1,
+            -1,
+            0,
+            1
+          ],
+          0
+        ],
+        [
+          "unreserve",
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "reserve",
+          [
+            9,
+            10
+          ]
+        ],
+        [
+          "reserve",
+          [
+            9,
+            10
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          9,
+          10
+        ],
+        "frames": [
+          200,
+          215,
+          216
+        ],
+        "harvester": false,
+        "name": "warp_non_harvester_min_delay",
+        "nav": [
+          9,
+          10
+        ]
+      },
+      "ticks": [
+        {
+          "end_step": [
+            [
+              "end_piggyback",
+              "drive1"
+            ],
+            [
+              "delete",
+              "drive1"
+            ]
+          ],
+          "events": [
+            [
+              "anim",
+              "warpout",
+              [
+                2688,
+                2688,
+                0
+              ],
+              [
+                0,
+                1,
+                1536,
+                0,
+                0
+              ]
+            ],
+            [
+              "distance",
+              "teleport",
+              256
+            ],
+            [
+              "mark",
+              "miner",
+              0
+            ],
+            [
+              "map_remove",
+              [
+                10,
+                10
+              ],
+              "miner"
+            ],
+            [
+              "sound",
+              66,
+              [
+                2688,
+                2688,
+                0
+              ],
+              0
+            ],
+            [
+              "mark",
+              "miner",
+              1
+            ],
+            [
+              "map_place",
+              [
+                9,
+                10
+              ],
+              "miner"
+            ],
+            [
+              "sound",
+              65,
+              [
+                2432,
+                2688,
+                0
+              ],
+              0
+            ],
+            [
+              "per_cell_process",
+              "miner",
+              2
+            ],
+            [
+              "stop_moving",
+              "teleport"
+            ],
+            [
+              "crate",
+              [
+                9,
+                10
+              ],
+              "miner"
+            ],
+            [
+              "assign_destination",
+              "miner",
+              null,
+              1
+            ],
+            [
+              "cocreate",
+              "drive1",
+              7
+            ],
+            [
+              "begin_piggyback",
+              "drive1",
+              "teleport"
+            ],
+            [
+              "stop_moving",
+              "drive1"
+            ],
+            [
+              "anim",
+              "warpout",
+              [
+                2432,
+                2688,
+                0
+              ],
+              [
+                0,
+                1,
+                1536,
+                0,
+                0
+              ]
+            ]
+          ],
+          "frame": 200,
+          "result": 0,
+          "state": {
+            "aux": null,
+            "dispatch_timer": [
+              0,
+              0
+            ],
+            "facing": {
+              "desired": 49152,
+              "duration": 0,
+              "start": 49152,
+              "timer_start": -1
+            },
+            "force_reassign": 0,
+            "location": [
+              2432,
+              2688,
+              0
+            ],
+            "locomotor": {
+              "active": "teleport",
+              "kind": "teleport"
+            },
+            "miner_contact": "refinery",
+            "miner_tether": 0,
+            "mission": 7,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "refinery_contact": "miner",
+            "refinery_queued": -1,
+            "refinery_tether": 0,
+            "reserved": [
+              [
+                9,
+                10
+              ]
+            ],
+            "reserved_deck": [],
+            "skip_move_to": 0,
+            "status": 0,
+            "teleport": {
+              "destination": [
+                0,
+                0,
+                0
+              ],
+              "moving": 0,
+              "refs": 1,
+              "resolved": [
+                2432,
+                2688,
+                0
+              ],
+              "stash": null,
+              "timer": [
+                200,
+                16
+              ]
+            },
+            "warp": [
+              0,
+              1,
+              0
+            ]
+          }
+        },
+        {
+          "end_step": [],
+          "events": [
+            [
+              "teleport_delay_tick"
+            ]
+          ],
+          "frame": 215,
+          "result": 0,
+          "state": {
+            "aux": null,
+            "dispatch_timer": [
+              0,
+              0
+            ],
+            "facing": {
+              "desired": 49152,
+              "duration": 0,
+              "start": 49152,
+              "timer_start": -1
+            },
+            "force_reassign": 0,
+            "location": [
+              2432,
+              2688,
+              0
+            ],
+            "locomotor": {
+              "active": "teleport",
+              "kind": "teleport"
+            },
+            "miner_contact": "refinery",
+            "miner_tether": 0,
+            "mission": 7,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "refinery_contact": "miner",
+            "refinery_queued": -1,
+            "refinery_tether": 0,
+            "reserved": [
+              [
+                9,
+                10
+              ]
+            ],
+            "reserved_deck": [],
+            "skip_move_to": 0,
+            "status": 0,
+            "teleport": {
+              "destination": [
+                0,
+                0,
+                0
+              ],
+              "moving": 0,
+              "refs": 1,
+              "resolved": [
+                2432,
+                2688,
+                0
+              ],
+              "stash": null,
+              "timer": [
+                200,
+                16
+              ]
+            },
+            "warp": [
+              0,
+              1,
+              0
+            ]
+          }
+        },
+        {
+          "end_step": [],
+          "events": [
+            [
+              "teleport_delay_tick"
+            ],
+            [
+              "enter_idle_mode",
+              0,
+              1
+            ]
+          ],
+          "frame": 216,
+          "result": 0,
+          "state": {
+            "aux": null,
+            "dispatch_timer": [
+              0,
+              0
+            ],
+            "facing": {
+              "desired": 49152,
+              "duration": 0,
+              "start": 49152,
+              "timer_start": -1
+            },
+            "force_reassign": 0,
+            "location": [
+              2432,
+              2688,
+              0
+            ],
+            "locomotor": {
+              "active": "teleport",
+              "kind": "teleport"
+            },
+            "miner_contact": "refinery",
+            "miner_tether": 0,
+            "mission": 7,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "refinery_contact": "miner",
+            "refinery_queued": -1,
+            "refinery_tether": 0,
+            "reserved": [
+              [
+                9,
+                10
+              ]
+            ],
+            "reserved_deck": [],
+            "skip_move_to": 0,
+            "status": 0,
+            "teleport": {
+              "destination": [
+                0,
+                0,
+                0
+              ],
+              "moving": 0,
+              "refs": 1,
+              "resolved": [
+                2432,
+                2688,
+                0
+              ],
+              "stash": null,
+              "timer": [
+                200,
+                16
+              ]
+            },
+            "warp": [
+              0,
+              0,
+              0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "arm": [
+        [
+          "move_to",
+          "teleport",
+          [
+            6528,
+            6784,
+            0
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "can_enter_cell",
+          [
+            25,
+            26
+          ],
+          [
+            -1,
+            -1,
+            0,
+            1
+          ],
+          0
+        ],
+        [
+          "unreserve",
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "reserve",
+          [
+            25,
+            26
+          ]
+        ],
+        [
+          "reserve",
+          [
+            25,
+            26
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          25,
+          26
+        ],
+        "frames": [
+          200,
+          215,
+          216
+        ],
+        "harvester": false,
+        "linked": false,
+        "name": "warp_range_min",
+        "nav": [
+          25,
+          26
+        ],
+        "range_minimum": 100000
+      },
+      "ticks": [
+        {
+          "end_step": [
+            [
+              "end_piggyback",
+              "drive1"
+            ],
+            [
+              "delete",
+              "drive1"
+            ]
+          ],
+          "events": [
+            [
+              "anim",
+              "warpout",
+              [
+                2688,
+                2688,
+                0
+              ],
+              [
+                0,
+                1,
+                1536,
+                0,
+                0
+              ]
+            ],
+            [
+              "distance",
+              "teleport",
+              5614
+            ],
+            [
+              "mark",
+              "miner",
+              0
+            ],
+            [
+              "map_remove",
+              [
+                10,
+                10
+              ],
+              "miner"
+            ],
+            [
+              "sound",
+              66,
+              [
+                2688,
+                2688,
+                0
+              ],
+              0
+            ],
+            [
+              "mark",
+              "miner",
+              1
+            ],
+            [
+              "map_place",
+              [
+                25,
+                26
+              ],
+              "miner"
+            ],
+            [
+              "sound",
+              65,
+              [
+                6528,
+                6784,
+                0
+              ],
+              0
+            ],
+            [
+              "per_cell_process",
+              "miner",
+              2
+            ],
+            [
+              "stop_moving",
+              "teleport"
+            ],
+            [
+              "crate",
+              [
+                25,
+                26
+              ],
+              "miner"
+            ],
+            [
+              "assign_destination",
+              "miner",
+              null,
+              1
+            ],
+            [
+              "cocreate",
+              "drive1",
+              7
+            ],
+            [
+              "begin_piggyback",
+              "drive1",
+              "teleport"
+            ],
+            [
+              "stop_moving",
+              "drive1"
+            ],
+            [
+              "anim",
+              "warpout",
+              [
+                6528,
+                6784,
+                0
+              ],
+              [
+                0,
+                1,
+                1536,
+                0,
+                0
+              ]
+            ]
+          ],
+          "frame": 200,
+          "result": 0,
+          "state": {
+            "aux": null,
+            "dispatch_timer": [
+              0,
+              0
+            ],
+            "facing": {
+              "desired": 49152,
+              "duration": 0,
+              "start": 49152,
+              "timer_start": -1
+            },
+            "force_reassign": 0,
+            "location": [
+              6528,
+              6784,
+              0
+            ],
+            "locomotor": {
+              "active": "teleport",
+              "kind": "teleport"
+            },
+            "miner_contact": null,
+            "miner_tether": 0,
+            "mission": 7,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "refinery_contact": null,
+            "refinery_queued": -1,
+            "refinery_tether": 0,
+            "reserved": [
+              [
+                25,
+                26
+              ]
+            ],
+            "reserved_deck": [],
+            "skip_move_to": 0,
+            "status": 0,
+            "teleport": {
+              "destination": [
+                0,
+                0,
+                0
+              ],
+              "moving": 0,
+              "refs": 1,
+              "resolved": [
+                6528,
+                6784,
+                0
+              ],
+              "stash": null,
+              "timer": [
+                200,
+                16
+              ]
+            },
+            "warp": [
+              0,
+              1,
+              0
+            ]
+          }
+        },
+        {
+          "end_step": [],
+          "events": [
+            [
+              "teleport_delay_tick"
+            ]
+          ],
+          "frame": 215,
+          "result": 0,
+          "state": {
+            "aux": null,
+            "dispatch_timer": [
+              0,
+              0
+            ],
+            "facing": {
+              "desired": 49152,
+              "duration": 0,
+              "start": 49152,
+              "timer_start": -1
+            },
+            "force_reassign": 0,
+            "location": [
+              6528,
+              6784,
+              0
+            ],
+            "locomotor": {
+              "active": "teleport",
+              "kind": "teleport"
+            },
+            "miner_contact": null,
+            "miner_tether": 0,
+            "mission": 7,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "refinery_contact": null,
+            "refinery_queued": -1,
+            "refinery_tether": 0,
+            "reserved": [
+              [
+                25,
+                26
+              ]
+            ],
+            "reserved_deck": [],
+            "skip_move_to": 0,
+            "status": 0,
+            "teleport": {
+              "destination": [
+                0,
+                0,
+                0
+              ],
+              "moving": 0,
+              "refs": 1,
+              "resolved": [
+                6528,
+                6784,
+                0
+              ],
+              "stash": null,
+              "timer": [
+                200,
+                16
+              ]
+            },
+            "warp": [
+              0,
+              1,
+              0
+            ]
+          }
+        },
+        {
+          "end_step": [],
+          "events": [
+            [
+              "teleport_delay_tick"
+            ],
+            [
+              "enter_idle_mode",
+              0,
+              1
+            ]
+          ],
+          "frame": 216,
+          "result": 0,
+          "state": {
+            "aux": null,
+            "dispatch_timer": [
+              0,
+              0
+            ],
+            "facing": {
+              "desired": 49152,
+              "duration": 0,
+              "start": 49152,
+              "timer_start": -1
+            },
+            "force_reassign": 0,
+            "location": [
+              6528,
+              6784,
+              0
+            ],
+            "locomotor": {
+              "active": "teleport",
+              "kind": "teleport"
+            },
+            "miner_contact": null,
+            "miner_tether": 0,
+            "mission": 7,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "refinery_contact": null,
+            "refinery_queued": -1,
+            "refinery_tether": 0,
+            "reserved": [
+              [
+                25,
+                26
+              ]
+            ],
+            "reserved_deck": [],
+            "skip_move_to": 0,
+            "status": 0,
+            "teleport": {
+              "destination": [
+                0,
+                0,
+                0
+              ],
+              "moving": 0,
+              "refs": 1,
+              "resolved": [
+                6528,
+                6784,
+                0
+              ],
+              "stash": null,
+              "timer": [
+                200,
+                16
+              ]
+            },
+            "warp": [
+              0,
+              0,
+              0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "arm": [
+        [
+          "move_to",
+          "teleport",
+          [
+            2432,
+            2688,
+            0
+          ]
+        ],
+        [
+          "unreserve",
+          [
+            9,
+            10
+          ]
+        ],
+        [
+          "can_enter_cell",
+          [
+            9,
+            10
+          ],
+          [
+            -1,
+            -1,
+            0,
+            1
+          ],
+          0
+        ],
+        [
+          "unreserve",
+          [
+            0,
+            0
+          ]
+        ],
+        [
+          "reserve",
+          [
+            9,
+            10
+          ]
+        ],
+        [
+          "reserve",
+          [
+            9,
+            10
+          ]
+        ]
+      ],
+      "input": {
+        "dest": [
+          9,
+          10
+        ],
+        "miner_cell": [
+          9,
+          10
+        ],
+        "name": "already_there",
+        "nav": [
+          9,
+          10
+        ]
+      },
+      "ticks": [
+        {
+          "end_step": [
+            [
+              "end_piggyback",
+              "drive1"
+            ],
+            [
+              "delete",
+              "drive1"
+            ]
+          ],
+          "events": [
+            [
+              "assign_destination",
+              "miner",
+              null,
+              1
+            ],
+            [
+              "cocreate",
+              "drive1",
+              7
+            ],
+            [
+              "begin_piggyback",
+              "drive1",
+              "teleport"
+            ],
+            [
+              "stop_moving",
+              "drive1"
+            ],
+            [
+              "stop_moving",
+              "teleport"
+            ]
+          ],
+          "frame": 200,
+          "result": 0,
+          "state": {
+            "aux": null,
+            "dispatch_timer": [
+              0,
+              0
+            ],
+            "facing": {
+              "desired": 49152,
+              "duration": 0,
+              "start": 49152,
+              "timer_start": -1
+            },
+            "force_reassign": 0,
+            "location": [
+              2432,
+              2688,
+              0
+            ],
+            "locomotor": {
+              "active": "teleport",
+              "kind": "teleport"
+            },
+            "miner_contact": "refinery",
+            "miner_tether": 0,
+            "mission": 7,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "refinery_contact": "miner",
+            "refinery_queued": -1,
+            "refinery_tether": 0,
+            "reserved": [
+              [
+                9,
+                10
+              ]
+            ],
+            "reserved_deck": [],
+            "skip_move_to": 0,
+            "status": 0,
+            "teleport": {
+              "destination": [
+                0,
+                0,
+                0
+              ],
+              "moving": 0,
+              "refs": 1,
+              "resolved": [
+                2432,
+                2688,
+                0
+              ],
+              "stash": null,
+              "timer": [
+                200,
+                0
+              ]
+            },
+            "warp": [
+              0,
+              0,
+              0
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
