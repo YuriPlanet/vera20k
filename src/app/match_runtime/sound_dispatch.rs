@@ -90,7 +90,8 @@ pub(super) fn dispatch_sim_sound_events(
                 stop_sound_id: None,
                 source: None,
             },
-            SimSoundEvent::GattlingLoopRelease { owner } => {
+            SimSoundEvent::GattlingLoopRelease { owner }
+            | SimSoundEvent::ObjectSoundReleased { owner } => {
                 GameSoundEvent::AnimationReleased { anim_id: owner }
             }
             SimSoundEvent::AircraftPhase { sound_id, world } => GameSoundEvent::AircraftPhase {

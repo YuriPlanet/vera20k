@@ -527,6 +527,25 @@ pub struct ObjectType {
     pub damage_sound: Option<String>,
     /// Sound ID played while this entity moves (looping engine/footstep).
     pub move_sound: Option<String>,
+    /// `CrashingSound=` — `TechnoTypeClass+0x544`, read at `0x00712F80`.
+    /// `FootClass::AI` plays it on the object's MoveSound controller
+    /// (`+0x544`) when the crash latch rises (`0x004DAD5E..0x004DADA7`).
+    pub crashing_sound: Option<String>,
+    /// `VoiceCrashing=` — `+0x550`, read at `0x00713034`. Played at the same
+    /// latch edge, before `CrashingSound=`, for a human player's object only
+    /// (`HouseClass::IsHumanPlayer @ 0x0050B6F0`, `0x004DAD10..0x004DAD59`).
+    pub voice_crashing: Option<String>,
+    /// `ImpactWaterSound=` / `ImpactLandSound=` — `+0x53C` / `+0x540`, read at
+    /// `0x00712EFC` / `0x00712F38`: the crash impact's cue by the impact cell's
+    /// LandType (`FlyLocomotionClass::Process 0x004CD818..0x004CD891`), each
+    /// falling back to the `[AudioVisual]` key of the same name.
+    ///
+    /// Like every `ReadString`+`VocClass::FindIndex` sound key, native keeps
+    /// the previous layer's value when a later layer names no registered
+    /// sound; VERA keeps the later name and the app resolves it to silence.
+    /// No retail INI names an unregistered crash sound.
+    pub impact_water_sound: Option<String>,
+    pub impact_land_sound: Option<String>,
     /// `VoiceFeedback=` — `TechnoTypeClass+0x4D8`, the line spoken when this
     /// techno's HP crosses below half strength.
     ///
@@ -1984,6 +2003,10 @@ impl ObjectType {
                 .filter(|s| !s.is_empty())
                 .map(str::to_string),
             move_sound: section.get("MoveSound").map(|s| s.to_string()),
+            crashing_sound: sound_key(section, "CrashingSound"),
+            voice_crashing: sound_key(section, "VoiceCrashing"),
+            impact_water_sound: sound_key(section, "ImpactWaterSound"),
+            impact_land_sound: sound_key(section, "ImpactLandSound"),
             voice_feedback: section.get("VoiceFeedback").map(|s| s.to_string()),
             voice_special_attack: section.get("VoiceSpecialAttack").map(|s| s.to_string()),
             crush_sound: section.get("CrushSound").map(|s| s.to_string()),
@@ -2657,6 +2680,17 @@ pub(crate) fn parse_csv_string_list(raw: Option<&str>) -> Vec<String> {
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
         .collect()
+}
+
+/// A single-sound key read by `CCINIClass::ReadString` then
+/// `VocClass::FindIndex @ 0x007514D0`: an empty value keeps the current (here
+/// absent) sound.
+fn sound_key(section: &IniSection, key: &str) -> Option<String> {
+    section
+        .get(key)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// Parse ExitCoord=X,Y,Z from rules.ini. Values are in leptons (256 = 1 cell).

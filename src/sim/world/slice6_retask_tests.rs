@@ -477,7 +477,12 @@ const SLICE6_BASELINE_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 0xA6B7_788A_9F3E_A87
 // (UnitClass::Enter_Idle_Mode 0x00738970) and draw its cadence from frame 0,
 // which moves the infantry's native paid-Walk sub-cell pick (walk_paid_step
 // slice6 rows regenerated natively). Old values: the commit that moved them.
-const SLICE6_BASELINE_HASH: u64 = 0x35C0_3F75_262A_E905;
+// Schema208 folds every object's crash latch and its AI edge (Foot+0x425/
+// +0x426) and a Fly's fall counter: composition only. Before(208) reproduces
+// the v207 pin (the ore-field schema moved nothing here);
+// the RNG stream pins are unchanged.
+const SLICE6_BASELINE_HASH: u64 = 0x5817_4EA8_2BF7_6AED;
+const SLICE6_BASELINE_HASH_PRE_AIRCRAFT_CRASH_V208: u64 = 0x35C0_3F75_262A_E905;
 const SLICE6_BASELINE_HASH_PRE_REARM_TIMER_V202: u64 = 0xA34D_06B7_8F8E_E38C;
 
 #[test]
@@ -778,6 +783,11 @@ fn replay_hash_stable_through_slice6() {
         sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(202)),
         SLICE6_BASELINE_HASH_PRE_REARM_TIMER_V202,
         "v202 only folds the object's rearm timer in place of the target's counters"
+    );
+    assert_eq!(
+        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(208)),
+        SLICE6_BASELINE_HASH_PRE_AIRCRAFT_CRASH_V208,
+        "v208 only folds the crash latch, its AI edge and the Fly fall counter"
     );
     assert_eq!(
         hash, SLICE6_BASELINE_HASH,

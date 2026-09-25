@@ -1222,6 +1222,10 @@ pub enum ProjectileDetonationReason {
     Fuse,
     Collision,
     TargetExpired,
+    /// `TechnoClass::Fire_Death_Weapon @ 0x0070D690` hands its bullet
+    /// straight to `DetonateAtCoord` (`0x0070D782`): one detonation, without
+    /// the BulletClass cluster loop and its draws.
+    DeathWeapon,
 }
 
 /// One deferred `BulletClass::Detonate` handoff for combat to apply.

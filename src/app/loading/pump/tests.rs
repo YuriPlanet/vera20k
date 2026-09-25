@@ -411,7 +411,7 @@ fn loading_preparation_consumes_real_source_and_returns_lease_on_initial_and_adm
     session.job.asset_manager = assets.lease_for_loading();
     let session =
         prepare_loading_session(&mut assets, session, true, Some(ra2_dir.clone())).unwrap();
-    assert!(!session.first_frame_presented);
+    assert_eq!(session.next_frame, NextLoadingFrame::Blank);
     assert_eq!(
         session.native.as_ref().unwrap().progress.current_value(),
         0.0

@@ -2848,7 +2848,6 @@ pub(crate) fn load_map_from_initial(
         houses::parse_house_roster(&map_data.ini, color_schemes, rules.as_ref());
     let house_color_map: HouseColorMap =
         house_color_map_for_launch_session(skirmish_launch_session, &house_roster);
-    progress.milestone(67);
     let bridge_destroyability_mode = BridgeDestroyabilityMode::SkirmishOrMultiplayer {
         bridge_destruction: skirmish_launch_session.options.bridges_destroyable,
     };
@@ -3045,8 +3044,11 @@ pub(crate) fn load_map_from_initial(
         ),
         None => None,
     };
+    // Read_Map_Section emits 63, 65 and 67 (`0x004AD011`, `0x004AD0AF`,
+    // `0x004AD339`) after Read_INI_Basic's 55/58/60 and before 68/69.
     progress.milestone(63);
     progress.milestone(65);
+    progress.milestone(67);
     let bridge_railing_tile_bases = theater_result
         .as_ref()
         .and_then(|td| td.bridge_railing_slope_starts())
@@ -3666,6 +3668,31 @@ mod random_map_retail_tests {
         println!(
             "{configurations} retail configurations checked, {structures_placed} neutral \
              structure(s) placed"
+        );
+    }
+}
+
+#[cfg(test)]
+mod milestone_order_tests {
+    /// A source-order guard. gamemd raises the bar in call order (45 -> 50 ->
+    /// 55/58/60 -> 63/65/67 -> 68/69 -> 70, `0x00687847`,
+    /// `0x0068ACA0..0x0068AD53`, `0x004AD011..0x004AD74F`, `0x00687A28`) and
+    /// the monotonic gate drops any value below the current one, so the
+    /// loader's literal milestones, in source order, must never fall back.
+    #[test]
+    fn literal_milestones_never_fall_back() {
+        let source = include_str!("init.rs");
+        let values: Vec<u32> = source
+            .match_indices("progress.milestone(")
+            .filter_map(|(at, call)| {
+                let rest = &source[at + call.len()..];
+                rest[..rest.find(')')?].parse().ok()
+            })
+            .collect();
+        assert!(values.len() > 20, "{values:?}");
+        assert!(
+            values.windows(2).all(|pair| pair[0] <= pair[1]),
+            "{values:?}"
         );
     }
 }

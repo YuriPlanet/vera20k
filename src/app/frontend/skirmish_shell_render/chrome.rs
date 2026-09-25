@@ -565,16 +565,7 @@ pub(super) fn lower_strip_entry(
 }
 
 pub(super) fn common_shell_origin(layout: &SkirmishShellLayout) -> (i32, i32) {
-    let x = if layout.screen.w > 1023 {
-        (layout.screen.w - 800) / 2
-    } else {
-        0
-    };
-    let y = if layout.screen.h > 767 {
-        (layout.screen.h - 600) / 2
-    } else {
-        0
-    };
+    let (x, y) = crate::ui::shell::geom::dialog_origin(layout.screen.w, layout.screen.h);
     (layout.screen.x + x, layout.screen.y + y)
 }
 

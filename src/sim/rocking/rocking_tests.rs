@@ -603,3 +603,52 @@ fn integration_determinism_same_impulse_same_hash() {
         );
     }
 }
+
+/// `RockingUpdate`'s crashing branch against the executable: 40-frame spins of
+/// both signs, a `BalloonHover=` clamp and a start from nonzero angles
+/// (`tools/spatial_oracle/aircraft_crash.json`, `rocking`). Native keeps f32;
+/// each SimFixed step may differ by one quantum, so the tolerance grows with
+/// the frame count.
+#[test]
+fn crash_spin_matches_native_rocking_update() {
+    use crate::sim::rocking::rocking_system::advance_crash_spin;
+    let oracle: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/aircraft_crash.json"
+    ))
+    .unwrap();
+    let rows = oracle["rocking"].as_array().unwrap();
+    assert_eq!(rows.len(), 4);
+    let native = |hex: &serde_json::Value| {
+        f64::from(f32::from_bits(
+            u32::from_str_radix(hex.as_str().unwrap(), 16).unwrap(),
+        ))
+    };
+    for row in rows {
+        let input = &row["input"];
+        let rates = input["rates"].as_array().unwrap();
+        let angles = input["angles"].as_array();
+        // The fixture writes the rates and angles as f32; start from those
+        // exact values.
+        let f32_of = |v: &serde_json::Value| f64::from(v.as_f64().unwrap() as f32);
+        let mut state = RockingState {
+            vel_sideways: SimFixed::from_num(f32_of(&rates[0])),
+            vel_forwards: SimFixed::from_num(f32_of(&rates[1])),
+            angle_sideways: angles.map_or(SimFixed::ZERO, |a| SimFixed::from_num(f32_of(&a[0]))),
+            angle_forwards: angles.map_or(SimFixed::ZERO, |a| SimFixed::from_num(f32_of(&a[1]))),
+            is_ship_rocking: false,
+        };
+        let balloon = input["balloon_hover"].as_i64() == Some(1);
+        for (frame, expected) in row["history"].as_array().unwrap().iter().enumerate() {
+            advance_crash_spin(&mut state, balloon);
+            let tolerance = (frame as f64 + 3.0) / 65536.0;
+            for (actual, index) in [(state.angle_sideways, 0), (state.angle_forwards, 1)] {
+                let expected = native(&expected[index]);
+                assert!(
+                    (actual.to_num::<f64>() - expected).abs() <= tolerance,
+                    "{} frame {frame} axis {index}: {actual} vs {expected}",
+                    input["name"]
+                );
+            }
+        }
+    }
+}

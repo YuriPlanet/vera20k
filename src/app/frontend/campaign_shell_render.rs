@@ -13,10 +13,10 @@ use crate::app::frontend::shell_pass::{
 };
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::batch::SpriteInstance;
-use crate::render::main_menu_shell_chrome::{CampaignShellArt, MainMenuShellChromeEntry};
+use crate::render::main_menu_shell_chrome::CampaignShellArt;
 use crate::render::shell_paint::{
     self, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel, SHELL_TEXT_RGB_ENABLED,
-    STATIC_IMAGE_DEPTH, push_entry_native,
+    STATIC_IMAGE_DEPTH, push_entry_crop, push_entry_native,
 };
 use crate::render::shell_text::ShellAlign;
 use crate::ui::campaign_shell::{
@@ -32,41 +32,6 @@ pub(crate) fn emblem_frame_counts(state: &AppState) -> [usize; 2] {
         .campaign_art
         .as_ref()
         .map_or([0, 0], |art| [art.allied.len(), art.soviet.len()])
-}
-
-/// Part `rect` of `entry` drawn with its origin at `origin`.
-fn push_entry_crop(
-    out: &mut Vec<SpriteInstance>,
-    entry: MainMenuShellChromeEntry,
-    origin: (i32, i32),
-    rect: RectPx,
-    depth: f32,
-) {
-    let left = rect.x.max(origin.0);
-    let top = rect.y.max(origin.1);
-    let right = (rect.x + rect.w).min(origin.0 + entry.pixel_size[0] as i32);
-    let bottom = (rect.y + rect.h).min(origin.1 + entry.pixel_size[1] as i32);
-    if right <= left || bottom <= top {
-        return;
-    }
-    let u_per_px = entry.uv_size[0] / entry.pixel_size[0];
-    let v_per_px = entry.uv_size[1] / entry.pixel_size[1];
-    out.push(SpriteInstance {
-        position: [left as f32, top as f32],
-        size: [(right - left) as f32, (bottom - top) as f32],
-        uv_origin: [
-            entry.uv_origin[0] + (left - origin.0) as f32 * u_per_px,
-            entry.uv_origin[1] + (top - origin.1) as f32 * v_per_px,
-        ],
-        uv_size: [
-            (right - left) as f32 * u_per_px,
-            (bottom - top) as f32 * v_per_px,
-        ],
-        depth,
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
-        ..Default::default()
-    });
 }
 
 /// The difficulty trackbar (`0x0061D950` paint): the area it saved under
@@ -115,18 +80,8 @@ fn campaign_sprites(
     let mut out = Vec::new();
     // Background_Overlay (`0x0072E730`) at `[0x00B0FC1C]`: centred only from
     // 1024x768 up (`0x0072EC70`).
-    let background_origin = (
-        if layout.page.screen.w >= 1024 {
-            (layout.page.screen.w - 800) / 2
-        } else {
-            0
-        },
-        if layout.page.screen.h >= 768 {
-            (layout.page.screen.h - 600) / 2
-        } else {
-            0
-        },
-    );
+    let background_origin =
+        crate::ui::shell::geom::dialog_origin(layout.page.screen.w, layout.page.screen.h);
     if let Some(background) = art.background {
         push_entry_native(
             &mut out,

@@ -4396,13 +4396,13 @@ fn gsi_04_07_damage_death_weapon_gate_selection_and_native_damage() {
         None,
         "ordinary current Primary does not admit the helper"
     );
-    let selected_suicide = interner.intern("SuicideGun");
+    // The gate reads the weapon at CurrentWeaponNumber (`GetWeapon(+0x138)`).
     let (suicide_damage, suicide_wh, suicide_weapon) = death_weapon_aoe(
         &rules,
         rules.object("SLOTGATE").unwrap(),
         0,
-        0,
-        Some(selected_suicide),
+        1,
+        Some("Ordinary"),
         &mut interner,
     )
     .unwrap();
@@ -4410,12 +4410,13 @@ fn gsi_04_07_damage_death_weapon_gate_selection_and_native_damage() {
     assert_eq!(interner.resolve(suicide_wh), "SlotWH");
     assert_eq!(interner.resolve(suicide_weapon), "SlotBoom");
 
+    // The payload fires GetCurrentWeapon (vtable `+0x3F4`).
     let (current_damage, current_wh, current_weapon) = death_weapon_aoe(
         &rules,
         rules.object("CURRENT").unwrap(),
         0,
         0,
-        None,
+        Some("Ordinary"),
         &mut interner,
     )
     .unwrap();

@@ -32,8 +32,8 @@ use crate::sim::world::Simulation;
 
 use super::state::{CRATE_SLOT_CAPACITY, CrateSlot};
 use super::{
-    CrateMarkCellRef, ForcedPostPrecheckFailure, OneCrateResult, map_cell_in_bounds,
-    place_one_random_crate, resolve_crate_mark_cell,
+    CrateMarkCellRef, ForcedPostPrecheckFailure, OneCrateResult, place_one_random_crate,
+    resolve_crate_mark_cell,
 };
 
 /// Outcome of one `MapClass__UpdateCrateRegenTimers` pass.
@@ -67,7 +67,7 @@ pub(crate) fn remove_crate_overlay_from_cell(
     registry: &OverlayTypeRegistry,
     cell: (i16, i16),
 ) -> bool {
-    if !map_cell_in_bounds(sim, cell) {
+    if !sim.map_cell_in_bounds(cell) {
         return false;
     }
     let cell_ref = resolve_crate_mark_cell(sim, cell);

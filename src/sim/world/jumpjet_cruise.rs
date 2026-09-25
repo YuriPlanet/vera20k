@@ -684,6 +684,7 @@ impl Simulation {
         Some(AirMovementTickStats {
             air_movers: 1,
             arrivals: u32::from(arrived),
+            impact: false,
         })
     }
 }

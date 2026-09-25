@@ -665,20 +665,33 @@ fn apply_mission_mutation(
 ) -> bool {
     // No "Unit lost" here: `AircraftClass::Enter_Idle_Mode @ 0x004176F0`
     // handles the AirportBound-without-airfield case by calling the
-    // `Crash` slot `+0x3DC` directly (`0x004179FD`, `0x00417B88`; body
-    // `0x004DEBB0`, which runs `RecordKill +0xE0` and the trigger events
-    // but never `Death_Announcement +0x3B8`), and the eventual impact in
-    // `AircraftClass::AI` (`0x00414BB0`, height < -400) is `RecordKill` +
-    // `UnInit` (`0x00414E1F`). Only a damage kill (`AircraftClass::
-    // ReceiveDamage 0x004165C0`, result 4 → `+0x3B8` at `0x00416613`)
-    // announces, and that runs through the combat kill loop.
+    // `Crash` slot `+0x3DC` directly with no attacker (`0x004179FD`,
+    // `0x00417B88`; body `0x004DEBB0`, which runs `RecordKill +0xE0` and the
+    // trigger events but never `Death_Announcement +0x3B8`), then returns 0
+    // whatever Crash answered (`0x00417A06`, `0x00417B91`). An airborne
+    // aircraft Crash accepted then falls to its impact
+    // like a shot-down one (`sim::world::crash`). Only a damage kill
+    // (`AircraftClass::ReceiveDamage 0x004165C0`, result 4 → `+0x3B8` at
+    // `0x00416613`) announces, and that runs through the combat kill loop.
+    //
+    // Only AircraftClass has that idle mode (vtable `+0x484` = `0x004176F0`);
+    // a custom Fly Infantry or Unit retires through VERA's terminal path.
     if m.self_destruct {
-        let infantry_terminal = sim.begin_raw_infantry_death(m.id, None);
-        if let Some(entity) = sim.substrate.entities.get_mut(m.id) {
-            if !infantry_terminal {
+        let aircraft = sim
+            .substrate
+            .entities
+            .get(m.id)
+            .is_some_and(|entity| entity.category == EntityCategory::Aircraft);
+        if aircraft {
+            sim.foot_crash(m.id, None, rules);
+        } else {
+            let infantry_terminal = sim.begin_raw_infantry_death(m.id, None);
+            if !infantry_terminal && let Some(entity) = sim.substrate.entities.get_mut(m.id) {
                 entity.health.current = 0;
                 entity.dying = true;
             }
+        }
+        if let Some(entity) = sim.substrate.entities.get_mut(m.id) {
             entity.aircraft_mission = None;
         }
         return false;

@@ -345,7 +345,11 @@ impl App {
         .with_accepted_random_map(accepted_random_map);
         state.frontend.skirmish_shell_state.pressed_owner_draw_button = None;
         state.frontend.skirmish_shell_last_painted_pressed_button = None;
-        state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
+        // GameMode stays 5 through the game, so the shell resumes on a new
+        // `0x102` afterwards (`App::resume_shell_after_match`).
+        state.frontend.shell_route = crate::app::shell_route::ShellRoute::Skirmish {
+            return_to_single_player: true,
+        };
         state.frontend.shell_first_paint_slide = None;
         state.frontend.skirmish_preview_texture = None;
         crate::app::loading::pump::begin_loading(state, request);
@@ -393,48 +397,7 @@ impl App {
 
         match action {
             crate::ui::skirmish_shell::SkirmishShellAction::StartGame => {
-                match crate::ui::skirmish_shell::launch_session(
-                    &state.frontend.skirmish_shell_state,
-                    state.frontend.scenario_catalog.shell_maps(),
-                    &state.frontend.skirmish_modes,
-                ) {
-                    Ok(raw_session) => {
-                        match state.frontend.offline_skirmish_runtime.close_shell_transaction(
-                            &state.frontend.skirmish_shell_state,
-                            state.frontend.scenario_catalog.shell_maps(),
-                            &state.frontend.skirmish_modes,
-                            &raw_session,
-                        ) {
-                            Ok(resolved_session) => {
-                                // 0x006ACEE0 packs the session and writes
-                                // result 0x617; the runner (0x006AE2C0) then
-                                // slides the dialog out before the launch.
-                                Self::sync_legacy_skirmish_settings_from_shell(state);
-                                Self::leave_shell_dialog(
-                                    state,
-                                    crate::app::frontend::shell_transition::ShellExitThen::SkirmishStart(
-                                        Box::new(resolved_session),
-                                    ),
-                                );
-                            }
-                            Err(err) => {
-                                log::error!(
-                                    "Could not resolve Cooperative shell assignments: {err}"
-                                );
-                                state.platform.window.request_redraw();
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        if let Some(modal) = Self::skirmish_validation_modal_for_error(state, &err)
-                        {
-                            Self::show_skirmish_validation_modal(state, modal);
-                            state.platform.window.request_redraw();
-                        } else {
-                            log::warn!("Could not start skirmish shell session: {err:?}");
-                        }
-                    }
-                }
+                Self::start_game_from_shell(state);
             }
             crate::ui::skirmish_shell::SkirmishShellAction::BackOrExit => {
                 if Self::handle_skirmish_back(state) == SkirmishBackOutcome::ExitApp {
@@ -451,6 +414,53 @@ impl App {
             crate::ui::skirmish_shell::SkirmishShellAction::None
             | crate::ui::skirmish_shell::SkirmishShellAction::SelectColor(_)
             | crate::ui::skirmish_shell::SkirmishShellAction::SelectMap(_) => {}
+        }
+    }
+
+    /// Start Game on `0x102` (`0x006ACEE0` case `0x617`): validate and pack
+    /// the session, then slide the dialog out before the launch.
+    pub(crate) fn start_game_from_shell(state: &mut AppState) {
+        match crate::ui::skirmish_shell::launch_session(
+            &state.frontend.skirmish_shell_state,
+            state.frontend.scenario_catalog.shell_maps(),
+            &state.frontend.skirmish_modes,
+        ) {
+            Ok(raw_session) => {
+                match state
+                    .frontend
+                    .offline_skirmish_runtime
+                    .close_shell_transaction(
+                        &state.frontend.skirmish_shell_state,
+                        state.frontend.scenario_catalog.shell_maps(),
+                        &state.frontend.skirmish_modes,
+                        &raw_session,
+                    ) {
+                    Ok(resolved_session) => {
+                        // 0x006ACEE0 packs the session and writes
+                        // result 0x617; the runner (0x006AE2C0) then
+                        // slides the dialog out before the launch.
+                        Self::sync_legacy_skirmish_settings_from_shell(state);
+                        Self::leave_shell_dialog(
+                            state,
+                            crate::app::frontend::shell_transition::ShellExitThen::SkirmishStart(
+                                Box::new(resolved_session),
+                            ),
+                        );
+                    }
+                    Err(err) => {
+                        log::error!("Could not resolve Cooperative shell assignments: {err}");
+                        state.platform.window.request_redraw();
+                    }
+                }
+            }
+            Err(err) => {
+                if let Some(modal) = Self::skirmish_validation_modal_for_error(state, &err) {
+                    Self::show_skirmish_validation_modal(state, modal);
+                    state.platform.window.request_redraw();
+                } else {
+                    log::warn!("Could not start skirmish shell session: {err:?}");
+                }
+            }
         }
     }
 
@@ -601,7 +611,7 @@ impl App {
         true
     }
 
-    fn handle_choose_map_modal_mouse_down(state: &mut AppState) -> bool {
+    pub(super) fn handle_choose_map_modal_mouse_down(state: &mut AppState) -> bool {
         if state
             .frontend
             .skirmish_shell_state
@@ -691,7 +701,7 @@ impl App {
             .and_then(|modal| modal.scroll_deadline())
     }
 
-    fn handle_choose_map_modal_mouse_up(state: &mut AppState) -> bool {
+    pub(super) fn handle_choose_map_modal_mouse_up(state: &mut AppState) -> bool {
         if Self::handle_choose_map_eject_mouse_up(state) {
             return true;
         }

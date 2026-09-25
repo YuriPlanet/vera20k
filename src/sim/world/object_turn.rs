@@ -591,7 +591,18 @@ impl Simulation {
             return Ok(outcome);
         }
 
-        sim.tick_air_movement_with_cell_lists_one(stable_id, rules);
+        let air = sim.tick_air_movement_with_cell_lists_one(stable_id, rules);
+        if air.impact {
+            // The impact UnInits the object; `FootClass::AI` returns on the
+            // cleared Object+90 (`0x004DA87E`) and `AircraftClass::AI` after
+            // it (`0x00414DAA`).
+            if let Some(rules) = rules {
+                sim.fly_crash_impact(stable_id, rules, overlay_registry);
+            } else {
+                sim.uninit(stable_id);
+            }
+            return Ok(outcome);
+        }
         let teleport_armed = sim
             .substrate
             .entities
@@ -694,12 +705,29 @@ impl Simulation {
                 sim.temporal_release_if_warping(stable_id);
             }
         }
-        sim.pending_rocket_detonations
-            .extend(rocket_movement::tick_rocket_movement(
-                &mut sim.substrate.entities,
-                &one,
-                sim.session.tick,
-            ));
+        let rocket_arrivals = rocket_movement::tick_rocket_movement(
+            &mut sim.substrate.entities,
+            &one,
+            sim.session.tick,
+        );
+        let rocket_arrived = !rocket_arrivals.is_empty();
+        sim.pending_rocket_detonations.extend(rocket_arrivals);
+        // `ILoco::Process 0x00662FD5..0x00662FE1`: after its flight step a
+        // missile left with no Health explodes where it is and is UnInit, so
+        // `FootClass::AI` and `AircraftClass::AI` stop here.
+        let rocket_died = !rocket_arrived
+            && sim.substrate.entities.get(stable_id).is_some_and(|entity| {
+                entity.health.current <= 0
+                    && entity.rocket_state.is_some()
+                    && entity.locomotor.as_ref().is_some_and(|locomotor| {
+                        locomotor.active_kind()
+                            == crate::rules::locomotor_type::LocomotorKind::Rocket
+                    })
+            });
+        if rocket_died {
+            crate::sim::spawn_manager::detonate_dead_missile(sim, stable_id);
+            return Ok(outcome);
+        }
         sim.tick_tunnel_locomotor_one(stable_id, path_grid);
         sim.tick_drop_pod_locomotor_one(stable_id, path_grid);
         let _ = homing_movement::tick_homing_movement(
@@ -791,9 +819,15 @@ impl Simulation {
         sim.pending_lifecycle_requests = lifecycle_requests;
 
         sim.tick_move_sound_after_process(stable_id, before_movement, rules);
+        if let Some(rules) = rules {
+            sim.crash_edge_sounds(stable_id, rules);
+        }
         // UnitClass::AI after FootClass::AI, before its second Ready/Commence.
         crate::sim::miner::miner_system::unit_ai_clear_harvesting(sim, stable_id);
         sim.object_ai_post_movement_promote_one(stable_id, rules);
+        if let Some(rules) = rules {
+            sim.aircraft_crash_smoke(stable_id, rules);
+        }
         Ok(outcome)
     }
 }

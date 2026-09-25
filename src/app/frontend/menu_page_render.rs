@@ -85,7 +85,7 @@ fn paint_buttons(layout: &MenuPageLayout, input: PageInput, disabled: &[u16]) ->
 
 /// Status help for the hovered control. Hover is enable-unfiltered, so a
 /// disabled button still writes its help text.
-fn status_csf_key(spec: &MenuPageSpec, hovered: Option<u16>) -> Option<&'static str> {
+pub(crate) fn status_csf_key(spec: &MenuPageSpec, hovered: Option<u16>) -> Option<&'static str> {
     hovered
         .and_then(|id| spec.button(id))
         .map(|button| button.tooltip_key)
@@ -223,7 +223,10 @@ pub(crate) fn active_page_title_text(
                 .map(|dialog| dialog.shell_title_text().to_owned())
                 .unwrap_or_default();
         }
-        ShellSlideKind::MainMenu | ShellSlideKind::Skirmish => return String::new(),
+        // These dialogs set their headings themselves.
+        ShellSlideKind::MainMenu | ShellSlideKind::Skirmish | ShellSlideKind::Score => {
+            return String::new();
+        }
     };
     resolve_csf(state, key).into_owned()
 }

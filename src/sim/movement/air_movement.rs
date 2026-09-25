@@ -6,6 +6,11 @@
 //! `fly_height`, the target speed in `fly_target_speed`. Horizontal_Step's
 //! arrival arm, the Process landing trigger and the landing callbacks still
 //! need their native migration; the legacy arrival below stands in.
+//!
+//! A dead (crashing) Fly follows Process natively: its fall block and impact
+//! run first (`sim::world::crash`), then the paid step only while IsMoving at
+//! its frozen speed and heading, then the height step. The whole fall to the
+//! impact is compared frame by frame with `tools/spatial_oracle/aircraft_crash`.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;
@@ -280,6 +285,9 @@ pub struct AirMovementTickStats {
     pub air_movers: u32,
     /// Number that completed their move this tick.
     pub arrivals: u32,
+    /// A dead Fly's fall reached the ground this visit: Process ends in the
+    /// impact (`Simulation::fly_crash_impact`), which its caller commits.
+    pub impact: bool,
 }
 
 /// Advance live Fly entities one tick.
@@ -355,14 +363,33 @@ pub fn tick_air_movement(
         let speed_control = super::motion_query::is_moving(entity) == Some(true);
 
         // --- Horizontal movement (facing-based, only when airborne) ---
-        let has_movement: bool = entity.movement_target.is_some();
+        // A dead (crashing) Fly takes Process's paid step exactly when IsMoving
+        // (`0x004CDA0B`) at its frozen speed and heading: Horizontal_Step, the
+        // landing trigger and the speed writer and ramp all need Health > 0
+        // (`0x004CCBE9`, `0x004CE3CA`, `0x004CE148`, `0x004CE444`). Evidence:
+        // `tools/spatial_oracle/aircraft_crash` `fall` rows.
+        let dead = entity.health.current == 0;
+        // Process returns at `0x004CDA10` when IsMoving is false, before the
+        // paid step and the height step. RESIDUAL: the gate is Process's for
+        // every Fly; a living one still reaches the legacy height step below
+        // while it stands still (its landing descent is not yet migrated to
+        // Process_Landing's callbacks), so only a dead Fly takes it here.
+        if dead && !speed_control {
+            continue;
+        }
+        let has_movement: bool = if dead {
+            speed_control
+        } else {
+            entity.movement_target.is_some()
+        };
 
         if has_movement {
             let height = current_fly_height(entity, terrain);
-            let can_move: bool = entity
-                .locomotor
-                .as_ref()
-                .is_some_and(|l| height >= l.fly_target_height() / 2);
+            let can_move: bool = dead
+                || entity
+                    .locomotor
+                    .as_ref()
+                    .is_some_and(|l| height >= l.fly_target_height() / 2);
 
             if can_move {
                 let native_type_speed = rules_context
@@ -443,7 +470,8 @@ pub fn tick_air_movement(
                 // Legacy arrival, standing in for Horizontal_Step's arrival
                 // arm (4CF4D2) and the Process landing trigger (4CE3C0) until
                 // they are ported: close enough AND speed near zero.
-                let arrived = dist_i32 < 128
+                let arrived = !dead
+                    && dist_i32 < 128
                     && entity
                         .locomotor
                         .as_ref()

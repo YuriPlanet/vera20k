@@ -4,10 +4,14 @@
 //! each tick. Drive/Ship slope interpolation is owned separately by locomotor
 //! runtime payload state.
 //!
-//! # DEAD SUBSYSTEM (GSI-08.14) — no producer and no consumer
+//! # The crash spin is live; the rocker is still dead (GSI-08.14)
 //!
-//! [`tick`] runs every frame from `World::advance_tick` Phase 2.5, but nothing
-//! in the build writes an impulse into it and nothing reads the angles back out:
+//! `FootClass::Crash @ 0x004DEBB0` writes a crashing object's spin rates
+//! (`sim::world::crash`), [`tick`]'s crashing branch
+//! ([`rocking_system::advance_crash_spin`], `RockingUpdate 0x0070B63D`)
+//! integrates them, and the unit renderer draws the angles through Fly
+//! Draw_Matrix's crashing arm (`render::vxl_raster`). Everything below is about
+//! the ordinary damped rocker, which still has no producer and no consumer:
 //!
 //! - **No producer.** [`apply_rocker_impulse`] has no caller outside this
 //!   module's tests. gamemd reaches `TechnoClass::ApplyRocker` (vtable `+0x3D8`

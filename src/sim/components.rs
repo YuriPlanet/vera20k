@@ -933,8 +933,8 @@ pub struct C4PlantState {
 /// intentionally independent from this optional component.
 ///
 /// Optional component on `GameEntity` — present on vehicles, ships, and
-/// voxel-bodied buildings; `None` for infantry, aircraft, SHP-bodied
-/// buildings.
+/// voxel-bodied buildings; `None` for infantry and SHP-bodied buildings, and
+/// for aircraft until `FootClass::Crash` sets their spin rates.
 #[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 pub struct RockingState {
     /// Roll angle, rad. Positive sign matches AngleRotatedSideways convention.

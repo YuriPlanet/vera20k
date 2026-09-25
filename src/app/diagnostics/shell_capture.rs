@@ -23,6 +23,7 @@ use crate::ui::main_menu_shell::MainMenuMovieBase;
 use crate::ui::shell::static_reveal::Kind1PaintWindow;
 
 mod movies;
+mod score;
 mod skirmish;
 pub(crate) use skirmish::PresentedShell;
 
@@ -72,6 +73,17 @@ const CHECKPOINT_SKIRMISH_0X102_ENTRY_PREFIX: &str = "skirmish-0x102-entry-tick-
 const CHECKPOINT_SKIRMISH_0X6B_STEADY: &str = "skirmish-0x6b-steady";
 const CHECKPOINT_SKIRMISH_0X6B_ENTRY_PREFIX: &str = "skirmish-0x6b-entry-tick-";
 const CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN: &str = "skirmish-0x102-choose-map-return";
+const CHECKPOINT_SKIRMISH_START_BLANK: &str = "skirmish-start-blank";
+const CHECKPOINT_SKIRMISH_LOADING_FIRST_FRAME: &str = "skirmish-loading-first-frame";
+const CHECKPOINT_SKIRMISH_0X6B_EJECT_BOX: &str = "skirmish-0x6b-eject-box";
+const CHECKPOINT_SKIRMISH_AFTER_QUIT: &str = "skirmish-after-quit";
+const CHECKPOINT_SKIRMISH_DEFEAT_SCORE: &str = "skirmish-defeat-score";
+const CHECKPOINT_SKIRMISH_DEFEAT_CONTINUE: &str = "skirmish-defeat-continue";
+const CHECKPOINT_SCORE_0X108_STEADY: &str = "score-0x108-steady";
+const CHECKPOINT_SCORE_0X108_ENTRY_PREFIX: &str = "score-0x108-entry-tick-";
+const CHECKPOINT_SCORE_0X108_HOVER_CONTINUE: &str = "score-0x108-hover-continue";
+const CHECKPOINT_SCORE_0X108_LEAVE_CONTINUE: &str = "score-0x108-leave-continue";
+const CHECKPOINT_SCORE_0X108_SLIDE_OUT_PREFIX: &str = "score-0x108-slide-out-tick-";
 const EXPECTED_WIDTH: u32 = 800;
 const EXPECTED_HEIGHT: u32 = 600;
 const EXPECTED_CURSOR_X: u32 = 400;
@@ -170,6 +182,34 @@ pub enum ShellCaptureCheckpoint {
     Skirmish0x6BEntry(u32),
     /// Cancel on `0x6B`, then `0x102` settled after its new entry slide.
     Skirmish0x102ChooseMapReturn,
+    /// Start Game on `0x102`: the black frame before the loading screen.
+    SkirmishStartBlank,
+    /// Start Game on `0x102`: the loading screen's first frame. The map load
+    /// then runs to the end before the process exits.
+    SkirmishLoadingFirstFrame,
+    /// Use Map on `0x6B`'s first map with AI rows that do not fit: the eject
+    /// box over the empty backdrop.
+    Skirmish0x6BEjectBox,
+    /// Start Game, a short game, Leave through the in-game abort: the new
+    /// `0x102` the shell resumes on, settled.
+    SkirmishAfterQuit,
+    /// Start Game, deploy the MCV and sell the Construction Yard (Short
+    /// Game): the score page after the real defeat, settled.
+    SkirmishDefeatScore,
+    /// The same, then Continue: the new `0x102`, settled.
+    SkirmishDefeatContinue,
+    /// The score dialog `0x108` with the retail comparison game's values,
+    /// settled.
+    Score0x108Steady,
+    /// Its entry slide held at one tick (`score-0x108-entry-tick-<N>`).
+    Score0x108Entry(u32),
+    /// Settled with the pointer on Continue.
+    Score0x108HoverContinue,
+    /// The pointer moved from Continue onto the bare art.
+    Score0x108LeaveContinue,
+    /// Continue pressed, its teardown slide held at one tick
+    /// (`score-0x108-slide-out-tick-<N>`).
+    Score0x108SlideOut(u32),
 }
 
 impl ShellCaptureCheckpoint {
@@ -233,6 +273,16 @@ impl ShellCaptureCheckpoint {
                 ShellSlideKind::WolWelcome,
                 Self::Wol0x10EEntry,
             ),
+            (
+                CHECKPOINT_SCORE_0X108_ENTRY_PREFIX,
+                ShellSlideKind::Score,
+                Self::Score0x108Entry,
+            ),
+            (
+                CHECKPOINT_SCORE_0X108_SLIDE_OUT_PREFIX,
+                ShellSlideKind::Score,
+                Self::Score0x108SlideOut,
+            ),
         ] {
             let Some(tick) = value.strip_prefix(prefix) else {
                 continue;
@@ -257,6 +307,15 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_SKIRMISH_0X102_STEADY => Ok(Self::Skirmish0x102Steady),
             CHECKPOINT_SKIRMISH_0X6B_STEADY => Ok(Self::Skirmish0x6BSteady),
             CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN => Ok(Self::Skirmish0x102ChooseMapReturn),
+            CHECKPOINT_SKIRMISH_START_BLANK => Ok(Self::SkirmishStartBlank),
+            CHECKPOINT_SKIRMISH_LOADING_FIRST_FRAME => Ok(Self::SkirmishLoadingFirstFrame),
+            CHECKPOINT_SKIRMISH_0X6B_EJECT_BOX => Ok(Self::Skirmish0x6BEjectBox),
+            CHECKPOINT_SKIRMISH_AFTER_QUIT => Ok(Self::SkirmishAfterQuit),
+            CHECKPOINT_SKIRMISH_DEFEAT_SCORE => Ok(Self::SkirmishDefeatScore),
+            CHECKPOINT_SKIRMISH_DEFEAT_CONTINUE => Ok(Self::SkirmishDefeatContinue),
+            CHECKPOINT_SCORE_0X108_STEADY => Ok(Self::Score0x108Steady),
+            CHECKPOINT_SCORE_0X108_HOVER_CONTINUE => Ok(Self::Score0x108HoverContinue),
+            CHECKPOINT_SCORE_0X108_LEAVE_CONTINUE => Ok(Self::Score0x108LeaveContinue),
             CHECKPOINT_MOVIES_0X101_STEADY => Ok(Self::MoviesPage0x101Steady),
             CHECKPOINT_MAIN_MENU_0XE2_EXIT_CONFIRM => Ok(Self::MainMenu0xE2ExitConfirm),
             CHECKPOINT_MOVIE_LIST_0X129_STEADY => Ok(Self::MovieList0x129Steady),
@@ -322,6 +381,17 @@ impl ShellCaptureCheckpoint {
             Self::Skirmish0x6BSteady => CHECKPOINT_SKIRMISH_0X6B_STEADY,
             Self::Skirmish0x6BEntry(_) => "skirmish-0x6b-entry",
             Self::Skirmish0x102ChooseMapReturn => CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN,
+            Self::SkirmishStartBlank => CHECKPOINT_SKIRMISH_START_BLANK,
+            Self::SkirmishLoadingFirstFrame => CHECKPOINT_SKIRMISH_LOADING_FIRST_FRAME,
+            Self::Skirmish0x6BEjectBox => CHECKPOINT_SKIRMISH_0X6B_EJECT_BOX,
+            Self::SkirmishAfterQuit => CHECKPOINT_SKIRMISH_AFTER_QUIT,
+            Self::SkirmishDefeatScore => CHECKPOINT_SKIRMISH_DEFEAT_SCORE,
+            Self::SkirmishDefeatContinue => CHECKPOINT_SKIRMISH_DEFEAT_CONTINUE,
+            Self::Score0x108Steady => CHECKPOINT_SCORE_0X108_STEADY,
+            Self::Score0x108Entry(_) => "score-0x108-entry",
+            Self::Score0x108HoverContinue => CHECKPOINT_SCORE_0X108_HOVER_CONTINUE,
+            Self::Score0x108LeaveContinue => CHECKPOINT_SCORE_0X108_LEAVE_CONTINUE,
+            Self::Score0x108SlideOut(_) => "score-0x108-slide-out",
         }
     }
 
@@ -798,6 +868,7 @@ pub(crate) struct ShellCaptureSession {
     entry_sequence: Option<EntrySequenceState>,
     skirmish: Option<skirmish::SkirmishCapture>,
     movies: Option<movies::MoviesCapture>,
+    score: Option<score::ScoreCapture>,
     outcome: Option<std::result::Result<(), String>>,
 }
 
@@ -822,6 +893,24 @@ impl ShellCaptureSession {
             ShellCaptureCheckpoint::Skirmish0x102ChooseMapReturn => Some(
                 skirmish::SkirmishCapture::chooser(skirmish::ChooserTarget::Return),
             ),
+            ShellCaptureCheckpoint::SkirmishStartBlank => Some(skirmish::SkirmishCapture::loading(
+                skirmish::LoadingTarget::Blank,
+            )),
+            ShellCaptureCheckpoint::SkirmishLoadingFirstFrame => Some(
+                skirmish::SkirmishCapture::loading(skirmish::LoadingTarget::FirstFrame),
+            ),
+            ShellCaptureCheckpoint::Skirmish0x6BEjectBox => Some(
+                skirmish::SkirmishCapture::chooser(skirmish::ChooserTarget::Eject),
+            ),
+            ShellCaptureCheckpoint::SkirmishAfterQuit => Some(skirmish::SkirmishCapture::loading(
+                skirmish::LoadingTarget::AfterQuit,
+            )),
+            ShellCaptureCheckpoint::SkirmishDefeatScore => Some(
+                skirmish::SkirmishCapture::loading(skirmish::LoadingTarget::DefeatScore),
+            ),
+            ShellCaptureCheckpoint::SkirmishDefeatContinue => Some(
+                skirmish::SkirmishCapture::loading(skirmish::LoadingTarget::DefeatContinue),
+            ),
             ShellCaptureCheckpoint::Skirmish0x102Entry(tick) => {
                 Some(skirmish::SkirmishCapture::entry(tick))
             }
@@ -831,6 +920,21 @@ impl ShellCaptureSession {
             .checkpoint
             .movies_target()
             .map(movies::MoviesCapture::new);
+        let score = match request.checkpoint {
+            ShellCaptureCheckpoint::Score0x108Steady => Some(score::ScoreTarget::Steady),
+            ShellCaptureCheckpoint::Score0x108Entry(tick) => Some(score::ScoreTarget::Entry(tick)),
+            ShellCaptureCheckpoint::Score0x108HoverContinue => {
+                Some(score::ScoreTarget::HoverContinue)
+            }
+            ShellCaptureCheckpoint::Score0x108LeaveContinue => {
+                Some(score::ScoreTarget::LeaveContinue)
+            }
+            ShellCaptureCheckpoint::Score0x108SlideOut(tick) => {
+                Some(score::ScoreTarget::SlideOut(tick))
+            }
+            _ => None,
+        }
+        .map(score::ScoreCapture::new);
         Self {
             request,
             started_at: None,
@@ -839,6 +943,7 @@ impl ShellCaptureSession {
             entry_sequence,
             skirmish,
             movies,
+            score,
             outcome: None,
         }
     }
@@ -866,7 +971,9 @@ impl ShellCaptureSession {
     }
 
     fn timeout(&self) -> Duration {
-        if self.skirmish.is_some() || self.movies.is_some() {
+        if let Some(capture) = &self.skirmish {
+            capture.timeout()
+        } else if self.movies.is_some() || self.score.is_some() {
             Duration::from_secs(60)
         } else {
             CAPTURE_TIMEOUT
@@ -875,6 +982,9 @@ impl ShellCaptureSession {
 
     fn steady_ready(&self, state: &AppState) -> Result<bool> {
         if let Some(capture) = &self.movies {
+            return capture.ready(state);
+        }
+        if let Some(capture) = &self.score {
             return capture.ready(state);
         }
         match &self.skirmish {
@@ -892,6 +1002,9 @@ impl ShellCaptureSession {
             capture.after_present(state, rendered, self.frames_seen)?;
         }
         if let Some(capture) = &mut self.movies {
+            capture.after_present(state, rendered, self.frames_seen)?;
+        }
+        if let Some(capture) = &mut self.score {
             capture.after_present(state, rendered, self.frames_seen)?;
         }
         Ok(())
@@ -1086,20 +1199,26 @@ impl ShellCaptureSession {
         let frame_path = self.request.output_dir().join(FRAME_FILE_NAME);
         write_new_file(&frame_path, pixels)?;
 
-        let mut manifest_bytes = match (&self.skirmish, &self.movies) {
-            (Some(capture), _) => serde_json::to_vec_pretty(&capture.manifest(
+        let mut manifest_bytes = match (&self.skirmish, &self.movies, &self.score) {
+            (Some(capture), _, _) => serde_json::to_vec_pretty(&capture.manifest(
                 &self.request,
                 surface_format,
                 pixels,
                 self.frames_seen,
             )),
-            (None, Some(capture)) => serde_json::to_vec_pretty(&capture.manifest(
+            (None, Some(capture), _) => serde_json::to_vec_pretty(&capture.manifest(
                 &self.request,
                 surface_format,
                 pixels,
                 self.frames_seen,
             )),
-            (None, None) => serde_json::to_vec_pretty(&capture_manifest(
+            (None, None, Some(capture)) => serde_json::to_vec_pretty(&capture.manifest(
+                &self.request,
+                surface_format,
+                pixels,
+                self.frames_seen,
+            )),
+            (None, None, None) => serde_json::to_vec_pretty(&capture_manifest(
                 &self.request,
                 surface_format,
                 pixels.len() as u64,

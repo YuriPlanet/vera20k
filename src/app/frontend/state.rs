@@ -109,12 +109,14 @@ pub(crate) struct FrontendState {
     /// Single Player's Load Saved Game `0xB7` while its route shows.
     pub(crate) load_saved_game:
         Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,
-    /// End-of-match score presentation, decorated from the sim-owned terminal
-    /// snapshot and held until the player leaves the screen. `None` for result
-    /// screens with no native score analogue (a load failure, a trigger-driven
-    /// campaign end), which keep the non-art fallback.
-    pub(crate) score_screen: Option<crate::ui::score_shell::ScoreScreenModel>,
-    pub(crate) score_shell_state: crate::ui::score_shell::ScoreShellState,
+    /// The score dialog `0x108` after a finished match, decorated from the
+    /// sim-owned terminal snapshot and held until Continue's teardown. `None`
+    /// for result screens with no native score analogue (a load failure, a
+    /// trigger-driven campaign end), which keep the non-art fallback.
+    pub(crate) score_page: Option<crate::ui::score_shell::ScorePage>,
+    /// `0x108`'s side art, loaded for the open page (`0x0072D730`) and
+    /// released with it (`0x0072D780`).
+    pub(crate) score_art: Option<crate::render::main_menu_shell_chrome::ScoreArt>,
     /// Number of matches finished this session — the score screen's `Game: n`.
     /// gamemd increments the same counter as it tears the scenario down.
     pub(crate) finished_game_count: u32,

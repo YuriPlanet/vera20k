@@ -116,9 +116,13 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // mode at 00683DF3. Loading artwork stays at shell size; successful tactical
     // installation must size its camera/shroud against the applied game mode.
     crate::app::App::enter_game_window_mode(state);
+    crate::app::loading::pump::present_game_mode_blank(state);
     crate::app::reset_scenario_exit_runtime(state);
     let startup = result.scenario.startup;
     let returns_scenario_rng_to_offline_shell = startup.launch_session().is_some();
+    state.match_state.match_presentation.local_player_handle = startup
+        .launch_session()
+        .map(|launch| launch.player_name.clone());
     // A loaded world is not timed until the launch handoff actually reaches
     // InGame (SpawnPick remains outside the scenario elapsed span).
     state.match_state.scenario_elapsed_clock.reset();
@@ -294,16 +298,8 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     );
     state.match_state.match_presentation.message_clock =
         crate::ui::messages::PauseAwareClock::default();
-    let map_title: &str = state
-        .match_state
-        .map_basic
-        .name
-        .as_deref()
-        .unwrap_or("Unknown Map");
-    state
-        .platform
-        .window
-        .set_title(&format!("RA2 - {}", map_title));
+    // The window keeps its title: gamemd names it once at CreateWindowExA
+    // (`0x00777CC5`) and imports no SetWindowText.
     state.platform.window.set_cursor_visible(
         state
             .match_state

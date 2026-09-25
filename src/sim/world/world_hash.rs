@@ -1626,11 +1626,11 @@ impl Simulation {
             }
             if schema.includes(HashFeature::SlaveManager) {
                 if let Some(manager) = entity.slave_manager.as_ref() {
-                    b"slave-manager-v208".hash(hasher);
+                    b"slave-manager-v209".hash(hasher);
                     manager.hash(hasher);
                 }
                 if entity.slave.owner().is_some() || !entity.slave.cargo().is_empty() {
-                    b"slave-v208".hash(hasher);
+                    b"slave-v209".hash(hasher);
                     entity.slave.owner().hash(hasher);
                     entity.slave.cargo().len().hash(hasher);
                     for bale in entity.slave.cargo() {
@@ -1670,6 +1670,10 @@ impl Simulation {
                 entity.in_playfield.hash(hasher);
             }
             entity.move_sound_active.hash(hasher);
+            if schema.includes(HashFeature::AircraftCrash) {
+                entity.crashing.hash(hasher);
+                entity.crashing_seen.hash(hasher);
+            }
             if schema.includes(HashFeature::TechnoMissionOnly) {
                 entity.is_mission_only().hash(hasher);
             }
@@ -2503,6 +2507,9 @@ fn hash_locomotor_payload(
                 state.moving().hash(hasher);
                 state.landing_effect_latched().hash(hasher);
                 state.airport_bound().hash(hasher);
+            }
+            if schema.includes(HashFeature::AircraftCrash) {
+                state.fall_counter().hash(hasher);
             }
         }
         LocomotorRuntimePayload::Jumpjet(state) => {

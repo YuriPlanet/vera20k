@@ -162,6 +162,7 @@ pub(crate) fn advance_ship_rocking(rocking: &mut RockingState, type_supports_shi
 pub fn tick(
     entities: &mut EntityStore,
     rules: &RuleSet,
+    interner: &crate::sim::intern::StringInterner,
     self_destruct_hook: &mut dyn SelfDestructHook,
 ) {
     let keys = entities.keys_sorted();
@@ -181,9 +182,16 @@ pub fn tick(
         // 1–2: mutate the rocking state. The &mut borrow is scoped to this
         // block so step 3 can take a fresh &mut GameEntity for the hook.
         {
+            let crashing = entity.crashing;
+            let balloon_hover = balloon_hover_type(entity, rules, interner);
             let rocking = entity.rocking.as_mut().unwrap();
             if rocking.is_ship_rocking {
                 advance_ship_rocking(rocking, supports_ship_rock);
+            } else if crashing {
+                // A crashing object spins by the rates Crash drew and returns:
+                // no damping and no wide-amplitude self-destruct.
+                advance_crash_spin(rocking, balloon_hover);
+                continue;
             } else {
                 // L8 forwards override (±π/10 during building-crush) is DEFERRED
                 // — the gate it depends on isn't wired yet. Both axes use ±π/4.
@@ -208,6 +216,40 @@ pub fn tick(
         // 3: wide-amplitude self-destruct check [L30].
         crate::sim::rocking::self_destruct::check_and_fire(entity, self_destruct_hook);
     }
+}
+
+/// `TechnoClass::RockingUpdate @ 0x0070B570`'s crashing branch
+/// (`0x0070B63D..0x0070B6FF`, IsCrashing `+0x425`): both angles add the rates
+/// `FootClass::Crash` drew (`+0x32C += +0x334`, then `+0x328 += +0x330`), and
+/// only a `BalloonHover=` type (`+0xD6A`) clamps them: forwards and sideways
+/// from below at -π/4, sideways from above at +π/4. The branch returns before
+/// the damper and the wide-amplitude C4 kill.
+///
+/// Native keeps f32 angles; VERA SimFixed. The angles only orient the crashing
+/// voxel (`FlyLocomotionClass` Draw_Matrix `0x004CF610`), so the sub-quantum
+/// difference is not visible. Evidence: `tools/spatial_oracle/aircraft_crash`
+/// `rocking` rows.
+pub(crate) fn advance_crash_spin(rocking: &mut RockingState, balloon_hover: bool) {
+    rocking.angle_forwards += rocking.vel_forwards;
+    rocking.angle_sideways += rocking.vel_sideways;
+    if balloon_hover {
+        rocking.angle_forwards = rocking.angle_forwards.max(-SATURATION_PI4);
+        rocking.angle_sideways = rocking
+            .angle_sideways
+            .max(-SATURATION_PI4)
+            .min(SATURATION_PI4);
+    }
+}
+
+fn balloon_hover_type(
+    entity: &GameEntity,
+    rules: &RuleSet,
+    interner: &crate::sim::intern::StringInterner,
+) -> bool {
+    entity.crashing
+        && rules
+            .object(interner.resolve(entity.type_ref()))
+            .is_some_and(|object| object.balloon_hover)
 }
 
 /// Whether the entity currently has an active movement path. Used to choose

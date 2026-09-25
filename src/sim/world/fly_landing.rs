@@ -31,6 +31,15 @@ impl Simulation {
         e.air_spatial_enter_order = order;
     }
 
+    /// `AircraftTracker::Remove @ 0x004135D0`: the Fly leaves the airborne
+    /// index at its touchdown or its crash impact.
+    pub(crate) fn remove_fly_air_tracker(&mut self, id: u64) {
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.air_spatial_bucket = None;
+            entity.air_spatial_enter_order = 0;
+        }
+    }
+
     pub(crate) fn finish_fly_takeoff_entry(&mut self, id: u64, rules: Option<&RuleSet>) {
         self.register_fly_air_tracker(id);
         let Some(e) = self.substrate.entities.get_mut(id) else {
@@ -236,11 +245,10 @@ impl Simulation {
             }
         }
         self.set_fly_owner_height(id, base);
+        self.remove_fly_air_tracker(id);
         let entity = self.substrate.entities.get_mut(id).unwrap();
         let loco = entity.locomotor.as_mut().unwrap();
         loco.fly_runtime_mut().unwrap().finish_landing();
-        entity.air_spatial_bucket = None;
-        entity.air_spatial_enter_order = 0;
         entity.foot_speed.applied_fraction = SIM_ZERO;
         loco.speed_fraction = SIM_ZERO;
         loco.fly_current_speed = SIM_ZERO;

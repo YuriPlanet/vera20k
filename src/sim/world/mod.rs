@@ -16,6 +16,7 @@
 
 pub(crate) mod authored_load_host;
 mod bridge_hut_scatter;
+mod crash;
 pub(crate) mod bridge_orchestrator;
 pub(crate) mod building_anim;
 pub mod edge_cell;
@@ -70,6 +71,8 @@ mod aircraft_deployment_tests;
 mod damage_consequence_tests;
 #[cfg(test)]
 mod eva_dispatch_tests;
+#[cfg(test)]
+mod crash_tests;
 #[cfg(test)]
 mod fly_height_tests;
 #[cfg(test)]
@@ -310,6 +313,10 @@ pub enum SimSoundEvent {
     /// A decay's or Limbo's release of that loop (`SoundEvent::Release @
     /// 0x00406060`): it stops repeating and plays out.
     GattlingLoopRelease { owner: u64 },
+    /// `SoundEvent::Release @ 0x00406060` on an object's own sound handle
+    /// (`FootClass+0x544`, keyed by the object's id) as the object goes: the
+    /// crash sound it holds plays out (`FootClass::~FootClass`, `0x004D3677`).
+    ObjectSoundReleased { owner: u64 },
     /// Native Fly AuxSound1/AuxSound2 at the phase callback world coordinate.
     AircraftPhase {
         sound_id: InternedId,
@@ -3306,7 +3313,9 @@ impl Simulation {
             entity,
             self.session.binary_frame,
         );
+        // `0x004DAA38`/`0x004DAA3E`: falling (`+0x8D`) or crashing (`+0x425`).
         let falling_or_crashing = entity.object_is_falling_down != 0
+            || entity.crashing
             || entity.parachute_state.is_some()
             || entity.locomotor.as_ref().is_some_and(|locomotor| {
                 // A Jumpjet in its descent state (the only locomotor with a
@@ -3463,6 +3472,24 @@ impl Simulation {
     /// `MapClass::Set_Clipped_LocalSize @ 0x00567230` establishes the five
     /// predicate fields. Size height is retained separately because later
     /// action-40 writers normalize another raw LocalSize against the same Size.
+    /// `MapClass::In_Bounds @ 0x00568300` — the active diamond test against
+    /// `MapClass+0xF4` (size width) and `MapClass+0xF8` (size height). No map
+    /// size (a headless fixture) admits nothing.
+    pub(crate) fn map_cell_in_bounds(&self, cell: (i16, i16)) -> bool {
+        let (Some(bounds), Some(height)) = (self.playfield_bounds, self.playfield_size_height)
+        else {
+            return false;
+        };
+        let x = i32::from(cell.0);
+        let y = i32::from(cell.1);
+        let sum = x.wrapping_add(y);
+        let width = bounds.base;
+        width < sum
+            && x.wrapping_sub(y) < width
+            && y.wrapping_sub(x) < width
+            && sum <= width.wrapping_add(height.wrapping_mul(2))
+    }
+
     pub(crate) fn install_playfield_from_map_header(
         &mut self,
         header: &crate::map::map_file::MapHeader,
@@ -4385,12 +4412,17 @@ impl Simulation {
 
         // `TechnoClass::ChangeOwner` calls `SpawnManagerClass::Kill_All_Spawns`
         // before the house swap: a mind-controlled V3/Dreadnought/Boomer loses
-        // the pool it built for its old owner. Run first so the children are
-        // destroyed while still attributed to the previous house. The owner is
-        // still alive here, so the slots re-arm with a zero regen wait and the
-        // new owner's pool is rebuilt on the next manager pass.
+        // the pool it built for its old owner, and a Carrier's airborne
+        // Hornets crash. Run first so the children are destroyed while still
+        // attributed to the previous house. The owner is still alive here, so
+        // the slots re-arm with a zero regen wait and the new owner's pool is
+        // rebuilt on the next manager pass.
         if has_spawn_manager {
-            crate::sim::spawn_manager::kill_all_spawns(self, stable_id);
+            crate::sim::spawn_manager::kill_all_spawns_with_context(
+                self,
+                stable_id,
+                rules.map_or_else(UninitContext::default, UninitContext::with_rules),
+            );
         }
         // `BuildingClass::ChangeOwner @ 0x004482AA..0x004482F9`, still on the
         // OLD owner: a `MultiplayPassive` old owner and a non-zero
@@ -6138,7 +6170,12 @@ impl Simulation {
         // independently.
         if let (Some(rules), Some(_terrain)) = (rules, self.resolved_terrain.as_ref()) {
             let mut hook = crate::sim::rocking::self_destruct::NoopSelfDestruct;
-            crate::sim::rocking::tick(&mut self.substrate.entities, rules, &mut hook);
+            crate::sim::rocking::tick(
+                &mut self.substrate.entities,
+                rules,
+                &self.interner,
+                &mut hook,
+            );
         }
 
         // Aircraft missions ran in their own LogicVector slots during the live

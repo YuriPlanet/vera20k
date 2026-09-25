@@ -790,6 +790,13 @@ pub struct GeneralRules {
     /// ChronoOutSound=` (stock ships `ChronoMinerTeleport`). A genuinely-absent
     /// key yields `None` = no sound, not a fabricated fallback.
     pub chrono_out_sound: Option<String>,
+    /// `[AudioVisual] ImpactWaterSound=` / `ImpactLandSound=`
+    /// (`RulesClass+0x200` / `+0x204`, `RulesClass::ReadAudioVisual`
+    /// `0x00669924` / `0x00669965`): a crash impact's fallback cue when the
+    /// type names none (`FlyLocomotionClass::Process 0x004CD83E`/`0x004CD85C`).
+    /// Stock: `ExplosionWaterLarge` and empty (silence).
+    pub impact_water_sound: Option<String>,
+    pub impact_land_sound: Option<String>,
     /// `[AudioVisual] BombTickingSound=` (`RulesClass+0x20C`): the looping
     /// tick at a bombed object (`BombListClass::UpdateAll @ 0x00438BF0`).
     pub bomb_ticking_sound: Option<String>,
@@ -1398,6 +1405,8 @@ impl Default for GeneralRules {
             fallback_coefficient: SimFixed::lit("0.1"),
             chrono_in_sound: Some("ChronoMinerTeleport".to_string()),
             chrono_out_sound: Some("ChronoMinerTeleport".to_string()),
+            impact_water_sound: None,
+            impact_land_sound: None,
             bomb_ticking_sound: None,
             bomb_attach_sound: None,
             damage_delay_minutes: 1.0,
@@ -2338,6 +2347,14 @@ impl GeneralRules {
                 .filter(|s| !s.is_empty()),
             chrono_out_sound: audio_visual
                 .and_then(|s| s.get("ChronoOutSound"))
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
+            impact_water_sound: audio_visual
+                .and_then(|s| s.get("ImpactWaterSound"))
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
+            impact_land_sound: audio_visual
+                .and_then(|s| s.get("ImpactLandSound"))
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
             bomb_ticking_sound,

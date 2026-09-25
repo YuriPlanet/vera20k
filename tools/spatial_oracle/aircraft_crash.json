@@ -1,0 +1,9563 @@
+{
+  "crash": [
+    {
+      "calls": [
+        {
+          "arg": 3,
+          "call": "transmit_first"
+        },
+        {
+          "call": "stun"
+        },
+        {
+          "arg": 4660,
+          "call": "kill_passengers"
+        },
+        {
+          "call": "announce_expired",
+          "removed": 0
+        }
+      ],
+      "crashing": 1,
+      "draws": [
+        [
+          0,
+          2147483646
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2147483646
+        ]
+      ],
+      "forwards": 0.07061682641506195,
+      "forwards_bits": "3d909f8e",
+      "health": 0,
+      "input": {
+        "attacker": 4660,
+        "health": 0,
+        "name": "dead_seed1",
+        "seed": 1
+      },
+      "next_random": 2901129938,
+      "returned": true,
+      "sideways": -0.24146468937397003,
+      "sideways_bits": "be774285"
+    },
+    {
+      "calls": [
+        {
+          "arg": 3,
+          "call": "transmit_first"
+        },
+        {
+          "call": "stun"
+        },
+        {
+          "arg": 4660,
+          "call": "kill_passengers"
+        },
+        {
+          "call": "announce_expired",
+          "removed": 0
+        }
+      ],
+      "crashing": 1,
+      "draws": [
+        [
+          0,
+          2147483646
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2147483646
+        ]
+      ],
+      "forwards": 0.06871462613344193,
+      "forwards_bits": "3d8cba41",
+      "health": 0,
+      "input": {
+        "attacker": 4660,
+        "health": 0,
+        "name": "dead_seed2",
+        "seed": 2
+      },
+      "next_random": 3532992885,
+      "returned": true,
+      "sideways": 0.14430928230285645,
+      "sideways_bits": "3e13c5d0"
+    },
+    {
+      "calls": [
+        {
+          "arg": 3,
+          "call": "transmit_first"
+        },
+        {
+          "call": "stun"
+        },
+        {
+          "arg": 4660,
+          "call": "kill_passengers"
+        },
+        {
+          "call": "announce_expired",
+          "removed": 0
+        }
+      ],
+      "crashing": 1,
+      "draws": [
+        [
+          0,
+          2147483646
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2147483646
+        ]
+      ],
+      "forwards": 0.020780442282557487,
+      "forwards_bits": "3caa3bbf",
+      "health": 0,
+      "input": {
+        "attacker": 4660,
+        "health": 0,
+        "name": "dead_seed3",
+        "seed": 3
+      },
+      "next_random": 2728140612,
+      "returned": true,
+      "sideways": -0.19032736122608185,
+      "sideways_bits": "be42e52d"
+    },
+    {
+      "calls": [
+        {
+          "arg": 3,
+          "call": "transmit_first"
+        },
+        {
+          "call": "stun"
+        },
+        {
+          "arg": 4660,
+          "call": "kill_passengers"
+        },
+        {
+          "call": "announce_expired",
+          "removed": 0
+        }
+      ],
+      "crashing": 1,
+      "draws": [
+        [
+          0,
+          2147483646
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2147483646
+        ]
+      ],
+      "forwards": 0.03765039145946503,
+      "forwards_bits": "3d1a374c",
+      "health": 0,
+      "input": {
+        "attacker": 4660,
+        "health": 0,
+        "name": "dead_seed4",
+        "seed": 4
+      },
+      "next_random": 2149062086,
+      "returned": true,
+      "sideways": -0.1712687611579895,
+      "sideways_bits": "be2f6114"
+    },
+    {
+      "calls": [
+        {
+          "arg": 3,
+          "call": "transmit_first"
+        },
+        {
+          "call": "stun"
+        },
+        {
+          "arg": 4660,
+          "call": "kill_passengers"
+        },
+        {
+          "call": "announce_expired",
+          "removed": 0
+        }
+      ],
+      "crashing": 1,
+      "draws": [
+        [
+          0,
+          2147483646
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2147483646
+        ]
+      ],
+      "forwards": 0.062464095652103424,
+      "forwards_bits": "3d7fda5a",
+      "health": 0,
+      "input": {
+        "attacker": 4660,
+        "health": 0,
+        "name": "dead_seed5",
+        "seed": 5
+      },
+      "next_random": 2445984281,
+      "returned": true,
+      "sideways": 0.12796272337436676,
+      "sideways_bits": "3e0308a9"
+    },
+    {
+      "calls": [
+        {
+          "arg": 3,
+          "call": "transmit_first"
+        },
+        {
+          "call": "stun"
+        },
+        {
+          "arg": 4660,
+          "call": "kill_passengers"
+        },
+        {
+          "call": "announce_expired",
+          "removed": 0
+        }
+      ],
+      "crashing": 1,
+      "draws": [
+        [
+          0,
+          2147483646
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2147483646
+        ]
+      ],
+      "forwards": 0.0788973942399025,
+      "forwards_bits": "3da194f5",
+      "health": 0,
+      "input": {
+        "attacker": 4660,
+        "health": 0,
+        "name": "dead_seed6",
+        "seed": 6
+      },
+      "next_random": 4149868777,
+      "returned": true,
+      "sideways": -0.20011034607887268,
+      "sideways_bits": "be4ce9ba"
+    },
+    {
+      "calls": [
+        {
+          "arg": 3,
+          "call": "transmit_first"
+        },
+        {
+          "call": "stun"
+        },
+        {
+          "arg": 4660,
+          "call": "kill_passengers"
+        },
+        {
+          "call": "announce_expired",
+          "removed": 0
+        }
+      ],
+      "crashing": 1,
+      "draws": [
+        [
+          0,
+          2147483646
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2147483646
+        ]
+      ],
+      "forwards": 0.09161750227212906,
+      "forwards_bits": "3dbba1f5",
+      "health": 0,
+      "input": {
+        "attacker": 4660,
+        "health": 0,
+        "name": "dead_seed7",
+        "seed": 7
+      },
+      "next_random": 907752771,
+      "returned": true,
+      "sideways": 0.14680542051792145,
+      "sideways_bits": "3e165429"
+    },
+    {
+      "calls": [
+        {
+          "arg": 3,
+          "call": "transmit_first"
+        },
+        {
+          "call": "stun"
+        },
+        {
+          "arg": 4660,
+          "call": "kill_passengers"
+        },
+        {
+          "call": "announce_expired",
+          "removed": 0
+        }
+      ],
+      "crashing": 1,
+      "draws": [
+        [
+          0,
+          2147483646
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2147483646
+        ]
+      ],
+      "forwards": 0.048820558935403824,
+      "forwards_bits": "3d47f811",
+      "health": 0,
+      "input": {
+        "attacker": 4660,
+        "health": 0,
+        "name": "dead_seed8",
+        "seed": 8
+      },
+      "next_random": 2827898163,
+      "returned": true,
+      "sideways": -0.12499497085809708,
+      "sideways_bits": "bdfffd5d"
+    },
+    {
+      "calls": [
+        {
+          "arg": 3,
+          "call": "transmit_first"
+        },
+        {
+          "call": "stun"
+        },
+        {
+          "arg": 4660,
+          "call": "kill_passengers"
+        },
+        {
+          "call": "announce_expired",
+          "removed": 0
+        }
+      ],
+      "crashing": 1,
+      "draws": [
+        [
+          0,
+          2147483646
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2147483646
+        ]
+      ],
+      "forwards": 0.07723025977611542,
+      "forwards_bits": "3d9e2ae6",
+      "health": 0,
+      "input": {
+        "attacker": 4660,
+        "health": 0,
+        "name": "dead_seed9",
+        "seed": 9
+      },
+      "next_random": 2316088118,
+      "returned": true,
+      "sideways": -0.19276344776153564,
+      "sideways_bits": "be4563c8"
+    },
+    {
+      "calls": [
+        {
+          "arg": 3,
+          "call": "transmit_first"
+        },
+        {
+          "call": "stun"
+        },
+        {
+          "arg": 4660,
+          "call": "kill_passengers"
+        },
+        {
+          "call": "announce_expired",
+          "removed": 0
+        }
+      ],
+      "crashing": 1,
+      "draws": [
+        [
+          0,
+          2147483646
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2147483646
+        ]
+      ],
+      "forwards": 0.04039645567536354,
+      "forwards_bits": "3d2576c1",
+      "health": 0,
+      "input": {
+        "attacker": 4660,
+        "health": 0,
+        "name": "dead_seed10",
+        "seed": 10
+      },
+      "next_random": 526625857,
+      "returned": true,
+      "sideways": 0.1947549432516098,
+      "sideways_bits": "3e476dd7"
+    },
+    {
+      "calls": [],
+      "crashing": 0,
+      "draws": [],
+      "forwards": 0.0,
+      "forwards_bits": "00000000",
+      "health": 0,
+      "input": {
+        "health": 0,
+        "name": "dead_grounded",
+        "xyz": [
+          13440,
+          13440,
+          0
+        ]
+      },
+      "next_random": 2025287381,
+      "returned": false,
+      "sideways": 0.0,
+      "sideways_bits": "00000000"
+    },
+    {
+      "calls": [
+        {
+          "arg": 3,
+          "call": "transmit_first"
+        },
+        {
+          "call": "stun"
+        },
+        {
+          "arg": 0,
+          "call": "kill_passengers"
+        },
+        {
+          "call": "announce_expired",
+          "removed": 0
+        }
+      ],
+      "crashing": 1,
+      "draws": [
+        [
+          0,
+          2147483646
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2147483646
+        ]
+      ],
+      "forwards": 0.03765039145946503,
+      "forwards_bits": "3d1a374c",
+      "health": 0,
+      "input": {
+        "health": 0,
+        "name": "dead_one_lepton",
+        "seed": 4,
+        "xyz": [
+          13440,
+          13440,
+          1
+        ]
+      },
+      "next_random": 2149062086,
+      "returned": true,
+      "sideways": -0.1712687611579895,
+      "sideways_bits": "be2f6114"
+    },
+    {
+      "calls": [
+        {
+          "arg": 3,
+          "call": "transmit_first"
+        },
+        {
+          "call": "stun"
+        },
+        {
+          "arg": 0,
+          "call": "kill_passengers"
+        },
+        {
+          "call": "announce_expired",
+          "removed": 0
+        }
+      ],
+      "crashing": 1,
+      "draws": [],
+      "forwards": 0.0,
+      "forwards_bits": "00000000",
+      "health": 0,
+      "input": {
+        "health": 0,
+        "i_know": 1,
+        "name": "dead_i_know",
+        "seed": 3
+      },
+      "next_random": 3440660545,
+      "returned": true,
+      "sideways": 0.0,
+      "sideways_bits": "00000000"
+    },
+    {
+      "calls": [
+        {
+          "arg": 0,
+          "call": "record_kill"
+        },
+        {
+          "arg": 3,
+          "call": "transmit_first"
+        },
+        {
+          "call": "stun"
+        },
+        {
+          "arg": 0,
+          "call": "kill_passengers"
+        },
+        {
+          "call": "announce_expired",
+          "removed": 0
+        }
+      ],
+      "crashing": 1,
+      "draws": [
+        [
+          0,
+          2147483646
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2147483646
+        ]
+      ],
+      "forwards": 0.062464095652103424,
+      "forwards_bits": "3d7fda5a",
+      "health": 0,
+      "input": {
+        "attacker": 0,
+        "health": 75,
+        "name": "live_seed5",
+        "seed": 5
+      },
+      "next_random": 2445984281,
+      "returned": true,
+      "sideways": 0.12796272337436676,
+      "sideways_bits": "3e0308a9"
+    },
+    {
+      "calls": [],
+      "crashing": 0,
+      "draws": [],
+      "forwards": 0.0,
+      "forwards_bits": "00000000",
+      "health": 75,
+      "input": {
+        "health": 75,
+        "name": "live_grounded",
+        "xyz": [
+          13440,
+          13440,
+          0
+        ]
+      },
+      "next_random": 2025287381,
+      "returned": false,
+      "sideways": 0.0,
+      "sideways_bits": "00000000"
+    }
+  ],
+  "draw_matrix": [
+    {
+      "input": {
+        "angles": [
+          0.0,
+          0.0
+        ],
+        "crashing": 1,
+        "facing": 0,
+        "name": "f0000_0.0_0.0"
+      },
+      "key": -1,
+      "matrix": [
+        "250d3000",
+        "bf800000",
+        "00000000",
+        "00000000",
+        "3f800000",
+        "250d3000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "3f800000",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          0.4,
+          0.0
+        ],
+        "crashing": 1,
+        "facing": 0,
+        "name": "f0000_0.4_0.0"
+      },
+      "key": -1,
+      "matrix": [
+        "250d3000",
+        "bf6bc13b",
+        "3ec78e62",
+        "00000000",
+        "3f800000",
+        "250205a1",
+        "a45c1dad",
+        "00000000",
+        "00000000",
+        "3ec78e62",
+        "3f6bc13b",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          0.0,
+          0.35
+        ],
+        "crashing": 1,
+        "facing": 0,
+        "name": "f0000_0.0_0.35"
+      },
+      "key": -1,
+      "matrix": [
+        "2504a3d0",
+        "bf800000",
+        "24418483",
+        "00000000",
+        "3f708066",
+        "250d3000",
+        "3eaf7139",
+        "00000000",
+        "beaf7139",
+        "00000000",
+        "3f708066",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          1.3,
+          -0.6
+        ],
+        "crashing": 1,
+        "facing": 0,
+        "name": "f0000_1.3_-0.6"
+      },
+      "key": -1,
+      "matrix": [
+        "3f0b3d40",
+        "be88ef74",
+        "3f4b9e66",
+        "00000000",
+        "3f535117",
+        "24170b1f",
+        "bf1080dc",
+        "00000000",
+        "3e1a973d",
+        "3f76ac9a",
+        "3e62117a",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          -2.9,
+          3.4
+        ],
+        "crashing": 1,
+        "facing": 0,
+        "name": "f0000_-2.9_3.4"
+      },
+      "key": -1,
+      "matrix": [
+        "bd7a7ee3",
+        "3f789091",
+        "3e6cdca0",
+        "00000000",
+        "bf777eef",
+        "a509163a",
+        "be82def3",
+        "00000000",
+        "be7e23c5",
+        "be750026",
+        "3f704ebc",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          7.5,
+          2.2
+        ],
+        "crashing": 1,
+        "facing": 0,
+        "name": "f0000_7.5_2.2"
+      },
+      "key": -1,
+      "matrix": [
+        "bf422791",
+        "beb1a76a",
+        "bf0d3e5f",
+        "00000000",
+        "bf16999d",
+        "2443f509",
+        "3f4f0417",
+        "00000000",
+        "be8fa935",
+        "3f701867",
+        "be510565",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          0.0,
+          0.0
+        ],
+        "crashing": 1,
+        "facing": 16384,
+        "name": "f4000_0.0_0.0"
+      },
+      "key": -1,
+      "matrix": [
+        "3f800000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "3f800000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "3f800000",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          0.4,
+          0.0
+        ],
+        "crashing": 1,
+        "facing": 16384,
+        "name": "f4000_0.4_0.0"
+      },
+      "key": -1,
+      "matrix": [
+        "3f800000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "3f6bc13b",
+        "bec78e62",
+        "00000000",
+        "00000000",
+        "3ec78e62",
+        "3f6bc13b",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          0.0,
+          0.35
+        ],
+        "crashing": 1,
+        "facing": 16384,
+        "name": "f4000_0.0_0.35"
+      },
+      "key": -1,
+      "matrix": [
+        "3f708066",
+        "00000000",
+        "3eaf7139",
+        "00000000",
+        "00000000",
+        "3f800000",
+        "00000000",
+        "00000000",
+        "beaf7139",
+        "00000000",
+        "3f708066",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          1.3,
+          -0.6
+        ],
+        "crashing": 1,
+        "facing": 16384,
+        "name": "f4000_1.3_-0.6"
+      },
+      "key": -1,
+      "matrix": [
+        "3f535118",
+        "00000000",
+        "bf1080dc",
+        "00000000",
+        "bf0b3d40",
+        "3e88ef74",
+        "bf4b9e66",
+        "00000000",
+        "3e1a973d",
+        "3f76ac9a",
+        "3e62117a",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          -2.9,
+          3.4
+        ],
+        "crashing": 1,
+        "facing": 16384,
+        "name": "f4000_-2.9_3.4"
+      },
+      "key": -1,
+      "matrix": [
+        "bf777ef0",
+        "80000000",
+        "be82def3",
+        "00000000",
+        "3d7a7ee3",
+        "bf789091",
+        "be6cdca0",
+        "00000000",
+        "be7e23c5",
+        "be750026",
+        "3f704ebc",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          7.5,
+          2.2
+        ],
+        "crashing": 1,
+        "facing": 16384,
+        "name": "f4000_7.5_2.2"
+      },
+      "key": -1,
+      "matrix": [
+        "bf16999e",
+        "00000000",
+        "3f4f0417",
+        "00000000",
+        "3f422791",
+        "3eb1a76a",
+        "3f0d3e5f",
+        "00000000",
+        "be8fa935",
+        "3f701867",
+        "be510565",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          0.0,
+          0.0
+        ],
+        "crashing": 1,
+        "facing": 25088,
+        "name": "f6200_0.0_0.0"
+      },
+      "key": -1,
+      "matrix": [
+        "3f354bfb",
+        "3f34bdcf",
+        "00000000",
+        "00000000",
+        "bf34bdcf",
+        "3f354bfb",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "3f800000",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          0.4,
+          0.0
+        ],
+        "crashing": 1,
+        "facing": 25088,
+        "name": "f6200_0.4_0.0"
+      },
+      "key": -1,
+      "matrix": [
+        "3f354bfb",
+        "3f2672a9",
+        "be8ce412",
+        "00000000",
+        "bf34bdcf",
+        "3f26f597",
+        "be8d52e5",
+        "00000000",
+        "00000000",
+        "3ec78e62",
+        "3f6bc13b",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          0.0,
+          0.35
+        ],
+        "crashing": 1,
+        "facing": 25088,
+        "name": "f6200_0.0_0.35"
+      },
+      "key": -1,
+      "matrix": [
+        "3f2a5229",
+        "3f34bdcf",
+        "3e787e3e",
+        "00000000",
+        "bf29cc98",
+        "3f354bfb",
+        "be77bb61",
+        "00000000",
+        "beaf7139",
+        "00000000",
+        "3f708066",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          1.3,
+          -0.6
+        ],
+        "crashing": 1,
+        "facing": 25088,
+        "name": "f6200_1.3_-0.6"
+      },
+      "key": -1,
+      "matrix": [
+        "3e4d62fe",
+        "3e415bca",
+        "bf761857",
+        "00000000",
+        "bf77cd54",
+        "3e41f3e2",
+        "be28b6ba",
+        "00000000",
+        "3e1a973d",
+        "3f76ac9a",
+        "3e62117a",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          -2.9,
+          3.4
+        ],
+        "crashing": 1,
+        "facing": 25088,
+        "name": "f6200_-2.9_3.4"
+      },
+      "key": -1,
+      "matrix": [
+        "bf243885",
+        "bf2f7df1",
+        "beb04bd8",
+        "00000000",
+        "3f39d322",
+        "bf3007fc",
+        "3c886a63",
+        "00000000",
+        "be7e23c5",
+        "be750026",
+        "3f704ebc",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          7.5,
+          2.2
+        ],
+        "crashing": 1,
+        "facing": 25088,
+        "name": "f6200_7.5_2.2"
+      },
+      "key": -1,
+      "matrix": [
+        "3df363b3",
+        "3e7adadd",
+        "3f7653e9",
+        "00000000",
+        "3f73d345",
+        "3e7ba030",
+        "be388563",
+        "00000000",
+        "be8fa935",
+        "3f701867",
+        "be510565",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          0.0,
+          0.0
+        ],
+        "crashing": 1,
+        "facing": 49152,
+        "name": "fc000_0.0_0.0"
+      },
+      "key": -1,
+      "matrix": [
+        "bf7fffec",
+        "3ac90fd5",
+        "00000000",
+        "00000000",
+        "bac90fd5",
+        "bf7fffec",
+        "00000000",
+        "00000000",
+        "80000000",
+        "00000000",
+        "3f800000",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          0.4,
+          0.0
+        ],
+        "crashing": 1,
+        "facing": 49152,
+        "name": "fc000_0.4_0.0"
+      },
+      "key": -1,
+      "matrix": [
+        "bf7fffec",
+        "3ab9294b",
+        "ba1cbb22",
+        "00000000",
+        "bac90fd5",
+        "bf6bc128",
+        "3ec78e52",
+        "00000000",
+        "80000000",
+        "3ec78e62",
+        "3f6bc13b",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          0.0,
+          0.35
+        ],
+        "crashing": 1,
+        "facing": 49152,
+        "name": "fc000_0.0_0.35"
+      },
+      "key": -1,
+      "matrix": [
+        "bf708053",
+        "3ac90fd5",
+        "beaf712b",
+        "00000000",
+        "babce3af",
+        "bf7fffec",
+        "ba09cabf",
+        "00000000",
+        "beaf7139",
+        "00000000",
+        "3f708066",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          1.3,
+          -0.6
+        ],
+        "crashing": 1,
+        "facing": 49152,
+        "name": "fc000_1.3_-0.6"
+      },
+      "key": -1,
+      "matrix": [
+        "bf5387b5",
+        "39d718f4",
+        "3f1030da",
+        "00000000",
+        "3f0aea39",
+        "be88ef69",
+        "3f4bd715",
+        "00000000",
+        "3e1a973d",
+        "3f76ac9a",
+        "3e62117a",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          -2.9,
+          3.4
+        ],
+        "crashing": 1,
+        "facing": 49152,
+        "name": "fc000_-2.9_3.4"
+      },
+      "key": -1,
+      "matrix": [
+        "3f778502",
+        "bac338e1",
+        "3e82b066",
+        "00000000",
+        "bd746bbf",
+        "3f78907d",
+        "3e6d4356",
+        "00000000",
+        "be7e23c5",
+        "be750026",
+        "3f704ebc",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          7.5,
+          2.2
+        ],
+        "crashing": 1,
+        "facing": 49152,
+        "name": "fc000_7.5_2.2"
+      },
+      "key": -1,
+      "matrix": [
+        "3f16e5d0",
+        "3a0b876e",
+        "bf4ecc8f",
+        "00000000",
+        "bf41ec5d",
+        "beb1a75c",
+        "bf0d8f9f",
+        "00000000",
+        "be8fa935",
+        "3f701867",
+        "be510565",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          1.0,
+          1.0
+        ],
+        "crashing": 0,
+        "facing": 16384,
+        "name": "not_crashing"
+      },
+      "key": 64,
+      "matrix": [
+        "3f800000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "3f800000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "3f800000",
+        "00000000"
+      ]
+    },
+    {
+      "input": {
+        "angles": [
+          1.0,
+          1.0
+        ],
+        "crashing": 1,
+        "facing": 16384,
+        "name": "grounded",
+        "xyz": [
+          13440,
+          13440,
+          0
+        ]
+      },
+      "key": 64,
+      "matrix": [
+        "3f800000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "3f800000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000",
+        "3f800000",
+        "00000000"
+      ]
+    }
+  ],
+  "fall": [
+    {
+      "frames": [
+        {
+          "calls": [],
+          "counter": 1,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13475,
+            13440,
+            1479
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 2,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13510,
+            13440,
+            1457
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 3,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13545,
+            13440,
+            1434
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 4,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13580,
+            13440,
+            1410
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 5,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13615,
+            13440,
+            1385
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 6,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13650,
+            13440,
+            1359
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 7,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13685,
+            13440,
+            1332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 8,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13720,
+            13440,
+            1304
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 9,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13755,
+            13440,
+            1275
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 10,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13790,
+            13440,
+            1245
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 11,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13825,
+            13440,
+            1214
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 12,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13860,
+            13440,
+            1182
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 13,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13895,
+            13440,
+            1149
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 14,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13930,
+            13440,
+            1115
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 15,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13965,
+            13440,
+            1080
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 16,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14000,
+            13440,
+            1044
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 17,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14035,
+            13440,
+            1007
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 18,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14070,
+            13440,
+            969
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 19,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14105,
+            13440,
+            930
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 20,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14140,
+            13440,
+            890
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 21,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14175,
+            13440,
+            849
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 22,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14210,
+            13440,
+            807
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 23,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14245,
+            13440,
+            764
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 24,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14280,
+            13440,
+            720
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 25,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14315,
+            13440,
+            675
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 26,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14350,
+            13440,
+            629
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 27,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14385,
+            13440,
+            582
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 28,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14420,
+            13440,
+            534
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 29,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14455,
+            13440,
+            485
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 30,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14490,
+            13440,
+            435
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 31,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14525,
+            13440,
+            384
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 32,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14560,
+            13440,
+            332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 33,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14595,
+            13440,
+            279
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 34,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14630,
+            13440,
+            225
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 35,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14665,
+            13440,
+            170
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 36,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14700,
+            13440,
+            114
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 37,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14735,
+            13440,
+            57
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 38,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14770,
+            13440,
+            1
+          ]
+        },
+        {
+          "calls": [
+            {
+              "call": "tracker_remove"
+            },
+            {
+              "arg": 0,
+              "call": "fire_death_weapon",
+              "health": 0,
+              "xyz": [
+                14770,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "play_at",
+              "controller": 0,
+              "sound": 12,
+              "xyz": [
+                14770,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "uninit",
+              "xyz": [
+                14770,
+                13440,
+                0
+              ]
+            }
+          ],
+          "counter": 39,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14770,
+            13440,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "crashing": 1,
+        "facing": 16384,
+        "health": 0,
+        "ini_speed": 14,
+        "name": "cruise_1500_full_speed",
+        "speed_bits": 65536
+      },
+      "next_random": 2025287381
+    },
+    {
+      "frames": [
+        {
+          "calls": [],
+          "counter": 1,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13457,
+            13440,
+            1479
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 2,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13474,
+            13440,
+            1457
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 3,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13491,
+            13440,
+            1434
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 4,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13508,
+            13440,
+            1410
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 5,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13525,
+            13440,
+            1385
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 6,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13542,
+            13440,
+            1359
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 7,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13559,
+            13440,
+            1332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 8,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13576,
+            13440,
+            1304
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 9,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13593,
+            13440,
+            1275
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 10,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13610,
+            13440,
+            1245
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 11,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13627,
+            13440,
+            1214
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 12,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13644,
+            13440,
+            1182
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 13,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13661,
+            13440,
+            1149
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 14,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13678,
+            13440,
+            1115
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 15,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13695,
+            13440,
+            1080
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 16,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13712,
+            13440,
+            1044
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 17,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13729,
+            13440,
+            1007
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 18,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13746,
+            13440,
+            969
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 19,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13763,
+            13440,
+            930
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 20,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13780,
+            13440,
+            890
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 21,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13797,
+            13440,
+            849
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 22,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13814,
+            13440,
+            807
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 23,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13831,
+            13440,
+            764
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 24,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13848,
+            13440,
+            720
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 25,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13865,
+            13440,
+            675
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 26,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13882,
+            13440,
+            629
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 27,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13899,
+            13440,
+            582
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 28,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13916,
+            13440,
+            534
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 29,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13933,
+            13440,
+            485
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 30,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13950,
+            13440,
+            435
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 31,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13967,
+            13440,
+            384
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 32,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            13984,
+            13440,
+            332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 33,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            14001,
+            13440,
+            279
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 34,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            14018,
+            13440,
+            225
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 35,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            14035,
+            13440,
+            170
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 36,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            14052,
+            13440,
+            114
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 37,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            14069,
+            13440,
+            57
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 38,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            14086,
+            13440,
+            1
+          ]
+        },
+        {
+          "calls": [
+            {
+              "call": "tracker_remove"
+            },
+            {
+              "arg": 0,
+              "call": "fire_death_weapon",
+              "health": 0,
+              "xyz": [
+                14086,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "play_at",
+              "controller": 0,
+              "sound": 12,
+              "xyz": [
+                14086,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "uninit",
+              "xyz": [
+                14086,
+                13440,
+                0
+              ]
+            }
+          ],
+          "counter": 39,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.5,
+          "xyz": [
+            14086,
+            13440,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "crashing": 1,
+        "facing": 16384,
+        "health": 0,
+        "ini_speed": 14,
+        "name": "cruise_1500_half_speed",
+        "speed_bits": 32768
+      },
+      "next_random": 2025287381
+    },
+    {
+      "frames": [
+        {
+          "calls": [],
+          "counter": 1,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1479
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 2,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1457
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 3,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1434
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 4,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1410
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 5,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1385
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 6,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1359
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 7,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 8,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1304
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 9,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1275
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 10,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1245
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 11,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1214
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 12,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1182
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 13,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1149
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 14,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1115
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 15,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1080
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 16,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1044
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 17,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1007
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 18,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            969
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 19,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            930
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 20,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            890
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 21,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            849
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 22,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            807
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 23,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            764
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 24,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            720
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 25,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            675
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 26,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            629
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 27,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            582
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 28,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            534
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 29,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            485
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 30,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            435
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 31,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            384
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 32,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 33,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            279
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 34,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            225
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 35,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            170
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 36,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            114
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 37,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            57
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 38,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            1
+          ]
+        },
+        {
+          "calls": [
+            {
+              "call": "tracker_remove"
+            },
+            {
+              "arg": 0,
+              "call": "fire_death_weapon",
+              "health": 0,
+              "xyz": [
+                13440,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "play_at",
+              "controller": 0,
+              "sound": 12,
+              "xyz": [
+                13440,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "uninit",
+              "xyz": [
+                13440,
+                13440,
+                0
+              ]
+            }
+          ],
+          "counter": 39,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 0.0,
+          "xyz": [
+            13440,
+            13440,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "crashing": 1,
+        "facing": 16384,
+        "health": 0,
+        "ini_speed": 14,
+        "name": "cruise_1500_stopped",
+        "speed_bits": 0
+      },
+      "next_random": 2025287381
+    },
+    {
+      "frames": [
+        {
+          "calls": [],
+          "counter": 1,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1499
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 2,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1497
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 3,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1494
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 4,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1490
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 5,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1485
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 6,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1479
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 7,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1472
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 8,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1464
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 9,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1455
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 10,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1445
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 11,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1434
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 12,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1422
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 13,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1409
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 14,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1395
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 15,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1380
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 16,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1364
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 17,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1347
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 18,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1329
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 19,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1310
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 20,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1290
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 21,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1269
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 22,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1247
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 23,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1224
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 24,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1200
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 25,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1175
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 26,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1149
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 27,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1122
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 28,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1094
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 29,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1065
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 30,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1035
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 31,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            1004
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 32,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            972
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 33,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            939
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 34,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            905
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 35,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            870
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 36,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            834
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 37,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            797
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 38,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            759
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 39,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            720
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 40,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            680
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 41,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            639
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 42,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            597
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 43,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            554
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 44,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            510
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 45,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            465
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 46,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            419
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 47,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            372
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 48,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            324
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 49,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            275
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 50,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            225
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 51,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            174
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 52,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            122
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 53,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            69
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 54,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            15
+          ]
+        },
+        {
+          "calls": [
+            {
+              "call": "tracker_remove"
+            },
+            {
+              "arg": 0,
+              "call": "fire_death_weapon",
+              "health": 0,
+              "xyz": [
+                13440,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "play_at",
+              "controller": 0,
+              "sound": 12,
+              "xyz": [
+                13440,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "uninit",
+              "xyz": [
+                13440,
+                13440,
+                0
+              ]
+            }
+          ],
+          "counter": 55,
+          "moving": 0,
+          "placed": true,
+          "returned": 0,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "crashing": 1,
+        "facing": 16384,
+        "health": 0,
+        "ini_speed": 14,
+        "moving": 0,
+        "name": "not_moving",
+        "speed_bits": 65536
+      },
+      "next_random": 2025287381
+    },
+    {
+      "frames": [
+        {
+          "calls": [],
+          "counter": 1,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13475,
+            13440,
+            279
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 2,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13510,
+            13440,
+            257
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 3,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13545,
+            13440,
+            234
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 4,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13580,
+            13440,
+            210
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 5,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13615,
+            13440,
+            185
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 6,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13650,
+            13440,
+            159
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 7,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13685,
+            13440,
+            132
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 8,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13720,
+            13440,
+            104
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 9,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13755,
+            13440,
+            75
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 10,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13790,
+            13440,
+            45
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 11,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13825,
+            13440,
+            14
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 12,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13860,
+            13440,
+            1
+          ]
+        },
+        {
+          "calls": [
+            {
+              "call": "tracker_remove"
+            },
+            {
+              "arg": 0,
+              "call": "fire_death_weapon",
+              "health": 0,
+              "xyz": [
+                13860,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "play_at",
+              "controller": 0,
+              "sound": 12,
+              "xyz": [
+                13860,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "uninit",
+              "xyz": [
+                13860,
+                13440,
+                0
+              ]
+            }
+          ],
+          "counter": 13,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13860,
+            13440,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "crashing": 1,
+        "facing": 16384,
+        "health": 0,
+        "ini_speed": 14,
+        "name": "low_300",
+        "speed_bits": 65536,
+        "xyz": [
+          13440,
+          13440,
+          300
+        ]
+      },
+      "next_random": 2025287381
+    },
+    {
+      "frames": [
+        {
+          "calls": [],
+          "counter": 1,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13475,
+            13440,
+            1
+          ]
+        },
+        {
+          "calls": [
+            {
+              "call": "tracker_remove"
+            },
+            {
+              "arg": 0,
+              "call": "fire_death_weapon",
+              "health": 0,
+              "xyz": [
+                13475,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "play_at",
+              "controller": 0,
+              "sound": 12,
+              "xyz": [
+                13475,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "uninit",
+              "xyz": [
+                13475,
+                13440,
+                0
+              ]
+            }
+          ],
+          "counter": 2,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13475,
+            13440,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "crashing": 1,
+        "facing": 16384,
+        "health": 0,
+        "ini_speed": 14,
+        "name": "low_21",
+        "speed_bits": 65536,
+        "xyz": [
+          13440,
+          13440,
+          21
+        ]
+      },
+      "next_random": 2025287381
+    },
+    {
+      "frames": [
+        {
+          "calls": [
+            {
+              "call": "tracker_remove"
+            },
+            {
+              "arg": 0,
+              "call": "fire_death_weapon",
+              "health": 0,
+              "xyz": [
+                13440,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "play_at",
+              "controller": 0,
+              "sound": 12,
+              "xyz": [
+                13440,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "uninit",
+              "xyz": [
+                13440,
+                13440,
+                0
+              ]
+            }
+          ],
+          "counter": 1,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13440,
+            13440,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "crashing": 1,
+        "facing": 16384,
+        "health": 0,
+        "ini_speed": 14,
+        "name": "low_1",
+        "speed_bits": 65536,
+        "xyz": [
+          13440,
+          13440,
+          1
+        ]
+      },
+      "next_random": 2025287381
+    },
+    {
+      "frames": [
+        {
+          "calls": [],
+          "counter": 1,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13475,
+            13440,
+            2165
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 2,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13510,
+            13440,
+            2130
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 3,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13545,
+            13440,
+            2096
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 4,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13580,
+            13440,
+            2063
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 5,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13615,
+            13440,
+            2031
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 6,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13650,
+            13440,
+            1999
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 7,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13685,
+            13440,
+            1968
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 8,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13720,
+            13440,
+            1937
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 9,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13755,
+            13440,
+            1907
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 10,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13790,
+            13440,
+            1877
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 11,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13825,
+            13440,
+            1846
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 12,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13860,
+            13440,
+            1814
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 13,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13895,
+            13440,
+            1781
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 14,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13930,
+            13440,
+            1747
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 15,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13965,
+            13440,
+            1712
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 16,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14000,
+            13440,
+            1676
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 17,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14035,
+            13440,
+            1639
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 18,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14070,
+            13440,
+            1601
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 19,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14105,
+            13440,
+            1562
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 20,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14140,
+            13440,
+            1522
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 21,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14175,
+            13440,
+            1481
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 22,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14210,
+            13440,
+            1439
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 23,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14245,
+            13440,
+            1396
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 24,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14280,
+            13440,
+            1352
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 25,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14315,
+            13440,
+            1307
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 26,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14350,
+            13440,
+            1261
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 27,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14385,
+            13440,
+            1214
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 28,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14420,
+            13440,
+            1166
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 29,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14455,
+            13440,
+            1117
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 30,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14490,
+            13440,
+            1067
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 31,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14525,
+            13440,
+            1016
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 32,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14560,
+            13440,
+            964
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 33,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14595,
+            13440,
+            911
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 34,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14630,
+            13440,
+            857
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 35,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14665,
+            13440,
+            802
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 36,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14700,
+            13440,
+            746
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 37,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14735,
+            13440,
+            689
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 38,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14770,
+            13440,
+            631
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 39,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14805,
+            13440,
+            572
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 40,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14840,
+            13440,
+            512
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 41,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14875,
+            13440,
+            451
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 42,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14910,
+            13440,
+            389
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 43,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14945,
+            13440,
+            326
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 44,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14980,
+            13440,
+            262
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 45,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            15015,
+            13440,
+            197
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 46,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            15050,
+            13440,
+            131
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 47,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            15085,
+            13440,
+            64
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 48,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            15120,
+            13440,
+            1
+          ]
+        },
+        {
+          "calls": [
+            {
+              "call": "tracker_remove"
+            },
+            {
+              "arg": 0,
+              "call": "fire_death_weapon",
+              "health": 0,
+              "xyz": [
+                15120,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "play_at",
+              "controller": 0,
+              "sound": 12,
+              "xyz": [
+                15120,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "uninit",
+              "xyz": [
+                15120,
+                13440,
+                0
+              ]
+            }
+          ],
+          "counter": 49,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            15120,
+            13440,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "crashing": 1,
+        "facing": 16384,
+        "health": 0,
+        "ini_speed": 14,
+        "name": "above_target_2200",
+        "speed_bits": 65536,
+        "xyz": [
+          13440,
+          13440,
+          2200
+        ]
+      },
+      "next_random": 2025287381
+    },
+    {
+      "frames": [
+        {
+          "calls": [],
+          "counter": 1,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13415,
+            13464,
+            1479
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 2,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13390,
+            13488,
+            1457
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 3,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13365,
+            13512,
+            1434
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 4,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13340,
+            13536,
+            1410
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 5,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13315,
+            13560,
+            1385
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 6,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13290,
+            13584,
+            1359
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 7,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13265,
+            13608,
+            1332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 8,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13240,
+            13632,
+            1304
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 9,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13215,
+            13656,
+            1275
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 10,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13190,
+            13680,
+            1245
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 11,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13165,
+            13704,
+            1214
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 12,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13140,
+            13728,
+            1182
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 13,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13115,
+            13752,
+            1149
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 14,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13090,
+            13776,
+            1115
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 15,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13065,
+            13800,
+            1080
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 16,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13040,
+            13824,
+            1044
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 17,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13015,
+            13848,
+            1007
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 18,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12990,
+            13872,
+            969
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 19,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12965,
+            13896,
+            930
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 20,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12940,
+            13920,
+            890
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 21,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12915,
+            13944,
+            849
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 22,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12890,
+            13968,
+            807
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 23,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12865,
+            13992,
+            764
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 24,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12840,
+            14016,
+            720
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 25,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12815,
+            14040,
+            675
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 26,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12790,
+            14064,
+            629
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 27,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12765,
+            14088,
+            582
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 28,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12740,
+            14112,
+            534
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 29,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12715,
+            14136,
+            485
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 30,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12690,
+            14160,
+            435
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 31,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12665,
+            14184,
+            384
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 32,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12640,
+            14208,
+            332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 33,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12615,
+            14232,
+            279
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 34,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12590,
+            14256,
+            225
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 35,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12565,
+            14280,
+            170
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 36,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12540,
+            14304,
+            114
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 37,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12515,
+            14328,
+            57
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 38,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12490,
+            14352,
+            1
+          ]
+        },
+        {
+          "calls": [
+            {
+              "call": "tracker_remove"
+            },
+            {
+              "arg": 0,
+              "call": "fire_death_weapon",
+              "health": 0,
+              "xyz": [
+                12490,
+                14352,
+                0
+              ]
+            },
+            {
+              "call": "play_at",
+              "controller": 0,
+              "sound": 12,
+              "xyz": [
+                12490,
+                14352,
+                0
+              ]
+            },
+            {
+              "call": "uninit",
+              "xyz": [
+                12490,
+                14352,
+                0
+              ]
+            }
+          ],
+          "counter": 39,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            12490,
+            14352,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "crashing": 1,
+        "facing": 40960,
+        "health": 0,
+        "ini_speed": 14,
+        "name": "heading_se",
+        "speed_bits": 65536
+      },
+      "next_random": 2025287381
+    },
+    {
+      "frames": [
+        {
+          "calls": [],
+          "counter": 1,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13474,
+            13439,
+            1479
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 2,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13508,
+            13434,
+            1457
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 3,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13541,
+            13425,
+            1434
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 4,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13573,
+            13412,
+            1410
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 5,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13603,
+            13395,
+            1385
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 6,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13631,
+            13374,
+            1359
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 7,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13656,
+            13350,
+            1332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 8,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13678,
+            13323,
+            1304
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 9,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13696,
+            13293,
+            1275
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 10,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13710,
+            13261,
+            1245
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 11,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13720,
+            13227,
+            1214
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 12,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13726,
+            13192,
+            1182
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 13,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13728,
+            13157,
+            1149
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 14,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13725,
+            13122,
+            1115
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 15,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13718,
+            13087,
+            1080
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 16,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13707,
+            13053,
+            1044
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 17,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13692,
+            13021,
+            1007
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 18,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13673,
+            12991,
+            969
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 19,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13650,
+            12964,
+            930
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 20,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13624,
+            12940,
+            890
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 21,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13595,
+            12919,
+            849
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 22,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13564,
+            12902,
+            807
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 23,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13531,
+            12889,
+            764
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 24,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13497,
+            12880,
+            720
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 25,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13462,
+            12875,
+            675
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 26,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13427,
+            12874,
+            629
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 27,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13392,
+            12873,
+            582
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 28,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13357,
+            12872,
+            534
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 29,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13322,
+            12871,
+            485
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 30,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13287,
+            12870,
+            435
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 31,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13252,
+            12869,
+            384
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 32,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13217,
+            12868,
+            332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 33,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13182,
+            12867,
+            279
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 34,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13147,
+            12866,
+            225
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 35,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13112,
+            12865,
+            170
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 36,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13077,
+            12864,
+            114
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 37,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13042,
+            12863,
+            57
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 38,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13007,
+            12862,
+            1
+          ]
+        },
+        {
+          "calls": [
+            {
+              "call": "tracker_remove"
+            },
+            {
+              "arg": 0,
+              "call": "fire_death_weapon",
+              "health": 0,
+              "xyz": [
+                13007,
+                12862,
+                0
+              ]
+            },
+            {
+              "call": "play_at",
+              "controller": 0,
+              "sound": 12,
+              "xyz": [
+                13007,
+                12862,
+                0
+              ]
+            },
+            {
+              "call": "uninit",
+              "xyz": [
+                13007,
+                12862,
+                0
+              ]
+            }
+          ],
+          "counter": 39,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13007,
+            12862,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "crashing": 1,
+        "facing": 16384,
+        "health": 0,
+        "ini_speed": 14,
+        "name": "turning",
+        "rot": 5,
+        "speed_bits": 65536,
+        "turn_age": 0,
+        "turn_to": 49152
+      },
+      "next_random": 2025287381
+    },
+    {
+      "frames": [
+        {
+          "calls": [],
+          "counter": 1,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13475,
+            13440,
+            1895
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 2,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13510,
+            13440,
+            1873
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 3,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13545,
+            13440,
+            1850
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 4,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13580,
+            13440,
+            1826
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 5,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13615,
+            13440,
+            1801
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 6,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13650,
+            13440,
+            1775
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 7,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13685,
+            13440,
+            1748
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 8,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13720,
+            13440,
+            1720
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 9,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13755,
+            13440,
+            1691
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 10,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13790,
+            13440,
+            1661
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 11,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13825,
+            13440,
+            1630
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 12,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13860,
+            13440,
+            1598
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 13,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13895,
+            13440,
+            1565
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 14,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13930,
+            13440,
+            1531
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 15,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13965,
+            13440,
+            1496
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 16,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14000,
+            13440,
+            1460
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 17,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14035,
+            13440,
+            1423
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 18,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14070,
+            13440,
+            1385
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 19,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14105,
+            13440,
+            1346
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 20,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14140,
+            13440,
+            1306
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 21,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14175,
+            13440,
+            1265
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 22,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14210,
+            13440,
+            1223
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 23,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14245,
+            13440,
+            1180
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 24,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14280,
+            13440,
+            1136
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 25,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14315,
+            13440,
+            1091
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 26,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14350,
+            13440,
+            1045
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 27,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14385,
+            13440,
+            998
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 28,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14420,
+            13440,
+            950
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 29,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14455,
+            13440,
+            901
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 30,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14490,
+            13440,
+            851
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 31,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14525,
+            13440,
+            800
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 32,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14560,
+            13440,
+            748
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 33,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14595,
+            13440,
+            695
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 34,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14630,
+            13440,
+            641
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 35,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14665,
+            13440,
+            586
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 36,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14700,
+            13440,
+            530
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 37,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14735,
+            13440,
+            473
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 38,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14770,
+            13440,
+            417
+          ]
+        },
+        {
+          "calls": [
+            {
+              "call": "tracker_remove"
+            },
+            {
+              "arg": 0,
+              "call": "fire_death_weapon",
+              "health": 0,
+              "xyz": [
+                14770,
+                13440,
+                416
+              ]
+            },
+            {
+              "call": "play_at",
+              "controller": 0,
+              "sound": 12,
+              "xyz": [
+                14770,
+                13440,
+                416
+              ]
+            },
+            {
+              "call": "uninit",
+              "xyz": [
+                14770,
+                13440,
+                416
+              ]
+            }
+          ],
+          "counter": 39,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14770,
+            13440,
+            416
+          ]
+        }
+      ],
+      "input": {
+        "crashing": 1,
+        "facing": 16384,
+        "health": 0,
+        "ini_speed": 14,
+        "level": 4,
+        "name": "level4_ground",
+        "speed_bits": 65536,
+        "xyz": [
+          13440,
+          13440,
+          1916
+        ]
+      },
+      "next_random": 2025287381
+    },
+    {
+      "frames": [
+        {
+          "calls": [],
+          "counter": 1,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13475,
+            13440,
+            1479
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 2,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13510,
+            13440,
+            1457
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 3,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13545,
+            13440,
+            1434
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 4,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13580,
+            13440,
+            1410
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 5,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13615,
+            13440,
+            1385
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 6,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13650,
+            13440,
+            1359
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 7,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13685,
+            13440,
+            1332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 8,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13720,
+            13440,
+            1304
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 9,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13755,
+            13440,
+            1275
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 10,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13790,
+            13440,
+            1245
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 11,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13825,
+            13440,
+            1214
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 12,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13860,
+            13440,
+            1182
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 13,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13895,
+            13440,
+            1149
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 14,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13930,
+            13440,
+            1115
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 15,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13965,
+            13440,
+            1080
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 16,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14000,
+            13440,
+            1044
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 17,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14035,
+            13440,
+            1007
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 18,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14070,
+            13440,
+            969
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 19,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14105,
+            13440,
+            930
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 20,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14140,
+            13440,
+            890
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 21,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14175,
+            13440,
+            849
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 22,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14210,
+            13440,
+            807
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 23,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14245,
+            13440,
+            764
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 24,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14280,
+            13440,
+            720
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 25,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14315,
+            13440,
+            675
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 26,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14350,
+            13440,
+            629
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 27,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14385,
+            13440,
+            582
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 28,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14420,
+            13440,
+            534
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 29,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14455,
+            13440,
+            485
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 30,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14490,
+            13440,
+            435
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 31,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14525,
+            13440,
+            384
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 32,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14560,
+            13440,
+            332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 33,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14595,
+            13440,
+            279
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 34,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14630,
+            13440,
+            225
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 35,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14665,
+            13440,
+            170
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 36,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14700,
+            13440,
+            114
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 37,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14735,
+            13440,
+            57
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 38,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14770,
+            13440,
+            1
+          ]
+        },
+        {
+          "calls": [
+            {
+              "call": "tracker_remove"
+            },
+            {
+              "arg": 0,
+              "call": "fire_death_weapon",
+              "health": 0,
+              "xyz": [
+                14770,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "play_at",
+              "controller": 0,
+              "sound": 33,
+              "xyz": [
+                14770,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "uninit",
+              "xyz": [
+                14770,
+                13440,
+                0
+              ]
+            }
+          ],
+          "counter": 39,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14770,
+            13440,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "crashing": 1,
+        "facing": 16384,
+        "health": 0,
+        "ini_speed": 14,
+        "land_type": 2,
+        "name": "water_impact",
+        "speed_bits": 65536,
+        "water_sound": 33
+      },
+      "next_random": 2025287381
+    },
+    {
+      "frames": [
+        {
+          "calls": [],
+          "counter": 1,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13475,
+            13440,
+            1479
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 2,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13510,
+            13440,
+            1457
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 3,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13545,
+            13440,
+            1434
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 4,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13580,
+            13440,
+            1410
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 5,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13615,
+            13440,
+            1385
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 6,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13650,
+            13440,
+            1359
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 7,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13685,
+            13440,
+            1332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 8,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13720,
+            13440,
+            1304
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 9,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13755,
+            13440,
+            1275
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 10,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13790,
+            13440,
+            1245
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 11,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13825,
+            13440,
+            1214
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 12,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13860,
+            13440,
+            1182
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 13,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13895,
+            13440,
+            1149
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 14,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13930,
+            13440,
+            1115
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 15,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13965,
+            13440,
+            1080
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 16,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14000,
+            13440,
+            1044
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 17,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14035,
+            13440,
+            1007
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 18,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14070,
+            13440,
+            969
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 19,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14105,
+            13440,
+            930
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 20,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14140,
+            13440,
+            890
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 21,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14175,
+            13440,
+            849
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 22,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14210,
+            13440,
+            807
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 23,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14245,
+            13440,
+            764
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 24,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14280,
+            13440,
+            720
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 25,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14315,
+            13440,
+            675
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 26,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14350,
+            13440,
+            629
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 27,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14385,
+            13440,
+            582
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 28,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14420,
+            13440,
+            534
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 29,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14455,
+            13440,
+            485
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 30,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14490,
+            13440,
+            435
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 31,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14525,
+            13440,
+            384
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 32,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14560,
+            13440,
+            332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 33,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14595,
+            13440,
+            279
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 34,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14630,
+            13440,
+            225
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 35,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14665,
+            13440,
+            170
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 36,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14700,
+            13440,
+            114
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 37,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14735,
+            13440,
+            57
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 38,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14770,
+            13440,
+            1
+          ]
+        },
+        {
+          "calls": [
+            {
+              "call": "tracker_remove"
+            },
+            {
+              "arg": 0,
+              "call": "fire_death_weapon",
+              "health": 0,
+              "xyz": [
+                14770,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "play_at",
+              "controller": 0,
+              "sound": 70,
+              "xyz": [
+                14770,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "uninit",
+              "xyz": [
+                14770,
+                13440,
+                0
+              ]
+            }
+          ],
+          "counter": 39,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14770,
+            13440,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "crashing": 1,
+        "facing": 16384,
+        "health": 0,
+        "ini_speed": 14,
+        "land_type": 2,
+        "name": "water_rules_fallback",
+        "speed_bits": 65536,
+        "water_sound": -1
+      },
+      "next_random": 2025287381
+    },
+    {
+      "frames": [
+        {
+          "calls": [],
+          "counter": 1,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13475,
+            13440,
+            1479
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 2,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13510,
+            13440,
+            1457
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 3,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13545,
+            13440,
+            1434
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 4,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13580,
+            13440,
+            1410
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 5,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13615,
+            13440,
+            1385
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 6,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13650,
+            13440,
+            1359
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 7,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13685,
+            13440,
+            1332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 8,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13720,
+            13440,
+            1304
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 9,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13755,
+            13440,
+            1275
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 10,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13790,
+            13440,
+            1245
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 11,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13825,
+            13440,
+            1214
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 12,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13860,
+            13440,
+            1182
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 13,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13895,
+            13440,
+            1149
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 14,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13930,
+            13440,
+            1115
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 15,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13965,
+            13440,
+            1080
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 16,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14000,
+            13440,
+            1044
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 17,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14035,
+            13440,
+            1007
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 18,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14070,
+            13440,
+            969
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 19,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14105,
+            13440,
+            930
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 20,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14140,
+            13440,
+            890
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 21,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14175,
+            13440,
+            849
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 22,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14210,
+            13440,
+            807
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 23,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14245,
+            13440,
+            764
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 24,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14280,
+            13440,
+            720
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 25,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14315,
+            13440,
+            675
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 26,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14350,
+            13440,
+            629
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 27,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14385,
+            13440,
+            582
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 28,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14420,
+            13440,
+            534
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 29,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14455,
+            13440,
+            485
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 30,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14490,
+            13440,
+            435
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 31,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14525,
+            13440,
+            384
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 32,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14560,
+            13440,
+            332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 33,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14595,
+            13440,
+            279
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 34,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14630,
+            13440,
+            225
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 35,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14665,
+            13440,
+            170
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 36,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14700,
+            13440,
+            114
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 37,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14735,
+            13440,
+            57
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 38,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14770,
+            13440,
+            1
+          ]
+        },
+        {
+          "calls": [
+            {
+              "call": "tracker_remove"
+            },
+            {
+              "arg": 0,
+              "call": "fire_death_weapon",
+              "health": 0,
+              "xyz": [
+                14770,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "play_at",
+              "controller": 0,
+              "sound": 71,
+              "xyz": [
+                14770,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "uninit",
+              "xyz": [
+                14770,
+                13440,
+                0
+              ]
+            }
+          ],
+          "counter": 39,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14770,
+            13440,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "crashing": 1,
+        "facing": 16384,
+        "health": 0,
+        "ini_speed": 14,
+        "land_sound": -1,
+        "name": "land_rules_fallback",
+        "speed_bits": 65536
+      },
+      "next_random": 2025287381
+    },
+    {
+      "frames": [
+        {
+          "calls": [],
+          "counter": 1,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13475,
+            13440,
+            1479
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 2,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13510,
+            13440,
+            1457
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 3,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13545,
+            13440,
+            1434
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 4,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13580,
+            13440,
+            1410
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 5,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13615,
+            13440,
+            1385
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 6,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13650,
+            13440,
+            1359
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 7,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13685,
+            13440,
+            1332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 8,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13720,
+            13440,
+            1304
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 9,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13755,
+            13440,
+            1275
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 10,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13790,
+            13440,
+            1245
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 11,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13825,
+            13440,
+            1214
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 12,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13860,
+            13440,
+            1182
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 13,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13895,
+            13440,
+            1149
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 14,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13930,
+            13440,
+            1115
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 15,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            13965,
+            13440,
+            1080
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 16,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14000,
+            13440,
+            1044
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 17,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14035,
+            13440,
+            1007
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 18,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14070,
+            13440,
+            969
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 19,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14105,
+            13440,
+            930
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 20,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14140,
+            13440,
+            890
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 21,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14175,
+            13440,
+            849
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 22,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14210,
+            13440,
+            807
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 23,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14245,
+            13440,
+            764
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 24,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14280,
+            13440,
+            720
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 25,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14315,
+            13440,
+            675
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 26,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14350,
+            13440,
+            629
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 27,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14385,
+            13440,
+            582
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 28,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14420,
+            13440,
+            534
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 29,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14455,
+            13440,
+            485
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 30,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14490,
+            13440,
+            435
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 31,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14525,
+            13440,
+            384
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 32,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14560,
+            13440,
+            332
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 33,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14595,
+            13440,
+            279
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 34,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14630,
+            13440,
+            225
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 35,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14665,
+            13440,
+            170
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 36,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14700,
+            13440,
+            114
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 37,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14735,
+            13440,
+            57
+          ]
+        },
+        {
+          "calls": [],
+          "counter": 38,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14770,
+            13440,
+            1
+          ]
+        },
+        {
+          "calls": [
+            {
+              "call": "tracker_remove"
+            },
+            {
+              "arg": 0,
+              "call": "fire_death_weapon",
+              "health": 0,
+              "xyz": [
+                14770,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "play_at",
+              "controller": 0,
+              "sound": 12,
+              "xyz": [
+                14770,
+                13440,
+                0
+              ]
+            },
+            {
+              "call": "uninit",
+              "xyz": [
+                14770,
+                13440,
+                0
+              ]
+            }
+          ],
+          "counter": 39,
+          "moving": 1,
+          "placed": true,
+          "returned": 1,
+          "speed": 1.0,
+          "xyz": [
+            14770,
+            13440,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "bridge": true,
+        "crashing": 1,
+        "facing": 16384,
+        "health": 0,
+        "ini_speed": 14,
+        "name": "over_bridge",
+        "speed_bits": 65536
+      },
+      "next_random": 2025287381
+    }
+  ],
+  "rocking": [
+    {
+      "calls": [],
+      "history": [
+        [
+          "3e3bcd36",
+          "3d28c155",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "3ebbcd36",
+          "3da8c155",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "3f0cd9e8",
+          "3dfd21ff",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "3f3bcd35",
+          "3e28c154",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "3f6ac082",
+          "3e52f1a9",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "3f8cd9e7",
+          "3e7d21fe",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "3fa4538d",
+          "3e93a929",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "3fbbcd33",
+          "3ea8c153",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "3fd346d9",
+          "3ebdd97d",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "3feac07f",
+          "3ed2f1a7",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40011d12",
+          "3ee809d1",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "400cd9e5",
+          "3efd21fb",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "401896b8",
+          "3f091d12",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "4024538b",
+          "3f13a927",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "4030105e",
+          "3f1e353c",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "403bcd31",
+          "3f28c151",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40478a04",
+          "3f334d66",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "405346d7",
+          "3f3dd97b",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "405f03aa",
+          "3f486590",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "406ac07d",
+          "3f52f1a5",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40767d50",
+          "3f5d7dba",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40811d11",
+          "3f6809cf",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "4086fb7a",
+          "3f7295e4",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "408cd9e3",
+          "3f7d21f9",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "4092b84c",
+          "3f83d707",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "409896b5",
+          "3f891d11",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "409e751e",
+          "3f8e631b",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40a45387",
+          "3f93a925",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40aa31f0",
+          "3f98ef2f",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40b01059",
+          "3f9e3539",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40b5eec2",
+          "3fa37b43",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40bbcd2b",
+          "3fa8c14d",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40c1ab94",
+          "3fae0757",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40c789fd",
+          "3fb34d61",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40cd6866",
+          "3fb8936b",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40d346cf",
+          "3fbdd975",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40d92538",
+          "3fc31f7f",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40df03a1",
+          "3fc86589",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40e4e20a",
+          "3fcdab93",
+          "3e3bcd36",
+          "3d28c155"
+        ],
+        [
+          "40eac073",
+          "3fd2f19d",
+          "3e3bcd36",
+          "3d28c155"
+        ]
+      ],
+      "input": {
+        "frames": 40,
+        "name": "spin",
+        "rates": [
+          0.1834,
+          0.0412
+        ]
+      }
+    },
+    {
+      "calls": [],
+      "history": [
+        [
+          "be800000",
+          "3dcccccd",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "bf000000",
+          "3e4ccccd",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "bf400000",
+          "3e999999",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "bf800000",
+          "3ecccccc",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "bfa00000",
+          "3effffff",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "bfc00000",
+          "3f199999",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "bfe00000",
+          "3f333332",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0000000",
+          "3f4ccccb",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0100000",
+          "3f666664",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0200000",
+          "3f7ffffd",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0300000",
+          "3f8ccccb",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0400000",
+          "3f999997",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0500000",
+          "3fa66663",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0600000",
+          "3fb3332f",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0700000",
+          "3fbffffb",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0800000",
+          "3fccccc7",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0880000",
+          "3fd99993",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0900000",
+          "3fe6665f",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0980000",
+          "3ff3332b",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0a00000",
+          "3ffffff7",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0a80000",
+          "40066661",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0b00000",
+          "400cccc7",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0b80000",
+          "4013332d",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0c00000",
+          "40199993",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0c80000",
+          "401ffff9",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0d00000",
+          "4026665f",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0d80000",
+          "402cccc5",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0e00000",
+          "4033332b",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0e80000",
+          "40399991",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0f00000",
+          "403ffff7",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c0f80000",
+          "4046665d",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c1000000",
+          "404cccc3",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c1040000",
+          "40533329",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c1080000",
+          "4059998f",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c10c0000",
+          "405ffff5",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c1100000",
+          "4066665b",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c1140000",
+          "406cccc1",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c1180000",
+          "40733327",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c11c0000",
+          "4079998d",
+          "be800000",
+          "3dcccccd"
+        ],
+        [
+          "c1200000",
+          "407ffff3",
+          "be800000",
+          "3dcccccd"
+        ]
+      ],
+      "input": {
+        "frames": 40,
+        "name": "negative_spin",
+        "rates": [
+          -0.25,
+          0.1
+        ]
+      }
+    },
+    {
+      "calls": [],
+      "history": [
+        [
+          "3e4ccccd",
+          "3d4ccccd",
+          "3e4ccccd",
+          "3d4ccccd"
+        ],
+        [
+          "3ecccccd",
+          "3dcccccd",
+          "3e4ccccd",
+          "3d4ccccd"
+        ],
+        [
+          "3f199999",
+          "3e199999",
+          "3e4ccccd",
+          "3d4ccccd"
+        ],
+        [
+          "3f490fdb",
+          "3e4ccccc",
+          "3e4ccccd",
+          "3d4ccccd"
+        ],
+        [
+          "3f490fdb",
+          "3e7fffff",
+          "3e4ccccd",
+          "3d4ccccd"
+        ],
+        [
+          "3f490fdb",
+          "3e999999",
+          "3e4ccccd",
+          "3d4ccccd"
+        ],
+        [
+          "3f490fdb",
+          "3eb33332",
+          "3e4ccccd",
+          "3d4ccccd"
+        ],
+        [
+          "3f490fdb",
+          "3ecccccb",
+          "3e4ccccd",
+          "3d4ccccd"
+        ],
+        [
+          "3f490fdb",
+          "3ee66664",
+          "3e4ccccd",
+          "3d4ccccd"
+        ],
+        [
+          "3f490fdb",
+          "3efffffd",
+          "3e4ccccd",
+          "3d4ccccd"
+        ],
+        [
+          "3f490fdb",
+          "3f0ccccb",
+          "3e4ccccd",
+          "3d4ccccd"
+        ],
+        [
+          "3f490fdb",
+          "3f199997",
+          "3e4ccccd",
+          "3d4ccccd"
+        ]
+      ],
+      "input": {
+        "balloon_hover": 1,
+        "frames": 12,
+        "name": "balloon_clamp",
+        "rates": [
+          0.2,
+          0.05
+        ]
+      }
+    },
+    {
+      "calls": [],
+      "history": [
+        [
+          "3f933333",
+          "bef5c28f",
+          "3e19999a",
+          "3ca3d70a"
+        ],
+        [
+          "3fa66666",
+          "beeb851e",
+          "3e19999a",
+          "3ca3d70a"
+        ],
+        [
+          "3fb99999",
+          "bee147ad",
+          "3e19999a",
+          "3ca3d70a"
+        ],
+        [
+          "3fcccccc",
+          "bed70a3c",
+          "3e19999a",
+          "3ca3d70a"
+        ],
+        [
+          "3fdfffff",
+          "becccccb",
+          "3e19999a",
+          "3ca3d70a"
+        ],
+        [
+          "3ff33332",
+          "bec28f5a",
+          "3e19999a",
+          "3ca3d70a"
+        ]
+      ],
+      "input": {
+        "angles": [
+          1.0,
+          -0.5
+        ],
+        "frames": 6,
+        "name": "from_angles",
+        "rates": [
+          0.15,
+          0.02
+        ]
+      }
+    }
+  ],
+  "smoke": [
+    {
+      "draws": [
+        [
+          0,
+          99
+        ]
+      ],
+      "input": {
+        "health": 0,
+        "name": "h0_s1",
+        "seed": 1,
+        "strength": 150
+      },
+      "next_random": 660436142,
+      "smoke": false
+    },
+    {
+      "draws": [
+        [
+          0,
+          99
+        ]
+      ],
+      "input": {
+        "health": 0,
+        "name": "h0_s2",
+        "seed": 2,
+        "strength": 150
+      },
+      "next_random": 1680153835,
+      "smoke": true
+    },
+    {
+      "draws": [
+        [
+          0,
+          99
+        ]
+      ],
+      "input": {
+        "health": 0,
+        "name": "h0_s3",
+        "seed": 3,
+        "strength": 150
+      },
+      "next_random": 3176385826,
+      "smoke": true
+    },
+    {
+      "draws": [
+        [
+          0,
+          99
+        ]
+      ],
+      "input": {
+        "health": 37,
+        "name": "h37_s1",
+        "seed": 1,
+        "strength": 150
+      },
+      "next_random": 660436142,
+      "smoke": false
+    },
+    {
+      "draws": [
+        [
+          0,
+          99
+        ]
+      ],
+      "input": {
+        "health": 37,
+        "name": "h37_s2",
+        "seed": 2,
+        "strength": 150
+      },
+      "next_random": 1680153835,
+      "smoke": false
+    },
+    {
+      "draws": [
+        [
+          0,
+          99
+        ]
+      ],
+      "input": {
+        "health": 37,
+        "name": "h37_s3",
+        "seed": 3,
+        "strength": 150
+      },
+      "next_random": 3176385826,
+      "smoke": false
+    },
+    {
+      "draws": [],
+      "input": {
+        "health": 38,
+        "name": "h38_s1",
+        "seed": 1,
+        "strength": 150
+      },
+      "next_random": 2025287381,
+      "smoke": false
+    },
+    {
+      "draws": [],
+      "input": {
+        "health": 38,
+        "name": "h38_s2",
+        "seed": 2,
+        "strength": 150
+      },
+      "next_random": 2781840146,
+      "smoke": false
+    },
+    {
+      "draws": [],
+      "input": {
+        "health": 38,
+        "name": "h38_s3",
+        "seed": 3,
+        "strength": 150
+      },
+      "next_random": 3440660545,
+      "smoke": false
+    },
+    {
+      "draws": [],
+      "input": {
+        "health": 150,
+        "name": "h150_s1",
+        "seed": 1,
+        "strength": 150
+      },
+      "next_random": 2025287381,
+      "smoke": false
+    },
+    {
+      "draws": [],
+      "input": {
+        "health": 150,
+        "name": "h150_s2",
+        "seed": 2,
+        "strength": 150
+      },
+      "next_random": 2781840146,
+      "smoke": false
+    },
+    {
+      "draws": [],
+      "input": {
+        "health": 150,
+        "name": "h150_s3",
+        "seed": 3,
+        "strength": 150
+      },
+      "next_random": 3440660545,
+      "smoke": false
+    },
+    {
+      "draws": [
+        [
+          0,
+          99
+        ]
+      ],
+      "input": {
+        "health": 1,
+        "name": "h1_s1",
+        "seed": 1,
+        "strength": 150
+      },
+      "next_random": 660436142,
+      "smoke": false
+    },
+    {
+      "draws": [
+        [
+          0,
+          99
+        ]
+      ],
+      "input": {
+        "health": 1,
+        "name": "h1_s2",
+        "seed": 2,
+        "strength": 150
+      },
+      "next_random": 1680153835,
+      "smoke": false
+    },
+    {
+      "draws": [
+        [
+          0,
+          99
+        ]
+      ],
+      "input": {
+        "health": 1,
+        "name": "h1_s3",
+        "seed": 3,
+        "strength": 150
+      },
+      "next_random": 3176385826,
+      "smoke": false
+    },
+    {
+      "draws": [],
+      "input": {
+        "health": 0,
+        "name": "grounded_dead",
+        "seed": 1,
+        "xyz": [
+          13440,
+          13440,
+          0
+        ]
+      },
+      "next_random": 2025287381,
+      "smoke": false
+    },
+    {
+      "draws": [],
+      "input": {
+        "health": 375,
+        "name": "exact_red",
+        "seed": 2,
+        "strength": 1500
+      },
+      "next_random": 2781840146,
+      "smoke": false
+    }
+  ]
+}

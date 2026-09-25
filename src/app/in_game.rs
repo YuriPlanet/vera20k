@@ -67,7 +67,8 @@ impl App {
         state.match_state.input.zoom_level = 1.0;
         state.match_state.input.zoom_target = 1.0;
         state.platform.window.set_cursor_visible(true);
-        log::info!("Returned to main menu");
+        Self::resume_shell_after_match(state);
+        log::info!("Returned to the shell");
     }
 
     /// Apply one foreground-activation edge.
@@ -570,6 +571,8 @@ impl App {
                 dispatch::toggle_debug_pause(state);
             }
             DevOverlayAction::ReturnToMenu => {
+                // The developer overlay always returns to the main menu.
+                state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
                 Self::return_to_main_menu(state);
             }
             DevOverlayAction::StepOneTick => {
@@ -718,12 +721,10 @@ impl App {
                 detail,
                 model,
             }) => {
-                state.frontend.score_screen = Some(model);
-                state.frontend.score_shell_state = Default::default();
-                state.frontend.screen = GameScreen::MissionResult { title, detail };
                 // Victory 006857AE restores the shell pair before score
                 // construction/run at 00685884/0068588B, not after Continue.
                 Self::enter_shell_window_mode(state);
+                Self::open_score_page(state, model, title, detail);
             }
             Some(crate::app::match_runtime::scenario_exit::ScenarioExitDestination::MainMenu) => {
                 Self::return_to_main_menu(state);

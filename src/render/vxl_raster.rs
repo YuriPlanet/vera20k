@@ -161,6 +161,43 @@ thread_local! {
         std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
+/// `FlyLocomotionClass` Draw_Matrix's crashing arm (`0x004CF610`, reached at
+/// `0x004CF6A3` while the owner's height is positive and its crash latch is
+/// set): the facing rotation, then `Matrix_rotate_x_axis @ 0x005AEF60` by the
+/// sideways angle and `Matrix_rotate_y_axis @ 0x005AF080` by the forwards
+/// angle, each post-multiplied like glam's rotations; the owner's draw then
+/// takes camera * that. The crashing arm keys its draw -1 (no cache): the
+/// pose is new every frame.
+///
+/// The PitchSpeed term (`+ type+0x3B0` when the current speed exceeds
+/// `type+0x3A8`) is omitted: the Fly speed of a crash never changes and no
+/// stock aircraft both exceeds its `PitchSpeed=` and authors a `PitchAngle=`.
+/// Native reads the table sine/cosine (`Math__SinFromTable`); glam's are
+/// within a pixel of it on these small bodies.
+fn voxel_crash_rotation(step: u8, tilt: [f32; 2]) -> Mat4 {
+    voxel_rotation_product(
+        voxel_camera_view(),
+        voxel_crash_locomotor_matrix(step, tilt),
+    )
+}
+
+/// The locomotor half of [`voxel_crash_rotation`], before the camera.
+fn voxel_crash_locomotor_matrix(step: u8, tilt: [f32; 2]) -> Mat4 {
+    voxel_rotation_product(
+        voxel_rotation_product(voxel_body_facing(step), Mat4::from_rotation_x(tilt[0])),
+        Mat4::from_rotation_y(tilt[1]),
+    )
+}
+
+/// The draw matrix of one body draw: the crashing arm when a tilt is present,
+/// else the slope/facing products.
+fn voxel_params_draw_rotation(params: &VxlRenderParams, step: u8) -> Mat4 {
+    match params.body_tilt {
+        Some(tilt) => voxel_crash_rotation(step, tilt),
+        None => voxel_draw_rotation_for_state(params.slope_type, params.slope_blend, step),
+    }
+}
+
 /// Ordinary stationary slope/facing combinations are finite. Build their
 /// native products once: turret pivots consume this every displayed frame,
 /// unlike the atlas which only prepares geometry on a cache miss. Blended
@@ -308,6 +345,10 @@ pub struct VxlRenderParams {
     /// Optional 3-frame slope transition. When present, this replaces
     /// `slope_type` with an interpolated slope orientation.
     pub slope_blend: Option<VxlSlopeBlend>,
+    /// A crashing Fly body's roll and pitch in radians (`TechnoClass+0x328`,
+    /// `+0x32C`). When present the body draws through Fly Draw_Matrix's
+    /// crashing arm ([`voxel_crash_rotation`]) instead of the slope matrices.
+    pub body_tilt: Option<[f32; 2]>,
     /// Model-space-unit to pixel scale. Default: 1.0 — one unit is one pixel.
     ///
     /// The original applies no magnification anywhere between the section
@@ -342,6 +383,7 @@ impl Default for VxlRenderParams {
             facing: 0,
             slope_type: 0,
             slope_blend: None,
+            body_tilt: None,
             scale: 1.0,
             ambient: 0.6,
             diffuse: 0.4,
@@ -518,11 +560,7 @@ pub fn native_vxl_draw_bounds(
     hva: Option<&HvaFile>,
     params: &VxlRenderParams,
 ) -> Option<[i32; 4]> {
-    let draw_matrix = voxel_draw_rotation_for_state(
-        params.slope_type,
-        params.slope_blend,
-        voxel_facing_step(params.facing),
-    );
+    let draw_matrix = voxel_params_draw_rotation(params, voxel_facing_step(params.facing));
     if params.scale == 1.0 && vxl.limbs.iter().all(|limb| limb.native_spans.is_some()) {
         let geometry = native::prepare_geometry(vxl, hva, params.frame, draw_matrix)?;
         let [x, y, _, _, width, height] = geometry.rect;
@@ -715,8 +753,7 @@ pub fn prepare_limb_data(
         .map(compute_slope_blend_rotation)
         .unwrap_or_else(|| compute_slope_rotation(params.slope_type));
 
-    let draw_matrix =
-        voxel_draw_rotation_for_state(params.slope_type, params.slope_blend, facing_step);
+    let draw_matrix = voxel_params_draw_rotation(params, facing_step);
     let draw_rotation = Mat3::from_mat4(draw_matrix);
     let model_rotation = voxel_rotation_product(slope_mat, body_facing);
     let mut limb_data: Vec<LimbRenderData> = Vec::new();
@@ -2105,5 +2142,54 @@ mod tests {
             * section_transform;
 
         assert_mat4_close(limbs[0].combined, expected, 1e-6);
+    }
+    /// Fly Draw_Matrix's crashing arm against the executable
+    /// (`tools/spatial_oracle/aircraft_crash.json`, `draw_matrix`): four
+    /// facings by six poses, the grounded and uncrashed bodies keying their
+    /// ordinary draw. Native reads table trig; within 2e-3 of glam's.
+    #[test]
+    fn crash_draw_matrix_matches_native_fly_draw_matrix() {
+        let oracle: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tools/spatial_oracle/aircraft_crash.json"
+        ))
+        .unwrap();
+        let rows = oracle["draw_matrix"].as_array().unwrap();
+        assert_eq!(rows.len(), 26);
+        let mut crashing = 0;
+        for row in rows {
+            let input = &row["input"];
+            let name = input["name"].as_str().unwrap();
+            let native: Vec<f32> = row["matrix"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|hex| f32::from_bits(u32::from_str_radix(hex.as_str().unwrap(), 16).unwrap()))
+                .collect();
+            let step = voxel_facing_step_u16(input["facing"].as_u64().unwrap() as u16);
+            let angles = input["angles"].as_array().unwrap();
+            let tilt = [
+                angles[0].as_f64().unwrap() as f32,
+                angles[1].as_f64().unwrap() as f32,
+            ];
+            let crash = row["key"].as_i64() == Some(-1);
+            let expected = if crash {
+                crashing += 1;
+                voxel_crash_locomotor_matrix(step, tilt)
+            } else {
+                // The ordinary arm: the facing alone (no stock pitch/roll).
+                voxel_body_facing(step)
+            };
+            for r in 0..3 {
+                for c in 0..3 {
+                    let actual = expected.col(c)[r];
+                    let native = native[r * 4 + c];
+                    assert!(
+                        (actual - native).abs() < 2e-3,
+                        "{name} m[{r}][{c}]: {actual} vs native {native}"
+                    );
+                }
+            }
+        }
+        assert_eq!(crashing, 24);
     }
 }

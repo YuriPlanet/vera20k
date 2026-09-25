@@ -910,24 +910,6 @@ fn packed_offset(cell: (i16, i16), offset: (i16, i16)) -> (i16, i16) {
     (cell.0.wrapping_add(offset.0), cell.1.wrapping_add(offset.1))
 }
 
-/// `MapClass::In_Bounds @ 0x00568300` — the active diamond test against
-/// `MapClass+0xF4` (size width) and `MapClass+0xF8` (size height). The low
-/// bridge search and `CrateSlot__RemoveCrateOverlayFromCell @ 0x004A1AA0` both
-/// call it before touching a CellClass.
-fn map_cell_in_bounds(sim: &Simulation, cell: (i16, i16)) -> bool {
-    let (Some(bounds), Some(height)) = (sim.playfield_bounds, sim.playfield_size_height) else {
-        return false;
-    };
-    let x = i32::from(cell.0);
-    let y = i32::from(cell.1);
-    let sum = x.wrapping_add(y);
-    let width = bounds.base;
-    width < sum
-        && x.wrapping_sub(y) < width
-        && y.wrapping_sub(x) < width
-        && sum <= width.wrapping_add(height.wrapping_mul(2))
-}
-
 fn execute_low_bridge_crate_mark(
     sim: &mut Simulation,
     registry: &OverlayTypeRegistry,
@@ -956,7 +938,7 @@ fn execute_low_bridge_crate_mark(
 
         let mut search = packed_step(origin, spec.join_direction);
         let mut found = None;
-        while map_cell_in_bounds(sim, search) {
+        while sim.map_cell_in_bounds(search) {
             let fields = read_crate_mark_fields(sim, search);
             if fields == (Some(spec.opposite_id), 1) {
                 found = Some(search);

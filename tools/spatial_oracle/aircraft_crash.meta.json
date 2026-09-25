@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Crash on dead/live/grounded/IKnowWhatImDoing aircraft over 15 seeds; the full per-frame Fly fall of a Health-0 aircraft from several heights, speeds, headings and grounds to its impact frame, death-weapon call, impact sound choice and UnInit; the crashing rocking accumulation; the red-health smoke gate and draw; the crashing Fly Draw_Matrix over 4 facings and 6 poses. Excludes the Techno death arm, the death weapon bullet, AnimClass construction and sound playback.",
+  "assumptions": [
+    "One Aircraft on the original (cloned) Aircraft vtable, real AircraftType, FacingClass and FlyLocomotionClass constructed by their original code; a flat 24x24 block of real cells (level/LandType per row) in the MapClass table; MapSize 64x64 (the block lies inside its playable diamond).",
+    "Scenario RNG seeded by the original seeder 0x0065C6D0 per row; next_random is the next raw Random() on the same stream after the row.",
+    "fall: Health 0, IsCrashing, Fly moving flag/current speed/target height/destination supplied as at the kill (the preceding Stun and Crash are not re-run). PC53/chop.",
+    "smoke: entry state of the block (ESI owner, EBX &Location); operator new returns NULL so the AnimClass constructor is not run; the draw and the allocation decision are the outputs."
+  ],
+  "substitutions": [
+    "crash: vt+0x274 Transmit_Radio_ToFirst, vt+0x3A0 Stun, vt+0xE0 RecordKill, KillPassengers 0x00707CB0 and AnnounceExpiredPointer 0x007258D0 recorded and returned without running.",
+    "fall: vt+0x124 Mark, vt+0xF8 UnInit, AircraftTracker 0x004138C0/0x004135D0, DisplayClass 0x004A9770/0x004A9720, Fire_Death_Weapon 0x0070D690 and VocClass::PlayAt 0x007509E0 recorded and returned without running."
+  ],
+  "entry_points": {
+    "crash": "0x004DEBB0",
+    "iloco_process": "0x004CCB40",
+    "process": "0x004CD600",
+    "rocking_update": "0x0070B570",
+    "smoke_begin": "0x00415085",
+    "smoke_end": "0x0041512C",
+    "random_ranged": "0x0065C7E0",
+    "rng_seed": "0x0065C6D0",
+    "fly_constructor": "0x004CC9A0",
+    "draw_matrix": "0x004CF610"
+  },
+  "payload_sha256": "729e0d3266fcb6115df0f8ccd55e094a8f1f9cd92e81048f381d06502fd15dd7"
+}

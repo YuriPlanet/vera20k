@@ -497,7 +497,9 @@ impl BitFont {
     pub fn missing_color_xor(rgb: [f32; 3]) -> [f32; 3] {
         fn xor_565(c: f32, bits: u32, mask: u8) -> f32 {
             let max_val = (1u32 << bits) - 1;
-            let quantized = ((c.clamp(0.0, 1.0) * max_val as f32) as u32) as u8;
+            // The surface unit of the encoded byte, as the presenter packs it.
+            let byte = (c.clamp(0.0, 1.0) * 255.0).round() as u8;
+            let quantized = byte >> (8 - bits);
             let flipped = (quantized ^ mask) & (max_val as u8);
             (flipped as f32) / (max_val as f32)
         }
@@ -828,7 +830,7 @@ pub(crate) mod tests {
     #[test]
     fn path_a_tint_is_the_encoded_colorref() {
         // UI tints multiply the encoded texel (`palette_light`): the terminal
-        // highlight unit's (255, 255, 30) must reach the surface as blue 30.
+        // highlight unit's (248, 252, 30) must reach the surface as blue 30.
         let font = make_test_font(&[(b'a' as u16, 6)], 4);
         let reveal = PathAReveal {
             count: 9,
@@ -837,7 +839,17 @@ pub(crate) mod tests {
             highlight_rgb: [255, 255, 255],
         };
         let (instances, _) = font.build_text_path_a("a", 0.0, 0.0, 1.0, 0.5, [0.0; 2], 0, reveal);
-        assert_eq!(instances[0].tint, [1.0, 1.0, 30.0 / 255.0]);
+        assert_eq!(
+            instances[0].tint,
+            [248.0 / 255.0, 252.0 / 255.0, 30.0 / 255.0]
+        );
+    }
+
+    #[test]
+    fn missing_color_xor_starts_from_the_surface_unit() {
+        // Path-A yellow is (248, 252, 0) in bytes, (31, 63, 0) in units.
+        let xored = BitFont::missing_color_xor([248.0 / 255.0, 252.0 / 255.0, 0.0]);
+        assert_eq!(xored, [21.0 / 31.0, 21.0 / 63.0, 21.0 / 31.0]);
     }
 
     #[test]
