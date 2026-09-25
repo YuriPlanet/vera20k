@@ -76,6 +76,16 @@ fn track_unit(entity: &GameEntity) -> bool {
         })
 }
 
+/// A `Teleporter=` Unit (TechnoType+0xCD4): Unit 0x741970 runs its
+/// Teleporter arm, which swaps a Drive in over the Teleport primary or ends
+/// it, before the Foot tail.
+fn teleporter_unit(sim: &Simulation, entity: &GameEntity, rules: Option<&RuleSet>) -> bool {
+    entity.category == EntityCategory::Unit
+        && rules
+            .and_then(|rules| sim.object_type(entity.type_ref(), rules))
+            .is_some_and(|object| object.teleporter)
+}
+
 pub(super) fn track_destination(entity: &GameEntity) -> Option<DriveCoord> {
     match entity.locomotor.as_ref()?.kind {
         LocomotorKind::Drive => entity.drive_locomotion.as_ref()?.destination,
@@ -726,7 +736,7 @@ impl Simulation {
     /// nulls +34, so a track end cannot resume the old order; any other
     /// receiver keeps the represented NavCom write set.
     pub(crate) fn assign_null_destination(&mut self, id: u64, rules: Option<&RuleSet>) {
-        if self.substrate.entities.get(id).is_some_and(track_unit) {
+        if self.unit_setter_receiver(id, rules) {
             self.set_unit_null_destination(id, rules);
         } else if let Some(actor) = self.substrate.entities.get_mut(id) {
             crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
@@ -735,14 +745,33 @@ impl Simulation {
         }
     }
 
-    /// Unit 0x741970(cell, 1) for a Drive/Ship receiver from a class caller:
-    /// the radio MOVE_HERE (Foot 0x004D91EB) and Mission_Harvest's staging
-    /// destination (0x0073EDB5). 0x741A80..0x741A90: an unchanged NavCom
-    /// returns before any write (the +1F8 force byte is not represented), so
-    /// the refinery's repeated MOVE_HERE leaves a running drive alone
-    /// (tools/spatial_oracle/track_destination.json `same_nav` rows).
-    /// Otherwise the ordinary accepted setter (`prepare_track_destination`).
-    /// Returns false for a non-track receiver or a refused destination.
+    /// Whether the Unit setter (`0x741970`) is represented for `id`: a
+    /// Drive/Ship receiver, or a `Teleporter=` Unit whatever its active
+    /// locomotor.
+    pub(crate) fn unit_setter_receiver(&self, id: u64, rules: Option<&RuleSet>) -> bool {
+        self.substrate
+            .entities
+            .get(id)
+            .is_some_and(|actor| track_unit(actor) || teleporter_unit(self, actor, rules))
+    }
+
+    /// Unit 0x741970(cell, 1) from a class caller: the radio MOVE_HERE (Foot
+    /// 0x004D91EB), Mission_Harvest's staging destination (0x0073EDB5) and
+    /// Mission_Enter's Teleporter re-assign (0x004D941D).
+    /// - 0x741A80..0x741A9C: an unchanged NavCom returns before any write
+    ///   unless the Techno+0x1F8 override is up; the call then clears it. So
+    ///   the refinery's repeated MOVE_HERE leaves a running drive alone
+    ///   (tools/spatial_oracle/track_destination.json `same_nav` rows).
+    /// - A `Teleporter=` type runs its arm ([`Self::unit_teleporter_arm`]).
+    /// - The Foot tail (0x4D94B0) writes NavCom and calls the active
+    ///   locomotor's Move_To — Drive/Ship ([`prepare_track_destination`]) or
+    ///   Teleport ([`teleport_move_to`]) — unless Foot+0x6AC skips it once.
+    ///
+    /// Returns false for a receiver without a represented Move_To or a
+    /// refused destination.
+    ///
+    /// [`prepare_track_destination`]: super::movement_commands::prepare_track_destination
+    /// [`teleport_move_to`]: super::teleport_movement::teleport_move_to
     pub(crate) fn set_unit_cell_destination(
         &mut self,
         id: u64,
@@ -752,41 +781,171 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
-        if !track_unit(actor) || !super::can_accept_destination(actor) {
+        let teleporter = teleporter_unit(self, actor, Some(rules));
+        if !(track_unit(actor) || teleporter) || !super::can_accept_destination(actor) {
             return false;
         }
-        if actor.navigation.nav_com == Some(NavTargetRef::cell(cell.0, cell.1)) {
+        if actor.navigation.nav_com == Some(NavTargetRef::cell(cell.0, cell.1))
+            && !actor.setter_force_reassign
+        {
             return true;
         }
         let Some(info) = self.resolve_move_info(id, Some(rules)) else {
             return false;
         };
-        let timing = super::DestinationTiming::from_rules(self.session.binary_frame, Some(rules));
+        {
+            let actor = self
+                .substrate
+                .entities
+                .get_mut(id)
+                .expect("same setter actor");
+            actor.setter_force_reassign = false;
+            super::movement_commands::clear_destination_path_head(actor);
+            actor.navigation.nav_queue.clear();
+        }
+        let skip_move_to = teleporter && self.unit_teleporter_arm(id, Some(cell), rules);
+        if !self.begin_foot_destination(id, true, rules) {
+            return false;
+        }
+        let frame = self.session.binary_frame;
+        let timing = super::DestinationTiming::from_rules(frame, Some(rules));
+        let terrain = self.resolved_terrain.as_ref();
         let actor = self
             .substrate
             .entities
             .get_mut(id)
             .expect("same setter actor");
-        super::movement_commands::prepare_track_destination(
-            actor,
-            cell,
-            None,
-            info.speed,
-            self.resolved_terrain.as_ref(),
-            timing,
-        );
-        if let Some(target) = actor.movement_target.as_mut() {
-            target.accel_factor = info.accel_factor;
-            target.decel_factor = info.decel_factor;
-            target.slowdown_distance = info.slowdown_distance;
+        let accepted = if skip_move_to {
+            super::navcom::publish_nav_com(actor, NavTargetRef::cell(cell.0, cell.1));
+            true
+        } else {
+            match actor.locomotor.as_ref().map(|loco| loco.active_kind()) {
+                Some(LocomotorKind::Drive | LocomotorKind::Ship) => {
+                    super::navcom::set_destination_internal_cell(actor, cell, terrain);
+                    super::movement_commands::prepare_destination_execution(
+                        actor, cell, info.speed,
+                    );
+                    if let Some(target) = actor.movement_target.as_mut() {
+                        target.accel_factor = info.accel_factor;
+                        target.decel_factor = info.decel_factor;
+                        target.slowdown_distance = info.slowdown_distance;
+                    }
+                    true
+                }
+                Some(LocomotorKind::Teleport) => {
+                    super::navcom::publish_nav_com(actor, NavTargetRef::cell(cell.0, cell.1));
+                    super::teleport_movement::teleport_move_to(
+                        actor,
+                        cell,
+                        &rules.general,
+                        info.is_harvester,
+                        frame,
+                    )
+                }
+                _ => false,
+            }
+        };
+        // 0x004D96C2..0x004D9707: +6B7 and the +640/+668 restarts follow the
+        // Move_To (or its skip) whatever it answered.
+        timing.accept(actor);
+        accepted
+    }
+
+    /// The Teleporter arm of Unit Assign_Destination
+    /// (`0x007423CD..0x007427C0`) for a `Teleporter=` type. The Teleport
+    /// primary stays in charge only for a Cell destination holding no Unit
+    /// while radio slot 0 holds a `DockUnload=` building (any such cell, not
+    /// only the pad: oracle row `contact_other_cell`); in the dock chain that
+    /// is the refinery's MOVE_HERE to its pad. Every other destination, NULL
+    /// included, drives: a Drive piggybacks over the Teleport
+    /// (`0x007425E6..0x0074277E`).
+    ///
+    /// Back to Teleport, a Drive piggyback ends when `Is_Ok_To_End` allows it
+    /// (`0x00742500..0x0074258A`). A Drive that cannot end yet is stopped, the
+    /// mission set to none with Enter queued and Techno+0x1F8 raised
+    /// (`0x0074258C..0x007425C6`); the FootClass::AI tail ends the stopped
+    /// Drive and the Enter redispatch's re-assign warps.
+    ///
+    /// Returns Foot+0x6AC, the can't-end branch's other byte: the Foot tail
+    /// keeps NavCom without a Move_To and clears it (`0x004D9607`). Both
+    /// tails the arm reaches consume it in the same call (`0x00742D0B`,
+    /// `0x00743161`), so it is never stored.
+    ///
+    /// The warp-transit latch (Techno+0x27C) and a lifted owner (+0x2B0) have
+    /// no producer in VERA and read clear; the Foot locomotor-swap byte
+    /// (+0x6AD) is read.
+    ///
+    /// RESIDUAL: the Drive install stashes the Teleport without a Stop, so a
+    /// warp the Teleport had armed waits natively until End_Piggyback hands
+    /// it back; VERA's warp request (`teleport_state`) lives on the entity,
+    /// so the next frame's Teleport step warps under the Drive. Trigger: a
+    /// non-pad re-assign between the arm and the same object's Process. The
+    /// dock chain arms and warps inside one FootClass::AI, so only an
+    /// outside setter call in between (none represented) reaches it.
+    fn unit_teleporter_arm(&mut self, id: u64, cell: Option<(u16, u16)>, rules: &RuleSet) -> bool {
+        let Some(actor) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if actor.foot_locomotor_swap_active {
+            return false;
         }
-        true
+        let Some(active) = actor.locomotor.as_ref().map(|loco| loco.active_kind()) else {
+            return false;
+        };
+        let dock_contact = actor
+            .radio_contacts
+            .slot(0)
+            .and_then(|contact| self.substrate.entities.get(contact))
+            .filter(|contact| contact.category == EntityCategory::Structure)
+            .and_then(|contact| self.object_type(contact.type_ref(), rules))
+            .is_some_and(|object| object.dock_unload);
+        // 0x007424D7: CellClass::Get_Unit(0) on the ground object list.
+        let pad = dock_contact
+            && cell.is_some_and(|(x, y)| {
+                self.substrate
+                    .occupancy
+                    .first_category_on_layer(
+                        x,
+                        y,
+                        MovementLayer::Ground,
+                        EntityCategory::Unit,
+                        &self.substrate.entities,
+                    )
+                    .is_none()
+            });
+        let frame = self.session.binary_frame;
+        if pad {
+            if active == LocomotorKind::Teleport {
+                return false;
+            }
+            let actor = self.substrate.entities.get_mut(id).expect("same arm actor");
+            if super::locomotor_owner::try_end_drive_at_foot_idle(actor) {
+                return false;
+            }
+            super::navcom::track_stop_moving(actor);
+            actor.setter_force_reassign = true;
+            let _ = self.mission_assign_exact(id, crate::sim::mission::MissionId::NONE, frame);
+            let _ = self.mission_queue_exact(
+                id,
+                crate::sim::mission::MissionId::from_known(MissionType::Enter),
+                0,
+                frame,
+                &crate::sim::mission::authority::EntityReadyInputProvider,
+            );
+            return true;
+        }
+        if active != LocomotorKind::Drive
+            && let Some(actor) = self.substrate.entities.get_mut(id)
+        {
+            super::locomotor_owner::begin_drive_for_teleporter(actor, frame);
+        }
+        false
     }
 
     /// Unit 0x741970(NULL, 1) for a Drive/Ship receiver, as Find_Path's
     /// failure continuation (0x4D413A) and the Process continuations call it.
-    /// - 0x741A80..0x741A90: without a NavCom (and without the +1F8 byte,
-    ///   which VERA does not represent) it returns before any write.
+    /// - 0x741A80..0x741A9C: without a NavCom it returns before any write
+    ///   unless the Techno+0x1F8 override is up; the call then clears it.
     /// - 0x742D46..0x742E1F: while radio slot 0 holds a WeaponsFactory
     ///   building (BuildingType+16BD, ReadINI 0x460A72) and the current
     ///   mission is not Enter, it clears only NavQueue (+588) and the +5AC
@@ -796,18 +955,32 @@ impl Simulation {
     ///   0x4D94B0(NULL): NavComAux/NavCom, locomotor Stop (+0x48) and the
     ///   +640/+668 restart with +6B7 = 0.
     ///
+    /// - A `Teleporter=` type runs its arm first ([`Self::unit_teleporter_arm`]):
+    ///   a NULL destination installs a Drive over the Teleport, which the
+    ///   FootClass::AI tail ends again once it is stopped.
+    ///
     /// Residual (not represented): the BalloonHover arm (0x741983), the
-    /// deploy-byte early return (0x741A9C), the Teleporter swap (0x7423CD),
-    /// the +2B0 linked-object branch (0x742E3A) and the unpowered-locomotor
-    /// PowerOn (0x742F48). Returns whether Foot 0x4D94B0 ran; the Rust
-    /// scheduling adapter is then trimmed to the committed head.
+    /// deploy-byte early return (0x741AA3..0x741ABD), the +2B0 linked-object
+    /// branch (0x742E3A) and the unpowered-locomotor PowerOn (0x742F48).
+    /// Returns whether Foot 0x4D94B0 ran; the Rust scheduling adapter is then
+    /// trimmed to the committed head.
     pub(crate) fn set_unit_null_destination(&mut self, id: u64, rules: Option<&RuleSet>) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
-        if actor.navigation.nav_com.is_none() {
+        if actor.navigation.nav_com.is_none() && !actor.setter_force_reassign {
             return false;
         }
+        let teleporter = teleporter_unit(self, actor, rules);
+        if let Some(actor) = self.substrate.entities.get_mut(id) {
+            actor.setter_force_reassign = false;
+        }
+        if teleporter && let Some(rules) = rules {
+            let _ = self.unit_teleporter_arm(id, None, rules);
+        }
+        let Some(actor) = self.substrate.entities.get(id) else {
+            return false;
+        };
         let factory_contact = actor
             .radio_contacts
             .slot(0)

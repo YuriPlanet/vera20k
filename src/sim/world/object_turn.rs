@@ -25,6 +25,39 @@ pub(super) fn shp_vehicle_counter_admitted(tube_active_at_entry: bool) -> bool {
     !tube_active_at_entry
 }
 
+/// The warp's two VocClass::PlayAt calls (`0x0071962C` at the old location,
+/// `0x00719710` at the new): the type's ChronoOutSound/ChronoInSound
+/// (TechnoType+0x578/+0x574), else `[AudioVisual]` (Rules+0x21C/+0x218), else
+/// silence.
+fn teleport_warp_sounds(
+    sim: &mut Simulation,
+    stable_id: u64,
+    departure: Option<(u16, u16)>,
+    rules: &RuleSet,
+) {
+    let Some(entity) = sim.substrate.entities.get(stable_id) else {
+        return;
+    };
+    let arrival = (entity.position.rx, entity.position.ry);
+    let object = sim.object_type(entity.type_ref(), rules);
+    let chrono_out = object
+        .and_then(|object| object.chrono_out_sound.clone())
+        .or_else(|| rules.general.chrono_out_sound.clone());
+    let chrono_in = object
+        .and_then(|object| object.chrono_in_sound.clone())
+        .or_else(|| rules.general.chrono_in_sound.clone());
+    for (name, (rx, ry)) in [
+        (chrono_out, departure.unwrap_or(arrival)),
+        (chrono_in, arrival),
+    ] {
+        if let Some(name) = name {
+            let sound_id = sim.interner.intern(&name);
+            sim.sound_events
+                .push(super::SimSoundEvent::ChronoTeleport { sound_id, rx, ry });
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "track_object_turn_tests.rs"]
 mod track_object_turn_tests;
@@ -96,7 +129,7 @@ fn reenter_pending_pass(
 }
 
 #[derive(Default)]
-struct ObjectTurnOutcome {
+pub(super) struct ObjectTurnOutcome {
     movement: movement::MovementTickStats,
     destroyed_structure: bool,
     bridge_state_changed: bool,
@@ -419,7 +452,7 @@ impl Simulation {
         Ok(outcome)
     }
 
-    fn advance_live_object_turn(
+    pub(super) fn advance_live_object_turn(
         &mut self,
         stable_id: u64,
         rules: Option<&RuleSet>,
@@ -561,7 +594,7 @@ impl Simulation {
         }
 
         sim.tick_air_movement_with_cell_lists_one(stable_id, rules);
-        let teleport_relocating = sim
+        let teleport_armed = sim
             .substrate
             .entities
             .get(stable_id)
@@ -569,6 +602,11 @@ impl Simulation {
             .is_some_and(|state| {
                 state.phase == crate::sim::movement::teleport_movement::TeleportPhase::Relocate
             });
+        // Teleport Process 0x007197AF: already on the destination, no warp.
+        let teleport_reached = sim.substrate.entities.get(stable_id).is_some_and(|entity| {
+            teleport_movement::warp_destination_reached(entity, sim.resolved_terrain.as_ref())
+        });
+        let teleport_relocating = teleport_armed && !teleport_reached;
         // Teleport Process 0x007195BF..0x007195CF: the warp step ejects a
         // parasite (ExitUnit, no suppression) before the relocation.
         if teleport_relocating
@@ -596,6 +634,11 @@ impl Simulation {
                 sim.resolved_terrain.as_ref(),
                 Some(&mut teleport_visuals),
             );
+            // RESIDUAL: the destination WarpOut is built here with the source
+            // one; native builds it after the arrival's Per_Cell_Process(2),
+            // Stop_Moving, crate pickup and NULL assign (`0x00719742`). Only
+            // an arrival step that draws RNG (a crush's death animation)
+            // could see the order.
             for descriptor in warp_spawns {
                 let type_name = descriptor.type_name;
                 if let Err(error) = sim.spawn_anim_object(rules, descriptor) {
@@ -617,13 +660,41 @@ impl Simulation {
                 None,
             );
         }
+        // Teleport Process's warp step (`0x007192F0`), after the relocation.
+        let unit_teleport = sim
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.category == EntityCategory::Unit);
+        let unit_warp_arrival = teleport_relocating && unit_teleport;
+        if teleport_reached && unit_teleport {
+            // 0x007197B4: vt+0x480(NULL, 1) before Stop_Moving.
+            sim.set_unit_null_destination(stable_id, rules);
+        }
         if teleport_relocating {
-            // Relocation71971C / 719ADE calls PerCell(2), including a
-            // same-cell relocation; ordinary Fly motion has no such call.
-            sim.foot_neighbors_at_per_cell(stable_id);
-            // PerCell(2)'s tail `0x006F5090` lets a held Temporal target go
-            // (a Chrono Legionnaire teleporting away from its victim).
-            sim.temporal_release_if_warping(stable_id);
+            if let Some(rules) = rules {
+                teleport_warp_sounds(sim, stable_id, cell_before_movement, rules);
+            }
+            if unit_warp_arrival {
+                // 0x0071971C: vt+0x18C(2) is UnitClass::Per_Cell_Process
+                // (0x00739EC0), with the Foot body and its playfield tail.
+                sim.unit_per_cell_process_arrival(stable_id, rules);
+                // 0x00719725 Stop_Moving: the tick retired the request.
+                // 0x0071972E CellClass::PickupCrate (`0x00481A00`): the crate
+                // receiver every mover still lacks (`movement::track_fresh`
+                // residuals).
+                // 0x0071973C: vt+0x480(NULL, 1). A Teleporter still in radio
+                // contact gets a Drive here, which the FootClass::AI tail below
+                // ends again.
+                sim.set_unit_null_destination(stable_id, rules);
+            } else {
+                // Relocation71971C calls PerCell(2), including a same-cell
+                // relocation; ordinary Fly motion has no such call.
+                sim.foot_neighbors_at_per_cell(stable_id);
+                // PerCell(2)'s tail `0x006F5090` lets a held Temporal target go
+                // (a Chrono Legionnaire teleporting away from its victim).
+                sim.temporal_release_if_warping(stable_id);
+            }
         }
         sim.pending_rocket_detonations
             .extend(rocket_movement::tick_rocket_movement(
@@ -673,6 +744,7 @@ impl Simulation {
             .map(|entity| (entity.position.rx, entity.position.ry));
         if !track_owned
             && !walk_process_owned
+            && !unit_warp_arrival
             && let Some(rules) = rules
         {
             sim.move_unit_sensor_after_cell_change(
@@ -682,11 +754,13 @@ impl Simulation {
                 rules,
             );
         }
-        if teleport_relocating {
-            // `TeleportLocomotionClass` arrival owns the exceptional exact
-            // outside clear at 0x00719A99; it must not flow through the
-            // ordinary promote-only per-cell writer.
-            sim.clear_entity_playfield_membership_after_teleport(stable_id);
+        if unit_warp_arrival {
+            // The Unit Per_Cell_Process above ran the Foot body.
+        } else if teleport_relocating {
+            // The warp's PerCell(2) ends in the `0x006F5090` playfield tail,
+            // which only promotes. (The exact outside clear at `0x00719A99`
+            // belongs to the Chronosphere warp states, not this step.)
+            sim.promote_entity_playfield_membership_after_move(stable_id);
         } else if !track_owned && !walk_process_owned && cell_before_movement != cell_after_movement
         {
             // `FootClass::PerCellProcess @ 0x004D85D0` runs the `Sensors=`

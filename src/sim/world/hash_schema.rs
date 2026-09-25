@@ -120,6 +120,11 @@ pub(super) enum HashFeature {
     /// resolution (`0x00468D80`) reads, and a bouncing anim's BounceClass
     /// body (`AnimClass+0x128`).
     BouncingDebris = 205,
+    /// Removes the Chrono Miner's retired dock-phase fold (home refinery,
+    /// dock-queued byte, dock phase, pivot facing) and adds the Techno+0x1F8
+    /// tag. Earlier schemas fold the constructor defaults in their place,
+    /// which every miner outside the retired Chrono phases held.
+    RetiredRefineryDockPhase = 206,
 }
 
 impl HashSchema {
@@ -152,6 +157,7 @@ impl HashSchema {
                     | HashFeature::RearmTimer
                     | HashFeature::InvisoBullet
                     | HashFeature::BouncingDebris
+                    | HashFeature::RetiredRefineryDockPhase
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

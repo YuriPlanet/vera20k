@@ -1297,6 +1297,12 @@ impl Simulation {
         self.track_enter_idle_mode(id, rules)
     }
 
+    /// Unit Per_Cell_Process(2) (`0x00739EC0`) outside a track: the Teleport
+    /// warp's arrival call (`0x0071971C`).
+    pub(crate) fn unit_per_cell_process_arrival(&mut self, id: u64, rules: Option<&RuleSet>) {
+        self.unit_track_per_cell(id, super::track_turn::PerCellReason::Arrival, rules, None);
+    }
+
     pub(super) fn unit_track_per_cell(
         &mut self,
         id: u64,
@@ -1334,6 +1340,13 @@ impl Simulation {
             });
         if let Some(rules) = rules.filter(|_| promote) {
             self.mission_host_promote(id, self.session.binary_frame, rules);
+        }
+        // 0x0073ACD7..0x0073ADC4: a harvester (or weeder) off Enter/Unload
+        // drops a refinery (weeder) contact at every track end.
+        if let Some(rules) = rules
+            && reason == super::track_turn::PerCellReason::Arrival
+        {
+            crate::sim::miner::per_cell_release_dock_contact(self, rules, id);
         }
         let Some(entity) = self.substrate.entities.get(id) else {
             return;

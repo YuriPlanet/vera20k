@@ -2,7 +2,8 @@
 //! the War Miner refinery dock runs against the Rust owners — the radio
 //! receive chain (`radio::receive`), Mission_Enter / Mission_Harvest /
 //! Mission_Unload (`miner::refinery_dock`, `miner_system`), the
-//! Per_Cell_Process DOCK_NOW sender and the StageClass tick — on a scene
+//! Per_Cell_Process DOCK_NOW sender and contact release, and the StageClass
+//! tick — on a scene
 //! built like the oracle's: a War Miner and a 4x3 DockUnload refinery whose
 //! NW cell is (6, 9), so the pad is (9, 10).
 //!
@@ -38,7 +39,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-const RULES: &str = "[VehicleTypes]\n0=HARV\n1=MTNK\n\
+pub(super) const RULES: &str = "[VehicleTypes]\n0=HARV\n1=MTNK\n\
     [HARV]\nStrength=1000\nSpeed=4\nROT=5\nHarvester=yes\nDock=GAREFN\nStorage=40\n\
     MovementZone=Crusher\nUnloadingClass=HORV\n\
     Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
@@ -75,7 +76,7 @@ pub(super) struct Scene {
 }
 
 impl Scene {
-    fn name(&self, id: u64) -> Value {
+    pub(super) fn name(&self, id: u64) -> Value {
         match id {
             id if id == self.miner => "miner".into(),
             id if id == self.refinery => "refinery".into(),
@@ -84,7 +85,7 @@ impl Scene {
         }
     }
 
-    fn id(&self, name: &str) -> u64 {
+    pub(super) fn id(&self, name: &str) -> u64 {
         match name {
             "miner" => self.miner,
             "refinery" => self.refinery,
@@ -94,7 +95,7 @@ impl Scene {
     }
 }
 
-fn mission(name: &str) -> MissionType {
+pub(super) fn mission(name: &str) -> MissionType {
     match name {
         "guard" => MissionType::Guard,
         "enter" => MissionType::Enter,
@@ -106,7 +107,7 @@ fn mission(name: &str) -> MissionType {
     }
 }
 
-fn cell(v: &Value) -> (u16, u16) {
+pub(super) fn cell(v: &Value) -> (u16, u16) {
     (v[0].as_u64().unwrap() as u16, v[1].as_u64().unwrap() as u16)
 }
 
@@ -169,6 +170,23 @@ fn world(rules: &RuleSet, ini: &IniFile) -> Simulation {
 
 pub(super) fn scene(input: &Value) -> Scene {
     let mut text = String::from(RULES);
+    // The type flags the Per_Cell release rows vary.
+    if input["harvester"] == false {
+        text = text.replacen("Harvester=yes", "Harvester=no", 1);
+    }
+    if input["weeder"] == true {
+        text = text.replacen("[HARV]\n", "[HARV]\nWeeder=yes\n", 1);
+    }
+    if input["refinery_flag"] == false {
+        text = text.replacen(
+            "Strength=900\nRefinery=yes\nDockUnload",
+            "Strength=900\nDockUnload",
+            1,
+        );
+    }
+    if input["weeder_dock"] == true {
+        text = text.replacen("[GAREFN]\n", "[GAREFN]\nWeeder=yes\n", 1);
+    }
     // A supplied Find_Nearby_Passable_Cell miss is ground no wheel can cross.
     let wheel = if input["passable"] == serde_json::json!([null]) {
         0
@@ -245,27 +263,42 @@ pub(super) fn scene_with(input: &Value, rules: RuleSet, ini: &IniFile) -> Scene 
         )
         .expect("purifier");
     }
-    // Spawned on a free cell, then placed: the pad is a refinery foundation
-    // cell, which Unlimbo refuses.
-    let miner = sim
-        .spawn_object("HARV", "Americans", 16, 16, 0, &rules, &heights)
-        .expect("miner");
+    // Spawned on a free cell, then moved into the row's cell list: the pad is
+    // a refinery foundation cell, which Unlimbo refuses, and a row's supplied
+    // Find_Nearby_Passable_Cell answer may be the miner's own cell, which its
+    // occupation bits would refuse. Its raw occupation stays on the spawn cell.
+    // `unlimbo_at_cell` (production-frame visits) Unlimbos on the cell itself.
+    let miner_type = input["miner_type"].as_str().unwrap_or("HARV");
     let (x, y) = input.get("miner_cell").map_or((10, 10), cell);
-    let entity = sim.substrate.entities.get_mut(miner).unwrap();
-    let (old_x, old_y) = (entity.position.rx, entity.position.ry);
-    entity.position.rx = x;
-    entity.position.ry = y;
-    let layer = entity.occupancy_list_layer().unwrap();
-    sim.substrate.occupancy.move_entity(
-        old_x,
-        old_y,
-        x,
-        y,
-        miner,
-        layer,
-        None,
-        crate::sim::occupancy::CellListInsertion::PrependNonBuilding,
-    );
+    let relocate = input["unlimbo_at_cell"] != true;
+    let (spawn_x, spawn_y) = if relocate { (16, 16) } else { (x, y) };
+    let miner = sim
+        .spawn_object(
+            miner_type,
+            "Americans",
+            spawn_x,
+            spawn_y,
+            0,
+            &rules,
+            &heights,
+        )
+        .expect("miner");
+    if relocate {
+        let entity = sim.substrate.entities.get_mut(miner).unwrap();
+        entity.position.rx = x;
+        entity.position.ry = y;
+        let layer = entity.occupancy_list_layer().unwrap();
+        sim.substrate.occupancy.move_entity(
+            spawn_x,
+            spawn_y,
+            x,
+            y,
+            miner,
+            layer,
+            None,
+            crate::sim::occupancy::CellListInsertion::PrependNonBuilding,
+        );
+    }
     let scene = Scene {
         sim,
         rules,
@@ -370,37 +403,38 @@ fn dress(mut s: Scene, input: &Value) -> Scene {
         body.set(raw, frame);
         entity.body_facing = Some(body);
         entity.facing = (raw >> 8) as u8;
-        let miner_state = entity.miner.as_mut().expect("War Miner");
-        miner_state.unload_active = input["unloading"] == true;
-        if let Some(stage) = input["stage"].as_array() {
-            miner_state.unload_accumulator = stage[0].as_i64().unwrap() as i32;
-            let start = stage[2].as_i64().unwrap();
-            let left = stage[3].as_u64().unwrap() as u32;
-            miner_state.unload_cluster_repeat = stage[4].as_u64().unwrap() as u32;
-            if start >= 0 {
-                miner_state.unload_cluster_timer.arm(start as u32, left);
-            } else {
-                miner_state.unload_cluster_timer.clear();
+        if let Some(miner_state) = entity.miner.as_mut() {
+            miner_state.unload_active = input["unloading"] == true;
+            if let Some(stage) = input["stage"].as_array() {
+                miner_state.unload_accumulator = stage[0].as_i64().unwrap() as i32;
+                let start = stage[2].as_i64().unwrap();
+                let left = stage[3].as_u64().unwrap() as u32;
+                miner_state.unload_cluster_repeat = stage[4].as_u64().unwrap() as u32;
+                if start >= 0 {
+                    miner_state.unload_cluster_timer.arm(start as u32, left);
+                } else {
+                    miner_state.unload_cluster_timer.clear();
+                }
             }
-        }
-        if let Some(storage) = input["storage"].as_array() {
-            let ore = storage[0].as_f64().unwrap() as usize;
-            let gems = storage[1].as_f64().unwrap() as usize;
-            miner_state.cargo = std::iter::repeat_n(
-                CargoBale {
-                    resource_type: ResourceType::Ore,
-                    value: 25,
-                },
-                ore,
-            )
-            .chain(std::iter::repeat_n(
-                CargoBale {
-                    resource_type: ResourceType::Gem,
-                    value: 50,
-                },
-                gems,
-            ))
-            .collect();
+            if let Some(storage) = input["storage"].as_array() {
+                let ore = storage[0].as_f64().unwrap() as usize;
+                let gems = storage[1].as_f64().unwrap() as usize;
+                miner_state.cargo = std::iter::repeat_n(
+                    CargoBale {
+                        resource_type: ResourceType::Ore,
+                        value: 25,
+                    },
+                    ore,
+                )
+                .chain(std::iter::repeat_n(
+                    CargoBale {
+                        resource_type: ResourceType::Gem,
+                        value: 50,
+                    },
+                    gems,
+                ))
+                .collect();
+            }
         }
     }
     if let Some(nav) = input.get("nav").filter(|n| !n.is_null()) {
@@ -415,7 +449,7 @@ fn dress(mut s: Scene, input: &Value) -> Scene {
 }
 
 /// The Rust transmit log in the oracle's event form.
-fn sends(s: &Scene) -> Vec<Value> {
+pub(super) fn sends(s: &Scene) -> Vec<Value> {
     radio::take_transmit_log()
         .into_iter()
         .map(|r| {
@@ -430,7 +464,7 @@ fn sends(s: &Scene) -> Vec<Value> {
         .collect()
 }
 
-fn oracle_sends(row: &Value) -> Vec<Value> {
+pub(super) fn oracle_sends(row: &Value) -> Vec<Value> {
     row["events"]
         .as_array()
         .unwrap()
@@ -595,7 +629,7 @@ fn compare_unload(s: &Scene, row: &Value, context: &str) {
 /// base, and Rust adds its own single draw from the Scenario stream as it
 /// stood before the dispatch. After an Enter_Idle_Mode the oracle did not
 /// run, the base is the Rate of the mission Rust's idle mode commenced.
-fn compare_delay(
+pub(super) fn compare_delay(
     s: &Scene,
     row: &Value,
     delay: i32,
@@ -842,6 +876,31 @@ fn per_cell_dock_now_matches_the_original_track_end_arm() {
     }
 }
 
+/// Per_Cell_Process(2)'s Ready/Commence and Refinery=/Weeder= contact
+/// release (`0x0073ACB3..0x0073ADCA`) through the production track-end
+/// owner. The rows stand at the queueing cell, off the pad, so the Enter arm
+/// before the snippet (the `per_cell` rows) sends nothing, and the crush and
+/// Foot tail after it find nothing to act on.
+#[test]
+fn per_cell_release_matches_the_original_track_end_arm() {
+    let corpus = corpus();
+    for row in corpus["per_cell_release"].as_array().unwrap() {
+        let input = &row["input"];
+        let context = input["name"].as_str().unwrap().to_string();
+        let mut s = scene(input);
+        radio::take_transmit_log();
+        s.sim.unit_per_cell_process_arrival(s.miner, Some(&s.rules));
+        assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
+        compare_state(&s, row, &context);
+        let miner = s.sim.substrate.entities.get(s.miner).unwrap();
+        assert_eq!(
+            u64::from(miner.miner.as_ref().is_some_and(|m| m.unload_active)),
+            row["state"]["unloading"].as_u64().unwrap(),
+            "{context}: unload latch"
+        );
+    }
+}
+
 #[test]
 fn stage_tick_matches_the_original_stageclass_step() {
     let corpus = corpus();
@@ -882,5 +941,6 @@ fn replay_covers_every_row() {
     assert_eq!(count("mission_harvest"), 9);
     assert_eq!(count("mission_unload"), 30);
     assert_eq!(count("per_cell"), 6);
+    assert_eq!(count("per_cell_release"), 13);
     assert_eq!(count("stage_tick"), 3);
 }

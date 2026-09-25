@@ -959,7 +959,7 @@ fn drive_ship_slope_failed_reveal_does_not_snap_or_consume_rng() {
 }
 
 #[test]
-fn techno_playfield_ctor_unlimbo_movement_hysteresis_and_teleport_clear() {
+fn techno_playfield_ctor_unlimbo_and_movement_hysteresis() {
     use crate::map::playfield::PlayfieldBounds;
 
     let mut sim = Simulation::new();
@@ -995,11 +995,6 @@ fn techno_playfield_ctor_unlimbo_movement_hysteresis_and_teleport_clear() {
     assert!(
         sim.substrate.entities.get(1).unwrap().in_playfield,
         "ordinary Foot movement @ 0x006F511A promotes but never demotes"
-    );
-    sim.clear_entity_playfield_membership_after_teleport(1);
-    assert!(
-        !sim.substrate.entities.get(1).unwrap().in_playfield,
-        "Teleport arrival @ 0x00719A99 clears an outside member"
     );
 }
 

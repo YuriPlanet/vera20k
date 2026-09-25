@@ -516,7 +516,7 @@ fn locomotor_tuple(
 /// state that draw must leave behind. The base lookup consumes no RNG, so one
 /// epilogue exit is exactly one draw.
 fn scenario_after_one_epilogue_draw(sim: &mut Simulation) -> SimRngLogicalState {
-    let mut probe = sim.miner_jitter_rng().clone();
+    let mut probe = sim.scenario_rng.clone();
     let _ = probe.next_range_u32_inclusive(0, RATE_EPILOGUE_JITTER_MAX);
     probe.logical_state()
 }
@@ -772,7 +772,7 @@ fn production_stock_harv_far_return_drive_uses_rule_profile() {
 
     let dx = u32::from(START.0.abs_diff(refinery_anchor.0));
     let dy = u32::from(START.1.abs_diff(refinery_anchor.1));
-    let threshold = u32::from(config.too_far_threshold_standard);
+    let threshold = oracle.rules.general.harvester_too_far_distance as u32;
     assert!(dx * dx + dy * dy > threshold * threshold);
 
     let mut sim = production_sim(0x0715_D008, &oracle);
@@ -869,7 +869,10 @@ fn gsi_04_07_placement_miner_return_threads_live_wall_neighbor_authority() {
         refinery_anchor.1 + queueing[1] as u16,
     );
     assert_eq!(staging, (28, 32));
-    assert!(START.0.abs_diff(refinery_anchor.0) > config.too_far_threshold_standard);
+    assert!(
+        i32::from(START.0.abs_diff(refinery_anchor.0))
+            > oracle.rules.general.harvester_too_far_distance
+    );
 
     let overlay_ini = IniFile::from_str(
         "[OverlayTypes]\n0=WALL\n1=ROCK\n\
@@ -1056,9 +1059,6 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
             (
                 miner.harvest_timer,
                 miner.rescan_cooldown,
-                miner.dock_enter_retry,
-                miner.approach_hello_timer,
-                miner.mission_deploy_timer,
                 miner.unload_cluster_timer,
             ),
             entity.radio_contacts.clone(),
@@ -1087,9 +1087,6 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
     let timers_after = (
         miner.harvest_timer,
         miner.rescan_cooldown,
-        miner.dock_enter_retry,
-        miner.approach_hello_timer,
-        miner.mission_deploy_timer,
         miner.unload_cluster_timer,
     );
     assert_eq!(entity.miner_state().unwrap(), MinerState::ReturnToRefinery);
@@ -1116,7 +1113,7 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
         refinery_id,
         entity_id
     ),);
-    assert!(!crate::sim::miner::miner_dock::has_entered(
+    assert!(!crate::sim::miner::miner_dock::test_support::has_entered(
         &sim,
         refinery_id,
         entity_id
@@ -1466,18 +1463,19 @@ fn production_cmin_arrival_clears_navcom_same_tick_and_releases_drive() {
     assert_ore_intact(&sim, &oracle, target);
 }
 
-/// Regression: the low-bridge tube gate must not classify the dock pad-entry
-/// direct move (a deliberate multi-cell, bypass-grid straight-line segment)
-/// as a failed tube traversal. It did, which stranded every miner whose
-/// accepted CAN_DOCK entry began more than one cell from the pad — the
-/// player-visible "chrono miner fills up and never returns" stall in every
-/// ordinary skirmish with an Allied refinery.
+/// A full Chrono Miner within `ChronoHarvTooFarDistance` of its refinery
+/// HELLOs from where it stands, queues Enter, and the refinery's MOVE_HERE
+/// warps it onto the pad in one frame: the Unit setter's Teleporter arm keeps
+/// the Teleport locomotor while the refinery is its radio contact
+/// (`0x007423CD`), and the same object turn's Teleport Process relocates it
+/// (`0x007192F0`) with ChronoOutSound at the old cell and ChronoInSound on the
+/// pad. It then turns east, unloads and hands back to Harvest.
 #[test]
-fn cmin_full_close_return_docks_and_deposits() {
-    use crate::sim::miner::RefineryDockPhase;
+fn cmin_full_close_return_warps_onto_the_pad_and_deposits() {
     let oracle = outbound_contract_oracle();
     let config = MinerConfig::from_rules(&oracle.rules);
     let refinery_anchor = (10, 10);
+    let pad = crate::sim::radio::receive::dock_pad_cell(refinery_anchor.0, refinery_anchor.1);
     let mut sim = production_sim(0xDEB6, &oracle);
     seed_human_house(&mut sim, "Americans");
     let mut grid = PathGrid::new(GRID_SIZE, GRID_SIZE);
@@ -1489,39 +1487,68 @@ fn cmin_full_close_return_docks_and_deposits() {
         refinery_type.bib,
     );
     install_world(&mut sim, &oracle, &grid, &[], true);
-    let _refinery_id = spawn_stock_refinery(&mut sim, &oracle, refinery_anchor);
+    let refinery_id = spawn_stock_refinery(&mut sim, &oracle, refinery_anchor);
     let entity_id = spawn_stock_miner(&mut sim, &oracle, "CMIN", MinerKind::Chrono);
     arm_full_ore_return(&mut sim, entity_id, &config);
+    let credits_before = crate::sim::production::credits_for_owner(&sim, "Americans");
 
+    let mut warped_at = None;
     let mut deposited_at = None;
-    for tick in 0..3000u32 {
+    for tick in 0..600u32 {
+        let before = position_tuple(&sim, entity_id);
+        let sounds_before = sim.sound_events.len();
         advance(&mut sim, &oracle, &grid);
         let e = sim.substrate.entities.get(entity_id).expect("miner");
+        if warped_at.is_none() && (e.position.rx, e.position.ry) == pad {
+            warped_at = Some(tick);
+            assert_eq!(
+                (before.0, before.1),
+                START,
+                "no drive: the miner leaves its harvest cell straight for the pad"
+            );
+            let chrono: Vec<_> = sim.sound_events[sounds_before..]
+                .iter()
+                .filter_map(|event| match event {
+                    crate::sim::world::SimSoundEvent::ChronoTeleport { rx, ry, .. } => {
+                        Some((*rx, *ry))
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(chrono, vec![START, pad], "ChronoOut, then ChronoIn");
+            let locomotor = e.locomotor.as_ref().expect("CMIN locomotor");
+            assert_eq!(locomotor.active_kind(), LocomotorKind::Teleport);
+            assert!(locomotor.piggyback.is_none(), "the arrival Drive ended");
+            assert_eq!(e.navigation.nav_com, None);
+            assert_eq!(e.radio_contacts.slot(0), Some(refinery_id));
+        }
         if e.miner.as_ref().expect("miner comp").cargo.is_empty() {
             deposited_at = Some(tick);
             break;
         }
     }
-    let deposited_at = deposited_at.expect(
-        "full CMIN must complete the close-return dock cycle and deposit \
-         (stall = the pad-entry direct move died; see tube gate)",
+    let warped_at = warped_at.expect("the refinery's MOVE_HERE warps the miner onto the pad");
+    let deposited_at = deposited_at.expect("the docked miner unloads its hold");
+    assert!(deposited_at > warped_at);
+    let paid = crate::sim::production::credits_for_owner(&sim, "Americans") - credits_before;
+    assert_eq!(
+        paid,
+        i32::from(config.ore_bale_value) * i32::from(get_capacity(&sim, entity_id)),
+        "the whole hold is paid"
     );
 
     // Let the state-4 departure and the delayed Harvest redispatch run.
     for _ in 0..100u32 {
         advance(&mut sim, &oracle, &grid);
     }
-
-    // The cycle physically completed: the miner entered the refinery pad,
-    // cargo empty, dock bookkeeping released, and the handler resumed
-    // harvest scheduling.
     let e = sim.substrate.entities.get(entity_id).expect("miner");
     let m = e.miner.as_ref().expect("miner comp");
     assert!(m.cargo.is_empty());
-    assert_eq!(m.dock_phase, RefineryDockPhase::Approach);
+    assert!(!m.unload_active);
+    assert!(m.reserved_refinery.is_none());
     assert!(
-        m.reserved_refinery.is_none(),
-        "reservation released at exit"
+        e.radio_contacts.is_empty(),
+        "OVER_OUT at the end of the unload"
     );
     assert!(
         matches!(
@@ -1531,19 +1558,21 @@ fn cmin_full_close_return_docks_and_deposits() {
         "post-deposit cursor resumes harvest scheduling, got {:?}",
         e.miner_state(),
     );
-    assert!(
-        deposited_at > 0,
-        "deposit happened during the run (tick {deposited_at})"
-    );
 }
 
-/// Regression: the second harvest cycle must leave the refinery pad. At dock
-/// departure the miner stands on the pad still facing the refinery, so the
-/// outbound move begins with a sharp (>=135°) turn whose fallback drive track
-/// consumes the first path node — leaving the "next" node two cells out. The
-/// tube gate classified that non-adjacent step on a plain (non-tube) cell as
-/// a failed tube traversal and killed the move on its issue tick, freezing
-/// the miner on the pad in a dispatch/kill loop after every deposit.
+fn get_capacity(sim: &Simulation, entity_id: u64) -> u16 {
+    sim.substrate
+        .entities
+        .get(entity_id)
+        .and_then(|entity| entity.miner.as_ref())
+        .expect("miner")
+        .capacity_bales
+}
+
+/// After the first deposit the Chrono Miner drives off the pad: Harvest state
+/// 0's destination has no radio contact, so the Teleporter arm gives it a
+/// Drive (`0x007425E6`). The departure turn from the east-facing pad is sharp
+/// (>=135°); an earlier tube-gate regression froze the miner there.
 #[test]
 fn cmin_second_cycle_leaves_the_pad_and_reharvests() {
     let oracle = outbound_contract_oracle();
@@ -1586,8 +1615,15 @@ fn cmin_second_cycle_leaves_the_pad_and_reharvests() {
     deposited_at.expect("cycle 1 deposit completes");
 
     let mut reharvested = false;
+    let mut last = position_tuple(&sim, entity_id);
     for _ in 0..2000u32 {
         advance(&mut sim, &oracle, &grid);
+        let now = position_tuple(&sim, entity_id);
+        assert!(
+            now.0.abs_diff(last.0) <= 1 && now.1.abs_diff(last.1) <= 1,
+            "the outbound leg drives; it never warps ({last:?} -> {now:?})"
+        );
+        last = now;
         let e = sim.substrate.entities.get(entity_id).expect("miner");
         if !e.miner.as_ref().expect("miner comp").cargo.is_empty() {
             reharvested = true;

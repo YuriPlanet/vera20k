@@ -8,9 +8,9 @@
 //! - Part of sim/ -- may depend on rules/ for data-driven miner detection.
 //! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
 
+mod exit_cell_search;
 mod harvest_mission;
 pub mod miner_dock;
-mod miner_dock_sequence;
 pub(crate) mod miner_system;
 mod refinery_dock;
 
@@ -22,22 +22,18 @@ mod miner_tests;
 #[path = "outbound_drive_tests.rs"]
 mod outbound_drive_tests;
 
-pub(crate) use self::harvest_mission::dispatch_harvest_for_object;
-pub(crate) use self::miner_dock_sequence::{
-    abandon_unload_for_direct_retask, interrupt_refinery_docked_miners,
-};
 // Generic nearby-passable-cell search, reused by the tank-bunker exit placement.
-pub(crate) use self::miner_dock_sequence::find_nearby_passable_cell_with_index;
+pub(crate) use self::exit_cell_search::find_nearby_passable_cell_with_index;
+pub(crate) use self::harvest_mission::dispatch_harvest_for_object;
 pub(crate) use self::miner_system::extract_bale;
 pub(crate) use self::refinery_dock::{
     clear_unload_latch, mission_enter, mission_unload, native_dock_miner, per_cell_dock_now,
-    tick_unload_stage,
+    per_cell_release_dock_contact, tick_unload_stage,
 };
 
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::GeneralRules;
 use crate::sim::mission::MissionTimer;
-use crate::sim::movement::facing_class::FacingClass;
 
 /// Which kind of resource a map cell or cargo bale contains.
 #[derive(
@@ -97,9 +93,11 @@ pub enum MinerState {
     SearchOre = 0,
     /// Extracting bales from the current cell.
     Harvest = 1,
-    /// Heading back (or teleporting) to the assigned refinery.
+    /// Finding a refinery: HELLO the nearest free one in range, else wait by
+    /// the nearest.
     ReturnToRefinery = 2,
-    /// Waiting in the dock queue outside the refinery.
+    /// The dock handoff: queue Enter. The dock itself runs as the Enter and
+    /// Unload missions (`refinery_dock`).
     Dock = 3,
     /// Parked because the bounded ore scan found nothing — gamemd's only
     /// entry into this cursor. VERA also parks here when the miner can reach
@@ -142,64 +140,6 @@ impl MinerState {
     /// Highest cursor gamemd's Harvest handler ever writes. Cursors above it
     /// are VERA-internal states with no native counterpart.
     pub const NATIVE_CURSOR_CEILING: u32 = 4;
-}
-
-/// Sub-state machine for the refinery docking sequence.
-///
-/// Active when `MinerState::Dock` is the current top-level state. Mirrors
-/// the stock refinery inbound radio sequence, then the unit deploy mission
-/// that starts the unload FSM.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
-)]
-pub enum RefineryDockPhase {
-    /// Mission_Harvest state 2 sends HELLO(0x02). Accepted miners enter the
-    /// refinery Contacts[] list; busy refineries can deny HELLO without
-    /// evicting the current contact, but the following CAN_DOCK path can
-    /// still defer with a receiver target instead of clearing the miner.
-    #[default]
-    Approach,
-    /// Mission_Enter sends CAN_DOCK(0x0E). Building case 0x0E replies with
-    /// the accepted cell (anchor + (3, 1)); only an already-there reply starts
-    /// the contact-entered/facing-sync handoff. Each dispatch schedules the
-    /// stock Enter retry delay.
-    MissionEnter,
-    /// Moving toward the accepted cell returned by CAN_DOCK. Arrival returns
-    /// to Mission_Enter; accepted-cell arrival does not bypass the Enter
-    /// retry timer.
-    AwaitingAcceptedCell,
-    /// Contact flag is set and ordinary radio 0x16 has synchronized the
-    /// locomotor/facing rate timer. This is not radio 0x15 and has no unload,
-    /// sound, pad-snap, or on-pad side effects.
-    #[serde(alias = "Linked")]
-    FaceSync,
-    /// Building radio 0x15 has queued sender mission 0x10 with queued flag 0.
-    /// No position snap, pad occupancy, cargo drain, deploy sound, or unload
-    /// animation starts in this phase.
-    MissionQueued,
-    /// Unit mission 0x10 (`Mission_Deploy_Building`) runs the path/facing gate
-    /// before starting the unload substate. The same facing timer initiated by
-    /// radio 0x16 is sampled here; only once the gate accepts do unload-active
-    /// effects start.
-    Pivoting,
-    /// Per-slot deposit pulse. Each timer crossing (HarvesterDumpRate × 900
-    /// = 14.4 ticks) drains one StorageClass slot — all bales of one
-    /// resource type at once — and emits one BaleDepositEvent per due gate
-    /// (`drained` on a slot drain, `empty` on the final no-cargo gate; the
-    /// refinery smoke burst fires on both, `0x0073E37E`).
-    /// Slot order matches gamemd: Ore (slot 0) first, Gems (slot 1) second.
-    /// On the first empty-slot gate after the last drain: transition to
-    /// Departing for the stock state-4 cleanup.
-    Unloading,
-    /// Legacy/pass-through phase for older save states. Stock unload now
-    /// reaches Departing directly from the empty-slot dump gate.
-    DepositCooldown,
-    /// Rust's stock zero-link state-4 handoff. Normal stock refinery unload
-    /// completion does not seed `Force_Track(0x47)`, play the conditional
-    /// `ReleaseDockedHarvester` departure sound, or install a cached
-    /// queue-cell destination. This phase clears the dock bookkeeping and
-    /// returns to SearchOre/Harvest scheduling.
-    Departing,
 }
 
 /// One discrete cargo bale carried by a miner.
@@ -248,12 +188,6 @@ pub struct MinerConfig {
     /// Long scan radius: cells to search from current position when short scan fails
     /// (TiberiumLongScan). If this also fails, falls back to unbounded global search.
     pub long_scan_radius: u16,
-    /// If the nearest ore is farther than this, the miner considers it "too far"
-    /// and will try local continuation first. Standard miners (HarvesterTooFarDistance).
-    pub too_far_threshold_standard: u16,
-    /// Too-far threshold for Chrono Miners (much larger because they teleport back)
-    /// (ChronoHarvTooFarDistance).
-    pub too_far_threshold_chrono: u16,
     /// The fixed handler return of the state-0 scan miss (`return 0x69` at
     /// `0x0073E91C`): frames until the GOING-TO-IDLE state (`WaitNoOre`)
     /// dispatches and queues Guard. Not an INI value.
@@ -279,8 +213,6 @@ impl Default for MinerConfig {
             unload_tick_interval: 15,
             local_continuation_radius: 6,
             long_scan_radius: 48,
-            too_far_threshold_standard: 5,
-            too_far_threshold_chrono: 50,
             // TibSun legacy: 0x69 = 105 frames at 15fps logic rate (~7 seconds).
             // Prevents aggressive re-scanning when no ore exists on the map.
             rescan_cooldown_ticks: 105,
@@ -305,8 +237,6 @@ impl MinerConfig {
         Self {
             local_continuation_radius: general.tiberium_short_scan.max(1) as u16,
             long_scan_radius: general.tiberium_long_scan.max(1) as u16,
-            too_far_threshold_standard: general.harvester_too_far_distance.max(1) as u16,
-            too_far_threshold_chrono: general.chrono_harv_too_far_distance.max(1) as u16,
             harvest_tick_interval: harvest_interval,
             unload_tick_interval: unload_interval,
             ..Self::default()
@@ -357,9 +287,9 @@ pub struct Miner {
     // NOTE: the FSM cursor (`state`) retired from this struct at the
     // substate-authority flip — `MissionCom::handler_state` is the cursor of
     // record. Read it via `GameEntity::miner_state()`.
-    /// StableEntityId of the "home" refinery (may change after unloading).
-    pub home_refinery: Option<u64>,
-    /// StableEntityId of the refinery this miner has reserved a dock slot at.
+    /// The refinery a player return order (`Command::MinerReturn`) pins
+    /// Mission_Harvest state 2 to. VERA-internal: the native order is an Enter
+    /// mission on the refinery.
     pub reserved_refinery: Option<u64>,
     /// The ore/gem cell we are currently targeting.
     pub target_ore_cell: Option<(u16, u16)>,
@@ -373,8 +303,6 @@ pub struct Miner {
     pub harvest_timer: MissionTimer,
     /// Whether the player issued a manual return order.
     pub forced_return: bool,
-    /// Whether this miner is queued (but not yet occupying) a dock.
-    pub dock_queued: bool,
     /// Frame-anchored cooldown before re-scanning for ore in WaitNoOre state
     /// (was a per-tick `u8` countdown; same +1 fence-post as `harvest_timer`).
     pub rescan_cooldown: MissionTimer,
@@ -383,32 +311,6 @@ pub struct Miner {
     /// dock cycle so the next `SearchOre` returns directly to it; consumed and
     /// cleared at `SearchOre` entry.
     pub last_harvest_cell: Option<(u16, u16)>,
-    /// Current phase of the refinery docking sequence.
-    /// Only meaningful when `state == MinerState::Dock`.
-    pub dock_phase: RefineryDockPhase,
-    /// Active 16-bit FacingClass timer for the refinery dock pivot.
-    ///
-    /// gamemd does not rotate the docked miner by manual 8-bit facing steps.
-    /// Radio 0x16 calls the locomotor's `Do_Turn(0x4000)`, which drives the
-    /// unit body through its PrimaryFacing RateTimer until deploy accepts the
-    /// target-facing window.
-    #[serde(default)]
-    pub dock_pivot_facing: Option<FacingClass>,
-    /// Stock Mission_Enter retry timer. Used after CAN_DOCK dispatches;
-    /// accepted-cell arrival does not bypass it. (Already frame-anchored — was
-    /// the `dock_enter_retry_start_frame`/`_duration` pair.)
-    #[serde(default)]
-    pub dock_enter_retry: MissionTimer,
-    /// Approach-phase re-HELLO cadence gate. gamemd's Mission_Harvest state 2
-    /// dispatches HELLO once per `[Harvest] Rate` cadence (~14-16f), not every
-    /// tick; this frame-anchored timer throttles the re-HELLO to one per due
-    /// window so contested-dock admission is decided per dispatch, not per tick.
-    #[serde(default)]
-    pub approach_hello_timer: MissionTimer,
-    /// Queued mission 0x10 (`Unload`) deploy-delay timer (was the
-    /// `mission_deploy_start_frame`/`_duration` pair).
-    #[serde(default)]
-    pub mission_deploy_timer: MissionTimer,
     /// Unit+0x6D1 unload-active latch.
     #[serde(default)]
     pub unload_active: bool,
@@ -423,11 +325,6 @@ pub struct Miner {
     /// Unit+0x10C, the StageClass rate; 0 stops the tick.
     #[serde(default)]
     pub unload_cluster_repeat: u32,
-    /// Legacy/conditional exit cell cache. Stock zero-link refinery unload
-    /// completion does not install a queue-cell destination; this remains
-    /// serialized so old saves and conditional release experiments can be
-    /// cleaned up deterministically.
-    pub exit_cell: Option<(u16, u16)>,
 }
 
 impl Miner {
@@ -458,26 +355,18 @@ impl Miner {
         };
         Self {
             kind,
-            home_refinery: None,
             reserved_refinery: None,
             target_ore_cell: None,
             cargo: Vec::with_capacity(capacity_bales as usize),
             capacity_bales,
             harvest_timer: MissionTimer::default(),
             forced_return: false,
-            dock_queued: false,
             rescan_cooldown: MissionTimer::default(),
             last_harvest_cell: None,
-            dock_phase: RefineryDockPhase::default(),
-            dock_pivot_facing: None,
-            dock_enter_retry: MissionTimer::default(),
-            approach_hello_timer: MissionTimer::default(),
-            mission_deploy_timer: MissionTimer::default(),
             unload_active: false,
             unload_accumulator: 0,
             unload_cluster_timer: MissionTimer::default(),
             unload_cluster_repeat: 0,
-            exit_cell: None,
         }
     }
 
@@ -674,14 +563,10 @@ mod tests {
         let mut general = GeneralRules::default();
         general.tiberium_short_scan = 10;
         general.tiberium_long_scan = 60;
-        general.harvester_too_far_distance = 8;
-        general.chrono_harv_too_far_distance = 40;
 
         let cfg = MinerConfig::from_general_rules(&general);
         assert_eq!(cfg.local_continuation_radius, 10);
         assert_eq!(cfg.long_scan_radius, 60);
-        assert_eq!(cfg.too_far_threshold_standard, 8);
-        assert_eq!(cfg.too_far_threshold_chrono, 40);
         // Bale values stay at defaults.
         assert_eq!(cfg.ore_bale_value, 25);
         assert_eq!(cfg.gem_bale_value, 50);
@@ -755,5 +640,4 @@ mod tests {
         assert_eq!(cfg.ore_bale_value, 25);
         assert_eq!(cfg.gem_bale_value, 50);
     }
-
 }

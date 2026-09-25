@@ -594,7 +594,10 @@ use crate::sim::world::Simulation;
 // bias (`HouseClass+0x1A8`), and a TeamType `Aggressive=`.
 // 204 -> 205: a bullet keeps its `Arcing=` (`BulletTypeClass+0x29B`) and an
 // anim its BounceClass body (`AnimClass+0x128`).
-const SNAPSHOT_VERSION: u32 = 205;
+// 205 -> 206: a miner no longer keeps the Chrono Miner's retired dock phases
+// (home refinery, dock-queued byte, dock phase, pivot facing, enter/approach/
+// deploy timers, exit cell); an entity keeps Techno+0x1F8.
+const SNAPSHOT_VERSION: u32 = 206;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1483,27 +1486,19 @@ fn restore_object_references(
                 target_id,
             )?;
         }
-        if let Some(miner) = entity.miner.as_ref() {
-            if let Some(target_id) = miner.home_refinery {
-                require_resolved_reference(
-                    entity_ids.contains(&target_id),
-                    "EntityStore",
-                    entity_id,
-                    "miner.home_refinery",
-                    "EntityStore",
-                    target_id,
-                )?;
-            }
-            if let Some(target_id) = miner.reserved_refinery {
-                require_resolved_reference(
-                    entity_ids.contains(&target_id),
-                    "EntityStore",
-                    entity_id,
-                    "miner.reserved_refinery",
-                    "EntityStore",
-                    target_id,
-                )?;
-            }
+        if let Some(target_id) = entity
+            .miner
+            .as_ref()
+            .and_then(|miner| miner.reserved_refinery)
+        {
+            require_resolved_reference(
+                entity_ids.contains(&target_id),
+                "EntityStore",
+                entity_id,
+                "miner.reserved_refinery",
+                "EntityStore",
+                target_id,
+            )?;
         }
         if let Some(slave) = entity.slave_harvester.as_ref() {
             require_resolved_reference(
@@ -3548,7 +3543,8 @@ mod tests {
         // 203 -> 204: bullet OnBridge, no owner house; house ROF bias; TeamType
         // `Aggressive=`.
         // 204 -> 205: bullet `Arcing=`; an anim's bounce body.
-        assert_eq!(super::SNAPSHOT_VERSION, 205);
+        // 205 -> 206: the retired Chrono dock phases; Techno+0x1F8.
+        assert_eq!(super::SNAPSHOT_VERSION, 206);
     }
 
     #[test]

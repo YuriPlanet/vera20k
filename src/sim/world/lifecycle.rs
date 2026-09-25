@@ -3431,14 +3431,10 @@ impl Simulation {
                 ammo.target_pad = None;
             }
         }
-        if let Some(miner) = listener.miner.as_mut() {
-            if miner.home_refinery == Some(expired_id) {
-                miner.home_refinery = None;
-            }
-            if miner.reserved_refinery == Some(expired_id) {
-                miner.reserved_refinery = None;
-                miner.dock_queued = false;
-            }
+        if let Some(miner) = listener.miner.as_mut()
+            && miner.reserved_refinery == Some(expired_id)
+        {
+            miner.reserved_refinery = None;
         }
 
         let clear_passenger_role = match &listener.passenger_role {

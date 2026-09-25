@@ -21,7 +21,8 @@ fn fixture() -> (Simulation, RuleSet) {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=CMIN\n[CMIN]\nStrength=400\nSpeed=4\n\
          Harvester=yes\nTeleporter=yes\nMovementZone=Normal\n\
-         Locomotor={4A582747-9839-11d1-B709-00A024DDAFD1}\n",
+         Locomotor={4A582747-9839-11d1-B709-00A024DDAFD1}\n\
+         [BuildingTypes]\n0=GAREFN\n[GAREFN]\nStrength=900\nDockUnload=yes\n",
     ))
     .expect("CMIN fixture rules");
     let mut sim = Simulation::new();
@@ -98,35 +99,45 @@ fn assert_retired(entity: &GameEntity) {
     assert!(entity.drive_locomotion.is_none());
 }
 
-fn destination(sim: &mut Simulation, rules: &RuleSet, building: bool) -> bool {
-    let grid = PathGrid::test_all_passable(16, 16);
-    movement::set_destination_for_teleporter_entity(
-        &mut sim.substrate.entities,
-        Some(&grid),
-        1,
-        (12, 8),
-        SimFixed::from_num(6),
-        false,
-        None,
-        None,
-        None,
-        None,
-        None,
-        &rules.general,
-        true,
-        true,
-        building,
-        None,
-        37,
-    )
+/// The Unit setter (`0x741970`) to cell (12, 8). With `dock_contact` a
+/// `DockUnload=` refinery holds radio slot 0, so the Teleporter arm keeps the
+/// Teleport primary; without it the arm installs a Drive.
+fn destination(sim: &mut Simulation, rules: &RuleSet, dock_contact: bool) -> bool {
+    if dock_contact {
+        let owner = sim.interner.intern("Americans");
+        let type_id = sim.interner.intern("GAREFN");
+        sim.substrate
+            .entities
+            .insert(GameEntity::new_at_frame_zero_for_test(
+                2,
+                3,
+                3,
+                0,
+                0,
+                owner,
+                Health { current: 900 },
+                type_id,
+                EntityCategory::Structure,
+                0,
+                5,
+                false,
+            ));
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .radio_contacts
+            .set_slot(0, 2);
+    }
+    sim.set_unit_cell_destination(1, (12, 8), rules)
 }
 
 #[test]
-fn empty_destination_retires_drive_before_starting_primary_teleport() {
+fn dock_pad_destination_retires_drive_before_teleport_move_to() {
     let (mut sim, rules) = fixture();
     activate_drive(sim.substrate.entities.get_mut(1).unwrap());
 
-    assert!(destination(&mut sim, &rules, false));
+    assert!(destination(&mut sim, &rules, true));
 
     let entity = sim.substrate.entities.get(1).unwrap();
     assert_retired(entity);
@@ -149,6 +160,9 @@ fn foot_ai_restore_retires_same_drive_fields_as_direct_destination() {
     ));
 }
 
+/// The arm's can't-end branch (`0x0074258C..0x007425C6`): a Drive still on
+/// its head is stopped, not ended; the Foot tail keeps NavCom without a
+/// Move_To and Techno+0x1F8 forces the next setter call.
 #[test]
 fn refused_restore_keeps_live_head_and_forced_segment() {
     for forced in [false, true] {
@@ -160,21 +174,38 @@ fn refused_restore_keeps_live_head_and_forced_segment() {
         if forced {
             assert!(sim.force_drive_track(1, 0x47, DriveCoord::cell(9, 8, 731)));
         }
-        let before = owned_state(sim.substrate.entities.get(1).unwrap());
 
-        assert!(!destination(&mut sim, &rules, false));
+        assert!(destination(&mut sim, &rules, true));
         assert!(!movement::tick_locomotor_piggyback_restore_one(
             &mut sim.substrate.entities,
             1
         ));
         let entity = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(owned_state(entity), before);
+        let locomotor = entity.locomotor.as_ref().unwrap();
+        assert_eq!(locomotor.active_kind(), LocomotorKind::Drive);
+        assert!(locomotor.piggyback.is_some());
+        let drive = entity.drive_locomotion.as_ref().unwrap();
+        assert_eq!(drive.head_to, Some(DriveCoord::cell(9, 8, 731)));
+        assert_eq!(drive.destination, None, "Stop_Moving, no Move_To");
+        assert_eq!(
+            entity.navigation.nav_com,
+            Some(crate::sim::components::NavTargetRef::cell(12, 8))
+        );
+        assert!(entity.setter_force_reassign);
+        assert_eq!(
+            entity.mission.current(),
+            crate::sim::mission::MissionId::NONE
+        );
+        assert_eq!(
+            entity.mission.queued(),
+            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Enter)
+        );
         assert!(entity.teleport_state.is_none());
     }
 }
 
 #[test]
-fn building_destination_installs_fresh_drive_without_previous_instance_state() {
+fn out_of_contact_destination_installs_fresh_drive_without_previous_instance_state() {
     let (mut sim, rules) = fixture();
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     // A saved state produced by the old direct-END path could leave these
@@ -182,7 +213,7 @@ fn building_destination_installs_fresh_drive_without_previous_instance_state() {
     supply_drive_state(entity);
     entity.drive_locomotion.as_mut().unwrap().track.turn_index = 0x47;
 
-    assert!(destination(&mut sim, &rules, true));
+    assert!(destination(&mut sim, &rules, false));
 
     let entity = sim.substrate.entities.get(1).unwrap();
     let locomotor = entity.locomotor.as_ref().unwrap();

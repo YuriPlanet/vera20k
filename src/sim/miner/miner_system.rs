@@ -14,12 +14,10 @@
 //! - sim/ NEVER depends on render/, ui/, sidebar/, audio/, net/.
 
 use crate::map::entities::EntityCategory;
-use crate::rules::locomotor_type::MovementZone;
+use crate::rules::locomotor_type::{LocomotorKind, MovementZone};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::miner::miner_dock::{self, ContactAdmission};
-use crate::sim::miner::{
-    CargoBale, Miner, MinerConfig, MinerKind, MinerState, RefineryDockPhase, ResourceType,
-};
+use crate::sim::miner::{CargoBale, Miner, MinerConfig, MinerKind, MinerState, ResourceType};
 use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement;
@@ -27,7 +25,7 @@ use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::zone_map::{ZONE_INVALID, ZoneGrid};
-use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::sim::world::Simulation;
 use crate::util::fixed_math::SimFixed;
 
 use crate::sim::debug_event_log::DebugEventKind;
@@ -136,7 +134,7 @@ fn return_exceeds_too_far_threshold(
     rules: &RuleSet,
     miner_sid: u64,
     refinery_sid: u64,
-    threshold_cells: u16,
+    threshold_cells: i32,
 ) -> Option<bool> {
     let miner = sim.substrate.entities.get(miner_sid)?;
     let refinery = sim.substrate.entities.get(refinery_sid)?;
@@ -175,8 +173,8 @@ fn return_exceeds_too_far_threshold(
     );
     let root = sqrt_approx_f32(distance_sq).ok()?;
     let distance = X87Chop53::ftol_i64(X87Chop53::load_f32(root).ok()?).ok()?;
-    let threshold = i64::from(threshold_cells) * 256;
-    Some(distance > threshold)
+    // `SHL EDX,8` then a signed `JG` (0x0073EC14 / 0x0073EE46).
+    Some(distance > i64::from(threshold_cells.wrapping_shl(8)))
 }
 
 #[cfg(test)]
@@ -538,8 +536,6 @@ pub(super) struct MinerSnapshot {
     pub(super) dispatch_delay: i32,
     /// Buffered miner state change events — flushed to entity at commit.
     pub(super) debug_events: Vec<(String, String)>,
-    /// Buffered dock phase change events — flushed to entity at commit.
-    pub(super) debug_dock_events: Vec<(String, String)>,
 }
 
 /// Build the dispatch snapshot for one live, non-dying, non-slave miner.
@@ -588,7 +584,6 @@ pub(super) fn build_miner_snapshot(
         state: cursor.unwrap_or(MinerState::SearchOre),
         dispatch_delay: DISPATCH_NEXT_FRAME,
         debug_events: Vec::new(),
-        debug_dock_events: Vec::new(),
     })
 }
 
@@ -610,15 +605,6 @@ pub(super) fn commit_miner_snapshot(sim: &mut Simulation, snap: &MinerSnapshot, 
         entity.push_debug_event(
             sim.session.tick as u32,
             DebugEventKind::MinerStateChange {
-                from: from.clone(),
-                to: to.clone(),
-            },
-        );
-    }
-    for (from, to) in &snap.debug_dock_events {
-        entity.push_debug_event(
-            sim.session.tick as u32,
-            DebugEventKind::DockPhaseChange {
                 from: from.clone(),
                 to: to.clone(),
             },
@@ -716,15 +702,7 @@ pub(super) fn process_miner(
     // `+0x3F8 == 0` case takes the same Guard queue early or reaches it
     // through the empty loop; both houses end on Guard, so the human test is
     // inert and not modelled.
-    //
-    // The `Dock` cursor is exempt: past the state-3 hand-off its phases run
-    // under native Mission_Enter / Mission_Deploy (the miner is no longer
-    // dispatched through Mission_Harvest there), and those handlers carry no
-    // dock-ownership preamble — a mind-controlled miner still finishes
-    // unloading into the refinery it entered. VERA dispatches the Dock
-    // cursor from this handler for structural reasons only.
-    let legacy_dock = snap.state == MinerState::Dock && snap.miner.kind != MinerKind::War;
-    if !legacy_dock && !house_owns_dock_instance(sim, rules, snap) {
+    if !house_owns_dock_instance(sim, rules, snap) {
         queue_guard_from_harvest(sim, snap);
         snap.dispatch_delay = DISPATCH_NEXT_FRAME;
         return;
@@ -741,21 +719,15 @@ pub(super) fn process_miner(
         MinerState::Harvest => {
             handle_harvest(sim, rules, config, path_grid, overlay_registry, snap)
         }
-        MinerState::ReturnToRefinery => {
-            handle_return(sim, rules, config, path_grid, overlay_registry, snap);
-            // Native return/finding-home state has no per-frame exit: every
-            // dispatch leaves through the default Rate epilogue.
+        // Native return/finding-home state has no per-frame exit: every
+        // dispatch leaves through the default Rate epilogue. ForcedReturn is
+        // the VERA-internal player-order cursor, outside the native switch,
+        // so it exits there too like any high cursor.
+        MinerState::ReturnToRefinery | MinerState::ForcedReturn => {
+            handle_return(sim, rules, snap);
             arm_rate_epilogue(sim, rules, snap);
         }
-        MinerState::Dock if snap.miner.kind == MinerKind::War => handle_handoff_war(sim, snap),
-        MinerState::Dock => super::miner_dock_sequence::handle_dock_sequence(
-            sim,
-            rules,
-            config,
-            path_grid,
-            overlay_registry,
-            snap,
-        ),
+        MinerState::Dock => handle_handoff(sim, snap),
         MinerState::Unload => {
             // Legacy state — production code never enters this path. If we
             // encounter it (e.g., a save from before the FSM rewrite), fall
@@ -770,12 +742,6 @@ pub(super) fn process_miner(
                 // into the default Rate epilogue (`0x0073EF97`).
                 arm_rate_epilogue(sim, rules, snap);
             }
-        }
-        MinerState::ForcedReturn => {
-            handle_forced_return(sim, rules, config, path_grid, overlay_registry, snap);
-            // VERA-internal cursor; outside the native handler's switch, so
-            // it exits through the default epilogue like any high cursor.
-            arm_rate_epilogue(sim, rules, snap);
         }
     }
     let state_after = format!("{:?}", snap.state);
@@ -894,31 +860,57 @@ fn handle_search_ore(
         NoOre,
     }
 
-    let outcome = {
-        // Combined scan filter — zone reachability + cell occupancy.
-        // Returns None if zone_grid / anchor is missing; caller falls back to
-        // an unfiltered scan that tick.
+    // Archive ghost-cell consumption: if `last_harvest_cell` is set, drive
+    // straight to it and clear. The archive is written by
+    // `save_archive_via_short_scan` when the miner becomes full. Reachability
+    // is re-checked because the patch may have been walled off between the
+    // save and the next cycle.
+    let archive_hit = snap.miner.last_harvest_cell.and_then(|archive| {
+        // Combined scan filter — zone reachability + cell occupancy. None
+        // without a zone grid or anchor: the check falls back to no filter.
+        let scan_filter = build_scan_filter(sim, path_grid, snap);
+        let archive_reachable = scan_filter.as_deref().is_none_or(|f| f(archive));
+        (resource_cell_present(sim, rules, overlay_registry, archive) && archive_reachable)
+            .then_some(ScanOutcome::Archive(archive))
+    });
+    if archive_hit.is_none() {
+        // Stale archive (depleted or unreachable) — drop it so we don't keep
+        // retrying.
+        snap.miner.last_harvest_cell = None;
+        // 0x0073E793..0x0073E83E: an active Teleport locomotor holding a
+        // NavCom takes vt+0x480(NULL, 1) before Search_For_Tiberium. The warp
+        // arrival clears NavCom, so the dock cycle never reaches it.
+        let teleport_with_nav = sim
+            .substrate
+            .entities
+            .get(snap.entity_id)
+            .is_some_and(|entity| {
+                entity.navigation.nav_com.is_some()
+                    && entity
+                        .locomotor
+                        .as_ref()
+                        .is_some_and(|loco| loco.active_kind() == LocomotorKind::Teleport)
+            });
+        if teleport_with_nav {
+            sim.set_unit_null_destination(snap.entity_id, Some(rules));
+        }
+        // Search_For_Tiberium returns at once for a NavCom (`0x004DCFE7`), and
+        // state 0 then leaves through the Rate epilogue
+        // (`0x0073E8C3..0x0073E92C`): still driving, no scan.
+        if sim
+            .substrate
+            .entities
+            .get(snap.entity_id)
+            .is_some_and(|entity| entity.navigation.nav_com.is_some())
+        {
+            arm_rate_epilogue(sim, rules, snap);
+            return;
+        }
+    }
+
+    let outcome = archive_hit.unwrap_or_else(|| {
         let scan_filter = build_scan_filter(sim, path_grid, snap);
         let filter_ref: Option<&dyn Fn((u16, u16)) -> bool> = scan_filter.as_deref();
-
-        // Archive ghost-cell consumption: if `last_harvest_cell` is set,
-        // drive straight to it and clear. The archive is written by
-        // `save_archive_via_short_scan` when the miner becomes full.
-        // Reachability is re-checked because the patch may have been walled
-        // off between the save and the next cycle.
-        let mut archive_hit = None;
-        if let Some(archive) = snap.miner.last_harvest_cell {
-            let archive_has_ore = resource_cell_present(sim, rules, overlay_registry, archive);
-            let archive_reachable = filter_ref.is_none_or(|f| f(archive));
-            if archive_has_ore && archive_reachable {
-                archive_hit = Some(ScanOutcome::Archive(archive));
-            } else {
-                // Stale archive (depleted or unreachable) — drop it so we
-                // don't keep retrying.
-                snap.miner.last_harvest_cell = None;
-            }
-        }
-
         // Long-range bounded scan from the miner's current position
         // (TiberiumLongScan). Single scan with no separate short-scan
         // pre-pass — the search expands outward and picks the best cell
@@ -929,23 +921,20 @@ fn handle_search_ore(
         // wider pass behind it, so a miss is a miss and the miss arm below —
         // not a cross-map drive — is what a player sees.
         //
-        // Chrono miners DRIVE to ore, not warp: the destination-setting path
-        // only keeps the Teleport locomotor when the miner already holds a
-        // radio contact, which a miner heading out to ore never does, so it
-        // swaps in a Drive piggyback. Only the inbound trip (ore → refinery)
-        // uses the warp.
-        archive_hit.unwrap_or_else(|| {
-            search_local_resource(
-                sim,
-                rules,
-                overlay_registry,
-                (snap.rx, snap.ry),
-                config.long_scan_radius,
-                filter_ref,
-            )
-            .map_or(ScanOutcome::NoOre, ScanOutcome::Found)
-        })
-    };
+        // Chrono miners DRIVE to ore, not warp: the Unit setter keeps the
+        // Teleport locomotor only for the refinery pad while in radio contact
+        // with it, which a miner heading out to ore never is, so its
+        // Teleporter arm swaps in a Drive piggyback.
+        search_local_resource(
+            sim,
+            rules,
+            overlay_registry,
+            (snap.rx, snap.ry),
+            config.long_scan_radius,
+            filter_ref,
+        )
+        .map_or(ScanOutcome::NoOre, ScanOutcome::Found)
+    });
 
     match outcome {
         ScanOutcome::Archive(cell) => {
@@ -1048,20 +1037,6 @@ fn handle_move_to_ore(
     if !still_has_ore {
         snap.miner.target_ore_cell = None;
         snap.state = MinerState::SearchOre;
-        return;
-    }
-
-    // Wait for any in-progress teleport to complete (chrono delay).
-    // Must be checked BEFORE the arrival check — during ChronoDelay the
-    // entity is already at the target position but still materializing
-    // (50% translucent). Transitioning to Harvest during delay would skip
-    // the warp-in visual.
-    let has_teleport = sim
-        .substrate
-        .entities
-        .get(snap.entity_id)
-        .is_some_and(|e| e.teleport_state.is_some());
-    if has_teleport {
         return;
     }
 
@@ -1219,7 +1194,7 @@ fn handle_harvest(
     // no-resource return path.
 
     // Short scan. The filter's closure captures `&sim`; scope it so the
-    // immutable borrow drops before `begin_return` needs `&mut sim` below.
+    // immutable borrow drops before the cursor writes below.
     let continuation_target = {
         let scan_filter = build_scan_filter(sim, path_grid, snap);
         let filter_ref: Option<&dyn Fn((u16, u16)) -> bool> = scan_filter.as_deref();
@@ -1239,14 +1214,9 @@ fn handle_harvest(
     }
 
     // Scan miss while not full → return to refinery, clear archive. Native
-    // state 1 only writes Status 2 and returns 1 (`0x0073EAEE..0x0073EB0D`);
-    // the Chrono Miner keeps the legacy same-dispatch selection.
+    // state 1 only writes Status 2 and returns 1 (`0x0073EAEE..0x0073EB0D`).
     snap.miner.last_harvest_cell = None;
-    if snap.miner.kind == MinerKind::War {
-        snap.state = MinerState::ReturnToRefinery;
-        return;
-    }
-    begin_return(sim, rules, config, path_grid, overlay_registry, snap);
+    snap.state = MinerState::ReturnToRefinery;
 }
 
 /// Save a fresh ghost-cell archive by running a short-radius scan from
@@ -1273,49 +1243,73 @@ fn save_archive_via_short_scan(
     );
 }
 
-/// `UnitClass::Mission_Harvest @ 0x0073E5E0` state 2 (FINDING_HOME) for a
-/// War Miner, `0x0073EB2C..0x0073EE72`. Every exit is the caller's Rate
-/// epilogue. Native evidence: tools/spatial_oracle/refinery_dock.json
-/// `mission_harvest` rows.
+/// `UnitClass::Mission_Harvest @ 0x0073E5E0` state 2 (FINDING_HOME),
+/// `0x0073EB2C..0x0073EE72`. Every exit is the caller's Rate epilogue. The
+/// Teleporter byte (`Type+0xCD4`, loaded at `0x0073E6DE`) changes three steps.
+/// Native evidence: tools/spatial_oracle/refinery_dock.json and
+/// cmin_dock.json `mission_harvest` rows.
 ///
-/// - With a NavCom (still driving) it only waits (`0x0073EB5A`).
-/// - The narrow `Find_Docking_Bay(Dock, 0, 0)` result within
-///   `HarvesterTooFarDistance` gets HELLO; ROGER writes state 3
-///   (`0x0073EB7E..0x0073EE68`).
-/// - Otherwise the wide pass (`0x0073EC1F`) finds the dock to wait by: within
-///   0x300 leptons the miner waits where it is (`0x0073ECD0`); farther out it
-///   drives to the nearby passable cell around the dock's NW cell plus art
-///   `QueueingCell=` (`0x0073ECDF..0x0073EDBB`), or clears its destination
-///   when there is none.
+/// - With a NavCom (still driving) a War Miner only waits (`0x0073EB5A`). A
+///   Teleporter first asks the narrow `Find_Docking_Bay(Dock, 0, 0)`
+///   (`0x0073EB3A`): a bay drops NavCom and NavComAux raw (`0x004DF0D0`; no
+///   locomotor Stop, so the Drive keeps its destination) and the state runs
+///   on in the same dispatch.
+/// - The narrow result within `HarvesterTooFarDistance` (Rules+0xD78), for a
+///   Teleporter `ChronoHarvTooFarDistance` (+0xD7C), gets HELLO; ROGER writes
+///   state 3 (`0x0073EB7E..0x0073EE68`).
+/// - Otherwise the wide pass (`0x0073EC1F`) finds the dock to wait by. A War
+///   Miner within 0x300 leptons of it waits where it is; a Teleporter never
+///   does (`0x0073ECD0`). The miner is sent to the nearby passable cell around
+///   the dock's NW cell plus art `QueueingCell=` (`0x0073ECDF..0x0073EDBB`),
+///   or its destination is cleared when there is none. Neither destination
+///   has a radio contact, so a Teleporter's arm makes it drive.
 ///
 /// VERA-internal: a player return order (`Command::MinerReturn`, the
 /// ForcedReturn cursor) pins both passes to its refinery; the native order is
 /// an Enter mission on the refinery, not yet represented.
-fn handle_return_war(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    config: &MinerConfig,
-    snap: &mut MinerSnapshot,
-) {
+fn handle_return(sim: &mut Simulation, rules: &RuleSet, snap: &mut MinerSnapshot) {
     let id = snap.entity_id;
-    if sim
-        .substrate
-        .entities
-        .get(id)
-        .is_some_and(|entity| entity.navigation.nav_com.is_some())
-    {
-        return;
-    }
+    let teleporter = sim
+        .object_type(snap.type_id, rules)
+        .is_some_and(|object| object.teleporter);
     let pinned = snap
         .miner
         .forced_return
         .then_some(snap.miner.reserved_refinery)
         .flatten()
         .filter(|&bay| sim.substrate.entities.get(bay).is_some());
-    let narrow = pinned.or_else(|| find_docking_bay(sim, rules, snap, false));
+    let driving = sim
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| entity.navigation.nav_com.is_some());
+    if driving && !teleporter {
+        return;
+    }
+    // The narrow pass takes only a bay with a free contact slot
+    // (`FUN_0065ADF0` at `0x004DEF09`), the pinned one included, so a
+    // driving Teleporter keeps its NavCom while that bay is busy.
+    let narrow = match pinned {
+        Some(bay) => refinery_dock_capacity_for_sid(sim, rules, bay)
+            .filter(|&capacity| miner_dock::would_admit(sim, bay, id, capacity))
+            .map(|_| bay),
+        None => find_docking_bay(sim, rules, snap, false),
+    };
+    if driving {
+        if narrow.is_none() {
+            return;
+        }
+        if let Some(entity) = sim.substrate.entities.get_mut(id) {
+            crate::sim::movement::foot_stop_moving(entity);
+        }
+    }
+    let too_far = if teleporter {
+        rules.general.chrono_harv_too_far_distance
+    } else {
+        rules.general.harvester_too_far_distance
+    };
     if let Some(bay) = narrow
-        && return_exceeds_too_far_threshold(sim, rules, id, bay, config.too_far_threshold_standard)
-            == Some(false)
+        && return_exceeds_too_far_threshold(sim, rules, id, bay, too_far) == Some(false)
         && let Some(capacity) = refinery_dock_capacity_for_sid(sim, rules, bay)
         && miner_dock::hello(sim, id, bay, capacity) == ContactAdmission::Accepted
     {
@@ -1327,8 +1321,8 @@ fn handle_return_war(
     let Some(bay) = pinned.or_else(|| find_docking_bay(sim, rules, snap, true)) else {
         return;
     };
-    if return_exceeds_too_far_threshold(sim, rules, id, bay, REFUSED_HELLO_STAGING_CELLS)
-        != Some(true)
+    if !teleporter
+        && return_exceeds_too_far_threshold(sim, rules, id, bay, STAGING_MIN_CELLS) != Some(true)
     {
         return;
     }
@@ -1341,6 +1335,10 @@ fn handle_return_war(
         }
     }
 }
+
+/// `0x0073ECD0`: a War Miner whose wide-pass dock is within `0x300` leptons
+/// (3 cells) gets no staging destination.
+const STAGING_MIN_CELLS: i32 = 3;
 
 /// `MapClass::Find_Nearby_Passable_Cell @ 0x0056DC20` as Mission_Harvest
 /// state 2 calls it at `0x0073ED75`: seeded at the dock's NW cell
@@ -1400,7 +1398,7 @@ fn refinery_staging_cell(sim: &Simulation, rules: &RuleSet, bay: u64) -> Option<
 
 /// Mission_Harvest state 3 (`0x0073EE8A`): `Queue_Mission(Enter, 0); return
 /// 1`. UnitClass::AI's Ready/Commence step promotes it.
-fn handle_handoff_war(sim: &mut Simulation, snap: &MinerSnapshot) {
+fn handle_handoff(sim: &mut Simulation, snap: &MinerSnapshot) {
     let now = sim.session.binary_frame;
     let _ = sim.mission_queue_exact(
         snap.entity_id,
@@ -1409,135 +1407,6 @@ fn handle_handoff_war(sim: &mut Simulation, snap: &MinerSnapshot) {
         now,
         &EntityReadyInputProvider,
     );
-}
-
-fn handle_return(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    config: &MinerConfig,
-    path_grid: Option<&PathGrid>,
-    overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-    snap: &mut MinerSnapshot,
-) {
-    if snap.miner.kind == MinerKind::War {
-        handle_return_war(sim, rules, config, snap);
-        return;
-    }
-    let has_teleport = sim
-        .substrate
-        .entities
-        .get(snap.entity_id)
-        .is_some_and(|e| e.teleport_state.is_some());
-    if has_teleport {
-        return;
-    }
-
-    let Some(ref_sid) = snap.miner.reserved_refinery else {
-        if let Some(rsid) = select_return_refinery(sim, rules, config, snap) {
-            snap.miner.reserved_refinery = Some(rsid);
-            if try_issue_chrono_far_return_teleport(sim, rules, config, path_grid, snap, rsid) {
-                return;
-            }
-            if try_begin_close_return_radio(
-                sim,
-                rules,
-                config,
-                path_grid,
-                overlay_registry,
-                snap,
-                rsid,
-            ) {
-                return;
-            }
-        }
-        // No bay from either pass (the house still owns a dock instance, or
-        // the preamble would already have queued Guard): native state 2 sets
-        // no destination and leaves through the Rate epilogue, re-running the
-        // whole selection on the next dispatch. Stay put.
-        return;
-    };
-
-    let dock = refinery_dock_for_sid(sim, ref_sid)
-        .filter(|_| miner_dock::same_house(sim, ref_sid, snap.entity_id));
-    let Some(dock) = dock else {
-        miner_dock::break_contact(sim, snap.entity_id, ref_sid);
-        snap.miner.reserved_refinery = None;
-        snap.miner.dock_queued = false;
-        snap.miner.dock_phase = RefineryDockPhase::Approach;
-        snap.miner.dock_enter_retry.clear();
-        snap.miner.exit_cell = None;
-        if snap.miner.is_full() {
-            snap.miner.target_ore_cell = None;
-            snap.state = MinerState::ReturnToRefinery;
-        } else {
-            snap.state = MinerState::SearchOre;
-        }
-        return;
-    };
-
-    let moving = sim
-        .substrate
-        .entities
-        .get(snap.entity_id)
-        .is_some_and(|entity| entity.movement_target.is_some());
-    if !moving && try_issue_chrono_far_return_teleport(sim, rules, config, path_grid, snap, ref_sid)
-    {
-        return;
-    }
-    if try_begin_close_return_radio(
-        sim,
-        rules,
-        config,
-        path_grid,
-        overlay_registry,
-        snap,
-        ref_sid,
-    ) {
-        return;
-    }
-
-    // Fallback contact test. With the close-return radio now covering every
-    // kind inside its too-far distance and the far paths covering the rest,
-    // this arm is reached only when the distance decision itself is
-    // unavailable (refinery dying / off-grid coordinates); it is kept as the
-    // VERA-internal safety net, gamemd equivalent UNCHECKED.
-    let at_dock = (snap.rx, snap.ry) == dock;
-    let contact = if snap.miner.kind == MinerKind::Chrono {
-        at_dock
-    } else {
-        let stopped_close_enough =
-            sim.substrate
-                .entities
-                .get(snap.entity_id)
-                .is_some_and(|entity| {
-                    entity.movement_target.is_none()
-                        && is_within_close_enough(
-                            (snap.rx, snap.ry),
-                            dock,
-                            rules.general.close_enough,
-                        )
-                });
-        is_adjacent_or_at((snap.rx, snap.ry), dock) || stopped_close_enough
-    };
-
-    if contact {
-        snap.state = MinerState::Dock;
-        snap.miner.dock_phase = RefineryDockPhase::Approach;
-        snap.miner.dock_enter_retry.clear();
-        return;
-    }
-
-    if let Some(grid) = path_grid {
-        issue_move_if_idle(
-            sim,
-            Some(rules),
-            grid,
-            snap.entity_id,
-            dock,
-            snap.speed,
-            overlay_registry,
-        );
-    }
 }
 
 /// `UnitClass::Mission_Harvest @ 0x0073E5E0` state 4 (GOING-TO-IDLE), the
@@ -1576,10 +1445,13 @@ fn handle_return(
 /// `Queue_Mission(mission, 0)` at `0x004C73B9`). A human war miner therefore
 /// parks on Guard until re-ordered — native behaviour.
 ///
-/// Step 2's cell search is VERA-internal in detail (the native range/flag
-/// arguments of `Find_Nearby_Passable_Cell` are not modelled; the same
-/// `find_nearby_passable_cell_with_index` helper the return staging uses
-/// stands in), gamemd equivalent UNCHECKED beyond the seed cell.
+/// Step 2's cell search is VERA-internal in detail: `FUN_00703590`'s
+/// `Find_Nearby_Passable_Cell` arguments are not modelled, and the exit
+/// spiral (`exit_cell_search::find_nearby_passable_cell_with_index`) stands
+/// in, where the return staging calls the native search
+/// ([`refinery_staging_cell`]). gamemd equivalent UNCHECKED beyond the seed
+/// cell. The destination goes through the Unit setter, so a Chrono Miner
+/// drives it.
 ///
 /// **Non-human houses take a VERA-internal bridge instead, gamemd equivalent
 /// = AI lane (`AI_Choose_Unit` 0x004FEB7B / `Mission_Guard` arm ii)
@@ -1701,51 +1573,14 @@ fn building_nearby_passable_cell(
         .map(|obj| foundation_dimensions(&obj.foundation))
         .unwrap_or((1, 1));
     let (x, y) = building_get_coords_xy(building, w, h);
-    super::miner_dock_sequence::find_nearby_passable_cell_with_index(
+    super::exit_cell_search::find_nearby_passable_cell_with_index(
         (x >> 8) as i32,
         (y >> 8) as i32,
         grid,
         Some(&sim.substrate.occupancy),
-        super::miner_dock_sequence::EXIT_SEARCH_MAX_RADIUS,
+        super::exit_cell_search::EXIT_SEARCH_MAX_RADIUS,
         u64::from(sim.session.binary_frame),
     )
-}
-
-fn handle_forced_return(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    config: &MinerConfig,
-    path_grid: Option<&PathGrid>,
-    overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-    snap: &mut MinerSnapshot,
-) {
-    if snap.miner.kind == MinerKind::War {
-        handle_return_war(sim, rules, config, snap);
-        return;
-    }
-    let has_teleport = sim
-        .substrate
-        .entities
-        .get(snap.entity_id)
-        .is_some_and(|e| e.teleport_state.is_some());
-    if has_teleport {
-        return;
-    }
-
-    if snap.miner.reserved_refinery.is_none() {
-        if let Some(rsid) = select_return_refinery(sim, rules, config, snap) {
-            snap.miner.reserved_refinery = Some(rsid);
-            if try_issue_chrono_far_return_teleport(sim, rules, config, path_grid, snap, rsid) {
-                return;
-            }
-        } else {
-            // VERA-internal cursor: keep retrying the selection on the Rate
-            // cadence, the way native state 2 does with no bay.
-            return;
-        }
-    }
-
-    handle_return(sim, rules, config, path_grid, overlay_registry, snap);
 }
 
 // -- Helpers --
@@ -1816,285 +1651,6 @@ pub(crate) fn extract_bales_max(
             value,
         })
         .collect()
-}
-
-/// Begin the return-to-refinery sequence.
-///
-/// Miners inside their kind's "too far" threshold (CMIN:
-/// `ChronoHarvTooFarDistance=50`, HARV: `HarvesterTooFarDistance=5`) keep the
-/// normal refinery radio/contact path to the accepted dock cell. Miners beyond
-/// that threshold use the far-return destination: the `QueueingCell` passable-cell
-/// search result, not the pad/contact cell. CMIN warps to the staging cell;
-/// HARV drives to it.
-fn begin_return(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    config: &MinerConfig,
-    path_grid: Option<&PathGrid>,
-    overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-    snap: &mut MinerSnapshot,
-) {
-    if let Some(rsid) = select_return_refinery(sim, rules, config, snap) {
-        // A miner holds one refinery contact at a time. HELLOing a new
-        // refinery over a live contact would evict the old one from the
-        // miner's single slot only, leaving the old refinery's slot taken
-        // until this miner died.
-        if let Some(previous) = snap.miner.reserved_refinery.filter(|&sid| sid != rsid) {
-            miner_dock::break_contact(sim, snap.entity_id, previous);
-        }
-        snap.miner.reserved_refinery = Some(rsid);
-        if try_issue_chrono_far_return_teleport(sim, rules, config, path_grid, snap, rsid) {
-            return;
-        }
-        if try_begin_close_return_radio(sim, rules, config, path_grid, overlay_registry, snap, rsid)
-        {
-            return;
-        }
-        snap.state = MinerState::ReturnToRefinery;
-    } else {
-        // No bay this dispatch: native state 2 sets nothing and retries on
-        // the next Rate-epilogue dispatch. (A house with no dock instance at
-        // all never gets here — the preamble queues Guard first.)
-        snap.state = MinerState::ReturnToRefinery;
-    }
-}
-
-fn try_begin_close_return_radio(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    config: &MinerConfig,
-    path_grid: Option<&PathGrid>,
-    overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-    snap: &mut MinerSnapshot,
-    ref_sid: u64,
-) -> bool {
-    // `UnitClass::Mission_Harvest @ 0x0073E5E0` state 2, the close-return
-    // radio (decompiled 2026-09-05, HARV branch `0x0073EBB1..0x0073EE68`,
-    // CMIN branch `0x0073EDE3..0x0073EE4B`): with no NavCom, the narrow
-    // `Find_Docking_Bay(Dock, 0, 0)` result within the kind's too-far
-    // distance (`HarvesterTooFarDistance` Rules+0xD78 for HARV,
-    // `ChronoHarvTooFarDistance` Rules+0xD7C for a `Teleporter=` type, both
-    // x256 leptons against the 3-D `GetCoords` distance) gets
-    // `Transmit_Radio(HELLO=2, bay)` on THAT dispatch (`0x0073EE51`); a reply
-    // of 1 writes state 3, whose next dispatch is `Queue_Mission(Enter, 0);
-    // return 1`. So a war miner hands off to Mission_Enter up to 5 cells out,
-    // never on adjacency. Both kinds share the shape; only the threshold
-    // differs.
-    //
-    // Chrono Miner legacy path; the War Miner runs `handle_return_war`.
-    if snap.miner.kind != MinerKind::Chrono {
-        return false;
-    }
-    let threshold = config.too_far_threshold_chrono;
-
-    match return_exceeds_too_far_threshold(sim, rules, snap.entity_id, ref_sid, threshold) {
-        Some(false) => {}
-        Some(true) | None => return false,
-    }
-
-    let Some(dock_capacity) = refinery_dock_capacity_for_sid(sim, rules, ref_sid) else {
-        return false;
-    };
-
-    let admission = miner_dock::hello(sim, snap.entity_id, ref_sid, dock_capacity);
-
-    if admission == ContactAdmission::Accepted {
-        if let Some(entity) = sim.substrate.entities.get_mut(snap.entity_id) {
-            entity.movement_target = None;
-        }
-        snap.state = MinerState::Dock;
-        snap.miner.dock_queued = false;
-        // G5: the accepted close-return HELLO queues Mission_Enter via the
-        // Harvest epilogue; arm the retry so the first CAN_DOCK waits the
-        // ~14-16f cadence (and draws the RandomRanged(0,2) the dispatch
-        // consumes), instead of an always-due next-tick collapse.
-        super::miner_dock_sequence::schedule_enter_retry(sim, rules, snap);
-        snap.miner.dock_phase = RefineryDockPhase::MissionEnter;
-        return true;
-    }
-
-    // HELLO refused (`0x0073EE68` falls through): the wide pass
-    // `Find_Docking_Bay(Dock, 0, 1)` under `g_MapEditorMode++`, and when its
-    // bay is farther than 0x300 leptons (`CMP EAX,0x300; JG` @ 0x0073ECD0)
-    // OR the type is a Teleporter, the staging destination = bay NW cell +
-    // `QueueingCell` (`BuildingType+0x1618/+0x161C`) through
-    // `Find_Nearby_Passable_Cell`; otherwise no destination — the state
-    // simply re-runs on the next Rate dispatch.
-    //
-    // **VERA-internal, gamemd equivalent UNCHECKED — staging seed.** Rust
-    // seeds the staging cell from the already-selected narrow-pass `ref_sid`
-    // where native re-runs `Find_Docking_Bay(Dock, 0, 1)` (the WIDE pass,
-    // no free-contact-slot gate) and seeds from THAT bay. The two differ
-    // only when the house owns two refineries of the Dock type within the
-    // `ChronoHarvTooFarDistance` close radius and the nearer one's slot is
-    // taken: native stages beside the other refinery, Rust beside the
-    // refused one. Player effect: a Chrono Miner waiting beside the wrong
-    // refinery for one Rate dispatch; the next HELLO retry re-selects.
-    // Chrono keeps its existing Dock/Approach re-HELLO cadence and staging
-    // drive (adjacency guard is VERA-internal; native sets the destination
-    // unconditionally for a Teleporter). The War Miner runs the native state
-    // 2 in `handle_return_war`.
-    if let Some(entity) = sim.substrate.entities.get_mut(snap.entity_id) {
-        entity.movement_target = None;
-    }
-    snap.state = MinerState::Dock;
-    snap.miner.dock_queued = true;
-    snap.miner.dock_enter_retry.clear();
-    snap.miner.dock_phase = RefineryDockPhase::Approach;
-    if let Some(staging) = chrono_return_staging_cell_for_sid(sim, rules, ref_sid, path_grid)
-        && !is_adjacent_or_at((snap.rx, snap.ry), staging)
-        && let Some(grid) = path_grid
-    {
-        issue_move_if_idle(
-            sim,
-            Some(rules),
-            grid,
-            snap.entity_id,
-            staging,
-            snap.speed,
-            overlay_registry,
-        );
-    }
-
-    true
-}
-
-/// `0x0073ECD0`: a non-Teleporter miner whose refused-HELLO wide-pass bay is
-/// within `0x300` leptons (3 cells) gets no staging destination.
-const REFUSED_HELLO_STAGING_CELLS: u16 = 3;
-
-fn try_issue_chrono_far_return_teleport(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    config: &MinerConfig,
-    path_grid: Option<&PathGrid>,
-    snap: &MinerSnapshot,
-    ref_sid: u64,
-) -> bool {
-    if snap.miner.kind != MinerKind::Chrono {
-        return false;
-    }
-
-    if !return_exceeds_too_far_threshold(
-        sim,
-        rules,
-        snap.entity_id,
-        ref_sid,
-        config.too_far_threshold_chrono,
-    )
-    .unwrap_or(false)
-    {
-        return false;
-    }
-
-    let Some(staging) = chrono_return_staging_cell_for_sid(sim, rules, ref_sid, path_grid) else {
-        return false;
-    };
-
-    let issued = movement::set_destination_for_teleporter_entity(
-        &mut sim.substrate.entities,
-        path_grid,
-        snap.entity_id,
-        staging,
-        snap.speed,
-        false,
-        None,
-        None,
-        None,
-        sim.zone_grid.as_ref(),
-        None,
-        &rules.general,
-        true,
-        true,
-        false,
-        sim.playfield_bounds,
-        sim.session.binary_frame,
-    );
-    if issued {
-        emit_chrono_warp_sounds(sim, rules, snap.type_id, (snap.rx, snap.ry), staging);
-    }
-    issued
-}
-
-fn emit_chrono_warp_sounds(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    type_id: InternedId,
-    depart: (u16, u16),
-    arrive: (u16, u16),
-) {
-    let obj = rules.object_case_insensitive(sim.interner.resolve(type_id));
-    let chrono_out = obj
-        .and_then(|o| o.chrono_out_sound.clone())
-        .or_else(|| rules.general.chrono_out_sound.clone());
-    let chrono_in = obj
-        .and_then(|o| o.chrono_in_sound.clone())
-        .or_else(|| rules.general.chrono_in_sound.clone());
-    if let Some(name) = chrono_out {
-        let sound_id = sim.interner.intern(&name);
-        sim.sound_events.push(SimSoundEvent::ChronoTeleport {
-            sound_id,
-            rx: depart.0,
-            ry: depart.1,
-        });
-    }
-    if let Some(name) = chrono_in {
-        let sound_id = sim.interner.intern(&name);
-        sim.sound_events.push(SimSoundEvent::ChronoTeleport {
-            sound_id,
-            rx: arrive.0,
-            ry: arrive.1,
-        });
-    }
-}
-
-/// Refinery selection for a full miner: `UnitClass::Mission_Harvest @
-/// 0x0073E5E0` state 2 (FINDING_HOME), decompiled 2026-09-05.
-///
-/// Native ordering: a *narrow* `Find_Docking_Bay(Type->Dock, 0, wide=0)` pass
-/// runs first, and its result is used only when it lies within the kind's
-/// too-far distance (`HarvesterTooFarDistance` @ Rules+0xD78 for HARV,
-/// `ChronoHarvTooFarDistance` @ Rules+0xD7C when the unit type's Teleporter
-/// byte +0xCD4 is set; both x256 leptons, compared against the 3-D
-/// `GetCoords` distance, where the building side is `BuildingClass::GetCoords
-/// @ 0x00447AC0` = foundation centre — see `return_exceeds_too_far_threshold`)
-/// — the miner then radios HELLO(2) to it. Otherwise
-/// (candidate too far, HELLO refused, or no candidate) a *wide* pass runs
-/// bracketed by `g_MapEditorMode++ / --` (`0x00A8E7AC`) with `wide=1`, and
-/// that result is the far-return destination. The wide pass admits
-/// refineries whose contact slots are full. Native then gates the drive on
-/// distance (0x0073ECD0: `CMP EAX,0x300; JG`): a non-Teleporter miner already
-/// within 768 leptons of the wide-pass result gets NO destination and idles in
-/// state 2 until a contact slot frees; Rust has no 0x300 gate and its dock FSM
-/// parks the miner nearby instead (VERA-internal, gamemd equivalent UNCHECKED
-/// beyond the compare; player-visible effect is the idle spot, small). There is no Teleporter branch
-/// inside selection: chrono miners run the same two passes, only the
-/// threshold differs (0x0073E5E0 case 2, `+0xCD4` selects Rules+0xD7C).
-///
-/// VERA-internal residuals: (1) the chosen refinery stays in
-/// `reserved_refinery` until the return completes, where gamemd re-runs both
-/// passes on every state-2 dispatch, so a miner beside an occupied refinery
-/// does not re-pick a second free one inside the close radius (visible only
-/// with two refineries within HarvesterTooFarDistance); (2) the narrow
-/// candidate is returned before HELLO — gamemd falls through to the wide pass
-/// when HELLO(2) is refused, VERA's later `hello_or_wait` re-probes instead.
-fn select_return_refinery(
-    sim: &Simulation,
-    rules: &RuleSet,
-    config: &MinerConfig,
-    snap: &MinerSnapshot,
-) -> Option<u64> {
-    let threshold = match snap.miner.kind {
-        MinerKind::Chrono => config.too_far_threshold_chrono,
-        MinerKind::War | MinerKind::Slave => config.too_far_threshold_standard,
-    };
-    if let Some(sid) = find_docking_bay(sim, rules, snap, false)
-        && return_exceeds_too_far_threshold(sim, rules, snap.entity_id, sid, threshold)
-            == Some(false)
-    {
-        return Some(sid);
-    }
-    find_docking_bay(sim, rules, snap, true)
 }
 
 /// One `FootClass::Find_Docking_Bay @ 0x004DF040` pass: for each `Dock=`
@@ -2329,15 +1885,6 @@ fn refinery_zone_reachable(
         || ore_reachable(zone_grid, mz, layer, anchor, dock)
 }
 
-/// Resolve a refinery's dock cell from its stable_id.
-fn refinery_dock_for_sid(sim: &Simulation, ref_sid: u64) -> Option<(u16, u16)> {
-    let entity = sim.substrate.entities.get(ref_sid)?;
-    if entity.dying || entity.health.current == 0 {
-        return None;
-    }
-    Some(refinery_dock_cell(entity.position.rx, entity.position.ry))
-}
-
 fn refinery_dock_capacity_for_sid(
     sim: &Simulation,
     rules: &RuleSet,
@@ -2350,38 +1897,6 @@ fn refinery_dock_capacity_for_sid(
     sim.object_type(entity.type_ref(), rules)
         .map(|o| o.dock_contact_capacity() as usize)
         .or(Some(1))
-}
-
-/// Chrono far-return staging cell from `QueueingCell`, then the same nearby
-/// passable-cell search gamemd runs before assigning a teleport destination.
-fn chrono_return_staging_cell_for_sid(
-    sim: &Simulation,
-    rules: &RuleSet,
-    ref_sid: u64,
-    path_grid: Option<&PathGrid>,
-) -> Option<(u16, u16)> {
-    let entity = sim.substrate.entities.get(ref_sid)?;
-    let queueing = sim
-        .object_type(entity.type_ref(), rules)
-        .map_or([0, 0], |o| o.queueing_cell);
-    let seed = super::miner_dock_sequence::refinery_queue_cell(
-        entity.position.rx,
-        entity.position.ry,
-        queueing,
-    );
-
-    if let Some(grid) = path_grid {
-        return super::miner_dock_sequence::find_nearby_passable_cell_with_index(
-            seed.0 as i32,
-            seed.1 as i32,
-            grid,
-            None,
-            super::miner_dock_sequence::EXIT_SEARCH_MAX_RADIUS,
-            u64::from(sim.session.binary_frame),
-        );
-    }
-
-    Some(seed)
 }
 
 /// The dock pad a refinery at NW `(rx, ry)` sends its miner to
@@ -2567,24 +2082,14 @@ fn issue_stock_miner_drive_move_with_overlay_registry(
     if target.0 >= grid.width() || target.1 >= grid.height() {
         return false;
     }
+    // Search_For_Tiberium's vt+0x480(cell, 1) (`0x004DD086`): the Unit setter,
+    // whose Teleporter arm gives a Chrono Miner out of radio contact a Drive.
+    if sim.unit_setter_receiver(entity_id, Some(rules)) {
+        return sim.set_unit_cell_destination(entity_id, target, rules);
+    }
     let Some(info) = sim.resolve_move_info(entity_id, Some(rules)) else {
         return false;
     };
-
-    // Unit741970's class refusals return before its Teleporter swap
-    // (0x7423CD), and the Drive setter behind the swap accepts without a
-    // route, so an activated Drive is never rolled back: a later Process
-    // FindPath failure clears the destination and the idle restore gate
-    // returns the Chrono Miner to Teleport.
-    if info.is_teleporter && info.is_harvester {
-        let Some(entity) = sim.substrate.entities.get_mut(entity_id) else {
-            return false;
-        };
-        if !movement::can_accept_destination(entity) {
-            return false;
-        }
-        movement::locomotor_owner::begin_drive_for_teleporter(entity, sim.session.binary_frame);
-    }
 
     let terrain_costs = sim.terrain_costs.get(&info.speed_type);
     let blocker_neighbor_counts = movement::bump_crush::build_blocker_neighbor_counts_with_overlays(
@@ -2632,15 +2137,15 @@ fn issue_stock_miner_drive_move_with_overlay_registry(
 }
 
 /// Issue a move command only if the entity's retained destination is not
-/// already this cell.
+/// already this cell: the Unit setter for its receivers (Mission_Harvest
+/// state 4's `Set_Destination`), the generic command otherwise.
 ///
 /// The destination is the NavCom the setter publishes: a Drive/Ship order
 /// accepts without a route (the first Process requests it) and keeps NavCom
 /// through the Foot+64C retry ladder, so the gate must not read the route.
 /// A Find_Path redirect (code 6 FNPC, code 7) or the command-time redirect
 /// of the remaining adapter locomotors publishes a different cell, and the
-/// next call re-issues the original target (VERA-internal dock approach;
-/// native Mission_Harvest's drive is not ported).
+/// next call re-issues the original target.
 pub(crate) fn issue_move_if_idle(
     sim: &mut Simulation,
     rules: Option<&RuleSet>,
@@ -2651,6 +2156,13 @@ pub(crate) fn issue_move_if_idle(
     overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
 ) {
     if target.0 >= grid.width() || target.1 >= grid.height() {
+        return;
+    }
+    // The Unit setter (`0x741970`) holds the same unchanged-NavCom return.
+    if let Some(rules) = rules
+        && sim.unit_setter_receiver(entity_id, Some(rules))
+    {
+        sim.set_unit_cell_destination(entity_id, target, rules);
         return;
     }
     let already = sim.substrate.entities.get(entity_id).is_some_and(|e| {
@@ -2692,29 +2204,6 @@ pub(crate) fn issue_move_if_idle(
             ),
         );
     }
-}
-
-/// True if `pos` is at `target` or cardinally/diagonally adjacent (1 cell away).
-/// Used for dock arrival checks — buildings occupy their cells, so miners
-/// park adjacent to the refinery rather than on top of it.
-fn is_adjacent_or_at(pos: (u16, u16), target: (u16, u16)) -> bool {
-    let dx = (pos.0 as i32 - target.0 as i32).unsigned_abs();
-    let dy = (pos.1 as i32 - target.1 as i32).unsigned_abs();
-    dx <= 1 && dy <= 1
-}
-
-/// Movement can legitimately stop short when blocked but within
-/// `[General] CloseEnough`; refinery return must treat that as contact so the
-/// dock radio/enter sequence can take over instead of reissuing the same path.
-fn is_within_close_enough(pos: (u16, u16), target: (u16, u16), close_enough: i32) -> bool {
-    // Same metric the movement give-up test uses: `CoordStruct::Distance3D` @
-    // `0x0041C380` against `Rules+0x1718`. A Manhattan sum here disagreed with
-    // movement by up to √2 at exactly the Δ(2,1) geometry where the two now
-    // both abort, so movement stopped while this said "not close enough" and the
-    // return loop reissued the same path.
-    let dx = (pos.0 as i64 - target.0 as i64).abs() * 256;
-    let dy = (pos.1 as i64 - target.1 as i64).abs() * 256;
-    crate::util::fixed_math::isqrt_i64(dx * dx + dy * dy) < i64::from(close_enough)
 }
 
 /// Count completed, alive Ore Purifier buildings owned by `owner`
@@ -3367,9 +2856,15 @@ mod harvest_scan_dispatch_tests {
             "HELLO accepted on the same dispatch"
         );
         assert_eq!((entity.position.rx, entity.position.ry), (16, 11));
+        let pad = sim
+            .substrate
+            .entities
+            .get(REFINERY_ID)
+            .map(|refinery| refinery_dock_cell(refinery.position.rx, refinery.position.ry))
+            .unwrap();
         assert!(
-            !is_adjacent_or_at((16, 11), refinery_dock_for_sid(&sim, REFINERY_ID).unwrap()),
-            "the hand-off happened without adjacency to the CAN_DOCK cell"
+            pad.0.abs_diff(16) > 1,
+            "the hand-off happened without adjacency to the pad {pad:?}"
         );
     }
 

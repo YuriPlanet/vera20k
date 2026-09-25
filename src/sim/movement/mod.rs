@@ -146,7 +146,7 @@ pub(crate) use drive_locomotion::{drive_do_turn, drive_locomotor_is_moving};
 // Re-export command functions so callers can use `movement::issue_move_command` etc.
 pub use movement_commands::{
     DestinationTiming, clear_navigation_for_entity, issue_direct_move, issue_move_command,
-    set_destination_for_teleporter_entity, stop_navigation_at_committed_head,
+    stop_navigation_at_committed_head,
 };
 pub(crate) use movement_commands::{
     can_accept_destination, issue_move_command_with_destination, issue_move_command_with_layered,
@@ -157,7 +157,7 @@ pub(crate) use movement_path::{
     path_search_used_zone_grid_marker, reset_path_search_used_zone_grid_marker,
 };
 pub(crate) use movement_tick::sync_formation_speeds_after_live_pass;
-pub(crate) use navcom::{set_destination_internal_cell, track_stop_moving};
+pub(crate) use navcom::{foot_stop_moving, set_destination_internal_cell, track_stop_moving};
 // Legacy batch tick used by focused movement fixtures.
 #[cfg(test)]
 pub(crate) use movement_tick::tick_movement_with_grids;

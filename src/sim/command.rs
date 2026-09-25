@@ -546,7 +546,8 @@ pub enum Command {
     /// Toggle repair mode on a building (spend credits to heal over time).
     ToggleRepair { entity_id: u64 },
     /// Force a miner to return to its refinery (right-click on own refinery or 'D' key).
-    /// Chrono Miners teleport; War Miners drive back.
+    /// Both kinds run the Harvest return; a Chrono Miner warps onto the pad
+    /// from within `ChronoHarvTooFarDistance`.
     MinerReturn {
         entity_id: u64,
         /// Explicit refinery clicked by the player. Keyboard/generic forced

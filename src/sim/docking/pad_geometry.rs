@@ -1,9 +1,10 @@
 //! Pad geometry — lepton→cell conversion for docking pad cells.
 //!
 //! Single source of truth for converting a building's (origin + foundation) +
-//! a pad's lepton offset into the cell where the docked unit parks. Shared by
-//! refinery pad approach (`sim::miner::miner_dock_sequence`) and aircraft
-//! docking descent (`sim::docking::aircraft_dock`).
+//! a pad's lepton offset into the cell where the docked unit parks, for
+//! aircraft docking descent (`sim::docking::aircraft_dock`). The refinery pad
+//! is the fixed NW+(3,1) cell the DOCKING receiver sends
+//! (`radio::receive::dock_pad_cell`).
 //!
 //! Offsets are interpreted as **building-center-relative**, not origin-
 //! relative: the original game computes a pad coordinate by adding the

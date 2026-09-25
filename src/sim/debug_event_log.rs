@@ -46,8 +46,6 @@ pub enum DebugEventKind {
     // -- Miner --
     /// Miner high-level state changed (e.g., SearchOre → MoveToOre).
     MinerStateChange { from: String, to: String },
-    /// Refinery dock sub-phase changed (e.g., Approach → WaitForDock).
-    DockPhaseChange { from: String, to: String },
 
     // -- Special movement --
     /// Special movement system activated (Teleport/Tunnel/Rocket/DropPod).

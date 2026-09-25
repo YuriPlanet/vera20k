@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "50 original executions of the Chrono Miner (CMIN) refinery chain: 17 Unit setter (vt+0x480) calls through its Teleporter arm; 4 Teleport Move_To guard refusals; 6 Teleport Move_To arming runs followed by 12 Teleport Process frames (warp, chrono delay, delay-expiry tick), each with the FootClass::AI piggyback END step; 15 UnitClass::Mission_Harvest (states 0/2/3), 5 FootClass::Mission_Enter and 1 UnitClass::Mission_Unload dispatches with their return value; 2 Per_Cell_Process(2) Enter-arm snippets. Every nested receiver, COM call, occupy-bit write, transmit reply and Scenario draw is recorded in order.",
+  "assumptions": [
+    "refinery_dock fixture (track_destination Unit and Drive, 32x32 map, House, Rules, refinery NW (6,9) with DockUnload and QueueingCell 4,1, a second refinery) made a CMIN: TechnoType +0xCD4 Teleporter 1, +0xE0E Harvester (0 in the non-harvester rows), +0x5B4 MovementZone 1 (Crusher, retail [CMIN]), +0x67C SpeedType 2 (fixture value distinct from it), +0x574/+0x578 ChronoIn/OutSound fixture indices 0x41/0x42.",
+    "Teleport from its original constructor at fixture memory, linked by the original Link_To_Object and installed at Foot+0x674 with one reference. drive_piggy rows run the original Drive Link_To_Object and IPiggyback Begin_Piggyback over the fixture Drive, so its stash holds the Teleport; both reference counts are then written as one.",
+    "Rules: ChronoDelay 60, ChronoDistanceFactor 48, ChronoTrigger yes, ChronoMinimumDelay 16, ChronoRangeMinimum 0 (100000 in warp_range_min), TiberiumLongScan 48 cells; ChronoHarvTooFarDistance 10 instead of the retail 50 so both sides of the threshold fit the map; WarpOut is a fixture anim type pointer. BridgeHeight 416 from its original initializer 0x7352F0 over the established level height 104. The miner is on the map (ObjectClass+0x74).",
+    "Process rows arm the Teleport with a direct Move_To to the cell centre (NavCom supplied), then per listed frame run Process and the FootClass::AI tail 0x4DAE5F..0x4DAEC6 plus its IPiggyback Release, not the rest of FootClass::AI. Per_Cell arm rows supply the prologue locals as refinery_dock does."
+  ],
+  "substitutions": [
+    "CoCreateInstance wrapper 0x41C250 is recorded; it runs the original Drive constructor and ILocomotion AddRef on fixture memory, stores that ILocomotion and returns S_OK.",
+    "operator new answers the AnimClass allocation with fixture memory and operator delete is recorded without freeing. The AnimClass constructor 0x421EA0, VocClass::PlayAt 0x7509E0, crate pickup 0x481A00 and Unit Per_Cell_Process 0x739EC0 (inside Process) are recorded and return without effect, so WarpOut AnimClass RNG draws are not covered.",
+    "MapClass zone lookup 0x56D230 answers zone 7 (no map zone tables); Search_For_Tiberium 0x4DCFE0 answers the row value (the original also answers 0 while NavCom is set); refinery_dock keeps its supplied Find_Docking_Bay, Find_Nearby_Passable_Cell and Ready_To_Commence answers and its Scatter, Enter_Idle_Mode and refinery animation observers."
+  ],
+  "entry_points": {
+    "assign_destination": "0x00741970",
+    "foot_assign_destination": "0x004D94B0",
+    "teleport_constructor": "0x00718000",
+    "drive_constructor": "0x004AF540",
+    "link_to_object": "0x0055A710",
+    "bridge_height": "0x007352F0",
+    "teleport_move_to": "0x00718100",
+    "teleport_destination": "0x00718B70",
+    "teleport_process": "0x007192F0",
+    "teleport_stop_moving": "0x00718230",
+    "teleport_do_turn": "0x007192C0",
+    "teleport_delay_tick": "0x00719BF0",
+    "teleport_is_ok_to_end": "0x00719F30",
+    "drive_begin_piggyback": "0x004AF8E0",
+    "drive_end_piggyback": "0x004AF930",
+    "drive_is_ok_to_end": "0x004AF970",
+    "drive_move_to": "0x004AFD40",
+    "can_enter_cell": "0x0073F0A0",
+    "set_occupy_bit": "0x007441B0",
+    "clear_occupy_bit": "0x00744210",
+    "mark": "0x004D3780",
+    "mission_harvest": "0x0073E5E0",
+    "mission_enter": "0x004D9290",
+    "mission_unload": "0x0073D630",
+    "per_cell_enter_arm": "0x0073A31F",
+    "foot_ai_piggyback_end": "0x004DAE5F",
+    "transmit": "0x0065A970",
+    "random_ranged": "0x0065C7E0",
+    "cocreate_wrapper": "0x0041C250"
+  },
+  "payload_sha256": "0c09972becd0dbae19513665f9629a251bf443efe5cff0117aa9724541f84879"
+}

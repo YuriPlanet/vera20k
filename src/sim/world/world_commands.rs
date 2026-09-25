@@ -677,9 +677,10 @@ impl Simulation {
                 let Some(info) = self.resolve_move_info(*entity_id, rules) else {
                     return false;
                 };
-                // Chrono Miners (Teleporter=yes + Harvester=yes) drive normally for
-                // player commands — they only teleport on return-to-refinery
-                // (handled by miner_system::chrono_teleport, not here).
+                // Chrono Miners (Teleporter=yes + Harvester=yes) drive for player
+                // commands; they warp only onto a refinery pad, through the Unit
+                // setter's Teleporter arm (`set_unit_cell_destination`). RESIDUAL:
+                // this Move does not run that setter (no arm, no +0x1F8 clear).
                 let use_teleport_move = !info.is_harvester
                     && (info.loco_kind == Some(LocomotorKind::Teleport) || info.is_teleporter);
 
@@ -867,7 +868,7 @@ impl Simulation {
                     ) && e.mission.current().known() == Some(MissionType::Attack)
                 });
                 // The IDLE event writes no mission of its own
-                // (`0x004C74CB..0x004C76BB`). A War Miner on its native Enter
+                // (`0x004C74CB..0x004C76BB`). A harvester on its native Enter
                 // or Unload keeps it: after the radio break below, the next
                 // Mission_Enter finds no target and idles it (Guard for a
                 // human miner off ore, `0x00738C0A`), so VERA's queued Stop,
@@ -1504,14 +1505,14 @@ impl Simulation {
                     }
                     None => None,
                 };
-                // A War Miner's dock is its native Enter/Unload missions: the
+                // A harvester's dock is its native Enter/Unload missions: the
                 // order's MEGAMISSION radio break (`0x004C72E8`) leaves the
                 // refinery link, and because the Harvest assign below replaces
                 // Unload without its contact gate (`0x0073DEE0`), the unload
                 // latch drops here too — as for `Command::HarvestCell`.
                 if crate::sim::miner::native_dock_miner(self, *entity_id) {
                     crate::sim::miner::miner_dock::break_for_retask(self, *entity_id, rules);
-                    crate::sim::miner::abandon_unload_for_direct_retask(self, *entity_id);
+                    crate::sim::miner::clear_unload_latch(self, *entity_id);
                 }
                 let previous_refinery = self
                     .substrate
@@ -1542,10 +1543,6 @@ impl Simulation {
                 };
                 if let Some(refinery_id) = explicit_refinery {
                     miner.reserved_refinery = Some(refinery_id);
-                    if explicit_refinery_changed {
-                        miner.dock_queued = false;
-                        miner.dock_phase = crate::sim::miner::RefineryDockPhase::Approach;
-                    }
                 }
                 miner.forced_return = true;
                 // Clear any in-progress movement — the miner system will path to refinery.
@@ -1921,7 +1918,7 @@ impl Simulation {
                 // an unload in progress is abandoned here rather than by the
                 // Unload mission's contact gate.
                 crate::sim::miner::miner_dock::break_for_retask(self, *entity_id, rules);
-                crate::sim::miner::abandon_unload_for_direct_retask(self, *entity_id);
+                crate::sim::miner::clear_unload_latch(self, *entity_id);
                 // Commit the Harvest mission and the MoveToOre cursor of
                 // record. Native (EventClass::Execute MEGAMISSION,
                 // disassembled 2026-09-05): the client's mission byte passes
@@ -2984,7 +2981,7 @@ mod tests {
     use crate::sim::components::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::house_state::HouseState;
-    use crate::sim::miner::{Miner, MinerConfig, MinerKind, MinerState, RefineryDockPhase};
+    use crate::sim::miner::{Miner, MinerConfig, MinerKind, MinerState};
     use crate::sim::mission::MissionId;
     use crate::sim::movement::locomotor::LocomotorState;
 
