@@ -207,9 +207,6 @@ impl App {
         let mut presented_shell = PresentedShell::Other;
 
         crate::app::frontend::shell_transition::activate_shell_first_paint_after_acquire(state);
-        // Advance the Skirmish right-panel static text reveals (started at the
-        // slide's completion edge). 30 ms-gated internally; a no-op when idle.
-        crate::app::frontend::shell_transition::advance_shell_static_reveals(state);
         crate::app::frontend::shell_transition::poll_main_menu_title_reveal(state);
         let shell_capture_current_frame = match shell_capture.as_deref_mut() {
             Some(session) => session.should_capture_current_frame(state)?,
@@ -689,6 +686,11 @@ impl App {
         if let Some(page) = state.frontend.score_page.as_mut() {
             page.commit_presented();
         }
+        state
+            .frontend
+            .skirmish_shell_state
+            .statics
+            .commit_presented();
         if let Some(token) = pending_main_menu_entry_token.take() {
             crate::app::frontend::shell_transition::record_main_menu_entry_presented(state, token)?;
         }

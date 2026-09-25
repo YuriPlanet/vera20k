@@ -136,7 +136,7 @@ impl App {
         {
             wol.status_help = layout.status_help_key(x, y);
         }
-        state.frontend.shell_status_line.hover_repaint();
+        state.frontend.shell_status_line.repaint();
     }
 
     pub(super) fn handle_wol_mouse_down(state: &mut AppState) {

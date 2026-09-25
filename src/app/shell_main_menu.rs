@@ -326,7 +326,7 @@ impl App {
     pub(super) fn handle_score_shell_mouse_move(state: &mut AppState) {
         let (_, feed, (x, y)) = Self::score_input(state);
         state.frontend.shell_controller.on_pointer_move(x, y, &feed);
-        state.frontend.shell_status_line.hover_repaint();
+        state.frontend.shell_status_line.repaint();
     }
 
     pub(super) fn handle_score_shell_mouse_down(state: &mut AppState) {
@@ -439,6 +439,8 @@ impl App {
             .frontend
             .skirmish_shell_state
             .pressed_owner_draw_button = None;
+        // A new 0x102 creates its kind-1 statics hidden (0x0060A5B0).
+        state.frontend.skirmish_shell_state.statics.reset();
         state.frontend.skirmish_shell_last_painted_pressed_button = None;
         Self::ensure_active_cooperative_shell_selection(state);
         // The skirmish dialog (0x102) slides its controls in on first paint like
@@ -692,7 +694,7 @@ impl App {
     pub(crate) fn handle_launcher_options_mouse(state: &mut AppState, down: Option<bool>) {
         if down.is_none() {
             // Every hover message repaints the status line (0x00615EF7).
-            state.frontend.shell_status_line.hover_repaint();
+            state.frontend.shell_status_line.repaint();
         }
         let Some(mut dialog) = state.frontend.options_dialog.take() else { return; };
         let (x, y) = (state.match_state.input.cursor_x as i32, state.match_state.input.cursor_y as i32);
@@ -811,7 +813,7 @@ impl App {
         state.frontend.shell_controller.on_pointer_move(x, y, &feed);
         Self::mirror_shell_controller_to_main_menu(state);
         // Every hover message repaints the status line (0x00615EF7).
-        state.frontend.shell_status_line.hover_repaint();
+        state.frontend.shell_status_line.repaint();
     }
 
     pub(super) fn handle_main_menu_shell_mouse_up(
@@ -979,7 +981,7 @@ impl App {
         // Hover is enable-unfiltered: a disabled button still drives 0x695.
         state.frontend.shell_controller.on_pointer_move(x, y, &feed);
         // Every hover message repaints the status line (0x00615EF7).
-        state.frontend.shell_status_line.hover_repaint();
+        state.frontend.shell_status_line.repaint();
     }
 
     pub(super) fn handle_menu_page_mouse_up(state: &mut AppState) {

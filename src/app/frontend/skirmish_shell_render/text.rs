@@ -4,11 +4,12 @@
 //! status help text, and start-marker number labels.
 
 use crate::app::AppState;
+use crate::app::frontend::main_menu_shell_render::shell_reveal_path_a;
 use crate::app::loading::init::MapMenuEntry;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::shell_paint::{self, PaintLabel};
-use crate::render::shell_text::{self, Reveal, ShellAlign, ShellTextDraw, TextRect};
+use crate::render::shell_text::{self, ShellAlign, ShellTextDraw, TextRect};
 use crate::skirmish_modes::mode_by_id;
 use crate::ui::main_menu::SkirmishCountry;
 use crate::ui::shell::modal::BodyOkLayout;
@@ -17,9 +18,9 @@ use crate::ui::skirmish_shell::{
     ChooseMapModalButton, ChooseMapModalLayout, OwnerDrawButton, RandomMapSetupLayout, RectPx,
     SETUP_COMBO_ROWS, SavedSeedLayout, SkirmishAiRowType, SkirmishCheckboxId, SkirmishComboId,
     SkirmishComboItem, SkirmishCountryChoice, SkirmishShellLayout, SkirmishShellOpponent,
-    SkirmishShellState, SkirmishTrackbarId, checkbox_text_rect, combo_dropdown_content_rect,
-    combo_dropdown_rect, combo_dropdown_visible_row_count, combo_enabled, combo_items,
-    combo_text_rect, player_name_edit_text_rect, player_row_visible,
+    SkirmishShellState, SkirmishTrackbarId, StaticPaint, checkbox_text_rect,
+    combo_dropdown_content_rect, combo_dropdown_rect, combo_dropdown_visible_row_count,
+    combo_enabled, combo_items, combo_text_rect, player_name_edit_text_rect, player_row_visible,
     random_map_setup_dropdown_rect, setup_combo_items, trackbar_value_text_rect,
     trackbar_visual_value,
 };
@@ -219,24 +220,7 @@ pub(super) fn push_text_draw(
     align: ShellAlign,
     depth: f32,
 ) {
-    push_text_draw_revealed(out, state, label, text_rect, color, align, depth, None);
-}
-
-/// `push_text_draw` carrying a kind-1 character reveal window through to
-/// `draw_in_rect`. Only the three Skirmish right-panel statics use the reveal;
-/// every other text draw goes through the `None` wrapper above.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn push_text_draw_revealed(
-    out: &mut Vec<ShellTextDraw>,
-    state: &AppState,
-    label: &str,
-    text_rect: TextRect,
-    color: [f32; 3],
-    align: ShellAlign,
-    depth: f32,
-    reveal: Option<Reveal>,
-) {
-    let draw = shell_text::draw_in_rect(
+    out.push(shell_text::draw_in_rect(
         &state.renderer.bit_font,
         label,
         text_rect,
@@ -244,9 +228,7 @@ pub(super) fn push_text_draw_revealed(
         align,
         [0.0, 0.0],
         depth,
-        reveal,
-    );
-    out.push(draw);
+    ));
 }
 
 pub(super) fn rect_to_text_rect(rect: RectPx) -> TextRect {
@@ -433,42 +415,9 @@ fn push_combo_face_label_draw_with_color(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(super) fn push_static_label_draw(
-    out: &mut Vec<ShellTextDraw>,
-    state: &AppState,
-    label: &str,
-    rect: RectPx,
-    align: ShellAlign,
-    depth: f32,
-    reveal: Option<Reveal>,
-) {
-    push_text_draw_revealed(
-        out,
-        state,
-        label,
-        rect_to_text_rect(rect),
-        SHELL_LABEL_TEXT_RGB,
-        align,
-        depth,
-        reveal,
-    );
-}
-
-/// Reveal window for the renderer: maps a static's [`StaticReveal`] cursor onto
-/// the render-layer [`Reveal`] type (or `None` when inactive / complete).
-fn static_reveal_window(
-    reveal: &crate::ui::skirmish_shell::static_reveal::StaticReveal,
-) -> Option<Reveal> {
-    reveal.window().map(|w| Reveal {
-        count: w.count,
-        range: w.range,
-    })
-}
-
-/// Single source of truth for the three Skirmish 0x102 right-panel static
-/// label strings (title / game-type / map-label). Shared by the renderer and
-/// the reveal-start trigger so both resolve identical text.
+/// The texts `0x102` holds for its heading, game type and map name statics
+/// (`0x006AEC86`, `0x006AEC8D`; again after Use Map, `0x006ADA99`); its SHOW
+/// completion hands them to [`crate::ui::skirmish_shell::SkirmishStatics`].
 pub(crate) fn skirmish_right_panel_label_strings(state: &AppState) -> (String, String, String) {
     let shell = &state.frontend.skirmish_shell_state;
     let title = localized_label(state, "GUI:SkirmishGame", "Skirmish Game");
@@ -484,6 +433,54 @@ pub(crate) fn skirmish_right_panel_label_strings(state: &AppState) -> (String, S
         .map(|map| map.display_name.clone())
         .unwrap_or_else(|| "None".to_string());
     (title, game_type, map_label)
+}
+
+/// Paint `0x102`'s kind-1 statics for this recomposition: the heading, game
+/// type and map name centred in their windows and the status line top-left
+/// (kind-1 paint passes the window's horizontal alignment only,
+/// `0x00615A81`). Hidden statics and a blank status line draw nothing.
+pub(super) fn paint_skirmish_statics(
+    state: &mut AppState,
+    layout: &SkirmishShellLayout,
+) -> Vec<PaintLabel<'static>> {
+    let paint = state
+        .frontend
+        .skirmish_shell_state
+        .statics
+        .paint(std::time::Instant::now());
+    let label = |shown: StaticPaint<'_>, rect: RectPx, align: ShellAlign| PaintLabel {
+        text: shown.text.to_owned().into(),
+        rect,
+        align,
+        rgb: SHELL_LABEL_TEXT_RGB,
+        path_a_reveal: Some(shell_reveal_path_a(shown.window)),
+    };
+    [
+        paint
+            .heading
+            .map(|shown| label(shown, layout.right_panel_text.title, ShellAlign::H_CENTER)),
+        paint.game_type.map(|shown| {
+            label(
+                shown,
+                layout.right_panel_text.game_type,
+                ShellAlign::H_CENTER,
+            )
+        }),
+        paint.map_label.map(|shown| {
+            label(
+                shown,
+                layout.right_panel_text.map_label,
+                ShellAlign::H_CENTER,
+            )
+        }),
+        paint
+            .status_line
+            .filter(|shown| !shown.text.is_empty())
+            .map(|shown| label(shown, layout.status_help, ShellAlign::NONE)),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 pub(super) fn push_player_name_edit_text_draw(
@@ -522,16 +519,16 @@ pub(super) fn push_player_name_edit_text_draw(
 }
 
 /// The dialog's text. While a slide runs (`sliding`) the right panel shows only
-/// the slide engine's art (the captions and the title, game-type and map
-/// statics are overdrawn every tick), and the heading and status line stay
-/// validate-only (`0x00606800`, `0x00601360`); the left-side controls keep
-/// what they painted.
+/// the slide engine's art (the captions are overdrawn every tick) and the
+/// kind-1 statics (`statics`, from [`paint_skirmish_statics`]) stay hidden;
+/// the left-side controls keep what they painted.
 pub(super) fn build_shell_text_draws(
     state: &AppState,
     layout: &SkirmishShellLayout,
     shell: &SkirmishShellState,
     maps: &[MapMenuEntry],
     sliding: bool,
+    statics: &[PaintLabel<'_>],
 ) -> (Vec<ShellTextDraw>, Vec<SpriteInstance>) {
     let mut shell_draws: Vec<ShellTextDraw> = Vec::new();
     let bare_instances: Vec<SpriteInstance> = Vec::new();
@@ -546,6 +543,11 @@ pub(super) fn build_shell_text_draws(
     if !sliding {
         push_right_panel_text_draws(&mut shell_draws, state, layout, shell);
     }
+    shell_draws.extend(shell_paint::paint_labels_at_depth(
+        &state.renderer.bit_font,
+        statics,
+        SHELL_CONTROL_TEXT_DEPTH,
+    ));
 
     for (key, fallback, rect) in [
         ("GUI:Players", "Players", layout.column_labels.players),
@@ -600,16 +602,6 @@ pub(super) fn build_shell_text_draws(
             rect_to_text_rect(trackbar_value_text_rect(trackbar_rect_for_id(layout, id))),
             trackbar_value_text_color(),
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-            SHELL_CONTROL_TEXT_DEPTH,
-        );
-    }
-
-    if let Some(status_help_text) = parent_shell_status_help_text(shell).filter(|_| !sliding) {
-        push_label_draw(
-            &mut shell_draws,
-            state,
-            status_help_text,
-            layout.status_help,
             SHELL_CONTROL_TEXT_DEPTH,
         );
     }
@@ -743,8 +735,7 @@ pub(super) fn build_shell_text_draws(
     (shell_draws, bare_instances)
 }
 
-/// The right panel's text: the three button captions and the title, game-type
-/// and map statics (`0x694`, `0x6EC`, `0x5A8`).
+/// The right panel's button captions.
 fn push_right_panel_text_draws(
     shell_draws: &mut Vec<ShellTextDraw>,
     state: &AppState,
@@ -781,42 +772,6 @@ fn push_right_panel_text_draws(
             0.00041,
         );
     }
-
-    // Resolve all three static strings from the single shared source so the
-    // reveal-start trigger (`frontend::shell_transition`) and this renderer agree on the
-    // exact text whose length sets the reveal target.
-    let (title, game_type, map_label) = skirmish_right_panel_label_strings(state);
-    push_static_label_draw(
-        shell_draws,
-        state,
-        &title,
-        layout.right_panel_text.title,
-        ShellAlign::H_CENTER,
-        SHELL_CONTROL_TEXT_DEPTH,
-        static_reveal_window(&shell.title_reveal),
-    );
-    push_static_label_draw(
-        shell_draws,
-        state,
-        &game_type,
-        layout.right_panel_text.game_type,
-        ShellAlign::H_CENTER,
-        SHELL_CONTROL_TEXT_DEPTH,
-        static_reveal_window(&shell.game_type_reveal),
-    );
-    push_static_label_draw(
-        shell_draws,
-        state,
-        &map_label,
-        layout.right_panel_text.map_label,
-        ShellAlign::H_CENTER,
-        SHELL_CONTROL_TEXT_DEPTH,
-        static_reveal_window(&shell.map_label_reveal),
-    );
-}
-
-pub(super) fn parent_shell_status_help_text(shell: &SkirmishShellState) -> Option<&str> {
-    (!shell.status_help_text.is_empty()).then_some(shell.status_help_text.as_str())
 }
 
 /// Text for the random-map setup dialog `0x105`.

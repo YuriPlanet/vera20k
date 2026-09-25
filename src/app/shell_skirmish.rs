@@ -606,8 +606,8 @@ impl App {
         );
         let applied = Self::apply_selected_shell_map_index(state, map_idx);
         debug_assert!(applied, "validated chooser map index must remain loadable");
-        // The heading, game type, map label and status line restart their
-        // reveals when `0x102`'s entry slide ends (`0x006230B8`).
+        // `0x102` shows its statics again when its entry slide ends; a changed
+        // game type or map name restarts that reveal (`0x006ADA99`, `0x4B2`).
         true
     }
 
@@ -952,6 +952,8 @@ impl App {
         .map(|key| Self::localized_status_help_text(state, key))
         .unwrap_or_default();
 
+        // `0x102`'s proc runs the common handler first (`0x006AE40A`): every
+        // move writes the help, which repaints the status line.
         if crate::ui::skirmish_shell::set_status_help_text(&mut state.frontend.skirmish_shell_state, text) {
             state.platform.window.request_redraw();
         }
@@ -1001,7 +1003,7 @@ impl App {
             return;
         };
         // A child's hover message repaints the status line (`0x00615EF7`).
-        state.frontend.shell_status_line.hover_repaint();
+        state.frontend.shell_status_line.repaint();
         if let Some(modal) = state
             .frontend
             .skirmish_shell_state

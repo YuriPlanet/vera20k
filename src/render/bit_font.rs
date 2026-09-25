@@ -110,64 +110,18 @@ impl BitFont {
         tint: [f32; 3],
         camera_offset: [f32; 2],
     ) -> Vec<SpriteInstance> {
-        self.build_text_revealed(text, x, y, scale, depth, tint, camera_offset, None)
-            .0
-    }
-
-    /// Glyph emission with an optional kind-1 character reveal cutoff.
-    ///
-    /// `reveal_cutoff` is `(already_consumed, count)`: `already_consumed` is the
-    /// number of revealable characters that preceded this segment (for threading
-    /// the window across wrapped lines), and `count` is the global reveal count.
-    /// Only characters whose running revealable index is `< count` are emitted;
-    /// the rest are cut (left-to-right wipe). Returns the emitted instances plus
-    /// the updated revealable-character count so the caller can thread the next
-    /// wrapped segment.
-    ///
-    /// Counting matches native `wcslen`: every wide char advances the count
-    /// except `\r`/`\n`, which are layout-only and never revealable cells.
-    /// With `reveal_cutoff == None` the output is byte-identical to the plain
-    /// `build_text` path (the cutoff branch never fires).
-    #[allow(clippy::too_many_arguments)]
-    pub fn build_text_revealed(
-        &self,
-        text: &str,
-        x: f32,
-        y: f32,
-        scale: f32,
-        depth: f32,
-        tint: [f32; 3],
-        camera_offset: [f32; 2],
-        reveal_cutoff: Option<(u32, u32)>,
-    ) -> (Vec<SpriteInstance>, u32) {
-        let (already_consumed, reveal_count) = match reveal_cutoff {
-            Some((consumed, count)) => (consumed, Some(count)),
-            None => (0, None),
-        };
         let mut instances = Vec::with_capacity(text.len());
         let mut cursor_x = x;
         let spacing = self.char_spacing as f32 * scale;
         let h = self.bitmap_rows as f32 * scale;
         let missing_tint = Self::missing_color_xor(tint);
         let mut emitted = 0u32;
-        let mut consumed = already_consumed;
 
         for ch in text.chars() {
-            // \r/\n are layout-only control chars: native wcslen counts them but
-            // the reveal renderer never advances or reveals on them, so they are
-            // not revealable cells. Skip before the cutoff so they cost no step.
+            // \r/\n are layout-only control chars.
             if ch == '\r' || ch == '\n' {
                 continue;
             }
-            // Reveal cutoff (v1 wipe): a char at revealable index >= count is not
-            // emitted. Because chars run left-to-right, the first cut char ends
-            // the segment. `consumed` is the running 0-based revealable index.
-            if let Some(count) = reveal_count {
-                if consumed >= count {
-                    break;
-                }
-            }
-            consumed += 1;
             match ch {
                 '\t' => {
                     let cell_x = ((cursor_x - x) / scale) as u32;
@@ -214,16 +168,14 @@ impl BitFont {
             cursor_x += w;
             emitted += 1;
         }
-        (instances, consumed)
+        instances
     }
 
     /// Glyph emission for the verified BITFONT Path-A UTF-16 reveal/tint path.
     ///
-    /// This is deliberately separate from [`Self::build_text_revealed`], whose
-    /// scalar wipe remains the existing Skirmish implementation. Every UTF-16
-    /// code unit consumes a one-based reveal position; spaces/tabs consume a
-    /// unit without emitting a quad, and surrogate halves independently take
-    /// the existing missing-glyph path.
+    /// Every UTF-16 code unit consumes a one-based reveal position;
+    /// spaces/tabs consume a unit without emitting a quad, and surrogate
+    /// halves independently take the existing missing-glyph path.
     #[allow(clippy::too_many_arguments)]
     pub fn build_text_path_a(
         &self,

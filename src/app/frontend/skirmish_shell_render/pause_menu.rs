@@ -70,7 +70,6 @@ fn text_draw(
         align,
         [0.0; 2],
         SHELL_CONTROL_TEXT_DEPTH,
-        None,
     )
 }
 

@@ -8,7 +8,8 @@ mod layout;
 mod scroll;
 pub(crate) use scroll::ScrollModel;
 mod state;
-pub mod static_reveal;
+mod statics;
+pub(crate) use statics::{SkirmishStatics, StaticPaint};
 
 pub use layout::{
     CHOOSE_MAP_MODAL_H, CHOOSE_MAP_MODAL_W, CHOOSE_MAP_TITLE_KEY, COMBO_ARROW_RESERVE_W,

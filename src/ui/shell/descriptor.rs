@@ -50,10 +50,13 @@ pub enum AnchorRule {
     RightAnchor,
     /// Apply a runtime size correction to the converted resource rect before
     /// right-anchoring it, then apply the final `(dy, dh)` adjustment.
-    /// (0xE2 0x694 heading: +1w/+1h before anchor, then +7y/+1h.)
+    /// (0xE2 0x694 heading: +1w/+1h before anchor, then +7y/+1h.) `inset`
+    /// is the control's inset override (record `+0xDC`, set by
+    /// `0x0060AB71..0x0060AD16`), which replaces `(168 - w) / 2`.
     RightAnchorRuntimeAdjust {
         resource_dw: i32,
         resource_dh: i32,
+        inset: Option<i32>,
         dy: i32,
         dh: i32,
     },
@@ -66,18 +69,40 @@ pub enum AnchorRule {
 pub const HEADING_ANCHOR: AnchorRule = AnchorRule::RightAnchorRuntimeAdjust {
     resource_dw: 1,
     resource_dh: 1,
+    inset: None,
     dy: 7,
     dh: 1,
 };
 
+/// Heading `0x694` of `0xBC 0xBD 0x102 0xC2 0xC9 0xBC6 0x105 0x6B 0x113`:
+/// the same window, which the fix-up pass moves only `+1` y (`0x0060BCE4`).
+pub const LOW_HEADING_ANCHOR: AnchorRule = AnchorRule::RightAnchorRuntimeAdjust {
+    resource_dw: 1,
+    resource_dh: 1,
+    inset: None,
+    dy: 1,
+    dh: 0,
+};
+
+/// Game type `0x6EC` and map name `0x5A8` of `0xBC 0xBD 0xC2 0xC9 0x102
+/// 0xBC6`: the one-pixel window correction and the inset override 14
+/// (`0x0060ACC2..0x0060AD04`).
+pub const MAP_TEXT_ANCHOR: AnchorRule = AnchorRule::RightAnchorRuntimeAdjust {
+    resource_dw: 1,
+    resource_dh: 1,
+    inset: Some(14),
+    dy: 0,
+    dh: 0,
+};
+
 /// Monitor static `0x71C`: the same one-pixel window correction as the
-/// heading. Its inset override 37 (`0x0060AC99..0x0060AD16`) equals
-/// `(168 - 93) / 2`, so the plain right-panel inset lands it at x 670 at
-/// 800x600 with the 93x55 window, and the 92x53 SDWRNANM frame centers at
-/// `(670, 48)`.
+/// heading and its inset override 37, set in the family dialogs that carry it
+/// (`0x0060AB71..0x0060ACA5`): x 670 at 800x600 with the 93x55 window, and the
+/// 92x53 SDWRNANM frame centers at `(670, 48)`.
 pub const MONITOR_ANCHOR: AnchorRule = AnchorRule::RightAnchorRuntimeAdjust {
     resource_dw: 1,
     resource_dh: 1,
+    inset: Some(37),
     dy: 0,
     dh: 0,
 };

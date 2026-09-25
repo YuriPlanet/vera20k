@@ -335,11 +335,12 @@ impl PresentedKind1Static {
         }
     }
 
-    /// A hover message (`0x4B2`) reaches the static: besides replacing the
-    /// text it restores the saved background and invalidates the static
-    /// (`0x00615EF7..0x00615F75`), so it repaints — and a running reveal
-    /// advances — on every hover message, not only on timer ticks.
-    pub(crate) fn hover_repaint(&mut self) {
+    /// A paint outside the timer. A hover message (`0x4B2`) restores the
+    /// saved background and invalidates the static besides replacing the
+    /// text (`0x00615EF7..0x00615F75`), so it repaints — and a running reveal
+    /// advances — on every hover message; a static shown again repaints at
+    /// its count, which after the last timer paint is the target.
+    pub(crate) fn repaint(&mut self) {
         self.reveal.invalidate();
     }
 
@@ -347,6 +348,15 @@ impl PresentedKind1Static {
     /// (`0x4EC -> 0x0060AA60 -> 0x4EE`).
     pub(crate) fn start(&mut self, now: Instant) -> bool {
         self.reveal.start(&self.text, now)
+    }
+
+    /// The SHOW completion of a dialog that may show again: `0x4EE` starts
+    /// only a static that has not started (`0x00615FDB`); a started one
+    /// repaints at its count as its dialog shows.
+    pub(crate) fn show(&mut self, now: Instant) {
+        if !self.start(now) {
+            self.repaint();
+        }
     }
 
     /// Reveal window for this recomposition, `None` while the child is hidden.
@@ -493,7 +503,7 @@ pub(crate) mod tests {
         assert_eq!(present(&mut status, t0).map(|w| w.count), Some(1));
         // A hover paint between timer ticks draws the current count and then
         // advances it, like any paint.
-        status.hover_repaint();
+        status.repaint();
         assert_eq!(
             present(&mut status, t0 + Duration::from_millis(5)).map(|w| w.count),
             Some(4)
@@ -510,12 +520,12 @@ pub(crate) mod tests {
         assert_eq!(finished.count, 19);
         // After the last timer paint a hover paint draws the final count
         // (22 >= target: every unit plain) and stops advancing there.
-        status.hover_repaint();
+        status.repaint();
         assert_eq!(
             present(&mut status, t0 + Duration::from_secs(1)).map(|w| w.count),
             Some(22)
         );
-        status.hover_repaint();
+        status.repaint();
         assert_eq!(
             present(&mut status, t0 + Duration::from_secs(2)).map(|w| w.count),
             Some(22)

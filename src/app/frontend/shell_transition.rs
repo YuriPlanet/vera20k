@@ -476,18 +476,6 @@ impl<'a> ShellLifecycleReducer<'a> {
     }
 }
 
-/// Advance the Skirmish right-panel static text reveals by one cadence step.
-/// Call once per frame: the per-label advance is internally 30 ms-gated and a
-/// no-op while no reveal is active, so an unconditional per-frame call never
-/// over-advances. This lives outside `render_shell_first_paint_slide` because
-/// the reveals start *at* the slide's completion edge (when the slide clears)
-/// and keep animating afterwards, when that renderer no longer runs.
-pub(crate) fn advance_shell_static_reveals(state: &mut AppState) {
-    state
-        .frontend.skirmish_shell_state
-        .advance_right_panel_static_reveals(Instant::now());
-}
-
 /// Invalidate the destroyed/recreated 0xE2 dialog instance at an actual route
 /// boundary, even when the destination never reaches a paint.
 ///
@@ -868,16 +856,17 @@ pub(crate) fn render_shell_first_paint_slide(
 
     let completion = ShellLifecycleReducer::from_state(state).finish_completed_wave(kind);
     match completion {
-        // The slide completion edge kicks off the Skirmish right-panel statics'
-        // character reveal. Start it here, on the same edge that clears the
-        // slide, using the strings the renderer will draw.
+        // `0x102`'s SHOW completion: its own statics start, or repaint when
+        // the dialog shows again after Choose Map.
         Some(ShellWaveCompletion::Skirmish) => {
             let now = Instant::now();
             let (title, game_type, map_label) =
                 crate::app::frontend::skirmish_shell_render::skirmish_right_panel_label_strings(state);
             state
-                .frontend.skirmish_shell_state
-                .start_right_panel_static_reveals(&title, &game_type, &map_label, now);
+                .frontend
+                .skirmish_shell_state
+                .statics
+                .show(&title, &game_type, &map_label, now);
         }
         // Menu pages start their heading reveal on the same edge (0xE2 starts
         // its own in the presented-entry completion transaction).
