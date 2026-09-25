@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "BounceClass::Update 0x00439B00 per tick, with the 0x004399A0 truncation, from zero-elasticity DBRIS1LG/DBRIS1SM launches (original constructor and Init, 8 seeds each) over flat level-0, flat level-2, a level-4 mesa and a level-4-walled pit, until result 2 or 400 ticks.",
+  "assumptions": [
+    "x87 control word 0x0E7F; 0x00822D80 holds 0x0E7F for ftol 0x007C5F00.",
+    "Supplied cell scalar 104 (0x0089E7C0/0x0089C778); original 0x00439610 derives the deck height 416.",
+    "Cells are flat (slope 0), no overlay, no objects, no bridge flags; steps are bare 4-level level changes without ramp cells.",
+    "Launch bodies come from anim_bouncer_launch.py's constructor execution and carry its assumptions and substitutions.",
+    "Update runs back to back; AnimClass::AI 0x00423930's result handling (bounce anim, cell damage, vt+0xF8 on 2) is not executed."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "update": "0x00439B00",
+    "truncate": "0x004399A0",
+    "deck_init": "0x00439610"
+  },
+  "payload_sha256": "196861b09b69e7fd7c1ccd2d8996ce101d9b5e87ada8b7f4ba28245b638bf76f"
+}

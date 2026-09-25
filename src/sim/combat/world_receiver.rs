@@ -477,7 +477,7 @@ pub(crate) fn commit_entities(
             .flatten()
             .and_then(|resolved| resolved.invulnerability_impact)
         {
-            death.invulnerability_impact_effects.push(effect);
+            death.combat_light_requests.push(effect);
         }
         let Some(receiver_health::ReceiverHealthCommit {
             building_entry_frame,
@@ -990,7 +990,7 @@ pub(crate) fn handle_death(
     let mut immediate_uninit_ids: Vec<u64> = Vec::new();
     let mut explosion_effects: Vec<ExplosionEffect> = Vec::new();
     let mut voxel_debris: Vec<crate::sim::voxel_anim::VoxelDebrisSpawn> = Vec::new();
-    let mut invulnerability_impact_effects: Vec<InvulnerabilityImpactEffect> = Vec::new();
+    let mut combat_light_requests: Vec<CombatLightRequest> = Vec::new();
     let mut bridge_damage_events: Vec<BridgeDamageEvent> = Vec::new();
     #[cfg(test)]
     let mut wall_mutations: Vec<WallMutation> = Vec::new();
@@ -1080,16 +1080,23 @@ pub(crate) fn handle_death(
                 // @ 0x00737C90` only calls after this function has returned 4 —
                 // so it lands here, between the sounds and the `Explosion=` /
                 // `DestroyAnim=` draws below.
+                // The pieces start from the dying object's GetCoords
+                // (`vtable+0x48` at `0x007024FC`): a building's foundation
+                // centre (`BuildingClass::GetCoords @ 0x00447AC0`).
+                let center = world
+                    .substrate
+                    .entities
+                    .get(dead_id)
+                    .map(|entity| {
+                        crate::sim::movement::ground_pose::object_center_coord(entity, obj)
+                    })
+                    .map_or((0, 0), |coord| (coord.x, coord.y));
                 throw_debris_for_death(
                     obj,
                     rules,
                     &mut world.interner,
                     owner,
-                    rx,
-                    ry,
-                    sub_x,
-                    sub_y,
-                    z,
+                    center,
                     world_z_leptons,
                     &mut world.scenario_rng,
                     &mut voxel_debris,
@@ -1248,7 +1255,7 @@ pub(crate) fn handle_death(
             structure_destroyed |= nested.structure_destroyed;
             explosion_effects.append(&mut nested.explosion_effects);
             voxel_debris.append(&mut nested.voxel_debris);
-            invulnerability_impact_effects.append(&mut nested.invulnerability_impact_effects);
+            combat_light_requests.append(&mut nested.combat_light_requests);
             bridge_damage_events.append(&mut nested.bridge_damage_events);
             #[cfg(test)]
             wall_mutations.append(&mut nested.wall_mutations);
@@ -1263,7 +1270,6 @@ pub(crate) fn handle_death(
             #[cfg(test)]
             receiver_stage_trace.append(&mut nested.receiver_stage_trace);
             under_attack_events.append(&mut pings);
-            let outer_anim_start = smudge_spawn_requests.len();
             emit_warhead_detonation_effects(
                 warhead,
                 *dmg,
@@ -1275,15 +1281,6 @@ pub(crate) fn handle_death(
                 *world_z_leptons,
                 &mut world.interner,
                 &mut explosion_effects,
-                &mut smudge_spawn_requests,
-            );
-            let outer_anim_requests = smudge_spawn_requests.split_off(outer_anim_start);
-            commit_smudges(
-                world,
-                rules,
-                overlay_registry,
-                outer_anim_requests,
-                &mut smudge_spawn_requests,
             );
             // `0x0043896A`/`0x00438982`: a bombed bridge-repair hut drops
             // its bridge after the blast.
@@ -1303,7 +1300,7 @@ pub(crate) fn handle_death(
         structure_destroyed,
         explosion_effects,
         voxel_debris,
-        invulnerability_impact_effects,
+        combat_light_requests,
         bridge_damage_events,
         #[cfg(test)]
         wall_mutations,
@@ -1474,7 +1471,7 @@ fn finish_concrete_death(
     for plan in concrete_smudge_plans {
         match plan {
             ConcreteDeathSmudgePlan::Infantry(postlude) => {
-                postlude.commit(world, rules, overlay_registry, effects);
+                postlude.commit(world, rules, effects);
             }
             ConcreteDeathSmudgePlan::Building => {
                 // DestructionEffects (`0x004415F0`): the building's own anims
@@ -1775,6 +1772,7 @@ fn emit_detonation_anim(
     detonation: &ProjectileDetonation,
     warhead: &WarheadType,
     inviso: bool,
+    bright: bool,
     out: &mut CombatEmit,
 ) {
     let (impact_rx, impact_ry, impact_sub_x, impact_sub_y, world_z_leptons) =
@@ -1791,6 +1789,28 @@ fn emit_detonation_anim(
     } else {
         (impact_rx, impact_ry, impact_sub_x, impact_sub_y)
     };
+    // `0x00469BD6..0x00469C41`: a Bright bullet (`+0xE0`, the weapon's
+    // `Bright=`) lights the anim coordinate with its damage (`+0x6C`),
+    // force 1, and the warhead's CLDisable channels. The Rules alternate
+    // warhead arm (Apply_area_damage returning 2) skips it; that arm is not
+    // modelled.
+    if bright {
+        let flags = (u32::from(warhead.cl_disable_red) << 1)
+            | (u32::from(warhead.cl_disable_green) << 2)
+            | (u32::from(warhead.cl_disable_blue) << 3);
+        out.effects.combat_light_requests.push(CombatLightRequest {
+            target_id: None,
+            damage: detonation.payload.base_damage,
+            warhead_ref: detonation.payload.warhead,
+            coord: ProjectileCoord::new(
+                i32::from(rx) * 256 + sub_x.to_num::<i32>(),
+                i32::from(ry) * 256 + sub_y.to_num::<i32>(),
+                world_z_leptons,
+            ),
+            force_create: true,
+            flags,
+        });
+    }
     emit_warhead_detonation_effects(
         warhead,
         detonation.payload.base_damage,
@@ -1802,7 +1822,6 @@ fn emit_detonation_anim(
         world_z_leptons,
         &mut world.interner,
         &mut out.effects.explosion_effects,
-        &mut out.effects.smudge_spawn_requests,
     );
 }
 
@@ -1841,6 +1860,10 @@ pub(crate) fn commit_projectile_detonations_inline(
             .and_then(|weapon| weapon.projectile.as_deref())
             .and_then(|projectile| rules.projectile(projectile));
         let inviso = projectile_type.is_some_and(|projectile| projectile.inviso);
+        // `CreateBullet` hands the bullet the weapon's `Bright=` (`+0x12F`).
+        let bright = rules
+            .weapon(world.interner.resolve(detonation.payload.weapon))
+            .is_some_and(|weapon| weapon.bright);
         let (clusters, cluster_draws) = match projectile_type {
             Some(projectile) if !projectile.airburst => (projectile.cluster.max(0), true),
             _ => (1, false),
@@ -1870,7 +1893,7 @@ pub(crate) fn commit_projectile_detonations_inline(
                 .extend(outer_explosion_effects);
             under_attack_events.append(&mut pings);
             let anim_start = emit.effects.smudge_spawn_requests.len();
-            emit_detonation_anim(world, &clustered, warhead, inviso, emit);
+            emit_detonation_anim(world, &clustered, warhead, inviso, bright, emit);
             let mut anim_requests = outer_anim_requests;
             anim_requests.extend(emit.effects.smudge_spawn_requests.split_off(anim_start));
             commit_smudges(
@@ -1949,8 +1972,6 @@ fn emit_missile_detonations(
         let world_z_leptons = air_impact
             .map(|impact| impact.z_leptons)
             .unwrap_or_else(|| impact_z.wrapping_mul(LEPTONS_PER_LEVEL as i32));
-        let mut outer_explosions = Vec::new();
-        let mut outer_smudges = Vec::new();
         emit_warhead_detonation_effects(
             warhead,
             det.damage,
@@ -1961,17 +1982,23 @@ fn emit_missile_detonations(
             impact_z_byte(impact_z),
             world_z_leptons,
             &mut world.interner,
-            &mut outer_explosions,
-            &mut outer_smudges,
+            &mut out.effects.explosion_effects,
         );
-        out.effects.explosion_effects.extend(outer_explosions);
-        commit_smudges(
-            world,
-            rules,
-            overlay_registry,
-            outer_smudges,
-            &mut out.effects.smudge_spawn_requests,
-        );
+        // `RocketLocomotion::Detonate` lights every impact after its anim and
+        // before the area damage (`0x006632AF`: damage, warhead, the impact
+        // coordinate, not forced, no CLDisable flags) — no `Bright=` gate.
+        out.effects.combat_light_requests.push(CombatLightRequest {
+            target_id: None,
+            damage: det.damage,
+            warhead_ref: wh_iid,
+            coord: ProjectileCoord::new(
+                i32::from(det.rx) * 256 + crate::util::lepton::CELL_CENTER_LEPTON.to_num::<i32>(),
+                i32::from(det.ry) * 256 + crate::util::lepton::CELL_CENTER_LEPTON.to_num::<i32>(),
+                world_z_leptons,
+            ),
+            force_create: false,
+            flags: 0,
+        });
         let aoe = {
             let collected = collect_area(
                 world,
@@ -4507,22 +4534,30 @@ pub(crate) fn tick_combat(
             continue;
         };
         let own_removed = emit.remove_attack[n_remove..].contains(&snap.stable_id);
-        // A removal leaves `Target == 0`, so native's arm A does not run and the
-        // only `Set` left is arm B's idle return at `0x00736BDD`, which the
-        // `+0x6AF` store at `0x00736B16` precedes: that arc starts with a clear
-        // latch. (VERA swings back on the removal tick rather than after the
-        // dwell; that difference is the pre-existing S3 kill-tick behaviour.)
-        let replacement_is_idle_return = true;
-        let replacement: Option<u16> =
-            own_removed.then(|| crate::sim::movement::turret::body_facing_to_turret(e.facing));
-        if let Some(replacement) = replacement {
+        // A removal leaves `Target == 0` before `UnitClass::Facing_Update @
+        // 0x00736990` runs (`0x007365E8`, after `Fire_At_Target`): arm A does
+        // not aim, and arm B's idle return (`0x00736BDD`) waits out the dwell
+        // since the last shot (`GuardAreaTargetingDelay + 5`, `0x00736B4B`)
+        // and turns to the animated hull or the move destination.
+        if own_removed {
+            let mut targetless = e.clone();
+            targetless.attack_target = None;
+            let replacement = UnitFacingUpdate::from_facing_update(
+                snap.stable_id,
+                crate::sim::movement::turret::facing_update(
+                    &targetless,
+                    &world.substrate.entities,
+                    Some(rules),
+                    &world.interner,
+                    binary_frame,
+                ),
+            );
             let update = emit
                 .unit_facing
                 .iter_mut()
                 .find(|u| u.entity_id == snap.stable_id)
                 .expect("Unit attacker was seeded before fire");
-            update.turret_destination = Some(replacement);
-            update.turret_destination_is_idle_return = replacement_is_idle_return;
+            *update = replacement;
         }
     }
     // An idle unit killed or warped out earlier in the frame no longer reaches

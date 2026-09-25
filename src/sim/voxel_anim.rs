@@ -191,7 +191,7 @@ const DEBRIS_GRAVITY: NativeF64Bits = NativeF64Bits::from_bits(0x3ff6_6666_6000_
 /// divides a NEGATIVE dividend and yields a negative remainder, while
 /// `(draw as i32) % divisor` followed by `.abs()` here yields the positive one.
 /// `|x| % d == |x % d|` for every other draw. One draw in 2^32.
-fn raw_abs_modulo(draw: u32, divisor: i32) -> i32 {
+pub(crate) fn raw_abs_modulo(draw: u32, divisor: i32) -> i32 {
     if divisor == 0 {
         return 0;
     }
@@ -389,7 +389,20 @@ pub struct ShpDebrisSpawn {
     /// Index into the source list the row names.
     pub index: usize,
     pub source: ShpDebrisSource,
+    /// The constructor's own draws, taken right after this row's pick as
+    /// native constructs each piece before picking the next (`0x00702566`);
+    /// `None` when the name has no bound anim type.
+    pub draws: Option<crate::sim::anim_class::AnimConstructorDraws>,
 }
+
+/// The AnimClass constructor a piece's pick feeds: given the row's list and
+/// index, take the constructor's draws.
+pub type ShpDebrisConstructor<'a> = dyn FnMut(
+        ShpDebrisSource,
+        usize,
+        &mut SimRng,
+    ) -> Result<Option<crate::sim::anim_class::AnimConstructorDraws>, NativeX87Error>
+    + 'a;
 
 /// Everything one death throws, in native emission order.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -530,6 +543,7 @@ pub fn throw_death_debris(
     owner_house: Option<InternedId>,
     origin: IVec3,
     rng: &mut SimRng,
+    construct_anim: &mut ShpDebrisConstructor<'_>,
 ) -> Result<DeathDebris, NativeX87Error> {
     let mut out = DeathDebris::default();
     if data.max_debris <= 0 {
@@ -598,9 +612,11 @@ pub fn throw_death_debris(
     if data.debris_anim_count > 0 {
         for _ in 0..budget.max(0) {
             let index = rng.next_range_i32_inclusive(0, data.debris_anim_count as i32 - 1) as usize;
+            let draws = construct_anim(ShpDebrisSource::TypeDebrisAnims, index, rng)?;
             out.anims.push(ShpDebrisSpawn {
                 index,
                 source: ShpDebrisSource::TypeDebrisAnims,
+                draws,
             });
         }
     } else if data.debris_types.is_empty() {
@@ -616,9 +632,11 @@ pub fn throw_death_debris(
         for _ in 0..budget.max(0) {
             let index =
                 rng.next_range_i32_inclusive(0, data.metallic_debris_count as i32 - 1) as usize;
+            let draws = construct_anim(ShpDebrisSource::RulesMetallicDebris, index, rng)?;
             out.anims.push(ShpDebrisSpawn {
                 index,
                 source: ShpDebrisSource::RulesMetallicDebris,
+                draws,
             });
         }
     }
@@ -661,8 +679,14 @@ mod tests {
     }
 
     fn throw(input: &DebrisTypeData<'_>, rng: &mut SimRng) -> DeathDebris {
-        throw_death_debris(input, None, IVec3::new(1280, 2560, 0), rng)
-            .expect("the debris block stays inside the verified x87 domain")
+        throw_death_debris(
+            input,
+            None,
+            IVec3::new(1280, 2560, 0),
+            rng,
+            &mut |_, _, _| Ok(None),
+        )
+        .expect("the debris block stays inside the verified x87 domain")
     }
 
     #[test]

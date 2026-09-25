@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "UnitClass::Facing_Update 0x00736990 per frame on a Turret=yes Unit: stationary targets at bearings around both initial headings, preset latch, ROT 5/10/200, OmniFire, TurretLocked, no weapon, TurretSpins, appearing/retargeted/moving targets, target clears against LastFire around the Rules+0xE04 + 5 threshold (delay 0/36/100), NavCom, Bunker, +0x6AD, IsSimpleDeployer, and hull turns during the idle return. Non-turret arm (type +0x67C / locomotor) not covered.",
+  "assumptions": [
+    "x87 control word 0x0E7F; the image's 0x00822D80 already holds 0x0E7F for ftol.",
+    "Unit, target and NavCom are UnitClass objects on the original vtable 0x007F5C70 with Location +0x9C; type +0x6C4 with Turret +0xCA1 = 1, +0x808 = 0 and weapon slot 0 at +0x898; Veterancy +0x150 = 0.0.",
+    "FacingClass objects built by 0x004C91C0 + Set_ROT 0x004C9680 + Snap 0x004C9300 at start-1; Rules [0x008871E0]+0xE04 supplied per row.",
+    "Frame [0x00A8ED84] advanced by one before each call; events apply before the call.",
+    "Facing_Update writes only +0x388/+0x3A0 facings, +0x4A0 and +0x6AF (write-guarded)."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "facing_update": "0x00736990",
+    "direction_to_target": "0x005F3DB0",
+    "set": "0x004C9220",
+    "current": "0x004C93D0",
+    "is_rotating": "0x004C9480",
+    "snap": "0x004C9300",
+    "set_rot": "0x004C9680",
+    "constructor": "0x004C91C0"
+  },
+  "payload_sha256": "57af2a40ffd4d7026d450f26d1672f40aa5ee73e844e5d9ff3eb0af50bc19e0c"
+}

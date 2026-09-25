@@ -476,6 +476,10 @@ pub struct ProjectileCollisionPolicy {
     pub floater: bool,
     /// BulletType +2C8, retained as exact binary64 bits for Eq/hash/save.
     pub elasticity_bits: u64,
+    /// `BulletTypeClass::Arcing` (`+0x29B`): impact resolution
+    /// (`0x00468ECF`) skips the detector-reference arm for it.
+    #[serde(default)]
+    pub arcing: bool,
 }
 
 impl ProjectileCollisionPolicy {
@@ -491,6 +495,7 @@ impl ProjectileCollisionPolicy {
         inaccurate: false,
         floater: false,
         elasticity_bits: 0x3fe8_0000_0000_0000,
+        arcing: false,
     };
 }
 
@@ -570,6 +575,8 @@ pub enum ProjectileCollisionResponse {
         near_target: bool,
         left_map: bool,
     },
+    /// The world's answer to [`ProjectileCollisionPhase::ImpactLadder`].
+    ImpactLadder(ImpactLadderWorld),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -581,6 +588,115 @@ pub(crate) enum ProjectileCollisionPhase {
     },
     Shared,
     TargetLocation,
+    /// `0x00468D80` asks the target and the warhead for
+    /// [`resolve_impact_coord`]; the candidate is the bullet's Location.
+    ImpactLadder,
+}
+
+/// The Target facts `BulletClass` impact resolution (`0x00468D80`) reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImpactLadderTarget {
+    /// vt+0x48: a Building's centre (`0x00447AC0`), a Cell's coordinate
+    /// (`0x00486840`), everything else its Location (`0x005F65A0`).
+    pub coords: ProjectileCoord,
+    /// vt+0x58: every Object forwards to vt+0x48 (`0x00410540`); a Cell
+    /// answers `0x00486890`.
+    pub aim: ProjectileCoord,
+    /// vt+0xA4: vt+0x48 (`0x0041BDD0`) for all but a Building
+    /// (`0x004500A0`, its TargetCoordOffset).
+    pub offset_coords: ProjectileCoord,
+    /// vt+0x54, ObjectClass::IsInAir `0x005F6B90`: on the map and at least
+    /// two levels up (Aircraft `0x0041B920` asks the V3/Dreadnought rocket
+    /// locomotor); a Cell never is (`0x00410530`).
+    pub in_air: bool,
+    /// vt+0x78 answers layer 2 (Ground).
+    pub ground_layer: bool,
+    /// `ObjectClass::DistanceTo 0x005F6360` from the bullet's Location:
+    /// vt+0x48 to vt+0x48, less a Building's `(Width + Height) * 64`,
+    /// clamped at 0.
+    pub distance: i32,
+    /// A Building whose type has a nonzero TargetCoordOffset (`+0xEBC`).
+    pub building_offset: bool,
+}
+
+/// What the world contributes to [`resolve_impact_coord`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ImpactLadderWorld {
+    /// The live Target (`+0x10C`), or none once PointerExpired cleared it.
+    pub target: Option<ImpactLadderTarget>,
+    /// The warhead's `EMEffect=` (`+0x154`).
+    pub em_effect: bool,
+}
+
+/// The bullet facts [`resolve_impact_coord`] reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImpactLadderBullet {
+    /// Location (`+0x9C`), where the AI committed the impact.
+    pub location: ProjectileCoord,
+    /// The ProximityDetector reference (`+0xB8 + 0x18` = `+0xD0`).
+    pub reference: ProjectileCoord,
+    /// The AI's impact flag, the ladder's argument (`0x00467FA2`).
+    pub impact_flag: bool,
+    pub inaccurate: bool,
+    pub airburst: bool,
+    pub arcing: bool,
+    /// ROT > 0 (`+0x2DC`).
+    pub homing: bool,
+}
+
+/// `BulletClass` impact resolution `0x00468D80` up to its first
+/// `DetonateAtCoord`: the coordinate the (first) cluster detonates at.
+/// - An `Inaccurate=` bullet keeps its Location.
+/// - A Target within `0x20` of its vt+0x48 (3-D, Sqrt_Approx, ftol) takes
+///   vt+0x48 unless the bullet is `Airburst=`.
+/// - `EMEffect=` or `Airburst=` stops there.
+/// - A fuse detonation (impact flag clear) of a bullet that is neither
+///   `Arcing=` nor ROT > 0 takes the ProximityDetector reference when it is
+///   not Empty.
+/// - An in-air Target off the Ground layer takes vt+0xA4 within `0x80`;
+///   otherwise a Target within `0x2A` (DistanceTo) takes vt+0x58, or vt+0xA4
+///   for a Building with a TargetCoordOffset.
+///
+/// Native execution: `tools/projectile_oracle/impact_ladder.py`.
+pub fn resolve_impact_coord(
+    bullet: &ImpactLadderBullet,
+    world: &ImpactLadderWorld,
+) -> ProjectileCoord {
+    let mut coord = bullet.location;
+    if bullet.inaccurate {
+        return coord;
+    }
+    if let Some(target) = world.target
+        && coord_distance(bullet.location, target.coords) < 0x20
+        && !bullet.airburst
+    {
+        coord = target.coords;
+    }
+    if world.em_effect || bullet.airburst {
+        return coord;
+    }
+    if !bullet.impact_flag
+        && !bullet.arcing
+        && !bullet.homing
+        && bullet.reference != ProjectileCoord::new(0, 0, 0)
+    {
+        coord = bullet.reference;
+    }
+    let Some(target) = world.target else {
+        return coord;
+    };
+    if target.in_air && !target.ground_layer {
+        if target.distance < 0x80 {
+            coord = target.offset_coords;
+        }
+    } else if target.distance < 0x2A {
+        coord = if target.building_offset {
+            target.offset_coords
+        } else {
+            target.aim
+        };
+    }
+    coord
 }
 
 /// Ordinary AI compares its binary64 candidate before ftol; the bridge and
@@ -1077,6 +1193,28 @@ pub struct Projectile {
     pub on_bridge: bool,
 }
 
+impl Projectile {
+    /// The facts [`resolve_impact_coord`] reads, with the bullet at its
+    /// committed Location.
+    fn impact_ladder_bullet(&self, impact_flag: bool) -> ImpactLadderBullet {
+        ImpactLadderBullet {
+            location: self.position,
+            reference: self.guidance.map_or(self.last_target_position, |guidance| {
+                guidance.fuse_reference
+            }),
+            impact_flag,
+            inaccurate: self
+                .guidance
+                .map_or(self.collision.inaccurate, |guidance| guidance.inaccurate),
+            airburst: self
+                .guidance
+                .map_or(self.collision.airburst, |guidance| guidance.airburst),
+            arcing: self.collision.arcing,
+            homing: self.tracks_target,
+        }
+    }
+}
+
 /// Why a projectile reached its combat detonation handoff.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ProjectileDetonationReason {
@@ -1289,6 +1427,7 @@ impl ProjectileStore {
                 ProjectileCollisionPhase::Ordinary { .. } => None,
                 ProjectileCollisionPhase::Shared => collides_at(projectile, candidate),
                 ProjectileCollisionPhase::TargetLocation => None,
+                ProjectileCollisionPhase::ImpactLadder => None,
             },
             true,
         )
@@ -1700,8 +1839,9 @@ impl ProjectileStore {
                         projectile.velocity = velocity;
                         impact
                     }
-                    ProjectileCollisionResponse::Ordinary { .. } => {
-                        unreachable!("ordinary response during shared probe")
+                    ProjectileCollisionResponse::Ordinary { .. }
+                    | ProjectileCollisionResponse::ImpactLadder(_) => {
+                        unreachable!("only the shared probe answers here")
                     }
                 });
             if let Some(impact) = collision_impact {
@@ -1825,9 +1965,18 @@ impl ProjectileStore {
                 ProjectileDetonationReason::Fuse
             };
             projectile.position = impact;
+            // `0x00467FA2`: the AI hands its impact flag to the resolution
+            // ladder, which picks where the detonation lands.
+            let world =
+                match collides_at(projectile, impact, ProjectileCollisionPhase::ImpactLadder) {
+                    Some(ProjectileCollisionResponse::ImpactLadder(world)) => world,
+                    _ => ImpactLadderWorld::default(),
+                };
+            let resolved =
+                resolve_impact_coord(&projectile.impact_ladder_bullet(impact_flag), &world);
             result
                 .detonations
-                .push(detonation(projectile, impact, reason));
+                .push(detonation(projectile, resolved, reason));
         }
 
         if remove_terminal {
@@ -2264,6 +2413,85 @@ fn detonation(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolve_impact_coord_matches_the_original() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../tools/projectile_oracle/impact_ladder.json"
+        ))
+        .unwrap();
+        const TARGET: [i32; 3] = [5000, 6000, 416];
+        let coord = |value: &serde_json::Value| {
+            ProjectileCoord::new(
+                value[0].as_i64().unwrap() as i32,
+                value[1].as_i64().unwrap() as i32,
+                value[2].as_i64().unwrap() as i32,
+            )
+        };
+        let shifted = |offset: [i32; 3]| {
+            ProjectileCoord::new(
+                TARGET[0] + offset[0],
+                TARGET[1] + offset[1],
+                TARGET[2] + offset[2],
+            )
+        };
+        let mut compared = 0;
+        for row in &rows {
+            let input = &row["input"];
+            let flag = |key: &str| input[key].as_i64().unwrap() != 0;
+            let location = coord(&input["location"]);
+            // Cluster <= 0 never reaches DetonateAtCoord; VERA's cluster loop
+            // (`world_receiver`) runs no iteration for it.
+            if input["cluster"].as_i64().unwrap() <= 0 {
+                assert!(row["detonation"].is_null());
+                continue;
+            }
+            let target = input["target"].as_object().map(|target| {
+                let field = |key: &str| target[key].as_i64().unwrap() as i32;
+                let building = field("what_am_i") == 6;
+                let foundation = &target["foundation"];
+                let adjust = if building {
+                    (foundation[0].as_i64().unwrap() + foundation[1].as_i64().unwrap()) as i32 * 64
+                } else {
+                    0
+                };
+                ImpactLadderTarget {
+                    coords: shifted([0, 0, 0]),
+                    aim: shifted([3, 5, 7]),
+                    offset_coords: shifted([11, 13, 17]),
+                    in_air: field("in_air") != 0,
+                    ground_layer: field("layer") == 2,
+                    distance: (coord_distance(location, shifted([0, 0, 0])) - adjust).max(0),
+                    building_offset: building
+                        && target["target_coord_offset"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .any(|axis| axis.as_i64().unwrap() != 0),
+                }
+            });
+            let bullet = ImpactLadderBullet {
+                location,
+                reference: coord(&input["reference"]),
+                impact_flag: flag("impact_flag"),
+                inaccurate: flag("inaccurate"),
+                airburst: flag("airburst"),
+                arcing: flag("arcing"),
+                homing: input["rot"].as_i64().unwrap() > 0,
+            };
+            let world = ImpactLadderWorld {
+                target,
+                em_effect: flag("em_effect"),
+            };
+            assert_eq!(
+                resolve_impact_coord(&bullet, &world),
+                coord(&row["detonation"]),
+                "{input}"
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 378);
+    }
 
     #[test]
     fn homing_impact_admission_matches_executed_retail_vectors() {

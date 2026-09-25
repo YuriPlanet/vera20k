@@ -6,7 +6,7 @@
 //! owns no gameplay state and never enters snapshots or world hashes.
 
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::InvulnerabilityImpactEffect;
+use crate::sim::combat::CombatLightRequest;
 use crate::sim::intern::StringInterner;
 use crate::sim::projectile::ProjectileCoord;
 
@@ -76,8 +76,8 @@ impl CombatLightRuntime {
 /// Materialize current-frame receiver records into the final native light-vector
 /// fields. Helper-only provenance (target, warhead, damage) intentionally stops
 /// at this boundary.
-pub(crate) fn materialize_simulation_impacts(
-    impacts: Vec<InvulnerabilityImpactEffect>,
+pub(crate) fn materialize_combat_lights(
+    impacts: Vec<CombatLightRequest>,
     rules: Option<&RuleSet>,
     interner: &StringInterner,
 ) -> Vec<CombatLight> {
@@ -93,7 +93,7 @@ pub(crate) fn materialize_simulation_impacts(
             Some(CombatLight {
                 coord: effect.coord,
                 stage: 0,
-                base_size: materialize_base_size(effect.doubled_damage, override_size),
+                base_size: materialize_base_size(effect.damage, override_size),
                 flags: effect.flags,
             })
         })
@@ -122,15 +122,10 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::sim::world::Simulation;
 
-    fn effect(
-        sim: &mut Simulation,
-        x: i32,
-        flags: u32,
-        damage: i32,
-    ) -> InvulnerabilityImpactEffect {
-        InvulnerabilityImpactEffect {
-            target_id: x as u64,
-            doubled_damage: damage,
+    fn effect(sim: &mut Simulation, x: i32, flags: u32, damage: i32) -> CombatLightRequest {
+        CombatLightRequest {
+            target_id: Some(x as u64),
+            damage,
             warhead_ref: sim.interner.intern("WH"),
             coord: ProjectileCoord { x, y: 512, z: 0 },
             force_create: true,
@@ -147,7 +142,7 @@ mod tests {
         let second = effect(&mut sim, 768, 6, 400);
         let mut runtime = CombatLightRuntime::default();
         let new_entries =
-            materialize_simulation_impacts(vec![first, second], Some(&rules), &sim.interner);
+            materialize_combat_lights(vec![first, second], Some(&rules), &sim.interner);
         assert_eq!(
             new_entries.iter().map(|e| e.base_size).collect::<Vec<_>>(),
             vec![25, 25]
@@ -164,7 +159,7 @@ mod tests {
             draw.iter().map(|r| r.surface_index).collect::<Vec<_>>(),
             vec![1, 1]
         );
-        assert!(materialize_simulation_impacts(Vec::new(), Some(&rules), &sim.interner).is_empty());
+        assert!(materialize_combat_lights(Vec::new(), Some(&rules), &sim.interner).is_empty());
     }
 
     #[test]

@@ -36,14 +36,13 @@ pub struct ArtEntry {
     pub scorch: bool,
     pub crater: bool,
     pub force_big_craters: bool,
-    /// SHP frame 0's visible-content bounding-rect width, in pixels.
-    /// Used by the smudge dispatcher as a damage-tier proxy for size selection.
-    /// Default 30 — matches the original engine's uncached first-call fallback;
-    /// replaced with the actual SHP frame width by `populate_anim_frame_dims`
-    /// for anims with a Crater/Scorch/ForceBigCraters spawn flag.
+    /// The middle frame's width, `AnimTypeClass+0x29C`: `AnimClass::Middle @
+    /// 0x00424F00` sizes its scorch or crater from the frame at `+0x298`,
+    /// the raw SHP frame count halved (`Load_Image 0x00427B50`), through
+    /// `0x0069E7E0`. 30 with no image (`0x00424F57`). Bound by
+    /// `populate_anim_frame_dims` for anims with a Scorch/Crater flag.
     pub frame_width: u16,
-    /// SHP frame 0's visible-content bounding-rect height, in pixels.
-    /// See `frame_width`.
+    /// The middle frame's height, `AnimTypeClass+0x2A0`. See `frame_width`.
     pub frame_height: u16,
     /// Render as VXL+HVA model (true) or SHP sprite (false).
     pub voxel: bool,
@@ -790,7 +789,7 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         trailer_anim: parse_anim_ref(section, "TrailerAnim"),
         trailer_seperation: section.get_i32("TrailerSeperation").unwrap_or(0),
         random_loop_delay: section.get("RandomLoopDelay").and_then(parse_u16_pair),
-        random_rate_logic_frames: section.get("RandomRate").and_then(parse_random_rate_pair),
+        random_rate_logic_frames: read_random_rate(section),
         y_draw_offset: section.get_i32("YDrawOffset").unwrap_or(0),
         z_adjust: section.get_i32("ZAdjust").unwrap_or(0),
         // AnimType ctor42765B initializes0; ReadINI428147 uses ReadInt5276D0.
@@ -863,14 +862,22 @@ fn parse_u16_pair(value: &str) -> Option<(u16, u16)> {
     Some((a, b))
 }
 
-fn parse_random_rate_pair(value: &str) -> Option<(u16, u16)> {
-    let mut parts = value.split(',').map(str::trim);
-    let mut low = art_rate_to_logic_frames(parts.next()?.parse::<i32>().ok()?);
-    let high = art_rate_to_logic_frames(parts.next()?.parse::<i32>().ok()?);
-    if high < low {
-        low = high;
-    }
-    Some((low, high))
+/// `RandomRate=` as `AnimTypeClass::ReadINI` stores it
+/// (`0x00428772..0x004287DC`): `ReadMinMax` with `-1,-1` defaults, each
+/// field that read something other than -1 becomes `900 / value` (0 when not
+/// positive) over the constructor's 0 (`0x004275C0`), the max is floored at
+/// 0 and the min clamped down to it. The constructor picks only when the max
+/// is non-zero (`0x004221D5`), so `None` stands for a zero max.
+fn read_random_rate(section: &IniSection) -> Option<(u16, u16)> {
+    let [low, high] = section.read_minmax("RandomRate", [-1, -1]);
+    let stored = |value: i32| match value {
+        -1 => 0,
+        value if value > 0 => 900 / value,
+        _ => 0,
+    };
+    let high = stored(high).max(0);
+    let low = stored(low).min(high);
+    (high != 0).then_some((low as u16, high as u16))
 }
 
 /// Default native frame delay when art.ini section has no `Rate=` key.
@@ -1433,6 +1440,8 @@ impl ArtRegistry {
                     if let Some(config) = self.anim_runtime_configs.get(&name) {
                         pending.extend(config.next.iter().cloned());
                         pending.extend(config.trailer_anim.iter().cloned());
+                        pending.extend(config.bounce_anim.iter().cloned());
+                        pending.extend(config.expire_anim.iter().cloned());
                     }
                     self.scheduler_anim_types.insert(name);
                 }
@@ -1528,6 +1537,15 @@ impl ArtRegistry {
             }
             if let Some(trailer) = config.trailer_anim {
                 pending.push_back(trailer);
+            }
+            // A bouncing chunk's `BounceAnim=` and `ExpireAnim=`
+            // (`AnimClass::ProcessBounceResult 0x004239CE`, `AnimClass::AI
+            // 0x00423E70`).
+            if let Some(bounce) = config.bounce_anim {
+                pending.push_back(bounce);
+            }
+            if let Some(expire) = config.expire_anim {
+                pending.push_back(expire);
             }
         }
 
@@ -1766,10 +1784,10 @@ impl ArtRegistry {
     }
 
     /// Eagerly populate `frame_width`/`frame_height` on entries whose anim has
-    /// a smudge-spawn flag (Crater/Burn/ForceBigCraters). Reads frame 0 of
-    /// each anim's SHP via the shared `anim_shp_candidates` filename
-    /// pipeline. Anims without a loadable SHP keep the (30, 30) defaults
-    /// from their initial parse.
+    /// a smudge-spawn flag (Crater/Burn/ForceBigCraters). Reads the middle
+    /// frame (the raw frame count halved) of each anim's SHP via the shared
+    /// `anim_shp_candidates` filename pipeline. Anims without a loadable SHP
+    /// keep the (30, 30) defaults from their initial parse.
     ///
     /// Returns `(populated, fallback)` for diagnostic logging:
     ///   `populated` = anims whose SHP was found and dims were stored
@@ -1806,7 +1824,7 @@ impl ArtRegistry {
                 fallback += 1;
                 continue;
             };
-            let Some(frame) = shp.frames.first() else {
+            let Some(frame) = shp.frames.get(shp.frames.len() / 2) else {
                 fallback += 1;
                 continue;
             };

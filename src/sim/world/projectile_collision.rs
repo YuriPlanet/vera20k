@@ -5,8 +5,9 @@
 use super::*;
 use crate::sim::cell_rect::{CellRef, get_cellclass_fallback, get_cellclass_fallback_leptons};
 use crate::sim::projectile::{
-    ProjectileCollisionMotion, ProjectileCollisionPhase, ProjectileTarget, ProjectileTrajectory,
-    ProjectileVelocity, coord_distance, projectile_ground_z,
+    ImpactLadderTarget, ImpactLadderWorld, ProjectileCollisionMotion, ProjectileCollisionPhase,
+    ProjectileTarget, ProjectileTrajectory, ProjectileVelocity, coord_distance,
+    projectile_ground_z,
 };
 
 pub(super) struct ProjectileCollisionWorld<'a> {
@@ -1516,7 +1517,61 @@ impl ProjectileCollisionWorld<'_> {
                     .map(|target| ProjectileCollisionResponse::TargetZClamp(self.location(target))),
                 _ => None,
             },
+            ProjectileCollisionPhase::ImpactLadder => {
+                Some(ProjectileCollisionResponse::ImpactLadder(
+                    self.impact_ladder(projectile, candidate),
+                ))
+            }
         }
+    }
+
+    /// The Target and warhead facts `0x00468D80` reads, with the bullet at
+    /// `location`.
+    /// RESIDUAL: a Building's vt+0xA4 (`0x004500A0`, TargetCoordOffset
+    /// `+0xEBC`) is its centre: `TargetCoordOffset=` is unparsed (the
+    /// shipyards). Trigger: a shell landing near a naval yard. Effect: it
+    /// detonates at the centre instead of the offset point.
+    fn impact_ladder(
+        &self,
+        projectile: &Projectile,
+        location: ProjectileCoord,
+    ) -> ImpactLadderWorld {
+        let em_effect = self.rules.is_some_and(|rules| {
+            rules
+                .warhead(self.interner.resolve(projectile.payload.warhead))
+                .is_some_and(|warhead| warhead.em_effect)
+        });
+        let target = match projectile.target {
+            ProjectileTarget::Entity(id) => self.entities.get(id).map(|target| {
+                let coords = self.location(target);
+                ImpactLadderTarget {
+                    coords,
+                    aim: coords,
+                    offset_coords: coords,
+                    in_air: self.high_flying(target),
+                    ground_layer: super::display_registry::entity_layer(
+                        target,
+                        self.terrain,
+                        self.rules,
+                    ) == super::display_layers::DisplayLayer::GROUND,
+                    distance: self.target_distance(location, target),
+                    building_offset: false,
+                }
+            }),
+            cell @ (ProjectileTarget::Cell { .. } | ProjectileTarget::DummyCell) => {
+                self.target_aim(cell).map(|coords| ImpactLadderTarget {
+                    coords,
+                    aim: coords,
+                    offset_coords: coords,
+                    in_air: false,
+                    ground_layer: true,
+                    distance: coord_distance(location, coords),
+                    building_offset: false,
+                })
+            }
+            ProjectileTarget::None => None,
+        };
+        ImpactLadderWorld { target, em_effect }
     }
 
     fn ordinary(

@@ -810,7 +810,7 @@ fn advance_one_simulation_frame(state: &mut AppState, tick_lane: TickLane) -> bo
                 overlay_removals,
                 sound_events: frame_sound_events,
                 fire_events: frame_fire_events,
-                invulnerability_impacts,
+                combat_lights,
                 lighting_events,
             } = rt
                 .advance_frame(&due_commands, SIM_TICK_MS, tick_lane)
@@ -830,8 +830,8 @@ fn advance_one_simulation_frame(state: &mut AppState, tick_lane: TickLane) -> bo
             frame_committed = tick_result.frame_committed;
             if tick_result.frame_committed {
                 drained_combat_lights =
-                    crate::app::presentation::combat_lights::materialize_simulation_impacts(
-                        invulnerability_impacts,
+                    crate::app::presentation::combat_lights::materialize_combat_lights(
+                        combat_lights,
                         Some(&resources.rules),
                         &sim.interner,
                     );

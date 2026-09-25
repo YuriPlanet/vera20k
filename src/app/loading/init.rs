@@ -2560,9 +2560,8 @@ pub(crate) fn load_map_from_initial(
     if let (Some(r), Some(a)) = (rules.as_mut(), art.as_mut()) {
         a.apply_anim_type_read_states(&r.anim_type_art_read_states);
         r.merge_art_data(a);
-        // Eagerly populate per-anim SHP frame dimensions so the smudge
-        // dispatcher can size-filter without falling back to the (30, 30)
-        // default that always loses the threshold check.
+        // Eagerly populate each marking anim's middle-frame size, which
+        // AnimClass::Middle sizes its scorch or crater from.
         let (populated, fallback) =
             a.populate_anim_frame_dims(&asset_manager, theater_ext, &map_data.header.theater);
         log::info!(

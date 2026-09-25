@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "AnimClass::AnimClass 0x00421EA0 on Bouncer AnimTypes (retail DBRIS LG/SM/HV and DBRS10SM values, odd Elasticity/MaxXYVel/MinZVel), through Unlimbo, the Bouncer arm and BounceClass::Init 0x004397E0, over 16 Scenario seeds and four coordinates; the RandomRate post-read 0x00428777..0x004287DC; and the ReceiveDamage MetallicDebris loop 0x007024E0..0x00702572 for 1..3 pieces.",
+  "assumptions": [
+    "x87 control word 0x0E7F (PC53, chop) on entry; ftol 0x007C5F00 loads the image value of 0x00822D80 (0x0E7F) when it differs.",
+    "AnimType fields are supplied: artmd.ini Elasticity/MaxXYVel/MinZVel, MaxZVel 3.5 (constructor 0x00427627, no INI key), Rate 1, Layer 3, LoopCount -1, frame counts 16, sounds -1; ObjectType +0xAC/+0x234/+0x23A zero so Unlimbo's alpha/radar/light arms do not run.",
+    "Game running (0x00A8E9A0=1), 0x00A8E7AC=0, anim array capacity 64, Rules+0x147C matches no fixture type.",
+    "AnimClass::Start 0x00424CE0 is not executed; its own RNG sites (Middle 0x00424F00, the Tiberium arm 0x00424DDF) lie outside these rows."
+  ],
+  "substitutions": [
+    "MapClass cell lookup 0x00565730 returns a dummy cell (AnimClass vt+0x1AC 0x004264C0 ignores it and returns 0)",
+    "0x005F5850 (reached through AnimClass vt+0x124 0x004238B0) returns 1",
+    "DisplayClass layer submit 0x004A9720 is recorded and returns 1",
+    "AnimClass::Start 0x00424CE0 is recorded and returns",
+    "operator new 0x007C8E17 is a bump allocator (16-byte rounding)",
+    "debris loop: the techno's vt+0x48 returns the case coordinate"
+  ],
+  "entry_points": {
+    "anim_ctor": "0x00421EA0",
+    "bouncer_arm": "0x004224D9",
+    "bounce_init": "0x004397E0",
+    "debris_loop": "0x007024E0",
+    "random_rate_read": "0x00428777",
+    "seed": "0x0065C6D0"
+  },
+  "payload_sha256": "58b70085bf5cd79a8506e3a2022c18d172f4345519c20253e5bbab2bc98e54fc"
+}

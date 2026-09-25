@@ -179,10 +179,15 @@ pub(crate) struct FacingUpdate {
 /// `[DISK]` alone in stock rulesmd, and the key is not parsed here at all.
 /// Downstream risk: none — the arm is self-contained.
 ///
+/// Native execution of this arm pair frame by frame:
+/// `tools/spatial_oracle/turret_cadence.py`.
+///
 /// RESIDUAL (GSI-08.14) — three idle-hold inputs have no VERA analogue and are
 /// therefore not gated: the per-weapon-slot lock byte `WeaponStruct+0x18`
-/// (`0x00736A02`/`0x00736B96`; identity UNCHECKED, zero stock authors for the
-/// adjacent `WeaponXTurretLocked` art key), the locomotor-piggyback flag
+/// (`0x00736A02`/`0x00736B96`; executed: with a target it aims the turret at
+/// the hull's current facing instead of the target, and its idle return
+/// ignores the NavCom; zero stock authors for the adjacent
+/// `WeaponXTurretLocked` art key), the locomotor-piggyback flag
 /// `+0x6AD` (`0x00736BB1`) and the simple-deployer byte `+0x6E0`
 /// (`0x00736B70`, paired with `IsSimpleDeployer=`). Trigger: a piggybacked or
 /// mid-deploy simple deployer losing its target. Player effect: its turret
