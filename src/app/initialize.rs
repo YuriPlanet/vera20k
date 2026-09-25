@@ -684,6 +684,8 @@ impl App {
                 campaign: None,
                 campaign_art: None,
                 load_saved_game: None,
+                wol_welcome: None,
+                wol_welcome_art: None,
                 score_screen: None,
                 score_shell_state: Default::default(),
                 finished_game_count: 0,

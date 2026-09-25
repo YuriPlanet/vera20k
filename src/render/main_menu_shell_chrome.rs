@@ -31,6 +31,16 @@ pub struct MainMenuShellChromeEntry {
     pub pixel_size: [f32; 2],
 }
 
+impl MainMenuShellChromeEntry {
+    /// The image's native width and height in pixels.
+    pub fn native_size(self) -> (i32, i32) {
+        (
+            self.pixel_size[0].round() as i32,
+            self.pixel_size[1].round() as i32,
+        )
+    }
+}
+
 pub struct MainMenuShellChromeAtlas {
     pub texture: BatchTexture,
     /// SDBTNANM.SHP frame 2 — default (unhovered, unpressed) button art.
@@ -327,6 +337,79 @@ pub fn build_campaign_shell_art(
         background_dark: extra("background:dark"),
         slider_thumb: extra("thumb"),
         slider_frame: extra("frame"),
+    })
+}
+
+/// Westwood Online welcome `0x10E` art: the dialog background and the icon
+/// glossary images.
+pub struct WolWelcomeArt {
+    pub texture: BatchTexture,
+    /// MultiplaySelection.shp frame 0 through MultiplaySelection.pal. The
+    /// loader `0x0072C7E0` loads the shape only when the screen is exactly
+    /// 800 wide; otherwise no background is drawn.
+    pub background: Option<MainMenuShellChromeEntry>,
+    /// The kind-2 icon statics' PCX images by lower-case file name.
+    pub icons: Vec<(String, MainMenuShellChromeEntry)>,
+}
+
+/// Magenta is transparent in a kind-2 image static, compared in the surface's
+/// packed format (`OwnerDraw_Static_006153E0`).
+const IMAGE_STATIC_TRANSPARENT_RGB: [u8; 3] = [255, 0, 255];
+
+pub fn build_wol_welcome_art(
+    gpu: &GpuContext,
+    batch: &BatchRenderer,
+    assets: &AssetManager,
+    screen_w: u32,
+    icon_files: &[&str],
+) -> Option<WolWelcomeArt> {
+    let mut rendered = Vec::new();
+    let mut labels: Vec<String> = Vec::new();
+    if screen_w == 800
+        && let Some(palette) = load_named_palette(assets, "MultiplaySelection.pal")
+        && let Some(entry) = render_shp_entry(assets, "MultiplaySelection.shp", &palette, 0, None)
+    {
+        rendered.push(entry);
+        labels.push("background".into());
+    }
+    for file in icon_files {
+        let name = file.to_ascii_lowercase();
+        if labels.contains(&name) {
+            continue;
+        }
+        let Some(bytes) = assets.get_ref(file) else {
+            log::warn!("Missing Westwood Online glossary icon {file}");
+            continue;
+        };
+        let Ok(pcx) = PcxFile::from_bytes(bytes) else {
+            log::warn!("Could not parse {file}");
+            continue;
+        };
+        let mut rgba = pcx.to_rgba(None);
+        crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
+            .apply_packed_color_key_rgba8(&mut rgba, IMAGE_STATIC_TRANSPARENT_RGB);
+        rendered.push(RenderedChromeEntry {
+            label: name.clone(),
+            width: pcx.width as u32,
+            height: pcx.height as u32,
+            rgba,
+        });
+        labels.push(name);
+    }
+    let (texture, packed) = pack_entries(gpu, batch, &rendered)?;
+    let mut background = None;
+    let mut icons = Vec::new();
+    for (label, entry) in labels.into_iter().zip(packed) {
+        if label == "background" {
+            background = Some(entry);
+        } else {
+            icons.push((label, entry));
+        }
+    }
+    Some(WolWelcomeArt {
+        texture,
+        background,
+        icons,
     })
 }
 

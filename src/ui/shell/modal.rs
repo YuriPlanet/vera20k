@@ -266,6 +266,27 @@ pub struct QuitConfirmLayout {
     pub cancel: RectPx,
 }
 
+/// Screen-relative pixel rects for a one-button message box: `0xCE` (the
+/// skirmish validation and saved-map notices) and `0xD0` (the Westwood Online
+/// `TXT_APIMISSING` box) share this geometry: body static `0x5B0`
+/// (40,40,220,50) and OK (207,175,83,15). The box centres on the live
+/// screen, not inside the 800x600 shell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BodyOkLayout {
+    pub dialog: RectPx,
+    pub body: RectPx,
+    pub ok: RectPx,
+}
+
+pub fn body_ok_layout(screen_w: i32, screen_h: i32) -> BodyOkLayout {
+    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    BodyOkLayout {
+        dialog,
+        body: modal_child(dialog, geom::dlu_rect(40, 40, 220, 50)),
+        ok: modal_child(dialog, geom::dlu_rect(207, 175, 83, 15)),
+    }
+}
+
 /// Center the modal panel on the live screen, then place each control at its
 /// dialog-relative DLU rect (the native modal-centered policy: no fullscreen
 /// re-anchor).
@@ -464,6 +485,18 @@ mod tests {
         // DLU x=207, as in the 0x120 template and the retail capture.
         assert!(l.ok.y < l.cancel.y);
         assert_eq!(l.ok.x, l.cancel.x);
+    }
+
+    #[test]
+    fn body_ok_layout_centres_on_the_live_screen() {
+        // (800-450+1)/2 = 175, (600-325+1)/2 = 138.
+        let l = body_ok_layout(800, 600);
+        assert_eq!(l.dialog, RectPx::new(175, 138, 450, 325));
+        assert_eq!(l.body, RectPx::new(235, 203, 330, 81));
+        assert_eq!(l.ok, RectPx::new(486, 422, 125, 24));
+        // Not inside an 800x600 sub-box: (1024-450+1)/2 = 287.
+        let wide = body_ok_layout(1024, 768);
+        assert_eq!(wide.dialog, RectPx::new(287, 222, 450, 325));
     }
 
     #[test]

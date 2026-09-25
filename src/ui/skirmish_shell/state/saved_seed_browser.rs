@@ -58,8 +58,8 @@ impl<I> SavedSeedPrompt<I> {
             let layout = crate::ui::shell::modal::quit_confirm_layout(width as i32, height as i32);
             (layout.dialog, layout.body, layout.ok, Some(layout.cancel))
         } else {
-            let layout = super::super::layout::compute_validation_modal_layout(width, height);
-            (layout.dialog, layout.message, layout.ok_button, None)
+            let layout = crate::ui::shell::modal::body_ok_layout(width as i32, height as i32);
+            (layout.dialog, layout.body, layout.ok, None)
         }
     }
 

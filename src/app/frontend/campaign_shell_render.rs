@@ -16,13 +16,13 @@ use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::{CampaignShellArt, MainMenuShellChromeEntry};
 use crate::render::shell_paint::{
     self, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel, SHELL_TEXT_RGB_ENABLED,
-    STATIC_IMAGE_DEPTH,
+    STATIC_IMAGE_DEPTH, push_entry_native,
 };
 use crate::render::shell_text::ShellAlign;
 use crate::ui::campaign_shell::{
     CAMPAIGN_PAGE, CampaignLayout, CampaignSide, DIFFICULTY_MAX, DIFFICULTY_SLIDER, compute_layout,
 };
-use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::{RectPx, centred_in_window};
 use crate::ui::shell::trackbar::thumb_left;
 
 /// Frame counts of the two emblems (FSALG / FSSLG, or the 640 set).
@@ -32,43 +32,6 @@ pub(crate) fn emblem_frame_counts(state: &AppState) -> [usize; 2] {
         .campaign_art
         .as_ref()
         .map_or([0, 0], |art| [art.allied.len(), art.soviet.len()])
-}
-
-fn push_entry(
-    out: &mut Vec<SpriteInstance>,
-    entry: MainMenuShellChromeEntry,
-    x: i32,
-    y: i32,
-    depth: f32,
-) {
-    out.push(SpriteInstance {
-        position: [x as f32, y as f32],
-        size: entry.pixel_size,
-        uv_origin: entry.uv_origin,
-        uv_size: entry.uv_size,
-        depth,
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
-        ..Default::default()
-    });
-}
-
-/// Kind-4 paint centres the frame in the static's window along an axis where
-/// the window is larger (`0x0061595E..0x0061597E`).
-fn centred_origin(window: RectPx, entry: MainMenuShellChromeEntry) -> (i32, i32) {
-    let w = entry.pixel_size[0].round() as i32;
-    let h = entry.pixel_size[1].round() as i32;
-    let x = if window.w > w {
-        window.x + (window.w - w) / 2
-    } else {
-        window.x
-    };
-    let y = if window.h > h {
-        window.y + (window.h - h) / 2
-    } else {
-        window.y
-    };
-    (x, y)
 }
 
 /// Part `rect` of `entry` drawn with its origin at `origin`.
@@ -129,10 +92,10 @@ fn push_slider(
     if let Some(thumb) = art.slider_thumb {
         let x = slider.x + thumb_left(position, slider.w, 0, DIFFICULTY_MAX);
         let y = slider.y + (slider.h - 22) / 2;
-        push_entry(out, thumb, x, y, STATIC_IMAGE_DEPTH - 0.00001);
+        push_entry_native(out, thumb, x, y, STATIC_IMAGE_DEPTH - 0.00001);
     }
     if let Some(frame) = art.slider_frame {
-        push_entry(
+        push_entry_native(
             out,
             frame,
             slider.x - 2,
@@ -165,7 +128,7 @@ fn campaign_sprites(
         },
     );
     if let Some(background) = art.background {
-        push_entry(
+        push_entry_native(
             &mut out,
             background,
             background_origin.0,
@@ -191,8 +154,9 @@ fn campaign_sprites(
         let Some(entry) = frames.get(campaign.emblem(side).shown_frame()).copied() else {
             continue;
         };
-        let (x, y) = centred_origin(layout.emblem(side), entry);
-        push_entry(&mut out, entry, x, y, STATIC_IMAGE_DEPTH);
+        let (w, h) = entry.native_size();
+        let (x, y) = centred_in_window(layout.emblem(side), w, h);
+        push_entry_native(&mut out, entry, x, y, STATIC_IMAGE_DEPTH);
     }
     out
 }

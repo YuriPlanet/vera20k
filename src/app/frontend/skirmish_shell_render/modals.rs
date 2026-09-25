@@ -7,15 +7,15 @@ use crate::render::shell_paint;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::skirmish_modes::SkirmishGameMode;
 use crate::ui::shell::geom::LOWER_STRIP_H;
+use crate::ui::shell::modal::BodyOkLayout;
 use crate::ui::skirmish_shell::{
     COMBO_DROPDOWN_ROW_H, COMBO_FACE_H, ChooseMapModalButton, ChooseMapModalLayout,
     RandomMapSetupControl, RandomMapSetupLayout, RandomMapSetupModalState, RectPx,
     SETUP_COMBO_ROWS, SavedSeedBrowserState, SavedSeedControl, SavedSeedLayout,
-    SkirmishShellLayout, SkirmishShellState, ValidationModalLayout,
-    choose_map_listbox_content_rect, choose_map_listbox_row_rect,
-    choose_map_listbox_scroll_thumb_rect, choose_map_listbox_scrollbar_rect,
-    choose_map_listbox_visible_row_count, random_map_setup_dropdown_rect, setup_combo_items,
-    trackbar_pixel_offset,
+    SkirmishShellLayout, SkirmishShellState, choose_map_listbox_content_rect,
+    choose_map_listbox_row_rect, choose_map_listbox_scroll_thumb_rect,
+    choose_map_listbox_scrollbar_rect, choose_map_listbox_visible_row_count,
+    random_map_setup_dropdown_rect, setup_combo_items, trackbar_pixel_offset,
 };
 
 use super::chrome::{
@@ -480,12 +480,12 @@ pub(super) fn push_random_map_setup_modal_control_instances(
 pub(super) fn push_validation_modal_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
-    layout: &ValidationModalLayout,
+    layout: &BodyOkLayout,
     pressed: bool,
 ) {
     let frames = super::chrome::type3_button_frames(atlas);
     let button = shell_paint::ModalButton {
-        rect: layout.ok_button,
+        rect: layout.ok,
         pressed,
         enabled: true,
     };

@@ -46,15 +46,15 @@ use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShe
 use crate::rules::color_scheme::ColorSchemeEntry;
 use crate::skirmish_modes::SkirmishGameMode;
 use crate::ui::main_menu::SkirmishCountry;
+use crate::ui::shell::modal::{BodyOkLayout, body_ok_layout};
 #[cfg(test)]
 use crate::ui::skirmish_shell::{
     COMBO_DROPDOWN_ROW_H, SkirmishComboId, combo_dropdown_content_rect, player_name_edit_text_rect,
 };
 use crate::ui::skirmish_shell::{
     ChooseMapModalLayout, OwnerDrawButton, RectPx, SkirmishShellAction, SkirmishShellLayout,
-    SkirmishShellState, ValidationModalLayout, compute_choose_map_modal_layout, compute_layout,
-    compute_random_map_setup_layout, compute_saved_seed_layout, compute_validation_modal_layout,
-    player_row_visible,
+    SkirmishShellState, compute_choose_map_modal_layout, compute_layout,
+    compute_random_map_setup_layout, compute_saved_seed_layout, player_row_visible,
 };
 
 use self::chrome::*;
@@ -200,7 +200,7 @@ fn build_skirmish_shell_instances(
     font: &BitFont,
     layout: &SkirmishShellLayout,
     choose_map_layout: Option<&ChooseMapModalLayout>,
-    validation_layout: Option<&ValidationModalLayout>,
+    validation_layout: Option<&BodyOkLayout>,
     validation_ok_pressed: bool,
     shell: &SkirmishShellState,
     color_schemes: &[ColorSchemeEntry],
@@ -483,7 +483,7 @@ fn render_skirmish_shell_with_atlas(
         .frontend.skirmish_shell_state
         .validation_modal
         .as_ref()
-        .map(|_| compute_validation_modal_layout(state.render_width(), state.render_height()));
+        .map(|_| body_ok_layout(state.render_width() as i32, state.render_height() as i32));
     let action = SkirmishShellAction::None;
 
     let Some(atlas) = atlas else {

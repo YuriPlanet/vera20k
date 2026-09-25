@@ -121,6 +121,17 @@ fn push_entry_sized(
     });
 }
 
+/// One chrome atlas entry at its native size, top-left at `(x, y)`.
+pub fn push_entry_native(
+    out: &mut Vec<SpriteInstance>,
+    entry: MainMenuShellChromeEntry,
+    x: i32,
+    y: i32,
+    depth: f32,
+) {
+    push_entry_sized(out, entry, x as f32, y as f32, entry.pixel_size, depth);
+}
+
 fn push_entry_rect(
     out: &mut Vec<SpriteInstance>,
     entry: MainMenuShellChromeEntry,

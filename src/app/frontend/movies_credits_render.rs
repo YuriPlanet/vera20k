@@ -12,7 +12,7 @@ use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::{MainMenuShellChromeAtlas, MainMenuShellChromeEntry};
 use crate::render::shell_paint::{
     self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
-    SHELL_TEXT_RGB_ENABLED,
+    SHELL_TEXT_RGB_ENABLED, push_entry_native,
 };
 use crate::render::shell_surface_present::SurfaceEffects;
 use crate::render::shell_text::{ShellAlign, ShellTextDraw};
@@ -163,25 +163,20 @@ fn push_list_frame(out: &mut Vec<SpriteInstance>, atlas: &MainMenuShellChromeAtl
     }
 }
 
-/// List interior (`x+1, y+1, w-1, h-1`) and the rows it holds.
-/// One atlas entry at its native size.
-fn push_entry_native(
+/// A `BS_GROUPBOX` frame (`0x0061E700`, executed in the Westwood Online
+/// research harness): the list's two rings, light over dark, with the top
+/// edge eight pixels below the window top and the rings on the window's last
+/// column and row.
+pub(crate) fn push_group_box(
     out: &mut Vec<SpriteInstance>,
-    entry: MainMenuShellChromeEntry,
-    x: i32,
-    y: i32,
-    depth: f32,
+    atlas: &MainMenuShellChromeAtlas,
+    window: RectPx,
 ) {
-    out.push(SpriteInstance {
-        position: [x as f32, y as f32],
-        size: entry.pixel_size,
-        uv_origin: entry.uv_origin,
-        uv_size: entry.uv_size,
-        depth,
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
-        ..Default::default()
-    });
+    push_list_frame(
+        out,
+        atlas,
+        RectPx::new(window.x + 1, window.y + 9, window.w - 3, window.h - 11),
+    );
 }
 
 /// The list's darkened backing: everything inside the inner frame ring,

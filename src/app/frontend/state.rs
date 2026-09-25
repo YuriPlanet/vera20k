@@ -98,6 +98,10 @@ pub(crate) struct FrontendState {
     /// Its emblem and background art (`0x0072D9A0`), loaded with the dialog
     /// and freed when it closes (`0x0072DAA0`).
     pub(crate) campaign_art: Option<crate::render::main_menu_shell_chrome::CampaignShellArt>,
+    /// Westwood Online welcome `0x10E` (and its box) while its route shows.
+    pub(crate) wol_welcome: Option<crate::ui::wol_shell::WolWelcomeState>,
+    /// Its background and icon art (`0x0072C7E0`).
+    pub(crate) wol_welcome_art: Option<crate::render::main_menu_shell_chrome::WolWelcomeArt>,
     /// Single Player's Load Saved Game `0xB7` while its route shows.
     pub(crate) load_saved_game:
         Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,

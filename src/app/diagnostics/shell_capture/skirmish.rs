@@ -17,6 +17,7 @@ pub(crate) enum PresentedShell {
     Campaign,
     LoadSavedGame,
     Options,
+    WolWelcome,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
