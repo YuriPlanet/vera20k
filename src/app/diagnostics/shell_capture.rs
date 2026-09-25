@@ -44,6 +44,7 @@ const CHECKPOINT_CAMPAIGN_0X94_ENTRY_PREFIX: &str = "campaign-0x94-entry-tick-";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-steady";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
 const CHECKPOINT_OPTIONS_0XD5_STEADY: &str = "options-0xd5-steady";
+const CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE: &str = "main-menu-0xe2-network-bounce";
 const CHECKPOINT_OPTIONS_0XD5_ENTRY_PREFIX: &str = "options-0xd5-entry-tick-";
 /// `options-0xd5-hover-<control>`: the pointer rests on a control (like the
 /// retail helper's hover capture) so the status line shows its help.
@@ -118,6 +119,9 @@ pub enum ShellCaptureCheckpoint {
     LoadSavedGame0xB7Entry(u32),
     /// Main Menu -> Options: `0xD5` settled.
     Options0xD5Steady,
+    /// Network on `0xE2`: after its teardown slide and a new `0xE2`'s entry
+    /// slide, the settled main menu.
+    MainMenu0xE2NetworkBounce,
     /// Its entry slide held at one tick (`options-0xd5-entry-tick-<N>`).
     Options0xD5Entry(u32),
     /// Settled with the pointer resting on a control
@@ -226,6 +230,7 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT => Ok(Self::Campaign0x94SliderRight),
             CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY => Ok(Self::LoadSavedGame0xB7Steady),
             CHECKPOINT_OPTIONS_0XD5_STEADY => Ok(Self::Options0xD5Steady),
+            CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE => Ok(Self::MainMenu0xE2NetworkBounce),
             _ => {
                 if let Some(index) = OPTIONS_0XD5_HOVER_CHECKPOINTS
                     .iter()
@@ -257,6 +262,7 @@ impl ShellCaptureCheckpoint {
             Self::LoadSavedGame0xB7Steady => CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY,
             Self::LoadSavedGame0xB7Entry(_) => "load-saved-game-0xb7-entry",
             Self::Options0xD5Steady => CHECKPOINT_OPTIONS_0XD5_STEADY,
+            Self::MainMenu0xE2NetworkBounce => CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE,
             Self::Options0xD5Entry(_) => "options-0xd5-entry",
             Self::Options0xD5Hover(index) => OPTIONS_0XD5_HOVER_CHECKPOINTS[index].0,
             Self::CreditsRollFrame(_) => "credits-roll-frame",
@@ -299,6 +305,7 @@ impl ShellCaptureCheckpoint {
             Self::LoadSavedGame0xB7Entry(tick) => movies::MoviesTarget::LoadSavedGame0xB7 {
                 entry_tick: Some(tick),
             },
+            Self::MainMenu0xE2NetworkBounce => movies::MoviesTarget::NetworkBounce,
             Self::Options0xD5Steady => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
                 hover: None,
@@ -1447,6 +1454,20 @@ mod tests {
             assert_eq!(checkpoint.as_str(), name);
         }
         assert!(ShellCaptureCheckpoint::parse("options-0xd5-hover-nothing").is_err());
+    }
+
+    #[test]
+    fn network_bounce_checkpoint_round_trips() {
+        let checkpoint = ShellCaptureCheckpoint::parse(CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE)
+            .expect("network bounce checkpoint");
+        assert_eq!(
+            checkpoint,
+            ShellCaptureCheckpoint::MainMenu0xE2NetworkBounce
+        );
+        assert_eq!(
+            checkpoint.as_str(),
+            CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE
+        );
     }
 
     #[test]
