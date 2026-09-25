@@ -20,11 +20,18 @@
 //! `tools/spatial_oracle/track_blocked_timers`.
 //!
 //! Residuals:
-//! - Unit door (`vt+0x29C` = `0x744180`, Unit+350 DoorClass): VERA has no
-//!   Unit door, so the gate always passes. Trigger: a transport whose door is
-//!   opening, open or closing (unload). Effect: a new track starts while
-//!   native waits for the door to close. Frequency: the frames after an
-//!   unload. Risk: none beyond that timing.
+//! - Unit door (`vt+0x29C` = `0x744180`, Unit+350 DoorClass), asked on every
+//!   pass (`0x4B3398..0x4B33A5`): VERA has no Unit door, so the gate always
+//!   passes. Trigger: a transport whose door is opening, open or closing
+//!   (unload). Effect: a new track starts while native waits for the door to
+//!   close. Frequency: the frames after an unload. Risk: none beyond that
+//!   timing.
+//! - `vt+0x37C` (Unit `0x746C90`: the EMP lock Techno+504 or the Unit
+//!   death-frame counter +6D8): neither has a Rust producer (VERA has no EMP
+//!   mechanism; see `techno_ai_cloak`), so the prologue gate reads false.
+//!   Trigger: an EMP'd or dying Unit. Effect: it could start a track native
+//!   refuses. Frequency: no stock EMP source is proven reachable. Risk: this
+//!   gate is a consumer of the EMP system when it lands.
 //! - Crates (`CellClass::PickupCrate 0x481A00` at `0x4B4062` and
 //!   `0x4B46E6`): answered as a cell without a crate (the native early exit
 //!   `0x481A39` returns true). Trigger: a head committed onto a crate cell.
@@ -34,15 +41,33 @@
 //!   returning a TerrainClass): VERA targets only objects and cells, so no
 //!   Override is issued for a tree. Unreachable today: VERA's A* never routes
 //!   through a terrain object (native prices a Wood route at 20).
-//! - Foot+68B (`0x4B3391`, `0x4B45ED`) and the redraw calls (`0x483480`):
-//!   a checksum-only latch and presentation; not represented.
-//! - Drive+64 (`0x4B400C`): the crush-track byte Process_Drive_Track reads at
-//!   `0x4B19AA`/`0x4B1A04` (the wall jolt +334 and the CrusherAll Unit
-//!   crush). VERA's track host crush arm does not read it.
+//! - The redraw calls (`0x483480`): presentation only; not represented.
+//! - Drive+64 (`0x4B400C`, the straight byte): Process_Drive_Track reads it
+//!   at `0x4B19AA`/`0x4B1A04` for the wall-crush tilt (+334 = -0.05) and the
+//!   CrusherAll Unit flag (+6B5, the speed ramp's crush clamp). Trigger: a
+//!   crusher's head forced straight over a crushable overlay, a CrusherAll
+//!   wall or a Unit. Effect: neither write happens; VERA's crush arm
+//!   (`apply_wall_crush_on_driveover`) runs without the byte and records both
+//!   writes as its own residuals. Frequency: crushers over walls and fences,
+//!   the Battle Fortress over vehicles. Risk: owned by the crush chain (A7).
+//! - A candidate at a negative cell coordinate publishes no target speed
+//!   (`publish_fresh_speed`); native reads the shared dummy Cell's land row.
+//!   Trigger: a Foot on map row or column 0 heading off the map. Frequency:
+//!   none in play (the playfield keeps movers inside). Risk: none.
 //! - A train (`IsTrain=`, Type+C94, set by no retail type) extends its last
 //!   path word with Find_Path's append form (`0x4B3F07`), which keeps the
 //!   queue and appends at most 24 - prefix words (`0x4D3E82`). VERA's route
 //!   install replaces the queue, so a train takes the ordinary request.
+//! - Units on a Rust route adapter (`issue_direct_move`: refinery and repair
+//!   pads, building entry, sell, passengers, grid-less scatter; and component
+//!   fixtures without native zone topology) keep the pass lane's own head
+//!   selection (`movement_step::select_fresh_drive_track_at_current_cell`
+//!   with `DriveCellAdmission`) and target publish
+//!   (`track_speed::publish_fresh_target`), a second implementation of this
+//!   arm. Trigger: every direct pad approach and direct scatter. Effect:
+//!   those moves skip the native gates, responses and speed products.
+//!   Frequency: every harvester dock and repair visit. Risk: the dock chain
+//!   (native Enter/Unload missions) removes the direct moves.
 
 use super::foot_path::{FindPathResult, FootPathOutcome, coord_cell};
 use super::ground_pose;
@@ -178,12 +203,18 @@ impl Simulation {
         if super::locomotor_owner::owner_is_warping(actor) {
             return Ok(false);
         }
-        //4B271F..4B273E: launched missiles out (+2D0, 0x6B7D80). The EMP
-        //(vt+37C) and Foot+6A0 (vt+380) gates have no Rust producer.
+        //4B271F..4B273E: launched missiles out (+2D0, 0x6B7D80).
         if actor.spawn_manager.as_ref().is_some_and(|manager| {
             manager.count_launched_missiles(&self.substrate.entities, call.rules, &self.interner)
                 > 0
         }) {
+            return Ok(false);
+        }
+        //4B2741..4B2761: vt+37C (Unit 0x746C90: the EMP lock +504 or the
+        //death-frame counter +6D8, neither represented; see the residual) and
+        //vt+380, FootClass::IsParalyzed 0x4DE770 (the Foot+6A0 timer a
+        //parasite arms), return with the out byte clear.
+        if actor.is_paralyzed(self.session.binary_frame) {
             return Ok(false);
         }
         let head = if head.is_some() {
@@ -332,13 +363,16 @@ impl Simulation {
         let candidate = super::track_head::offset_head(location, direction);
         let cell = coord_cell(candidate);
         //4B32F0..4B3332: the current Cell's level, +4 on a bridge.
-        let height = ground_pose::query_object_cell_height(
-            &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
-            location,
-            actor.on_bridge,
-        );
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let height = ground_pose::query_object_cell_height(&cells, location, actor.on_bridge);
+        //4B3376..4B3391: the candidate Cell's bridge bit against OnBridge.
+        let bridge_mismatch = (cells.flags(cells.lookup(cell)) & 0x100 != 0) != actor.on_bridge;
         let owner = self.interner.resolve(actor.owner()).to_owned();
-        //4B339D: Unit+29C (door closed) is always true; see the residual.
+        if bridge_mismatch {
+            self.latch_foot_68b(id);
+        }
+        //4B3398..4B33A5: Unit+29C (door closed) is always true; see the
+        //residual.
         //4B33B3..4B33FA: an allied gate that is not open yet holds the Foot.
         if !crate::sim::gate_runtime::request_gate_open_for_cell(
             &mut self.substrate.entities,
@@ -690,7 +724,9 @@ impl Simulation {
         match dispatch {
             FreshDispatch::OwnerNotAlive => Ok(false),
             FreshDispatch::Accept => {
-                //4B45CB..4B45F4: shift two words, then the finalize tail.
+                //4B45CB..4B45F4: shift two words, Foot+68B = 1, then the
+                //finalize tail.
+                self.latch_foot_68b(id);
                 self.track_fresh_finalize(call, Some(second_candidate), 2, turn_index)
             }
             FreshDispatch::Gate { .. } => {
@@ -994,6 +1030,16 @@ impl Simulation {
         }
     }
 
+    /// Foot+68B = 1 (0x4B3391, 0x4B45ED): write-once in the program (the
+    /// Foot constructor zeroes it; nothing clears it), read only by
+    /// `FootClass::ComputeChecksum` (0x4DBD0C). Its persisted analogue is
+    /// the hashed `RuntimeBridgeTransitionState::pending_mismatch`.
+    fn latch_foot_68b(&mut self, id: u64) {
+        if let Some(actor) = self.substrate.entities.get_mut(id) {
+            actor.runtime_bridge_transition.pending_mismatch = true;
+        }
+    }
+
     /// The live Destination (+34) that 0x4B39D6 / 0x4B3E8F address and hand
     /// to +2CC after Find_Path: Find_Path's core-failure receiver (+500 ->
     /// locomotor Stop) nulls it, and a null reads as Cell (0,0).
@@ -1068,8 +1114,10 @@ impl Simulation {
     }
 
     /// The CloseEnough stop tests of the fresh arm's code-6 responses
-    /// (0x4B3742..0x4B3829, 0x4B4273..0x4B4346): |Foot - destination| summed
-    /// dz*dz + dy*dy + dx*dx below CloseEnough, then the stop band.
+    /// (0x4B3742..0x4B3829, 0x4B4273..0x4B4346): Sqrt_Approx of |Foot -
+    /// destination| below CloseEnough, then the stop band. The first site sums
+    /// dz*dz + dy*dy + dx*dx, the second (dx*dx + dz*dz) + dy*dy; integer
+    /// squares at map scale add exactly in a double, so one order serves both.
     fn track_close_enough_stop(&self, id: u64, rules: &RuleSet) -> Result<bool, String> {
         let actor = self
             .substrate

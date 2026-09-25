@@ -49,6 +49,10 @@ def query(case):
     u, call, read32 = make_destination_fixture(dict(family=family, head=[0, 0, 0],
                                                     mission=case.get('mission', 2),
                                                     cells=case.get('cells', [])))
+    # track_destination rewrites its entry Cell (11,10) +140 after the
+    # source fixture's per-cell flags; restore the row's.
+    for x, y, _level, flags in case.get('cells', []):
+        u.mem_write(cell(x, y) + 0x140, dwords(flags))
     # The original startup fills the lepton direction table (0x89F6D8).
     call(0x49F3A0, 0, [])
     # Health (Object+6C) over Strength (Type+A0) for GetHealthRatio 0x5F5C60.
@@ -110,6 +114,10 @@ def query(case):
     u.mem_write(ACTOR + 0x668, dwords(*case.get('blocked_timer', [100, 0, 22])))
     u.mem_write(ACTOR + 0x6B7, bytes([case.get('latched', False)]))
     u.mem_write(ACTOR + 0x64C, dwords(case.get('retries', 10)))
+    # FootClass ParalysisTimer (+6A0 start, +6A8 duration), read by 0x4DE770.
+    if 'paralysis' in case:
+        start, duration = case['paralysis']
+        u.mem_write(ACTOR + 0x6A0, dwords(start, 0, duration))
     # A retained selector with the valid byte clear: no active-track dispatch.
     if 'selector' in case:
         u.mem_write(LOCO + 0x58, dwords(case['selector']))
@@ -199,7 +207,8 @@ def query(case):
         blocked_timer=[read32(ACTOR + 0x668), read32(ACTOR + 0x670)],
         latched=u.mem_read(ACTOR + 0x6B7, 1)[0], retries=read32(ACTOR + 0x64C),
         facing=struct.unpack('<H', u.mem_read(ACTOR + 0x388, 2))[0],
-        mission=signed(ACTOR + 0xAC, 1)[0], returned=stop == RETURNED[family])
+        mission=signed(ACTOR + 0xAC, 1)[0], foot_68b=u.mem_read(ACTOR + 0x68B, 1)[0],
+        returned=stop == RETURNED[family])
     if state['returned']:
         state['out'] = u.mem_read(u.reg_read(UC_X86_REG_ESP) + 0x24, 1)[0]
     return dict(input=case, events=events, state=state)
@@ -283,6 +292,12 @@ def generate():
         # +58 is written before the second query (0x4B401D): a second-stage
         # retry's publish sees the new selector, not the retained one.
         rows.append(dict(base, route=turn, codes=[0, 2, 0], selector=0x41))
+        # A running ParalysisTimer returns before the path word (0x4B2761), and
+        # an expired one does not.
+        rows.append(dict(base, route=east, paralysis=[100, 30]))
+        rows.append(dict(base, route=east, codes=[0], paralysis=[50, 30]))
+        # A bridge-flagged candidate against OnBridge 0 sets Foot+68B (0x4B3391).
+        rows.append(dict(base, route=east, codes=[0], cells=[[11, 10, 0, 0x100]]))
     return [query(row) for row in rows]
 
 

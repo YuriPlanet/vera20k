@@ -103,9 +103,11 @@ fn unit(
     let mut heights = BTreeMap::new();
     for cell in input["cells"].as_array().into_iter().flatten() {
         let (x, y) = pair(cell);
-        assert_eq!(cell[3].as_u64(), Some(0), "flat cells without flags");
         let level = cell[2].as_u64().unwrap() as u8;
-        terrain.cell_mut(x as u16, y as u16).unwrap().level = level;
+        let target = terrain.cell_mut(x as u16, y as u16).unwrap();
+        target.level = level;
+        // Cell+140, the bridge bits the +68B comparison reads.
+        target.bridge_facts.raw_flags = cell[3].as_u64().unwrap() as u32;
         heights.insert((x as u16, y as u16), level);
     }
     for overlay in input["overlays"].as_array().into_iter().flatten() {
@@ -333,6 +335,10 @@ fn compare(sim: &Simulation, id: u64, row: &Value, out: bool) {
             json!(e.body_facing.as_ref().unwrap().destination()),
         ),
         ("mission", json!(e.mission.current().raw())),
+        (
+            "foot_68b",
+            json!(u8::from(e.runtime_bridge_transition.pending_mismatch)),
+        ),
         ("out", json!(u8::from(out))),
     ];
     for (key, actual) in fields {
@@ -399,6 +405,13 @@ fn fresh_arm_rows_match_the_original_responses() {
         runtime.start_blocked(blocked[0] as u32, blocked[2] as i32);
         runtime.path_blocked = input["latched"] == true;
         runtime.retries_left = input["retries"].as_u64().unwrap_or(10) as u32;
+        // FootClass ParalysisTimer (+6A0).
+        if let Some(paralysis) = input["paralysis"].as_array() {
+            e.paralysis_timer = crate::sim::timer::CdTimer::started(
+                paralysis[0].as_i64().unwrap() as i32,
+                paralysis[1].as_i64().unwrap() as i32,
+            );
+        }
         // A retained selector with the valid byte clear.
         if let Some(selector) = input["selector"].as_i64() {
             if let Some(drive) = e.drive_locomotion.as_mut() {
@@ -427,5 +440,5 @@ fn fresh_arm_rows_match_the_original_responses() {
         compare(&sim, id, &row, out);
         checked += 1;
     }
-    assert_eq!(checked, 88);
+    assert_eq!(checked, 94);
 }
