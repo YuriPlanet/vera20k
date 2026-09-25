@@ -105,9 +105,11 @@ struct SlaveSnapshot {
     harvester: SlaveHarvester,
 }
 
-/// Slave-side combined scan filter. Mirrors `miner_system::build_scan_filter`'s
-/// occupancy/path-grid check; zone reachability is skipped (slaves anchor to
-/// the master refinery and the slave path planner handles per-step passability).
+/// Slave-side combined scan filter: the occupancy/path-grid check
+/// (`miner_system::is_cell_path_clear_for_scan`); zone reachability is
+/// skipped (slaves anchor to the master refinery and the slave path planner
+/// handles per-step passability). VERA-internal: the War/Chrono Miner scan
+/// runs the native `Is_Cell_Harvestable` (`miner::ore_scan`).
 fn build_slave_scan_filter<'a>(
     sim: &'a Simulation,
     path_grid: Option<&'a PathGrid>,

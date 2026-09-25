@@ -583,30 +583,30 @@ pub(crate) fn build_unit_instances(
         // to its next ore cell shows none. RESIDUAL: native frames it from
         // `(Unit+0x538 + frame) % 15`; this overlay keeps its own counter.
         let moving = crate::sim::movement::motion_query::is_moving(entity).unwrap_or(false);
-        if let Some(ref ho) = entity.harvest_overlay {
-            if ho.visible && !moving {
-                if let Some((page, instance)) = emit_harvest_overlay(
-                    state,
-                    entity,
-                    entity.facing,
-                    ho,
-                    center_x,
-                    center_y,
-                    pos.z,
-                    tint,
-                    palette_light.brightness(),
-                    draw_state,
-                ) {
-                    if collect_ground {
-                        ground_pieces.push(GroundPieceInstance {
-                            target: GroundTexture::ShpPage(page),
-                            render_z: RenderZPolicy::ReadOnly,
-                            instance,
-                        });
-                    } else if let Some(bucket) = shp_paged.get_mut(page) {
-                        bucket.push(instance);
-                    }
-                }
+        if let Some(ref ho) = entity.harvest_overlay
+            && ho.visible
+            && !moving
+            && let Some((page, instance)) = emit_harvest_overlay(
+                state,
+                entity,
+                entity.facing,
+                ho,
+                center_x,
+                center_y,
+                pos.z,
+                tint,
+                palette_light.brightness(),
+                draw_state,
+            )
+        {
+            if collect_ground {
+                ground_pieces.push(GroundPieceInstance {
+                    target: GroundTexture::ShpPage(page),
+                    render_z: RenderZPolicy::ReadOnly,
+                    instance,
+                });
+            } else if let Some(bucket) = shp_paged.get_mut(page) {
+                bucket.push(instance);
             }
         }
 

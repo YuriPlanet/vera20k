@@ -509,8 +509,9 @@ pub(super) const DISPATCH_NEXT_FRAME: i32 = 1;
 /// `ftol([Harvest] Rate × 900)` plus one `RandomRanged(0, 2)` drawn on the
 /// scenario stream ([`Simulation::mission_rate_epilogue_for`]). Paths that
 /// take it: the return/finding-home state on every dispatch, the idle state
-/// on every dispatch, the search state's archive-consume and still-driving
-/// returns, and any cursor outside the native handler's switch.
+/// on every dispatch, the search state whenever the miner is left driving
+/// (an archive or scan-hit destination, or one it already held), and any
+/// cursor outside the native handler's switch.
 pub(super) fn arm_rate_epilogue(sim: &mut Simulation, rules: &RuleSet, snap: &mut MinerSnapshot) {
     snap.dispatch_delay = sim.mission_rate_epilogue_for(
         rules,

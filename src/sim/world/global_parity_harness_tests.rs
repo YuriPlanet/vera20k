@@ -8,8 +8,8 @@
 //! desync tripwire for the whole mission/radio substrate migration.
 //!
 //! Coverage: two hostile houses; an Allied war factory + refinery + harvester
-//! over a seeded ore patch (the harvester gets a `Miner` component at spawn and
-//! the miner system acquires an ore target — that state folds into the hash);
+//! over a seeded ore patch (the harvester gets a `Miner` component at spawn,
+//! reaches the patch and cuts — that state folds into the hash);
 //! tanks + infantry under scripted Move/AttackMove/Stop, with the two sides
 //! closing to combat range (exercises mission retask, movement, targeting/
 //! retaliation, and the RNG streams). The harvester carries the real
@@ -157,7 +157,9 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
     // 2026-09-25 combat chain 1: Mission_Guard cadence draws from frame 0 and
     // the tank duel from tick 281 (see GLOBAL_HARNESS_FINAL_HASH).
     // 2026-09-25 combat chain 2: vehicle Guard cadence draws from frame 0.
-    0x526D_C44A_4C20_4BAB,
+    // 2026-09-25 ore-field chain: the fixture's playfield and the harvester's
+    // native ore field (see GLOBAL_HARNESS_FINAL_HASH).
+    0x670E_F1DD_13DA_B92B,
     0x39F3_258B_A550_EB7C,
     0x1CE8_1848_7043_6163,
 );
@@ -662,7 +664,7 @@ const GLOBAL_PRE_SUSTAINED_SIGHT_V142_HASH: u64 = 0x4E6E_0CFE_23A8_03A7;
 
 // Schema171: fresh-turn admission/residual clearing and retained-owner hashes.
 // See TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md, PR415 causal attribution.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 1251167382382790085;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 3996170898638906741;
 // Schema174 removes folds instead of adding them: OreGrowthState's node-era
 // scanner cursor, candidate lists and sample counters, and ProductionState's
 // fallback ore overlay id. The pre-174 projection folds the values those fields
@@ -671,10 +673,10 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 125116738
 // id. It is not a general reconstruction; a scenario finalized by the map
 // loader held Some(first TIB* id). The projection must still equal the previous
 // current pin, asserted below. Rust hash-composition ratchet, not a native golden.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 3390742988134478757;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 10323268363979260645;
 // v181 adds the default Foot+580 factor to every entity's hash. The pre-181
 // assertion below retains the previous entire fixture state/RNG ratchet.
-const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xF311_9067_82CA_C64A;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0x64D8_FAA2_4448_3B4B;
 // Snapshot182 adds ordered display vectors. The pre-182 projection below
 // must reproduce the previous whole-fixture hash, including all RNG/state.
 // Schema186 removes the always-None release-tail byte from each entity. This
@@ -727,10 +729,25 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0xF311_9067_82CA_
 // Techno+0x1F8, which no object here raises: composition only. Before(206)
 // reproduces the v205 pin; the three RNG stream pins, per-tick replay and the
 // miner-engagement tripwire are unchanged.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x5F0A_B8C9_C3CC_2870;
-const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_DOCK_PHASE_V206: u64 = 0x448B_03D8_7937_09AA;
-const GLOBAL_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0x00B4_EF53_9135_6C1D;
-const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 7203384866521846607;
+// 2026-09-25 ore-field chain (behavior, snapshot 207), two causes:
+// 1. The fixture now installs the map's playfield, as map load does: the
+//    native ore scan (`Is_Cell_Harvestable`) admits only playfield cells.
+//    On origin/main 474a71ca with only that change the harvester cuts 20
+//    bales by tick 599 and the duel ends with tank 4 alive at 12 HP and tank
+//    6 at 12 HP (final 0xFE28_0F62_91CC_4516; Scenario stream
+//    0x59F4_735D_FB94_7D28; main and mapgen unchanged).
+// 2. Mission_Harvest states 0/1 run natively: the harvester reaches its
+//    field, cuts one bale per StageClass gate and hops without a fresh wait,
+//    21 bales by tick 599; its Rate epilogue draws and a mined-out cell's
+//    spread-queue draws move the Scenario stream only. The duel is as in 1.
+// Schema 207 drops the retired target-cell and harvest-timer folds and adds
+// the StageClass and Unit+0x6D1/+0x6D2; Before(207) pins that projection.
+// Every older projection moves with the behavior. Old values: the moving commit.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x514D_7BA5_3EFC_0D88;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_NATIVE_ORE_FIELD_V207: u64 = 0x2360_9B20_F501_8DC1;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_DOCK_PHASE_V206: u64 = 0x78B4_DE6C_76A7_3020;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0x126B_C4A8_9BAA_FF2F;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 12653442097862425252;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -842,6 +859,15 @@ fn seed_scenario(
     }
     overlay_grid.take_dirty_cells();
     sim.overlay_grid = Some(overlay_grid);
+    // The playfield map load installs: the harvester's ore scan
+    // (`FootClass::Is_Cell_Harvestable @ 0x004DCE80`) admits only cells in it.
+    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+        base: 0,
+        off_fc: -64,
+        off_100: -1,
+        off_104: 128,
+        off_108: 65,
+    });
 }
 
 /// Scripted commands keyed by `execute_tick` (fires when tick+1 == execute_tick).
@@ -983,8 +1009,8 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     );
     assert!(
         miner_engaged,
-        "the miner system must engage the harvester (acquire an ore target) — \
-         else miner-component creation or the SearchOre path regressed"
+        "the miner system must engage the harvester (head for or cut ore) — \
+         else miner-component creation or Mission_Harvest state 0 regressed"
     );
 
     // ---- Replay pass: fresh sim, real ReplayRunner, assert tick-by-tick.
@@ -1054,6 +1080,11 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         *recorded_streams.last().expect("final checkpoint recorded");
     let final_hash = *replayed.last().expect("at least one tick recorded");
     assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(207)),
+        GLOBAL_HARNESS_FINAL_HASH_PRE_NATIVE_ORE_FIELD_V207,
+        "the pre-207 ore-field composition moved"
+    );
+    assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(206)),
         GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_DOCK_PHASE_V206,
         "v206 only removes the retired miner dock folds"
@@ -1065,17 +1096,17 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
-        0x1AFB_B1F8_D862_C4C9,
+        0xFD01_E512_23DC_F620,
         "v190 changes only the Foot neighbor-history hash composition in this fixture"
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
-        0x5BEE_57CB_172B_9D55,
+        0xEDBC_716C_0C88_E276,
         "v189 adds only the retained Techno+3D4 hash fold"
     );
     let before_burst_hash = rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(187));
     assert_eq!(
-        before_burst_hash, 0xA30E_9AD5_61AD_9C4F,
+        before_burst_hash, 0x2691_9D35_924C_2278,
         "schema187 only replaces zero remaining-shot fields with the retained index in this fixture"
     );
     let before_release_hash =
@@ -1132,8 +1163,9 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     );
     // 2026-09-23: moved by the Drive/Ship order and first-Process behavior
     // change (see GLOBAL_HARNESS_FINAL_HASH), not by a hash owner.
+    // 2026-09-25: moved by the ore-field chain's two causes (same place).
     assert_eq!(
-        before_power_hash, 16967402887069896679,
+        before_power_hash, 10916856755737007740,
         "full08 projection moved: investigate behavior or another hash owner; do not rebaseline"
     );
 
@@ -1200,12 +1232,18 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     // Tank 4's attack-move acquires Soviet tank 6 at tick 281 and fires; tank 6
     // retaliates. After the Stop (300) and the Move home (320) a hit from tank
     // 6 turns tank 4 back (ShouldRetaliate 0x007087C0: no Target, and Move
-    // keeps the constructor's Retaliate=yes), and the duel ends with tank 4
-    // dead at tick 590. The same-call track continuation this block used to
-    // follow is covered by track_path_continuation_tests on production rows.
-    assert!(
-        rep.substrate.entities.get(4).is_none(),
-        "the retasked tank loses its duel"
+    // keeps the constructor's Retaliate=yes). With the map's playfield
+    // installed (2026-09-25; see GLOBAL_HARNESS_FINAL_HASH) the duel ends
+    // with both tanks at 12 HP at tick 599. The same-call track continuation
+    // this block used to follow is covered by track_path_continuation_tests
+    // on production rows.
+    assert_eq!(
+        rep.substrate
+            .entities
+            .get(4)
+            .map(|tank| tank.health.current),
+        Some(12),
+        "the retasked tank survives its duel at 12 HP"
     );
     assert_eq!(
         rep.substrate
