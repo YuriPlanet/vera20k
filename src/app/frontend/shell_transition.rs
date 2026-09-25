@@ -562,9 +562,11 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     {
         return None;
     }
+    // Only the native page slides; the assetless fallback does not.
     if state.frontend.options_dialog.is_some() {
-        return crate::ui::shell::slide::is_slide_eligible(ShellSlideKind::Options.dialog_id())
-            .then_some(ShellSlideKind::Options);
+        return (crate::app::App::native_launcher_options_active(state)
+            && crate::ui::shell::slide::is_slide_eligible(ShellSlideKind::Options.dialog_id()))
+        .then_some(ShellSlideKind::Options);
     }
     let candidate =
         if state.frontend.shell_route.skirmish() || state.frontend.dev_skirmish_shell_enabled {

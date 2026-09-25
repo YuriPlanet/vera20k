@@ -246,26 +246,27 @@ pub(crate) fn render_launcher_options(
     let leaving = exit_wave.is_some();
     let wave = exit_wave.or_else(|| state.frontend.shell_first_paint_slide.clone());
     let sliding = wave.is_some();
-    let (title, status_label, monitor_frame) = if sliding {
-        (None, None, None)
+    // Like the sibling family pages, the monitor shows its current frame
+    // with no timer while the entry slide runs.
+    let frames = state
+        .frontend
+        .skirmish_shell_chrome
+        .as_ref()
+        .map_or(0, |atlas| atlas.launcher_warning_frames.len());
+    let monitor_frame = if leaving {
+        None
+    } else {
+        state.frontend.shell_monitor.paint(now, frames, !sliding)
+    };
+    let (title, status_label) = if sliding {
+        (None, None)
     } else {
         let title = state.frontend.shell_page_title.paint(now);
-        let (x, y) = (
-            state.match_state.input.cursor_x.round() as i32,
-            state.match_state.input.cursor_y.round() as i32,
-        );
         let status_text = state
             .frontend
             .options_dialog
             .as_ref()
-            .and_then(|dialog| {
-                dialog.shell_status_help_key(
-                    x,
-                    y,
-                    state.render_width() as i32,
-                    state.render_height() as i32,
-                )
-            })
+            .and_then(|dialog| dialog.shell_status_help())
             .map(|key| crate::app::frontend::shell_pass::resolve_csf(state, key).into_owned())
             .unwrap_or_default();
         let status = crate::app::frontend::menu_page_render::paint_shell_status_line(
@@ -273,13 +274,7 @@ pub(crate) fn render_launcher_options(
             status_text,
             layout.status_help,
         );
-        let frames = state
-            .frontend
-            .skirmish_shell_chrome
-            .as_ref()
-            .map_or(0, |atlas| atlas.launcher_warning_frames.len());
-        let monitor = state.frontend.shell_monitor.paint(now, frames, true);
-        (title, status, monitor)
+        (title, status)
     };
     let dialog = state
         .frontend

@@ -74,6 +74,9 @@ Session `+0x30D8` is clear at the main menu, so `0xD5` is a family page:
   and blanks every child during the slide-out. Its heading, status line and
   monitor are now the shared family statics; the Options-only heading reveal
   and its present receipt are removed.
+- The status line keeps the last help text while a slider or button holds
+  the mouse or the resolution list is open (no dialog hit test reaches it
+  then), and the entry slide starts only for the native page.
 - The slider captions start at the position names; the unused template
   captions are removed from the label table. (The earlier design assumed
   they showed until the first thumb move.)
@@ -109,13 +112,21 @@ the profiles.
 ## Residuals
 
 - **Keyboard and Network.** `0xD5` does not slide out before Keyboard `0xA3`
-  or Network, and `0xA3` does not slide; Network `0xD7` is not implemented
-  (VERA20k reopens `0xD5` at once). A new `0xD5` after Keyboard does slide
-  in. Each Keyboard/Network visit.
+  or Network, and `0xA3` does not slide; Network `0xD7` is not implemented.
+  In both cases the reopened `0xD5` is a new instance and slides in again
+  (as retail's new `0xD5` does). Each Keyboard/Network visit.
 - **Commit timing.** VERA20k commits the controls after the slide-out;
-  retail commits before it and writes the INI after. Not visible.
-- **Monitor during the entry slide** is left to the panel art (suppressed by
-  `0x00606800`); not captured.
+  retail commits before it (`0x0055FCFF`) and writes the INI after. Only
+  audible in one edge case: a Score volume moved to zero stops the queued
+  music one slide-out later.
+- **Monitor during the entry slide** shows its current frame without a timer,
+  like the other family pages; whether `0x00606800` blanks it instead is
+  unresolved for every family page (the comparisons mask the monitor).
+- **Status help over sliders, checkboxes and the combo.** The status line is
+  written from the dialog's own hit test (`0x00622CCB..0x00622E83`); the
+  trackbar subclass passes its `WM_NCHITTEST` to the original proc, so
+  retail may show no help over an enabled slider. VERA20k shows the table's
+  help for them; not yet compared against retail.
 - **Resolution combo.** Retail under Wine/cnc-ddraw shows no mode list
   (the proc skips filling it when the mode enumerator `0x004A4900` returns
   nothing, `0x005601C3`), so both retail stills lack the combo; VERA20k

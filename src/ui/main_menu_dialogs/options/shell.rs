@@ -25,6 +25,8 @@ pub(super) struct ShellInteraction {
     popup_hovered: Option<usize>,
     popup_top: usize,
     popup_scroll_grab: Option<i32>,
+    /// Status help last written by a dialog hit test (`0x00622CCB`).
+    status_help: Option<&'static str>,
 }
 
 pub(crate) const KEYBOARD_BUTTON: u16 = 0x05CE;
@@ -328,6 +330,14 @@ impl OptionsDialogState {
         })
     }
 
+    /// The status help the line shows: the key the last dialog hit test
+    /// wrote. While a slider or button holds the mouse capture, or the
+    /// resolution list is open, the dialog gets no hit test and the text
+    /// stays.
+    pub(crate) fn shell_status_help(&self) -> Option<&'static str> {
+        self.shell_interaction.status_help
+    }
+
     /// Status help (`0x00604729..0x00604838`) for the control under the
     /// pointer. Hover is enable-unfiltered; the open resolution list is a
     /// window of its own with no entry.
@@ -346,13 +356,14 @@ impl OptionsDialogState {
             return None;
         }
         if let Some((id, _)) = layout.buttons.iter().find(|(_, rect)| rect.contains(x, y)) {
-            return Some(match id {
-                LauncherParentResult::Keyboard => "STT:MainOptButtonKeyboard",
-                LauncherParentResult::Network => "STT:MainOptButtonNetwork",
-                LauncherParentResult::Back | LauncherParentResult::Terminal => {
-                    "STT:MainOptButtonBack"
-                }
-            });
+            let control = match id {
+                LauncherParentResult::Keyboard => KEYBOARD_BUTTON,
+                LauncherParentResult::Network => NETWORK_BUTTON,
+                LauncherParentResult::Back | LauncherParentResult::Terminal => MAIN_MENU_BUTTON,
+            };
+            return OPTIONS_PAGE
+                .button(control)
+                .map(|button| button.tooltip_key);
         }
         if let Some((id, _)) = layout
             .trackbars
@@ -463,6 +474,12 @@ impl OptionsDialogState {
 
     pub(crate) fn shell_mouse_move(&mut self, x: i32, y: i32, width: i32, height: i32) {
         let layout = LauncherOptionsLayout::new(width, height);
+        if self.capture.is_none()
+            && self.shell_interaction.pressed_button.is_none()
+            && !self.resolution_popup_open
+        {
+            self.shell_interaction.status_help = self.shell_status_help_key(x, y, width, height);
+        }
         if let Some(id) = self.capture {
             self.trackbar_mouse_move(id, frame(layout.trackbar_rect(id), x, y));
             self.shell_interaction.hovered_button = None;
@@ -559,6 +576,21 @@ mod tests {
         );
         assert_eq!(at(layout.resolution), Some("STT:MainOptComboModes"));
         assert_eq!(state.shell_status_help_key(5, 5, 800, 600), None);
+    }
+
+    #[test]
+    fn a_captured_slider_keeps_the_status_help_until_release() {
+        let mut state = state();
+        let layout = LauncherOptionsLayout::new(800, 600);
+        let rect = layout.trackbar_rect(LauncherTrackbarId::Score);
+        let thumb = state.shell_trackbar_thumb_left(LauncherTrackbarId::Score, rect.w);
+        state.shell_mouse_down(rect.x + thumb + 5, rect.y + 10, 800, 600);
+        assert_eq!(state.shell_status_help(), Some("STT:MainOptSliderMusic"));
+        let back = layout.buttons[2].1;
+        state.shell_mouse_move(back.x + 5, back.y + 5, 800, 600);
+        assert_eq!(state.shell_status_help(), Some("STT:MainOptSliderMusic"));
+        state.shell_mouse_up(back.x + 5, back.y + 5, 800, 600);
+        assert_eq!(state.shell_status_help(), Some("STT:MainOptButtonBack"));
     }
 
     #[test]
