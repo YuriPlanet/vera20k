@@ -675,17 +675,8 @@ impl Simulation {
     /// default `AnimTypeClass` in that case whose `End` stays 0, so the anim
     /// retains its first-AI guard, expires on a later visit, and draws nothing.
     ///
-    /// RESIDUAL — the impact Z arrives as the producer's height-level byte,
-    /// not exact leptons: `ExplosionEffect` carries the byte while its paired
-    /// `SmudgeSpawnRequest::Anim` carries the exact `world_z_leptons`. The
-    /// store itself holds exact leptons, so this is the producer's to fix.
-    /// - Trigger: any detonation whose impact Z is not a whole level — an
-    ///   airburst, or a shot landing on a slope.
-    /// - Player effect: the explosion sprite's height, and therefore its depth
-    ///   sort against nearby objects, can be off by up to one height level.
-    /// - Frequency: common.
-    /// - Downstream risk: widening `ExplosionEffect` moves hashed anim
-    ///   coordinates for every such detonation.
+    /// The anim is constructed at the producer's exact impact Z (`world_z`);
+    /// `z` is only the level byte of the descriptor.
     pub(crate) fn spawn_combat_explosion_anim(
         &mut self,
         rules: &RuleSet,
@@ -1241,11 +1232,13 @@ impl Simulation {
                 .wrapping_add(anim.runtime.frame_step);
             // `0x0042465D..0x00424687`: the committed stage reaching the
             // type's middle frame (`+0x298`, zero meaning Start already ran
-            // Middle) calls Middle unless the anim is a bouncer or meteor
-            // (`+0x194`), before the boundary tail.
+            // Middle) calls Middle unless the anim is bouncing (`+0x194`, the
+            // constructor's byte, which a `Next=` switch keeps; the meteor arm
+            // is not built, so its type flag stands in), before the boundary
+            // tail.
             let middle = middle_frame(&config).is_some_and(|middle| {
                 config.start.wrapping_add(anim.runtime.current_frame) == middle
-            }) && !(config.bouncer || config.is_meteor);
+            }) && !(anim.bounce.is_some() || config.is_meteor);
             (middle, advance_anim_boundary(anim, &config))
         };
         if middle {
@@ -1891,51 +1884,53 @@ impl Simulation {
             Err(_) => return,
         };
         let warhead_ref = self.interner.intern(warhead_name);
-        let residents: Vec<u64> = self
+        // The walk reads each successor after the hit (`0x00423A83`), so a
+        // victim that leaves the cell ends it (its next pointer is cleared).
+        // RESIDUAL: native's FirstObject list also holds the cell's
+        // TerrainClass objects, which VERA keeps outside occupancy, so a tree
+        // under a bouncing chunk takes no hit. Trigger: a chunk reporting
+        // Bounced (a cliff face or building top, 8 of 64 native flights) in a
+        // tree cell. Effect: the tree is not damaged.
+        let ground = crate::sim::movement::locomotor::MovementLayer::Ground;
+        let mut current = self
             .substrate
             .occupancy
             .get(rx, ry)
-            .map(|cell| {
-                cell.iter_layer(crate::sim::movement::locomotor::MovementLayer::Ground)
-                    .map(|occupant| occupant.entity_id)
-                    .collect()
-            })
-            .unwrap_or_default();
-        let mut receivers = Vec::new();
-        for target in residents {
-            let Some(entity) = self.substrate.entities.get(target) else {
-                continue;
-            };
-            let Some(object_type) = rules.object(self.interner.resolve(entity.type_ref())) else {
-                continue;
-            };
-            let center =
-                crate::sim::movement::ground_pose::object_center_coord(entity, object_type);
-            let distance = position
-                .x
-                .wrapping_sub(center.x)
-                .wrapping_abs()
-                .wrapping_add(position.y.wrapping_sub(center.y).wrapping_abs());
-            if distance > config.damage_radius {
-                continue;
+            .and_then(|cell| cell.first_on_layer(ground));
+        while let Some(target) = current {
+            let hit = self.substrate.entities.get(target).and_then(|entity| {
+                let object_type = rules.object(self.interner.resolve(entity.type_ref()))?;
+                let center =
+                    crate::sim::movement::ground_pose::object_center_coord(entity, object_type);
+                let distance = position
+                    .x
+                    .wrapping_sub(center.x)
+                    .wrapping_abs()
+                    .wrapping_add(position.y.wrapping_sub(center.y).wrapping_abs());
+                (distance <= config.damage_radius).then_some(distance)
+            });
+            if let Some(distance) = hit {
+                let receiver = crate::sim::combat::combat_aoe::AreaDamageReceiver::Entity(
+                    crate::sim::combat::EntityDamageEvent::direct_receiver(
+                        target,
+                        damage,
+                        crate::util::native_x87::adjust_for_z_standard(distance),
+                        crate::sim::combat::RAD_NO_ATTACKER,
+                        None,
+                        warhead_ref,
+                        crate::sim::combat::ReceiverCallFlags {
+                            ignore_defenses: false,
+                            arg6: false,
+                        },
+                    ),
+                );
+                self.commit_noncombat_aoe_receivers(rules, overlay_registry, &[receiver]);
             }
-            receivers.push(crate::sim::combat::combat_aoe::AreaDamageReceiver::Entity(
-                crate::sim::combat::EntityDamageEvent::direct_receiver(
-                    target,
-                    damage,
-                    crate::util::native_x87::adjust_for_z_standard(distance),
-                    crate::sim::combat::RAD_NO_ATTACKER,
-                    None,
-                    warhead_ref,
-                    crate::sim::combat::ReceiverCallFlags {
-                        ignore_defenses: false,
-                        arg6: false,
-                    },
-                ),
-            ));
-        }
-        for receiver in receivers {
-            self.commit_noncombat_aoe_receivers(rules, overlay_registry, &[receiver]);
+            current = self
+                .substrate
+                .occupancy
+                .get(rx, ry)
+                .and_then(|cell| cell.next_on_layer(ground, target));
         }
     }
 

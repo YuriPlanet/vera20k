@@ -618,15 +618,15 @@ impl Simulation {
     /// is that retail's Unit path can leave the promotion one tick late when
     /// its readiness predicate says no, and this cannot.
     ///
-    /// Dispatchable miners keep their spawn-time Harvest override — the native
-    /// creation-mission family is its own recorded UNCHECKED and the harvest
-    /// FSM needs a truthful `current` from birth.
+    /// Dispatchable miners keep the Harvest their Unlimbo idle mode gave them —
+    /// the native creation-mission family is its own recorded UNCHECKED and the
+    /// harvest FSM needs a truthful `current` from birth.
     fn commit_map_placement_mission(
         &mut self,
         stable_id: u64,
         authored: Option<crate::sim::mission::MissionType>,
     ) {
-        if self.commit_spawn_harvest_mission(stable_id) {
+        if self.is_dispatchable_miner(stable_id) {
             return;
         }
         let Some(mission) = authored else {
@@ -640,43 +640,16 @@ impl Simulation {
         );
     }
 
-    /// Commit the spawn-time Harvest mission for a freshly stored miner so the
-    /// host's mission dispatch has a truthful `current` from birth (cursor
-    /// `SearchOre` == the zeroed handler state a fresh Assign writes).
-    ///
-    /// Native: `TechnoClass::Unlimbo @ 0x006F6CA0` calls `Enter_Idle_Mode(1, 1)`
-    /// at 0x006F6E2A and immediately promotes it (`+0x200` Ready_To_Commence,
-    /// `+0x1EC` Commence). With `param_2 = 1` the harvester arm of
-    /// `UnitClass::Enter_Idle_Mode @ 0x00738970` skips the human/off-ore Guard
-    /// check, so a Harvester=yes unit entering the world always takes Harvest
-    /// — human or AI, on ore or not. `BuildingClass::ExitObject` then
-    /// `Queue_Mission(Harvest)` again at 0x00444ED4, a no-op on an object
-    /// already on Harvest (`MissionClass::Queue_Mission @ 0x005B35E0` skips a
-    /// mission equal to the current one with nothing else queued), so this
-    /// single commit is the whole native outcome — not a double assignment.
-    /// The Unlimbo caller order (idle arm before the ExitObject queue) is not
-    /// otherwise observable. Slave Miners are excluded (their own system drives
-    /// them; never Harvest-dispatched).
-    ///
-    /// Returns whether the object was a dispatchable miner, i.e. whether this
-    /// call owns its spawn mission.
-    fn commit_spawn_harvest_mission(&mut self, stable_id: u64) -> bool {
-        let is_dispatchable_miner = self
-            .substrate
+    /// A miner the harvest dispatch drives (not a Slave Miner): Unlimbo's idle
+    /// mode already gave it Harvest (`UnitClass::Enter_Idle_Mode @ 0x00738970`,
+    /// harvester arm `0x00738BD8`, owned by `foot_unlimbo_idle_mode`), which a
+    /// map placement keeps.
+    fn is_dispatchable_miner(&self, stable_id: u64) -> bool {
+        self.substrate
             .entities
             .get(stable_id)
             .and_then(|e| e.miner.as_ref())
-            .is_some_and(|m| m.kind != crate::sim::miner::MinerKind::Slave);
-        if !is_dispatchable_miner {
-            return false;
-        }
-        let now = self.session.binary_frame;
-        let _ = self.mission_assign_exact(
-            stable_id,
-            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Harvest),
-            now,
-        );
-        true
+            .is_some_and(|m| m.kind != crate::sim::miner::MinerKind::Slave)
     }
 
     /// Spawn one object instance (used by production). Returns the stable_id on success.
@@ -815,7 +788,6 @@ impl Simulation {
         }
         self.initialize_cloak_after_unlimbo(stable_id, rules);
         self.add_unit_sensor_after_unlimbo(stable_id, rules);
-        self.commit_spawn_harvest_mission(stable_id);
         Ok(Some(stable_id))
     }
 
@@ -867,7 +839,6 @@ impl Simulation {
         let stable_id = self.create_limbo(ge);
         self.commit_constructor_owned_techno_children(stable_id, rules);
         self.register_house_base_building(stable_id, rules);
-        self.commit_spawn_harvest_mission(stable_id);
         Ok(Some(stable_id))
     }
 
@@ -1071,7 +1042,6 @@ impl Simulation {
         self.allocate_building_light(stable_id, rules);
         self.initialize_cloak_after_unlimbo(stable_id, rules);
         self.add_unit_sensor_after_unlimbo(stable_id, rules);
-        self.commit_spawn_harvest_mission(stable_id);
         Some(stable_id)
     }
 
@@ -1714,7 +1684,6 @@ impl Simulation {
         }
         self.initialize_cloak_after_unlimbo(new_sid, rules);
         self.add_unit_sensor_after_unlimbo(new_sid, rules);
-        self.commit_spawn_harvest_mission(new_sid);
         self.mission_spawned_entities = true;
         self.uninit_with_rules(stable_id, rules);
 

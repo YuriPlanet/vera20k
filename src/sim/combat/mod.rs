@@ -1377,8 +1377,8 @@ pub struct ExplosionEffect {
     /// A death producer's own constructor call (`Death_Explosion`, the
     /// Aircraft death arm, `DestructionEffects`): `AnimClass(type, coord,
     /// delay, 1, 0x600, 0, 0)` at an exact coordinate. `None` rows construct
-    /// with the warhead impact's `(0, 1, 0x2600, -15)` at a level-rounded
-    /// coordinate: the impact anim and the InfDeath anims. The TechnoClass
+    /// with the warhead impact's `(0, 1, 0x2600, -15)` at the impact's cell,
+    /// sub-cell and exact `world_z`: the impact anim and the InfDeath anims. The TechnoClass
     /// debris anims are death constructions at `center + 0x14 Z` (`0x007024AA`,
     /// `0x00702566`) that already took their constructor draws.
     pub death: Option<destruction_effects::DeathAnimSpawn>,
@@ -1387,12 +1387,15 @@ pub struct ExplosionEffect {
 /// One transient combat-light request, the inputs of one `FUN_0048A620` call.
 /// It creates an unowned screen-space light, not an AnimClass/ParticleSystem,
 /// so this record keeps the exact call inputs without inventing an attachment
-/// or house. Two callers:
+/// or house. Callers:
 /// - an active IronCurtain or ForceShield rejecting a positive receiver call
 ///   (the damage shifted left once; flags IC=1, ForceShield=6);
 /// - a `Bright=` bullet's detonation (`BulletClass::DetonateAtCoord
 ///   0x00469BD6..0x00469C41`: the bullet's damage `+0x6C`, flags from the
-///   warhead's `CLDisableRed/Green/Blue=` as 2/4/8).
+///   warhead's `CLDisableRed/Green/Blue=` as 2/4/8);
+/// - every rocket impact (`RocketLocomotion::Detonate 0x006632AF`, not forced)
+///   and a bouncing chunk's dry landing (`AnimClass::AI 0x00423EF8`, not
+///   forced).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CombatLightRequest {
     /// Receiver provenance only; this is not native effect ownership.
@@ -2035,11 +2038,7 @@ fn throw_debris_for_death(
     rules: &RuleSet,
     interner: &mut StringInterner,
     owner: InternedId,
-    rx: u16,
-    ry: u16,
-    sub_x: SimFixed,
-    sub_y: SimFixed,
-    z: u8,
+    (world_x, world_y): (i32, i32),
     world_z_leptons: i32,
     scenario_rng: &mut SimRng,
     voxel_debris: &mut Vec<crate::sim::voxel_anim::VoxelDebrisSpawn>,
@@ -2050,12 +2049,6 @@ fn throw_debris_for_death(
     if object_type.max_debris <= 0 {
         return;
     }
-    let world_x = i32::from(rx)
-        .wrapping_mul(256)
-        .wrapping_add(sub_x.to_num::<i32>());
-    let world_y = i32::from(ry)
-        .wrapping_mul(256)
-        .wrapping_add(sub_y.to_num::<i32>());
 
     let debris_types: Vec<Option<(crate::rules::voxel_anim_type::VoxelAnimTypeId, _)>> =
         object_type
@@ -2112,6 +2105,7 @@ fn throw_debris_for_death(
     for row in thrown.anims {
         if let Some(name) = debris_name(row.source, row.index) {
             let shp_name = interner.intern(name);
+            let (rx, ry, sub_x, sub_y, z) = anim_coord.to_cell_sub_z();
             explosion_effects.push(ExplosionEffect {
                 shp_name,
                 rx,
@@ -3419,11 +3413,7 @@ mod impact_height_tests {
                 &rules,
                 &mut interner,
                 owner,
-                (at(0) / 256) as u16,
-                (at(1) / 256) as u16,
-                SimFixed::from_num(at(0) % 256),
-                SimFixed::from_num(at(1) % 256),
-                0,
+                (at(0), at(1)),
                 at(2),
                 &mut rng,
                 &mut voxels,

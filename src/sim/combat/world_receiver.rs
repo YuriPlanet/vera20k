@@ -1080,16 +1080,23 @@ pub(crate) fn handle_death(
                 // @ 0x00737C90` only calls after this function has returned 4 —
                 // so it lands here, between the sounds and the `Explosion=` /
                 // `DestroyAnim=` draws below.
+                // The pieces start from the dying object's GetCoords
+                // (`vtable+0x48` at `0x007024FC`): a building's foundation
+                // centre (`BuildingClass::GetCoords @ 0x00447AC0`).
+                let center = world
+                    .substrate
+                    .entities
+                    .get(dead_id)
+                    .map(|entity| {
+                        crate::sim::movement::ground_pose::object_center_coord(entity, obj)
+                    })
+                    .map_or((0, 0), |coord| (coord.x, coord.y));
                 throw_debris_for_death(
                     obj,
                     rules,
                     &mut world.interner,
                     owner,
-                    rx,
-                    ry,
-                    sub_x,
-                    sub_y,
-                    z,
+                    center,
                     world_z_leptons,
                     &mut world.scenario_rng,
                     &mut voxel_debris,
@@ -1977,6 +1984,21 @@ fn emit_missile_detonations(
             &mut world.interner,
             &mut out.effects.explosion_effects,
         );
+        // `RocketLocomotion::Detonate` lights every impact after its anim and
+        // before the area damage (`0x006632AF`: damage, warhead, the impact
+        // coordinate, not forced, no CLDisable flags) — no `Bright=` gate.
+        out.effects.combat_light_requests.push(CombatLightRequest {
+            target_id: None,
+            damage: det.damage,
+            warhead_ref: wh_iid,
+            coord: ProjectileCoord::new(
+                i32::from(det.rx) * 256 + crate::util::lepton::CELL_CENTER_LEPTON.to_num::<i32>(),
+                i32::from(det.ry) * 256 + crate::util::lepton::CELL_CENTER_LEPTON.to_num::<i32>(),
+                world_z_leptons,
+            ),
+            force_create: false,
+            flags: 0,
+        });
         let aoe = {
             let collected = collect_area(
                 world,

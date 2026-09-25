@@ -581,10 +581,6 @@ mod tests {
         )
     }
 
-    /// A Grizzly (Cost=700) killing rookie Rhinos (Cost=900) earns 3/7 per kill:
-    /// veteran on kill 3, elite on kill 5. Both crossings sit far from a
-    /// rounding tie, so the kill counts do not depend on the precision-control
-    /// question recorded on `accumulate`.
     /// Every `veterancy_add.json` row: the original `0x0074FF50` under the
     /// native control word.
     #[test]
@@ -618,6 +614,8 @@ mod tests {
         assert_eq!(compared, 217);
     }
 
+    /// A Grizzly (Cost=700) killing rookie Rhinos (Cost=900) earns 3/7 per kill:
+    /// veteran on kill 3, elite on kill 5.
     #[test]
     fn gsi_08_12_grizzly_promotes_on_the_third_and_fifth_rhino() {
         let steps = run(700, 900, 5);
