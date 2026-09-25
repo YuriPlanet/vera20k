@@ -13,6 +13,9 @@ pub enum BrowserInputResult<I> {
     Outcome(SavedSeedOutcome<I>),
     PromptAnswer(bool),
     ButtonPressed,
+    /// A single press selected a row: the list subclass plays GenericClick
+    /// (`0x0061AA43..0x0061AA5A`).
+    RowClicked,
 }
 
 /// Native list notifications use the host's double-click policy.
@@ -115,6 +118,24 @@ pub fn mouse_down<I: Clone + PartialEq>(
     browser.description_edit.focused = hit == Some(SavedSeedControl::NameEdit0x526);
     match hit {
         Some(SavedSeedControl::List) => {
+            if crate::ui::shell::list::is_double_click(
+                &mut browser.last_list_press,
+                now,
+                x,
+                y,
+                double_click_limits,
+            ) {
+                // LBN_DBLCLK: the Load proc loads when the list has rows
+                // (0x00558AC0), wherever in the list the clicks landed.
+                if browser.mode == SavedSeedMode::Load && browser.action_enabled() {
+                    return browser
+                        .action_outcome()
+                        .map_or(BrowserInputResult::None, BrowserInputResult::Outcome);
+                }
+                return BrowserInputResult::None;
+            }
+            // 0x0061A948: a press on a row selects it and clicks; presses
+            // below the last row are ignored.
             if let Some(row) = SeedListGeometry::new(
                 layout.list,
                 browser.entries.len(),
@@ -123,22 +144,7 @@ pub fn mouse_down<I: Clone + PartialEq>(
             .row_at(browser.entries.len(), browser.top_index, x, y)
             {
                 browser.select(row);
-                let (time, width, height) = double_click_limits;
-                let double_click = browser.last_list_press.is_some_and(|(last, px, py)| {
-                    now.duration_since(last) <= time
-                        && (x - px).abs() * 2 <= width
-                        && (y - py).abs() * 2 <= height
-                });
-                browser.last_list_press = if double_click {
-                    None
-                } else {
-                    Some((now, x, y))
-                };
-                if double_click && browser.mode == SavedSeedMode::Load {
-                    return browser
-                        .action_outcome()
-                        .map_or(BrowserInputResult::None, BrowserInputResult::Outcome);
-                }
+                return BrowserInputResult::RowClicked;
             }
         }
         Some(SavedSeedControl::ScrollUp | SavedSeedControl::ScrollDown) => {
@@ -301,7 +307,7 @@ mod tests {
         let limits = (Duration::from_millis(500), 4, 4);
         assert!(matches!(
             mouse_down(&mut browser, &layout, (800, 600), pointer, now, limits),
-            BrowserInputResult::None
+            BrowserInputResult::RowClicked
         ));
         assert!(matches!(
             mouse_up(&mut browser, &layout, (800, 600), pointer),
@@ -314,6 +320,33 @@ mod tests {
             mouse_up(&mut browser, &layout, (800, 600), pointer),
             BrowserInputResult::None
         ));
+    }
+
+    #[test]
+    fn a_double_click_below_the_rows_loads_the_selection_without_reselecting() {
+        let (mut browser, layout) = fixture(SavedSeedMode::Load, 2);
+        let geometry = SeedListGeometry::new(layout.list, 2, 0);
+        let below = geometry.row(geometry.visible_rows - 1);
+        let pointer = (below.x + 2, below.y + 2);
+        let now = Instant::now();
+        let limits = (Duration::from_millis(500), 4, 4);
+        assert!(matches!(
+            mouse_down(&mut browser, &layout, (800, 600), pointer, now, limits),
+            BrowserInputResult::None
+        ));
+        let _ = mouse_up(&mut browser, &layout, (800, 600), pointer);
+        assert!(matches!(
+            mouse_down(
+                &mut browser,
+                &layout,
+                (800, 600),
+                pointer,
+                now + Duration::from_millis(100),
+                limits
+            ),
+            BrowserInputResult::Outcome(SavedSeedOutcome::Load(path)) if path == PathBuf::from("save0.bin")
+        ));
+        assert_eq!(browser.selected, Some(0));
     }
 
     #[test]

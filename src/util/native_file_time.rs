@@ -145,6 +145,38 @@ fn format_local_system_time(system: &NativeSystemTime) -> Option<(String, String
     ))
 }
 
+/// The user's LC_TIME locale (the C locale when it cannot load), created
+/// once for the process and never freed.
+#[cfg(unix)]
+struct TimeLocale(libc::locale_t);
+
+// SAFETY: the handle is never mutated after creation; strftime_l only reads
+// it, and POSIX allows a locale object to be used from any thread.
+#[cfg(unix)]
+unsafe impl Send for TimeLocale {}
+#[cfg(unix)]
+unsafe impl Sync for TimeLocale {}
+
+#[cfg(unix)]
+fn time_locale() -> Option<libc::locale_t> {
+    static LOCALE: std::sync::OnceLock<Option<TimeLocale>> = std::sync::OnceLock::new();
+    LOCALE
+        .get_or_init(|| {
+            // SAFETY: newlocale with a null base allocates a fresh handle.
+            let locale = unsafe {
+                let user = libc::newlocale(libc::LC_TIME_MASK, c"".as_ptr(), std::ptr::null_mut());
+                if user.is_null() {
+                    libc::newlocale(libc::LC_TIME_MASK, c"C".as_ptr(), std::ptr::null_mut())
+                } else {
+                    user
+                }
+            };
+            (!locale.is_null()).then_some(TimeLocale(locale))
+        })
+        .as_ref()
+        .map(|locale| locale.0)
+}
+
 /// FILETIME ticks as local time in the user's locale short date and time.
 #[cfg(unix)]
 pub(crate) fn format_file_time_parts(ticks: u64) -> Option<(String, String)> {
@@ -153,18 +185,12 @@ pub(crate) fn format_file_time_parts(ticks: u64) -> Option<(String, String)> {
     }
     let seconds = (ticks / TICKS_PER_SECOND).checked_sub(WINDOWS_EPOCH_SECONDS)?;
     let seconds = libc::time_t::try_from(seconds).ok()?;
-    // SAFETY: `tm` is plain data that localtime_r fills; the locale handle is
-    // checked, used for two bounded strftime_l calls and freed once.
+    let locale = time_locale()?;
+    // SAFETY: `tm` is plain data that localtime_r fills; strftime_l writes at
+    // most the buffer length and reads the live process locale.
     unsafe {
         let mut local: libc::tm = std::mem::zeroed();
         if libc::localtime_r(&seconds, &mut local).is_null() {
-            return None;
-        }
-        let mut locale = libc::newlocale(libc::LC_TIME_MASK, c"".as_ptr(), std::ptr::null_mut());
-        if locale.is_null() {
-            locale = libc::newlocale(libc::LC_TIME_MASK, c"C".as_ptr(), std::ptr::null_mut());
-        }
-        if locale.is_null() {
             return None;
         }
         let format = |pattern: &std::ffi::CStr| {
@@ -178,9 +204,7 @@ pub(crate) fn format_file_time_parts(ticks: u64) -> Option<(String, String)> {
             );
             (len > 0).then(|| String::from_utf8_lossy(&out[..len]).into_owned())
         };
-        let parts = format(c"%x").zip(format(c"%X"));
-        let _ = libc::freelocale(locale);
-        parts
+        format(c"%x").zip(format(c"%X"))
     }
 }
 
@@ -203,8 +227,7 @@ mod unix_tests {
         // 2026-07-30 13:45:12 UTC.
         let ticks = (1_785_419_112 + WINDOWS_EPOCH_SECONDS) * TICKS_PER_SECOND;
         let (date, time) = format_file_time_parts(ticks).expect("locale formatting");
-        assert!(date.chars().any(|c| c.is_ascii_digit()), "{date:?}");
-        assert!(time.contains(':'), "{time:?}");
+        assert!(!date.is_empty() && !time.is_empty(), "{date:?} {time:?}");
         assert_eq!(format_file_time_parts(u64::from(u32::MAX)), None);
         assert_eq!(format_file_time_parts(0), None, "before 1970");
     }

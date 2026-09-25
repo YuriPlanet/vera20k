@@ -239,6 +239,7 @@ impl App {
             BrowserInputResult::ButtonPressed => {
                 Self::play_skirmish_shell_generic_click_sound(state)
             }
+            BrowserInputResult::RowClicked => Self::play_skirmish_shell_generic_click_sound(state),
         }
     }
 

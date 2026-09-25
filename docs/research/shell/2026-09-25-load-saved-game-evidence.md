@@ -54,7 +54,13 @@ button), Back `(644, 535, 156, 42)`, list window `(119, 127, 399, 304)`.
   description, short date, time. The first compatible row is selected
   (`0x00559BB5`).
 - **Load** is enabled when the list has rows (`0x00558FC8..0x00558FE5`), with
-  or without a selection. A double-click on a row loads it (`0x00558AC0`).
+  or without a selection.
+- **List presses** (subclass `0x0061A948`, style `0x50000151` like the movie
+  list): a press on a row selects it and plays GenericClick
+  (`0x0061AA43..0x0061AA5A`); presses below the last row do nothing. A
+  double-click anywhere in the list only sends `LBN_DBLCLK`
+  (`0x0061A904..0x0061A945`), and the proc loads when the list has rows
+  (`0x00558AC0`).
 - **Buttons** play GUIMainButtonSound on the press
   (`0x00613667..0x00613771`).
 - **Status help** (`0x00604261..0x0060429A`): list `STT:LoadList`, Load
@@ -83,6 +89,10 @@ button), Back `(644, 535, 156, 42)`, list window `(119, 127, 399, 304)`.
   movie list `0x129` (`movies_credits_render::push_family_list`).
 - Single Player enables Load Saved Game from the same repository reader the
   list uses.
+- The list press rule (row click with GenericClick, double-click anywhere)
+  is one function shared by the movie list and every saved browser
+  (`ui::shell::list::is_double_click`, `saved_file_input`); the in-game and
+  saved-map browsers gain the row click sound and the wider double-click.
 - A disabled Load takes no press (shared by every saved browser).
 - Saved-list dates and times now format on macOS and Linux too (local time,
   the user's locale short date and time); they were blank there before.
@@ -104,7 +114,9 @@ Load Saved Game with one retail save (prefix `Screenshots/`,
 | `load-saved-game-0xb7-entry-tick-17` (status line masked) | `lsg-b7.png` (`377b11ae`, the entry slide's tail) | 0 |
 
 The tail still differs from the settled page by 14,502 pixels in the right
-panel, so it pins the slide. The status line shows the list help in both. Its
+panel, so it pins the slide. The row mask also covers most of the selected
+row's fill, so the selection and the date/time columns are compared by eye
+only (they match). The status line shows the list help in both. Its
 last two glyphs are 1–5 units brighter in VERA20k (71 pixels): a one-line
 residual. Retail Back returned to Single Player (`lsg-back-settled.png`,
 `53c31dff`).
@@ -114,10 +126,14 @@ residual. Retail Back returned to Single Player (`lsg-back-settled.png`,
 - **Native behavior established:** route, flag-0 layout and paint, list,
   enable rules, sounds, status help, keyboard, Back and the load/failure
   path, from instructions.
-- **Native execution:** the slide column (`shell_slide_engine.py`).
+- **Native execution:** the slide column (`shell_slide_engine.py`; `0xB7`
+  has the same inputs as `0x129`, so its cases match by construction; the
+  count including a disabled Load rests on reading `0x0060A180`, which tests
+  visibility, not enablement).
 - **Parity demonstrated:** the two comparisons above at 800x600.
 - **Rust regression tested:** `ui::shell::saved_games` (family rects),
-  `ui::shell::saved_file_input` (disabled Load), `ui::shell::slide` (column
+  `ui::shell::saved_file_input` (disabled Load, row click, double-click
+  below the rows), `ui::shell::slide` (column
   golden), `util::native_file_time` (Unix formatting),
   `app::diagnostics::shell_capture` (checkpoints).
 

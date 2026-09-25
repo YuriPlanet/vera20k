@@ -114,16 +114,14 @@ impl App {
         }
         let layout = Self::load_saved_game_layout(state);
         let (_, y) = Self::load_saved_game_pointer(state);
-        if let Some(browser) = state.frontend.load_saved_game.as_mut()
-            && saved_file_input::update_scroll(
+        if let Some(browser) = state.frontend.load_saved_game.as_mut() {
+            saved_file_input::update_scroll(
                 browser,
                 &layout.browser,
                 y,
                 pointer_moved,
                 std::time::Instant::now(),
-            )
-        {
-            state.platform.window.request_redraw();
+            );
         }
     }
 
@@ -133,6 +131,7 @@ impl App {
             // Owner-draw buttons play GUIMainButtonSound on the press
             // (0x00613667..0x00613771).
             BrowserInputResult::ButtonPressed => Self::play_main_menu_button_sound(state),
+            BrowserInputResult::RowClicked => Self::play_generic_click_sound(state),
             BrowserInputResult::PromptAnswer(_) => {
                 if let Some(browser) = state.frontend.load_saved_game.as_mut() {
                     browser.pressed_control = None;

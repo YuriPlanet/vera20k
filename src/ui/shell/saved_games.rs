@@ -115,7 +115,7 @@ pub const LOAD_SAVED_GAME_PAGE: MenuPageSpec = MenuPageSpec {
     }],
     back: MenuPageButtonSpec {
         id: BACK_BUTTON,
-        dlu_top: 253,
+        dlu_top: 346,
         csf_key: "GUI:Back",
         tooltip_key: "STT:LoadButtonBack",
         result: Some(2),

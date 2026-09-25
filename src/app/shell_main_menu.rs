@@ -311,7 +311,7 @@ impl App {
         state
             .frontend
             .single_player_shell_state
-            .load_saved_game_enabled = !state.persistence.repository.browser_entries().is_empty();
+            .load_saved_game_enabled = state.persistence.repository.has_browser_entry();
     }
 
     pub(super) fn open_single_player_shell(state: &mut AppState) {
