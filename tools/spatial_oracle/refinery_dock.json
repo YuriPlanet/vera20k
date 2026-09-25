@@ -1,0 +1,7393 @@
+{
+  "can_dock": [
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          1
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ]
+      ],
+      "input": {
+        "name": "off_pad_stopped"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          200,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": [
+          9,
+          10
+        ],
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          10
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          1
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ]
+      ],
+      "input": {
+        "moving": true,
+        "name": "off_pad_driving_to_pad",
+        "nav": [
+          9,
+          10
+        ]
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          200,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": [
+          9,
+          10
+        ],
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          10
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          1
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ]
+      ],
+      "input": {
+        "moving": true,
+        "name": "off_pad_driving_elsewhere",
+        "nav": [
+          12,
+          12
+        ]
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          200,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": [
+          9,
+          10
+        ],
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          10
+        ]
+      ],
+      "input": {
+        "moving": true,
+        "name": "nav_on_dock_coord",
+        "nav": [
+          8,
+          10
+        ]
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": [
+          8,
+          10
+        ],
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          20
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          0
+        ],
+        [
+          "send",
+          "refinery",
+          22,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          0
+        ],
+        [
+          "do_turn",
+          16384
+        ]
+      ],
+      "input": {
+        "miner_cell": [
+          9,
+          10
+        ],
+        "name": "on_pad_facing_west"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 25,
+          "start": 49152,
+          "timer_start": 200
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          20
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          0
+        ],
+        [
+          "send",
+          "refinery",
+          22,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          0
+        ],
+        [
+          "send",
+          "miner",
+          21,
+          "refinery",
+          1
+        ],
+        [
+          "queue",
+          "miner",
+          16,
+          0
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "miner_tether": true,
+        "name": "on_pad_facing_east_tethered",
+        "refinery_tether": true
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": 16,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          20
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          0
+        ],
+        [
+          "send",
+          "refinery",
+          22,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          0
+        ],
+        [
+          "do_turn",
+          16384
+        ]
+      ],
+      "input": {
+        "facing": 16256,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "miner_tether": true,
+        "name": "on_pad_facing_near_east",
+        "refinery_tether": true
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16256,
+          "timer_start": 200
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          20
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          0
+        ],
+        [
+          "send",
+          "refinery",
+          22,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          0
+        ],
+        [
+          "send",
+          "miner",
+          21,
+          "refinery",
+          1
+        ],
+        [
+          "queue",
+          "miner",
+          16,
+          0
+        ]
+      ],
+      "input": {
+        "miner_cell": [
+          9,
+          10
+        ],
+        "miner_tether": true,
+        "name": "on_pad_turret_latch",
+        "refinery_tether": true,
+        "turret_latch": true
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": 16,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          10
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          20
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          0
+        ],
+        [
+          "send",
+          "refinery",
+          22,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          0
+        ],
+        [
+          "do_turn",
+          16384
+        ]
+      ],
+      "input": {
+        "miner_cell": [
+          9,
+          10
+        ],
+        "moving": true,
+        "name": "on_pad_moving",
+        "nav": [
+          9,
+          10
+        ]
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 25,
+          "start": 49152,
+          "timer_start": 200
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": [
+          9,
+          10
+        ],
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          10
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          20
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          0
+        ],
+        [
+          "send",
+          "refinery",
+          22,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          0
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "moving": true,
+        "name": "on_pad_moving_east",
+        "nav": [
+          9,
+          10
+        ]
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": [
+          9,
+          10
+        ],
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          20
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          0
+        ],
+        [
+          "send",
+          "refinery",
+          22,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          0
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "miner_tether": true,
+        "mission": "harvest",
+        "name": "on_pad_not_enter",
+        "refinery_tether": true
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          20
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          0
+        ],
+        [
+          "send",
+          "refinery",
+          22,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          0
+        ],
+        [
+          "send",
+          "miner",
+          21,
+          "refinery",
+          10
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "miner_tether": true,
+        "name": "on_pad_selling",
+        "refinery_mission": "selling",
+        "refinery_tether": true
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          10
+        ]
+      ],
+      "input": {
+        "name": "offline",
+        "online": false
+      },
+      "reply": 10,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          2,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          1
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ]
+      ],
+      "input": {
+        "linked": false,
+        "name": "not_linked_free"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          200,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": [
+          9,
+          10
+        ],
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          1
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ]
+      ],
+      "input": {
+        "linked": false,
+        "name": "not_linked_busy",
+        "refinery_contact": "other"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          200,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": [
+          9,
+          10
+        ],
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "other",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          1
+        ],
+        [
+          "queue",
+          "miner",
+          2,
+          0
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ]
+      ],
+      "input": {
+        "mission": "guard",
+        "name": "off_pad_guard"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          200,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 5,
+        "miner_nav": [
+          9,
+          10
+        ],
+        "miner_queued": 2,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          1
+        ],
+        [
+          "ready",
+          1
+        ],
+        [
+          "commence",
+          "miner"
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ]
+      ],
+      "input": {
+        "mission": "harvest",
+        "name": "off_pad_queued_enter",
+        "queued": "enter",
+        "ready": [
+          1
+        ]
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          200,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": [
+          9,
+          10
+        ],
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          1
+        ],
+        [
+          "ready",
+          0
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ]
+      ],
+      "input": {
+        "mission": "harvest",
+        "name": "off_pad_queued_enter_not_ready",
+        "queued": "enter",
+        "ready": [
+          0
+        ]
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          200,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 10,
+        "miner_nav": [
+          9,
+          10
+        ],
+        "miner_queued": 7,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ]
+      ],
+      "input": {
+        "dock_unload": false,
+        "name": "no_dock_unload"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    }
+  ],
+  "mission_enter": [
+    {
+      "delay": 15,
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          1
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "name": "enter_off_pad"
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          200,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": [
+          9,
+          10
+        ],
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          20
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          0
+        ],
+        [
+          "send",
+          "refinery",
+          22,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          0
+        ],
+        [
+          "do_turn",
+          16384
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "miner_cell": [
+          9,
+          10
+        ],
+        "name": "enter_on_pad_west"
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 25,
+          "start": 49152,
+          "timer_start": 200
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          20
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          0
+        ],
+        [
+          "send",
+          "refinery",
+          22,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          0
+        ],
+        [
+          "send",
+          "miner",
+          21,
+          "refinery",
+          1
+        ],
+        [
+          "queue",
+          "miner",
+          16,
+          0
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "miner_tether": true,
+        "name": "enter_on_pad_east_tethered",
+        "refinery_tether": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": 16,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          10
+        ],
+        [
+          "send",
+          "miner",
+          3,
+          "refinery",
+          1
+        ],
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "name": "enter_offline",
+        "online": false
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          1
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          10
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "miner_tether": true,
+        "name": "enter_offline_tethered",
+        "online": false
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ],
+        [
+          "commence",
+          "miner"
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "linked": false,
+        "name": "enter_no_target"
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 27,
+      "events": [
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ],
+        [
+          "commence",
+          "miner"
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "linked": false,
+        "name": "enter_no_target_queued_guard",
+        "queued": "guard"
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          200,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 5,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            12,
+            12
+          ],
+          0
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "dock_unload": false,
+        "name": "enter_nav_queue",
+        "nav_queue": [
+          [
+            12,
+            12
+          ],
+          [
+            13,
+            13
+          ]
+        ]
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": [
+          12,
+          12
+        ],
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 16,
+      "events": [
+        [
+          "send",
+          "miner",
+          14,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          19,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          18,
+          "miner",
+          1
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            9,
+            10
+          ],
+          1
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "frame": 4321,
+        "name": "enter_frame_seed",
+        "seed": 7
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          4321,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": [
+          9,
+          10
+        ],
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    }
+  ],
+  "mission_harvest": [
+    {
+      "delay": 15,
+      "events": [
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "mission": "harvest",
+        "moving": true,
+        "name": "return_driving",
+        "nav": [
+          12,
+          12
+        ],
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 10,
+        "miner_nav": [
+          12,
+          12
+        ],
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "send",
+          "miner",
+          2,
+          "refinery",
+          1
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "bays": [
+          "refinery"
+        ],
+        "linked": false,
+        "mission": "harvest",
+        "name": "return_hello",
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "send",
+          "miner",
+          2,
+          "refinery",
+          1
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "bays": [
+          "refinery"
+        ],
+        "mission": "harvest",
+        "name": "return_hello_linked",
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "send",
+          "miner",
+          2,
+          "refinery",
+          10
+        ],
+        [
+          "find_docking_bay",
+          0,
+          1,
+          1,
+          "refinery"
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "bays": [
+          "refinery",
+          "refinery"
+        ],
+        "linked": false,
+        "mission": "harvest",
+        "name": "return_refused_close",
+        "refinery_contact": "other",
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "other",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "send",
+          "miner",
+          2,
+          "refinery",
+          10
+        ],
+        [
+          "find_docking_bay",
+          0,
+          1,
+          1,
+          "refinery"
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            10,
+            10
+          ],
+          2,
+          [
+            10,
+            11
+          ]
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            10,
+            11
+          ],
+          1
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "bays": [
+          "refinery",
+          "refinery"
+        ],
+        "linked": false,
+        "miner_cell": [
+          11,
+          10
+        ],
+        "mission": "harvest",
+        "name": "return_refused_beyond_0x300",
+        "passable": [
+          [
+            10,
+            11
+          ]
+        ],
+        "refinery_contact": "other",
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 10,
+        "miner_nav": [
+          10,
+          11
+        ],
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "other",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "find_docking_bay",
+          0,
+          1,
+          1,
+          "refinery"
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            10,
+            10
+          ],
+          2,
+          [
+            10,
+            10
+          ]
+        ],
+        [
+          "assign_destination",
+          "miner",
+          [
+            10,
+            10
+          ],
+          1
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "bays": [
+          "refinery",
+          "refinery"
+        ],
+        "linked": false,
+        "miner_cell": [
+          16,
+          16
+        ],
+        "mission": "harvest",
+        "name": "return_too_far",
+        "passable": [
+          [
+            10,
+            10
+          ]
+        ],
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 10,
+        "miner_nav": [
+          10,
+          10
+        ],
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          "refinery"
+        ],
+        [
+          "find_docking_bay",
+          0,
+          1,
+          1,
+          "refinery"
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            10,
+            10
+          ],
+          2,
+          null
+        ],
+        [
+          "assign_destination",
+          "miner",
+          null,
+          1
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "bays": [
+          "refinery",
+          "refinery"
+        ],
+        "linked": false,
+        "miner_cell": [
+          16,
+          16
+        ],
+        "mission": "harvest",
+        "name": "return_too_far_no_cell",
+        "passable": [
+          null
+        ],
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          null
+        ],
+        [
+          "find_docking_bay",
+          0,
+          1,
+          1,
+          null
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "bays": [
+          null,
+          null
+        ],
+        "linked": false,
+        "mission": "harvest",
+        "name": "return_no_bay",
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "find_docking_bay",
+          0,
+          0,
+          0,
+          null
+        ],
+        [
+          "find_docking_bay",
+          0,
+          1,
+          1,
+          "refinery"
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "bays": [
+          null,
+          "refinery"
+        ],
+        "linked": false,
+        "mission": "harvest",
+        "name": "return_narrow_none_wide_close",
+        "refinery_contact": "other",
+        "status": 2
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 2,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "other",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "queue",
+          "miner",
+          7,
+          0
+        ]
+      ],
+      "input": {
+        "mission": "harvest",
+        "name": "handoff",
+        "status": 3
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": 7,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    }
+  ],
+  "mission_unload": [
+    {
+      "delay": 5,
+      "events": [
+        [
+          "do_turn",
+          16384
+        ]
+      ],
+      "input": {
+        "facing": 49152,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_facing_west"
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 25,
+          "start": 49152,
+          "timer_start": 200
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 5,
+      "events": [],
+      "input": {
+        "facing": 49152,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_facing_west_latch",
+        "turret_latch": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "play_anim",
+          7
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "facing": 16256,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_window_low_edge",
+        "storage": [
+          40,
+          0,
+          0,
+          0
+        ]
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16256,
+          "duration": 0,
+          "start": 16256,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          200,
+          1,
+          1
+        ],
+        "storage": [
+          40.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 5,
+      "events": [
+        [
+          "do_turn",
+          16384
+        ]
+      ],
+      "input": {
+        "facing": 16255,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_window_outside"
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16255,
+          "timer_start": 200
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "play_anim",
+          7
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_first_pass",
+        "storage": [
+          40,
+          0,
+          0,
+          0
+        ]
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          200,
+          1,
+          1
+        ],
+        "storage": [
+          40.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_below_gate",
+        "stage": [
+          14,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          40,
+          0,
+          0,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          14,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          40.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "give_tiberium",
+          40.0,
+          0
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_ore",
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          40,
+          0,
+          0,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 1000,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 200,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "give_tiberium",
+          40.0,
+          0
+        ],
+        [
+          "give_tiberium",
+          10.0,
+          0
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_ore_purifier",
+        "purifiers": 1,
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          40,
+          0,
+          0,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 1250,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 250,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "give_tiberium",
+          39.0,
+          0
+        ],
+        [
+          "give_tiberium",
+          9.75,
+          0
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_partial_purifier",
+        "purifiers": 1,
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          39,
+          0,
+          0,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 1218,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 243,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "give_tiberium",
+          5.0,
+          0
+        ],
+        [
+          "give_tiberium",
+          2.5,
+          0
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_mixed",
+        "purifiers": 2,
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          5,
+          10,
+          0,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 187,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 37,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          10.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "give_tiberium",
+          10.0,
+          1
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_gems",
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          0,
+          10,
+          0,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 500,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 50,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "give_tiberium",
+          40.0,
+          0
+        ],
+        [
+          "give_tiberium",
+          40.0,
+          0
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "human": false,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_ai_virtual",
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          40,
+          0,
+          0,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 2000,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 400,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "give_tiberium",
+          40.0,
+          0
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "game_mode": 0,
+        "human": false,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_ai_campaign",
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          40,
+          0,
+          0,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 1000,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 200,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "give_tiberium",
+          40.0,
+          0
+        ]
+      ],
+      "input": {
+        "difficulty": 2,
+        "facing": 16384,
+        "human": false,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_ai_easy",
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          40,
+          0,
+          0,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 1000,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 200,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "give_tiberium",
+          40.0,
+          0
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "income_mult": 0.9,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_income_mult",
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          40,
+          0,
+          0,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 899,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 200,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "give_tiberium",
+          39.0,
+          0
+        ],
+        [
+          "give_tiberium",
+          9.75,
+          0
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "income_mult": 0.9,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_income_mult_bonus",
+        "purifiers": 1,
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          39,
+          0,
+          0,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 1096,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 243,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "play_anim",
+          8
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_empty",
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "unloading": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 4,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          15,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          8
+        ],
+        [
+          "destroy_anim",
+          10
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_empty_special_anim",
+        "special_anim": 17185,
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "unloading": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 4,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          15,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "give_tiberium",
+          40.0,
+          0
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_ore_special_anim",
+        "special_anim": 17185,
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          40,
+          0,
+          0,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 1000,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 200,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "send",
+          "miner",
+          3,
+          "refinery",
+          1
+        ],
+        [
+          "queue",
+          "miner",
+          10,
+          1
+        ],
+        [
+          "ready",
+          0
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_missing_building",
+        "ready": [
+          0
+        ],
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          40,
+          0,
+          0,
+          0
+        ],
+        "unloading": true,
+        "west_building": false
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": 10,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          1
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          15,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          40.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "send",
+          "miner",
+          3,
+          "refinery",
+          1
+        ],
+        [
+          "queue",
+          "miner",
+          10,
+          1
+        ],
+        [
+          "ready",
+          0
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_missing_building_below_gate",
+        "ready": [
+          0
+        ],
+        "stage": [
+          3,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          40,
+          0,
+          0,
+          0
+        ],
+        "unloading": true,
+        "west_building": false
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": 10,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          1
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          3,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          40.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "give_tiberium",
+          40.0,
+          0
+        ],
+        [
+          "play_anim",
+          8
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_new_order",
+        "nav": [
+          12,
+          12
+        ],
+        "queued": "guard",
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          40,
+          0,
+          0,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 1000,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": [
+          12,
+          12
+        ],
+        "miner_queued": 5,
+        "miner_status": 4,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 200,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "give_tiberium",
+          40.0,
+          0
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_new_order_harvest",
+        "nav": [
+          12,
+          12
+        ],
+        "queued": "harvest",
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          40,
+          0,
+          0,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 1000,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": [
+          12,
+          12
+        ],
+        "miner_queued": 10,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 200,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "queue",
+          "miner",
+          10,
+          0
+        ],
+        [
+          "ready",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          3,
+          "refinery",
+          1
+        ],
+        [
+          "commence",
+          "miner"
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_state4_ready",
+        "ready": [
+          1
+        ],
+        "status": 4,
+        "unloading": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          200,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          1
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 15,
+      "events": [
+        [
+          "queue",
+          "miner",
+          10,
+          0
+        ],
+        [
+          "ready",
+          0
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_state4_not_ready",
+        "ready": [
+          0
+        ],
+        "status": 4,
+        "unloading": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": 10,
+        "miner_status": 4,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 1,
+      "events": [],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_state4_production_anim",
+        "production_anim": 4660,
+        "status": 4,
+        "unloading": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 4,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 27,
+      "events": [
+        [
+          "ready",
+          1
+        ],
+        [
+          "commence",
+          "miner"
+        ],
+        [
+          "random",
+          0,
+          2
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "moving": true,
+        "name": "unload_state4_new_order",
+        "nav": [
+          12,
+          12
+        ],
+        "queued": "guard",
+        "ready": [
+          1
+        ],
+        "status": 4,
+        "unloading": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          200,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 5,
+        "miner_nav": [
+          12,
+          12
+        ],
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ],
+        [
+          "ready",
+          1
+        ],
+        [
+          "commence",
+          "miner"
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "linked": false,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_contact_lost",
+        "ready": [
+          1
+        ],
+        "status": 3,
+        "unloading": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ],
+        [
+          "ready",
+          0
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "linked": false,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_contact_lost_not_ready",
+        "ready": [
+          0
+        ],
+        "status": 3,
+        "unloading": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    }
+  ],
+  "per_cell": [
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          21,
+          "refinery",
+          1
+        ],
+        [
+          "queue",
+          "miner",
+          16,
+          0
+        ]
+      ],
+      "input": {
+        "miner_cell": [
+          9,
+          10
+        ],
+        "miner_tether": true,
+        "name": "per_cell_pad_tethered",
+        "refinery_tether": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": 16,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [],
+      "input": {
+        "miner_cell": [
+          9,
+          10
+        ],
+        "miner_tether": false,
+        "name": "per_cell_pad_untethered",
+        "refinery_tether": false
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [],
+      "input": {
+        "miner_cell": [
+          9,
+          10
+        ],
+        "miner_tether": true,
+        "mission": "harvest",
+        "name": "per_cell_pad_not_enter",
+        "refinery_tether": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 10,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          21,
+          "refinery",
+          10
+        ],
+        [
+          "scatter",
+          "miner",
+          1,
+          0
+        ]
+      ],
+      "input": {
+        "miner_cell": [
+          9,
+          10
+        ],
+        "miner_tether": true,
+        "name": "per_cell_pad_selling",
+        "refinery_mission": "selling",
+        "refinery_tether": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [],
+      "input": {
+        "miner_cell": [
+          10,
+          10
+        ],
+        "miner_tether": true,
+        "name": "per_cell_queue_cell",
+        "refinery_tether": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [],
+      "input": {
+        "linked": false,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "miner_tether": true,
+        "name": "per_cell_no_contact",
+        "refinery_tether": true
+      },
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    }
+  ],
+  "radio": [
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          2,
+          "refinery",
+          1
+        ]
+      ],
+      "input": {
+        "from": "miner",
+        "linked": false,
+        "msg": 2,
+        "name": "hello_fresh"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          2,
+          "refinery",
+          1
+        ]
+      ],
+      "input": {
+        "from": "miner",
+        "msg": 2,
+        "name": "hello_linked"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          2,
+          "refinery",
+          10
+        ]
+      ],
+      "input": {
+        "from": "miner",
+        "linked": false,
+        "msg": 2,
+        "name": "hello_busy",
+        "refinery_contact": "other"
+      },
+      "reply": 10,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "other",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          2,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          3,
+          "other",
+          1
+        ]
+      ],
+      "input": {
+        "from": "miner",
+        "linked": false,
+        "miner_contact": "other",
+        "msg": 2,
+        "name": "hello_sender_full",
+        "other_contact": "miner"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          2,
+          "refinery",
+          10
+        ]
+      ],
+      "input": {
+        "from": "miner",
+        "linked": false,
+        "msg": 2,
+        "name": "hello_dead_receiver",
+        "refinery_health": 0
+      },
+      "reply": 10,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          3,
+          "refinery",
+          1
+        ]
+      ],
+      "input": {
+        "from": "miner",
+        "msg": 3,
+        "name": "over_out_miner"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          1
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          3,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          25,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          25,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          25,
+          "miner",
+          0
+        ]
+      ],
+      "input": {
+        "from": "miner",
+        "miner_tether": true,
+        "msg": 3,
+        "name": "over_out_miner_tethered",
+        "refinery_tether": true
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          1
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          3,
+          "refinery",
+          1
+        ]
+      ],
+      "input": {
+        "from": "miner",
+        "miner_tether": true,
+        "msg": 3,
+        "name": "over_out_miner_half_tether"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          1
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "refinery",
+          3,
+          "miner",
+          1
+        ]
+      ],
+      "input": {
+        "from": "refinery",
+        "msg": 3,
+        "name": "over_out_refinery"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "refinery",
+          3,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          25,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          25,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          25,
+          "refinery",
+          0
+        ]
+      ],
+      "input": {
+        "from": "refinery",
+        "miner_tether": true,
+        "msg": 3,
+        "name": "over_out_refinery_tethered",
+        "refinery_tether": true
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "refinery",
+          3,
+          "miner",
+          1
+        ]
+      ],
+      "input": {
+        "from": "refinery",
+        "miner_tether": true,
+        "msg": 3,
+        "name": "over_out_refinery_half_tether"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "refinery",
+          3,
+          "miner",
+          1
+        ],
+        [
+          "queue",
+          "miner",
+          5,
+          0
+        ]
+      ],
+      "input": {
+        "from": "refinery",
+        "mission": "return",
+        "msg": 3,
+        "name": "over_out_miner_on_return"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 12,
+        "miner_nav": null,
+        "miner_queued": 5,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          3,
+          "refinery",
+          1
+        ]
+      ],
+      "input": {
+        "from": "miner",
+        "linked": false,
+        "msg": 3,
+        "name": "over_out_unlinked"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          1
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          21,
+          "refinery",
+          1
+        ],
+        [
+          "queue",
+          "miner",
+          16,
+          0
+        ]
+      ],
+      "input": {
+        "from": "miner",
+        "msg": 21,
+        "name": "dock_now"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": 16,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          21,
+          "refinery",
+          10
+        ]
+      ],
+      "input": {
+        "from": "miner",
+        "msg": 21,
+        "name": "dock_now_selling",
+        "refinery_mission": "selling"
+      },
+      "reply": 10,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          0
+        ]
+      ],
+      "input": {
+        "from": "refinery",
+        "msg": 24,
+        "name": "tether_from_refinery"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          24,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          24,
+          "refinery",
+          0
+        ]
+      ],
+      "input": {
+        "from": "miner",
+        "msg": 24,
+        "name": "tether_from_miner"
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 1,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 1,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "send",
+          "refinery",
+          25,
+          "miner",
+          1
+        ],
+        [
+          "send",
+          "miner",
+          25,
+          "refinery",
+          1
+        ],
+        [
+          "send",
+          "refinery",
+          25,
+          "miner",
+          0
+        ]
+      ],
+      "input": {
+        "from": "refinery",
+        "miner_tether": true,
+        "msg": 25,
+        "name": "untether",
+        "refinery_tether": true
+      },
+      "reply": 1,
+      "state": {
+        "balance": 0,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "stage": [
+          0,
+          -1,
+          0,
+          0
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    }
+  ],
+  "source": "unicorn/gamemd.exe",
+  "stage_tick": [
+    {
+      "input": {
+        "from_frame": 100,
+        "name": "rate_one",
+        "stage": [
+          0,
+          0,
+          100,
+          1,
+          1
+        ],
+        "to_frame": 118
+      },
+      "values": [
+        [
+          100,
+          0,
+          0
+        ],
+        [
+          101,
+          1,
+          1
+        ],
+        [
+          102,
+          2,
+          1
+        ],
+        [
+          103,
+          3,
+          1
+        ],
+        [
+          104,
+          4,
+          1
+        ],
+        [
+          105,
+          5,
+          1
+        ],
+        [
+          106,
+          6,
+          1
+        ],
+        [
+          107,
+          7,
+          1
+        ],
+        [
+          108,
+          8,
+          1
+        ],
+        [
+          109,
+          9,
+          1
+        ],
+        [
+          110,
+          10,
+          1
+        ],
+        [
+          111,
+          11,
+          1
+        ],
+        [
+          112,
+          12,
+          1
+        ],
+        [
+          113,
+          13,
+          1
+        ],
+        [
+          114,
+          14,
+          1
+        ],
+        [
+          115,
+          15,
+          1
+        ],
+        [
+          116,
+          16,
+          1
+        ],
+        [
+          117,
+          17,
+          1
+        ],
+        [
+          118,
+          18,
+          1
+        ]
+      ]
+    },
+    {
+      "input": {
+        "from_frame": 100,
+        "name": "rate_zero",
+        "stage": [
+          5,
+          0,
+          100,
+          1,
+          0
+        ],
+        "to_frame": 104
+      },
+      "values": [
+        [
+          100,
+          5,
+          0
+        ],
+        [
+          101,
+          5,
+          0
+        ],
+        [
+          102,
+          5,
+          0
+        ],
+        [
+          103,
+          5,
+          0
+        ],
+        [
+          104,
+          5,
+          0
+        ]
+      ]
+    },
+    {
+      "input": {
+        "from_frame": 100,
+        "name": "stopped_timer",
+        "stage": [
+          3,
+          0,
+          -1,
+          0,
+          1
+        ],
+        "to_frame": 103
+      },
+      "values": [
+        [
+          100,
+          4,
+          1
+        ],
+        [
+          101,
+          5,
+          1
+        ],
+        [
+          102,
+          6,
+          1
+        ],
+        [
+          103,
+          7,
+          1
+        ]
+      ]
+    }
+  ]
+}
