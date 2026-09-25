@@ -130,7 +130,9 @@ impl App {
             BrowserInputResult::None => {}
             // Owner-draw buttons play GUIMainButtonSound on the press
             // (0x00613667..0x00613771).
-            BrowserInputResult::ButtonPressed => Self::play_main_menu_button_sound(state),
+            BrowserInputResult::ButtonPressed | BrowserInputResult::PromptButtonPressed => {
+                Self::play_main_menu_button_sound(state)
+            }
             BrowserInputResult::RowClicked => Self::play_generic_click_sound(state),
             BrowserInputResult::PromptAnswer(_) => {
                 if let Some(browser) = state.frontend.load_saved_game.as_mut() {

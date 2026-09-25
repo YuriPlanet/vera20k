@@ -797,6 +797,12 @@ impl App {
             return;
         }
         state.frontend.shell_controller.on_pointer_down(x, y, &feed);
+        // The message box (`0x005D3490`, proc `0x005D36A0`) subclasses its
+        // owner-draw OK/Cancel to `0x00612B70`, which plays
+        // GUIMainButtonSound on the press (`0x0061374B`).
+        if state.frontend.shell_controller.pressed().is_some() {
+            Self::play_main_menu_button_sound(state);
+        }
     }
 
     pub(super) fn handle_exit_confirm_modal_mouse_up(state: &mut AppState) {

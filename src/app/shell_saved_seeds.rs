@@ -302,7 +302,9 @@ impl App {
             BrowserInputResult::PromptAnswer(answer) => {
                 Self::resolve_saved_seed_prompt(state, answer)
             }
-            BrowserInputResult::ButtonPressed => Self::play_main_menu_button_sound(state),
+            BrowserInputResult::ButtonPressed | BrowserInputResult::PromptButtonPressed => {
+                Self::play_main_menu_button_sound(state)
+            }
             BrowserInputResult::RowClicked => Self::play_skirmish_shell_generic_click_sound(state),
         }
     }

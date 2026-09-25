@@ -13,6 +13,10 @@ pub enum BrowserInputResult<I> {
     Outcome(SavedSeedOutcome<I>),
     PromptAnswer(bool),
     ButtonPressed,
+    /// A press on a prompt's button: the message box (`0x005D3490`)
+    /// subclasses its owner-draw buttons to `0x00612B70`, which plays
+    /// GUIMainButtonSound (`0x0061374B`) whichever browser asked.
+    PromptButtonPressed,
     /// A single press selected a row: the list subclass plays GenericClick
     /// (`0x0061AA43..0x0061AA5A`).
     RowClicked,
@@ -113,7 +117,11 @@ pub fn mouse_down<I: Clone + PartialEq>(
     browser.pressed_control = None;
     if browser.prompt.is_some() {
         browser.pressed_control = hit;
-        return BrowserInputResult::None;
+        return if hit.is_some() {
+            BrowserInputResult::PromptButtonPressed
+        } else {
+            BrowserInputResult::None
+        };
     }
     browser.description_edit.focused = hit == Some(SavedSeedControl::NameEdit0x526);
     match hit {
@@ -296,6 +304,35 @@ mod tests {
             BrowserInputResult::PromptAnswer(false)
         ));
         assert!(browser.prompt.is_some(), "the app owns prompt resolution");
+    }
+
+    #[test]
+    fn a_press_on_a_prompt_button_is_a_button_press() {
+        let (mut browser, layout) = fixture(SavedSeedMode::Save, 0);
+        let prompt = SavedSeedPrompt {
+            purpose: SavedSeedPromptPurpose::Error,
+            body: "Failure".into(),
+            affirmative: "OK".into(),
+            negative: None,
+        };
+        let (dialog, _, ok, _) = prompt.layout(800, 600);
+        browser.prompt = Some(prompt);
+        let limits = (Duration::from_millis(500), 4, 4);
+        let on_ok = (ok.x + 2, ok.y + 2);
+        let off = (dialog.x + 2, dialog.y + 2);
+        let now = Instant::now();
+        assert!(matches!(
+            mouse_down(&mut browser, &layout, (800, 600), off, now, limits),
+            BrowserInputResult::None
+        ));
+        assert!(matches!(
+            mouse_down(&mut browser, &layout, (800, 600), on_ok, now, limits),
+            BrowserInputResult::PromptButtonPressed
+        ));
+        assert!(matches!(
+            mouse_up(&mut browser, &layout, (800, 600), on_ok),
+            BrowserInputResult::PromptAnswer(true)
+        ));
     }
 
     #[test]
