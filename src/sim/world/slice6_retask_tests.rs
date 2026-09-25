@@ -469,9 +469,9 @@ const SLICE6_BASELINE_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 0xBBFD_94B2_07D8_9F1
 // cooldown/burst-delay counters and the cloak copy: composition only.
 // Before(202) reproduces the v201 pin; per-tick replay, the RNG stream pins and
 // the route tripwires are unchanged.
-// 2026-09-25 combat chain 1 (snapshot 203): state only. Both RNG streams,
+// 2026-09-25 combat chain 1 (snapshot 204): state only. Both RNG streams,
 // every entity's cell and health match 947c7044 on all 16 frames (traced);
-// the pins move with retained object state and the schema 203 folds (house
+// the pins move with retained object state and the schema 204 folds (house
 // ROF bias, bullet OnBridge). Old values: the commit that moved them.
 const SLICE6_BASELINE_HASH: u64 = 0xD105_3D76_B3F3_9552;
 const SLICE6_BASELINE_HASH_PRE_REARM_TIMER_V202: u64 = 0xBB99_05E9_DAC6_0FB8;

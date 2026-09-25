@@ -1363,30 +1363,53 @@ pub fn scatter_blocker(
     accepted
 }
 
-/// `CellClass::Scatter_Objects` 0x00481670 with the NullCoord source
-/// (0x008A0790 / Ship 0x00B077F8) and force 1, as the Drive/Ship Process
-/// continuations call it (0x4B2DC0, 0x4B327D and the Ship twins). The
-/// selected list is snapshotted first, then each occupant's Scatter (+0x174)
-/// runs in list order; force admits every recipient (cell_scatter corpus).
-/// The per-occupant receiver is the existing [`scatter_blocker`] adapter, so
-/// its displacement and RNG residuals apply unchanged.
+/// `CellClass::Scatter_Objects` 0x00481670 with a null source (Drive/Ship
+/// 0x008A0790, Ship 0x00B077F8, Unit 0x00B1CFE8). The Drive/Ship Process
+/// continuations and code-6 arms force it (0x4B2DC0, 0x4B327D, 0x4B393A,
+/// 0x4B4437, chain 0x4B1F43 and the Ship twins); a crusher's pre-entry scatter
+/// does not (Unit 0x74176F). The selected list is snapshotted first; an
+/// unforced call pre-scans it for an elite occupant, and each occupant's
+/// Scatter (+0x174) runs in list order when [`scatter_dispatch_allowed`]
+/// admits it (cell_scatter corpus). The per-occupant receiver is the existing
+/// [`scatter_blocker`] adapter, so its displacement and RNG residuals apply
+/// unchanged.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn scatter_cell_objects(
     entities: &mut EntityStore,
     occupancy: &OccupancyGrid,
     cell: (u16, u16),
     layer: MovementLayer,
+    forced: bool,
     path_grid: Option<&PathGrid>,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     rng: &mut SimRng,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     interner: &crate::sim::intern::StringInterner,
+    houses: &std::collections::BTreeMap<
+        crate::sim::intern::InternedId,
+        crate::sim::house_state::HouseState,
+    >,
     timing: crate::sim::movement::DestinationTiming,
 ) {
     let occupants = occupancy
         .get(cell.0, cell.1)
         .map_or_else(Vec::new, |occ| occ.snapshot_layer(layer));
+    let eligibility = ScatterEligibility::from_rules(rules);
+    let elite_in_cell = !forced && cell_has_elite_occupant(&occupants, u64::MAX, entities);
     for id in occupants {
+        let admitted = entities.get(id).is_some_and(|occupant| {
+            scatter_dispatch_allowed(
+                eligibility,
+                forced,
+                elite_in_cell,
+                Some(ScatterTechno::from_entity(
+                    occupant, rules, houses, interner,
+                )),
+            )
+        });
+        if !admitted {
+            continue;
+        }
         scatter_blocker(
             entities,
             id,

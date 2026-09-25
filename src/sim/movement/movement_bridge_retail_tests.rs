@@ -2906,23 +2906,20 @@ fn tank_ordered_across_the_deadman_collapse_gap_never_drives_into_it() {
 /// So the row's question is sharp: a destroyed low bridge over water. Does VERA
 /// still let a tank drive over it?
 ///
-/// **Measured answer: no, and this is the right answer.** The ordinary Move is
-/// admitted but its goal is resolved back to `(106,46)`, the last surviving deck
-/// cell before the destroyed one; the tank drives out to the broken edge over
-/// water and stops. It never occupies a `0x64`/`0x65` cell.
+/// **Answer: no; the order is dropped before the tank moves.** The break splits
+/// the MovementZone, so the far approach fails CanReachDestination (vt+0x2CC)
+/// and the outer Drive Process zone test (`0x4B09AB..0x4B0A68`: in playfield
+/// +3D5, not Enter, moving) clears the head and calls SetDestination(NULL, 1)
+/// on the first Process, before Process_Movement. The setter (`0x741970`)
+/// accepts the clicked cell unchanged; nothing resolves it to the near edge.
 ///
-/// The discriminator is exact and worth stating, because a `ground_walkable`
-/// read would have got it backwards — that flag is `true` on the destroyed cell,
-/// the same trap the matrix's evidence gap 1 was opened over. `(106,46)` and
-/// `(107,46)` sit on the *same* pre-overlay Water; the only difference between
-/// them is the overlay id, and the tank crosses the first and cannot enter the
-/// second. So passability here is decided by the damage-table overlay, not by
-/// the water beneath.
+/// The damage-table overlay, not the water, is what breaks the span: the near
+/// edge `(106,46)` and the destroyed `(107,46)` sit on the *same* pre-overlay
+/// Water and differ only in overlay id. A `ground_walkable` read would have got
+/// it backwards — that flag is `true` on the destroyed cell.
 ///
-/// What this does **not** claim: that the stopping *point* matches gamemd.
-/// Whether the original refuses the order outright, truncates to the same cell,
-/// or routes elsewhere is an unread question, as is whether `0x64`/`0x65` are
-/// the right terminal sinks. Both need the binary.
+/// Coverage: the drop is native control flow; the zone split is VERA's native
+/// zone port on this map, not a gamemd execution of it.
 #[test]
 #[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
 fn tank_cannot_cross_a_destroyed_shrapnel_low_bridge() {
@@ -3086,19 +3083,23 @@ fn tank_cannot_cross_a_destroyed_shrapnel_low_bridge() {
         destroyed_visited,
     );
 
-    // 2. It did not simply fail to move: it reached the near edge of the break,
-    //    which is the last surviving deck cell before the destroyed one. Without
-    //    this the run would pass on a mover that never left its approach.
+    // 2. The first Process drops the unreachable order (0x4B09AB..0x4B0A68):
+    //    the tank never leaves its approach and keeps no destination.
     let first_destroyed_on_route = *on_route.first().expect("a destroyed cell on the route");
     let near_edge = offset(first_destroyed_on_route, (-span.step.0, -span.step.1))
         .expect("the cell before the break is in bounds");
-    assert_eq!(
-        last.cell,
-        near_edge,
-        "the tank stopped at {:?} rather than at the near edge of the break {near_edge:?}; \
-         cells visited {:?}",
-        last.cell,
+    assert!(
+        rows.iter().all(|row| row.cell == span.approach_a),
+        "the tank left its approach {:?} on an order the zone test drops; cells visited {:?}",
+        span.approach_a,
         rows.iter().map(|row| row.cell).collect::<Vec<_>>(),
+    );
+    let tank = scenario.sim().entities().get(entity_id).expect("the tank");
+    assert!(
+        tank.drive_locomotion
+            .as_ref()
+            .is_some_and(|drive| drive.destination.is_none()),
+        "the zone test did not clear the Drive destination"
     );
 
     // 3. The near edge and the destroyed cell sit on the same pre-overlay Water,
@@ -3117,8 +3118,9 @@ fn tank_cannot_cross_a_destroyed_shrapnel_low_bridge() {
         "the tank completed the crossing over a destroyed low bridge"
     );
     println!(
-        "T2-10: the break at {first_destroyed_on_route:?} is impassable; the tank drove to the \
-         near edge {near_edge:?} — water-backed, same river, passable — and stopped."
+        "T2-10: the break at {first_destroyed_on_route:?} splits the zone; the first Process \
+         dropped the order and the tank stayed at {:?}.",
+        span.approach_a
     );
 }
 

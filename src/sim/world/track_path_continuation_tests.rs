@@ -23,7 +23,6 @@ use crate::sim::components::{DriveCoord, FootPathQueue, NavTargetRef};
 use crate::sim::mission::MissionId;
 use crate::sim::movement::{FindPathResult, FootPathOutcome};
 use crate::sim::world::Simulation;
-use crate::util::fixed_math::SimFixed;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -59,7 +58,7 @@ fn unit(
     rules.general.path_delay = 0.01;
     rules.general.blockage_path_delay_ticks = 22;
     assert_eq!(rules.general.path_delay_ticks(), 9);
-    sim.close_enough = SimFixed::from_num(input["close_enough"].as_i64().unwrap_or(128));
+    rules.general.close_enough = input["close_enough"].as_i64().unwrap_or(128) as i32;
     let owner = sim.interner.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 0);
     house.player_control = input["human"] != false;

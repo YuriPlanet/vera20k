@@ -31,6 +31,7 @@ use crate::render::shell_text::{ShellAlign, ShellTextDraw};
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeEntry;
 use crate::ui::shell::geom::{RectPx, RightPanelRects};
+use crate::ui::shell::slide::{ColumnDraw, column_draw_origin};
 
 /// Parent background sits behind the movie in the Z stack. Greater depth =
 /// farther back, so this must exceed `MOVIE_DEPTH`. 0xE2-only (the main-menu
@@ -87,8 +88,6 @@ pub struct PaintButton {
     pub pressed: bool,
     pub hovered: bool,
     pub enabled: bool,
-    /// First-paint slide frame index, or None for steady-state.
-    pub wave_frame: Option<usize>,
 }
 
 /// One static or button label to paint. `rect` is already inset/sunk and `rgb`
@@ -204,6 +203,42 @@ pub fn paint_chrome(
     out
 }
 
+/// The slide engine's SDBTNANM draws (`0x006071E0`): each frame right-aligned
+/// over its tile row of [`paint_chrome`]'s column, in draw order (later on
+/// top), in place of the buttons.
+pub(crate) fn paint_slide_column(
+    atlas: &MainMenuShellChromeAtlas,
+    panel: RightPanelRects,
+    draws: &[ColumnDraw],
+) -> Vec<SpriteInstance> {
+    let mut out = Vec::new();
+    for (index, draw) in draws.iter().enumerate() {
+        let Some(entry) = atlas.button_wave_frames.get(draw.frame).copied().flatten() else {
+            continue;
+        };
+        let w = entry.pixel_size[0].round() as i32;
+        let h = entry.pixel_size[1].round() as i32;
+        let (x, y) = column_draw_origin(panel, draw.row, w);
+        push_entry_rect(
+            &mut out,
+            entry,
+            RectPx::new(x, y, w, h),
+            BUTTON_DEPTH - index as f32 * 1e-7,
+        );
+    }
+    out
+}
+
+/// `RightPanel__Draw` (`0x0072E450`) with its overlay flag clear, as the empty
+/// shell backdrop (`0x0072E820(0)`, painted by `0x0052FEC0` between dialogs)
+/// draws it: every tile row closed (SDBTNANM frame 10), the state a slide-out
+/// ends in.
+pub(crate) fn shuttered_column(panel: RightPanelRects) -> Vec<ColumnDraw> {
+    (0..panel.tile_count.max(0) as u32)
+        .map(|row| ColumnDraw { row, frame: 10 })
+        .collect()
+}
+
 /// Static `0x71C`: SDWRNANM `frame` in the static's window. Kind-4 paint
 /// (`0x0061595E..0x0061597E`) centers the shape only along an axis where the
 /// window is larger, and the window clips it.
@@ -284,36 +319,26 @@ fn steady_frame_choice(
     SteadyFrame::Default
 }
 
-/// Pick the SDBTNANM frame for a button: wave frame (clamped down one), else
-/// pressed (frame 4), else opt-in hover-flash (frame 3), else default
-/// (frame 2). Returns `None` only when a wave index resolves to no baked frame
-/// (the button holds and draws nothing — never panics on a short SHP).
+/// Pick the SDBTNANM frame for a steady button: pressed (frame 4), else opt-in
+/// hover-flash (frame 3), else default (frame 2). Slides paint the column
+/// instead (`paint_slide_column`).
 fn select_frame(
     atlas: &MainMenuShellChromeAtlas,
     b: &PaintButton,
     policy: ButtonPolicy,
     now: Instant,
     hover_started_at: Option<Instant>,
-) -> Option<MainMenuShellChromeEntry> {
-    if let Some(idx) = b.wave_frame {
-        // Clamp-down-one (verbatim from both emitters): use the exact frame, or
-        // fall back to one lower if the SHP lacks it.
-        let wave_frame = |i: usize| atlas.button_wave_frames.get(i).copied().flatten();
-        return wave_frame(idx).or_else(|| wave_frame(idx.saturating_sub(1)));
+) -> MainMenuShellChromeEntry {
+    match steady_frame_choice(b, policy, now, hover_started_at) {
+        SteadyFrame::Default => atlas.button_default,
+        SteadyFrame::Hover => atlas.button_hover,
+        SteadyFrame::Pressed => atlas.button_pressed,
     }
-    Some(
-        match steady_frame_choice(b, policy, now, hover_started_at) {
-            SteadyFrame::Default => atlas.button_default,
-            SteadyFrame::Hover => atlas.button_hover,
-            SteadyFrame::Pressed => atlas.button_pressed,
-        },
-    )
 }
 
 /// Emit the owner-draw buttons at `BUTTON_DEPTH`, applying the per-shell policy
-/// (frame select 2/3/4 or wave frame, art fit, art sink, disabled dim). The
-/// Wave and steady paths use the same supplied art-fit and disabled-dim policy;
-/// both fall out of the policy without a per-dialog branch.
+/// (frame select 2/3/4, art fit, art sink, disabled dim) without a per-dialog
+/// branch.
 pub fn paint_buttons(
     atlas: &MainMenuShellChromeAtlas,
     buttons: &[PaintButton],
@@ -323,10 +348,7 @@ pub fn paint_buttons(
 ) -> Vec<SpriteInstance> {
     let mut out = Vec::new();
     for b in buttons {
-        let frame = match select_frame(atlas, b, policy, now, hover_started_at) {
-            Some(f) => f,
-            None => continue, // wave hold: draw nothing
-        };
+        let frame = select_frame(atlas, b, policy, now, hover_started_at);
         let alpha = if !b.enabled && policy.disabled_dim {
             BUTTON_DISABLED_ALPHA
         } else {
@@ -334,14 +356,7 @@ pub fn paint_buttons(
         };
         let (pos, size) = match policy.art_fit {
             ArtFit::Native => {
-                // The press sink applies only to the STEADY pressed frame; the
-                // first-paint wave path draws native with no sink (matching the
-                // prior emitter, where the wave branch never offset Y).
-                let sink = if b.pressed && b.wave_frame.is_none() {
-                    policy.art_sink_y
-                } else {
-                    0.0
-                };
+                let sink = if b.pressed { policy.art_sink_y } else { 0.0 };
                 ([b.rect.x as f32, b.rect.y as f32 + sink], frame.pixel_size)
             }
             ArtFit::FitRightAnchored { panel_w, tile_h } => {
@@ -573,7 +588,6 @@ mod tests {
             pressed,
             hovered,
             enabled: true,
-            wave_frame: None,
         }
     }
 
@@ -810,26 +824,6 @@ mod tests {
             ),
             SteadyFrame::Default
         );
-    }
-
-    /// Wave clamp-down-one: an exact frame is used; a missing exact frame falls
-    /// back to one lower; a fully-absent pair holds (None). Exercises the
-    /// `select_frame` wave branch via a hand-built frame table.
-    #[test]
-    fn wave_clamps_down_one() {
-        let exact = fake_entry(10.0, 10.0);
-        let lower = fake_entry(20.0, 20.0);
-        let mut frames: [Option<MainMenuShellChromeEntry>; 17] = [None; 17];
-        frames[5] = Some(exact);
-        frames[6] = Some(lower); // frame 7 missing -> clamps to 6
-
-        let pick = |idx: usize| -> Option<MainMenuShellChromeEntry> {
-            let wave_frame = |i: usize| frames.get(i).copied().flatten();
-            wave_frame(idx).or_else(|| wave_frame(idx.saturating_sub(1)))
-        };
-        assert_eq!(pick(5), Some(exact)); // exact
-        assert_eq!(pick(7), Some(lower)); // 7 missing -> 6
-        assert_eq!(pick(0), None); // 0 and underflow-clamped 0 both missing
     }
 
     /// Depth/compose order: parent bg behind movie behind chrome behind buttons

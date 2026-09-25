@@ -995,6 +995,17 @@ impl Simulation {
         if self.resolved_terrain.is_none() {
             return Err("Foot entry requires map cells".into());
         }
+        #[cfg(test)]
+        if let Some(code) = crate::sim::movement::fresh_oracle_seam::supplied_can_enter(
+            self.resolved_terrain
+                .as_ref()
+                .expect("checked above")
+                .native_cell_coord(cell),
+            args.direction,
+            args.height,
+        ) {
+            return Ok(code);
+        }
         let mut live = LivePublication {
             sim: self,
             rules,

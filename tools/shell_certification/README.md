@@ -80,8 +80,9 @@ status 1 because the current capture is still drift; an invalid evidence input
 exits with 2.
 
 The additive `main-menu-0xe2-entry-sequence` path is separate from the sealed
-steady schema and comparator. It validates exactly 14 final-swapchain BGRA
-frames (ticks `0..13`) after the RGB565 presenter:
+steady schema and comparator. It validates exactly 18 final-swapchain BGRA
+frames (ticks `0..17`, the slide engine's loop at 800x600) after the RGB565
+presenter:
 
 ```powershell
 python -m tools.shell_certification validate-entry-sequence `
@@ -94,15 +95,17 @@ python -m tools.shell_certification capture-entry-sequence `
 ```
 
 The bundle inventory is exactly `capture.json` and `frames.bgra`. The payload
-is 26,880,000 bytes: fourteen contiguous 800x600 BGRA frames of 1,920,000
+is 34,560,000 bytes: eighteen contiguous 800x600 BGRA frames of 1,920,000
 bytes each. Validation requires one generation, ordered ticks and offsets,
-completion after tick 13, neutral software cursor identity, bare dialog
+completion after tick 17, neutral software cursor identity, bare dialog
 `0xE2`, and presenter domain `final-swapchain-after-rgb565`. The validator
 reports manifest, payload, and per-frame SHA-256 values as provenance.
 
-A valid Rust sequence is not native pixel parity evidence. Until comparable
-native transition frames exist, movie phase, child text, cursor/focus behavior,
-and every native sequence row remain `UNVERIFIED`. The capture command must not
+A valid Rust sequence is not native pixel parity evidence. Only the settled
+tail ticks have a native comparison (retail `to-mm.png`, recorded in
+`docs/research/shell/2026-09-24-slide-transitions-evidence.md`); movie phase,
+child text, cursor/focus behavior and every other native sequence row remain
+`UNVERIFIED`. The capture command must not
 be launched when the enrolled Oracle/capture safety status is invalid,
 unenrolled, stale, or ambiguous.
 

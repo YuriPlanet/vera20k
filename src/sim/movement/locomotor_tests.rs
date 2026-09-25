@@ -163,6 +163,7 @@ fn make_obj(locomotor: LocomotorKind, category: ObjectCategory) -> ObjectType {
         decel_factor: SimFixed::lit("0.02"),
         accelerates: true,
         passive: false,
+        is_train: false,
         slowdown_distance: 512,
         flight_level: -1,
         is_dropship: false,

@@ -871,6 +871,34 @@ impl Simulation {
         true
     }
 
+    /// `Foot::Override_Mission(Attack, target, NULL)` (`0x004D8F40`) from the
+    /// Drive/Ship code-4/5 arm (Drive `0x004B3BE9`, Ship `0x006A3238`), after
+    /// that arm asked the mover's House about an object target. NavCom and
+    /// TarCom are archived, the mission overrides onto Attack and the target
+    /// is assigned; the class setter's NULL destination is Unit `0x00741970`
+    /// ([`Self::assign_null_destination`]), whose locomotor Stop nulls +34.
+    pub(crate) fn mission_override_track_blocker(
+        &mut self,
+        mover: u64,
+        target: TargetKind,
+        rules: &RuleSet,
+    ) -> bool {
+        let entities = &mut self.substrate.entities;
+        let target_commits = assign_target_commits(entities, Some(target));
+        let Some(entity) = entities.get_mut(mover) else {
+            return false;
+        };
+        let archived_destination = entity.navigation.nav_com;
+        if !override_entity_to_attack_target(entity, target, target_commits, archived_destination) {
+            return false;
+        }
+        // The arm cleared the head before the Override; the scheduling
+        // adapter stops with NavCom in the same transaction.
+        entity.movement_target = None;
+        self.assign_null_destination(mover, Some(rules));
+        true
+    }
+
     /// The blocked-step Override every ground locomotor runs: stop, and fight
     /// whatever is standing in the way.
     ///

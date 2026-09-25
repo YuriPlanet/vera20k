@@ -8,6 +8,7 @@
 //! - Any module may depend on util/.
 
 pub mod base64;
+pub mod case_insensitive_path;
 pub mod config;
 pub mod direction;
 pub mod direction_tables;

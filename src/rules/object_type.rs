@@ -365,9 +365,16 @@ pub struct ObjectType {
     /// Defaults to true; `Accelerates=false` is handled by locomotor speed
     /// fraction ownership, not by mutating raw `Speed=`.
     pub accelerates: bool,
-    /// UnitType+E0C: ctor747103=false, ReadINI747829/74783D reads Passive.
+    /// UnitType+E0C: ctor747103=false, ReadINI747829/74783D reads Passive
+    /// through INIClass::ReadBool 0x5295F0; other classes keep false.
     /// Ordinary Drive4B1C59..1C72/Ship6A12A3..12BC chain admission requires it.
     pub passive: bool,
+    /// TechnoType+C94 `IsTrain=`: TechnoTypeClass::ReadINI 0x0071227F reads it
+    /// through INIClass::ReadBool 0x5295F0 over the constructor's false. No
+    /// retail type sets it; Drive/Ship Process_Movement coerces codes below 7
+    /// to 0 for a train (0x4B34DE / 0x6A2B2D) and passes it as Find_Path's
+    /// append flag (0x4B3EF2).
+    pub is_train: bool,
     /// Lepton distance from destination at which braking begins (SlowdownDistance=).
     /// Native default500 leptons.
     pub slowdown_distance: i32,
@@ -1871,7 +1878,8 @@ impl ObjectType {
                 .map(sim_from_f32)
                 .unwrap_or(SimFixed::lit("0.002")),
             accelerates: section.get_bool("Accelerates").unwrap_or(true),
-            passive: section.get_bool("Passive").unwrap_or(false),
+            passive: category == ObjectCategory::Vehicle && section.read_bool("Passive", false),
+            is_train: section.read_bool("IsTrain", false),
             slowdown_distance: section.get_i32("SlowdownDistance").unwrap_or(500),
             flight_level: section.get_i32("FlightLevel").unwrap_or(-1),
             is_dropship: section.get_bool("IsDropship").unwrap_or(false),

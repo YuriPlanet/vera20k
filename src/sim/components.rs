@@ -283,6 +283,14 @@ pub struct MovementTarget {
     /// occupancy checks — other movers still collide.
     #[serde(default)]
     pub bypass_grid: bool,
+    /// A Rust route adapter owns this route (`issue_direct_move`, component
+    /// fixtures): its cells were never published to Foot+5E0 and it names no
+    /// locomotor destination, so a Drive/Ship Unit keeps the pass lane while it
+    /// is pending. Native routes (the setter's empty scheduling adapter and
+    /// Find_Path's install) leave it false, so emptying their Foot+5E0 head
+    /// never reroutes the Unit through the adapter lane.
+    #[serde(default)]
+    pub adapter_route: bool,
 }
 
 /// Native-like navigation target reference.
@@ -673,6 +681,7 @@ impl Default for MovementTarget {
             ignore_terrain_cost: false,
             bypass_grid: false,
             wall_refusal_cell: None,
+            adapter_route: false,
         }
     }
 }

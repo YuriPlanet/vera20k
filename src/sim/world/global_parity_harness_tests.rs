@@ -702,7 +702,7 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0x1256_8F26_12CB_
 // cooldown/burst-delay counters and the cloak copy: composition only.
 // Before(202) reproduces the v201 pin; per-tick replay, the RNG stream pins and
 // the route tripwires are unchanged.
-// 2026-09-25 combat chain 1 (behavior, snapshot 203), traced tick by tick
+// 2026-09-25 combat chain 1 (behavior, snapshot 204), traced tick by tick
 // against 947c7044: from frame 0 three objects on Guard run Mission_Guard and
 // draw its RandomRanged(0, 2) cadence, and the infantry idle fidgets move with
 // them (Scenario stream only). Cells and health match until tick 281, when
@@ -710,7 +710,7 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0x1256_8F26_12CB_
 // it. 947c7044 never fired and at tick 292 swapped to infantryman 7; its fire
 // path carried a shroud gate and invented retargets, neither of which native
 // has, and this chain deletes both. Tank 6 retaliates and the duel ends with tank
-// 4 dead at tick 590. The main and mapgen streams are unchanged. Schema 203
+// 4 dead at tick 590. The main and mapgen streams are unchanged. Schema 204
 // adds the house ROF bias and bullet OnBridge folds. Old values: the commit
 // that moved them.
 const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x9941_BD3B_AC71_581E;

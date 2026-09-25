@@ -31,12 +31,18 @@ const CHECKPOINT_MAIN_MENU_0XE2_STEADY: &str = "main-menu-0xe2-steady";
 const CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE: &str = "main-menu-0xe2-entry-sequence";
 const CHECKPOINT_SKIRMISH_0X102_STEADY: &str = "skirmish-0x102-steady";
 const CHECKPOINT_MOVIES_0X101_STEADY: &str = "movies-0x101-steady";
+const CHECKPOINT_MAIN_MENU_0XE2_EXIT_CONFIRM: &str = "main-menu-0xe2-exit-confirm";
 const CHECKPOINT_MOVIE_LIST_0X129_STEADY: &str = "movie-list-0x129-steady";
 const CHECKPOINT_MOVIE_LIST_0X129_SELECTED: &str = "movie-list-0x129-selected";
 const CHECKPOINT_MOVIE_LIST_0X129_FULL: &str = "movie-list-0x129-full";
 const CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2: &str = "movie-list-0x129-full-down2";
+const CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME: &str = "movie-list-0x129-back-first-frame";
 const CHECKPOINT_CREDITS_ROLL_FRAME_PREFIX: &str = "credits-roll-frame-";
 const CHECKPOINT_SNEAK_PEEK_FRAME_PREFIX: &str = "sneak-peek-frame-";
+const CHECKPOINT_MAIN_MENU_0XE2_SLIDE_OUT_PREFIX: &str = "main-menu-0xe2-slide-out-tick-";
+const CHECKPOINT_MOVIE_LIST_0X129_SLIDE_OUT_PREFIX: &str = "movie-list-0x129-slide-out-tick-";
+const CHECKPOINT_SKIRMISH_0X102_BACK_SLIDE_OUT_PREFIX: &str = "skirmish-0x102-back-slide-out-tick-";
+const CHECKPOINT_SKIRMISH_0X102_ENTRY_PREFIX: &str = "skirmish-0x102-entry-tick-";
 const EXPECTED_WIDTH: u32 = 800;
 const EXPECTED_HEIGHT: u32 = 600;
 const EXPECTED_CURSOR_X: u32 = 400;
@@ -50,8 +56,10 @@ const FRAME_FILE_NAME: &str = "frame.bgra";
 const ENTRY_SEQUENCE_FRAMES_FILE_NAME: &str = "frames.bgra";
 const MANIFEST_FILE_NAME: &str = "capture.json";
 const FRAME_BYTE_LENGTH: u64 = EXPECTED_WIDTH as u64 * EXPECTED_HEIGHT as u64 * 4;
-const ENTRY_SEQUENCE_BYTE_LENGTH: u64 =
-    FRAME_BYTE_LENGTH * crate::ui::shell::slide::MAIN_MENU_ENTRY_FRAME_COUNT as u64;
+/// Ticks of the `0xE2` entry slide at 800x600: 9 tile rows + 9 (`0x006071E0`).
+const ENTRY_SEQUENCE_FRAMES: u8 = 18;
+const ENTRY_SEQUENCE_TERMINAL_TICK: u8 = ENTRY_SEQUENCE_FRAMES - 1;
+const ENTRY_SEQUENCE_BYTE_LENGTH: u64 = FRAME_BYTE_LENGTH * ENTRY_SEQUENCE_FRAMES as u64;
 
 #[derive(Debug)]
 pub enum AppLaunchMode {
@@ -65,16 +73,34 @@ pub enum ShellCaptureCheckpoint {
     MainMenu0xE2EntrySequence,
     Skirmish0x102Steady,
     MoviesPage0x101Steady,
+    /// Exit Game on `0xE2`: after the teardown slide, the confirmation over
+    /// the empty shell backdrop (state 6).
+    MainMenu0xE2ExitConfirm,
     MovieList0x129Steady,
     MovieList0x129Selected,
     /// All 17 movies unlocked (a scrollbar is shown), optionally after two
     /// down-arrow presses.
     MovieList0x129Full,
     MovieList0x129FullDown2,
+    /// Back on the movie list: the first frame after its teardown slide,
+    /// which must already be the recreated `0x101`'s entry slide at tick 0.
+    MovieList0x129BackFirstFrame,
     /// Show_Credits pinned at one roll frame (`credits-roll-frame-<N>`).
     CreditsRollFrame(u64),
     /// Sneak Peeks Play_Movie pinned at one video frame (`sneak-peek-frame-<N>`).
     SneakPeekFrame(usize),
+    /// Exit Game on `0xE2`, its teardown slide held at one tick
+    /// (`main-menu-0xe2-slide-out-tick-<N>`).
+    MainMenu0xE2SlideOut(u32),
+    /// Back on the movie list, its teardown slide held at one tick
+    /// (`movie-list-0x129-slide-out-tick-<N>`).
+    MovieList0x129SlideOut(u32),
+    /// Back on Skirmish, its teardown slide held at one tick
+    /// (`skirmish-0x102-back-slide-out-tick-<N>`).
+    Skirmish0x102BackSlideOut(u32),
+    /// Skirmish opened from Single Player, its entry slide held at one tick
+    /// (`skirmish-0x102-entry-tick-<N>`).
+    Skirmish0x102Entry(u32),
 }
 
 impl ShellCaptureCheckpoint {
@@ -92,15 +118,56 @@ impl ShellCaptureCheckpoint {
                 .with_context(|| format!("movie frame is not an integer: {frame:?}"))?;
             return Ok(Self::SneakPeekFrame(frame));
         }
+        for (prefix, kind, checkpoint) in [
+            (
+                CHECKPOINT_MAIN_MENU_0XE2_SLIDE_OUT_PREFIX,
+                ShellSlideKind::MainMenu,
+                Self::MainMenu0xE2SlideOut as fn(u32) -> Self,
+            ),
+            (
+                CHECKPOINT_MOVIE_LIST_0X129_SLIDE_OUT_PREFIX,
+                ShellSlideKind::MovieList,
+                Self::MovieList0x129SlideOut,
+            ),
+            (
+                CHECKPOINT_SKIRMISH_0X102_BACK_SLIDE_OUT_PREFIX,
+                ShellSlideKind::Skirmish,
+                Self::Skirmish0x102BackSlideOut,
+            ),
+            (
+                CHECKPOINT_SKIRMISH_0X102_ENTRY_PREFIX,
+                ShellSlideKind::Skirmish,
+                Self::Skirmish0x102Entry,
+            ),
+        ] {
+            let Some(tick) = value.strip_prefix(prefix) else {
+                continue;
+            };
+            let tick: u32 = tick
+                .parse()
+                .with_context(|| format!("slide tick is not an integer: {tick:?}"))?;
+            // The slide shows ticks 0 up to its loop bound, exclusive: the
+            // panel's tile rows + 9 at the capture's 800x600.
+            let rows = crate::ui::shell::geom::right_panel_rects(
+                EXPECTED_WIDTH as i32,
+                EXPECTED_HEIGHT as i32,
+            )
+            .tile_count as u32;
+            let last = kind.column(rows).total_ticks() - 1;
+            ensure!(tick <= last, "{value}: the slide shows ticks 0..={last}");
+            return Ok(checkpoint(tick));
+        }
         match value {
             CHECKPOINT_MAIN_MENU_0XE2_STEADY => Ok(Self::MainMenu0xE2Steady),
             CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE => Ok(Self::MainMenu0xE2EntrySequence),
             CHECKPOINT_SKIRMISH_0X102_STEADY => Ok(Self::Skirmish0x102Steady),
             CHECKPOINT_MOVIES_0X101_STEADY => Ok(Self::MoviesPage0x101Steady),
+            CHECKPOINT_MAIN_MENU_0XE2_EXIT_CONFIRM => Ok(Self::MainMenu0xE2ExitConfirm),
             CHECKPOINT_MOVIE_LIST_0X129_STEADY => Ok(Self::MovieList0x129Steady),
             CHECKPOINT_MOVIE_LIST_0X129_SELECTED => Ok(Self::MovieList0x129Selected),
             CHECKPOINT_MOVIE_LIST_0X129_FULL => Ok(Self::MovieList0x129Full),
             CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2 => Ok(Self::MovieList0x129FullDown2),
+            CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME => Ok(Self::MovieList0x129BackFirstFrame),
             _ => bail!("unsupported shell-capture checkpoint {value:?}"),
         }
     }
@@ -111,24 +178,40 @@ impl ShellCaptureCheckpoint {
             Self::MainMenu0xE2EntrySequence => CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE,
             Self::Skirmish0x102Steady => CHECKPOINT_SKIRMISH_0X102_STEADY,
             Self::MoviesPage0x101Steady => CHECKPOINT_MOVIES_0X101_STEADY,
+            Self::MainMenu0xE2ExitConfirm => CHECKPOINT_MAIN_MENU_0XE2_EXIT_CONFIRM,
             Self::MovieList0x129Steady => CHECKPOINT_MOVIE_LIST_0X129_STEADY,
             Self::MovieList0x129Selected => CHECKPOINT_MOVIE_LIST_0X129_SELECTED,
             Self::MovieList0x129Full => CHECKPOINT_MOVIE_LIST_0X129_FULL,
             Self::MovieList0x129FullDown2 => CHECKPOINT_MOVIE_LIST_0X129_FULL_DOWN2,
+            Self::MovieList0x129BackFirstFrame => CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME,
             Self::CreditsRollFrame(_) => "credits-roll-frame",
             Self::SneakPeekFrame(_) => "sneak-peek-frame",
+            Self::MainMenu0xE2SlideOut(_) => "main-menu-0xe2-slide-out",
+            Self::MovieList0x129SlideOut(_) => "movie-list-0x129-slide-out",
+            Self::Skirmish0x102BackSlideOut(_) => "skirmish-0x102-back-slide-out",
+            Self::Skirmish0x102Entry(_) => "skirmish-0x102-entry",
         }
     }
 
     fn movies_target(self) -> Option<movies::MoviesTarget> {
         Some(match self {
             Self::MoviesPage0x101Steady => movies::MoviesTarget::Page0x101,
+            Self::MainMenu0xE2ExitConfirm => movies::MoviesTarget::ExitConfirm,
             Self::MovieList0x129Steady => movies::MoviesTarget::List0x129,
             Self::MovieList0x129Selected => movies::MoviesTarget::List0x129Selected,
             Self::MovieList0x129Full => movies::MoviesTarget::FullList { down_presses: 0 },
             Self::MovieList0x129FullDown2 => movies::MoviesTarget::FullList { down_presses: 2 },
+            Self::MovieList0x129BackFirstFrame => movies::MoviesTarget::ListBackFirstFrame,
             Self::CreditsRollFrame(frame) => movies::MoviesTarget::Credits { frame },
             Self::SneakPeekFrame(frame) => movies::MoviesTarget::SneakPeek { frame },
+            Self::MainMenu0xE2SlideOut(tick) => movies::MoviesTarget::SlideOut {
+                kind: ShellSlideKind::MainMenu,
+                tick,
+            },
+            Self::MovieList0x129SlideOut(tick) => movies::MoviesTarget::SlideOut {
+                kind: ShellSlideKind::MovieList,
+                tick,
+            },
             _ => return None,
         })
     }
@@ -473,8 +556,8 @@ struct EntrySequenceState {
 impl EntrySequenceState {
     fn validate_next(&self, identity: EntrySequenceFrameIdentity) -> Result<()> {
         ensure!(
-            self.pending.len() < usize::from(crate::ui::shell::slide::MAIN_MENU_ENTRY_FRAME_COUNT),
-            "entry sequence attempted a fifteenth frame"
+            self.pending.len() < usize::from(ENTRY_SEQUENCE_FRAMES),
+            "entry sequence attempted a frame past tick {ENTRY_SEQUENCE_TERMINAL_TICK}"
         );
         ensure!(
             identity.tick == self.expected_next_tick,
@@ -483,7 +566,7 @@ impl EntrySequenceState {
             identity.tick
         );
         ensure!(
-            identity.tick <= crate::ui::shell::slide::MAIN_MENU_TERMINAL_TICK,
+            identity.tick <= ENTRY_SEQUENCE_TERMINAL_TICK,
             "entry sequence tick {} exceeds terminal tick",
             identity.tick
         );
@@ -531,8 +614,18 @@ impl ShellCaptureSession {
         let entry_sequence = (request.checkpoint
             == ShellCaptureCheckpoint::MainMenu0xE2EntrySequence)
             .then(EntrySequenceState::default);
-        let skirmish = (request.checkpoint == ShellCaptureCheckpoint::Skirmish0x102Steady)
-            .then(skirmish::SkirmishCapture::default);
+        let skirmish = match request.checkpoint {
+            ShellCaptureCheckpoint::Skirmish0x102Steady => {
+                Some(skirmish::SkirmishCapture::default())
+            }
+            ShellCaptureCheckpoint::Skirmish0x102BackSlideOut(tick) => {
+                Some(skirmish::SkirmishCapture::slide_out(tick))
+            }
+            ShellCaptureCheckpoint::Skirmish0x102Entry(tick) => {
+                Some(skirmish::SkirmishCapture::entry(tick))
+            }
+            _ => None,
+        };
         let movies = request
             .checkpoint
             .movies_target()
@@ -841,13 +934,12 @@ impl ShellCaptureSession {
             .as_mut()
             .context("entry-sequence state is unavailable")?;
         ensure!(
-            sequence.expected_next_tick == crate::ui::shell::slide::MAIN_MENU_ENTRY_FRAME_COUNT,
+            sequence.expected_next_tick == ENTRY_SEQUENCE_FRAMES,
             "entry sequence completed with {} accepted ticks",
             sequence.expected_next_tick
         );
         ensure!(
-            sequence.pending.len()
-                == usize::from(crate::ui::shell::slide::MAIN_MENU_ENTRY_FRAME_COUNT),
+            sequence.pending.len() == usize::from(ENTRY_SEQUENCE_FRAMES),
             "entry sequence completed with {} retained readbacks",
             sequence.pending.len()
         );
@@ -982,7 +1074,7 @@ fn entry_sequence_manifest(
     surface_format: wgpu::TextureFormat,
     generation: u64,
 ) -> EntrySequenceManifest {
-    let frames = (0..crate::ui::shell::slide::MAIN_MENU_ENTRY_FRAME_COUNT)
+    let frames = (0..ENTRY_SEQUENCE_FRAMES)
         .map(|tick| EntrySequenceFrameManifest {
             tick,
             byte_offset: u64::from(tick) * FRAME_BYTE_LENGTH,
@@ -1199,6 +1291,48 @@ mod tests {
     }
 
     #[test]
+    fn slide_checkpoints_accept_only_shown_ticks() {
+        // Every family slide at 800x600 shows ticks 0..=17 (9 tile rows + 9).
+        for (prefix, checkpoint) in [
+            (
+                "main-menu-0xe2-slide-out-tick-",
+                ShellCaptureCheckpoint::MainMenu0xE2SlideOut(17),
+            ),
+            (
+                "movie-list-0x129-slide-out-tick-",
+                ShellCaptureCheckpoint::MovieList0x129SlideOut(17),
+            ),
+            (
+                "skirmish-0x102-back-slide-out-tick-",
+                ShellCaptureCheckpoint::Skirmish0x102BackSlideOut(17),
+            ),
+            (
+                "skirmish-0x102-entry-tick-",
+                ShellCaptureCheckpoint::Skirmish0x102Entry(17),
+            ),
+        ] {
+            assert_eq!(
+                ShellCaptureCheckpoint::parse(&format!("{prefix}17")).expect("last tick"),
+                checkpoint
+            );
+            assert!(ShellCaptureCheckpoint::parse(&format!("{prefix}18")).is_err());
+        }
+    }
+
+    #[test]
+    fn entry_sequence_holds_every_main_menu_entry_tick() {
+        let rows = crate::ui::shell::geom::right_panel_rects(
+            EXPECTED_WIDTH as i32,
+            EXPECTED_HEIGHT as i32,
+        )
+        .tile_count as u32;
+        assert_eq!(
+            ShellSlideKind::MainMenu.column(rows).total_ticks(),
+            u32::from(ENTRY_SEQUENCE_FRAMES)
+        );
+    }
+
+    #[test]
     fn skirmish_capture_uses_distinct_checkpoint_and_route_budget() {
         let output = new_output_path("skirmish");
         let mut values = valid_args(&output);
@@ -1240,9 +1374,10 @@ mod tests {
         );
         assert_eq!(value["generation"].as_u64(), Some(73));
         assert_eq!(value["completion_observed"].as_bool(), Some(true));
-        assert_eq!(value["payload"]["byte_length"].as_u64(), Some(26_880_000));
+        // 18 ticks of 800x600 BGRA8 (9 tile rows + 9, `0x006071E0`).
+        assert_eq!(value["payload"]["byte_length"].as_u64(), Some(34_560_000));
         let frames = value["frames"].as_array().expect("frames");
-        assert_eq!(frames.len(), 14);
+        assert_eq!(frames.len(), 18);
         for (tick, frame) in frames.iter().enumerate() {
             assert_eq!(frame["tick"].as_u64(), Some(tick as u64));
             assert_eq!(frame["byte_offset"].as_u64(), Some(tick as u64 * 1_920_000));

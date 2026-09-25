@@ -13,7 +13,7 @@
 use super::block_index::LentOwnerBlockSet;
 use super::ground_pose;
 use super::infantry_entry::InfantryEntryArgs;
-use super::movement_tick::{FootPathCaller, FootPathRequest};
+use super::movement_tick::FootPathRequest;
 use crate::map::entities::EntityCategory;
 use crate::map::overlay_types::OverlayTypeRegistry;
 use crate::map::resolved_terrain::NativeCellQuery;
@@ -164,8 +164,10 @@ pub(crate) enum FootPathOutcome {
 }
 
 impl Simulation {
-    /// Dispatch a suspended no-queue request to its locomotor caller. `lent`
-    /// is the requester's owner block set held by the pending pass.
+    /// Run a suspended Walk no-queue request (Walk75AFC5, continuation
+    /// 0x75AFD3); `lent` is the requester's owner block set held by the
+    /// pending pass. Drive/Ship requests are made inside their
+    /// Process_Movement (`track_fresh`).
     pub(crate) fn run_foot_path_request(
         &mut self,
         request: &FootPathRequest,
@@ -174,20 +176,14 @@ impl Simulation {
         fallback: Option<&PathGrid>,
         registry: Option<&OverlayTypeRegistry>,
     ) -> Result<FootPathOutcome, String> {
-        match request.caller {
-            FootPathCaller::Walk => self
-                .run_walk_path_request(request, lent, rules, fallback, registry)
-                .map(|resumed| {
-                    if resumed {
-                        FootPathOutcome::Resume
-                    } else {
-                        FootPathOutcome::Returned
-                    }
-                }),
-            FootPathCaller::Track(_) => {
-                self.run_track_path_request(request, lent, rules, fallback, registry)
-            }
-        }
+        self.run_walk_path_request(request, lent, rules, fallback, registry)
+            .map(|resumed| {
+                if resumed {
+                    FootPathOutcome::Resume
+                } else {
+                    FootPathOutcome::Returned
+                }
+            })
     }
 
     /// `Find_Path(cell, 0, 0)` for a no-queue caller whose own movement
@@ -202,6 +198,29 @@ impl Simulation {
     ) -> Result<FindPathResult, String> {
         let id = request.entity_id;
         let frame = self.session.binary_frame;
+        #[cfg(test)]
+        if let Some(path) = super::fresh_oracle_seam::supplied_path(
+            (request.destination.x / 256, request.destination.y / 256),
+            request.urgency,
+        ) {
+            use super::fresh_oracle_seam::SuppliedPath;
+            let queue = &mut self
+                .substrate
+                .entities
+                .get_mut(id)
+                .ok_or("retired Find_Path requester")?
+                .navigation
+                .path_replay;
+            match path {
+                SuppliedPath::Found(words) => {
+                    queue.directions = words;
+                    queue.cursor = 0;
+                    return Ok(FindPathResult::Route);
+                }
+                SuppliedPath::Failed => return Ok(FindPathResult::Failed),
+                SuppliedPath::CoreNull => super::fresh_oracle_seam::arm_core_null(),
+            }
+        }
         //4D392A..393A: append=false clears one head before the +2CC
         //precheck; the backing suffix is retained.
         self.substrate
@@ -360,6 +379,14 @@ impl Simulation {
         if let Some(lent) = borrowed {
             self.movement_pass_cache.give_back(owner, lent);
         }
+        #[cfg(test)]
+        let searched = if super::fresh_oracle_seam::take_core_null() {
+            Err(super::movement_path::MovePathFailure::Search(
+                crate::sim::pathfinding::zone_search::PathSearchFailure::CellSearchExhausted,
+            ))
+        } else {
+            searched
+        };
         //4D3EAC restores Mark1 before inspecting the core result.
         self.foot_mark_put(id, Some(rules), fallback, registry);
         let actor = self
@@ -565,7 +592,7 @@ impl Simulation {
                     native_xyz_distance(coord.x - centre.x, coord.y - centre.y, coord.z - centre.z);
                 //0x4D3A9B: dist <= CloseEnough keeps the target. IsTrain (+C94)
                 //is set by no retail TechnoType (no IsTrain=yes in rulesmd).
-                if distance <= self.close_enough.to_num::<i32>() {
+                if distance <= rules.general.close_enough {
                     return Ok(destination);
                 }
                 let Some(near) = self.find_path_nearby_cell(id, target, rules)? else {

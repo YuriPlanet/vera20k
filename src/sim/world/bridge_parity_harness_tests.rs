@@ -236,12 +236,12 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 99256439874650475
 // cooldown/burst-delay counters and the cloak copy: composition only.
 // Before(202) reproduces the v201 pin; per-tick replay, the RNG stream pins and
 // the route tripwires are unchanged.
-// 2026-09-25 combat chain 1 (behavior, snapshot 203): first divergence from
+// 2026-09-25 combat chain 1 (behavior, snapshot 204): first divergence from
 // 947c7044 is frame 0. The map-placed infantryman now enters Guard on Unlimbo
 // (InfantryClass::Enter_Idle_Mode 0x0051CBA0), so its Mission_Guard runs from
 // frame 0 and draws its RandomRanged(0, 2) cadence; the Scenario stream is
 // that draw ahead from then on. Main and mapgen streams, every entity's cell
-// and health match 947c7044 on all 200 ticks (traced). Schema 203 adds the
+// and health match 947c7044 on all 200 ticks (traced). Schema 204 adds the
 // house ROF bias and bullet OnBridge folds. Old values: the commit that moved
 // them.
 const BRIDGE_HARNESS_FINAL_HASH: u64 = 0xD866_6A7C_28C9_D608;

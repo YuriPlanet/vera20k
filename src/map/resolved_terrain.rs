@@ -52,7 +52,7 @@ use std::sync::{
 #[cfg(test)]
 pub(crate) use tests::{
     bridge_constructor_terrain, install_bridge_batch_test_catalog,
-    install_ordinary_repair_test_catalog,
+    install_ordinary_repair_test_catalog, install_tunnel_repair_test_catalog,
 };
 
 #[path = "resolved_terrain_mutation.rs"]
@@ -1838,6 +1838,32 @@ impl AuthoredTerrainFill {
     pub(crate) fn pending_grid(&self) -> &ResolvedTerrainGrid {
         &self.0
     }
+}
+
+/// A `size` x `size` flat level-0 grid whose land rows admit Foot, Track and
+/// Wheel at 100%: the inputs the native Foot `Can_Enter_Cell` reads.
+#[cfg(test)]
+pub(crate) fn test_flat_ground_grid(size: u16) -> ResolvedTerrainGrid {
+    let costs = SpeedCostProfile {
+        foot: Some(100),
+        track: Some(100),
+        wheel: Some(100),
+        ..Default::default()
+    };
+    ResolvedTerrainGrid::from_cells(
+        size,
+        size,
+        (0..size)
+            .flat_map(|ry| {
+                (0..size).map(move |rx| {
+                    let mut cell = test_flat_cell(rx, ry);
+                    cell.speed_costs = costs;
+                    cell.base_speed_costs = costs;
+                    cell
+                })
+            })
+            .collect(),
+    )
 }
 
 /// A fully-populated flat `ResolvedTerrainCell`, for tests in other modules that

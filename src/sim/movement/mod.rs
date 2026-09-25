@@ -70,6 +70,7 @@ mod foot_path;
 #[cfg(test)]
 pub(crate) use foot_path::FindPathResult;
 pub(crate) use foot_path::FootPathOutcome;
+pub(crate) use track_fresh::ProcessMovementArgs;
 mod foot_speed;
 pub(crate) mod ground_pose;
 pub(crate) mod infantry_entry;
@@ -86,15 +87,16 @@ mod movement_step;
 pub(crate) mod movement_tick;
 mod navcom;
 pub(crate) use navcom::{nav_target_coordinate, set_walk_destination_coord, target_cell_coord};
+#[cfg(test)]
+pub(crate) mod fresh_oracle_seam;
 mod path_markers;
 pub(crate) mod ready_producer;
 mod scatter_cell;
 pub(crate) mod slope_transition;
-mod track_entry;
-#[cfg(test)]
+mod track_continuation;
+mod track_fresh;
 mod track_fresh_dispatch;
 pub(crate) mod track_head;
-mod track_continuation;
 mod track_host;
 mod track_path;
 pub(crate) mod track_process;
@@ -350,7 +352,6 @@ impl MovementConfig {
     /// timers retain their own signed duration after a reached native store.
     pub(crate) fn from_rules(
         binary_frame: u32,
-        close_enough: SimFixed,
         rules: Option<&crate::rules::ruleset::RuleSet>,
     ) -> Self {
         let defaults;
@@ -362,7 +363,7 @@ impl MovementConfig {
         };
         Self {
             binary_frame,
-            close_enough,
+            close_enough: SimFixed::from_num(general.close_enough),
             path_delay_ticks: general.path_delay_ticks(),
             blockage_path_delay_ticks: general.blockage_path_delay_ticks,
         }

@@ -267,7 +267,7 @@ fn rules_driven_sentinel_timers_survive_snapshot_and_same_frame_process() {
         install_stationary_path_request(&mut sim);
         sim.session.binary_frame = u32::MAX;
         sim.session.tick = u64::from(u32::MAX);
-        let timing = MovementConfig::from_rules(u32::MAX, SIM_ZERO, Some(&rules));
+        let timing = MovementConfig::from_rules(u32::MAX, Some(&rules));
         assert_eq!(timing.path_delay_ticks, expected_path);
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         DestinationTiming::from_rules(u32::MAX, Some(&rules)).accept(entity);

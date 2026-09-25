@@ -41,7 +41,7 @@ use crate::rules::tiberium_type::TiberiumTypeRegistry;
 use crate::rules::voxel_anim_type::{VoxelAnimType, VoxelAnimTypeId};
 use crate::rules::warhead_type::WarheadType;
 use crate::rules::weapon_type::WeaponType;
-use crate::util::fixed_math::{SimFixed, sim_from_f32};
+use crate::util::fixed_math::{SIM_ONE, SimFixed, sim_from_f32};
 
 /// Country-level fields needed by gameplay systems.
 #[derive(Debug, Clone)]
@@ -711,6 +711,10 @@ pub struct GeneralRules {
     /// GUIMoveInSound (stock `MenuSlideIn`). Played once at the start of each
     /// allow-listed shell dialog's slide. None = no sound configured.
     pub gui_move_in_sound: Option<String>,
+    /// Shell teardown slide-out cue from [AudioVisual] GUIMoveOutSound (stock
+    /// `MenuSlideOut`, `RulesClass+0x19C` read at `0x006694C7`), played by
+    /// `0x00608070` before a shown shell dialog's buttons slide out.
+    pub gui_move_out_sound: Option<String>,
     /// Generic shell click sound from [AudioVisual] GenericClick.
     pub generic_click_sound: Option<String>,
     /// Launcher Options Sound/Voice preview cue from [AudioVisual] GenericBeep.
@@ -932,13 +936,17 @@ pub struct GeneralRules {
     pub ship_sinking_weight: SimFixed,
 
     // -- Cliff/slope movement coefficients ([General]) --
-    /// Tracked vehicle uphill coefficient (`TrackedUphill=`; vanilla 1.0 = no change).
+    // Rules +0x768/+0x770/+0x778/+0x780, each `ReadDouble` over its current
+    // value (0x66F213..0x66F2A9); the constructor stores 1.0 in all four
+    // (0x6660BE..0x6660ED). Read by the Drive/Ship fresh speed publish
+    // (0x4B3D4C..0x4B3DA6) and the per-cell speed chain.
+    /// Tracked vehicle uphill coefficient (`TrackedUphill=`).
     pub tracked_uphill: SimFixed,
-    /// Tracked vehicle downhill coefficient (`TrackedDownhill=`; vanilla 1.2 = faster).
+    /// Tracked vehicle downhill coefficient (`TrackedDownhill=`).
     pub tracked_downhill: SimFixed,
-    /// Non-tracked (wheeled and other) vehicle uphill coefficient (`WheeledUphill=`; vanilla 1.0).
+    /// Non-tracked (wheeled and other) vehicle uphill coefficient (`WheeledUphill=`).
     pub wheeled_uphill: SimFixed,
-    /// Non-tracked vehicle downhill coefficient (`WheeledDownhill=`; vanilla 1.2).
+    /// Non-tracked vehicle downhill coefficient (`WheeledDownhill=`).
     pub wheeled_downhill: SimFixed,
 
     // -- Per-object draw-light offsets --
@@ -950,9 +958,13 @@ pub struct GeneralRules {
     pub extra_aircraft_light: i32,
 
     // -- Movement arrival --
-    /// Distance in leptons below which a blocked unit stops instead of repathing.
-    /// CloseEnough=2.25 in vanilla rulesmd.ini (2.25 cells × 256 lep/cell ≈ 576 leptons).
-    pub close_enough: SimFixed,
+    /// `Rules+0x1718`, `[General] CloseEnough=` in leptons: a blocked mover
+    /// within this distance of its destination stops instead of repathing.
+    /// Read by `RulesClass::ReadGeneral` at `0x00670EDD..0x00670EF7` through
+    /// `CCINIClass::ReadRange 0x00474620` (cells x 256, chopped) over the
+    /// current value; the constructor writes `0x280` (`0x00667588`). Retail
+    /// `CloseEnough=2.25` is 576.
+    pub close_enough: i32,
 
     // -- Service depot / unit repair --
     /// Ticks between applying RepairStep HP when a unit is on a repair depot.
@@ -1336,6 +1348,7 @@ impl Default for GeneralRules {
             chute_sound: None,
             gui_main_button_sound: None,
             gui_move_in_sound: None,
+            gui_move_out_sound: None,
             generic_click_sound: None,
             generic_beep_sound: None,
             gui_checkbox_sound: None,
@@ -1393,17 +1406,16 @@ impl Default for GeneralRules {
                 0x3fe0_0000_0000_0000,
             ),
             ship_sinking_weight: SimFixed::lit("3.0"),
-            // Vanilla rulesmd.ini [General]: 1.0 uphill (no change) / 1.2 downhill (faster),
-            // same for tracked and wheeled. Mods can override via [General].
-            tracked_uphill: SimFixed::lit("1.0"),
-            tracked_downhill: SimFixed::lit("1.2"),
-            wheeled_uphill: SimFixed::lit("1.0"),
-            wheeled_downhill: SimFixed::lit("1.2"),
+            // RulesClass constructor 0x6660BE..0x6660ED.
+            tracked_uphill: SIM_ONE,
+            tracked_downhill: SIM_ONE,
+            wheeled_uphill: SIM_ONE,
+            wheeled_downhill: SIM_ONE,
             extra_unit_light: 0,
             extra_infantry_light: 0,
             extra_aircraft_light: 0,
-            // CloseEnough=2.25 cells in vanilla rulesmd.ini → 576 leptons.
-            close_enough: SimFixed::from_num(576),
+            // RulesClass constructor 0x00667588.
+            close_enough: 0x280,
             // URepairRate=.016 min = 0.96 sec ≈ 14 ticks at 15 Hz.
             unit_repair_rate_ticks: 14,
             repair_step: 5,
@@ -2217,6 +2229,11 @@ impl GeneralRules {
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(str::to_string),
+            gui_move_out_sound: audio_visual
+                .and_then(|s| s.get("GUIMoveOutSound"))
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
             generic_click_sound: audio_visual
                 .and_then(|s| s.get("GenericClick"))
                 .map(str::trim)
@@ -2410,22 +2427,22 @@ impl GeneralRules {
                 .get_f32("ShipSinkingWeight")
                 .map(sim_from_f32)
                 .unwrap_or(defaults.ship_sinking_weight),
-            tracked_uphill: general
-                .get_f32("TrackedUphill")
-                .map(sim_from_f32)
-                .unwrap_or(defaults.tracked_uphill),
-            tracked_downhill: general
-                .get_f32("TrackedDownhill")
-                .map(sim_from_f32)
-                .unwrap_or(defaults.tracked_downhill),
-            wheeled_uphill: general
-                .get_f32("WheeledUphill")
-                .map(sim_from_f32)
-                .unwrap_or(defaults.wheeled_uphill),
-            wheeled_downhill: general
-                .get_f32("WheeledDownhill")
-                .map(sim_from_f32)
-                .unwrap_or(defaults.wheeled_downhill),
+            tracked_uphill: SimFixed::from_num(general.read_double(
+                "TrackedUphill",
+                defaults.tracked_uphill.to_num::<f64>(),
+            )),
+            tracked_downhill: SimFixed::from_num(general.read_double(
+                "TrackedDownhill",
+                defaults.tracked_downhill.to_num::<f64>(),
+            )),
+            wheeled_uphill: SimFixed::from_num(general.read_double(
+                "WheeledUphill",
+                defaults.wheeled_uphill.to_num::<f64>(),
+            )),
+            wheeled_downhill: SimFixed::from_num(general.read_double(
+                "WheeledDownhill",
+                defaults.wheeled_downhill.to_num::<f64>(),
+            )),
             // RulesClass's AudioVisual pass stores these ReadDouble values as
             // signed milliunits after the active x87 chop-toward-zero conversion.
             extra_unit_light: (audio_visual
@@ -2452,10 +2469,7 @@ impl GeneralRules {
                 })
                 .unwrap_or(defaults.extra_aircraft_light as f64 / 1000.0)
                 * 1000.0) as i32,
-            close_enough: general
-                .get_f32("CloseEnough")
-                .map(|cells| sim_from_f32(cells * 256.0))
-                .unwrap_or(defaults.close_enough),
+            close_enough: general.read_range("CloseEnough", defaults.close_enough),
             // URepairRate= is in minutes. Convert to ticks: minutes * 60 * 15 ticks/sec.
             unit_repair_rate_ticks: general
                 .get_f32("URepairRate")
@@ -4882,6 +4896,18 @@ SpawnCount=3
     }
     use super::*;
     use crate::rules::native_processing::RulesLayerKind;
+
+    #[test]
+    fn retail_shell_slide_cues_come_from_audio_visual() {
+        // RulesClass+0x19C GUIMoveOutSound (0x006694C7) and +0x1A0
+        // GUIMoveInSound (0x00669509), read from [AudioVisual].
+        let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let general = GeneralRules::from_ini(&ini);
+        assert_eq!(general.gui_move_out_sound.as_deref(), Some("MenuSlideOut"));
+        assert_eq!(general.gui_move_in_sound.as_deref(), Some("MenuSlideIn"));
+    }
 
     #[test]
     fn cloak_global_defaults_and_native_minute_conversion_parse() {

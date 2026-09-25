@@ -1200,9 +1200,6 @@ pub struct Simulation {
     /// Built from [General] rules at map load.
     #[serde(skip)]
     pub terrain_speed_config: terrain_speed::TerrainSpeedConfig,
-    /// Distance in leptons below which a blocked unit stops instead of repathing.
-    /// From CloseEnough= in [General]. Default 576 (~2.25 cells).
-    pub close_enough: SimFixed,
     /// When true, newly spawned entities get a `DebugEventLog` allocated.
     /// Toggled by the debug inspector hotkey (X). Debug-only — not included in state hashing.
     #[serde(skip)]
@@ -2964,7 +2961,6 @@ impl Simulation {
             lightning_storm: None,
             super_weapons_initialized: false,
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
-            close_enough: SimFixed::from_num(576), // 2.25 cells × 256 lep/cell
             debug_event_logging: false,
             input_delay_ticks: 2,
             quit_requested: false,

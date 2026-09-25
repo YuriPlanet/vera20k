@@ -65,6 +65,7 @@ pub(crate) mod shell_route;
 mod shell_skirmish;
 pub(crate) mod sidebar_projection;
 mod state;
+mod window_icon;
 
 pub(crate) use shell_random_map::{
     RandomMapGenerationRetention,

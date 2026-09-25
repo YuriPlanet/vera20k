@@ -52,6 +52,12 @@ pub struct SkirmishShellChromeAtlas {
     /// D5 static71C: 6038F7->6039EF selects SDWRNANM through SHELL2.PAL.
     pub launcher_warning_frames: Vec<SkirmishShellChromeEntry>,
     pub sd_map_button: Option<SkirmishShellChromeEntry>,
+    /// SDMPBTN.SHP frames 0..=6: the map button in place (0) to only its rail
+    /// left (6), drawn by the slide engine (`0x006071E0`).
+    pub sd_map_button_frames: [Option<SkirmishShellChromeEntry>; 7],
+    /// SDWRNTMP.SHP frames 0..=5: the top panel's warning display moving while
+    /// the slide engine runs (SHELL.PAL, `0x0072E280`).
+    pub sd_warning_frames: [Option<SkirmishShellChromeEntry>; 6],
     pub background_640_mnscrns: Option<SkirmishShellChromeEntry>,
     pub background_800_coop_game_setup: Option<SkirmishShellChromeEntry>,
     pub choose_map_background_800_customize_battle: Option<SkirmishShellChromeEntry>,
@@ -336,6 +342,25 @@ pub fn build_skirmish_shell_chrome_atlas(
         0,
         "SHELL.PAL",
     )?);
+    // The slide engine's map-button and warning-display frames.
+    for frame in 1..=6 {
+        rendered.extend(render_shp_entry_labeled(
+            assets,
+            "SDMPBTN.SHP",
+            &format!("sdmpbtn.shp#{frame}"),
+            &shell_palette,
+            frame,
+        ));
+    }
+    for frame in 0..=5 {
+        rendered.extend(render_shp_entry_labeled(
+            assets,
+            "SDWRNTMP.SHP",
+            &format!("sdwrntmp.shp#{frame}"),
+            &shell_palette,
+            frame,
+        ));
+    }
     rendered.push(mandatory_shp(
         assets,
         "LWSCRNS.SHP",
@@ -511,6 +536,13 @@ pub fn build_skirmish_shell_chrome_atlas(
         }),
         right_panel_bottom_sdbtm: by_label.get("sdbtm.shp").copied(),
         sd_map_button: by_label.get("sdmpbtn.shp").copied(),
+        sd_map_button_frames: std::array::from_fn(|frame| match frame {
+            0 => by_label.get("sdmpbtn.shp").copied(),
+            frame => by_label.get(&format!("sdmpbtn.shp#{frame}")).copied(),
+        }),
+        sd_warning_frames: std::array::from_fn(|frame| {
+            by_label.get(&format!("sdwrntmp.shp#{frame}")).copied()
+        }),
         background_640_mnscrns: by_label.get("mnscrns.shp").copied(),
         background_800_coop_game_setup: by_label.get("mnscrnlcoopgamesetup.shp").copied(),
         choose_map_background_800_customize_battle: by_label
