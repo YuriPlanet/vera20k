@@ -947,13 +947,9 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
             first_uncommitted_frame.get_or_insert(tick);
         }
 
-        if rec
-            .substrate
-            .entities
-            .get(3)
-            .and_then(|h| h.miner.as_ref())
-            .is_some_and(|m| m.target_ore_cell.is_some())
-        {
+        if rec.substrate.entities.get(3).is_some_and(|h| {
+            h.miner.as_ref().is_some_and(|m| m.harvesting) || h.navigation.nav_com.is_some()
+        }) {
             miner_engaged = true;
         }
         log.record_tick(tick, due, result.state_hash);

@@ -597,7 +597,10 @@ use crate::sim::world::Simulation;
 // 205 -> 206: a miner no longer keeps the Chrono Miner's retired dock phases
 // (home refinery, dock-queued byte, dock phase, pivot facing, enter/approach/
 // deploy timers, exit cell); an entity keeps Techno+0x1F8.
-const SNAPSHOT_VERSION: u32 = 206;
+// 206 -> 207: a miner keeps Unit+0x6D2 and one +0xF8 StageClass (the unload
+// counter renamed) instead of its target-ore cell, harvest timer, rescan
+// cooldown and archive copy (the archive is Techno+0x218).
+const SNAPSHOT_VERSION: u32 = 207;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3544,7 +3547,8 @@ mod tests {
         // `Aggressive=`.
         // 204 -> 205: bullet `Arcing=`; an anim's bounce body.
         // 205 -> 206: the retired Chrono dock phases; Techno+0x1F8.
-        assert_eq!(super::SNAPSHOT_VERSION, 206);
+        // 206 -> 207: the native ore field (Unit+0x6D2, the StageClass).
+        assert_eq!(super::SNAPSHOT_VERSION, 207);
     }
 
     #[test]

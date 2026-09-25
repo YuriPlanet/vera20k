@@ -1157,6 +1157,18 @@ pub struct GameEntity {
 }
 
 impl GameEntity {
+    /// `TechnoClass::ArchiveTarget` (`Techno+0x218`): the base-defence
+    /// responder's post and a harvester's archived ore cell share this one
+    /// field, stored in [`BaseDefenseResponseState`].
+    pub(crate) fn archive_target(&self) -> Option<crate::sim::combat::TargetKind> {
+        self.base_defense_response.archive_target
+    }
+
+    /// `TechnoClass::Set_ArchiveTarget @ 0x0070C610`, a plain store.
+    pub(crate) fn set_archive_target(&mut self, target: Option<crate::sim::combat::TargetKind>) {
+        self.base_defense_response.set_archive_target(target);
+    }
+
     pub(crate) const fn is_mission_only(&self) -> bool {
         self.mission_only
     }

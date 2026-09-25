@@ -243,6 +243,8 @@ def ring(data, kind=0, center=(10, 10)):
 
 def reduce_cases():
     empty = [10, 10, 0, 3, 0]
+    clear = [15, 15, 0, 3, 0]
+    here = dict(cell=[15, 15], amount=1)
     return [
         dict(name='reduce_partial', cell=[10, 10], amount=1, ore=[ORE]),
         dict(name='reduce_last_level', cell=[10, 10], amount=1, ore=[[10, 10, 0, 3, 1]]),
@@ -253,20 +255,22 @@ def reduce_cases():
         dict(name='reduce_no_tiberium', cell=[10, 10], amount=1, ore=[]),
         dict(name='reduce_full_density', cell=[10, 10], amount=1, ore=[[10, 10, 0, 11, 11]]),
         dict(name='reduce_gem', cell=[10, 10], amount=1, ore=[[10, 10, 1, 2, 7]]),
-        dict(name='reduce_empty_neighbours_0_to_7', cell=[10, 10], amount=1,
-             ore=[empty] + ring([0, 1, 2, 3, 4, 5, 6, 7])),
-        dict(name='reduce_empty_neighbours_dense', cell=[10, 10], amount=1,
-             ore=[empty] + ring([11, 10, 9, 8, 7, 6, 5, 4])),
-        dict(name='reduce_empty_gem_neighbours', cell=[10, 10], amount=1,
-             ore=[empty] + ring([0, 1, 2, 3, 4, 5, 6, 7], kind=1)),
-        dict(name='reduce_empty_neighbours_queued', cell=[10, 10], amount=1,
-             ore=[empty] + ring([6] * 8), spread_queued=[[10, 9], [11, 10]]),
-        dict(name='reduce_empty_no_spread_flag', cell=[10, 10], amount=1,
-             ore=[empty] + ring([6] * 8), spreads=False),
-        dict(name='reduce_empty_zero_spread_percentage', cell=[10, 10], amount=1,
-             ore=[empty] + ring([6] * 8), spread_percentage=0.0),
-        dict(name='reduce_empty_seed_31', cell=[10, 10], amount=1,
-             ore=[empty] + ring([6] * 8), seed=31),
+        # (9,11), a neighbour of (10,12), is a refinery foundation cell: the
+        # refinery in its object list refuses the spread there.
+        dict(name='reduce_empty_neighbours_0_to_7', cell=[10, 12], amount=1,
+             ore=[[10, 12, 0, 3, 0]] + ring([0, 1, 2, 3, 4, 5, 6, 7], center=(10, 12))),
+        dict(here, name='reduce_empty_neighbours_dense',
+             ore=[clear] + ring([11, 10, 9, 8, 7, 6, 5, 4], center=(15, 15))),
+        dict(here, name='reduce_empty_gem_neighbours',
+             ore=[clear] + ring([0, 1, 2, 3, 4, 5, 6, 7], kind=1, center=(15, 15))),
+        dict(here, name='reduce_empty_neighbours_queued',
+             ore=[clear] + ring([6] * 8, center=(15, 15)), spread_queued=[[15, 14], [16, 15]]),
+        dict(here, name='reduce_empty_no_spread_flag',
+             ore=[clear] + ring([6] * 8, center=(15, 15)), spreads=False),
+        dict(here, name='reduce_empty_zero_spread_percentage',
+             ore=[clear] + ring([6] * 8, center=(15, 15)), spread_percentage=0.0),
+        dict(here, name='reduce_empty_seed_31',
+             ore=[clear] + ring([6] * 8, center=(15, 15)), seed=31),
     ]
 
 

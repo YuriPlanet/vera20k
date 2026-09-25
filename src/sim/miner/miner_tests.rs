@@ -80,7 +80,10 @@ fn miner_rules() -> RuleSet {
          Owner=Americans\n\
          Foundation=4x3\n\
          Refinery=yes\nDockUnload=yes\n\
-         FreeUnit=CMIN\n",
+         FreeUnit=CMIN\n\
+         [General]\n\
+         TiberiumShortScan=6\n\
+         TiberiumLongScan=48\n",
         crate::sim::tiberium::test_support::tiberium_rules_text(),
     ));
     let mut rules = RuleSet::from_ini(&ini).expect("miner rules");
@@ -147,12 +150,30 @@ fn spawn_miner(sim: &mut Simulation, sid: u64, kind: MinerKind, rx: u16, ry: u16
         5,
         true,
     );
-    if kind == MinerKind::Chrono {
-        ge.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Teleport));
+    // The locomotor each stock miner has in a match: the class setter
+    // (`vt+0x480`) that Mission_Harvest drives it through needs one.
+    match kind {
+        MinerKind::Chrono => {
+            ge.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Teleport));
+        }
+        MinerKind::War => {
+            ge.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+            ge.drive_locomotion = Some(Default::default());
+        }
+        MinerKind::Slave => {}
     }
     ge.miner = Some(Miner::new(kind, &MinerConfig::default(), 0));
     ge.lifecycle.in_limbo = false;
     sim.substrate.entities.insert(ge);
+    // A playfield holding the 64x64 fixture (Is_Cell_Harvestable's first gate).
+    sim.playfield_bounds
+        .get_or_insert(crate::map::playfield::PlayfieldBounds {
+            base: 0,
+            off_fc: -64,
+            off_100: -1,
+            off_104: 128,
+            off_108: 65,
+        });
     // Update the shared object allocator if needed so test IDs do not collide.
     if sim.substrate.next_stable_object_id <= sid {
         sim.substrate.next_stable_object_id = sid + 1;
@@ -295,6 +316,14 @@ fn place_ore(sim: &mut Simulation, rx: u16, ry: u16, amount: u16) {
 /// Matches advance_tick ordering: teleport (Phase 2) → miners (Phase 7) →
 /// ground movement. Teleport must run before miners so that Relocate/ChronoDelay
 /// updates are visible to the miner snapshot.
+/// TechnoClass::AI's StageClass step (`0x006FABC4`) for every miner, after
+/// the mission dispatch as the production host runs it.
+fn tick_stages(sim: &mut Simulation) {
+    for id in sim.substrate.entities.keys_sorted() {
+        super::tick_stage(sim, id);
+    }
+}
+
 fn tick_miners_n(sim: &mut Simulation, rules: &RuleSet, n: usize) {
     let config = MinerConfig::default();
     let grid = PathGrid::new(64, 64);
@@ -310,6 +339,7 @@ fn tick_miners_n(sim: &mut Simulation, rules: &RuleSet, n: usize) {
             None,
         );
         super::miner_system::tick_miners(sim, rules, &config, Some(&grid));
+        tick_stages(sim);
         // Also tick movement so issue_direct_move targets are consumed
         // (Linked/Departing wait for movement_target to be None).
         crate::sim::movement::tick_movement(
@@ -343,6 +373,46 @@ impl std::ops::DerefMut for MinerView {
 }
 
 /// Read the Miner component + FSM cursor from an entity by stable_id.
+/// The miner's NavCom cell, the destination Mission_Harvest's scan gave it.
+fn nav_cell(sim: &Simulation, entity_id: u64) -> Option<(u16, u16)> {
+    match sim.substrate.entities.get(entity_id)?.navigation.nav_com? {
+        crate::sim::components::NavTargetRef::Cell { rx, ry } => Some((rx, ry)),
+        _ => None,
+    }
+}
+
+/// A native zone grid, as map load builds it, over a flat `size` x `size`
+/// map split by a water column at `x = wall_x`.
+fn native_zones_split_at(sim: &mut Simulation, size: u16, wall_x: u16) {
+    use crate::map::resolved_terrain::zone_class;
+    use crate::rules::terrain_rules::TerrainClass;
+    let mut terrain = crate::sim::tiberium::test_support::flat_terrain(size, size);
+    for y in 0..size {
+        let cell = terrain.cell_mut(wall_x, y).expect("wall cell");
+        cell.is_water = true;
+        cell.terrain_class = TerrainClass::Water;
+        cell.base_terrain_class = TerrainClass::Water;
+        cell.land_type = 2;
+        cell.base_land_type = 2;
+        cell.yr_cell_land_type = 2;
+        cell.base_yr_cell_land_type = 2;
+        cell.zone_type = zone_class::WATER;
+        cell.ground_walk_blocked = true;
+        cell.base_ground_walk_blocked = true;
+    }
+    let path = PathGrid::from_resolved_terrain(&terrain);
+    sim.zone_grid = Some(
+        crate::sim::pathfinding::zone_map::ZoneGrid::build_with_native_map_context(
+            &path,
+            &BTreeMap::new(),
+            &terrain,
+            &[],
+            Some((i32::from(size), i32::from(size))),
+            sim.playfield_bounds,
+        ),
+    );
+}
+
 fn get_miner(sim: &Simulation, entity_id: u64) -> MinerView {
     let entity = sim
         .substrate
@@ -468,197 +538,6 @@ fn war_miner_does_not_teleport() {
 }
 
 // ==========================================================================
-// Test 9: After ore cell empties, miner searches for more (local continuation)
-// ==========================================================================
-#[test]
-fn local_continuation_after_cell_depletes() {
-    let mut sim = Simulation::new();
-    let rules = miner_rules();
-
-    // Miner at (20, 20). Two ore cells: one small (will deplete), one nearby.
-    let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 20, 20);
-    spawn_refinery(&mut sim, 2, 10, 10);
-    // 2 density levels at (20, 20) and a richer patch nearby (within local
-    // continuation radius of 6 cells).
-    place_ore(&mut sim, 20, 20, 2 * 120);
-    place_ore(&mut sim, 22, 20, 100 * 120);
-
-    // Put miner in Harvest state at its position.
-    {
-        let entity = sim
-            .substrate
-            .entities
-            .get_mut(miner_id)
-            .expect("miner entity");
-        let miner = entity.miner.as_mut().expect("miner component");
-        entity
-            .mission
-            .set_handler_state(MinerState::Harvest.cursor());
-        miner.target_ore_cell = Some((20, 20));
-        miner.harvest_timer.clear();
-    }
-
-    // Tick enough to deplete the small cell and search for the next. One
-    // level per 19-frame gate (Harvest_Ore_Tick @ 0x0073D450 requests
-    // min(1, free)): bales at frames 1 and 20, the empty-cell gate at 39.
-    tick_miners_n(&mut sim, &rules, 40);
-
-    let miner = get_miner(&sim, miner_id);
-    // After (20,20) depletes, the short-scan continuation must pick (22,20)
-    // and the miner transitions to MoveToOre / Harvest (gamemd State 1
-    // depletion path: stay harvesting, move to new cell within
-    // TiberiumShortScan radius).
-    assert_eq!(
-        miner.target_ore_cell,
-        Some((22, 20)),
-        "Short-scan continuation should pick the nearby ore at (22, 20)"
-    );
-    assert!(
-        matches!(miner.state, MinerState::MoveToOre | MinerState::Harvest),
-        "Miner should be moving to / harvesting the new cell; state was {:?}",
-        miner.state,
-    );
-}
-
-// ==========================================================================
-// Test 9a: Cell depletes with PARTIAL cargo → miner continues to nearby ore
-//          (the short-scan-before-return behavior, gamemd State 1)
-// ==========================================================================
-#[test]
-fn harvest_continues_to_nearby_ore_when_cell_depletes_partial_cargo() {
-    let mut sim = Simulation::new();
-    let rules = miner_rules();
-
-    let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 20, 20);
-    spawn_refinery(&mut sim, 2, 10, 10);
-    // Cell at miner's position: 2 density levels (2 × ore-base 120 = 240).
-    place_ore(&mut sim, 20, 20, 2 * 120);
-    // Nearby ore well within TiberiumShortScan (radius 6 cells).
-    place_ore(&mut sim, 23, 20, 100 * 120);
-
-    {
-        let entity = sim.substrate.entities.get_mut(miner_id).expect("miner");
-        let miner = entity.miner.as_mut().expect("miner component");
-        entity
-            .mission
-            .set_handler_state(MinerState::Harvest.cursor());
-        miner.target_ore_cell = Some((20, 20));
-        miner.harvest_timer.clear();
-    }
-
-    // Tick enough to deplete (20,20) and trigger the continuation scan: one
-    // level per 19-frame gate, so the empty-cell gate fires at frame 39.
-    tick_miners_n(&mut sim, &rules, 40);
-
-    let miner = get_miner(&sim, miner_id);
-    assert!(
-        !miner.cargo.is_empty(),
-        "Miner should have extracted bales before cell depleted"
-    );
-    assert_eq!(
-        miner.target_ore_cell,
-        Some((23, 20)),
-        "After cell depleted, miner should pick the nearby ore via short scan"
-    );
-    assert!(
-        matches!(miner.state, MinerState::MoveToOre | MinerState::Harvest),
-        "Miner should move to / be harvesting the new ore cell, not return-to-refinery; \
-         state was {:?}",
-        miner.state,
-    );
-    assert!(
-        !matches!(miner.state, MinerState::ReturnToRefinery | MinerState::Dock),
-        "Miner with ore nearby must NOT head to refinery on partial cargo"
-    );
-}
-
-// ==========================================================================
-// Test 9b: Cell depletes with PARTIAL cargo + no ore nearby → miner returns
-// ==========================================================================
-#[test]
-fn harvest_returns_when_no_ore_within_short_scan() {
-    let mut sim = Simulation::new();
-    let rules = miner_rules();
-
-    let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 20, 20);
-    spawn_refinery(&mut sim, 2, 10, 10);
-    // Only the miner's cell has ore (2 density levels = 240 base units).
-    // Nothing within the short-scan radius (default 6 cells). The further
-    // ore patch is well outside.
-    place_ore(&mut sim, 20, 20, 2 * 120);
-    place_ore(&mut sim, 50, 50, 100 * 120); // far outside local_continuation_radius
-
-    {
-        let entity = sim.substrate.entities.get_mut(miner_id).expect("miner");
-        let miner = entity.miner.as_mut().expect("miner component");
-        entity
-            .mission
-            .set_handler_state(MinerState::Harvest.cursor());
-        miner.target_ore_cell = Some((20, 20));
-        miner.harvest_timer.clear();
-    }
-
-    // One level per 19-frame gate: the empty-cell gate fires at frame 39.
-    tick_miners_n(&mut sim, &rules, 40);
-
-    let miner = get_miner(&sim, miner_id);
-    assert!(
-        !miner.cargo.is_empty(),
-        "Miner should have extracted bales before depletion"
-    );
-    assert!(
-        matches!(miner.state, MinerState::ReturnToRefinery | MinerState::Dock),
-        "With cargo but no nearby ore, miner must head to refinery; state was {:?}",
-        miner.state,
-    );
-}
-
-// ==========================================================================
-// Test 9c: EMPTY-cargo cell depletion + short-scan miss → return to refinery
-//          (gamemd case-1 parity: cargo is irrelevant to the miss → state 2
-//           transition. Empty miners detour home before re-scanning, matching
-//           gamemd's observable travel path.)
-// ==========================================================================
-#[test]
-fn empty_cargo_cell_depletion_returns_to_refinery() {
-    let mut sim = Simulation::new();
-    let rules = miner_rules();
-
-    let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 20, 20);
-    spawn_refinery(&mut sim, 2, 10, 10);
-    // No ore on the miner's cell. Nothing within short-scan radius (6 cells).
-    // The far ore patch is outside short-scan; gamemd does NOT run a long
-    // scan from case 1 — it transitions to state 2 (return) on miss.
-    place_ore(&mut sim, 40, 20, 100);
-
-    {
-        let entity = sim.substrate.entities.get_mut(miner_id).expect("miner");
-        let miner = entity.miner.as_mut().expect("miner component");
-        entity
-            .mission
-            .set_handler_state(MinerState::Harvest.cursor());
-        miner.target_ore_cell = Some((20, 20));
-        miner.harvest_timer.clear();
-        // Cargo intentionally empty — extract_bale will fail on first tick.
-        assert!(miner.cargo.is_empty());
-    }
-
-    tick_miners_n(&mut sim, &rules, 5);
-
-    let miner = get_miner(&sim, miner_id);
-    assert!(
-        miner.cargo.is_empty(),
-        "No ore was on the cell, so no bales should have been extracted"
-    );
-    assert!(
-        matches!(miner.state, MinerState::ReturnToRefinery | MinerState::Dock),
-        "Empty-cargo miner on a depleted cell with no short-scan hit should \
-         head to the refinery (gamemd state 2); state was {:?}",
-        miner.state,
-    );
-}
-
-// ==========================================================================
 // Test 10: Cargo pips always show 5 steps of 20%
 // ==========================================================================
 #[test]
@@ -752,9 +631,8 @@ fn chrono_miner_does_not_warp_outbound() {
         "chrono miner must NOT issue a teleport on outbound SearchOre — \
          only the inbound (ore → refinery) leg warps"
     );
-    let miner = entity.miner.as_ref().expect("miner");
-    assert_eq!(miner.target_ore_cell, Some((50, 50)));
-    assert_eq!(entity.miner_state().unwrap(), MinerState::MoveToOre);
+    assert_eq!(nav_cell(&sim, miner_id), Some((50, 50)));
+    assert_eq!(entity.miner_state().unwrap(), MinerState::SearchOre);
 }
 
 // ==========================================================================
@@ -768,22 +646,12 @@ fn chrono_miner_drives_to_ore() {
     let miner_id = spawn_miner(&mut sim, 1, MinerKind::Chrono, 10, 10);
     place_ore(&mut sim, 12, 10, 1200);
 
-    // Set up: miner knows about ore, state = MoveToOre.
-    {
-        let entity = sim
-            .substrate
-            .entities
-            .get_mut(miner_id)
-            .expect("miner entity");
-        let miner = entity.miner.as_mut().expect("miner component");
-        miner.target_ore_cell = Some((12, 10));
-        entity
-            .mission
-            .set_handler_state(MinerState::MoveToOre.cursor());
-    }
+    // Mission_Harvest state 0 finds the ore two cells east.
+    spawn_inert_dock_instance(&mut sim);
 
     // After one tick, chrono miner should NOT have a teleport — it drives.
     tick_miners_n(&mut sim, &rules, 1);
+    assert_eq!(nav_cell(&sim, miner_id), Some((12, 10)));
 
     let entity = sim.substrate.entities.get(miner_id).expect("entity");
     assert!(
@@ -833,7 +701,8 @@ fn wait_no_ore_queues_guard_when_the_wait_expires() {
     spawn_refinery(&mut sim, 2, 10, 10);
 
     let start_frame = sim.session.binary_frame;
-    let wait = u32::from(config.rescan_cooldown_ticks);
+    // The fixed `return 0x69` of the state-0 scan miss (`0x0073E91C`).
+    let wait = 0x69u32;
     {
         let entity = sim
             .substrate
@@ -852,15 +721,8 @@ fn wait_no_ore_queues_guard_when_the_wait_expires() {
         entity
             .mission
             .write_dispatch_epilogue(start_frame as i32, wait as i32);
-        entity
-            .miner
-            .as_mut()
-            .expect("miner component")
-            .rescan_cooldown
-            .arm(start_frame, wait);
     }
 
-    // rescan_cooldown_ticks = 105 (0x69 frames from the original engine).
     // Half way through, still parked.
     let half_cooldown = (wait / 2) as usize;
     tick_miners_n(&mut sim, &rules, half_cooldown);
@@ -895,7 +757,7 @@ fn wait_no_ore_queues_guard_when_the_wait_expires() {
     );
     assert_eq!(entity.miner_state(), Some(MinerState::WaitNoOre));
     assert_eq!(
-        entity.miner.as_ref().expect("miner").target_ore_cell,
+        nav_cell(&sim, miner_id),
         None,
         "state 4 does not look at the ore that appeared during the wait",
     );
@@ -912,12 +774,12 @@ fn wait_no_ore_queues_guard_when_the_wait_expires() {
     );
     let m = get_miner(&sim, miner_id);
     assert_eq!(m.state, MinerState::WaitNoOre);
-    assert_eq!(m.target_ore_cell, None);
+    assert_eq!(nav_cell(&sim, miner_id), None);
 }
 
 // ==========================================================================
 // Test 14b (L6): the no-ore retry gate is armed for exactly
-// rescan_cooldown_ticks (0x69 = 105) frames — the production arm site must
+// 0x69 = 105 frames — the production arm site must
 // not add a fencepost. Exercises the real SearchOre->WaitNoOre transition.
 // ==========================================================================
 #[test]
@@ -948,9 +810,10 @@ fn wait_no_ore_retry_gate_is_exactly_105_frames() {
         MinerState::WaitNoOre,
         "no reachable ore must drop the miner into WaitNoOre"
     );
+    let entity = sim.substrate.entities.get(miner_id).expect("miner");
     assert_eq!(
-        miner.rescan_cooldown.duration,
-        u32::from(config.rescan_cooldown_ticks),
+        entity.mission.dispatch_timer().delay(),
+        0x69,
         "no-ore retry gate must be exactly 0x69=105 frames, not 106"
     );
 }
@@ -1143,17 +1006,10 @@ fn unreachable_ore_filtered_out() {
     spawn_inert_dock_instance(&mut sim);
     let rules = miner_rules();
 
-    // Build a 16x16 path grid with an impassable wall column at x=8 that
-    // splits the map into two zones (left and right halves).
-    let mut grid = PathGrid::new(16, 16);
-    for y in 0..16u16 {
-        grid.set_blocked(8, y, true);
-    }
-    let zone_grid = ZoneGrid::build(&grid, &BTreeMap::new(), 16, 16);
-    sim.zone_grid = Some(zone_grid);
-
-    // Harvester on the LEFT side at (3, 8). Ore on the RIGHT side at (12, 8).
+    // Harvester on the LEFT side at (3, 8). Ore on the RIGHT side at (12, 8),
+    // beyond a water column at x = 8 (native zones).
     let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 3, 8);
+    native_zones_split_at(&mut sim, 16, 8);
     place_ore(&mut sim, 12, 8, 1200);
 
     // Drive the miner into SearchOre state.
@@ -1179,9 +1035,9 @@ fn unreachable_ore_filtered_out() {
         "must wait — only ore on the map is in a disconnected zone, so unreachable",
     );
     assert!(
-        m.target_ore_cell.is_none(),
+        nav_cell(&sim, miner_id).is_none(),
         "must not have targeted unreachable ore, got {:?}",
-        m.target_ore_cell,
+        nav_cell(&sim, miner_id),
     );
 }
 
@@ -1198,16 +1054,9 @@ fn reachable_ore_picked_over_closer_unreachable() {
     spawn_inert_dock_instance(&mut sim);
     let rules = miner_rules();
 
-    // 16x16 grid with an impassable wall column at x=8.
-    let mut grid = PathGrid::new(16, 16);
-    for y in 0..16u16 {
-        grid.set_blocked(8, y, true);
-    }
-    let zone_grid = ZoneGrid::build(&grid, &BTreeMap::new(), 16, 16);
-    sim.zone_grid = Some(zone_grid);
-
-    // Harvester at (3, 8) on the LEFT side.
+    // Harvester at (3, 8) on the LEFT side of a water column at x = 8.
     let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 3, 8);
+    native_zones_split_at(&mut sim, 16, 8);
     // Closer ore at (10, 8) is on the RIGHT side (unreachable).
     place_ore(&mut sim, 10, 8, 1200);
     // Farther ore at (1, 1) is on the LEFT side (reachable).
@@ -1228,72 +1077,13 @@ fn reachable_ore_picked_over_closer_unreachable() {
     tick_miners_n(&mut sim, &rules, 1);
 
     let m = get_miner(&sim, miner_id);
-    assert_eq!(m.state, MinerState::MoveToOre);
+    assert_eq!(m.state, MinerState::SearchOre);
     assert_eq!(
-        m.target_ore_cell,
+        nav_cell(&sim, miner_id),
         Some((1, 1)),
         "reachable farther ore at (1,1) must be picked over unreachable closer ore at (10,8). \
          Got {:?}",
-        m.target_ore_cell,
-    );
-}
-
-/// When the harvester is standing on a cell marked impassable in the path
-/// grid (mirrors mid-harvest on Tiberium), the effective-zone probe must
-/// find a valid zone via a neighbor and the filter must still apply.
-/// Specifically: nearby reachable ore is picked, distant unreachable ore
-/// is filtered.
-#[test]
-fn harvester_on_tiberium_falls_back_to_neighbor_zone() {
-    use crate::sim::pathfinding::zone_map::ZoneGrid;
-    use std::collections::BTreeMap;
-
-    let mut sim = Simulation::new();
-
-    spawn_inert_dock_instance(&mut sim);
-    let rules = miner_rules();
-
-    // 16x16 grid. Wall column at x=8 splits LEFT and RIGHT zones.
-    // Harvester's cell at (3, 8) is also blocked (simulates standing on
-    // Tiberium that the path grid marks impassable).
-    let mut grid = PathGrid::new(16, 16);
-    for y in 0..16u16 {
-        grid.set_blocked(8, y, true);
-    }
-    grid.set_blocked(3, 8, true);
-    let zone_grid = ZoneGrid::build(&grid, &BTreeMap::new(), 16, 16);
-    sim.zone_grid = Some(zone_grid);
-
-    // Harvester at (3, 8) on the blocked cell.
-    let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 3, 8);
-    // Reachable ore at (5, 8) on the LEFT side.
-    place_ore(&mut sim, 5, 8, 1200);
-    // Unreachable ore at (10, 8) on the RIGHT side.
-    place_ore(&mut sim, 10, 8, 1200);
-
-    {
-        let entity = sim
-            .substrate
-            .entities
-            .get_mut(miner_id)
-            .expect("miner entity");
-        let _miner = entity.miner.as_mut().expect("miner component");
-        entity
-            .mission
-            .set_handler_state(MinerState::SearchOre.cursor());
-    }
-
-    tick_miners_n(&mut sim, &rules, 1);
-
-    let m = get_miner(&sim, miner_id);
-    assert_eq!(m.state, MinerState::MoveToOre);
-    assert_eq!(
-        m.target_ore_cell,
-        Some((5, 8)),
-        "left-side reachable ore must be picked even with the harvester on a \
-         blocked cell — the effective-zone probe finds a passable neighbor. \
-         Got {:?}",
-        m.target_ore_cell,
+        nav_cell(&sim, miner_id),
     );
 }
 
@@ -1589,6 +1379,7 @@ fn tick_miners_overlay_n(
             Some(&grid),
             Some(registry),
         );
+        tick_stages(sim);
         crate::sim::movement::tick_movement(
             &mut sim.substrate.entities,
             &mut sim.interner,
@@ -1598,45 +1389,49 @@ fn tick_miners_overlay_n(
     }
 }
 
-/// Drives the full handle_harvest path on the legacy node model: a War Miner
-/// on an 11-density ore cell takes exactly one bale per gate. The first gate
-/// fires on the cleared timer; every later bale waits the native
-/// `HarvesterLoadRate` cadence (`harvest_tick_interval + 1` = 19 frames).
+/// Mission_Harvest state 1 with the StageClass at 9 on the stock
+/// `HarvesterLoadRate` 2, so the next dispatch cuts.
+fn arm_cutting(sim: &mut Simulation, id: u64) {
+    let entity = sim.substrate.entities.get_mut(id).expect("miner entity");
+    entity
+        .mission
+        .set_handler_state(MinerState::Harvest.cursor());
+    let miner = entity.miner.as_mut().expect("miner component");
+    miner.harvesting = true;
+    miner.stage_value = 9;
+    miner.stage_rate = 2;
+    miner.stage_timer.arm(0, 2);
+}
+
+/// Frames between two cuts: the stage re-arms at `HarvesterLoadRate` 2 and
+/// counts 9 steps after each dispatch; the dispatch after the ninth cuts.
+const GATE: usize = 9 * 2 + 1;
+
+/// A War Miner on an 11-density ore cell takes exactly one bale per gate. The
+/// first gate fires on a stage already at 9; every later bale waits the
+/// StageClass cadence (`GATE` = 19 frames).
 #[test]
 fn harvester_takes_one_bale_per_gate_over_eleven_gates() {
     let mut sim = Simulation::new();
     spawn_inert_dock_instance(&mut sim);
     let rules = miner_rules();
-    let config = MinerConfig::default();
-    let gate = usize::from(config.harvest_tick_interval) + 1;
+    let gate = GATE;
 
     place_ore(&mut sim, 20, 20, 11 * 120);
 
     let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 20, 20);
-    {
-        let entity = sim
-            .substrate
-            .entities
-            .get_mut(miner_id)
-            .expect("miner entity");
-        let miner = entity.miner.as_mut().expect("miner component");
-        entity
-            .mission
-            .set_handler_state(MinerState::Harvest.cursor());
-        miner.target_ore_cell = Some((20, 20));
-        miner.harvest_timer.clear();
-    }
+    arm_cutting(&mut sim, miner_id);
 
-    // Gate 1 fires immediately on the cleared timer: one bale, density 10.
+    // Gate 1 fires immediately on the ready stage: one bale, density 10.
     tick_miners_n(&mut sim, &rules, 1);
     {
         let miner = get_miner(&sim, miner_id);
         assert_eq!(miner.cargo.len(), 1, "first gate removes one level");
         assert_eq!(miner.state, MinerState::Harvest);
         assert_eq!(
-            miner.harvest_timer.duration,
-            u32::from(config.harvest_tick_interval) + 1,
-            "success re-arms the native F+19 gate"
+            (miner.stage_value, miner.stage_rate),
+            (0, 2),
+            "success re-arms the StageClass at HarvesterLoadRate"
         );
         let after_remaining = crate::sim::tiberium::test_support::stock_amount_at(&sim, (20, 20));
         assert_eq!(after_remaining, 10 * 120, "cell drops by one level");
@@ -1705,8 +1500,7 @@ fn harvester_takes_one_bale_per_gate_over_eleven_gates() {
 fn harvester_clears_density_zero_overlay_without_bale_and_moves_on() {
     let (rules, registry) = miner_rules_with_tiberium();
     let tib01 = registry.id_for_name("TIB01").expect("TIB01");
-    let config = MinerConfig::default();
-    let gate = usize::from(config.harvest_tick_interval) + 1;
+    let gate = GATE;
     let cell = (20u16, 20u16);
     let next = (21u16, 20u16);
 
@@ -1722,19 +1516,7 @@ fn harvester_clears_density_zero_overlay_without_bale_and_moves_on() {
     }
 
     let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, cell.0, cell.1);
-    {
-        let entity = sim
-            .substrate
-            .entities
-            .get_mut(miner_id)
-            .expect("miner entity");
-        let miner = entity.miner.as_mut().expect("miner component");
-        entity
-            .mission
-            .set_handler_state(MinerState::Harvest.cursor());
-        miner.target_ore_cell = Some(cell);
-        miner.harvest_timer.clear();
-    }
+    arm_cutting(&mut sim, miner_id);
 
     let density = |sim: &Simulation| {
         let overlay = sim.overlay_grid.as_ref().expect("overlay grid");
@@ -1762,9 +1544,9 @@ fn harvester_clears_density_zero_overlay_without_bale_and_moves_on() {
             "gate {bale}: overlay present, one level lower"
         );
         assert_eq!(
-            miner.harvest_timer.duration,
-            u32::from(config.harvest_tick_interval) + 1,
-            "gate {bale}: success re-arms F+19"
+            (miner.stage_value, miner.stage_rate),
+            (0, 2),
+            "gate {bale}: success re-arms the StageClass"
         );
         tick_miners_overlay_n(&mut sim, &rules, &registry, gate - 1);
         assert_eq!(
@@ -1781,14 +1563,19 @@ fn harvester_clears_density_zero_overlay_without_bale_and_moves_on() {
     );
 
     // Gate 12: full-removal path on data 0 returns 0 -> overlay cleared, no
-    // bale, miner retargets the neighbouring patch.
+    // bale; state 1 sends the miner to the neighbouring patch and stays.
     tick_miners_overlay_n(&mut sim, &rules, &registry, 1);
     let miner = get_miner(&sim, miner_id);
     assert_eq!(miner.cargo.len(), 11, "density-0 gate credits nothing");
     assert_eq!(density(&sim), (None, 0), "density-0 overlay is cleared");
-    assert_eq!(miner.state, MinerState::MoveToOre, "miner moves on");
     assert_eq!(
-        miner.target_ore_cell,
+        miner.state,
+        MinerState::Harvest,
+        "state 1 holds for the hop"
+    );
+    assert!(miner.harvesting, "Unit+0x6D2 stays up for the hop");
+    assert_eq!(
+        nav_cell(&sim, miner_id),
         Some(next),
         "short scan picked the neighbour"
     );
@@ -1836,12 +1623,8 @@ fn harvester_caps_extraction_at_remaining_capacity() {
                 value: config.ore_bale_value,
             });
         }
-        entity
-            .mission
-            .set_handler_state(MinerState::Harvest.cursor());
-        miner.target_ore_cell = Some((20, 20));
-        miner.harvest_timer.clear();
     }
+    arm_cutting(&mut sim, miner_id);
 
     tick_miners_n(&mut sim, &rules, 1);
 
@@ -1853,19 +1636,15 @@ fn harvester_caps_extraction_at_remaining_capacity() {
         "positive extraction remains a successful Harvest tick"
     );
     assert_eq!(
-        miner.harvest_timer.duration,
-        u32::from(config.harvest_tick_interval) + 1,
-        "success-reset gate remains due at the native F+19 observation"
+        (miner.stage_value, miner.stage_rate),
+        (0, 2),
+        "success re-arms the StageClass"
     );
     let after_remaining = crate::sim::tiberium::test_support::stock_amount_at(&sim, (20, 20));
     assert_eq!(after_remaining, 10 * 120, "cell drops to density 10");
 
     // The next gate takes the fortieth bale: filling is still a success.
-    tick_miners_n(
-        &mut sim,
-        &rules,
-        usize::from(config.harvest_tick_interval) + 1,
-    );
+    tick_miners_n(&mut sim, &rules, GATE);
 
     let miner = get_miner(&sim, miner_id);
     assert_eq!(miner.cargo.len(), 40, "capped at capacity");
@@ -1875,7 +1654,12 @@ fn harvester_caps_extraction_at_remaining_capacity() {
         "positive filling extraction remains a successful Harvest tick"
     );
     assert_eq!(
-        miner.last_harvest_cell, None,
+        sim.substrate
+            .entities
+            .get(miner_id)
+            .unwrap()
+            .archive_target(),
+        None,
         "archive is not selected on fill"
     );
     assert_eq!(
@@ -1915,11 +1699,6 @@ fn filling_extraction_waits_for_full_gate_before_war_return() {
                 value: config.ore_bale_value,
             });
         }
-        entity
-            .mission
-            .set_handler_state(MinerState::Harvest.cursor());
-        miner.target_ore_cell = Some((30, 30));
-        miner.harvest_timer.clear();
         let mut voxel = VoxelAnimation::new(15, 1);
         voxel.frame = 7;
         voxel.elapsed_frames = 1;
@@ -1931,6 +1710,7 @@ fn filling_extraction_waits_for_full_gate_before_war_return() {
             elapsed_frames: 0,
         });
     }
+    arm_cutting(&mut sim, miner_id);
 
     tick_miners_n(&mut sim, &rules, 1);
     let fill_frame = sim.session.binary_frame;
@@ -1939,12 +1719,9 @@ fn filling_extraction_waits_for_full_gate_before_war_return() {
         let miner = entity.miner.as_ref().expect("miner component");
         assert_eq!(miner.cargo.len(), 40);
         assert_eq!(entity.miner_state().unwrap(), MinerState::Harvest);
-        assert_eq!(miner.harvest_timer.start_frame, fill_frame);
-        assert_eq!(
-            miner.harvest_timer.duration,
-            u32::from(config.harvest_tick_interval) + 1
-        );
-        assert_eq!(miner.last_harvest_cell, None);
+        assert_eq!(miner.stage_timer.start_frame, fill_frame);
+        assert_eq!((miner.stage_value, miner.stage_rate), (0, 2));
+        assert_eq!(entity.archive_target(), None);
         assert_eq!(miner.reserved_refinery, None);
         assert!(entity.movement_target.is_none());
         assert!(entity.teleport_state.is_none());
@@ -1956,10 +1733,10 @@ fn filling_extraction_waits_for_full_gate_before_war_return() {
         assert_eq!((overlay.frame, overlay.elapsed_frames), (6, 0));
     }
 
-    tick_miners_n(&mut sim, &rules, config.harvest_tick_interval as usize);
+    tick_miners_n(&mut sim, &rules, GATE - 1);
     assert_eq!(
         sim.session.binary_frame.wrapping_sub(fill_frame),
-        u32::from(config.harvest_tick_interval)
+        (GATE - 1) as u32
     );
     {
         let entity = sim.substrate.entities.get(miner_id).expect("miner entity");
@@ -1969,7 +1746,11 @@ fn filling_extraction_waits_for_full_gate_before_war_return() {
             MinerState::Harvest,
             "F+18 remains pending"
         );
-        assert_eq!(miner.last_harvest_cell, None);
+        assert_eq!(
+            miner.stage_value, 9,
+            "the ninth step lands after F+18's dispatch"
+        );
+        assert_eq!(entity.archive_target(), None);
         assert_eq!(miner.reserved_refinery, None);
         assert!(entity.movement_target.is_none());
         let voxel = entity.voxel_animation.expect("voxel anim");
@@ -1994,14 +1775,15 @@ fn filling_extraction_waits_for_full_gate_before_war_return() {
     {
         let entity = sim.substrate.entities.get(miner_id).expect("miner entity");
         let miner = entity.miner.as_ref().expect("miner component");
-        assert_eq!(
-            full_gate_frame.wrapping_sub(fill_frame),
-            u32::from(config.harvest_tick_interval) + 1
-        );
+        assert_eq!(full_gate_frame.wrapping_sub(fill_frame), GATE as u32);
         assert_eq!(entity.miner_state().unwrap(), MinerState::ReturnToRefinery);
-        assert_eq!(miner.harvest_timer.start_frame, full_gate_frame);
-        assert_eq!(miner.harvest_timer.duration, 0);
-        assert_eq!(miner.last_harvest_cell, Some((31, 30)));
+        assert_eq!(miner.stage_timer.start_frame, full_gate_frame);
+        assert_eq!(miner.stage_timer.duration, 0);
+        assert_eq!(miner.stage_rate, 0, "the full gate resets the StageClass");
+        assert_eq!(
+            entity.archive_target(),
+            Some(crate::sim::combat::TargetKind::Cell(31, 30))
+        );
         assert_eq!(miner.reserved_refinery, None);
         assert!(entity.movement_target.is_none());
         assert!(entity.teleport_state.is_none());
@@ -2027,72 +1809,6 @@ fn filling_extraction_waits_for_full_gate_before_war_return() {
             Some(crate::sim::components::NavTargetRef::cell(14, 11)),
             "F+20 state-2 dispatch stages the far return at NW + QueueingCell"
         );
-    }
-}
-
-/// After a partial-density cell is fully drained but the miner still has
-/// capacity, the next harvest cycle's empty-cell branch should kick a
-/// TiberiumShortScan continuation that picks up the neighbouring patch.
-#[test]
-fn harvester_continues_to_short_scan_when_partial_then_empty() {
-    let mut sim = Simulation::new();
-    spawn_inert_dock_instance(&mut sim);
-    let rules = miner_rules();
-    let config = MinerConfig::default();
-
-    // Density-5 cell at (20, 20). Another density-5 cell at (21, 20),
-    // safely within the local continuation radius (6 cells).
-    place_ore(&mut sim, 20, 20, 5 * 120);
-    place_ore(&mut sim, 21, 20, 5 * 120);
-
-    let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 20, 20);
-    {
-        let entity = sim
-            .substrate
-            .entities
-            .get_mut(miner_id)
-            .expect("miner entity");
-        let miner = entity.miner.as_mut().expect("miner component");
-        entity
-            .mission
-            .set_handler_state(MinerState::Harvest.cursor());
-        miner.target_ore_cell = Some((20, 20));
-        miner.harvest_timer.clear();
-    }
-
-    // Five gates drain (20, 20): one level per gate (Harvest_Ore_Tick
-    // @ 0x0073D450 requests min(1, free)). Each success re-arms the
-    // harvest_tick_interval + 1 gate and the miner stays in Harvest.
-    tick_miners_n(&mut sim, &rules, 1);
-    for _ in 1..5 {
-        tick_miners_n(&mut sim, &rules, config.harvest_tick_interval as usize + 1);
-    }
-    {
-        let miner = get_miner(&sim, miner_id);
-        assert_eq!(miner.cargo.len(), 5, "5 bales after 5 gates");
-        assert_eq!(
-            miner.state,
-            MinerState::Harvest,
-            "stays in Harvest, timer reset"
-        );
-        assert_eq!(
-            crate::sim::tiberium::test_support::bales_at(&sim, 20, 20),
-            0,
-            "cell drained"
-        );
-    }
-
-    // Tick out the harvest_tick_interval wait; the next extraction attempt
-    // hits an empty cell and the short-scan picks up (21, 20).
-    tick_miners_n(&mut sim, &rules, config.harvest_tick_interval as usize + 1);
-    {
-        let miner = get_miner(&sim, miner_id);
-        assert_eq!(
-            miner.state,
-            MinerState::MoveToOre,
-            "transitions to MoveToOre after empty-cell short scan"
-        );
-        assert_eq!(miner.target_ore_cell, Some((21, 20)));
     }
 }
 
@@ -2448,7 +2164,6 @@ fn harvest_order_mid_unload_drops_the_unload_latch_and_image() {
     let entity = sim.substrate.entities.get(miner_id).unwrap();
     let miner = entity.miner.as_ref().unwrap();
     assert!(!miner.unload_active);
-    assert!(!miner.unload_cluster_timer.is_armed());
     assert_eq!(entity.display_type_override, None);
     assert_eq!(entity.dock_entered_with, None);
     assert!(!crate::sim::miner::miner_dock::has_contact(
@@ -2544,8 +2259,6 @@ fn scan_skips_tree_blocked_ore_cell() {
     // farther, so without the path-grid filter the scan would pick (10, 10).
     let mut grid = PathGrid::new(32, 32);
     grid.set_blocked(10, 10, true);
-    let zone_grid = ZoneGrid::build(&grid, &BTreeMap::new(), 32, 32);
-    sim.zone_grid = Some(zone_grid);
 
     let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 5, 10);
     place_ore(&mut sim, 10, 10, 1200);
@@ -2562,22 +2275,15 @@ fn scan_skips_tree_blocked_ore_cell() {
             .set_handler_state(MinerState::SearchOre.cursor());
     }
 
-    // Use a path_grid that matches the blocked cell so build_scan_filter
-    // sees the tree. tick_miners_n's default 64×64 all-passable grid would
-    // miss it, so call tick_miners directly with the right grid.
+    // Can_Enter_Cell reads the world's path grid, so the tree is the world's.
+    sim.path_grid = Some(std::sync::Arc::new(grid.clone()));
     let config = MinerConfig::default();
     super::miner_system::tick_miners(&mut sim, &rules, &config, Some(&grid));
 
-    let m = get_miner(&sim, miner_id);
-    assert_ne!(
-        m.target_ore_cell,
-        Some((10, 10)),
-        "must not target tree-blocked ore cell (10,10)",
-    );
     assert_eq!(
-        m.target_ore_cell,
+        nav_cell(&sim, miner_id),
         Some((12, 10)),
-        "must fall through to the next-best clear ore cell",
+        "must pass over the tree-blocked (10,10) to the next-best clear ore cell",
     );
 }
 
@@ -2595,8 +2301,6 @@ fn scan_skips_cell_occupied_by_other_miner() {
     let rules = miner_rules();
 
     let grid = PathGrid::new(32, 32);
-    let zone_grid = ZoneGrid::build(&grid, &BTreeMap::new(), 32, 32);
-    sim.zone_grid = Some(zone_grid);
 
     // Miner A sits on ore at (10, 10). Miner B at (5, 10) is the scanner.
     let _miner_a = spawn_miner(&mut sim, 1, MinerKind::War, 10, 10);
@@ -2631,16 +2335,10 @@ fn scan_skips_cell_occupied_by_other_miner() {
     let config = MinerConfig::default();
     super::miner_system::tick_miners(&mut sim, &rules, &config, Some(&grid));
 
-    let m = get_miner(&sim, miner_b);
-    assert_ne!(
-        m.target_ore_cell,
-        Some((10, 10)),
-        "must not target cell occupied by another miner",
-    );
     assert_eq!(
-        m.target_ore_cell,
+        nav_cell(&sim, miner_b),
         Some((12, 10)),
-        "must fall through to the next clear ore cell",
+        "must pass over the cell another miner occupies to the next clear ore cell",
     );
 }
 
@@ -2686,14 +2384,14 @@ fn scan_ring_0_allows_harvesters_own_cell() {
 
     let m = get_miner(&sim, miner_id);
     assert_eq!(
-        m.target_ore_cell,
-        Some((10, 10)),
-        "ring-0 fast path must return the harvester's own ore cell",
+        (m.state, nav_cell(&sim, miner_id)),
+        (MinerState::Harvest, None),
+        "the own-cell answer starts cutting where the harvester stands",
     );
 }
 
 // ---------------------------------------------------------------------------
-// MoveToOre destination guard (gamemd parity for Mission_Harvest state 0)
+// Mission_Harvest state 0 destination guard
 // ---------------------------------------------------------------------------
 
 /// Re-anchor the miner's Harvest dispatch timer so the very next dispatch runs.
@@ -2753,376 +2451,6 @@ fn spawn_drive_miner(sim: &mut Simulation, sid: u64, rx: u16, ry: u16) -> u64 {
     miner_id
 }
 
-/// If a tree blocks the initially-chosen ore cell, the miner must NOT
-/// target it on first scan — the scan filter rejects it, and a different
-/// ore cell is picked from the start.
-#[test]
-fn move_to_ore_avoids_tree_blocked_cell_from_start() {
-    use crate::sim::pathfinding::zone_map::ZoneGrid;
-    use std::collections::BTreeMap;
-
-    let mut sim = Simulation::new();
-
-    spawn_inert_dock_instance(&mut sim);
-    let rules = miner_rules();
-
-    let mut grid = PathGrid::new(32, 32);
-    grid.set_blocked(12, 12, true);
-    let zone_grid = ZoneGrid::build(&grid, &BTreeMap::new(), 32, 32);
-    sim.zone_grid = Some(zone_grid);
-
-    let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, 8, 12);
-    place_ore(&mut sim, 12, 12, 1200);
-    place_ore(&mut sim, 13, 13, 1200);
-
-    {
-        let entity = sim.substrate.entities.get_mut(miner_id).expect("miner");
-        entity
-            .mission
-            .set_handler_state(MinerState::SearchOre.cursor());
-    }
-
-    let config = MinerConfig::default();
-    super::miner_system::tick_miners(&mut sim, &rules, &config, Some(&grid));
-
-    let m = get_miner(&sim, miner_id);
-    assert_ne!(
-        m.target_ore_cell,
-        Some((12, 12)),
-        "tree-blocked cell rejected"
-    );
-    assert!(
-        matches!(m.state, MinerState::MoveToOre | MinerState::Harvest),
-        "must transition out of SearchOre — got {:?}",
-        m.state,
-    );
-}
-
-/// Blocking the cell an already-commanded drive is aimed at must change
-/// nothing while the destination is still held.
-///
-/// Mission_Harvest state 0 wraps its whole body — the ore scan, the cell
-/// lookup and the destination write — in a "no destination held" guard. While
-/// a destination IS held the state is a no-op that re-arms the Rate cadence
-/// and returns; it never looks at ore. Only one candidate fast-retarget path
-/// was checked against a *distant* destination going impassable (the
-/// destination repair inside the locomotor's path search) and it cannot fire
-/// here; whether anything else in the engine reacts to that trigger is
-/// UNCHECKED. So on the checked paths the miner keeps driving at the tree and
-/// only re-picks once the drive ends.
-///
-/// Non-vacuity: the blocked cell is the one the scan chose, and a second ore
-/// patch sits one ring further out, so a body that re-ran the scan here would
-/// visibly move the target.
-#[test]
-fn move_to_ore_holds_target_while_destination_is_held() {
-    use crate::sim::pathfinding::zone_map::ZoneGrid;
-    use std::collections::BTreeMap;
-
-    let mut sim = Simulation::new();
-
-    spawn_inert_dock_instance(&mut sim);
-    let rules = miner_rules();
-
-    let mut grid = PathGrid::new(32, 32);
-    let zone_grid = ZoneGrid::build(&grid, &BTreeMap::new(), 32, 32);
-    sim.zone_grid = Some(zone_grid);
-
-    let miner_id = spawn_drive_miner(&mut sim, 1, 8, 12);
-    place_ore(&mut sim, 12, 12, 1200);
-    place_ore(&mut sim, 11, 12, 1200);
-
-    {
-        let entity = sim.substrate.entities.get_mut(miner_id).expect("miner");
-        entity
-            .mission
-            .set_handler_state(MinerState::SearchOre.cursor());
-    }
-
-    let config = MinerConfig::default();
-    super::miner_system::tick_miners(&mut sim, &rules, &config, Some(&grid));
-
-    let initial_target = get_miner(&sim, miner_id).target_ore_cell;
-    let blocked_cell = initial_target.expect("the scan must pick an initial target");
-    {
-        let entity = sim.substrate.entities.get(miner_id).expect("miner entity");
-        assert!(
-            entity.navigation.nav_com.is_some(),
-            "the scan dispatch must leave the OWNER destination in place — this \
-             is the half of the guard that survives the Drive host migration, \
-             and without it the guard under test is never reached",
-        );
-        assert!(
-            entity.movement_target.is_some(),
-            "the scan dispatch must leave the transitional destination in place \
-             too — the guard reads both while MovementTarget is still a second \
-             owner",
-        );
-    }
-
-    // Block the cell the drive is aimed at, and rebuild the zone map with it,
-    // so a scan re-run from here would reject it and answer (12, 12) instead.
-    grid.set_blocked(blocked_cell.0, blocked_cell.1, true);
-    sim.zone_grid = Some(ZoneGrid::build(&grid, &BTreeMap::new(), 32, 32));
-
-    // Move off the scan's own frame so the epilogue anchor below is observable,
-    // then ask for the next dispatch explicitly.
-    sim.session.binary_frame += 1;
-    let dispatch_frame = sim.session.binary_frame;
-    arm_dispatch_now(&mut sim, miner_id);
-
-    // The held-destination return exits through the default Rate epilogue, so
-    // it draws exactly one RandomRanged(0, 2). Mirror it twice: once for the
-    // value the delay must carry, once for the scenario-stream position that
-    // draw must leave behind. The value alone cannot tell "drew and added 0"
-    // from "never drew", and cannot see a second draw at all — and stream
-    // position is the thing lockstep actually depends on.
-    let expected_scenario = {
-        let mut probe = sim.scenario_rng.clone();
-        let _ = probe.next_range_u32_inclusive(
-            0,
-            crate::sim::mission::authority::RATE_EPILOGUE_JITTER_MAX_FRAMES,
-        );
-        probe.logical_state()
-    };
-    let jitter = {
-        let mut probe = sim.scenario_rng.clone();
-        probe.next_range_u32_inclusive(
-            0,
-            crate::sim::mission::authority::RATE_EPILOGUE_JITTER_MAX_FRAMES,
-        )
-    };
-
-    super::miner_system::tick_miners(&mut sim, &rules, &config, Some(&grid));
-
-    let m = get_miner(&sim, miner_id);
-    assert_eq!(
-        m.state,
-        MinerState::MoveToOre,
-        "the held-destination return leaves the cursor where it was",
-    );
-    assert_eq!(
-        m.target_ore_cell, initial_target,
-        "state 0 must not look at ore while a destination is held — the target \
-         stays on the now-blocked cell until the drive itself ends",
-    );
-
-    // ...and the refusal to re-scan is paced by the mission cadence, not retried
-    // every frame: the dispatch timer is re-anchored at this dispatch with the
-    // [Harvest] Rate base plus the drawn jitter, so the next frame carries no
-    // Harvest dispatch at all.
-    let base = rules
-        .mission_control
-        .rate_frames(crate::sim::mission::MissionType::Harvest);
-    let timer = sim
-        .substrate
-        .entities
-        .get(miner_id)
-        .expect("miner entity")
-        .mission
-        .dispatch_timer();
-    assert_eq!(
-        timer.start_frame(),
-        dispatch_frame as i32,
-        "the epilogue re-anchors at the dispatch that ran",
-    );
-    assert_eq!(
-        timer.delay(),
-        base as i32 + jitter as i32,
-        "held-destination return arms the [Harvest] Rate base plus the drawn jitter",
-    );
-    assert_eq!(
-        sim.rng_state().scenario,
-        expected_scenario,
-        "the held-destination return draws exactly one epilogue jitter — no draw \
-         leaves the stream short, a second one leaves it long, and either \
-         desyncs every later scenario consumer in lockstep",
-    );
-    assert!(
-        !timer.due(dispatch_frame + 1),
-        "the Rate cadence must gate the next dispatch — a per-frame retry here \
-         would be the pre-retiming VERA drift",
-    );
-}
-
-/// Once the drive ends, the next due dispatch runs the state-0 body for real:
-/// it re-runs the ore scan, the scan filter rejects the now-blocked cell, and
-/// the miner is retargeted and re-commanded to the next-best patch.
-///
-/// This is the other half of the guard pinned by
-/// `move_to_ore_holds_target_while_destination_is_held`: the retarget is real,
-/// it is just gated on the destination clearing rather than on a per-tick
-/// rescan.
-#[test]
-fn move_to_ore_rescans_and_rejects_blocked_cell_once_destination_clears() {
-    use crate::sim::pathfinding::zone_map::ZoneGrid;
-    use std::collections::BTreeMap;
-
-    let mut sim = Simulation::new();
-
-    spawn_inert_dock_instance(&mut sim);
-    let rules = miner_rules();
-
-    let mut grid = PathGrid::new(32, 32);
-    let zone_grid = ZoneGrid::build(&grid, &BTreeMap::new(), 32, 32);
-    sim.zone_grid = Some(zone_grid);
-
-    let miner_id = spawn_drive_miner(&mut sim, 1, 8, 12);
-    place_ore(&mut sim, 12, 12, 1200);
-    place_ore(&mut sim, 11, 12, 1200);
-
-    {
-        let entity = sim.substrate.entities.get_mut(miner_id).expect("miner");
-        entity
-            .mission
-            .set_handler_state(MinerState::SearchOre.cursor());
-    }
-
-    let config = MinerConfig::default();
-    super::miner_system::tick_miners(&mut sim, &rules, &config, Some(&grid));
-
-    let initial_target = get_miner(&sim, miner_id).target_ore_cell;
-    let blocked_cell = initial_target.expect("the scan must pick an initial target");
-
-    grid.set_blocked(blocked_cell.0, blocked_cell.1, true);
-    sim.zone_grid = Some(ZoneGrid::build(&grid, &BTreeMap::new(), 32, 32));
-
-    // The native trigger for re-entering the state-0 body: the destination is
-    // gone (arrival, or an aborted drive), not merely a frame having passed.
-    clear_outbound_drive(&mut sim, miner_id);
-    sim.session.binary_frame += 1;
-    arm_dispatch_now(&mut sim, miner_id);
-
-    super::miner_system::tick_miners(&mut sim, &rules, &config, Some(&grid));
-
-    let m = get_miner(&sim, miner_id);
-    let new_target = m.target_ore_cell;
-    assert_eq!(
-        m.state,
-        MinerState::MoveToOre,
-        "a hit keeps the miner on the move-to-ore cursor",
-    );
-    assert_ne!(
-        new_target, initial_target,
-        "with the destination cleared the scan re-runs, and its filter rejects \
-         the blocked cell",
-    );
-    assert!(new_target.is_some(), "must pick an alternative cell");
-
-    // The retarget is not bookkeeping: the same dispatch commands the drive to
-    // the newly chosen cell. This also proves the body ran at all — the
-    // fixture cleared the destination immediately before the dispatch.
-    let movement = sim
-        .substrate
-        .entities
-        .get(miner_id)
-        .expect("miner entity")
-        .movement_target
-        .as_ref()
-        .expect("the retargeting dispatch must re-command the drive");
-    assert_eq!(
-        movement.final_goal, new_target,
-        "the drive is commanded to the cell the rescan chose",
-    );
-}
-
-/// The rescan must NOT thrash. Three ore cells sit on the same row, one ring
-/// apart; when the destination clears and the state-0 body genuinely re-runs
-/// the scan from an unmoved position in an unchanged world, it has to answer
-/// the same cell it answered the first time — not flip between candidates.
-///
-/// Non-vacuity: state 0 keeps the current target when the scan answers
-/// nothing (`new_target.unwrap_or(current_target)`), so a fixture that left
-/// the first answer in place would pass on a scan that had stopped returning
-/// anything at all. The target is therefore poisoned to the FARTHEST of the
-/// three ore cells before the second dispatch: only a scan that genuinely
-/// re-picks the nearest can put the original answer back.
-#[test]
-fn move_to_ore_target_stable_when_world_unchanged() {
-    use crate::sim::pathfinding::zone_map::ZoneGrid;
-    use std::collections::BTreeMap;
-
-    // Farthest of the three ore cells — a live ore cell (so the depletion
-    // branch does not fire) that the scan will never answer from (8, 12).
-    const POISON_TARGET: (u16, u16) = (16, 12);
-
-    let mut sim = Simulation::new();
-
-    spawn_inert_dock_instance(&mut sim);
-    let rules = miner_rules();
-
-    let grid = PathGrid::new(32, 32);
-    let zone_grid = ZoneGrid::build(&grid, &BTreeMap::new(), 32, 32);
-    sim.zone_grid = Some(zone_grid);
-
-    let miner_id = spawn_drive_miner(&mut sim, 1, 8, 12);
-    place_ore(&mut sim, 14, 12, 1200);
-    place_ore(&mut sim, 15, 12, 1200);
-    place_ore(&mut sim, 16, 12, 1200);
-
-    {
-        let entity = sim.substrate.entities.get_mut(miner_id).expect("miner");
-        entity
-            .mission
-            .set_handler_state(MinerState::SearchOre.cursor());
-    }
-
-    let config = MinerConfig::default();
-    super::miner_system::tick_miners(&mut sim, &rules, &config, Some(&grid));
-    let t1 = get_miner(&sim, miner_id).target_ore_cell;
-    assert!(t1.is_some(), "the scan must pick an initial target");
-    assert_ne!(
-        t1,
-        Some(POISON_TARGET),
-        "the poison must not be the scan's own answer, or the re-scan pin below \
-         is vacuous again",
-    );
-
-    // Two things are needed for the second dispatch to reach the scan at all:
-    // the destination has to be gone (state 0 is a no-op while one is held),
-    // and the Rate epilogue the first dispatch installed has to be re-anchored.
-    // Without both, this fixture would pass on a skipped dispatch and prove
-    // nothing about the scan.
-    clear_outbound_drive(&mut sim, miner_id);
-    // Poison the target so a scan that answers nothing can no longer be
-    // mistaken for a scan that answered the same cell twice: state 0 falls
-    // back to the current target on a `None`, so `t1 == t2` would otherwise
-    // hold even if the scan had stopped returning anything.
-    sim.substrate
-        .entities
-        .get_mut(miner_id)
-        .expect("miner entity")
-        .miner
-        .as_mut()
-        .expect("miner component")
-        .target_ore_cell = Some(POISON_TARGET);
-    sim.session.binary_frame += 1;
-    arm_dispatch_now(&mut sim, miner_id);
-
-    super::miner_system::tick_miners(&mut sim, &rules, &config, Some(&grid));
-    let t2 = get_miner(&sim, miner_id).target_ore_cell;
-
-    assert_eq!(
-        t1, t2,
-        "stable world → stable target across dispatches; a scan that answered \
-         nothing would leave the poisoned cell in place instead",
-    );
-    // The dispatch really did run the body: it re-commanded the drive the
-    // fixture had just cleared, and aimed it at the same cell.
-    let movement = sim
-        .substrate
-        .entities
-        .get(miner_id)
-        .expect("miner entity")
-        .movement_target
-        .as_ref()
-        .expect("the rescanning dispatch must re-command the drive");
-    assert_eq!(
-        movement.final_goal, t1,
-        "the re-issued drive keeps the original destination",
-    );
-}
-
 // ==========================================================================
 // Slice L5 — Harvest mission handler dispatch
 //
@@ -3171,140 +2499,6 @@ fn harvest_seam_derived_mission_is_harvest_each_tick() {
             entity.derived_mission(),
             (MissionType::Harvest, state as u8),
             "derived mission must be Harvest with the FSM cursor as sub-phase every tick",
-        );
-    }
-}
-
-/// Regression for the reported "miner removes ore one cell behind" symptom.
-/// Drive onto the same ore cell from all four cardinal directions and verify
-/// both the simulation resource and its render overlay use the arrived cell.
-#[test]
-fn coordinate_runtime_trace_miner_arrival_and_extraction_four_directions() {
-    let target = (20_u16, 20_u16);
-    let approaches = [
-        ("west", (19_u16, 20_u16), (21_u16, 20_u16)),
-        ("east", (21_u16, 20_u16), (19_u16, 20_u16)),
-        ("north", (20_u16, 19_u16), (20_u16, 21_u16)),
-        ("south", (20_u16, 21_u16), (20_u16, 19_u16)),
-    ];
-
-    for (label, start, behind) in approaches {
-        let mut sim = Simulation::new();
-        spawn_inert_dock_instance(&mut sim);
-        let rules = miner_rules();
-        place_ore(&mut sim, target.0, target.1, 120);
-        place_ore(&mut sim, behind.0, behind.1, 120);
-
-        let miner_id = spawn_miner(&mut sim, 1, MinerKind::War, start.0, start.1);
-        {
-            let entity = sim
-                .substrate
-                .entities
-                .get_mut(miner_id)
-                .expect("miner entity");
-            let miner = entity.miner.as_mut().expect("miner component");
-            entity
-                .mission
-                .set_handler_state(MinerState::MoveToOre.cursor());
-            miner.target_ore_cell = Some(target);
-            miner.harvest_timer.clear();
-        }
-
-        let mut first_harvest_tick = None;
-        let mut extraction_tick = None;
-
-        for trace_tick in 0..512_u32 {
-            let target_before = crate::sim::tiberium::test_support::has_tiberium(&sim, target);
-            tick_miners_n(&mut sim, &rules, 1);
-
-            let entity = sim
-                .substrate
-                .entities
-                .get(miner_id)
-                .expect("miner remains alive");
-            let state = entity.miner_state().expect("valid miner state");
-            let sub_x = entity.position.sub_x.to_num::<i32>();
-            let sub_y = entity.position.sub_y.to_num::<i32>();
-
-            if state == MinerState::Harvest && first_harvest_tick.is_none() {
-                eprintln!(
-                    "MINER_TRACE approach={label} event=enter_harvest trace_tick={trace_tick} \
-                     sim_tick={} cell=({},{}) sub=({sub_x},{sub_y}) \
-                     target={target:?} movement_target={}",
-                    sim.session.tick,
-                    entity.position.rx,
-                    entity.position.ry,
-                    entity.movement_target.is_some(),
-                );
-                assert_eq!(
-                    (entity.position.rx, entity.position.ry),
-                    target,
-                    "{label}: Harvest must begin on the selected ore cell"
-                );
-                assert_eq!(
-                    (sub_x, sub_y),
-                    (128, 128),
-                    "{label}: Harvest must begin at cell center"
-                );
-                assert!(
-                    entity.movement_target.is_none(),
-                    "{label}: Harvest must not begin while movement is still active"
-                );
-                first_harvest_tick = Some(trace_tick);
-            }
-
-            let target_after = crate::sim::tiberium::test_support::has_tiberium(&sim, target);
-            if target_before && !target_after {
-                let overlay = sim.overlay_grid.as_ref().expect("overlay grid");
-                let target_overlay_cleared = overlay.cell(target.0, target.1).overlay_id.is_none();
-                let behind_overlay_preserved =
-                    overlay.cell(behind.0, behind.1).overlay_id.is_some();
-                eprintln!(
-                    "MINER_TRACE approach={label} event=extract trace_tick={trace_tick} \
-                     sim_tick={} cell=({},{}) sub=({sub_x},{sub_y}) target_removed={target:?} \
-                     target_overlay_cleared={target_overlay_cleared} \
-                     behind_resource_preserved={} behind_overlay_preserved={behind_overlay_preserved} \
-                     cargo_bales={}",
-                    sim.session.tick,
-                    entity.position.rx,
-                    entity.position.ry,
-                    crate::sim::tiberium::test_support::has_tiberium(&sim, behind),
-                    entity.miner.as_ref().expect("miner component").cargo.len(),
-                );
-                assert_eq!(
-                    (entity.position.rx, entity.position.ry),
-                    target,
-                    "{label}: extraction must use the miner's current cell"
-                );
-                assert_eq!(
-                    (sub_x, sub_y),
-                    (128, 128),
-                    "{label}: extraction must occur at cell center"
-                );
-                assert!(
-                    crate::sim::tiberium::test_support::has_tiberium(&sim, behind),
-                    "{label}: ore behind the target must remain untouched"
-                );
-                assert!(
-                    target_overlay_cleared,
-                    "{label}: the renderer's target overlay cell must clear"
-                );
-                assert!(
-                    behind_overlay_preserved,
-                    "{label}: the renderer's behind-cell overlay must remain occupied"
-                );
-                extraction_tick = Some(trace_tick);
-                break;
-            }
-        }
-
-        assert!(
-            first_harvest_tick.is_some(),
-            "{label}: miner never entered Harvest"
-        );
-        assert!(
-            extraction_tick.is_some(),
-            "{label}: miner never extracted the target ore"
         );
     }
 }
@@ -4267,7 +3461,7 @@ fn player_move_arrival_returns_a_war_miner_to_harvest_on_ore() {
         .get_mut(miner_id)
         .unwrap()
         .mission
-        .set_handler_state(MinerState::MoveToOre.cursor());
+        .set_handler_state(MinerState::Harvest.cursor());
     sim.mission_assign_exact(miner_id, MissionId::from_known(MissionType::Move), now)
         .expect("assign Move");
     let cursor_on_move = sim
@@ -4301,8 +3495,7 @@ fn player_move_arrival_returns_a_war_miner_to_harvest_on_ore() {
     let e = sim.substrate.entities.get(miner_id).unwrap();
     assert_eq!(e.mission.current().known(), Some(MissionType::Harvest));
     assert!(
-        e.miner.as_ref().unwrap().target_ore_cell.is_some()
-            || MinerState::from_cursor(e.mission.handler_state()).is_some(),
+        MinerState::from_cursor(e.mission.handler_state()).is_some(),
         "the Harvest handler dispatched from state 0"
     );
 }

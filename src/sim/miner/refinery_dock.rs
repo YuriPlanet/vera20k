@@ -238,9 +238,9 @@ pub(crate) fn mission_unload(sim: &mut Simulation, rules: &RuleSet, id: u64) -> 
             .get_mut(id)
             .and_then(|entity| entity.miner.as_mut())
         {
-            miner.unload_accumulator = 0;
-            miner.unload_cluster_repeat = 1;
-            miner.unload_cluster_timer.arm(now, 1);
+            miner.stage_value = 0;
+            miner.stage_rate = 1;
+            miner.stage_timer.arm(now, 1);
         }
         set_unload_latch(sim, rules, id, true);
         if let Some(building) = unload_building(sim, id) {
@@ -277,7 +277,7 @@ fn unload_dumping(sim: &mut Simulation, rules: &RuleSet, id: u64) -> i32 {
         .entities
         .get(id)
         .and_then(|entity| entity.miner.as_ref())
-        .map_or(0, |miner| miner.unload_accumulator);
+        .map_or(0, |miner| miner.stage_value);
     // 0x0073E355..0x0073E374: `HarvesterDumpRate × 900 <= Value`. The
     // integer stage crosses at ceil(rate × 900) (`GeneralRules`).
     if stage >= i32::from(rules.general.harvester_dump_frames) {
@@ -296,7 +296,7 @@ fn unload_dumping(sim: &mut Simulation, rules: &RuleSet, id: u64) -> i32 {
                 .get_mut(id)
                 .and_then(|entity| entity.miner.as_mut())
             {
-                miner.unload_accumulator = 0;
+                miner.stage_value = 0;
             }
             sim.bale_events.push(BaleDepositEvent {
                 building_id: building,
@@ -366,10 +366,9 @@ fn unload_finishing(sim: &mut Simulation, rules: &RuleSet, id: u64) -> i32 {
 
 /// The Unit+0xF8 StageClass tick of `TechnoClass::AI` (`0x006FABC4..
 /// 0x006FAC31`), after the mission dispatch: an expired timer with a nonzero
-/// rate adds the step (1) and restarts at the rate. Native keeps ticking after
-/// the unload until Harvest reuses the StageClass; VERA stops the unload
-/// stage with the latch (no reader in between).
-pub(crate) fn tick_unload_stage(sim: &mut Simulation, id: u64) {
+/// rate adds the step (1) and restarts at the rate. Mission_Harvest state 1
+/// counts its cut gate and Mission_Unload its dumps on it.
+pub(crate) fn tick_stage(sim: &mut Simulation, id: u64) {
     let now = sim.session.binary_frame;
     let Some(miner) = sim
         .substrate
@@ -379,13 +378,11 @@ pub(crate) fn tick_unload_stage(sim: &mut Simulation, id: u64) {
     else {
         return;
     };
-    if miner.unload_cluster_repeat == 0 || !miner.unload_cluster_timer.due(now) {
+    if miner.stage_rate == 0 || !miner.stage_timer.due(now) {
         return;
     }
-    miner.unload_accumulator = miner.unload_accumulator.saturating_add(1);
-    miner
-        .unload_cluster_timer
-        .arm(now, miner.unload_cluster_repeat);
+    miner.stage_value = miner.stage_value.saturating_add(1);
+    miner.stage_timer.arm(now, miner.stage_rate);
 }
 
 /// Unit `Per_Cell_Process(2)` Enter arm at a Drive track end
@@ -507,9 +504,9 @@ fn set_unload_latch(sim: &mut Simulation, rules: &RuleSet, id: u64, active: bool
     entity.display_type_override = image;
 }
 
-/// Drop Unit+0x6D1: the ordinary image returns and the unload stage stops
-/// (`tick_unload_stage` has no reader until the next first pass re-arms it).
-/// Returns whether the latch was set.
+/// Drop Unit+0x6D1: the ordinary image returns. The StageClass keeps
+/// ticking at its rate until Mission_Harvest re-arms it. Returns whether the
+/// latch was set.
 pub(crate) fn clear_unload_latch(sim: &mut Simulation, id: u64) -> bool {
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return false;
@@ -519,8 +516,6 @@ pub(crate) fn clear_unload_latch(sim: &mut Simulation, id: u64) -> bool {
     };
     let was_set = miner.unload_active;
     miner.unload_active = false;
-    miner.unload_cluster_repeat = 0;
-    miner.unload_cluster_timer.clear();
     entity.display_type_override = None;
     was_set
 }

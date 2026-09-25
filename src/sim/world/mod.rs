@@ -6831,6 +6831,13 @@ mod smudge_integration_tests;
 #[cfg(test)]
 #[path = "refinery_dock_oracle_tests.rs"]
 mod refinery_dock_oracle_tests;
+#[cfg(test)]
+#[path = "harvest_field_oracle_tests.rs"]
+mod harvest_field_oracle_tests;
+
+#[cfg(test)]
+#[path = "harvest_field_cycle_tests.rs"]
+mod harvest_field_cycle_tests;
 
 #[cfg(test)]
 #[path = "refinery_dock_cycle_tests.rs"]
