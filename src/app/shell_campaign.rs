@@ -121,9 +121,14 @@ impl App {
         let (x, y) = Self::campaign_cursor(state);
         state.frontend.shell_controller.on_pointer_move(x, y, &feed);
         let now = Instant::now();
+        // A captured thumb or a pressed Back owns the mouse: the dialog sees
+        // no hit test (`0x0052ED60`) until the release.
+        let back_pressed = state.frontend.shell_controller.pressed().is_some();
         let mut slider_moved = false;
         if let Some(campaign) = state.frontend.campaign.as_mut() {
-            campaign.pointer_moved(layout.emblem_at(x, y), now);
+            if !campaign.slider_captured() && !back_pressed {
+                campaign.pointer_moved(layout.emblem_at(x, y), now);
+            }
             slider_moved = campaign.slider_drag(x - layout.slider.x, layout.slider.w);
         }
         if slider_moved {
@@ -173,24 +178,28 @@ impl App {
     pub(super) fn handle_campaign_mouse_up(state: &mut AppState) {
         let layout = Self::campaign_layout(state);
         let (x, y) = Self::campaign_cursor(state);
-        if let Some(campaign) = state.frontend.campaign.as_mut() {
-            campaign.slider_release();
+        let back_pressed = state.frontend.shell_controller.pressed().is_some();
+        let Some(campaign) = state.frontend.campaign.as_mut() else {
+            return;
+        };
+        let emblem_capture = campaign.pressed().is_some();
+        let slider_capture = campaign.slider_captured();
+        campaign.slider_release();
+        if slider_capture {
+            return;
         }
-        let emblem = layout.emblem_at(x, y);
-        let capture = state
-            .frontend
-            .campaign
-            .as_ref()
-            .and_then(CampaignShellState::pressed);
-        if capture.is_some() {
-            let now = Instant::now();
-            let release = state
-                .frontend
-                .campaign
-                .as_mut()
-                .map_or(CampaignRelease::None, |campaign| {
-                    campaign.pointer_up(emblem, now)
-                });
+        // The release reaches the dialog proc (`0x0052F1CF`) when an emblem
+        // press holds its capture, or over the background and the emblems
+        // (their statics do not take the mouse). Back and the slider are
+        // windows of their own and receive it themselves.
+        let over_child = layout.slider.contains(x, y)
+            || layout
+                .page
+                .buttons
+                .iter()
+                .any(|button| button.rect.contains(x, y));
+        if emblem_capture || (!back_pressed && !over_child) {
+            let release = campaign.pointer_up(layout.emblem_at(x, y), Instant::now());
             if let CampaignRelease::Selected(side) = release {
                 Self::select_campaign(state, side);
             }
@@ -216,7 +225,7 @@ impl App {
         let Some(campaign) = state.frontend.campaign.as_mut() else {
             return;
         };
-        let difficulty = i32::from(campaign.difficulty);
+        let difficulty = i32::from(campaign.difficulty());
         let voice = campaign.take_selection_voice();
         state.persistence.options_profile.difficulty = difficulty;
         if let Some(voice) = voice {

@@ -5,7 +5,7 @@
 //! 0..6 with 0 = fastest (the dialog slider position is `6 - value`); DetailLevel
 //! is 0..2 direct. Defaults match gamemd OptionsClass::SetDefaults.
 
-use crate::ui::main_menu_dialogs::options::trackbar_position_from_x;
+use crate::ui::shell::trackbar::trackbar_position_from_x;
 use crate::ui::skirmish_shell::RectPx;
 
 /// GameSpeed/ScrollRate internal range (0 = fastest .. 6 = slowest).

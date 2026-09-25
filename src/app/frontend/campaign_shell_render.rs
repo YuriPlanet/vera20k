@@ -22,8 +22,8 @@ use crate::render::shell_text::ShellAlign;
 use crate::ui::campaign_shell::{
     CAMPAIGN_PAGE, CampaignLayout, CampaignSide, DIFFICULTY_MAX, DIFFICULTY_SLIDER, compute_layout,
 };
-use crate::ui::main_menu_dialogs::options::thumb_left;
 use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::trackbar::thumb_left;
 
 /// Frame counts of the two emblems (FSALG / FSSLG, or the 640 set).
 pub(crate) fn emblem_frame_counts(state: &AppState) -> [usize; 2] {
@@ -181,7 +181,7 @@ fn campaign_sprites(
         art,
         layout,
         background_origin,
-        campaign.difficulty,
+        campaign.difficulty(),
     );
     for side in CampaignSide::ALL {
         let frames = match side {

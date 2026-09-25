@@ -16,12 +16,10 @@
 
 use std::time::{Duration, Instant};
 
-use crate::ui::main_menu_dialogs::options::{
-    TrackbarPress, trackbar_position_from_x, trackbar_press,
-};
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, center_offset, dlu_rect};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::trackbar::{TrackbarPress, trackbar_position_from_x, trackbar_press};
 
 pub const CAMPAIGN_DIALOG: DialogId = DialogId(0x0094);
 /// Allied emblem static (FSALG.SHP, kind 4).
@@ -30,8 +28,6 @@ pub const ALLIED_EMBLEM: u16 = 0x06EA;
 pub const SOVIET_EMBLEM: u16 = 0x06EC;
 /// Difficulty trackbar `msctls_trackbar32`.
 pub const DIFFICULTY_SLIDER: u16 = 0x050F;
-/// Static the slider's `WM_HSCROLL` writes the difficulty name into.
-pub const DIFFICULTY_VALUE: u16 = 0x0670;
 pub const BACK_BUTTON: u16 = 0x0686;
 
 /// Slider positions `0..=2` (`TBM_SETRANGE 0x20000`, `0x0052F105`).
@@ -110,20 +106,6 @@ impl CampaignSide {
             CampaignSide::Allied => 0,
             CampaignSide::Soviet => 1,
         }
-    }
-}
-
-/// Scenario difficulties a campaign starts with, by slider position: the
-/// `0x0052E527` switch (table `0x0052EBE4`) writes Scenario `+0x610` and
-/// `+0x60C` (easy 0, normal 1, hard 2). Positions 3 and 4 exist in the table
-/// but the slider range stops at 2.
-pub fn scenario_difficulties(position: u8) -> (u8, u8) {
-    match position {
-        0 => (2, 0),
-        1 => (2, 1),
-        2 => (1, 1),
-        3 => (0, 1),
-        _ => (0, 2),
     }
 }
 
@@ -234,23 +216,29 @@ impl EmblemAnimation {
         }
     }
 
-    /// Paint every due timer step. Returns true when the painted frame
-    /// wrapped the counter to 0: the static reports `0x4D8` with frame 0 and
-    /// the dialog stops it (`0x4D4`), leaving the last frame on screen.
-    fn advance(&mut self, now: Instant, frame_count: usize) -> bool {
-        while let Some(due) = self.next_step_at {
-            if now < due || frame_count == 0 {
-                return false;
-            }
-            self.shown_frame = self.next_frame;
-            self.next_frame = (self.next_frame + 1) % frame_count;
-            self.next_step_at = Some(due + EMBLEM_FRAME_INTERVAL);
-            if self.next_frame == 0 {
-                self.next_step_at = None;
-                return true;
-            }
+    /// One due `WM_TIMER` paints the next frame and advances the counter
+    /// (`0x006159FC`); missed periods coalesce into that one message. When
+    /// the counter wraps to 0 the static reports `0x4D8` with frame 0 and the
+    /// dialog stops it (`0x4D4`), leaving the last painted frame on screen
+    /// until the static repaints.
+    fn advance(&mut self, now: Instant, frame_count: usize) {
+        let Some(due) = self.next_step_at else {
+            return;
+        };
+        if now < due || frame_count == 0 {
+            return;
         }
-        false
+        self.shown_frame = self.next_frame;
+        self.next_frame = (self.next_frame + 1) % frame_count;
+        if self.next_frame == 0 {
+            self.next_step_at = None;
+            return;
+        }
+        let mut next = due + EMBLEM_FRAME_INTERVAL;
+        while next <= now {
+            next += EMBLEM_FRAME_INTERVAL;
+        }
+        self.next_step_at = Some(next);
     }
 }
 
@@ -272,7 +260,7 @@ pub struct CampaignShellState {
     pending_voice: Option<(CampaignSide, Instant)>,
     emblems: [EmblemAnimation; 2],
     /// Slider position `0..=DIFFICULTY_MAX`.
-    pub difficulty: u8,
+    difficulty: u8,
     /// Thumb captured by a press on it (`TrackBar_ProcessMouse` `0x0061D950`).
     slider_captured: bool,
 }
@@ -291,6 +279,11 @@ impl CampaignShellState {
             difficulty: options_difficulty.clamp(0, i32::from(DIFFICULTY_MAX)) as u8,
             slider_captured: false,
         }
+    }
+
+    /// Slider position `0..=DIFFICULTY_MAX` (`TBM_GETPOS`).
+    pub fn difficulty(&self) -> u8 {
+        self.difficulty
     }
 
     /// The difficulty name the value static `0x670` shows.
@@ -375,26 +368,42 @@ impl CampaignShellState {
         true
     }
 
-    /// `WM_LBUTTONUP` (`0x0052F1C0`): releasing on the pressed emblem selects
-    /// its campaign; releasing on another emblem moves the highlight there;
-    /// anywhere else clears it. The capture ends either way.
+    /// `WM_LBUTTONUP` reaching the dialog (`0x0052F1CF`): with its own
+    /// capture, or over the background or an emblem. Releasing on the pressed
+    /// emblem selects its campaign and stops the hovered emblem, which stays
+    /// hovered (`0x0052F276..0x0052F2A3`). Releasing on any emblem otherwise
+    /// stops the hovered one and restarts the one under the cursor from frame
+    /// 0 (`0x0052F34C..0x0052F38D`); anywhere else stops and clears the hover
+    /// (`0x0052F31F`, `0x0052F395`). The queued voice is kept, and the capture
+    /// ends either way (`0x0052F3C6`).
     pub fn pointer_up(
         &mut self,
         emblem_under: Option<CampaignSide>,
         now: Instant,
     ) -> CampaignRelease {
         let pressed = self.pressed.take();
-        if let Some(old) = self.hovered.take() {
-            self.emblem_mut(old).reset();
-        }
         match emblem_under {
-            Some(side) if pressed == Some(side) => CampaignRelease::Selected(side),
+            Some(side) if pressed == Some(side) => {
+                if let Some(hovered) = self.hovered {
+                    self.emblem_mut(hovered).reset();
+                }
+                CampaignRelease::Selected(side)
+            }
             Some(side) => {
+                if let Some(old) = self.hovered.take() {
+                    self.emblem_mut(old).reset();
+                }
+                self.emblem_mut(side).reset();
                 self.emblem_mut(side).start(now);
                 self.hovered = Some(side);
                 CampaignRelease::None
             }
-            None => CampaignRelease::None,
+            None => {
+                if let Some(old) = self.hovered.take() {
+                    self.emblem_mut(old).reset();
+                }
+                CampaignRelease::None
+            }
         }
     }
 
@@ -407,7 +416,8 @@ impl CampaignShellState {
     /// The state loop's hover voice (`0x0052DFAF`): once due, play it once.
     pub fn take_due_voice(&mut self, now: Instant) -> Option<CampaignSide> {
         let (side, due) = self.pending_voice?;
-        if now < due {
+        // 0x0052DFAF plays it only once the time is past the due time.
+        if now <= due {
             return None;
         }
         self.pending_voice = None;
@@ -493,9 +503,9 @@ mod tests {
 
     #[test]
     fn slider_starts_at_the_options_difficulty_clamped_to_its_range() {
-        assert_eq!(CampaignShellState::open(1).difficulty, 1);
-        assert_eq!(CampaignShellState::open(4).difficulty, 2);
-        assert_eq!(CampaignShellState::open(-3).difficulty, 0);
+        assert_eq!(CampaignShellState::open(1).difficulty(), 1);
+        assert_eq!(CampaignShellState::open(4).difficulty(), 2);
+        assert_eq!(CampaignShellState::open(-3).difficulty(), 0);
         assert_eq!(
             CampaignShellState::open(1).difficulty_label_key(),
             "TXT_NORMAL"
@@ -512,7 +522,7 @@ mod tests {
             "above the admitted strip"
         );
         assert!(state.slider_press(40, 10, 272, 22));
-        assert_eq!(state.difficulty, 0);
+        assert_eq!(state.difficulty(), 0);
         assert!(!state.slider_captured());
         assert!(
             !state.slider_press(5, 10, 272, 22),
@@ -532,11 +542,11 @@ mod tests {
         state.pointer_moved(Some(CampaignSide::Allied), start);
         assert_eq!(state.hovered(), Some(CampaignSide::Allied));
         assert_eq!(
-            state.take_due_voice(start + Duration::from_millis(499)),
+            state.take_due_voice(start + Duration::from_millis(500)),
             None
         );
         assert_eq!(
-            state.take_due_voice(start + Duration::from_millis(500)),
+            state.take_due_voice(start + Duration::from_millis(501)),
             Some(CampaignSide::Allied)
         );
         assert_eq!(
@@ -624,9 +634,61 @@ mod tests {
     }
 
     #[test]
-    fn slider_positions_map_to_scenario_difficulties() {
-        assert_eq!(scenario_difficulties(0), (2, 0));
-        assert_eq!(scenario_difficulties(1), (2, 1));
-        assert_eq!(scenario_difficulties(2), (1, 1));
+    fn a_selection_keeps_the_emblem_hovered_so_moving_on_it_queues_no_voice() {
+        let start = t0();
+        let mut state = CampaignShellState::open(1);
+        state.pointer_moved(Some(CampaignSide::Allied), start);
+        state.advance_emblems(start + Duration::from_millis(100), [5, 5]);
+        state.pointer_down(Some(CampaignSide::Allied));
+        let at = start + Duration::from_millis(150);
+        assert_eq!(
+            state.pointer_up(Some(CampaignSide::Allied), at),
+            CampaignRelease::Selected(CampaignSide::Allied)
+        );
+        assert_eq!(state.take_selection_voice(), Some(CampaignSide::Allied));
+        assert_eq!(state.hovered(), Some(CampaignSide::Allied));
+        assert_eq!(state.emblem(CampaignSide::Allied).shown_frame(), 0);
+        assert!(!state.emblem(CampaignSide::Allied).running());
+        state.pointer_moved(Some(CampaignSide::Allied), at);
+        assert_eq!(state.take_due_voice(at + Duration::from_secs(1)), None);
+        assert!(!state.emblem(CampaignSide::Allied).running());
+    }
+
+    #[test]
+    fn an_uncaptured_release_on_the_hovered_emblem_restarts_it() {
+        let start = t0();
+        let mut state = CampaignShellState::open(1);
+        state.pointer_moved(Some(CampaignSide::Soviet), start);
+        for ms in [100, 200] {
+            state.advance_emblems(start + Duration::from_millis(ms), [5, 5]);
+        }
+        assert_eq!(state.emblem(CampaignSide::Soviet).shown_frame(), 1);
+        let at = start + Duration::from_millis(250);
+        assert_eq!(
+            state.pointer_up(Some(CampaignSide::Soviet), at),
+            CampaignRelease::None
+        );
+        assert_eq!(state.emblem(CampaignSide::Soviet).shown_frame(), 0);
+        state.advance_emblems(at + Duration::from_millis(100), [5, 5]);
+        assert_eq!(state.emblem(CampaignSide::Soviet).shown_frame(), 0);
+        assert!(
+            state
+                .take_due_voice(start + Duration::from_millis(501))
+                .is_some(),
+            "the queued voice survives the release"
+        );
+    }
+
+    #[test]
+    fn a_stalled_timer_paints_one_step() {
+        let start = t0();
+        let mut state = CampaignShellState::open(1);
+        state.pointer_moved(Some(CampaignSide::Allied), start);
+        state.advance_emblems(start + Duration::from_millis(450), [5, 5]);
+        assert_eq!(state.emblem(CampaignSide::Allied).shown_frame(), 0);
+        assert_eq!(
+            state.next_deadline(),
+            Some(start + Duration::from_millis(500))
+        );
     }
 }

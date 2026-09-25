@@ -87,13 +87,19 @@ was found.
   animates (`0x4D3`: 100 ms a frame, from `ShellStatic__AnimationInterval`
   `0x006033F0`) and queues its voice (AlliedCampaignSelect or
   SovietCampaignSelect). Each paint reports its next frame to the dialog
-  (`0x4D8`, `0x00615A34`); the wrap to 0 stops the timer, so the last frame
-  stays up until the cursor leaves.
+  (`0x4D8`, `0x00615A34`); the wrap to 0 stops the timer. The counter is then
+  0, but nothing repaints the static, so the last painted frame stays up until
+  the cursor leaves. A captured thumb or a pressed Back holds the mouse, so
+  hover does not change while either is held.
 - **Selecting:** a press on an emblem captures the mouse and plays
   `GUIMainButtonSound` (`0x0052EF52`). Releasing on the same emblem writes the
   campaign found by name ("all1", "sov1": `CampaignClass__IndexByName`
   `0x0046CC90`), stores the slider in OptionsClass `Difficulty` and plays the
-  queued voice at once. Releasing elsewhere moves or clears the highlight.
+  queued voice at once; the emblem stops but stays hovered
+  (`0x0052F276..0x0052F2A3`), so moving on it queues no second voice. Any
+  other release the dialog receives (its own capture, or over the background
+  and the emblems) restarts the emblem under the cursor from frame 0 or clears
+  the highlight (`0x0052F307..0x0052F3C0`).
 - **Slider:** a press counts only below `y = h − 18`. On the thumb it
   captures; beside it, it jumps once. Positions are `x < 94` → 0, `< 180` → 1,
   else 2. Every change sends `WM_HSCROLL` with the position in `HIWORD`
@@ -118,13 +124,19 @@ was found.
   that voice plays, up to 3000 ms.
 - `app::frontend::campaign_shell_render` paints it; the art (emblems, background,
   thumb, trackbar frame, darkened background) is `CampaignShellArt`.
-- The trackbar press rule is shared with the launcher Options trackbars
-  (`trackbar_press`).
-- The shared trackbar frame (`render::skirmish_shell_chrome`) had the bevel
-  colours in the wrong channel order and skipped the second box of a
-  plaque-less trackbar. Both are fixed, so Skirmish and in-game Options
-  trackbar frames change too, and are pinned to executed `0x006208F0` draw
-  lists (`tools/storage_oracle/shell_bevel.py`).
+- The trackbar rules (`thumb_left`, `trackbar_position_from_x`,
+  `trackbar_press`) move to `ui::shell::trackbar`, shared by the launcher and
+  in-game Options, the sound sliders and this dialog.
+- The shared bevel (`render::skirmish_shell_chrome`) had its colours in the
+  wrong channel order, and plaque-less trackbar frames skipped their second
+  box. Both are fixed and pinned to executed `0x006208F0` draw lists
+  (`tools/storage_oracle/shell_bevel.py`). The colour order changes every
+  bevel consumer: the Skirmish, launcher Options and in-game Options trackbar
+  frames (`launcher_trackbar_plain_180` and `in_game_trackbar_plain_192` also
+  gain the second box) and the combo faces (`skirmish_combo_face_*`,
+  `launcher_combo_face_180`, `keyboard_combo_face_207`). Retail stills of those
+  screens (2026-09-24, 45 frames) show the blue-grey `(0xA7, 0xBE, 0xC5)` face
+  and none of the old beige order; no per-screen diff was re-run for them.
 - The egui campaign placeholder is removed.
 
 ## Production comparison (800x600, RGB565 units)
@@ -163,10 +175,17 @@ shell's help hit test lands on Back, so their status line shows Back's help
   on an emblem stores the difficulty and plays the voice, but the dialog stays
   up; retail tears it down, waits for the voice and starts the first scenario
   (`0x00683AB0`). Every campaign start; the whole campaign mission start is a
-  separate mechanism.
-- **Hover animation and voice timing** come from instructions; the retail
-  helper cannot hover this dialog (its pointer recentres through the help hit
-  test), so no capture shows them.
+  separate mechanism. The select path also clears `[0x00ABCE08]`
+  (`0x0052F28B`, in-game state read by `Main_Tick` and the save loader),
+  inert in the shell; the scenario difficulties from Options `Difficulty`
+  (switch `0x0052E527`, table `0x0052EBE4`) belong to that start.
+- **Hover animation and voice timing** come from instructions and were not
+  executed: the 100 ms frame step, the 500 ms voice delay (played once the
+  time is past it), the 3000 ms post-teardown voice wait, and the
+  draw-then-advance order that leaves the last frame up. The retail helper
+  cannot hover this dialog (its pointer recentres through the help hit test),
+  so no capture shows them. Missed timer periods coalesce into one step, as
+  `WM_TIMER` does.
 - **640x480 and in-between sizes** are not captured. Screens 801–1023 wide
   shift the controls but not the background in retail; VERA20k follows the
   same rules but has no comparison.

@@ -5,7 +5,7 @@
 use super::button::ShellButtonInteraction;
 use super::geom::{self, RectPx};
 use super::in_game_shell::InGameShellLayout;
-use crate::ui::main_menu_dialogs::options::{thumb_left, trackbar_position_from_x};
+use crate::ui::shell::trackbar::{thumb_left, trackbar_position_from_x};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
