@@ -1105,6 +1105,77 @@ fn launcher_death_destroys_a_missile_already_in_flight() {
     );
 }
 
+/// `ILoco::Process 0x00662FD5..0x00662FE1`: a missile left with no Health in
+/// flight (AA's Crash latched it) explodes where it is on its next turn
+/// (`RocketLocomotion::Detonate 0x00663030`) instead of flying on, so its
+/// target is never hit. Shot down straight off the rail, it bursts beside its
+/// launcher.
+#[test]
+fn a_missile_shot_down_in_flight_explodes_where_it_is() {
+    let rules = make_spawner_rules();
+    let mut sim = flat_sim();
+    let hm = empty_height_map();
+    let v3 = sim
+        .spawn_object("V3", "Russians", 10, 10, 0, &rules, &hm)
+        .expect("spawn V3");
+    let target = sim
+        .spawn_object("TARGET", "Yuri", 20, 20, 0, &rules, &hm)
+        .expect("spawn TARGET");
+    let bystander = sim
+        .spawn_object("TARGET", "Yuri", 11, 10, 0, &rules, &hm)
+        .expect("spawn a bystander beside the launcher");
+    let missile = sim
+        .substrate
+        .entities
+        .get(v3)
+        .and_then(|e| e.spawn_manager.as_ref())
+        .and_then(|m| m.slots[0].spawn)
+        .expect("child");
+    for _ in 0..2 {
+        if let Some(manager) = sim
+            .substrate
+            .entities
+            .get_mut(v3)
+            .and_then(|e| e.spawn_manager.as_mut())
+        {
+            manager.set_target(Some(TargetKind::Entity(target)));
+            manager.update_timer = SpawnTimer::ready();
+        }
+        tick_spawn_managers(&mut sim, &rules, &[v3], None);
+    }
+    let entity = sim.substrate.entities.get_mut(missile).expect("missile");
+    assert!(entity.rocket_state.is_some() && !entity.lifecycle.in_limbo);
+    entity.health.current = 0;
+    entity.crashing = true;
+    let target_health = sim.substrate.entities.get(target).unwrap().health.current;
+
+    let grid = crate::sim::pathfinding::PathGrid::test_all_passable(40, 32);
+    sim.advance_tick(&[], Some(&rules), &hm, Some(&grid), None, 67);
+
+    assert!(
+        sim.substrate
+            .entities
+            .get(missile)
+            .is_none_or(|m| !m.lifecycle.object_alive),
+        "the missile explodes and is UnInit"
+    );
+    assert_eq!(
+        sim.substrate.entities.get(target).unwrap().health.current,
+        target_health,
+        "its payload never reaches the target"
+    );
+    assert!(
+        sim.substrate
+            .entities
+            .get(bystander)
+            .unwrap()
+            .health
+            .current
+            < 1000,
+        "the burst lands beside the launcher"
+    );
+}
+
 /// `TechnoClass::ChangeOwner` → `Kill_All_Spawns`: a mind-controlled launcher
 /// loses the pool it built for its previous house. The owner is still alive,
 /// so the slots re-arm with a zero regen wait rather than the full
@@ -1445,6 +1516,103 @@ fn a_dead_carriers_airborne_hornet_crashes() {
         manager_slot
             .is_none_or(|(spawn, state)| spawn.is_none() && state == SpawnSlotState::Regenerating)
     );
+}
+
+/// `Kill_All_Spawns` walks the slots from the last (`0x006B7123`), so of two
+/// airborne Hornets the one in the higher slot crashes first and takes the
+/// first three Scenario draws of `FootClass::Crash` (`RandomRanged(0,
+/// 0x7FFFFFFE)` for the sideways rate, `RandomRanged(0, 1)` for its sign,
+/// then the forward rate). The sideways magnitude grows with its draw.
+#[test]
+fn a_dead_carriers_hornets_crash_from_the_last_slot() {
+    let rules = make_spawner_rules();
+    let mut sim = flat_sim();
+    let hm = empty_height_map();
+    let carrier = sim
+        .spawn_object("CARRIER", "Americans", 10, 10, 0, &rules, &hm)
+        .expect("spawn CARRIER");
+    let target = sim
+        .spawn_object("TARGET", "Yuri", 30, 10, 0, &rules, &hm)
+        .expect("spawn TARGET");
+    let airborne = |sim: &Simulation| -> Vec<(usize, u64)> {
+        sim.substrate
+            .entities
+            .get(carrier)
+            .and_then(|e| e.spawn_manager.as_ref())
+            .map(|m| {
+                m.slots
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| s.state == SpawnSlotState::InFlight)
+                    .filter_map(|(index, s)| Some((index, s.spawn?)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    for _ in 0..12 {
+        if airborne(&sim).len() >= 2 {
+            break;
+        }
+        if let Some(manager) = sim
+            .substrate
+            .entities
+            .get_mut(carrier)
+            .and_then(|e| e.spawn_manager.as_mut())
+        {
+            manager.set_target(Some(TargetKind::Entity(target)));
+            manager.update_timer = SpawnTimer::ready();
+            // The launch pacing between Hornets.
+            manager.reload_timer = SpawnTimer::ready();
+        }
+        tick_spawn_managers(&mut sim, &rules, &[carrier], None);
+    }
+    let wing = airborne(&sim);
+    assert!(wing.len() >= 2, "two Hornets off the deck: {wing:?}");
+    for &(_, hornet) in &wing {
+        let entity = sim.substrate.entities.get_mut(hornet).unwrap();
+        entity.position.exact_z_leptons = Some(600);
+        if let Some(locomotor) = entity.locomotor.as_mut() {
+            locomotor.altitude = SimFixed::from_num(600);
+        }
+    }
+    // The three draws each crash takes, in the order they are taken.
+    let mut rng = sim.scenario_rng.clone();
+    let draws: Vec<(i32, i32)> = wing
+        .iter()
+        .map(|_| {
+            let sideways = rng.next_range_i32_inclusive(0, 0x7FFF_FFFE);
+            let sign = rng.next_range_i32_inclusive(0, 1);
+            let _forwards = rng.next_range_i32_inclusive(0, 0x7FFF_FFFE);
+            (sideways, sign)
+        })
+        .collect();
+
+    sim.uninit_with_rules(carrier, &rules);
+
+    // Highest slot first.
+    let mut by_slot = wing.clone();
+    by_slot.sort_by_key(|&(index, _)| std::cmp::Reverse(index));
+    let rates: Vec<SimFixed> = by_slot
+        .iter()
+        .map(|&(_, hornet)| {
+            sim.substrate
+                .entities
+                .get(hornet)
+                .and_then(|e| e.rocking.as_ref())
+                .expect("a crashing Hornet spins")
+                .vel_sideways
+        })
+        .collect();
+    for (rate, &(_, sign)) in rates.iter().zip(&draws) {
+        assert_eq!(*rate < SimFixed::ZERO, sign == 0, "{rates:?} {draws:?}");
+    }
+    for pair in 0..rates.len() - 1 {
+        assert_eq!(
+            rates[pair].abs() > rates[pair + 1].abs(),
+            draws[pair].0 > draws[pair + 1].0,
+            "{rates:?} {draws:?}"
+        );
+    }
 }
 
 /// A Hornet landing on its Carrier keeps its slot through the dock. The Limbo

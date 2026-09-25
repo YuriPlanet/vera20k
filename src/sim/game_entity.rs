@@ -636,6 +636,12 @@ pub struct GameEntity {
     pub current_weapon_index: u8,
     /// Actual weapon identity returned by the most recent live selection.
     /// Class overrides can make this differ from the type's static slot.
+    ///
+    /// No simulation reader remains: the death weapon reads
+    /// `GetCurrentWeapon` (`combat_weapon::current_weapon`) like native. It is
+    /// kept only because every historical hash projection folds its per-fire
+    /// value, which no earlier schema can reconstruct; retiring it re-pins
+    /// those ratchet probes and is left to a dedicated change.
     #[serde(default)]
     pub current_weapon_ref: Option<InternedId>,
     /// RadioClass-style live contacts for this entity, stored as stable IDs.

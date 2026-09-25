@@ -1863,8 +1863,9 @@ fn emit_detonation_anim(
 /// loop (`0x00469020..0x00469091`): per cluster the receivers commit, the anim
 /// tail runs, and every cluster (the last included) draws its successor
 /// around the impact, `RandomRanged(0x100, 0x200)` plus one raw draw. An
-/// `Airburst=` bullet detonates once and draws nothing, and so (VERA-internal,
-/// never in retail) does one whose weapon names no BulletType.
+/// `Airburst=` bullet detonates once and draws nothing, as does a death
+/// weapon's bare `DetonateAtCoord` (`ProjectileDetonationReason::DeathWeapon`)
+/// and (VERA-internal, never in retail) a weapon that names no BulletType.
 ///
 /// RESIDUAL: the anims and smudges are admitted when the caller commits the
 /// detonation's effects, after the cluster draws, where native constructs them
@@ -1898,8 +1899,12 @@ pub(crate) fn commit_projectile_detonations_inline(
         let bright = rules
             .weapon(world.interner.resolve(detonation.payload.weapon))
             .is_some_and(|weapon| weapon.bright);
+        let death_weapon =
+            detonation.reason == crate::sim::projectile::ProjectileDetonationReason::DeathWeapon;
         let (clusters, cluster_draws) = match projectile_type {
-            Some(projectile) if !projectile.airburst => (projectile.cluster.max(0), true),
+            Some(projectile) if !projectile.airburst && !death_weapon => {
+                (projectile.cluster.max(0), true)
+            }
             _ => (1, false),
         };
         let mut coordinate = detonation.impact;
@@ -1993,26 +1998,53 @@ fn emit_missile_detonations(
             continue;
         };
         let wh_iid = world.interner.intern(&warhead.id);
-        let impact_z =
-            combat_aoe::bridge_adjusted_impact_z(world.resolved_terrain.as_ref(), det.rx, det.ry);
-        let air_impact = combat_aoe::air_impact_from_layer_z(
-            world.resolved_terrain.as_ref(),
-            det.rx,
-            det.ry,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-            impact_z,
-        );
+        // A missile that exploded in flight carries its own coordinate; an
+        // arrival detonates on the ground of its target cell's centre.
+        let (rx, ry, sub_x, sub_y, impact_z, air_impact) = match det.impact {
+            Some(impact) => {
+                let (rx, ry, sub_x, sub_y, z_leptons) = projectile_impact_cell(impact);
+                let air_impact = combat_aoe::AoEAirImpact {
+                    sub_x,
+                    sub_y,
+                    z_leptons,
+                };
+                let impact_z = z_leptons.div_euclid(LEPTONS_PER_LEVEL as i32);
+                (rx, ry, sub_x, sub_y, impact_z, Some(air_impact))
+            }
+            None => {
+                let impact_z = combat_aoe::bridge_adjusted_impact_z(
+                    world.resolved_terrain.as_ref(),
+                    det.rx,
+                    det.ry,
+                );
+                let air_impact = combat_aoe::air_impact_from_layer_z(
+                    world.resolved_terrain.as_ref(),
+                    det.rx,
+                    det.ry,
+                    crate::util::lepton::CELL_CENTER_LEPTON,
+                    crate::util::lepton::CELL_CENTER_LEPTON,
+                    impact_z,
+                );
+                (
+                    det.rx,
+                    det.ry,
+                    crate::util::lepton::CELL_CENTER_LEPTON,
+                    crate::util::lepton::CELL_CENTER_LEPTON,
+                    impact_z,
+                    air_impact,
+                )
+            }
+        };
         let world_z_leptons = air_impact
             .map(|impact| impact.z_leptons)
             .unwrap_or_else(|| impact_z.wrapping_mul(LEPTONS_PER_LEVEL as i32));
         emit_warhead_detonation_effects(
             warhead,
             det.damage,
-            det.rx,
-            det.ry,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-            crate::util::lepton::CELL_CENTER_LEPTON,
+            rx,
+            ry,
+            sub_x,
+            sub_y,
             impact_z_byte(impact_z),
             world_z_leptons,
             &mut world.interner,
@@ -2026,8 +2058,8 @@ fn emit_missile_detonations(
             damage: det.damage,
             warhead_ref: wh_iid,
             coord: ProjectileCoord::new(
-                i32::from(det.rx) * 256 + crate::util::lepton::CELL_CENTER_LEPTON.to_num::<i32>(),
-                i32::from(det.ry) * 256 + crate::util::lepton::CELL_CENTER_LEPTON.to_num::<i32>(),
+                i32::from(rx) * 256 + sub_x.to_num::<i32>(),
+                i32::from(ry) * 256 + sub_y.to_num::<i32>(),
                 world_z_leptons,
             ),
             force_create: false,
@@ -2038,7 +2070,7 @@ fn emit_missile_detonations(
                 world,
                 rules,
                 overlay_registry,
-                (det.rx, det.ry),
+                (rx, ry),
                 det.damage,
                 warhead,
                 (det.firer_id, Some(det.owner), wh_iid),

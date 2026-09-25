@@ -707,12 +707,29 @@ impl Simulation {
                 sim.temporal_release_if_warping(stable_id);
             }
         }
-        sim.pending_rocket_detonations
-            .extend(rocket_movement::tick_rocket_movement(
-                &mut sim.substrate.entities,
-                &one,
-                sim.session.tick,
-            ));
+        let rocket_arrivals = rocket_movement::tick_rocket_movement(
+            &mut sim.substrate.entities,
+            &one,
+            sim.session.tick,
+        );
+        let rocket_arrived = !rocket_arrivals.is_empty();
+        sim.pending_rocket_detonations.extend(rocket_arrivals);
+        // `ILoco::Process 0x00662FD5..0x00662FE1`: after its flight step a
+        // missile left with no Health explodes where it is and is UnInit, so
+        // `FootClass::AI` and `AircraftClass::AI` stop here.
+        let rocket_died = !rocket_arrived
+            && sim.substrate.entities.get(stable_id).is_some_and(|entity| {
+                entity.health.current <= 0
+                    && entity.rocket_state.is_some()
+                    && entity.locomotor.as_ref().is_some_and(|locomotor| {
+                        locomotor.active_kind()
+                            == crate::rules::locomotor_type::LocomotorKind::Rocket
+                    })
+            });
+        if rocket_died {
+            crate::sim::spawn_manager::detonate_dead_missile(sim, stable_id);
+            return Ok(outcome);
+        }
         sim.tick_tunnel_locomotor_one(stable_id, path_grid);
         sim.tick_drop_pod_locomotor_one(stable_id, path_grid);
         let _ = homing_movement::tick_homing_movement(

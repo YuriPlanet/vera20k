@@ -667,8 +667,9 @@ fn apply_mission_mutation(
     // handles the AirportBound-without-airfield case by calling the
     // `Crash` slot `+0x3DC` directly with no attacker (`0x004179FD`,
     // `0x00417B88`; body `0x004DEBB0`, which runs `RecordKill +0xE0` and the
-    // trigger events but never `Death_Announcement +0x3B8`) and returns
-    // whatever Crash answers. The crashing aircraft then falls to its impact
+    // trigger events but never `Death_Announcement +0x3B8`), then returns 0
+    // whatever Crash answered (`0x00417A06`, `0x00417B91`). An airborne
+    // aircraft Crash accepted then falls to its impact
     // like a shot-down one (`sim::world::crash`). Only a damage kill
     // (`AircraftClass::ReceiveDamage 0x004165C0`, result 4 → `+0x3B8` at
     // `0x00416613`) announces, and that runs through the combat kill loop.

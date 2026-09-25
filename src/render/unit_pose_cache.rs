@@ -4,8 +4,9 @@
 //! draw -1, so the native voxel cache never holds a crash pose: the body is
 //! rasterized afresh every frame with its current roll and pitch. This page
 //! does the same for the crashing bodies on screen. It is rebuilt each
-//! presentation frame ([`VxlPoseFrameCache::begin_frame`]) and uploaded once
-//! after the unit instances are built ([`VxlPoseFrameCache::upload`]).
+//! presentation frame ([`VxlPoseFrameCache::begin_frame`]) and its used rows
+//! are written into one reused GPU page after the unit instances are built
+//! ([`VxlPoseFrameCache::upload`]).
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::vpl_file::VplFile;
@@ -26,17 +27,21 @@ pub struct VxlPoseFrameCache {
     cursor_y: u32,
     shelf_height: u32,
     dirty: bool,
-    texture: Option<BatchTexture>,
+    /// The GPU page, created on the first crash pose and rewritten in place.
+    texture: Option<(wgpu::Texture, BatchTexture)>,
+    /// `VOXELS.VPL`, parsed on the first crash pose.
+    vpl: Option<Option<VplFile>>,
 }
 
 impl VxlPoseFrameCache {
-    /// Forget last frame's poses. The texture stays bound until the next
-    /// upload replaces it.
+    /// Forget last frame's poses. The GPU page keeps its old texels until the
+    /// next upload; no instance references them.
     pub fn begin_frame(&mut self) {
         if self.pixels.is_empty() {
             self.pixels = vec![0; (PAGE_SIZE * PAGE_SIZE) as usize];
-        } else if self.dirty || self.cursor_x != 0 || self.cursor_y != 0 {
-            self.pixels.fill(0);
+        } else if self.dirty {
+            let used = (self.used_rows() * PAGE_SIZE) as usize;
+            self.pixels[..used].fill(0);
         }
         self.cursor_x = 0;
         self.cursor_y = 0;
@@ -60,15 +65,20 @@ impl VxlPoseFrameCache {
         if self.pixels.is_empty() {
             self.begin_frame();
         }
-        let vpl = asset_manager
-            .get_ref("VOXELS.VPL")
-            .and_then(|data| VplFile::from_bytes(data).ok());
+        let vpl = self
+            .vpl
+            .get_or_insert_with(|| {
+                asset_manager
+                    .get_ref("VOXELS.VPL")
+                    .and_then(|data| VplFile::from_bytes(data).ok())
+            })
+            .as_ref();
         let (sprite, _, native_draw_bounds) = render_unit_sprite_posed(
             asset_manager,
             key,
             rules,
             art,
-            vpl.as_ref(),
+            vpl,
             None,
             gpu,
             None,
@@ -91,16 +101,44 @@ impl VxlPoseFrameCache {
         })
     }
 
-    /// Upload this frame's page when anything was placed on it.
+    /// Write this frame's used rows into the GPU page when anything was
+    /// placed on it.
     pub fn upload(&mut self, gpu: &GpuContext, batch: &BatchRenderer) {
-        if self.dirty {
-            self.texture =
-                Some(batch.create_unit_atlas_texture(gpu, PAGE_SIZE, PAGE_SIZE, &self.pixels));
+        if !self.dirty {
+            return;
         }
+        let rows = self.used_rows();
+        let (texture, _) = self.texture.get_or_insert_with(|| {
+            batch.create_updatable_unit_atlas_texture(gpu, PAGE_SIZE, PAGE_SIZE)
+        });
+        gpu.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &self.pixels[..(rows * PAGE_SIZE) as usize],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(PAGE_SIZE),
+                rows_per_image: Some(rows),
+            },
+            wgpu::Extent3d {
+                width: PAGE_SIZE,
+                height: rows,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     pub fn texture(&self) -> Option<&BatchTexture> {
-        self.texture.as_ref()
+        self.texture.as_ref().map(|(_, texture)| texture)
+    }
+
+    /// Rows holding this frame's sprites: every closed shelf and the open one.
+    fn used_rows(&self) -> u32 {
+        (self.cursor_y + self.shelf_height).min(PAGE_SIZE)
     }
 
     fn try_place(&mut self, sprite: &VxlSprite) -> Option<(u32, u32)> {
@@ -144,5 +182,33 @@ mod tests {
         cache.begin_frame();
         assert_eq!(cache.pixels.len(), (PAGE_SIZE * PAGE_SIZE) as usize);
         assert!(!cache.dirty && cache.texture().is_none());
+    }
+
+    /// Sprites pack left to right on shelves; the upload covers exactly the
+    /// rows they use, and the next frame clears those rows.
+    #[test]
+    fn placed_sprites_bound_the_uploaded_rows() {
+        let sprite = |width: u32, height: u32| VxlSprite {
+            palette_indices: vec![7; (width * height) as usize],
+            depth: vec![0.0; (width * height) as usize],
+            width,
+            height,
+            offset_x: 0.0,
+            offset_y: 0.0,
+        };
+        let mut cache = VxlPoseFrameCache::default();
+        cache.begin_frame();
+        let a = sprite(600, 40);
+        let b = sprite(600, 30);
+        let first = cache.try_place(&a).unwrap();
+        cache.blit(&a, first.0, first.1);
+        let second = cache.try_place(&b).unwrap();
+        cache.blit(&b, second.0, second.1);
+        cache.dirty = true;
+        assert_eq!((first, second), ((0, 0), (0, 40 + SPRITE_PADDING)));
+        assert_eq!(cache.used_rows(), 40 + SPRITE_PADDING + 30);
+        cache.begin_frame();
+        assert!(cache.pixels.iter().all(|&pixel| pixel == 0));
+        assert_eq!(cache.used_rows(), 0);
     }
 }

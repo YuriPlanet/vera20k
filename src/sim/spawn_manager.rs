@@ -1249,6 +1249,10 @@ pub struct MissileDetonation {
     pub firer_id: u64,
     /// House the missile carried, for the area-damage owner argument.
     pub owner: InternedId,
+    /// The exact impact coordinate (world leptons) of a missile that
+    /// exploded in flight ([`detonate_dead_missile`]); `None` detonates on
+    /// the ground of the target cell `(rx, ry)`.
+    pub impact: Option<crate::sim::projectile::ProjectileCoord>,
 }
 
 /// Consume every missile that reached its target during this tick's movement
@@ -1286,10 +1290,68 @@ pub fn detonate_missiles(sim: &mut Simulation, detonated: &[u64]) {
                 damage: payload.damage,
                 firer_id: payload.firer_id,
                 owner,
+                impact: None,
             });
         }
         sim.uninit(missile_id);
     }
+}
+
+/// `RocketLocomotion::Detonate` (`0x00663030`) for a missile that lost its
+/// Health in flight. `ILoco::Process` checks its owner after the flight step
+/// (`0x00662FD5..0x00662FE1`), so a missile shot down by AA — latched
+/// crashing by `FootClass::Crash`, which only a Fly locomotor then drops —
+/// explodes where it is on its next turn instead of flying on to its target.
+/// The payload is the one its launch selected, and the impact joins the
+/// arrival queue ([`detonate_missiles`], with the same within-tick drift).
+///
+/// RESIDUAL: native explodes `BodyLength=` ahead of the missile along its nose
+/// (`0x006630F7..0x006631C7`: X and Y by the facing, Z by the pitch `+0x54`);
+/// VERA's rocket flight keeps no native pitch, so the blast is at the
+/// missile's own coordinate. Trigger: AA kills a V3, Dreadnought or Boomer
+/// missile. Effect: the blast centre sits up to BodyLength behind native
+/// (stock 256 leptons for V3, 128 for the others). Frequency: every such
+/// shot-down. Downstream: the area damage's reach shifts by that distance.
+///
+/// RESIDUAL: the area damage's source is the launcher (the queued impact's
+/// owner, for kill credit), where native passes the missile itself
+/// (`0x006632B8`); `Apply_area_damage` leaves its source out of the ground
+/// list. Trigger: a missile shot down within its warhead's CellSpread of its
+/// launcher. Effect: the launcher is spared the blast. Frequency: rare (AA
+/// covering the launcher). Downstream: that launcher's health.
+pub(crate) fn detonate_dead_missile(sim: &mut Simulation, missile_id: u64) {
+    let Some((impact, rx, ry, payload, owner)) =
+        sim.substrate.entities.get(missile_id).and_then(|entity| {
+            let coord = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+            entity.rocket_state.as_ref().map(|rocket| {
+                (
+                    crate::sim::projectile::ProjectileCoord {
+                        x: coord.x,
+                        y: coord.y,
+                        z: coord.z,
+                    },
+                    entity.position.rx,
+                    entity.position.ry,
+                    rocket.payload,
+                    entity.owner(),
+                )
+            })
+        })
+    else {
+        return;
+    };
+    if let Some(payload) = payload {
+        sim.pending_missile_detonations.push(MissileDetonation {
+            rx,
+            ry,
+            warhead: payload.warhead,
+            damage: payload.damage,
+            firer_id: payload.firer_id,
+            owner,
+            impact: Some(impact),
+        });
+    }
+    sim.uninit(missile_id);
 }
 
 /// `SpawnManagerClass::PointerExpired` (`decompile_function 0x006B7C60`) for
@@ -1502,7 +1564,9 @@ pub(crate) fn kill_all_spawns_with_context(
     // not touched at all. Nothing in this routine reads or writes the manager's
     // targets either — `ClearAllTargets` is a separate call that only the
     // owner-expired path makes alongside this one.
-    for (index, slot) in slots.into_iter().enumerate() {
+    // Backwards, as native (`0x006B7123` from the last slot, `0x006B7218`):
+    // each crashing Hornet takes its three Scenario draws in that order.
+    for (index, slot) in slots.into_iter().enumerate().rev() {
         if slot.state == SpawnSlotState::Regenerating {
             continue;
         }

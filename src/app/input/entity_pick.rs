@@ -1271,6 +1271,8 @@ fn static_selection_gate(
     require_playfield_membership: bool,
 ) -> bool {
     entity.lifecycle.object_alive
+        // `0x006F32D3`: no Health — a crashing aircraft falls alive at 0.
+        && entity.health.current > 0
         && !entity.lifecycle.in_limbo
         && !entity.is_warped_out()
         // `TechnoClass::Select @ 0x006F32D0` requires the stored +0x3D5
@@ -2260,5 +2262,20 @@ mod tests {
             static_selection_gate(&entity, "MTNK", None, false),
             "headless fixtures without MapClass authority preserve prior admission"
         );
+    }
+
+    /// `TechnoClass::IsLocalPlayerSelectableObject @ 0x006F32D0` refuses an
+    /// object with no Health first (`0x006F32D3`): a crashing aircraft is
+    /// alive at Health 0 and cannot be picked or banded.
+    #[test]
+    fn an_object_without_health_is_not_selectable() {
+        let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 5, 5);
+        entity.lifecycle.object_alive = true;
+        entity.lifecycle.in_limbo = false;
+        entity.in_playfield = true;
+        assert!(static_selection_gate(&entity, "ORCA", None, true));
+        entity.health.current = 0;
+        entity.crashing = true;
+        assert!(!static_selection_gate(&entity, "ORCA", None, true));
     }
 }

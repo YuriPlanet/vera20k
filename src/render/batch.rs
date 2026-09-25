@@ -1299,6 +1299,31 @@ impl BatchRenderer {
         height: u32,
         pixels: &[u8],
     ) -> BatchTexture {
+        self.create_unit_atlas_texture_parts(device, queue, width, height, pixels)
+            .1
+    }
+
+    /// An empty R8Uint unit-atlas page that its owner rewrites in place
+    /// (`queue.write_texture` on the returned texture) instead of recreating
+    /// it and its bind group.
+    pub fn create_updatable_unit_atlas_texture(
+        &self,
+        gpu: &GpuContext,
+        width: u32,
+        height: u32,
+    ) -> (wgpu::Texture, BatchTexture) {
+        let pixels = vec![0; (width * height) as usize];
+        self.create_unit_atlas_texture_parts(&gpu.device, &gpu.queue, width, height, &pixels)
+    }
+
+    fn create_unit_atlas_texture_parts(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        width: u32,
+        height: u32,
+        pixels: &[u8],
+    ) -> (wgpu::Texture, BatchTexture) {
         debug_assert_eq!(
             pixels.len(),
             (width * height) as usize,
@@ -1350,12 +1375,15 @@ impl BatchRenderer {
             }],
         });
 
-        BatchTexture {
-            bind_group,
-            view,
-            width,
-            height,
-        }
+        (
+            texture,
+            BatchTexture {
+                bind_group,
+                view,
+                width,
+                height,
+            },
+        )
     }
 
     /// Upload RGBA pixel data to the GPU as a batch-renderable texture.

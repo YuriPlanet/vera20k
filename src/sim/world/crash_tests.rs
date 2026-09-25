@@ -489,6 +489,117 @@ fn a_shot_down_aircraft_falls_and_detonates_through_advance_tick() {
     assert!(sim.substrate.entities.get(shooter).is_some());
 }
 
+/// A save in mid-fall restores the latch, its seen edge, the fall counter and
+/// the spin: the loaded and the continuing worlds fall frame for frame to the
+/// same impact.
+#[test]
+fn a_crash_saved_in_mid_fall_lands_like_the_original() {
+    use crate::sim::combat::combat_aoe::AreaDamageReceiver;
+    use crate::sim::snapshot::GameSnapshot;
+    use std::collections::BTreeMap;
+    let (mut sim, rules) = fixture(&serde_json::json!({"health": 150, "crashing": 0}));
+    let soviets = sim.interner.intern("Soviets");
+    let warhead = sim.interner.intern("CrashWH");
+    let hit = crate::sim::combat::EntityDamageEvent::area(
+        1,
+        200,
+        0,
+        crate::sim::combat::RAD_NO_ATTACKER,
+        Some(soviets),
+        warhead,
+    );
+    sim.commit_noncombat_aoe_receivers(&rules, None, &[AreaDamageReceiver::Entity(hit)]);
+    assert!(sim.substrate.entities.get(1).unwrap().crashing);
+    let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
+    let tick = |sim: &mut Simulation| {
+        sim.advance_tick(&[], Some(&rules), &BTreeMap::new(), Some(&grid), None, 67);
+    };
+    for _ in 0..10 {
+        tick(&mut sim);
+    }
+    assert!(sim.substrate.entities.get(1).unwrap().crashing_seen);
+
+    sim.scenario_rng = SimRng::new(0);
+    let bytes = GameSnapshot::save(&sim, 0, 0, "crash in mid-fall", 0);
+    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+    restored.retain_in_scenario_process_state_from(&sim);
+    restored.resolved_terrain = sim.resolved_terrain.clone();
+    restored.restore_after_snapshot_load().unwrap();
+    assert_eq!(restored.state_hash(), sim.state_hash());
+
+    let alive = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(1)
+            .is_some_and(|entity| entity.lifecycle.object_alive)
+    };
+    let mut frames = 0;
+    while alive(&sim) {
+        frames += 1;
+        assert!(frames < 60, "the fall reaches the ground");
+        tick(&mut sim);
+        tick(&mut restored);
+        assert_eq!(restored.state_hash(), sim.state_hash(), "frame {frames}");
+        assert_eq!(alive(&restored), alive(&sim));
+    }
+}
+
+/// `Fire_Death_Weapon` hands its bullet straight to `DetonateAtCoord`
+/// (`0x0070D782`). A BulletClass hit runs the cluster loop, which after every
+/// cluster, the last included, draws the next cluster's coordinate
+/// (`0x00469020..0x00469091`); the death weapon's single detonation draws
+/// nothing there.
+#[test]
+fn a_death_weapon_detonates_once_without_cluster_draws() {
+    use crate::sim::projectile::{
+        ProjectileCoord, ProjectileDetonation, ProjectileDetonationReason, ProjectilePayload,
+        ProjectileTarget,
+    };
+    let (mut sim, _) = fixture(&serde_json::json!({"health": 150}));
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AircraftTypes]\n0=TEST\n[TEST]\nStrength=150\nPrimary=CrashGun\n\
+         [CrashGun]\nDamage=150\nWarhead=CrashWH\nProjectile=CrashProj\n\
+         [CrashProj]\nInviso=no\n\
+         [CrashWH]\nCellSpread=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .unwrap();
+    sim.resolve_type_handles(&rules);
+    let payload = ProjectilePayload {
+        base_damage: 150,
+        warhead: sim.interner.intern("CrashWH"),
+        weapon: sim.interner.intern("CrashGun"),
+    };
+    let detonation = |reason| ProjectileDetonation {
+        projectile_id: 1,
+        source_id: 1,
+        target: ProjectileTarget::Cell { rx: 40, ry: 40 },
+        impact: ProjectileCoord {
+            x: 40 * 256 + 128,
+            y: 40 * 256 + 128,
+            z: 0,
+        },
+        payload,
+        reason,
+    };
+    let before = sim.scenario_rng.state();
+    sim.commit_logic_projectile_detonations(
+        &rules,
+        None,
+        &[detonation(ProjectileDetonationReason::DeathWeapon)],
+    );
+    assert_eq!(sim.scenario_rng.state(), before, "no cluster draws");
+    sim.commit_logic_projectile_detonations(
+        &rules,
+        None,
+        &[detonation(ProjectileDetonationReason::ReachedTarget)],
+    );
+    assert_ne!(
+        sim.scenario_rng.state(),
+        before,
+        "a bullet hit draws its next cluster"
+    );
+}
+
 /// Retail Dustbowl runtime, end to end through production: a Harrier ordered
 /// at three flak tracks takes off, their `FlakTrackAAGun` volleys shoot it
 /// down, and it crashes. `VoiceCrashing=`/`CrashingSound=` play on the edge,
@@ -622,6 +733,7 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
     let mut crash_frame = None;
     let mut impact_frame = None;
     let mut heights = Vec::new();
+    let mut track = Vec::new();
     let mut spun = false;
     let mut smoke = BTreeSet::new();
     let mut sounds = Vec::new();
@@ -693,6 +805,8 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
             let rocking = entity.rocking.as_ref().expect("a crash spins");
             spun |= rocking.angle_sideways != SimFixed::ZERO;
             heights.push(height);
+            let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+            track.push((xy[0], xy[1]));
             println!(
                 "frame {frame}: height {height}, roll {:.4}, pitch {:.4}",
                 rocking.angle_sideways.to_num::<f64>(),
@@ -731,6 +845,20 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
     assert_eq!(heights[1..], native[..native.len() - 1], "the fall frames");
     assert_eq!(native.last(), Some(&0), "the native impact frame");
     assert_eq!(impact_frame - crash_frame, native.len() as i32);
+    let steps: Vec<(i32, i32)> = track
+        .windows(2)
+        .map(|pair| (pair[1].0 - pair[0].0, pair[1].1 - pair[0].1))
+        .collect();
+    println!("fall steps: {steps:?}");
+    // The paid step keeps the frozen cruise speed (the native row steps 35
+    // leptons a frame); the heading finishes whatever turn was under way.
+    assert!(
+        steps.iter().all(|&(dx, dy)| {
+            let length = f64::from(dx * dx + dy * dy).sqrt();
+            (33.5..=36.5).contains(&length)
+        }),
+        "{steps:?}"
+    );
     assert!(spun, "the crash spin turns the body");
     assert!(!smoke.is_empty(), "the falling Harrier trails SGRYSMK1");
     assert!(

@@ -142,6 +142,14 @@ impl Simulation {
     /// and its impact (`0x004CD8A9..0x004CD9C0`) kills it with the C4 warhead,
     /// an explosion anim and area damage. Nothing in VERA powers an aircraft
     /// off (native: `Power_Off`, reached by EMP), so the arm is dormant.
+    ///
+    /// RESIDUAL: `AircraftClass::AI` UnInits an aircraft outside the playfield
+    /// or `In_Bounds` when its map-leave predicate (vt+0x4DC, `0x0041B890`)
+    /// answers true (`0x00414F47..0x00414FD1`); VERA ports neither. Trigger: a
+    /// wreck of a plane that leaves the map (paradrop, spy, cargo: the
+    /// predicate's `+0x3D4` latch) drifting out of bounds while it falls.
+    /// Effect: it keeps drifting where native removes it; a shot-down combat
+    /// aircraft (latch clear) drifts natively too. Frequency: rare.
     pub(super) fn fly_crash_fall(&mut self, id: u64) -> bool {
         let terrain = self.resolved_terrain.as_ref();
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -188,11 +196,10 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     ) {
-        let Some(entity) = self.substrate.entities.get_mut(id) else {
+        if !self.substrate.entities.contains(id) {
             return;
-        };
-        entity.air_spatial_bucket = None;
-        entity.air_spatial_enter_order = 0;
+        }
+        self.remove_fly_air_tracker(id);
         self.set_fly_owner_height(id, 0);
         self.fire_death_weapon(id, rules, overlay_registry);
         self.play_crash_impact_sound(id, rules);
@@ -244,7 +251,7 @@ impl Simulation {
                 warhead,
                 weapon,
             },
-            reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
+            reason: crate::sim::projectile::ProjectileDetonationReason::DeathWeapon,
         };
         self.commit_logic_projectile_detonations(rules, overlay_registry, &[detonation]);
     }
@@ -338,7 +345,8 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if entity.category != EntityCategory::Aircraft {
+        // `0x00414DAA`: an aircraft its own FootClass::AI removed never gets here.
+        if entity.category != EntityCategory::Aircraft || !entity.lifecycle.object_alive {
             return;
         }
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
