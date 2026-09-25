@@ -125,6 +125,10 @@ pub(super) enum HashFeature {
     /// tag. Earlier schemas fold the constructor defaults in their place,
     /// which every miner outside the retired Chrono phases held.
     RetiredRefineryDockPhase = 206,
+    /// The crash latch and its AI edge (`FootClass+0x425`/`+0x426`) and the
+    /// Fly fall counter (`FlyLocomotionClass+0x58`). Earlier schemas fold
+    /// nothing: no object crashed before, so every latch and counter was zero.
+    AircraftCrash = 207,
 }
 
 impl HashSchema {
@@ -158,6 +162,7 @@ impl HashSchema {
                     | HashFeature::InvisoBullet
                     | HashFeature::BouncingDebris
                     | HashFeature::RetiredRefineryDockPhase
+                    | HashFeature::AircraftCrash
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

@@ -1892,6 +1892,16 @@ impl Simulation {
 
         self.materialize_legacy_fly_coordinate(stable_id);
 
+        // Fly Process opens with a dead Fly's fall (`0x004CD67F`); reaching
+        // the ground ends it in the impact, which the object turn commits.
+        if transact_fly && self.fly_crash_fall(stable_id) {
+            return crate::sim::movement::air_movement::AirMovementTickStats {
+                air_movers: 1,
+                arrivals: 0,
+                impact: true,
+            };
+        }
+
         // A cruising Jumpjet runs the native Update/State3 body instead of the
         // air adapter (`world::jumpjet_cruise`).
         let stats = match self.tick_jumpjet_cruise_one(stable_id, rules) {

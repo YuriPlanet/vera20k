@@ -463,11 +463,13 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
     // entities remain in `sim.entities` through the death animation, but their
     // airfield-pad reservation must release immediately so other aircraft can
     // dock without waiting through the death anim (matches building_dock/miner).
+    // A crashing aircraft stays represented until its impact; its pad went
+    // with the kill (the death arm's OVER_OUT to every contact, `0x00702206`).
     let alive: BTreeSet<u64> = sim
         .substrate
         .entities
         .values()
-        .filter(|e| !e.dying)
+        .filter(|e| !e.dying && !e.crashing)
         .map(|e| e.stable_id())
         .collect();
     sim.production.airfield_docks.cleanup_dead(&alive);
@@ -498,8 +500,10 @@ pub fn tick_aircraft_docks(sim: &mut Simulation, rules: &RuleSet) {
         .values()
         .filter_map(|e| {
             // A Dying aircraft corpse must not run the dock/ammo state machine
-            // (auto-return moves, reload, pad reservation) before the drain.
-            if e.dying {
+            // (auto-return moves, reload, pad reservation) before the drain;
+            // nor may a crashing one, whose missions no longer dispatch
+            // (`MissionClass` dispatch skips Health 0, `0x005B30A7`).
+            if e.dying || e.crashing {
                 return None;
             }
             // A warped aircraft's AI (reload, return) does not run

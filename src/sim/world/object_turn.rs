@@ -593,7 +593,18 @@ impl Simulation {
             return Ok(outcome);
         }
 
-        sim.tick_air_movement_with_cell_lists_one(stable_id, rules);
+        let air = sim.tick_air_movement_with_cell_lists_one(stable_id, rules);
+        if air.impact {
+            // The impact UnInits the object; `FootClass::AI` returns on the
+            // cleared Object+90 (`0x004DA87E`) and `AircraftClass::AI` after
+            // it (`0x00414DAA`).
+            if let Some(rules) = rules {
+                sim.fly_crash_impact(stable_id, rules, overlay_registry);
+            } else {
+                sim.uninit(stable_id);
+            }
+            return Ok(outcome);
+        }
         let teleport_armed = sim
             .substrate
             .entities
@@ -793,7 +804,13 @@ impl Simulation {
         sim.pending_lifecycle_requests = lifecycle_requests;
 
         sim.tick_move_sound_after_process(stable_id, before_movement, rules);
+        if let Some(rules) = rules {
+            sim.crash_edge_sounds(stable_id, rules);
+        }
         sim.object_ai_post_movement_promote_one(stable_id, rules);
+        if let Some(rules) = rules {
+            sim.aircraft_crash_smoke(stable_id, rules);
+        }
         Ok(outcome)
     }
 }

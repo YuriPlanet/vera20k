@@ -597,7 +597,9 @@ use crate::sim::world::Simulation;
 // 205 -> 206: a miner no longer keeps the Chrono Miner's retired dock phases
 // (home refinery, dock-queued byte, dock phase, pivot facing, enter/approach/
 // deploy timers, exit cell); an entity keeps Techno+0x1F8.
-const SNAPSHOT_VERSION: u32 = 206;
+// 206 -> 207: an entity keeps the crash latch and its AI edge (Foot+0x425/
+// +0x426) and a Fly its fall counter (+0x58).
+const SNAPSHOT_VERSION: u32 = 207;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3544,7 +3546,8 @@ mod tests {
         // `Aggressive=`.
         // 204 -> 205: bullet `Arcing=`; an anim's bounce body.
         // 205 -> 206: the retired Chrono dock phases; Techno+0x1F8.
-        assert_eq!(super::SNAPSHOT_VERSION, 206);
+        // 206 -> 207: the crash latch and edge; the Fly fall counter.
+        assert_eq!(super::SNAPSHOT_VERSION, 207);
     }
 
     #[test]

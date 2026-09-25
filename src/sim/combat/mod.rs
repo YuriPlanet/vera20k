@@ -1827,48 +1827,54 @@ fn death_weapon_half_strength(strength: i32) -> Option<i32> {
     i32::try_from(X87Chop53::ftol_i64(product).ok()?).ok()
 }
 
-/// Resolve the active fatal-receiver death producer. The reachability gate is
-/// independent of `DeathWeapon=`: native consults effective Explodes abilities
-/// and the receiver's live `CurrentWeaponNumber` Suicide flag first. Once
-/// admitted, selection is explicit type weapon, current weapon, then the Rules
-/// default, with distinct native damage formulas for the first two vs default.
+/// Resolve the active fatal-receiver death producer: the death arm's gate
+/// (`TechnoClass::ReceiveDamage 0x00702572..0x00702603`: effective Explodes,
+/// or the weapon at `CurrentWeaponNumber` (`GetWeapon(+0x138)`, vtable
+/// `+0x3F8`) is `Suicide=`), then [`fire_death_weapon_payload`].
 fn death_weapon_aoe(
     rules: &RuleSet,
     obj: &ObjectType,
     veterancy: u16,
     current_weapon_index: u8,
-    current_weapon_ref: Option<InternedId>,
+    current_weapon: Option<&str>,
     interner: &mut StringInterner,
 ) -> Option<(i32, InternedId, InternedId)> {
-    let selected_current_weapon =
-        current_weapon_ref.and_then(|weapon_id| rules.weapon(interner.resolve(weapon_id)));
-    let slot_current_weapon =
+    let numbered_weapon =
         combat_weapon::weapon_for_slot_index(obj, veterancy, i32::from(current_weapon_index))
             .and_then(|(weapon_id, _)| rules.weapon(weapon_id));
-    let current_weapon = selected_current_weapon.or(slot_current_weapon);
     let effective_explodes = obj.explodes
         || (veterancy >= 100 && obj.veteran_explodes)
         || (veterancy >= 200 && obj.elite_explodes);
-    if !effective_explodes && !current_weapon.is_some_and(|weapon| weapon.suicide) {
+    if !effective_explodes && !numbered_weapon.is_some_and(|weapon| weapon.suicide) {
         return None;
     }
+    fire_death_weapon_payload(rules, obj, current_weapon, interner)
+}
 
-    if let Some(explicit) = obj
+/// `TechnoClass::Fire_Death_Weapon @ 0x0070D690`'s weapon and damage, before
+/// its caller's extra damage: `DeathWeapon=` (`+0xD18`), else the current
+/// weapon (`GetCurrentWeapon`, vtable `+0x3F4`, the caller's `current_weapon`),
+/// each at `ftol(Damage * DeathWeaponDamageModifier)`
+/// (`0x0070D6EB..0x0070D6F7`); else `[CombatDamage] DeathWeapon=`
+/// (`Rules+0xFDC`) at `ftol(Strength * 0.5)` (`0x0070D6FE..0x0070D71F`). No
+/// weapon fires nothing. The function has no `Explodes=` gate: the death arm
+/// gates it ([`death_weapon_aoe`]); a crash impact calls it bare.
+pub(crate) fn fire_death_weapon_payload(
+    rules: &RuleSet,
+    obj: &ObjectType,
+    current_weapon: Option<&str>,
+    interner: &mut StringInterner,
+) -> Option<(i32, InternedId, InternedId)> {
+    let chosen = obj
         .death_weapon
         .as_deref()
         .and_then(|weapon_id| rules.weapon(weapon_id))
-    {
+        .or_else(|| current_weapon.and_then(|weapon_id| rules.weapon(weapon_id)));
+    if let Some(weapon) = chosen {
         let damage =
-            death_weapon_ftol_product_i32_f32(explicit.damage, obj.death_weapon_damage_modifier)?;
-        let warhead_ref = interner.intern(explicit.warhead.as_ref()?);
-        let weapon_ref = interner.intern(&explicit.id);
-        return Some((damage, warhead_ref, weapon_ref));
-    }
-    if let Some(current) = current_weapon {
-        let damage =
-            death_weapon_ftol_product_i32_f32(current.damage, obj.death_weapon_damage_modifier)?;
-        let warhead_ref = interner.intern(current.warhead.as_ref()?);
-        let weapon_ref = interner.intern(&current.id);
+            death_weapon_ftol_product_i32_f32(weapon.damage, obj.death_weapon_damage_modifier)?;
+        let warhead_ref = interner.intern(weapon.warhead.as_ref()?);
+        let weapon_ref = interner.intern(&weapon.id);
         return Some((damage, warhead_ref, weapon_ref));
     }
     let fallback = rules

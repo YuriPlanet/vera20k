@@ -1026,7 +1026,6 @@ pub(crate) fn handle_death(
                 e.category,
                 e.veterancy,
                 e.current_weapon_index,
-                e.current_weapon_ref,
             )
         });
 
@@ -1043,7 +1042,6 @@ pub(crate) fn handle_death(
             category,
             veterancy,
             current_weapon_index,
-            current_weapon_ref,
         )) = dead_info
         {
             // `0x00702112`: the death arm frees a controller's captives before
@@ -1102,12 +1100,19 @@ pub(crate) fn handle_death(
                     &mut voxel_debris,
                     &mut explosion_effects,
                 );
+                // `Fire_Death_Weapon` fires the object's GetCurrentWeapon
+                // (vtable `+0x3F4`, `0x0070D6C6`).
+                let current_weapon = world
+                    .substrate
+                    .entities
+                    .get(dead_id)
+                    .and_then(|entity| super::combat_weapon::current_weapon(entity, obj));
                 if let Some((dmg, wh_id, weapon_id)) = death_weapon_aoe(
                     rules,
                     obj,
                     veterancy,
                     current_weapon_index,
-                    current_weapon_ref,
+                    current_weapon,
                     &mut world.interner,
                 ) {
                     // Fire_Death_Weapon @ 0x0070D690 detonates a real bullet at
@@ -1462,6 +1467,18 @@ fn finish_concrete_death(
         // arm's OVER_OUT to every contact (`techno_death_stun`) already
         // released its dock slots.
         effects.despawned_ids.push(dead_id);
+    } else if category == EntityCategory::Aircraft
+        && callbacks_enabled(world)
+        && world.foot_crash(
+            dead_id,
+            killing_attacker(world, damage_events, dead_id),
+            rules,
+        )
+    {
+        // `AircraftClass::ReceiveDamage` (`0x00416694..0x004166A3`): an
+        // airborne aircraft crashes instead of its UnInit. It stays alive and
+        // represented, with Health 0, until its fall's impact.
+        effects.despawned_ids.push(dead_id);
     } else {
         effects.immediate_uninit_ids.push(dead_id);
         effects.despawned_ids.push(dead_id);
@@ -1508,6 +1525,23 @@ fn finish_concrete_death(
             }
         }
     }
+}
+
+/// The killing ReceiveDamage call's attacker (its fourth argument), when it
+/// names an object.
+fn killing_attacker(
+    world: &Simulation,
+    damage_events: &[EntityDamageEvent],
+    dead_id: u64,
+) -> Option<u64> {
+    damage_events
+        .iter()
+        .rfind(|event| event.target_id == dead_id)
+        .map(|event| event.attacker_id)
+        .filter(|&attacker| {
+            attacker != crate::sim::combat::RAD_NO_ATTACKER
+                && world.substrate.entities.contains(attacker)
+        })
 }
 
 /// What a special arm of `BulletClass::DetonateAtCoord` reads as its target:

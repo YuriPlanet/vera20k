@@ -1673,6 +1673,10 @@ impl Simulation {
                 entity.in_playfield.hash(hasher);
             }
             entity.move_sound_active.hash(hasher);
+            if schema.includes(HashFeature::AircraftCrash) {
+                entity.crashing.hash(hasher);
+                entity.crashing_seen.hash(hasher);
+            }
             if schema.includes(HashFeature::TechnoMissionOnly) {
                 entity.is_mission_only().hash(hasher);
             }
@@ -2495,6 +2499,9 @@ fn hash_locomotor_payload(
                 state.moving().hash(hasher);
                 state.landing_effect_latched().hash(hasher);
                 state.airport_bound().hash(hasher);
+            }
+            if schema.includes(HashFeature::AircraftCrash) {
+                state.fall_counter().hash(hasher);
             }
         }
         LocomotorRuntimePayload::Jumpjet(state) => {

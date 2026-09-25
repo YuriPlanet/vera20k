@@ -962,6 +962,17 @@ pub struct GameEntity {
     /// Remaining stopped AI visits before an active MoveSound is released.
     #[serde(default)]
     pub move_sound_countdown: u8,
+    /// `FootClass+0x425`, the crash latch: set only by `FootClass::Crash @
+    /// 0x004DEBB0` (`0x004DEC7F`) and cleared by the constructor
+    /// (`0x006F2FF9`). A crashing object is alive (Object+90) with Health 0
+    /// and falls under its locomotor until the impact UnInits it. Owner:
+    /// `Simulation::foot_crash` (`sim::world::crash`).
+    #[serde(default)]
+    pub crashing: bool,
+    /// `FootClass+0x426`, the latch as the previous `FootClass::AI` saw it: the
+    /// rising edge plays the crash voice and sound (`0x004DACDD..0x004DADC2`).
+    #[serde(default)]
+    pub crashing_seen: bool,
 
     // --- Passenger/transport system ---
     /// Original owner of a CanBeOccupied building, saved when the first garrison
@@ -1549,6 +1560,8 @@ impl GameEntity {
             blocked_scatter_timer: 0,
             move_sound_active: false,
             move_sound_countdown: 0,
+            crashing: false,
+            crashing_seen: false,
             garrison_original_owner: None,
             passenger_role: PassengerRole::None,
             weapon_override: None,
