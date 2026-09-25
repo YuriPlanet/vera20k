@@ -31,6 +31,16 @@ pub struct MainMenuShellChromeEntry {
     pub pixel_size: [f32; 2],
 }
 
+impl MainMenuShellChromeEntry {
+    /// The image's native width and height in pixels.
+    pub fn native_size(self) -> (i32, i32) {
+        (
+            self.pixel_size[0].round() as i32,
+            self.pixel_size[1].round() as i32,
+        )
+    }
+}
+
 pub struct MainMenuShellChromeAtlas {
     pub texture: BatchTexture,
     /// SDBTNANM.SHP frame 2 — default (unhovered, unpressed) button art.

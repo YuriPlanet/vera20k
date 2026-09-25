@@ -10,12 +10,13 @@ use crate::render::bit_font::BitFont;
 use crate::render::shell_paint::{self, PaintLabel};
 use crate::render::shell_text::{self, Reveal, ShellAlign, ShellTextDraw, TextRect};
 use crate::ui::main_menu::SkirmishCountry;
+use crate::ui::shell::modal::BodyOkLayout;
 use crate::ui::skirmish_shell::{
     COMBO_DROPDOWN_ROW_H, COMBO_FACE_H, COMBO_TEXT_LEFT_INSET, ChooseMapModalButton,
     ChooseMapModalLayout, OwnerDrawButton, RandomMapSetupLayout, RectPx, SETUP_COMBO_ROWS,
     SavedSeedLayout, SkirmishAiRowType, SkirmishCheckboxId, SkirmishComboId, SkirmishComboItem,
     SkirmishCountryChoice, SkirmishShellLayout, SkirmishShellOpponent, SkirmishShellState,
-    SkirmishTrackbarId, ValidationModalLayout, checkbox_text_rect, choose_map_listbox_content_rect,
+    SkirmishTrackbarId, checkbox_text_rect, choose_map_listbox_content_rect,
     choose_map_listbox_row_rect,
     choose_map_listbox_visible_row_count, combo_dropdown_content_rect, combo_dropdown_rect,
     combo_dropdown_visible_row_count, combo_enabled, combo_items, combo_text_rect,
@@ -528,7 +529,7 @@ pub(super) fn push_player_name_edit_text_draw(
 pub(super) fn build_shell_text_draws(
     state: &AppState,
     layout: &SkirmishShellLayout,
-    validation_layout: Option<&ValidationModalLayout>,
+    validation_layout: Option<&BodyOkLayout>,
     shell: &SkirmishShellState,
     maps: &[MapMenuEntry],
     sliding: bool,
@@ -1115,7 +1116,7 @@ pub(super) fn push_choose_map_modal_text_draws(
 pub(super) fn push_validation_modal_text_draws(
     out: &mut Vec<ShellTextDraw>,
     state: &AppState,
-    layout: &ValidationModalLayout,
+    layout: &BodyOkLayout,
     pressed: bool,
 ) {
     let Some(modal) = state.frontend.skirmish_shell_state.validation_modal.as_ref() else {
@@ -1123,7 +1124,7 @@ pub(super) fn push_validation_modal_text_draws(
     };
     let body = [PaintLabel {
         text: (&modal.message).into(),
-        rect: layout.message,
+        rect: layout.body,
         rgb: SHELL_LABEL_TEXT_RGB,
         align: validation_modal_body_text_align(),
         path_a_reveal: None,
@@ -1135,7 +1136,7 @@ pub(super) fn push_validation_modal_text_draws(
     ));
     let ok = [PaintLabel {
         text: (&modal.ok_button).into(),
-        rect: button_label_rect_px(layout.ok_button, pressed),
+        rect: button_label_rect_px(layout.ok, pressed),
         rgb: SHELL_LABEL_TEXT_RGB,
         align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
         path_a_reveal: None,

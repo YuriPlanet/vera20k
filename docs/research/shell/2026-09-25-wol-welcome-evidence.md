@@ -49,7 +49,10 @@ A family page (Session `+0x30D8` clear):
   `tools/storage_oracle/shell_slide_engine.py` (6 more cases). At 640x480
   the six top buttons fill all six rows, so the engine draws the last row
   twice (Community and Main Menu); the Rust column follows it. Hit tests
-  follow the template Z-order, so Main Menu takes that shared row.
+  follow the template Z-order, so Main Menu takes that shared row; the
+  buttons (`0x5000000B`, no `WS_CLIPSIBLINGS`) paint down the Z-order, so
+  Community's face shows there unless Main Menu is pressed (inferred).
+- **Heading** `0x694` is 108x11 DLU here: the relayout keeps the family place, one row taller ((635, 9, 163, 19) at 800x600).
 - **Background:** MultiplaySelection.shp through MultiplaySelection.pal at the
   dialog origin (`0x0072E730`), loaded only when the screen is exactly 800
   wide (`MultiplaySelectionArt__Load` `0x0072C7E0`).
@@ -66,7 +69,10 @@ A family page (Session `+0x30D8` clear):
   `STT:WOLMyInformation{Wins,Losses,Disconnects,Rank,Points}`, `0x797`
   `STT:WelcomeUpdate`.
 - **Box `0xD0`:** the `0xCE` geometry: PUDLGBGN, body static, one MNBTTN OK,
-  over the empty backdrop (MNSCRNL, right panel, shut column).
+  over the empty backdrop (MNSCRNL, right panel, shut column). The OK
+  (`0x4000000B`) is `BS_OWNERDRAW`, which `0x0060F9A0` subclasses to
+  `0x00612B70`: its press plays GUIMainButtonSound (`0x00613667..0x00613771`).
+  The box's loop takes no keys.
 
 ## VERA20k
 
@@ -83,7 +89,8 @@ A family page (Session `+0x30D8` clear):
 - Music: `ThemeRuntime::enter_wol_lobby` / `leave_wol_lobby` port the entry
   and exit rules; the menu's INTRO upkeep yields to Theme AI while the route
   is WOL. `[WOnline] LobMusic` is read into the options profile (read-only).
-- `ui::shell::modal::body_ok_layout` gives the one-button box geometry.
+- `ui::shell::modal::body_ok_layout` gives the one-button box geometry,
+  shared with the skirmish `0xCE` notices.
 
 ## Production comparison (800x600, RGB565 units)
 
@@ -111,24 +118,27 @@ the box, or the new `0xE2` entry slide and settle.
   slide column (research harnesses; `shell_slide_engine.py` in the repo).
 - **Parity demonstrated:** the comparisons above.
 - **Rust regression tested:** `ui::wol_shell` (right panel, template
-  children, icon placement, status help, actions, the 640 Z-order),
-  `audio::theme` (WOL entry and exit music), `ui::shell::slide` (column
-  golden), `app::diagnostics::shell_capture` (checkpoints).
+  children, icon placement, status help, the 640 Z-order and shared-row
+  face), `audio::theme` (WOL entry and exit music),
+  `app::persistence::options_profile` (`LobMusic`), `ui::shell::modal`
+  (box geometry), `ui::shell::slide` (column golden),
+  `app::diagnostics::shell_capture` (checkpoints). The route lifecycle
+  (open, box, return) has no headless harness; the capture route logs
+  record it.
 
 ## Residuals
 
-- **Box position.** The box is 1 px right and 1 px lower than retail: the
-  shared message-box centring ignores the one-pixel window grow (the same for
-  `0x120` and `0xCE`).
-- **Box press sound** is GUIMainButtonSound from the owner-draw press path
-  (`0x00613667..0x00613771`); the type-3 button's own path is not traced.
+- **Box position.** The box is 1 px right and 1 px lower than retail.
 - **Lobby track choice.** Theme AI draws the shuffled track from VERA20k's
   presentation stream (unseeded at the main menu), not `g_MainRng`, so the
   first lobby track is always the same one.
 - **640 and 1024.** At 640 retail draws MNSCRNS through the
-  MultiplaySelection palette (almost black) and paints Community over Main
-  Menu (inferred); at 1024 no shape loads and whatever the empty backdrop
-  left shows. VERA20k shows the family backdrop at both; neither is
-  captured.
+  MultiplaySelection palette (almost black); at 1024 no shape loads and
+  whatever the empty backdrop left shows. VERA20k shows the family backdrop
+  at both; neither is captured. At 640 the left-side children, kept at
+  their template places, reach into the button column: the native
+  status-help walk (`0x00622CCB`) meets the stats statics before Quick
+  Co-op and Community in template order, while VERA20k tests the buttons
+  first. Unported.
 - **Connected WOL.** With WOLAPI installed the actions connect to Westwood
   Online (network only); not ported.

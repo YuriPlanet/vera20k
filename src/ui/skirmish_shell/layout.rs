@@ -38,13 +38,6 @@ pub const CHOOSE_MAP_MODAL_H: i32 = 369;
 pub const CHOOSE_MAP_LIST_ROW_H: i32 = 19;
 pub const CHOOSE_MAP_LISTBOX_ROW_H: i32 = CHOOSE_MAP_LIST_ROW_H;
 pub const CHOOSE_MAP_LISTBOX_SCROLLBAR_W: i32 = 20;
-// Validation popup child pixel size, using the 6x13 dialog-unit base. The parent
-// chooser resource is a 533x369-DLU template; the exact post-creation client size
-// for this child popup (runtime DLU->pixel conversion) has not been captured, so
-// treat as unconfirmed pending a native GetClientRect/screenshot.
-pub const VALIDATION_MODAL_W: i32 = 450;
-pub const VALIDATION_MODAL_H: i32 = 325;
-
 // Random-map setup dialog 0x105. Same 533x369-DLU frame, font and background as
 // choose-map. Its right-column controls sit 2-3 DLU left of choose-map's in the
 // resource (and the preview 2 DLU right), but every right-column helper here is
@@ -268,14 +261,6 @@ pub struct RandomMapSetupLayout {
     pub blank: RectPx,
     pub progress_text: RectPx,
     pub progress_bar: RectPx,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ValidationModalLayout {
-    pub screen: RectPx,
-    pub dialog: RectPx,
-    pub message: RectPx,
-    pub ok_button: RectPx,
 }
 
 fn checkbox_dlu_rect(x: i32, y: i32, w: i32, h: i32) -> RectPx {
@@ -1132,35 +1117,6 @@ pub fn choose_map_listbox_row_at(
     (idx < row_count).then_some(idx)
 }
 
-/// Center a native child dialog against the LIVE screen, matching the engine's
-/// child-window centering: x/y = max(0, ((screen - child) + 1) / 2). The +1 term
-/// biases odd-size centering by one pixel and the max(0) clamps negatives — both
-/// observable, so they are reproduced exactly. The validation popup parents to
-/// the top-level window, so it centers on the real screen, NOT inside the
-/// fixed 800x600 shell box.
-fn centered_live_screen_dialog(screen_w: i32, screen_h: i32, w: i32, h: i32) -> RectPx {
-    RectPx::new(
-        (((screen_w - w) + 1) / 2).max(0),
-        (((screen_h - h) + 1) / 2).max(0),
-        w,
-        h,
-    )
-}
-
-pub fn compute_validation_modal_layout(screen_w: u32, screen_h: u32) -> ValidationModalLayout {
-    let screen_w = screen_w as i32;
-    let screen_h = screen_h as i32;
-    let dialog =
-        centered_live_screen_dialog(screen_w, screen_h, VALIDATION_MODAL_W, VALIDATION_MODAL_H);
-
-    ValidationModalLayout {
-        screen: RectPx::new(0, 0, screen_w, screen_h),
-        dialog,
-        message: dialog_child(dialog, dlu_rect(40, 40, 220, 50)),
-        ok_button: dialog_child(dialog, dlu_rect(207, 175, 83, 15)),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::RandomMapSetupControl;
@@ -1173,10 +1129,9 @@ mod tests {
         choose_map_modal_list_row_at, combo_arrow_rect, combo_face_rect, combo_swatch_rect,
         combo_text_rect, compute_choose_map_modal_layout,
         compute_fixed_800_choose_map_modal_layout, compute_fixed_800_layout, compute_layout,
-        compute_random_map_setup_layout, compute_validation_modal_layout, dlu_rect,
-        player_name_edit_client_rect, player_name_edit_text_rect, random_map_setup_control_at,
-        trackbar_active_width, trackbar_pixel_offset, trackbar_plaque_rect, trackbar_thumb_rect,
-        trackbar_value_text_rect,
+        compute_random_map_setup_layout, dlu_rect, player_name_edit_client_rect,
+        player_name_edit_text_rect, random_map_setup_control_at, trackbar_active_width,
+        trackbar_pixel_offset, trackbar_plaque_rect, trackbar_thumb_rect, trackbar_value_text_rect,
     };
 
     struct ExpectedRect {
@@ -1651,25 +1606,6 @@ mod tests {
         assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 195, 16));
         assert_eq!(layout.status_help, RectPx::new(122, 663, 455, 20));
         assert_eq!(layout.preview, RectPx::new(756, 121, 144, 112));
-    }
-
-    #[test]
-    fn validation_modal_layout_centers_ok_button() {
-        let layout = compute_validation_modal_layout(800, 600);
-
-        // Single-center against the live screen with the +1 odd-size bias:
-        // x = (800-450+1)/2 = 175, y = (600-325+1)/2 = 138.
-        assert_eq!(layout.dialog, RectPx::new(175, 138, 450, 325));
-        assert_eq!(layout.message, RectPx::new(235, 203, 330, 81));
-        assert_eq!(layout.ok_button, RectPx::new(486, 422, 125, 24));
-    }
-
-    #[test]
-    fn validation_modal_centers_against_live_screen_not_800_box() {
-        // At 1024x768 the modal centers on the real screen, not inside an 800x600
-        // sub-box: x = (1024-450+1)/2 = 287, y = (768-325+1)/2 = 222.
-        let layout = compute_validation_modal_layout(1024, 768);
-        assert_eq!(layout.dialog, RectPx::new(287, 222, 450, 325));
     }
 
     #[test]

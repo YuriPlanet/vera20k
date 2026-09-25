@@ -88,6 +88,15 @@ pub fn center_offset(screen: i32, base: i32) -> i32 {
     ((screen - base) / 2).max(0)
 }
 
+/// Where an image static paints a `w`x`h` image in its window: centred only
+/// along an axis where the window is larger, else at the window edge (kind 2
+/// `0x00615831..0x006158F3`, kind 4 `0x0061595E..0x0061597E`).
+pub fn centred_in_window(window: RectPx, w: i32, h: i32) -> (i32, i32) {
+    let dx = if window.w > w { (window.w - w) / 2 } else { 0 };
+    let dy = if window.h > h { (window.h - h) / 2 } else { 0 };
+    (window.x + dx, window.y + dy)
+}
+
 /// Right-panel layout (SDTP top cap / SDBTNBKGD tile column / SDBTM bottom cap).
 /// Reproduces all three shells' output exactly, including the `bottom_h.max(0)`
 /// clamp. Same for 0xE2 / 0x100 / 0x102.

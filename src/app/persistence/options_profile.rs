@@ -601,6 +601,17 @@ mod tests {
     }
 
     #[test]
+    fn wol_lobby_music_reads_wonline_lobmusic_as_readint_default_one() {
+        let mut profile = RetailOptionsProfile::default();
+        profile.apply_ini(&IniFile::from_str("[WOnline]\nNick=x\n"));
+        assert_eq!(profile.wol_lobby_music, 1, "absent key keeps the default");
+        profile.apply_ini(&IniFile::from_str("[WOnline]\nLobMusic=0\n"));
+        assert_eq!(profile.wol_lobby_music, 0);
+        profile.apply_ini(&IniFile::from_str("[WOnline]\nLobMusic=$2\n"));
+        assert_eq!(profile.wol_lobby_music, 2, "ReadInt takes $ hex");
+    }
+
+    #[test]
     fn profile_load_uses_native_typed_semantics_and_clamps() {
         let ini = IniFile::from_str(
             "[Options]\n\

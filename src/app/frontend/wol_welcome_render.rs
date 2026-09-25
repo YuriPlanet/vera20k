@@ -18,14 +18,13 @@ use crate::app::frontend::shell_pass::{
     software_cursor,
 };
 use crate::app::frontend::shell_transition::ShellSlideKind;
-use crate::render::batch::SpriteInstance;
-use crate::render::main_menu_shell_chrome::MainMenuShellChromeEntry;
 use crate::render::shell_paint::{
     self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
-    SHELL_TEXT_RGB_ENABLED,
+    SHELL_TEXT_RGB_ENABLED, push_entry_native,
 };
 use crate::render::shell_text::ShellAlign;
-use crate::ui::wol_shell::{StaticAlign, WOL_WELCOME_PAGE, centred_image_origin};
+use crate::ui::shell::geom::centred_in_window;
+use crate::ui::wol_shell::{StaticAlign, WOL_WELCOME_PAGE};
 
 /// Icon and group-box children sit over the background, under the text.
 const CHILD_DEPTH: f32 = CHROME_DEPTH - 0.00002;
@@ -35,25 +34,6 @@ const BOX_DEPTHS: shell_paint::ModalDepths = shell_paint::ModalDepths {
     button: 0.00045,
     text: 0.00040,
 };
-
-fn push_entry(
-    out: &mut Vec<SpriteInstance>,
-    entry: MainMenuShellChromeEntry,
-    x: i32,
-    y: i32,
-    depth: f32,
-) {
-    out.push(SpriteInstance {
-        position: [x as f32, y as f32],
-        size: entry.pixel_size,
-        uv_origin: entry.uv_origin,
-        uv_size: entry.uv_size,
-        depth,
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
-        ..Default::default()
-    });
-}
 
 fn align(value: StaticAlign) -> ShellAlign {
     match value {
@@ -131,9 +111,15 @@ pub(crate) fn render_wol_welcome_page(
     let dialog_background = art
         .and_then(|art| art.background)
         .filter(|_| api_missing.is_none());
-    let mut art_sprites = Vec::new();
+    let mut background_sprites = Vec::new();
     match dialog_background {
-        Some(entry) => push_entry(&mut art_sprites, entry, 0, 0, PARENT_BACKGROUND_DEPTH),
+        Some(entry) => push_entry_native(
+            &mut background_sprites,
+            entry,
+            0,
+            0,
+            PARENT_BACKGROUND_DEPTH,
+        ),
         None => sprites.extend(
             crate::app::frontend::main_menu_shell_render::shell_parent_background_instances(
                 chrome, screen_w, screen_h,
@@ -151,8 +137,10 @@ pub(crate) fn render_wol_welcome_page(
     }));
 
     // Children of the page: blank while the teardown slide runs and gone
-    // once the box shows; the entry slide leaves the left side painted.
+    // once the box shows; the entry slide leaves the left side painted. The
+    // icons draw after the backdrop, wherever it came from.
     let children = page_statics;
+    let mut icon_sprites = Vec::new();
     if children {
         for window in layout.group_boxes {
             push_group_box(&mut sprites, chrome, window);
@@ -162,12 +150,9 @@ pub(crate) fn render_wol_welcome_page(
                 let Some((_, entry)) = art.icons.iter().find(|(name, _)| name == file) else {
                     continue;
                 };
-                let (x, y) = centred_image_origin(
-                    *window,
-                    entry.pixel_size[0].round() as i32,
-                    entry.pixel_size[1].round() as i32,
-                );
-                push_entry(&mut art_sprites, *entry, x, y, CHILD_DEPTH);
+                let (w, h) = entry.native_size();
+                let (x, y) = centred_in_window(*window, w, h);
+                push_entry_native(&mut icon_sprites, *entry, x, y, CHILD_DEPTH);
             }
         }
     }
@@ -182,7 +167,7 @@ pub(crate) fn render_wol_welcome_page(
     } else {
         wave.as_ref().map(|wave| wave.button_draws())
     };
-    let buttons: Vec<PaintButton> = match column {
+    let painted = match column {
         Some(draws) => {
             sprites.extend(shell_paint::paint_slide_column(
                 chrome,
@@ -191,18 +176,17 @@ pub(crate) fn render_wol_welcome_page(
             ));
             Vec::new()
         }
-        None => layout
-            .page
-            .buttons
-            .iter()
-            .map(|button| PaintButton {
-                rect: button.rect,
-                pressed: pressed == Some(button.id),
-                hovered: false,
-                enabled: true,
-            })
-            .collect(),
+        None => layout.painted_buttons(pressed),
     };
+    let buttons: Vec<PaintButton> = painted
+        .iter()
+        .map(|button| PaintButton {
+            rect: button.rect,
+            pressed: pressed == Some(button.id),
+            hovered: false,
+            enabled: true,
+        })
+        .collect();
     let button_sprites = shell_paint::paint_buttons(
         chrome,
         &buttons,
@@ -227,7 +211,7 @@ pub(crate) fn render_wol_welcome_page(
             });
         }
     }
-    for button in layout.page.buttons.iter().filter(|_| !buttons.is_empty()) {
+    for button in &painted {
         let Some(spec) = WOL_WELCOME_PAGE.button(button.id) else {
             continue;
         };
@@ -295,25 +279,29 @@ pub(crate) fn render_wol_welcome_page(
         text.extend(draw.text);
     }
 
-    let mut draws = vec![
-        TexturedDraw {
-            texture: &chrome.texture,
-            instances: sprites,
-        },
-        TexturedDraw {
-            texture: &chrome.texture,
-            instances: button_sprites,
-        },
-    ];
+    // Draw order is paint order: the dialog background, the backdrop and
+    // chrome, the icons, then the buttons.
+    let mut draws = Vec::new();
     if let Some(art) = art {
-        draws.insert(
-            0,
-            TexturedDraw {
-                texture: &art.texture,
-                instances: art_sprites,
-            },
-        );
+        draws.push(TexturedDraw {
+            texture: &art.texture,
+            instances: background_sprites,
+        });
     }
+    draws.push(TexturedDraw {
+        texture: &chrome.texture,
+        instances: sprites,
+    });
+    if let Some(art) = art {
+        draws.push(TexturedDraw {
+            texture: &art.texture,
+            instances: icon_sprites,
+        });
+    }
+    draws.push(TexturedDraw {
+        texture: &chrome.texture,
+        instances: button_sprites,
+    });
     if let Some(atlas) = box_texture {
         draws.push(TexturedDraw {
             texture: &atlas.texture,

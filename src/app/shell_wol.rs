@@ -200,11 +200,13 @@ impl App {
             wol.status_help = None;
             wol.api_missing = Some(ApiMissingBox { body, ok });
         }
+        // The box's loop (`0x007759E0`) dispatches without `IsDialogMessage`:
+        // it takes no keys.
         if state.frontend.shell_controller.top_id() != Some(API_MISSING_DIALOG) {
             state
                 .frontend
                 .shell_controller
-                .push(API_MISSING_DIALOG, true);
+                .push(API_MISSING_DIALOG, false);
         }
     }
 

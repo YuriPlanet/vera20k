@@ -45,13 +45,13 @@ impl App {
     }
 
     fn validation_modal_feed(state: &AppState) -> Vec<crate::ui::shell::layout::LaidOutControl> {
-        let layout = crate::ui::skirmish_shell::compute_validation_modal_layout(
-            state.render_width(),
-            state.render_height(),
+        let layout = crate::ui::shell::modal::body_ok_layout(
+            state.render_width() as i32,
+            state.render_height() as i32,
         );
         vec![crate::ui::shell::layout::LaidOutControl {
             id: crate::ui::shell::modal::control::OK,
-            rect: layout.ok_button,
+            rect: layout.ok,
         }]
     }
 

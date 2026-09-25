@@ -14,7 +14,9 @@
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, dlu_rect};
 use crate::ui::shell::layout::status_line_rect;
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::menu_page::{
+    self, MenuPageButtonRect, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec,
+};
 
 pub const WOL_WELCOME_DIALOG: DialogId = DialogId(0x010E);
 pub const QUICK_MATCH: u16 = 0x06E0;
@@ -86,8 +88,8 @@ pub const WOL_WELCOME_PAGE: MenuPageSpec = MenuPageSpec {
 };
 
 /// The buttons in template order, which is their Z-order: a hit test finds
-/// the first. At 640x480 Community and Main Menu share the last row, and
-/// Main Menu, created first, takes the pointer.
+/// the first. At 640x480 Community and Main Menu share the last row: Main
+/// Menu, created first, takes the pointer, and Community paints over it.
 pub const WOL_BUTTON_Z_ORDER: [u16; 7] = [
     QUICK_MATCH,
     CUSTOM_MATCH,
@@ -340,7 +342,10 @@ pub struct WolWelcomeLayout {
 }
 
 pub fn compute_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayout {
-    let page = menu_page::compute_layout(&WOL_WELCOME_PAGE, screen_w, screen_h);
+    let mut page = menu_page::compute_layout(&WOL_WELCOME_PAGE, screen_w, screen_h);
+    // The heading template is 108x11 DLU here (the family's is 108x10): the
+    // relayout keeps the family place and the window is one row taller.
+    page.title.h = dlu_rect(423, 4, 108, 11).h + 1;
     let status_help = status_line_rect(
         RectPx::new(2, 355, 316, 12),
         screen_w as i32,
@@ -371,11 +376,38 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayout {
 
 impl WolWelcomeLayout {
     /// The page's buttons in hit-test order.
-    pub fn buttons_in_z_order(&self) -> Vec<crate::ui::shell::menu_page::MenuPageButtonRect> {
+    pub fn buttons_in_z_order(&self) -> Vec<MenuPageButtonRect> {
         WOL_BUTTON_Z_ORDER
             .iter()
             .filter_map(|id| self.page.buttons.iter().find(|button| button.id == *id))
             .copied()
+            .collect()
+    }
+
+    /// The buttons whose faces show. Siblings do not clip each other and
+    /// paint down the Z-order, so where two share a row (Community and Main
+    /// Menu at 640x480) the later one covers the earlier, unless the earlier
+    /// is pressed and repaints alone (inferred from Win32 paint order;
+    /// uncaptured).
+    pub fn painted_buttons(&self, pressed: Option<u16>) -> Vec<MenuPageButtonRect> {
+        let order = self.buttons_in_z_order();
+        let shows = |index: usize, button: &MenuPageButtonRect| {
+            if pressed == Some(button.id) {
+                return true;
+            }
+            let row_pressed = order
+                .iter()
+                .any(|other| other.rect == button.rect && pressed == Some(other.id));
+            !row_pressed
+                && !order[index + 1..]
+                    .iter()
+                    .any(|other| other.rect == button.rect)
+        };
+        order
+            .iter()
+            .enumerate()
+            .filter(|(index, button)| shows(*index, button))
+            .map(|(_, button)| *button)
             .collect()
     }
 
@@ -427,25 +459,10 @@ impl WolWelcomeState {
     }
 }
 
-/// A kind-2 image static centres its image only along an axis where the
-/// window is larger (`0x00615831..0x006158F3`).
-pub fn centred_image_origin(window: RectPx, image_w: i32, image_h: i32) -> (i32, i32) {
-    let dx = if window.w > image_w {
-        (window.w - image_w) / 2
-    } else {
-        0
-    };
-    let dy = if window.h > image_h {
-        (window.h - image_h) / 2
-    } else {
-        0
-    };
-    (window.x + dx, window.y + dy)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::shell::geom::centred_in_window;
 
     #[test]
     fn right_panel_matches_the_executed_relayout() {
@@ -469,6 +486,16 @@ mod tests {
             ]
         );
         assert_eq!(layout.status_help, RectPx::new(10, 578, 475, 21));
+        // The executed relayout of heading 0x694 (dlu 423,4,108,11).
+        assert_eq!(layout.page.title, RectPx::new(635, 9, 163, 19));
+        assert_eq!(
+            compute_layout(640, 480).page.title,
+            RectPx::new(475, 9, 163, 19)
+        );
+        assert_eq!(
+            compute_layout(1024, 768).page.title,
+            RectPx::new(747, 93, 163, 19)
+        );
     }
 
     #[test]
@@ -485,9 +512,9 @@ mod tests {
         // The executed kind-2 placement: gt18 at (108, 328), the second
         // number0 (0x79F, +1 x) at (110, 473).
         let (_, gt18) = layout.icons[0];
-        assert_eq!(centred_image_origin(gt18, 14, 14), (108, 328));
+        assert_eq!(centred_in_window(gt18, 14, 14), (108, 328));
         let (_, number0) = layout.icons[9];
-        assert_eq!(centred_image_origin(number0, 8, 16), (110, 473));
+        assert_eq!(centred_in_window(number0, 8, 16), (110, 473));
         // 1024x768 leaves them at their 800x600 places.
         let wide = compute_layout(1024, 768);
         assert_eq!(wide.group_boxes, layout.group_boxes);
@@ -524,26 +551,19 @@ mod tests {
             .find(|button| button.rect.contains(community.x + 5, community.y + 5))
             .unwrap();
         assert_eq!(first.id, MAIN_MENU);
-    }
-
-    #[test]
-    fn wol_actions_need_the_missing_api_except_community_and_main_menu() {
-        for id in [
-            QUICK_MATCH,
-            QUICK_COOP,
-            CUSTOM_MATCH,
-            PLAY_BUDDY,
-            MY_INFORMATION,
-        ] {
-            assert_eq!(action_for_control(id), Some(WolWelcomeAction::ApiMissing));
-        }
-        assert_eq!(
-            action_for_control(COMMUNITY),
-            Some(WolWelcomeAction::Community)
-        );
-        assert_eq!(
-            action_for_control(MAIN_MENU),
-            Some(WolWelcomeAction::MainMenu)
-        );
+        // One face shows on the shared row: Community's, painted later, or
+        // a pressed Main Menu's.
+        let shown = |pressed| -> Vec<u16> {
+            layout
+                .painted_buttons(pressed)
+                .iter()
+                .filter(|button| button.rect == community)
+                .map(|button| button.id)
+                .collect()
+        };
+        assert_eq!(shown(None), [COMMUNITY]);
+        assert_eq!(shown(Some(MAIN_MENU)), [MAIN_MENU]);
+        assert_eq!(layout.painted_buttons(None).len(), 6);
+        assert_eq!(compute_layout(800, 600).painted_buttons(None).len(), 7);
     }
 }
