@@ -10,7 +10,9 @@ use super::{
     LauncherResolutionRow, LauncherTrackbarId, OptionsDialogState, PhysicalControlFrame,
     thumb_left,
 };
+use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, center_offset, dlu_rect};
+use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageSpec};
 use crate::ui::skirmish_shell::{
     COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, COMBO_DROPDOWN_SCROLLBAR_W,
     COMBO_FACE_H, ScrollModel,
@@ -25,10 +27,48 @@ pub(super) struct ShellInteraction {
     popup_scroll_grab: Option<i32>,
 }
 
+pub(crate) const KEYBOARD_BUTTON: u16 = 0x05CE;
+pub(crate) const NETWORK_BUTTON: u16 = 0x05CD;
+pub(crate) const MAIN_MENU_BUTTON: u16 = 0x0686;
+
+/// `0xD5` as a family page (Session `+0x30D8` clear at the main menu): the
+/// right-panel column is Keyboard and Network (`0x006092CB`), then Main Menu
+/// (`0x0060982C`); the heading and status line sit at the family places.
+/// Button captions come from the dialog's own labels.
+pub(crate) const OPTIONS_PAGE: MenuPageSpec = MenuPageSpec {
+    dialog: DialogId(0x00D5),
+    title_key: "GUI:OptionsMenu",
+    stacked: &[
+        MenuPageButtonSpec {
+            id: KEYBOARD_BUTTON,
+            dlu_top: 122,
+            csf_key: "GUI:Keyboard",
+            tooltip_key: "STT:MainOptButtonKeyboard",
+            result: None,
+        },
+        MenuPageButtonSpec {
+            id: NETWORK_BUTTON,
+            dlu_top: 149,
+            csf_key: "GUI:Network",
+            tooltip_key: "STT:MainOptButtonNetwork",
+            result: None,
+        },
+    ],
+    back: MenuPageButtonSpec {
+        id: MAIN_MENU_BUTTON,
+        dlu_top: 346,
+        csf_key: "GUI:MainMenu",
+        tooltip_key: "STT:MainOptButtonBack",
+        result: Some(0x05CB),
+    },
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct LauncherOptionsLayout {
     pub(crate) title: RectPx,
     pub(crate) warning: RectPx,
+    /// Status line `0x695`.
+    pub(crate) status_help: RectPx,
     pub(crate) resolution: RectPx,
     pub(crate) trackbars: [(LauncherTrackbarId, RectPx); 6],
     pub(crate) checkboxes: [(LauncherCheckboxId, RectPx); 3],
@@ -43,11 +83,13 @@ impl LauncherOptionsLayout {
         let offset_y = center_offset(height, 600);
         let px = |rect: RectPx| rect.translate(offset_x, offset_y);
         let dlu = |x, y, w, h| px(dlu_rect(x, y, w, h));
+        // The right-panel children follow the panel, not the dialog centring.
+        let page = menu_page::compute_layout(&OPTIONS_PAGE, width as u32, height as u32);
+        let button = |id| page.button_rect(id).expect("0xD5 page button");
         Self {
-            title: px(RectPx::new(635, 9, 162, 17)),
-            // 0x71C window: +1w/+1h like the family's monitor, so the 92x53
-            // frame centers at (670, 48).
-            warning: px(RectPx::new(670, 47, 93, 55)),
+            title: page.title,
+            warning: page.warning_monitor,
+            status_help: page.status_help,
             resolution: px(RectPx::new(351, 86, 180, COMBO_FACE_H)),
             trackbars: [
                 (LauncherTrackbarId::Detail, dlu(89, 53, 120, 13)),
@@ -63,18 +105,9 @@ impl LauncherOptionsLayout {
                 (LauncherCheckboxId::ShowHidden, dlu(93, 218, 130, 10)),
             ],
             buttons: [
-                (
-                    LauncherParentResult::Keyboard,
-                    px(RectPx::new(644, 199, 156, 42)),
-                ),
-                (
-                    LauncherParentResult::Network,
-                    px(RectPx::new(644, 241, 156, 42)),
-                ),
-                (
-                    LauncherParentResult::Back,
-                    px(RectPx::new(644, 535, 156, 42)),
-                ),
+                (LauncherParentResult::Keyboard, button(KEYBOARD_BUTTON)),
+                (LauncherParentResult::Network, button(NETWORK_BUTTON)),
+                (LauncherParentResult::Back, button(MAIN_MENU_BUTTON)),
             ],
             offset_x,
             offset_y,
@@ -295,6 +328,63 @@ impl OptionsDialogState {
         })
     }
 
+    /// Status help (`0x00604729..0x00604838`) for the control under the
+    /// pointer. Hover is enable-unfiltered; the open resolution list is a
+    /// window of its own with no entry.
+    pub(crate) fn shell_status_help_key(
+        &self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> Option<&'static str> {
+        let layout = LauncherOptionsLayout::new(width, height);
+        if self
+            .shell_popup(&layout)
+            .is_some_and(|popup| popup.rect.contains(x, y))
+        {
+            return None;
+        }
+        if let Some((id, _)) = layout.buttons.iter().find(|(_, rect)| rect.contains(x, y)) {
+            return Some(match id {
+                LauncherParentResult::Keyboard => "STT:MainOptButtonKeyboard",
+                LauncherParentResult::Network => "STT:MainOptButtonNetwork",
+                LauncherParentResult::Back | LauncherParentResult::Terminal => {
+                    "STT:MainOptButtonBack"
+                }
+            });
+        }
+        if let Some((id, _)) = layout
+            .trackbars
+            .iter()
+            .find(|(_, rect)| rect.contains(x, y))
+        {
+            return Some(match id {
+                LauncherTrackbarId::Detail => "STT:MainOptSliderVisual",
+                LauncherTrackbarId::Difficulty => "STT:MainOptSliderDifficulty",
+                LauncherTrackbarId::Scroll => "STT:MainOptSliderScroll",
+                LauncherTrackbarId::Score => "STT:MainOptSliderMusic",
+                LauncherTrackbarId::Sound => "STT:MainOptSliderSound",
+                LauncherTrackbarId::Voice => "STT:MainOptSliderVoice",
+            });
+        }
+        if let Some((id, _)) = layout
+            .checkboxes
+            .iter()
+            .find(|(_, rect)| rect.contains(x, y))
+        {
+            return Some(match id {
+                LauncherCheckboxId::Tooltips => "STT:MainOptCBoxTooltips",
+                LauncherCheckboxId::TargetLines => "STT:MainOptCBoxTargetLines",
+                LauncherCheckboxId::ShowHidden => "STT:MainOptCBoxHidden",
+            });
+        }
+        layout
+            .resolution
+            .contains(x, y)
+            .then_some("STT:MainOptComboModes")
+    }
+
     /// The caller routes all pointer messages here while this parent is topmost.
     pub(crate) fn shell_mouse_down(&mut self, x: i32, y: i32, width: i32, height: i32) {
         let layout = LauncherOptionsLayout::new(width, height);
@@ -438,6 +528,37 @@ mod tests {
             Some(0),
             true,
         )
+    }
+
+    #[test]
+    fn right_panel_children_follow_the_family_places() {
+        let layout = LauncherOptionsLayout::new(800, 600);
+        assert_eq!(layout.title, RectPx::new(635, 9, 163, 18));
+        assert_eq!(layout.status_help, RectPx::new(10, 578, 456, 21));
+        let buttons = layout.buttons.map(|(_, rect)| rect);
+        assert_eq!(
+            buttons,
+            [
+                RectPx::new(644, 199, 156, 42),
+                RectPx::new(644, 241, 156, 42),
+                RectPx::new(644, 535, 156, 42),
+            ]
+        );
+    }
+
+    #[test]
+    fn status_help_names_the_control_under_the_pointer() {
+        let state = state();
+        let layout = LauncherOptionsLayout::new(800, 600);
+        let at = |rect: RectPx| state.shell_status_help_key(rect.x + 2, rect.y + 2, 800, 600);
+        assert_eq!(at(layout.buttons[0].1), Some("STT:MainOptButtonKeyboard"));
+        assert_eq!(at(layout.buttons[2].1), Some("STT:MainOptButtonBack"));
+        assert_eq!(
+            at(layout.trackbar_rect(LauncherTrackbarId::Score)),
+            Some("STT:MainOptSliderMusic")
+        );
+        assert_eq!(at(layout.resolution), Some("STT:MainOptComboModes"));
+        assert_eq!(state.shell_status_help_key(5, 5, 800, 600), None);
     }
 
     #[test]

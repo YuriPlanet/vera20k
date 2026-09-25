@@ -61,6 +61,8 @@ pub(crate) enum ShellSlideKind {
     Campaign,
     /// Dialog 0xB7 — Single Player's Load Saved Game.
     LoadSavedGame,
+    /// Dialog 0xD5 — launcher Options.
+    Options,
 }
 
 impl ShellSlideKind {
@@ -76,6 +78,7 @@ impl ShellSlideKind {
             ShellSlideKind::Skirmish => 0x0102,
             ShellSlideKind::Campaign => 0x0094,
             ShellSlideKind::LoadSavedGame => 0x00B7,
+            ShellSlideKind::Options => 0x00D5,
         })
     }
 
@@ -117,6 +120,9 @@ pub(crate) enum ShellExitThen {
     CampaignBack,
     /// Load Saved Game Back (result 2): state 1 recreates Single Player.
     LoadSavedGameBack,
+    /// Options Main Menu (result `0x5CB`): the controls commit, and state
+    /// 0x12 recreates `0xE2`.
+    OptionsBack,
 }
 
 impl ShellExitThen {
@@ -130,6 +136,7 @@ impl ShellExitThen {
             Self::SkirmishStart(_) | Self::SkirmishBack => ShellSlideKind::Skirmish,
             Self::CampaignBack => ShellSlideKind::Campaign,
             Self::LoadSavedGameBack => ShellSlideKind::LoadSavedGame,
+            Self::OptionsBack => ShellSlideKind::Options,
         }
     }
 }
@@ -386,7 +393,8 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::MoviesAndCredits
             | ShellSlideKind::MovieList
             | ShellSlideKind::Campaign
-            | ShellSlideKind::LoadSavedGame => ShellWaveCompletion::MenuPage,
+            | ShellSlideKind::LoadSavedGame
+            | ShellSlideKind::Options => ShellWaveCompletion::MenuPage,
             ShellSlideKind::Skirmish => ShellWaveCompletion::Skirmish,
         })
     }
@@ -544,16 +552,19 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     if state.frontend.fullscreen_movie.is_some() || state.frontend.credits_roll.is_some() {
         return None;
     }
-    // Options `0xD5` (and its Keyboard child) runs after `0xE2` is destroyed
-    // (state 5); state 0x12 builds a new `0xE2` when it closes (`0x0052DDAB`).
-    // The Exit confirmation (state 6) and the quit after it (state 7) also run
-    // without a family dialog.
-    if state.frontend.options_dialog.is_some()
-        || state.frontend.keyboard_dialog.is_some()
+    // Options `0xD5` runs after `0xE2` is destroyed (state 5,
+    // `0x0052DDAB`); state 0x12 builds a new `0xE2` when it closes. Its
+    // Keyboard child `0xA3` does not slide here yet. The Exit confirmation
+    // (state 6) and the quit after it (state 7) run without a family dialog.
+    if state.frontend.keyboard_dialog.is_some()
         || state.frontend.exit_confirm_modal.is_some()
         || state.frontend.quit_cascade.is_some()
     {
         return None;
+    }
+    if state.frontend.options_dialog.is_some() {
+        return crate::ui::shell::slide::is_slide_eligible(ShellSlideKind::Options.dialog_id())
+            .then_some(ShellSlideKind::Options);
     }
     let candidate =
         if state.frontend.shell_route.skirmish() || state.frontend.dev_skirmish_shell_enabled {
@@ -730,6 +741,16 @@ pub(crate) fn render_shell_first_paint_slide(
                 encoder,
                 destination,
             )?
+        }
+        ShellSlideKind::Options => {
+            crate::app::App::native_launcher_options_active(state) && {
+                crate::app::frontend::skirmish_shell_render::render_launcher_options(
+                    state,
+                    encoder,
+                    destination,
+                )?;
+                true
+            }
         }
         ShellSlideKind::SinglePlayer | ShellSlideKind::MoviesAndCredits => matches!(
             crate::app::frontend::menu_page_render::render_active_menu_page(
