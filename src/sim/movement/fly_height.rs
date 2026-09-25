@@ -118,7 +118,6 @@ impl FlyRuntime {
         self.landing_effect_latched
     }
 
-    ///4CEB53..4CEB90, once per admitted BeginLanding, strictly below300.
     /// Process `0x004CD6B1..0x004CD6E4`: an unpowered or dead Fly above the
     /// ground adds 1 a frame to its fall counter when dead, 3 when alive, and
     /// drops by the new counter. Returns the counter.
@@ -131,6 +130,7 @@ impl FlyRuntime {
         self.fall_counter
     }
 
+    ///4CEB53..4CEB90, once per admitted BeginLanding, strictly below300.
     pub(crate) fn admit_landing_effect(&mut self, height: i32) -> bool {
         if self.landing_effect_latched || height >= 300 {
             return false;

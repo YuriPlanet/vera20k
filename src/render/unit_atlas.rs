@@ -599,9 +599,36 @@ pub(crate) fn render_unit_sprite_with_slope_blend(
     rules: Option<&RuleSet>,
     art: Option<&ArtRegistry>,
     vpl: Option<&VplFile>,
+    compute: Option<&mut VxlComputeRenderer>,
+    gpu: &GpuContext,
+    slope_blend: Option<VxlSlopeBlend>,
+) -> Option<(VxlSprite, bool, Option<[i32; 4]>)> {
+    render_unit_sprite_posed(
+        asset_manager,
+        key,
+        rules,
+        art,
+        vpl,
+        compute,
+        gpu,
+        slope_blend,
+        None,
+    )
+}
+
+/// [`render_unit_sprite_with_slope_blend`] with an optional crashing body
+/// tilt (`VxlRenderParams::body_tilt`), which replaces the slope matrices.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_unit_sprite_posed(
+    asset_manager: &AssetManager,
+    key: &UnitSpriteKey,
+    rules: Option<&RuleSet>,
+    art: Option<&ArtRegistry>,
+    vpl: Option<&VplFile>,
     mut compute: Option<&mut VxlComputeRenderer>,
     gpu: &GpuContext,
     slope_blend: Option<VxlSlopeBlend>,
+    body_tilt: Option<[f32; 2]>,
 ) -> Option<(VxlSprite, bool, Option<[i32; 4]>)> {
     // Resolve image name: type_id → rules.ini Image= → art.ini Image= override.
     let rules_image: String = rules
@@ -644,6 +671,7 @@ pub(crate) fn render_unit_sprite_with_slope_blend(
         facing: key.facing, // already quantized by atlas key generation
         slope_type: key.slope_type,
         slope_blend,
+        body_tilt,
         ..VxlRenderParams::default()
     };
     // Ordinary ground, single-section ShadowIndex/frame-zero geometry. Keep

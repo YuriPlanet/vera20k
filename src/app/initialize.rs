@@ -704,6 +704,7 @@ impl App {
                 vxl_compute: Some(vxl_compute),
                 bit_font,
                 vxl_slope_transition_cache: std::cell::RefCell::new(Default::default()),
+                vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
             },
             process_assets: crate::app::process_assets::ProcessAssets::from_startup(

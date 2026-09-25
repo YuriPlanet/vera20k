@@ -7,7 +7,7 @@
     1,
     33621247
   ],
-  "scope": "Crash on dead/live/grounded/IKnowWhatImDoing aircraft over 15 seeds; the full per-frame Fly fall of a Health-0 aircraft from several heights, speeds, headings and grounds to its impact frame, death-weapon call, impact sound choice and UnInit; the crashing rocking accumulation; the red-health smoke gate and draw. Excludes the Techno death arm, the death weapon bullet, AnimClass construction and sound playback.",
+  "scope": "Crash on dead/live/grounded/IKnowWhatImDoing aircraft over 15 seeds; the full per-frame Fly fall of a Health-0 aircraft from several heights, speeds, headings and grounds to its impact frame, death-weapon call, impact sound choice and UnInit; the crashing rocking accumulation; the red-health smoke gate and draw; the crashing Fly Draw_Matrix over 4 facings and 6 poses. Excludes the Techno death arm, the death weapon bullet, AnimClass construction and sound playback.",
   "assumptions": [
     "One Aircraft on the original (cloned) Aircraft vtable, real AircraftType, FacingClass and FlyLocomotionClass constructed by their original code; a flat 24x24 block of real cells (level/LandType per row) in the MapClass table; MapSize 64x64 (the block lies inside its playable diamond).",
     "Scenario RNG seeded by the original seeder 0x0065C6D0 per row; next_random is the next raw Random() on the same stream after the row.",
@@ -27,7 +27,8 @@
     "smoke_end": "0x0041512C",
     "random_ranged": "0x0065C7E0",
     "rng_seed": "0x0065C6D0",
-    "fly_constructor": "0x004CC9A0"
+    "fly_constructor": "0x004CC9A0",
+    "draw_matrix": "0x004CF610"
   },
-  "payload_sha256": "bdbb584c91a1143ceed0e7e0396c39ba6e2c14ce9e18ead858e66c3041ad717d"
+  "payload_sha256": "729e0d3266fcb6115df0f8ccd55e094a8f1f9cd92e81048f381d06502fd15dd7"
 }

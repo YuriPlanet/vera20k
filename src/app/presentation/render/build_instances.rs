@@ -274,6 +274,11 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
         .max(1);
     let mut unit_transition_paged: Vec<Vec<SpriteInstance>> =
         vec![Vec::new(); transition_page_count];
+    state
+        .renderer
+        .vxl_pose_frame_cache
+        .borrow_mut()
+        .begin_frame();
     instances::build_unit_instances(
         state,
         &mut unit,
@@ -288,6 +293,11 @@ pub(super) fn build_world_instances(state: &mut AppState, sw: f32, sh: f32) -> W
     for page in &mut unit_transition_paged {
         sort_by_depth_desc(page);
     }
+    state
+        .renderer
+        .vxl_pose_frame_cache
+        .borrow_mut()
+        .upload(&state.renderer.gpu, &state.renderer.batch_renderer);
     // A building's voxel turret remains owned by the building display call.
     // The SHP builder therefore adds it to the same contiguous Ground parent
     // instead of leaking it into an atlas-level tie.

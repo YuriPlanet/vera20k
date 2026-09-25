@@ -373,3 +373,380 @@ fn crash_smoke_matches_native_rows() {
         );
     }
 }
+
+/// A lethal hit on a flying aircraft through the production receiver, then
+/// whole frames through `advance_tick`: the aircraft stays alive at Health 0,
+/// latched and spinning, trails smoke and plays its crash sound while it
+/// falls, and at the impact its death weapon strikes the victim below before
+/// it is UnInit. The killer's house holds the kill from the hit on.
+#[test]
+fn a_shot_down_aircraft_falls_and_detonates_through_advance_tick() {
+    use crate::sim::combat::combat_aoe::AreaDamageReceiver;
+    use std::collections::BTreeMap;
+    let input = serde_json::json!({"health": 150, "crashing": 0});
+    let (mut sim, rules) = fixture(&input);
+    let soviets = sim.interner.intern("Soviets");
+    let shooter = sim.allocate_stable_id();
+    let shooter_type = sim.interner.intern("VICTIM");
+    let mut entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
+        shooter,
+        40,
+        40,
+        0,
+        0,
+        soviets,
+        crate::sim::components::Health { current: 1000 },
+        shooter_type,
+        EntityCategory::Unit,
+        0,
+        5,
+        true,
+    );
+    entity.lifecycle.in_limbo = true;
+    sim.substrate.entities.insert(entity);
+    assert!(matches!(
+        sim.try_reveal_entity(
+            shooter,
+            RevealRequest {
+                position: RevealPosition {
+                    rx: 40,
+                    ry: 40,
+                    z: 0,
+                    sub_x: SimFixed::from_num(128),
+                    sub_y: SimFixed::from_num(128),
+                },
+                placement: PlacementEvidence::MarkSucceeded,
+                logic_eligible: true,
+            }
+        ),
+        RevealOutcome::Revealed { .. }
+    ));
+    let warhead = sim.interner.intern("CrashWH");
+    let hit =
+        crate::sim::combat::EntityDamageEvent::area(1, 200, 0, shooter, Some(soviets), warhead);
+    sim.commit_noncombat_aoe_receivers(&rules, None, &[AreaDamageReceiver::Entity(hit)]);
+    let entity = sim
+        .substrate
+        .entities
+        .get(1)
+        .expect("a crashing aircraft stays represented");
+    assert!(entity.crashing && entity.lifecycle.object_alive && !entity.dying);
+    assert_eq!(entity.health.current, 0);
+    assert_eq!(entity.killed_by, Some(soviets));
+    assert!(
+        entity
+            .rocking
+            .as_ref()
+            .is_some_and(|r| r.vel_sideways != SimFixed::ZERO)
+    );
+
+    let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
+    let mut smoke = 0;
+    let mut crash_sound = false;
+    let mut frames = 0;
+    let mut last_xyz = None;
+    while sim
+        .substrate
+        .entities
+        .get(1)
+        .is_some_and(|e| e.lifecycle.object_alive)
+    {
+        frames += 1;
+        assert!(frames < 60, "the fall must reach the ground");
+        let anims_before = sim.substrate.anims.len();
+        sim.sound_events.clear();
+        sim.advance_tick(&[], Some(&rules), &BTreeMap::new(), Some(&grid), None, 67);
+        smoke += sim.substrate.anims.len().saturating_sub(anims_before);
+        crash_sound |= sim.sound_events.iter().any(|event| {
+            matches!(
+                event,
+                super::SimSoundEvent::AnimationStarted { anim_id: 1, .. }
+            )
+        });
+        if let Some(entity) = sim.substrate.entities.get(1) {
+            last_xyz = Some(crate::sim::movement::ground_pose::position_world_coord(
+                &entity.position,
+            ));
+        }
+    }
+    let last = last_xyz.unwrap();
+    assert!(
+        frames > 30,
+        "a 1500-lepton fall takes ~39 frames, took {frames}"
+    );
+    assert!(smoke > 0, "a dead airborne aircraft trails SGRYSMK1");
+    // The type names no CrashingSound: the test only proves the edge ran once
+    // with nothing to play.
+    assert!(!crash_sound);
+    assert!(last.z >= 0);
+    assert!(
+        sim.sound_events.iter().any(|event| matches!(
+            event,
+            super::SimSoundEvent::VocAt { sound_id, .. } if sound_id == "TypeLand"
+        )),
+        "the impact cue"
+    );
+    assert!(sim.substrate.entities.get(shooter).is_some());
+}
+
+/// Retail Dustbowl runtime, end to end through production: a Harrier ordered
+/// at three flak tracks takes off, their `FlakTrackAAGun` volleys shoot it
+/// down, and it crashes. `VoiceCrashing=`/`CrashingSound=` play on the edge,
+/// SGRYSMK1 smoke trails the spinning fall, whose frames are the original
+/// executable's to the impact, and there its current weapon detonates as the
+/// death weapon and `ImpactLandSound=` plays before it is UnInit. Ignored:
+/// needs the retail install (`RA2_DIR` or `config.toml`).
+#[test]
+#[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
+fn retail_dustbowl_flak_shoots_a_harrier_down() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::house_state::HouseState;
+    use crate::sim::movement::air_movement::current_fly_height;
+    use std::collections::BTreeSet;
+
+    let dir = std::env::var("RA2_DIR")
+        .ok()
+        .filter(|path| !path.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            crate::util::config::GameConfig::load()
+                .expect("set RA2_DIR or provide config.toml for this ignored test")
+                .paths
+                .ra2_dir
+        });
+    let mut scenario =
+        crate::headless_scenario::load(&dir, "Dustbowl.mmx", 0x00C0_FFEE).expect("Dustbowl loads");
+    let crate::sim::runtime::SimRuntime {
+        simulation: sim,
+        resources,
+    } = &mut scenario.runtime;
+    for (name, side, human) in [("Americans", 0, true), ("Russians", 1, false)] {
+        let house = sim.interner.intern(name);
+        sim.houses
+            .entry(house)
+            .or_insert_with(|| HouseState::new(house, side, None, human, 10_000, 10));
+        if !sim.session.house_order.contains(&house) {
+            sim.session.house_order.push(house);
+        }
+    }
+    // A Harrier on open level ground with three flak tracks eight and nine
+    // cells east: beyond their sight while it stands, inside their AA range
+    // once it lifts off. Each side keeps a power plant out of the fight, so
+    // neither house is defeated under the Battle mode's ShortGame.
+    let (harrier, flak) = (40..100_u16)
+        .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
+        .find_map(|(x, y)| {
+            let grid = sim.path_grid()?;
+            let terrain = sim.resolved_terrain.as_ref()?;
+            let level = terrain.cell(x, y)?.level;
+            let open = (x.checked_sub(4)?..=x + 13).all(|cx| {
+                (y - 1..=y + 1).all(|cy| {
+                    terrain.cell(cx, cy).is_some_and(|cell| cell.level == level)
+                        && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)
+                })
+            });
+            if !open {
+                return None;
+            }
+            for (plant, owner, px) in [
+                ("GAPOWR", "Americans", x - 4),
+                ("NAPOWR", "Russians", x + 12),
+            ] {
+                sim.spawn_object(
+                    plant,
+                    owner,
+                    px,
+                    y - 1,
+                    0,
+                    &resources.rules,
+                    &resources.height_map,
+                )?;
+            }
+            let harrier = sim.spawn_object(
+                "ORCA",
+                "Americans",
+                x,
+                y,
+                64,
+                &resources.rules,
+                &resources.height_map,
+            )?;
+            let flak = [(x + 8, y - 1), (x + 8, y + 1), (x + 9, y)]
+                .into_iter()
+                .map(|(fx, fy)| {
+                    sim.spawn_object(
+                        "HTK",
+                        "Russians",
+                        fx,
+                        fy,
+                        192,
+                        &resources.rules,
+                        &resources.height_map,
+                    )
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some((harrier, flak))
+        })
+        .expect("open level ground for the fight");
+    sim.resolve_type_handles(&resources.rules);
+    let americans = sim.interner.intern("Americans");
+    let russians = sim.interner.intern("Russians");
+    let smoke_type = sim.interner.intern("SGRYSMK1");
+    // The Harrier's death weapon is its current weapon, Maverick (ORCAAP).
+    let impact_anims: BTreeSet<_> = resources
+        .rules
+        .warhead("ORCAAP")
+        .expect("retail ORCAAP")
+        .anim_list
+        .iter()
+        .map(|name| sim.interner.intern(name))
+        .collect();
+    let order = CommandEnvelope::new(
+        americans,
+        sim.session.tick + 1,
+        Command::Attack {
+            attacker_id: harrier,
+            target_id: flak[0],
+        },
+    );
+    scenario
+        .runtime
+        .advance_frame(
+            &[order],
+            crate::headless_scenario::SIM_TICK_MS,
+            super::TickLane::Ordinary,
+        )
+        .expect("the order frame");
+
+    let mut lifted = false;
+    let mut crash_frame = None;
+    let mut impact_frame = None;
+    let mut heights = Vec::new();
+    let mut spun = false;
+    let mut smoke = BTreeSet::new();
+    let mut sounds = Vec::new();
+    let mut impact_explosions = Vec::new();
+    for frame in 1..=900 {
+        let anims_before: BTreeSet<_> = scenario
+            .sim()
+            .substrate
+            .anims
+            .iter()
+            .map(|(id, _)| *id)
+            .collect();
+        let output = scenario
+            .runtime
+            .advance_frame(
+                &[],
+                crate::headless_scenario::SIM_TICK_MS,
+                super::TickLane::Ordinary,
+            )
+            .expect("a retail frame");
+        let sim = scenario.sim();
+        for event in &output.sound_events {
+            match event {
+                super::SimSoundEvent::VocAt { sound_id, .. } => {
+                    sounds.push((frame, sound_id.clone()));
+                }
+                super::SimSoundEvent::AnimationStarted {
+                    anim_id, sound_id, ..
+                } if *anim_id == harrier => {
+                    sounds.push((frame, sim.interner.resolve(*sound_id).to_string()));
+                }
+                _ => {}
+            }
+        }
+        let Some(entity) = sim
+            .substrate
+            .entities
+            .get(harrier)
+            .filter(|entity| entity.lifecycle.object_alive)
+        else {
+            assert!(crash_frame.is_some(), "the Harrier left before crashing");
+            impact_frame = Some(frame);
+            impact_explosions = sim
+                .substrate
+                .anims
+                .iter()
+                .filter(|(id, anim)| {
+                    !anims_before.contains(id) && impact_anims.contains(&anim.type_id)
+                })
+                .map(|(_, anim)| sim.interner.resolve(anim.type_id).to_string())
+                .collect();
+            break;
+        };
+        let height = current_fly_height(entity, sim.resolved_terrain.as_ref());
+        lifted |= height > 0;
+        if !entity.crashing && frame % 15 == 0 {
+            println!(
+                "frame {frame}: height {height}, health {}, mission {:?}",
+                entity.health.current, entity.aircraft_mission
+            );
+        }
+        if entity.crashing {
+            if crash_frame.is_none() {
+                crash_frame = Some(frame);
+                assert!(height > 0, "shot down in the air");
+                assert_eq!(entity.health.current, 0);
+                assert_eq!(entity.killed_by, Some(russians));
+            }
+            let rocking = entity.rocking.as_ref().expect("a crash spins");
+            spun |= rocking.angle_sideways != SimFixed::ZERO;
+            heights.push(height);
+            println!(
+                "frame {frame}: height {height}, roll {:.4}, pitch {:.4}",
+                rocking.angle_sideways.to_num::<f64>(),
+                rocking.angle_forwards.to_num::<f64>()
+            );
+            for (id, anim) in sim.substrate.anims.iter() {
+                if anim.type_id == smoke_type {
+                    smoke.insert(*id);
+                }
+            }
+        }
+    }
+    println!("sounds: {sounds:?}");
+    let crash_frame = crash_frame.expect("the flak shoots the Harrier down");
+    let impact_frame = impact_frame.expect("the crash reaches the ground");
+    println!(
+        "lifted, crashed at frame {crash_frame}, impact at frame {impact_frame}, {} smoke puffs, \
+         impact explosions {impact_explosions:?}",
+        smoke.len()
+    );
+    assert!(lifted);
+    // Killed cruising at FlightLevel and full speed, it falls exactly as the
+    // original executable's `cruise_1500_full_speed` row, to the impact.
+    let native = oracle()["fall"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "cruise_1500_full_speed")
+        .expect("the oracle's cruise row")["frames"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|frame| frame["xyz"][2].as_i64().unwrap() as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(heights[0], 1500);
+    assert_eq!(heights[1..], native[..native.len() - 1], "the fall frames");
+    assert_eq!(native.last(), Some(&0), "the native impact frame");
+    assert_eq!(impact_frame - crash_frame, native.len() as i32);
+    assert!(spun, "the crash spin turns the body");
+    assert!(!smoke.is_empty(), "the falling Harrier trails SGRYSMK1");
+    assert!(
+        !impact_explosions.is_empty(),
+        "its Maverick detonates at the impact"
+    );
+    let heard = |name: &str| {
+        sounds
+            .iter()
+            .filter(|(_, sound)| sound == name)
+            .map(|(frame, _)| *frame)
+            .collect::<Vec<_>>()
+    };
+    // The crash edge runs in the Harrier's own AI after the hit latched it;
+    // the impact cue on the frame its height reached zero.
+    assert_eq!(heard("IntruderVoiceDie").len(), 1, "{sounds:?}");
+    assert_eq!(heard("IntruderDie").len(), 1, "{sounds:?}");
+    assert_eq!(heard("GenAircraftCrash"), vec![impact_frame], "{sounds:?}");
+}

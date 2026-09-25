@@ -14,6 +14,8 @@ Four families, each on real Aircraft/Fly/Facing vtables and constructors:
   accumulating the spin rates Crash wrote.
 - ``smoke``: the red-health smoke block of ``AircraftClass::AI``
   (``0x00415085..0x0041512C``), its Scenario draw and threshold.
+- ``draw_matrix``: FlyLocomotionClass Draw_Matrix (``0x004CF610``) of a
+  crashing body: the facing rotation, then the roll and pitch rotations.
 
 Substitutions are declared per family and recorded in each row's ``calls``.
 """
@@ -41,6 +43,7 @@ NULL_COORD_INIT, FLY_CONSTRUCTOR = 0x4CC940, 0x4CC9A0
 FACING_CONSTRUCTOR, FACING_SET_ROT, FACING_SET = 0x4C91C0, 0x4C9680, 0x4C9300
 RNG_SEED, RANDOM, RANDOM_RANGED = 0x65C6D0, 0x65C780, 0x65C7E0
 CRASH, ILOCO_PROCESS, ROCKING_UPDATE = 0x4DEBB0, 0x4CCB40, 0x70B570
+DRAW_MATRIX = 0x4CF610
 SMOKE_BEGIN, SMOKE_END = 0x415085, 0x41512C
 TYPE_SPEED_CONVERSION = (0x71465F, 0x71469F)
 # Vtable slots the families substitute (Aircraft vtable offsets).
@@ -160,11 +163,14 @@ class Fixture:
         u.reg_write(UC_X86_REG_EBP, TYPE)
         u.reg_write(UC_X86_REG_EAX, case.get('ini_speed', 14) & 0xFFFFFFFF)
         run_checked(u, *TYPE_SPEED_CONVERSION, count=100)
-        # Facing: original constructor, ROT and current heading.
-        self.call(FACING_CONSTRUCTOR, OWNER + 0x388)
-        self.call(FACING_SET_ROT, OWNER + 0x388, case.get('rot', 5))
-        u.mem_write(ARG, dwords(case.get('facing', 0x4000)))
-        self.call(FACING_SET, OWNER + 0x388, ARG)
+        # Facings: original constructor, ROT and current heading for Primary
+        # (+0x388, which moves the Fly) and Secondary (+0x3A0, which its
+        # Draw_Matrix reads); a flying aircraft holds them equal.
+        for facing in (OWNER + 0x388, OWNER + 0x3A0):
+            self.call(FACING_CONSTRUCTOR, facing)
+            self.call(FACING_SET_ROT, facing, case.get('rot', 5))
+            u.mem_write(ARG, dwords(case.get('facing', 0x4000)))
+            self.call(FACING_SET, facing, ARG)
         if 'turn_to' in case:
             u.mem_write(FRAME, dwords(case.get('frame', 1000) - case.get('turn_age', 0)))
             u.mem_write(ARG, dwords(case['turn_to']))
@@ -301,6 +307,20 @@ def rocking_row(case):
     return dict(input=case, history=history, calls=f.calls)
 
 
+def draw_matrix_row(case):
+    """Fly Draw_Matrix (ILocomotion +0x24, 0x004CF610) of a crashing body."""
+    f = Fixture(case, 'draw_matrix')
+    u = f.u
+    u.mem_write(TYPE + 0x3A8, struct.pack('<d', case.get('pitch_speed', 1.1)))
+    u.mem_write(TYPE + 0x3B0, struct.pack('<d', case.get('pitch_angle', 0.0)))
+    out, key = ARG + 0x100, ARG + 0x200
+    u.mem_write(key, dwords(0))
+    f.call(DRAW_MATRIX, None, LOCO + 4, out, key)
+    matrix = struct.unpack('<12I', u.mem_read(out, 48))
+    return dict(input=case, matrix=[f'{x:08x}' for x in matrix],
+                key=i32(u.mem_read(key, 4)))
+
+
 def smoke_row(case):
     f = Fixture(case, 'smoke')
     u = f.u
@@ -385,6 +405,18 @@ def rocking_cases():
     ]]
 
 
+def draw_matrix_cases():
+    cases = []
+    for facing in (0x0000, 0x4000, 0x6200, 0xC000):
+        for angles in ((0.0, 0.0), (0.4, 0.0), (0.0, 0.35), (1.3, -0.6), (-2.9, 3.4), (7.5, 2.2)):
+            cases.append(dict(name=f'f{facing:04x}_{angles[0]}_{angles[1]}', facing=facing,
+                              angles=angles, crashing=1))
+    cases.append(dict(name='not_crashing', facing=0x4000, angles=(1.0, 1.0), crashing=0))
+    cases.append(dict(name='grounded', facing=0x4000, angles=(1.0, 1.0), crashing=1,
+                      xyz=(START, START, 0)))
+    return [draw_matrix_row(case) for case in cases]
+
+
 def smoke_cases():
     cases = []
     for health, strength in ((0, 150), (37, 150), (38, 150), (150, 150), (1, 150)):
@@ -397,7 +429,7 @@ def smoke_cases():
 
 def generate():
     return dict(crash=crash_cases(), fall=fall_cases(), rocking=rocking_cases(),
-                smoke=smoke_cases())
+                smoke=smoke_cases(), draw_matrix=draw_matrix_cases())
 
 
 if __name__ == '__main__':
@@ -405,7 +437,8 @@ if __name__ == '__main__':
         entry_points={'crash': CRASH, 'iloco_process': ILOCO_PROCESS, 'process': 0x4CD600,
                       'rocking_update': ROCKING_UPDATE, 'smoke_begin': SMOKE_BEGIN,
                       'smoke_end': SMOKE_END, 'random_ranged': RANDOM_RANGED,
-                      'rng_seed': RNG_SEED, 'fly_constructor': FLY_CONSTRUCTOR},
+                      'rng_seed': RNG_SEED, 'fly_constructor': FLY_CONSTRUCTOR,
+                      'draw_matrix': DRAW_MATRIX},
         assumptions=[
             'One Aircraft on the original (cloned) Aircraft vtable, real AircraftType, FacingClass and FlyLocomotionClass constructed by their original code; a flat 24x24 block of real cells (level/LandType per row) in the MapClass table; MapSize 64x64 (the block lies inside its playable diamond).',
             'Scenario RNG seeded by the original seeder 0x0065C6D0 per row; next_random is the next raw Random() on the same stream after the row.',
@@ -416,5 +449,5 @@ if __name__ == '__main__':
             'crash: vt+0x274 Transmit_Radio_ToFirst, vt+0x3A0 Stun, vt+0xE0 RecordKill, KillPassengers 0x00707CB0 and AnnounceExpiredPointer 0x007258D0 recorded and returned without running.',
             'fall: vt+0x124 Mark, vt+0xF8 UnInit, AircraftTracker 0x004138C0/0x004135D0, DisplayClass 0x004A9770/0x004A9720, Fire_Death_Weapon 0x0070D690 and VocClass::PlayAt 0x007509E0 recorded and returned without running.',
         ],
-        scope='Crash on dead/live/grounded/IKnowWhatImDoing aircraft over 15 seeds; the full per-frame Fly fall of a Health-0 aircraft from several heights, speeds, headings and grounds to its impact frame, death-weapon call, impact sound choice and UnInit; the crashing rocking accumulation; the red-health smoke gate and draw. Excludes the Techno death arm, the death weapon bullet, AnimClass construction and sound playback.',
+        scope='Crash on dead/live/grounded/IKnowWhatImDoing aircraft over 15 seeds; the full per-frame Fly fall of a Health-0 aircraft from several heights, speeds, headings and grounds to its impact frame, death-weapon call, impact sound choice and UnInit; the crashing rocking accumulation; the red-health smoke gate and draw; the crashing Fly Draw_Matrix over 4 facings and 6 poses. Excludes the Techno death arm, the death weapon bullet, AnimClass construction and sound playback.',
     ))

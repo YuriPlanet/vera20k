@@ -453,6 +453,7 @@ impl Iterator for UnitPageRuns<'_> {
 
 /// Draw a flat UnitAtlas stream in its existing order, rebinding textures only
 /// at contiguous page changes. Page assignment never becomes a merge tie-break.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn draw_unit_atlas_page_runs<'a>(
     pass: &mut wgpu::RenderPass<'a>,
     batch: &'a BatchRenderer,
@@ -462,8 +463,23 @@ pub(super) fn draw_unit_atlas_page_runs<'a>(
     pages: &[usize],
     start: u32,
     count: u32,
+    pose_texture: Option<&'a crate::render::batch::BatchTexture>,
 ) {
     for run in unit_page_runs(pages, start, count) {
+        if run.page == crate::app::presentation::instances::POSE_PAGE {
+            // A crashing body drawn this frame (`render::unit_pose_cache`).
+            if let Some(texture) = pose_texture {
+                batch.draw_voxel_sprites_range(
+                    pass,
+                    texture,
+                    &palette_set.bind_group,
+                    buffer,
+                    run.start,
+                    run.count,
+                );
+            }
+            continue;
+        }
         let texture = atlas.page_texture(run.page).unwrap_or_else(|| {
             panic!(
                 "UnitAtlas instance references missing page {} of {}",
@@ -549,6 +565,7 @@ fn draw_group_range<'a>(
                     pages,
                     start,
                     count,
+                    None,
                 );
             }
         }

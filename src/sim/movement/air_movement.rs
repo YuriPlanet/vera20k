@@ -6,6 +6,11 @@
 //! `fly_height`, the target speed in `fly_target_speed`. Horizontal_Step's
 //! arrival arm, the Process landing trigger and the landing callbacks still
 //! need their native migration; the legacy arrival below stands in.
+//!
+//! A dead (crashing) Fly follows Process natively: its fall block and impact
+//! run first (`sim::world::crash`), then the paid step only while IsMoving at
+//! its frozen speed and heading, then the height step. The whole fall to the
+//! impact is compared frame by frame with `tools/spatial_oracle/aircraft_crash`.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;

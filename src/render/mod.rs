@@ -77,6 +77,7 @@ pub mod tactical_compat;
 pub mod tactical_draw_plan;
 pub mod tile_atlas;
 pub mod unit_atlas;
+pub mod unit_pose_cache;
 pub mod unit_slope_transition_cache;
 pub mod upscale_pass;
 #[cfg(test)]

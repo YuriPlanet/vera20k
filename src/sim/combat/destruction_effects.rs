@@ -65,9 +65,11 @@
 //!   - A `Crashable=` (`+0xD95`) unit's crash (`0x007461D1`, locomotor
 //!     message 0x117C through the Unit vtable at `0x007F5C4C`:
 //!     Death_Explosion then UnInit; `BalloonHover=` types fire their
-//!     DeathWeapon instead). VERA has no crash; stock SHAD, HIND, SCHP and
-//!     SCHD die through the ReceiveDamage arm. Whether FootClass defers
-//!     their in-air death to the crash is untraced.
+//!     DeathWeapon instead). The shared `FootClass::Crash` is ported for
+//!     aircraft (`sim::world::crash`), but `UnitClass::ReceiveDamage` does not
+//!     call it for a `Crashable=` unit (`0x00738457..0x00738485`) and the
+//!     Jumpjet crash state (`0x0054CA90`) is not ported, so stock ZEP, SHAD,
+//!     HIND, SCHP, SCHD and DISK still vanish at the killing hit.
 //!   - The `DeathFrames=` completion (`0x00736381`), dead on stock.
 //! - `AnimClass::Middle @ 0x00424F00` is not run for these anims, so the
 //!   scorch/crater a multi-frame explosion leaves at its middle frame (and its

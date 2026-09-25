@@ -357,7 +357,9 @@ impl Simulation {
             return;
         }
         // `0x004150EF..0x00415102`: `AnimTypeClass::Find` of the literal.
-        let type_id = self.interner.intern("SGRYSMK1");
+        let type_id = self
+            .interner
+            .intern(crate::rules::effect_asset_catalog::AIRCRAFT_SMOKE_ANIM);
         self.admit_death_anim(
             rules,
             type_id,
