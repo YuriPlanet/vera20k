@@ -32,6 +32,17 @@ enum Phase {
     Chooser,
     /// Cancel pressed on `0x6B`: it slides out and `0x102` slides in again.
     ChooserReturn,
+    /// Start Game pressed: `0x102` slides out and the scenario loads.
+    Starting,
+}
+
+/// Which loading frame a Start Game checkpoint captures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum LoadingTarget {
+    /// The black frame that replaces the closed shell.
+    Blank,
+    /// The loading screen's first frame; the map load then runs to the end.
+    FirstFrame,
 }
 
 /// What a Choose Map checkpoint captures.
@@ -62,6 +73,7 @@ pub(super) struct SkirmishCapture {
     /// The steady chooser got the production mouse move at the resting
     /// pointer, as the retail helper's pointer rests over the map list.
     pointer_rested: bool,
+    loading: Option<LoadingTarget>,
 }
 
 #[derive(Clone, Copy)]
@@ -99,10 +111,11 @@ impl CaptureGuard {
     }
 }
 
-fn guard(state: &AppState, chooser: bool) -> Result<()> {
+fn guard(state: &AppState, chooser: bool, loading: bool) -> Result<()> {
     let shell = &state.frontend.skirmish_shell_state;
     CaptureGuard {
-        main_menu_screen: state.frontend.screen == GameScreen::MainMenu,
+        main_menu_screen: state.frontend.screen == GameScreen::MainMenu
+            || (loading && state.frontend.screen == GameScreen::Loading),
         surface: (state.render_width(), state.render_height()),
         failed: state.frontend.main_menu_shell_failed,
         developer_shortcut: state.frontend.dev_skirmish_shell_enabled,
@@ -213,6 +226,17 @@ impl SkirmishCapture {
         }
     }
 
+    pub(super) fn loading(target: LoadingTarget) -> Self {
+        Self {
+            loading: Some(target),
+            ..Self::default()
+        }
+    }
+
+    fn guard(&self, state: &AppState) -> Result<()> {
+        guard(state, self.chooser.is_some(), self.phase == Phase::Starting)
+    }
+
     /// `0x6B` shows with no slide and its heading and status line revealed.
     fn chooser_settled(state: &AppState) -> bool {
         state
@@ -235,7 +259,7 @@ impl SkirmishCapture {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
-        guard(state, self.chooser.is_some())?;
+        self.guard(state)?;
         self.last_presented = Some(rendered);
         match (self.phase, rendered) {
             (Phase::MainMenu, PresentedShell::MainMenu) => {
@@ -313,6 +337,16 @@ impl SkirmishCapture {
                     self.route
                         .push(json!({"dialog": 0x102, "frame": frame, "action": "Back"}));
                     self.phase = Phase::SlideOut;
+                } else if self.selected_scene.is_some() && self.loading.is_some() {
+                    // Start Game (`0x617`) through the production action.
+                    App::start_game_from_shell(state);
+                    ensure!(
+                        state.frontend.shell_exit.is_some(),
+                        "Start Game did not start 0x102's teardown slide"
+                    );
+                    self.route
+                        .push(json!({"dialog": 0x102, "frame": frame, "action": "StartGame"}));
+                    self.phase = Phase::Starting;
                 } else if self.selected_scene.is_some() && self.chooser.is_some() {
                     App::leave_shell_dialog(
                         state,
@@ -406,7 +440,7 @@ impl SkirmishCapture {
     }
 
     fn settled(&self, state: &AppState) -> Result<bool> {
-        guard(state, self.chooser.is_some())?;
+        self.guard(state)?;
         ensure!(
             state
                 .frontend
@@ -431,7 +465,7 @@ impl SkirmishCapture {
     }
 
     pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
-        guard(state, self.chooser.is_some())?;
+        self.guard(state)?;
         if let Some(target) = self.entry_tick {
             return Ok(
                 self.entry_held && entry_wave_tick(state, ShellSlideKind::Skirmish) == Some(target)
@@ -459,6 +493,15 @@ impl SkirmishCapture {
                     && self.settled(state)?);
             }
             None => {}
+        }
+        if let Some(target) = self.loading {
+            let next = match target {
+                LoadingTarget::Blank => crate::app::loading::pump::NextLoadingFrame::Blank,
+                LoadingTarget::FirstFrame => crate::app::loading::pump::NextLoadingFrame::First,
+            };
+            return Ok(self.phase == Phase::Starting
+                && state.frontend.screen == GameScreen::Loading
+                && crate::app::loading::pump::next_native_loading_frame(state) == Some(next));
         }
         if let Some(target) = self.slide_out_tick {
             return Ok(self.phase == Phase::SlideOut
@@ -493,16 +536,17 @@ impl SkirmishCapture {
         pixels: &[u8],
         frame: u32,
     ) -> Value {
-        json!({
+        let mut manifest = json!({
             "schema_version": "vera20k.skirmish-shell-capture.v1", "checkpoint": request.checkpoint.as_str(),
             "parity_certification": "NONE", "presenter_domain": "final-swapchain-after-rgb565",
             "surface": {"width": request.width, "height": request.height, "format": format!("{format:?}"),
                 "pixel_layout": "BGRA8", "row_order": "top-left", "row_stride": request.width * 4},
             "cursor": {"x": request.cursor_x, "y": request.cursor_y, "policy": "software-composited"},
             "route": self.route,
-            "dialog_resource_id": match self.chooser {
-                Some(ChooserTarget::Steady | ChooserTarget::Entry(_)) => 0x6b,
-                _ => 0x102,
+            "dialog_resource_id": match (self.chooser, self.loading) {
+                (Some(ChooserTarget::Steady | ChooserTarget::Entry(_)), _) => Some(0x6b),
+                (_, Some(_)) => None,
+                _ => Some(0x102),
             },
             "capture_frame": frame,
             "selection": self.selected_scene, "reveals_completed": self.entry_tick.is_none(),
@@ -510,7 +554,13 @@ impl SkirmishCapture {
             "input_enrollment": "UNENROLLED; asset/profile bytes require enrollment before native comparison",
             "frame": {"path": FRAME_FILE_NAME, "byte_length": pixels.len(),
                 "sha256": crate::util::sha256::sha256_hex(pixels)}
-        })
+        });
+        // Only loading checkpoints carry the key; the validator
+        // (`tools/shell_certification/skirmish.py`) pins the others' key set.
+        if let Some(target) = self.loading {
+            manifest["loading_frame"] = json!(format!("{target:?}"));
+        }
+        manifest
     }
 }
 

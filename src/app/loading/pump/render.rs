@@ -35,6 +35,64 @@ const SIDE_ICON_DEPTH: f32 = 0.10;
 /// Row label follows the bar and country insignia.
 const ROW_LABEL_DEPTH: f32 = 0.05;
 
+/// A black frame with no cursor: gamemd fills its hidden surface black and
+/// blits it between the closed shell and the loading screen
+/// (`0x0052E64C..0x0052E69E`) and again in the game mode after the load
+/// (`0x00683E07..0x00683E1C`).
+fn encode_blank(
+    presenter: &ShellSurfacePresenter,
+    encoder: &mut wgpu::CommandEncoder,
+    destination: &wgpu::Texture,
+) {
+    let target = presenter.source_render_view();
+    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("Loading Blank"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: &target,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(crate::app::types::CLEAR_COLOR),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    });
+    presenter.encode_present(encoder, destination);
+}
+
+/// The blank between the closed shell and the loading screen, in the frame
+/// loop.
+pub(super) fn encode_blank_loading_frame(
+    renderer: &RendererState,
+    encoder: &mut wgpu::CommandEncoder,
+    destination: &wgpu::Texture,
+) {
+    encode_blank(&renderer.shell_surface_presenter, encoder, destination);
+}
+
+/// Present the blank at once, outside the frame loop.
+pub(super) fn present_blank(
+    gpu: &GpuContext,
+    presenter: &ShellSurfacePresenter,
+) -> anyhow::Result<()> {
+    let output = gpu
+        .surface
+        .get_current_texture()
+        .map_err(|e| anyhow::anyhow!("blank frame surface texture: {e}"))?;
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Game Mode Blank"),
+        });
+    encode_blank(presenter, &mut encoder, &output.texture);
+    gpu.queue.submit(std::iter::once(encoder.finish()));
+    output.present();
+    Ok(())
+}
+
 /// Encode the prepared native frame into the caller's existing frame submission.
 pub(super) fn encode_native_loading_frame(
     renderer: &RendererState,

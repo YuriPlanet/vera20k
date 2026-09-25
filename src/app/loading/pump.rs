@@ -158,10 +158,11 @@ impl NativeLoadingProgressCadence {
     /// Whether native has resolved Scenario inputs before the first loading frame.
     ///
     /// Selected maps also need their parsed preview. Random maps take pixels
-    /// from `RandMap.img`, but Full Init has already regenerated the `.SED`,
-    /// copied accepted start staging, and run both selected-mode callbacks
-    /// before DrawLoadingScreen. Both branches therefore swallow the loader's
-    /// raw 8 here and hand it to the first post-frame pump.
+    /// from `RandMap.img`; both branches swallow the loader's raw 8 here and
+    /// hand it to the first post-frame pump. Native generates a random map
+    /// after its first loading frame (Full_Init inside Generate, the
+    /// generation reported as 50–99%), which VERA20k does before it — a
+    /// recorded residual of the random-map chain.
     fn prepares_scenario_before_first_frame(self) -> bool {
         match self {
             Self::SelectedMap | Self::RandomMapHalved => true,
@@ -524,7 +525,13 @@ pub(crate) struct LoadingSession {
     stage: LoadingStage,
     native: Option<NativeLoadingScreenState>,
     job: LoadingJob,
-    first_frame_presented: bool,
+    /// The loading frame the next present draws. Native sessions start with
+    /// the black frame that replaces the closed shell: Main_Game hides the
+    /// cursor, fills the hidden surface black and blits it
+    /// (`0x0052E64C..0x0052E69E`) before Start_Scenario reads the map, and
+    /// nothing else reaches the screen until the loading screen's first
+    /// repaint. Generic sessions start at their first frame.
+    next_frame: NextLoadingFrame,
 }
 
 impl LoadingSession {
@@ -559,9 +566,13 @@ impl LoadingSession {
         };
         Self {
             stage: LoadingStage::Selected(request),
+            next_frame: if native.is_some() {
+                NextLoadingFrame::Blank
+            } else {
+                NextLoadingFrame::First
+            },
             native,
             job: LoadingJob::new(),
-            first_frame_presented: false,
         }
     }
 }
@@ -1011,7 +1022,7 @@ fn prepare_loading_session(
         stage,
         mut native,
         mut job,
-        first_frame_presented,
+        next_frame,
     } = session;
     let stage = match stage {
         LoadingStage::Prepared(prepared) => LoadingStage::Prepared(prepared),
@@ -1047,7 +1058,7 @@ fn prepare_loading_session(
         stage,
         native,
         job,
-        first_frame_presented,
+        next_frame,
     })
 }
 
@@ -1418,11 +1429,20 @@ fn encode_loading_screen(
     if !is_native_loading_session(state) {
         return Ok(LoadingRenderResult::GenericFallback);
     }
+    if state
+        .frontend
+        .loading_session
+        .as_ref()
+        .is_some_and(|session| session.next_frame == NextLoadingFrame::Blank)
+    {
+        render::encode_blank_loading_frame(&state.renderer, encoder, destination);
+        return Ok(LoadingRenderResult::NativeRendered);
+    }
     if let Err(err) = ensure_native_loading_atlas(state) {
         return Err(err);
     }
     if let Some(session) = state.frontend.loading_session.as_mut()
-        && !session.first_frame_presented
+        && session.next_frame == NextLoadingFrame::First
         && let Some(native) = session.native.as_mut()
     {
         // Retail composes the LS country surface first, then ProgressClass
@@ -1448,6 +1468,14 @@ fn encode_loading_screen(
 /// owns acknowledgement, continuation and terminal disposition as one step.
 pub(crate) fn after_loading_frame_presented(state: &mut AppState) {
     if !matches!(state.frontend.screen, GameScreen::Loading) {
+        return;
+    }
+    // The black frame is up: the scenario is read under it on the next frame.
+    if let Some(session) = state.frontend.loading_session.as_mut()
+        && session.next_frame == NextLoadingFrame::Blank
+    {
+        session.next_frame = NextLoadingFrame::First;
+        state.platform.window.request_redraw();
         return;
     }
     loading_screen_presented(state);
@@ -1489,12 +1517,40 @@ fn fail_loading(state: &mut AppState, policy: LoadingFailurePolicy, err: anyhow:
     }
 }
 
+/// Which loading frame the next native present draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NextLoadingFrame {
+    /// The black frame that replaces the closed shell.
+    Blank,
+    /// The loading screen's first frame (3%), after the scenario is read.
+    First,
+    /// A later loading frame.
+    Later,
+}
+
+pub(crate) fn next_native_loading_frame(state: &AppState) -> Option<NextLoadingFrame> {
+    let session = state.frontend.loading_session.as_ref()?;
+    session.native.as_ref()?;
+    Some(session.next_frame)
+}
+
+/// After the load gamemd switches to the game mode and shows black until
+/// the first game frame (`0x00683E07..0x00683E1C`, again at
+/// `0x0052EAA1..0x0052EAEB`); the tactical install runs under it.
+pub(crate) fn present_game_mode_blank(state: &AppState) {
+    if let Err(err) =
+        render::present_blank(&state.renderer.gpu, &state.renderer.shell_surface_presenter)
+    {
+        log::warn!("Game-mode blank frame failed: {err:#}");
+    }
+}
+
 fn loading_screen_presented(state: &mut AppState) {
     let Some(session) = state.frontend.loading_session.as_mut() else {
         state.frontend.loading_progress.advance_progress(3);
         return;
     };
-    session.first_frame_presented = true;
+    session.next_frame = NextLoadingFrame::Later;
     log::debug!(target: "vera20k::loading_attempt", "frame_presented native_progress={:?}", session.native.as_ref().map(|n| n.progress.current_value()));
 }
 
