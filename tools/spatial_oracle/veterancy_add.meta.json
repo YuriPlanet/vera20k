@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "VeterancyClass::Add 0x0074FF50 over stock and odd costs, awards, ratios and caps, running totals near the rank and cap boundaries, infinities from zero and negative costs, a chain of twelve Rhino-kills-Grizzly awards and eight GI-kills-GI awards.",
+  "assumptions": [
+    "x87 control word 0x0E7F (PC53, chop), the harness default.",
+    "Rules+0x668 VeteranRatio and +0x698 VeteranCap are supplied binary64."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "add": "0x0074FF50"
+  },
+  "payload_sha256": "773e91c83c79558bc7ad112e83a0c127f9260bb50db1fcde1b52d5de9ede9040"
+}
