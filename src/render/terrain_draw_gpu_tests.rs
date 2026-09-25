@@ -57,6 +57,82 @@ impl Gpu {
             },
         })
     }
+    /// Read back one rectangle of an unsigned-integer texture (e.g. palette
+    /// indices) through `textureLoad`; atlas textures have no COPY_SRC.
+    pub(crate) fn read_uint_texels(
+        &self,
+        view: &wgpu::TextureView,
+        origin: [u32; 2],
+        size: [u32; 2],
+    ) -> Vec<u8> {
+        let ([x, y], [width, height]) = (origin, size);
+        let source = format!(
+            "@group(0) @binding(0) var t:texture_2d<u32>; @group(0) @binding(1) var<storage,read_write> output:array<u32>; @compute @workgroup_size(8,8) fn main(@builtin(global_invocation_id) p:vec3<u32>) {{ if p.x<{width}u && p.y<{height}u {{ output[p.y*{width}u+p.x]=textureLoad(t,vec2<i32>(i32(p.x+{x}u),i32(p.y+{y}u)),0).r; }} }}"
+        );
+        let shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("uint texel readback"),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: None,
+                layout: None,
+                module: &shader,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+        let out = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: u64::from(width * height * 4),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let read = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: out.size(),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: out.as_entire_binding(),
+                },
+            ],
+        });
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        {
+            let mut pass = encoder.begin_compute_pass(&Default::default());
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &group, &[]);
+            pass.dispatch_workgroups(width.div_ceil(8), height.div_ceil(8), 1);
+        }
+        encoder.copy_buffer_to_buffer(&out, 0, &read, 0, out.size());
+        self.queue.submit([encoder.finish()]);
+        let (tx, rx) = std::sync::mpsc::channel();
+        read.slice(..)
+            .map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .unwrap();
+        rx.recv().unwrap().unwrap();
+        let data = read.slice(..).get_mapped_range();
+        data.chunks_exact(4)
+            .map(|texel| u32::from_le_bytes(texel.try_into().unwrap()) as u8)
+            .collect()
+    }
+
     pub(crate) fn read(
         &self,
         encoder: &mut wgpu::CommandEncoder,

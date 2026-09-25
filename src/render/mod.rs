@@ -15,6 +15,7 @@
 //! - render/ NEVER mutates sim state — strictly read-only access
 //! - render/ does NOT depend on: ui/, sidebar/, audio/, net/
 
+pub(crate) mod atlas_growth;
 #[cfg(test)]
 mod atlas_refresh_retail_tests;
 pub mod batch;

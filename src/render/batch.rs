@@ -1281,16 +1281,6 @@ impl BatchRenderer {
     /// Used for voxel sprite atlases where each byte is a palette index
     /// (post-VPL, pre-house-remap). Sampled in shader via `textureLoad` (no
     /// filtering, integer coords).
-    pub fn create_unit_atlas_texture(
-        &self,
-        gpu: &GpuContext,
-        width: u32,
-        height: u32,
-        pixels: &[u8],
-    ) -> BatchTexture {
-        self.create_unit_atlas_texture_on_device(&gpu.device, &gpu.queue, width, height, pixels)
-    }
-
     pub(crate) fn create_unit_atlas_texture_on_device(
         &self,
         device: &wgpu::Device,
@@ -1304,7 +1294,26 @@ impl BatchRenderer {
             (width * height) as usize,
             "pixel buffer size must equal width * height"
         );
+        let texture = self.create_blank_unit_atlas_texture(device, width, height);
+        crate::render::atlas_growth::write_texels(
+            queue,
+            texture.view.texture(),
+            [0, 0],
+            [width, height],
+            1,
+            pixels,
+        );
+        texture
+    }
 
+    /// A zeroed palette-index texture in the unit atlas layout, writable with
+    /// `Queue::write_texture`, for pages that receive sprites after creation.
+    pub(crate) fn create_blank_unit_atlas_texture(
+        &self,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+    ) -> BatchTexture {
         let texture: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("unit_atlas_r8uint"),
             size: wgpu::Extent3d {
@@ -1319,26 +1328,6 @@ impl BatchRenderer {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            pixels,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(width),
-                rows_per_image: Some(height),
-            },
-            wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
 
         let view: wgpu::TextureView = texture.create_view(&Default::default());
         let bind_group: wgpu::BindGroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1416,7 +1405,55 @@ impl BatchRenderer {
             wgpu::util::TextureDataOrder::LayerMajor,
             rgba_data,
         );
+        self.batch_texture(device, &texture, source_indices, width, height)
+    }
 
+    /// A zeroed RGBA texture and its palette-index companion, both writable
+    /// with `Queue::write_texture`, for atlas pages that receive sprites after
+    /// they are created. The index texture is returned so the owner can write
+    /// it; the bind group only holds a view.
+    pub(crate) fn create_blank_texture_with_indices(
+        &self,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+    ) -> (BatchTexture, wgpu::Texture) {
+        let blank = |label: &str, format: wgpu::TextureFormat| {
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            })
+        };
+        let texture = blank("Batch Growth Texture", wgpu::TextureFormat::Rgba8UnormSrgb);
+        let source_indices = blank(
+            "SHP growth source palette indices",
+            wgpu::TextureFormat::R8Uint,
+        );
+        let indices_view = source_indices.create_view(&Default::default());
+        (
+            self.batch_texture(device, &texture, &indices_view, width, height),
+            source_indices,
+        )
+    }
+
+    fn batch_texture(
+        &self,
+        device: &wgpu::Device,
+        texture: &wgpu::Texture,
+        source_indices: &wgpu::TextureView,
+        width: u32,
+        height: u32,
+    ) -> BatchTexture {
         let view: wgpu::TextureView = texture.create_view(&Default::default());
         let sampler: wgpu::Sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Batch Sampler (Nearest)"),

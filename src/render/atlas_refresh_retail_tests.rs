@@ -11,7 +11,7 @@
 //! RA2_DIR=<retail root> cargo test -p vera20k --lib --release \
 //!     retail_atlas_refresh_costs -- --ignored --nocapture
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -166,8 +166,23 @@ fn retail_atlas_refresh_costs() {
         units.page_count()
     );
 
-    // A building type and a vehicle type the map did not start with, placed
+    // Building types and a vehicle type the map did not start with, placed
     // beside the first owned object.
+    let present: HashSet<String> = sim
+        .entities()
+        .values()
+        .map(|entity| sim.interner.resolve(entity.type_ref()).to_ascii_uppercase())
+        .collect();
+    let mut absent = ["GAPOWR", "NAPOWR", "GAPILE", "NAHAND", "GAREFN", "NAREFN"]
+        .into_iter()
+        .filter(|type_id| !present.contains(*type_id));
+    let first_building = absent.next().expect("an absent building type");
+    let second_building = absent.next().expect("a second absent building type");
+    let new_vehicle = ["HTNK", "MTNK", "APOC", "LTNK", "FV"]
+        .into_iter()
+        .find(|type_id| !present.contains(*type_id))
+        .expect("an absent vehicle type");
+    eprintln!("new types: {first_building}, {second_building}, {new_vehicle}");
     let anchor = sim
         .entities()
         .values()
@@ -175,7 +190,7 @@ fn retail_atlas_refresh_costs() {
         .map(|entity| (entity.position.rx, entity.position.ry))
         .expect("owned anchor");
     let heights = BTreeMap::new();
-    let mut spawn_near = |type_id: &str| {
+    let spawn_near = |sim: &mut crate::sim::world::Simulation, type_id: &str| {
         for (dx, dy) in [(4, 4), (6, 0), (0, 6), (-6, 0), (0, -6), (8, 8), (-8, -8)] {
             let rx = (i32::from(anchor.0) + dx) as u16;
             let ry = (i32::from(anchor.1) + dy) as u16;
@@ -188,23 +203,18 @@ fn retail_atlas_refresh_costs() {
         }
         panic!("could not place {type_id} near {anchor:?}");
     };
-    spawn_near("GAPOWR");
-    spawn_near("MTNK");
+    spawn_near(sim, first_building);
+    spawn_near(sim, new_vehicle);
 
-    // The check every spawn, death and Limbo runs before any rebuild.
+    // The check every spawn, death and Limbo runs before any refresh.
     let rounds = 20;
     let started = Instant::now();
-    let mut unit_rebuild = false;
-    let mut sprite_rebuild = false;
+    let mut unit_refresh = false;
+    let mut sprite_refresh = false;
     for _ in 0..rounds {
-        let needed = unit_atlas::collect_needed_unit_keys(
-            sim.entities(),
-            &assets,
-            Some(rules),
-            Some(art),
-            Some(&sim.interner),
-        );
-        unit_rebuild = !units.has_all_keys(&needed);
+        let demand =
+            unit_atlas::UnitAtlasDemand::of_world(sim.entities(), Some(rules), Some(&sim.interner));
+        unit_refresh = !units.covers(&demand);
         let extra = crate::app::frontend::skirmish::deployable_building_types(
             sim.entities(),
             Some(rules),
@@ -217,62 +227,75 @@ fn retail_atlas_refresh_costs() {
             Some(&sim.interner),
         );
         let remaps = sprite_atlas::collect_anim_remap_base_keys(sim);
-        sprite_rebuild =
-            !sprite_atlas::atlas_covers_base_keys(&sprites, &bases, ShpPaletteContext::Legacy)
-                || !sprite_atlas::atlas_covers_base_keys(
-                    &sprites,
-                    &remaps,
-                    ShpPaletteContext::SelectedScheme,
-                );
+        sprite_refresh = !sprites.covers(&bases, &remaps);
     }
     eprintln!(
-        "coverage check: {:.2} ms per event ({} entities)",
+        "coverage check: {:.3} ms per event ({} entities)",
         ms(started.elapsed()) / f64::from(rounds),
         sim.entities().values().count()
     );
     assert!(
-        sprite_rebuild,
+        sprite_refresh,
         "a new building type must request a sprite refresh"
     );
     assert!(
-        unit_rebuild,
+        unit_refresh,
         "a new vehicle type must request a unit refresh"
     );
 
-    let started = Instant::now();
-    let extra = crate::app::frontend::skirmish::deployable_building_types(
-        sim.entities(),
-        Some(rules),
-        Some(&sim.interner),
-    );
-    let remaps = sprite_atlas::collect_anim_remap_base_keys(sim);
-    sprites = sprite_atlas::build_sprite_atlas(
-        &device,
-        &queue,
-        &batch,
-        sim.entities(),
-        &assets,
-        &theater.unit_palette,
-        theater_ext,
-        &theater_name,
-        Some(rules),
-        Some(art),
-        &house_colors,
-        &extra,
-        &remaps,
-        &cell_drawers,
-        Some(&theater.iso_palette),
-        Some(sprites),
-        Some(&sim.interner),
-    )
-    .expect("refreshed sprite atlas");
-    settle(&device, &queue);
-    eprintln!(
-        "sprite refresh (new building type): {:.0} ms, {} sprites on {} pages",
-        ms(started.elapsed()),
+    let refresh_sprites =
+        |sim: &crate::sim::world::Simulation, atlas: sprite_atlas::SpriteAtlas, label: &str| {
+            let started = Instant::now();
+            let extra = crate::app::frontend::skirmish::deployable_building_types(
+                sim.entities(),
+                Some(rules),
+                Some(&sim.interner),
+            );
+            let remaps = sprite_atlas::collect_anim_remap_base_keys(sim);
+            let atlas = sprite_atlas::build_sprite_atlas(
+                &device,
+                &queue,
+                &batch,
+                sim.entities(),
+                &assets,
+                &theater.unit_palette,
+                theater_ext,
+                &theater_name,
+                Some(rules),
+                Some(art),
+                &house_colors,
+                &extra,
+                &remaps,
+                &cell_drawers,
+                Some(&theater.iso_palette),
+                Some(atlas),
+                Some(&sim.interner),
+            )
+            .expect("refreshed sprite atlas");
+            settle(&device, &queue);
+            eprintln!(
+                "sprite refresh ({label}): {:.1} ms, {} sprites on {} pages",
+                ms(started.elapsed()),
+                atlas.sprite_count(),
+                atlas.page_count()
+            );
+            atlas
+        };
+    let resident_pages = sprites.page_count();
+    let before = sprites.sprite_count();
+    sprites = refresh_sprites(sim, sprites, "first new building type");
+    assert!(sprites.sprite_count() > before);
+    let growth_pages = sprites.page_count() - resident_pages;
+    assert!(growth_pages <= 1, "one growth page holds one refresh");
+    let before = sprites.sprite_count();
+    sprites = refresh_sprites(sim, sprites, "nothing new");
+    assert_eq!(
         sprites.sprite_count(),
-        sprites.page_count()
+        before,
+        "resolved keys are never retried"
     );
+    spawn_near(sim, second_building);
+    sprites = refresh_sprites(sim, sprites, "second new building type");
 
     let started = Instant::now();
     units = unit_atlas::build_unit_atlas(
@@ -290,28 +313,30 @@ fn retail_atlas_refresh_costs() {
     .expect("refreshed unit atlas");
     settle(&device, &queue);
     eprintln!(
-        "unit refresh (new vehicle type): {:.0} ms, {} sprites on {} pages",
+        "unit refresh (new vehicle type): {:.1} ms, {} sprites on {} pages",
         ms(started.elapsed()),
         units.sprite_count(),
         units.page_count()
     );
 
-    assert!(
-        sprites
-            .get(&ShpSpriteKey {
-                palette_context: ShpPaletteContext::Legacy,
-                type_id: "GAPOWR".to_string(),
-                facing: 0,
-                frame: 0,
-                house_color: owner_color,
-            })
-            .is_some(),
-        "the refreshed sprite atlas draws the new building"
-    );
+    for building in [first_building, second_building] {
+        assert!(
+            sprites
+                .get(&ShpSpriteKey {
+                    palette_context: ShpPaletteContext::Legacy,
+                    type_id: building.to_string(),
+                    facing: 0,
+                    frame: 0,
+                    house_color: owner_color,
+                })
+                .is_some(),
+            "the refreshed sprite atlas draws {building}"
+        );
+    }
     assert!(
         units
             .get(&UnitSpriteKey {
-                type_id: "MTNK".to_string(),
+                type_id: new_vehicle.to_string(),
                 facing: 0,
                 layer: VxlLayer::Body,
                 frame: 0,

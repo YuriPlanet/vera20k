@@ -74,76 +74,15 @@ fn sample_indices(
 ) -> Vec<u8> {
     let entry = atlas.get(key).unwrap();
     let texture = &atlas.pages[entry.page].texture;
-    let width = texture.width;
-    let height = texture.height;
-    let shader=gpu.device.create_shader_module(wgpu::ShaderModuleDescriptor{label:Some("atlas index readback"),source:wgpu::ShaderSource::Wgsl("@group(0) @binding(0) var t:texture_2d<u32>; @group(0) @binding(1) var<storage,read_write> output:array<u32>; @compute @workgroup_size(8,8) fn main(@builtin(global_invocation_id) p:vec3<u32>) { let d=textureDimensions(t); if p.x<d.x && p.y<d.y { output[p.y*d.x+p.x]=textureLoad(t,vec2<i32>(p.xy),0).r; } }".into())});
-    let pipeline = gpu
-        .device
-        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: None,
-            layout: None,
-            module: &shader,
-            entry_point: Some("main"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
-    let out = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: u64::from(width * height * 4),
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-        mapped_at_creation: false,
-    });
-    let read = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: out.size(),
-        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    let group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: None,
-        layout: &pipeline.get_bind_group_layout(0),
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&texture.view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: out.as_entire_binding(),
-            },
-        ],
-    });
-    let mut encoder = gpu.device.create_command_encoder(&Default::default());
-    {
-        let mut pass = encoder.begin_compute_pass(&Default::default());
-        pass.set_pipeline(&pipeline);
-        pass.set_bind_group(0, &group, &[]);
-        pass.dispatch_workgroups(width.div_ceil(8), height.div_ceil(8), 1);
-    }
-    encoder.copy_buffer_to_buffer(&out, 0, &read, 0, out.size());
-    gpu.queue.submit([encoder.finish()]);
-    let (tx, rx) = std::sync::mpsc::channel();
-    read.slice(..)
-        .map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
-    gpu.device
-        .poll(wgpu::PollType::wait_indefinitely())
-        .unwrap();
-    rx.recv().unwrap().unwrap();
-    let data = read.slice(..).get_mapped_range();
-    let mut result = Vec::new();
-    let x = (entry.uv_origin[0] * width as f32).round() as usize;
-    let y = (entry.uv_origin[1] * height as f32).round() as usize;
-    for dy in 0..entry.pixel_size[1] as usize {
-        for dx in 0..entry.pixel_size[0] as usize {
-            let p = ((y + dy) * width as usize + x + dx) * 4;
-            result.push(u32::from_le_bytes(data[p..p + 4].try_into().unwrap()) as u8);
-        }
-    }
-    result
+    let origin = [
+        (entry.uv_origin[0] * texture.width as f32).round() as u32,
+        (entry.uv_origin[1] * texture.height as f32).round() as u32,
+    ];
+    gpu.read_uint_texels(&texture.view, origin, entry.pixel_size.map(|v| v as u32))
 }
 
 #[test]
-#[ignore = "requires GPU; actual atlas packing/upload, mask first fill/hit and repack"]
+#[ignore = "requires GPU; actual atlas packing/upload, mask first fill/hit and growth"]
 fn shadow_first_fill_hits_and_atlas_growth_keep_payloads() {
     let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
     let batch = BatchRenderer::new_with_device(
@@ -183,14 +122,8 @@ fn shadow_first_fill_hits_and_atlas_growth_keep_payloads() {
     ];
     let shadow_key = cache[1].key.clone();
     let body_key = cache[0].key.clone();
-    let mut atlas = super::super::pack_sprites_on_device(
-        &gpu.device,
-        &gpu.queue,
-        &batch,
-        &cache,
-        Default::default(),
-    )
-    .unwrap();
+    let mut atlas =
+        super::super::pack_sprites_on_device(&gpu.device, &gpu.queue, &batch, &cache).unwrap();
     atlas.rendered_cache = cache;
     let body = *atlas.get(&body_key).unwrap();
     assert!(atlas.prepare_native_shadow(&gpu.queue, &shadow_key, [(body, [0., 0.])]));
@@ -202,35 +135,28 @@ fn shadow_first_fill_hits_and_atlas_growth_keep_payloads() {
         panic!("cache hit read new body")
     });
     assert!(atlas.prepare_native_shadow(&gpu.queue, &shadow_key, bomb));
-    // Transfer to a genuinely different shelf layout. The old page remains
-    // live and must retain the payload that an already queued draw references.
-    let retained = atlas.shadow_masks.borrow().clone();
-    let mut cache = std::mem::take(&mut atlas.rendered_cache);
-    cache.push(make(VxlLayer::Turret, vec![57; 320], 40, 8, [-20., -4.]));
-    let mut grown = super::super::pack_sprites_on_device(
-        &gpu.device,
-        &gpu.queue,
-        &batch,
-        &cache,
-        Default::default(),
-    )
-    .unwrap();
-    grown.rendered_cache = cache;
-    assert_ne!(
-        atlas.get(&shadow_key).unwrap().uv_origin,
-        grown.get(&shadow_key).unwrap().uv_origin
+    // Growth appends to a new page and moves nothing already resident, so the
+    // uploaded mask stays where queued draws reference it.
+    let resident_shadow = *atlas.get(&shadow_key).unwrap();
+    let turret = make(VxlLayer::Turret, vec![57; 320], 40, 8, [-20., -4.]);
+    let turret_key = turret.key.clone();
+    atlas.append_sprites(&gpu.device, &gpu.queue, &batch, vec![turret]);
+    let grown_shadow = *atlas.get(&shadow_key).unwrap();
+    assert_eq!(
+        (grown_shadow.page, grown_shadow.uv_origin),
+        (resident_shadow.page, resident_shadow.uv_origin)
     );
-    grown.restore_shadow_masks(&gpu.queue, retained);
-    assert!(grown.prepare_native_shadow(&gpu.queue, &shadow_key, []));
-    assert_eq!(sample_indices(&gpu, &grown, &shadow_key), expected);
+    assert_ne!(atlas.get(&turret_key).unwrap().page, resident_shadow.page);
+    assert!(atlas.prepare_native_shadow(&gpu.queue, &shadow_key, []));
     assert_eq!(sample_indices(&gpu, &atlas, &shadow_key), expected);
     assert_eq!(
-        sample_indices(&gpu, &grown, &body_key),
+        sample_indices(&gpu, &atlas, &body_key),
         vec![33, 0, 33, 0, 0, 33, 0, 33]
     );
+    assert_eq!(sample_indices(&gpu, &atlas, &turret_key), vec![57; 320]);
     let start = std::time::Instant::now();
     for _ in 0..20_000 {
-        assert!(grown.prepare_native_shadow(&gpu.queue, &shadow_key, []));
+        assert!(atlas.prepare_native_shadow(&gpu.queue, &shadow_key, []));
     }
     eprintln!(
         "20k stable shadow cache-hit CPU lookup: {:?}; no mask reads/uploads",

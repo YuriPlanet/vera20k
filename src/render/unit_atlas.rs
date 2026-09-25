@@ -8,13 +8,16 @@
 //!
 //! This retains the proven TileAtlas pre-render/cache approach while paging only
 //! the texture storage and ordered draw submission needed for lossless capacity.
+//! A voxel model that first appears mid-match has only its own sprites rendered,
+//! appended to a growth page (`atlas_growth`); resident pages are not repacked.
 //!
 //! ## Dependency rules
 //! - Part of render/ — depends on assets/ (VXL/HVA/Palette), render/batch (GPU upload),
 //!   render/vxl_raster (software rendering).
 //! - Reads from sim/ via EntityStore iteration (GameEntity fields).
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::time::Instant;
 
 #[path = "unit_shadow_cache.rs"]
 mod shadow_cache;
@@ -23,16 +26,16 @@ use crate::assets::asset_manager::AssetManager;
 use crate::assets::hva_file::HvaFile;
 use crate::assets::vpl_file::VplFile;
 use crate::assets::vxl_file::VxlFile;
+use crate::render::atlas_growth::{self, SPRITE_PADDING, ShelfCursor};
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::vxl_compute::VxlComputeRenderer;
 use crate::render::vxl_raster::{self, VxlRenderParams, VxlSlopeBlend, VxlSprite};
 use crate::rules::art_data::{self, ArtRegistry};
 use crate::rules::ruleset::RuleSet;
 
-/// Maximum atlas texture width for unit sprites (pixels).
-
-/// Padding between sprites in the atlas to prevent texture bleeding.
-const SPRITE_PADDING: u32 = 1;
+/// Edge of a growth page. One byte per texel makes it 64 MB, room for the
+/// every-slope sprite set of a few new vehicle types.
+const GROWTH_PAGE_SIZE: u32 = 8192;
 /// Body/composite facing quantization step: 8 = 32 buckets (11.25° per bucket).
 ///
 /// This is not an atlas-size compromise — it is the renderer's real resolution. The
@@ -114,7 +117,9 @@ pub struct UnitAtlasPage {
 
 /// A paged GPU texture atlas containing pre-rendered unit voxel sprites.
 ///
-/// Created once at map load. Queried per-frame to build unit SpriteInstances.
+/// Created once at map load and queried per-frame to build unit
+/// SpriteInstances. A refresh appends the sprites of newly seen voxel models to
+/// growth pages without touching the rest.
 pub struct UnitAtlas {
     /// Lossless texture pages containing all unit sprites.
     pub pages: Vec<UnitAtlasPage>,
@@ -123,17 +128,105 @@ pub struct UnitAtlas {
     /// HVA frame counts per (type_id, layer). Missing entries have 1 frame.
     /// Used at spawn time to initialize VoxelAnimation components.
     pub frame_counts: BTreeMap<(String, VxlLayer), u32>,
-    /// Cached rendered sprites for incremental rebuild. On subsequent rebuilds,
-    /// only genuinely new sprite keys are rendered; cached sprites are reused
-    /// and everything is repacked.
+    /// Palette indices of every resident sprite; native shadow masks are
+    /// composed from them.
     rendered_cache: Vec<CachedUnitSprite>,
     /// How many sprites were rendered via GPU compute in the last build.
     pub gpu_rendered: u32,
     /// How many sprites were rendered via CPU rasterizer in the last build.
     pub cpu_rendered: u32,
     /// First eligible composed-body mask for each supported shadow key.
-    /// Atlas repacking retains these pixels; it does not regenerate the mask.
+    /// Pages are never repacked, so an uploaded mask stays where it was written.
     shadow_masks: std::cell::RefCell<HashMap<UnitSpriteKey, Vec<u8>>>,
+    /// Voxel models whose sprites have been collected. Every key derives from
+    /// a model, so coverage is checked per model, never per key.
+    covered: UnitAtlasDemand,
+    /// Page refreshes append to; created when the first refresh needs room.
+    growth: Option<GrowthPage>,
+}
+
+/// The page refreshes append to.
+struct GrowthPage {
+    page: usize,
+    shelf: ShelfCursor,
+}
+
+/// The voxel models a world can draw: vehicle types seeded as ground units
+/// (every slope) or as aircraft (flat only), and building voxel turrets. A
+/// model's sprite keys depend on nothing else, so this is what coverage and
+/// refreshes are decided on.
+#[derive(Debug, Default)]
+pub struct UnitAtlasDemand {
+    ground: BTreeSet<String>,
+    air: BTreeSet<String>,
+    turrets: BTreeSet<String>,
+}
+
+impl UnitAtlasDemand {
+    /// Every voxel model the world's objects draw with.
+    pub fn of_world(
+        entities: &crate::sim::entity_store::EntityStore,
+        rules: Option<&RuleSet>,
+        interner: Option<&crate::sim::intern::StringInterner>,
+    ) -> Self {
+        use crate::map::entities::EntityCategory;
+        let mut demand = Self::default();
+        for entity in entities.values() {
+            let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
+            if entity.is_voxel {
+                let set = if entity.category == EntityCategory::Aircraft {
+                    &mut demand.air
+                } else {
+                    &mut demand.ground
+                };
+                if !set.contains(type_str) {
+                    set.insert(type_str.to_string());
+                }
+            } else if entity.category == EntityCategory::Structure
+                // Building turret VXLs: SHP buildings with TurretAnimIsVoxel=true
+                // (e.g., SAM.VXL for NASAM) draw a voxel on top of the SHP body.
+                && let Some(obj) = rules.and_then(|r| r.object(type_str))
+                && obj.turret_anim_is_voxel
+                && let Some(turret_id) = &obj.turret_anim
+                && !demand.turrets.contains(turret_id)
+            {
+                demand.turrets.insert(turret_id.clone());
+            }
+        }
+        demand
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ground.is_empty() && self.air.is_empty() && self.turrets.is_empty()
+    }
+
+    fn len(&self) -> usize {
+        self.ground.len() + self.air.len() + self.turrets.len()
+    }
+
+    fn is_subset(&self, other: &Self) -> bool {
+        self.ground.is_subset(&other.ground)
+            && self.air.is_subset(&other.air)
+            && self.turrets.is_subset(&other.turrets)
+    }
+
+    /// The models in `self` that `covered` does not hold.
+    fn without(&self, covered: &Self) -> Self {
+        let missing = |mine: &BTreeSet<String>, theirs: &BTreeSet<String>| {
+            mine.difference(theirs).cloned().collect()
+        };
+        Self {
+            ground: missing(&self.ground, &covered.ground),
+            air: missing(&self.air, &covered.air),
+            turrets: missing(&self.turrets, &covered.turrets),
+        }
+    }
+
+    fn extend(&mut self, other: Self) {
+        self.ground.extend(other.ground);
+        self.air.extend(other.air);
+        self.turrets.extend(other.turrets);
+    }
 }
 
 impl UnitAtlas {
@@ -162,10 +255,130 @@ impl UnitAtlas {
         self.page(page).map(|atlas_page| &atlas_page.texture)
     }
 
-    /// Check whether the atlas already contains all sprite keys needed by the
-    /// current ECS world. Returns true if no rebuild is necessary.
-    pub fn has_all_keys(&self, needed: &HashSet<UnitSpriteKey>) -> bool {
-        needed.iter().all(|k| self.entries.contains_key(k))
+    /// Whether every voxel model in `demand` has been collected, so no
+    /// refresh is needed.
+    pub fn covers(&self, demand: &UnitAtlasDemand) -> bool {
+        demand.is_subset(&self.covered)
+    }
+
+    fn new(pages: Vec<UnitAtlasPage>, entries: HashMap<UnitSpriteKey, UnitSpriteEntry>) -> Self {
+        Self {
+            pages,
+            entries,
+            frame_counts: BTreeMap::new(),
+            rendered_cache: Vec::new(),
+            gpu_rendered: 0,
+            cpu_rendered: 0,
+            shadow_masks: Default::default(),
+            covered: UnitAtlasDemand::default(),
+            growth: None,
+        }
+    }
+
+    /// Place sprites rendered after the map-load pack on growth pages and
+    /// upload the rows they fill, one write per page.
+    fn append_sprites(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        mut sprites: Vec<CachedUnitSprite>,
+    ) {
+        // Tallest first keeps each shelf tight.
+        sprites.sort_by(|a, b| b.height.cmp(&a.height));
+        let max_dim = device.limits().max_texture_dimension_2d;
+        // A fresh shelf keeps resident sprites out of the rows uploaded below.
+        if let Some(growth) = self.growth.as_mut() {
+            growth.shelf.start_new_shelf();
+        }
+        let mut band: Vec<([u32; 2], CachedUnitSprite)> = Vec::new();
+        for sprite in sprites {
+            let [width, height] = [sprite.width, sprite.height];
+            let placed = self
+                .growth
+                .as_mut()
+                .and_then(|growth| growth.shelf.place(width, height));
+            let origin = match placed {
+                Some(origin) => origin,
+                None => {
+                    self.upload_band(queue, std::mem::take(&mut band));
+                    let page_width = GROWTH_PAGE_SIZE.max(width).min(max_dim);
+                    let page_height = GROWTH_PAGE_SIZE.max(height).min(max_dim);
+                    let texture =
+                        batch.create_blank_unit_atlas_texture(device, page_width, page_height);
+                    self.pages.push(UnitAtlasPage { texture });
+                    let page = self.pages.len() - 1;
+                    log::info!("Unit atlas growth page {page} ({page_width}x{page_height})");
+                    let growth = self.growth.insert(GrowthPage {
+                        page,
+                        shelf: ShelfCursor::new(page_width, page_height),
+                    });
+                    match growth.shelf.place(width, height) {
+                        Some(origin) => origin,
+                        None => {
+                            log::warn!(
+                                "{} VXL sprite ({width}x{height}) exceeds the texture limit {max_dim}",
+                                sprite.key.type_id,
+                            );
+                            continue;
+                        }
+                    }
+                }
+            };
+            band.push((origin, sprite));
+        }
+        self.upload_band(queue, band);
+    }
+
+    /// Upload sprites placed on the current growth page and record them.
+    fn upload_band(&mut self, queue: &wgpu::Queue, band: Vec<([u32; 2], CachedUnitSprite)>) {
+        let Some(growth) = self.growth.as_ref() else {
+            return;
+        };
+        let texture = &self.pages[growth.page].texture;
+        let rects: Vec<_> = band
+            .iter()
+            .map(|(origin, sprite)| {
+                (
+                    *origin,
+                    [sprite.width, sprite.height],
+                    sprite.pixels.as_slice(),
+                )
+            })
+            .collect();
+        atlas_growth::write_band(queue, texture.view.texture(), 1, &rects);
+        let page = growth.page;
+        let page_size = [texture.width, texture.height];
+        for (origin, sprite) in band {
+            let entry = unit_entry(&sprite, origin, page, page_size);
+            self.entries.insert(sprite.key.clone(), entry);
+            self.rendered_cache.push(sprite);
+        }
+    }
+}
+
+/// UV rectangle and draw data of `sprite` placed at `origin` on a page.
+fn unit_entry(
+    sprite: &CachedUnitSprite,
+    origin: [u32; 2],
+    page: usize,
+    page_size: [u32; 2],
+) -> UnitSpriteEntry {
+    let [page_width, page_height] = page_size.map(|v| v as f32);
+    UnitSpriteEntry {
+        uv_origin: [
+            origin[0] as f32 / page_width,
+            origin[1] as f32 / page_height,
+        ],
+        uv_size: [
+            sprite.width as f32 / page_width,
+            sprite.height as f32 / page_height,
+        ],
+        pixel_size: [sprite.width as f32, sprite.height as f32],
+        offset_x: sprite.offset_x,
+        offset_y: sprite.offset_y,
+        native_draw_bounds: sprite.native_draw_bounds,
+        page,
     }
 }
 
@@ -273,88 +486,63 @@ fn seed_unit_variant_keys(
     }
 }
 
-/// Collect the set of unit sprite keys needed by the current ECS world.
+/// Every unit sprite key the voxel models in `demand` can draw, with their
+/// HVA frame counts.
 ///
-/// Used by the incremental rebuild path to diff against the existing atlas.
 /// Ground vehicles get all 17 slope variants (0-16) pre-rendered so that no
 /// atlas rebuild is needed when they drive onto any populated ramp.
-pub fn collect_needed_unit_keys(
-    entities: &crate::sim::entity_store::EntityStore,
+fn needed_unit_keys(
+    demand: &UnitAtlasDemand,
     asset_manager: &AssetManager,
     rules: Option<&RuleSet>,
     art: Option<&ArtRegistry>,
-    interner: Option<&crate::sim::intern::StringInterner>,
-) -> HashSet<UnitSpriteKey> {
-    use crate::map::entities::EntityCategory;
+) -> (HashSet<UnitSpriteKey>, BTreeMap<(String, VxlLayer), u32>) {
     let mut needed: HashSet<UnitSpriteKey> = HashSet::new();
     let mut frame_counts: BTreeMap<(String, VxlLayer), u32> = BTreeMap::new();
-    for entity in entities.values() {
-        if !entity.is_voxel {
-            continue;
-        }
-        let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
-        let is_ground_vehicle: bool = entity.category != EntityCategory::Aircraft;
-        for variant in unit_atlas_variants(type_str, rules) {
-            seed_unit_variant_keys(
-                &mut needed,
-                &mut frame_counts,
-                &variant,
-                is_ground_vehicle,
-                asset_manager,
-                rules,
-                art,
-            );
-        }
-    }
-
-    // Step 1b: Building turret VXLs — non-voxel buildings with TurretAnimIsVoxel=true.
-    // Buildings don't tilt on slopes, so slope_type is always 0.
-    {
-        for entity in entities.values() {
-            if entity.is_voxel || entity.category != EntityCategory::Structure {
-                continue;
-            }
-            let btype_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
-            let obj = match rules.and_then(|r| r.object(btype_str)) {
-                Some(o) => o,
-                None => continue,
-            };
-            if !obj.turret_anim_is_voxel {
-                continue;
-            }
-            let turret_id = match &obj.turret_anim {
-                Some(id) => id,
-                None => continue,
-            };
-            for bucket in 0..TURRET_FACING_BUCKETS {
-                let facing: u8 = (bucket * u16::from(TURRET_FACING_STEP)) as u8;
-                needed.insert(UnitSpriteKey {
-                    type_id: turret_id.clone(),
-                    facing,
-                    layer: VxlLayer::Composite,
-                    frame: 0,
-                    slope_type: 0,
-                });
+    for (types, is_ground_vehicle) in [(&demand.ground, true), (&demand.air, false)] {
+        for type_str in types {
+            for variant in unit_atlas_variants(type_str, rules) {
+                seed_unit_variant_keys(
+                    &mut needed,
+                    &mut frame_counts,
+                    &variant,
+                    is_ground_vehicle,
+                    asset_manager,
+                    rules,
+                    art,
+                );
             }
         }
     }
 
-    needed
+    // Building turret VXLs (e.g., SAM.VXL for NASAM) drawn on top of SHP
+    // buildings. Buildings don't tilt on slopes, so slope_type is always 0.
+    for turret_id in &demand.turrets {
+        for bucket in 0..TURRET_FACING_BUCKETS {
+            let facing: u8 = (bucket * u16::from(TURRET_FACING_STEP)) as u8;
+            needed.insert(UnitSpriteKey {
+                type_id: turret_id.clone(),
+                facing,
+                layer: VxlLayer::Composite,
+                frame: 0,
+                slope_type: 0,
+            });
+        }
+    }
+
+    (needed, frame_counts)
 }
 
-/// Build a unit sprite atlas from all VoxelModel entities in the ECS world.
+/// Build or refresh the unit sprite atlas for every voxel model in the world.
 ///
-/// Uses incremental rendering: if `existing` is provided, its cached rendered
-/// sprites are reused and only genuinely new keys are rendered. This avoids
-/// the expensive VXL software rasterization for sprites already in the atlas.
-///
-/// 1. Queries the world for all (TypeRef, Facing, VoxelModel) entities.
-/// 2. Collects unique (type_id, facing) pairs.
-/// 3. Diffs against cached sprites — renders only new keys.
-/// 4. Shelf-packs all sprites (cached + new) into a single atlas texture.
+/// Without an `existing` atlas every model's sprites are rendered and
+/// shelf-packed into new pages. With one, only the models it has not collected
+/// yet are rendered, and their sprites are appended to a growth page; the
+/// resident pages are not touched and the software rasterizer only runs for
+/// the new models.
 ///
 /// Returns `None` only when no prior atlas exists and no voxel sprite can be
-/// produced. A supplied prior atlas is returned unchanged on ordinary failure.
+/// produced.
 pub fn build_unit_atlas(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -367,95 +555,51 @@ pub fn build_unit_atlas(
     mut compute: Option<&mut VxlComputeRenderer>,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> Option<UnitAtlas> {
-    use crate::map::entities::EntityCategory;
-    let mut previous_atlas = existing;
-    // Step 1: Collect unique (type_id, facing, house_color, layer, frame, slope_type) keys.
-    // For turret units, insert separate Body/Turret/Barrel entries per facing.
-    // For non-turret units, insert a single Composite entry per facing.
-    // Multi-frame HVA units get entries for each frame.
-    let mut needed: HashSet<UnitSpriteKey> = HashSet::new();
-    let mut frame_counts: BTreeMap<(String, VxlLayer), u32> = BTreeMap::new();
-    for entity in entities.values() {
-        if !entity.is_voxel {
-            continue;
-        }
-        let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
-        let is_ground_vehicle: bool = entity.category != EntityCategory::Aircraft;
-        for variant in unit_atlas_variants(type_str, rules) {
-            seed_unit_variant_keys(
-                &mut needed,
-                &mut frame_counts,
-                &variant,
-                is_ground_vehicle,
-                asset_manager,
-                rules,
-                art,
-            );
-        }
+    let started = Instant::now();
+    // Step 1: the voxel models the atlas has not collected yet — every one at
+    // map load — and the keys they draw with. For turret units, separate
+    // Body/Turret/Barrel entries per facing; for the rest a single Composite
+    // entry per facing. Multi-frame HVA units get entries for each frame.
+    let demand = UnitAtlasDemand::of_world(entities, rules, interner);
+    let missing = match &existing {
+        Some(atlas) => demand.without(&atlas.covered),
+        None => demand,
+    };
+    if missing.is_empty() {
+        log::info!("No new voxel models — keeping the current unit atlas");
+        return existing;
     }
-
-    // Step 1b: Building turret VXLs — non-voxel buildings with TurretAnimIsVoxel=true.
-    // These are separate VXL models (e.g., SAM.VXL for NASAM) drawn on top of SHP buildings.
-    {
-        for entity in entities.values() {
-            if entity.is_voxel || entity.category != EntityCategory::Structure {
-                continue;
-            }
-            let btype_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
-            let obj = match rules.and_then(|r| r.object(btype_str)) {
-                Some(o) => o,
-                None => continue,
-            };
-            if !obj.turret_anim_is_voxel {
-                continue;
-            }
-            let turret_id = match &obj.turret_anim {
-                Some(id) => id,
-                None => continue,
-            };
-            for bucket in 0..TURRET_FACING_BUCKETS {
-                let facing: u8 = (bucket * u16::from(TURRET_FACING_STEP)) as u8;
-                needed.insert(UnitSpriteKey {
-                    type_id: turret_id.clone(),
-                    facing,
-                    layer: VxlLayer::Composite,
-                    frame: 0,
-                    slope_type: 0,
-                });
-            }
-        }
-    }
-
-    if needed.is_empty() {
-        log::info!("No voxel entities found — keeping the current unit atlas");
-        return previous_atlas;
-    }
-
-    // Step 1.5: Extract cached sprites from existing atlas, diff against needed keys.
-    let previous_cache_len = previous_atlas
-        .as_ref()
-        .map_or(0, |atlas| atlas.rendered_cache.len());
-    let mut cached: Vec<CachedUnitSprite> = previous_atlas
-        .as_mut()
-        .map(|atlas| std::mem::take(&mut atlas.rendered_cache))
-        .unwrap_or_default();
-    let cached_keys: HashSet<UnitSpriteKey> = cached.iter().map(|s| s.key.clone()).collect();
-    let new_keys: Vec<UnitSpriteKey> = needed
-        .iter()
-        .filter(|k| !cached_keys.contains(k))
-        .cloned()
+    let (needed, frame_counts) = needed_unit_keys(&missing, asset_manager, rules, art);
+    // A type seeded as an aircraft after its ground variant (or the reverse)
+    // shares its flat keys with the resident ones.
+    let mut new_keys: Vec<UnitSpriteKey> = needed
+        .into_iter()
+        .filter(|key| {
+            existing
+                .as_ref()
+                .is_none_or(|atlas| !atlas.entries.contains_key(key))
+        })
         .collect();
-
+    new_keys.sort_unstable_by(|a, b| {
+        (&a.type_id, a.layer, a.frame, a.facing, a.slope_type).cmp(&(
+            &b.type_id,
+            b.layer,
+            b.frame,
+            b.facing,
+            b.slope_type,
+        ))
+    });
     log::info!(
-        "Unit atlas: {} cached, {} new to render, {} total needed",
-        cached.len(),
+        "Unit atlas: {} new sprites to render for {} new voxel models",
         new_keys.len(),
-        needed.len(),
+        missing.len(),
     );
 
-    // Step 2: Render only new sprites (skip cached ones).
+    // Step 2: Render the new sprites.
+    let mut rendered: Vec<CachedUnitSprite> = Vec::with_capacity(new_keys.len());
     let mut gpu_rendered: u32 = 0;
     let mut cpu_rendered: u32 = 0;
+    let mut failed: BTreeMap<&str, usize> = BTreeMap::new();
     if !new_keys.is_empty() {
         // Load VPL file for Blinn-Phong lighting lookup (optional).
         let vpl: Option<VplFile> =
@@ -500,7 +644,7 @@ pub fn build_unit_atlas(
                             device,
                             queue,
                         ) {
-                            cached.push(CachedUnitSprite::from_rendered(RenderedSprite {
+                            rendered.push(CachedUnitSprite::from_rendered(RenderedSprite {
                                 key: fallback_key,
                                 sprite: fallback,
                                 native_draw_bounds: None,
@@ -513,15 +657,13 @@ pub fn build_unit_atlas(
                     } else {
                         cpu_rendered += 1;
                     }
-                    cached.push(CachedUnitSprite::from_rendered(RenderedSprite {
+                    rendered.push(CachedUnitSprite::from_rendered(RenderedSprite {
                         key: key.clone(),
                         sprite,
                         native_draw_bounds,
                     }));
                 }
-                None => {
-                    log::warn!("Failed to render VXL for {}", key.type_id);
-                }
+                None => *failed.entry(key.type_id.as_str()).or_default() += 1,
             }
         }
         if gpu_rendered > 0 || cpu_rendered > 0 {
@@ -531,40 +673,38 @@ pub fn build_unit_atlas(
                 cpu_rendered,
             );
         }
-    }
-
-    if cached.is_empty() {
-        log::warn!("No unit sprites rendered");
-        if let Some(mut previous) = previous_atlas {
-            cached.truncate(previous_cache_len);
-            previous.rendered_cache = cached;
-            log::warn!("Keeping the previous valid unit atlas after render failure");
-            return Some(previous);
+        for (type_id, count) in failed {
+            log::warn!("Failed to render {count} VXL sprites for {type_id}");
         }
-        return None;
     }
 
-    // Step 3: Shelf-pack all sprites (cached + newly rendered) into atlas.
-    let mut atlas: UnitAtlas =
-        match pack_sprites_on_device(device, queue, batch, &cached, frame_counts) {
-            Ok(atlas) => atlas,
+    // Step 3: shelf-pack into new pages at map load; afterwards append to a
+    // growth page so resident sprites are never repacked or re-uploaded.
+    let added = rendered.len();
+    let mut atlas = match existing {
+        Some(mut atlas) => {
+            atlas.append_sprites(device, queue, batch, rendered);
+            atlas
+        }
+        None if rendered.is_empty() => {
+            log::warn!("No unit sprites rendered");
+            return None;
+        }
+        None => match pack_sprites_on_device(device, queue, batch, &rendered) {
+            Ok(mut atlas) => {
+                atlas.rendered_cache = rendered;
+                atlas
+            }
             Err(err) => {
                 log::error!("Unit atlas packing failed: {err}");
-                if let Some(mut previous) = previous_atlas {
-                    cached.truncate(previous_cache_len);
-                    previous.rendered_cache = cached;
-                    log::error!("Keeping the previous valid unit atlas after packing failure");
-                    return Some(previous);
-                }
                 return None;
             }
-        };
-    atlas.rendered_cache = cached;
+        },
+    };
+    atlas.frame_counts.extend(frame_counts);
+    atlas.covered.extend(missing);
     atlas.gpu_rendered = gpu_rendered;
     atlas.cpu_rendered = cpu_rendered;
-    if let Some(previous) = previous_atlas.as_ref() {
-        atlas.restore_shadow_masks(queue, previous.shadow_masks.borrow().clone());
-    }
     let page_dimensions = atlas
         .pages
         .iter()
@@ -572,7 +712,9 @@ pub fn build_unit_atlas(
         .collect::<Vec<_>>()
         .join(", ");
     log::info!(
-        "Unit atlas built: {} sprites across {} page(s): {}",
+        "Unit atlas: {} sprites added in {:.1} ms; {} sprites across {} page(s): {}",
+        added,
+        started.elapsed().as_secs_f64() * 1000.0,
         atlas.sprite_count(),
         atlas.page_count(),
         page_dimensions,
@@ -1226,7 +1368,6 @@ fn pack_sprites_on_device(
     queue: &wgpu::Queue,
     batch: &BatchRenderer,
     sprites: &[CachedUnitSprite],
-    frame_counts: BTreeMap<(String, VxlLayer), u32>,
 ) -> Result<UnitAtlas, UnitAtlasPackError> {
     let max_texture_dim: u32 = device.limits().max_texture_dimension_2d;
     let plan = plan_cached_sprite_pages(sprites, max_texture_dim)?;
@@ -1242,8 +1383,6 @@ fn pack_sprites_on_device(
     let mut entries = HashMap::with_capacity(plan.placements.len());
     for (page_index, &page_height) in plan.page_heights.iter().enumerate() {
         let mut pixels = vec![0u8; (plan.page_width * page_height) as usize];
-        let page_width_f32 = plan.page_width as f32;
-        let page_height_f32 = page_height as f32;
         for placement in plan
             .placements
             .iter()
@@ -1267,21 +1406,12 @@ fn pack_sprites_on_device(
             }
             entries.insert(
                 rs.key.clone(),
-                UnitSpriteEntry {
-                    uv_origin: [
-                        placement.x as f32 / page_width_f32,
-                        placement.y as f32 / page_height_f32,
-                    ],
-                    uv_size: [
-                        rs.width as f32 / page_width_f32,
-                        rs.height as f32 / page_height_f32,
-                    ],
-                    pixel_size: [rs.width as f32, rs.height as f32],
-                    offset_x: rs.offset_x,
-                    offset_y: rs.offset_y,
-                    native_draw_bounds: rs.native_draw_bounds,
-                    page: page_index,
-                },
+                unit_entry(
+                    rs,
+                    [placement.x, placement.y],
+                    page_index,
+                    [plan.page_width, page_height],
+                ),
             );
         }
         let texture = batch.create_unit_atlas_texture_on_device(
@@ -1294,15 +1424,7 @@ fn pack_sprites_on_device(
         pages.push(UnitAtlasPage { texture });
     }
 
-    Ok(UnitAtlas {
-        pages,
-        entries,
-        frame_counts,
-        rendered_cache: Vec::new(), // caller sets this after packing
-        gpu_rendered: 0,            // caller sets after rendering
-        cpu_rendered: 0,
-        shadow_masks: Default::default(),
-    })
+    Ok(UnitAtlas::new(pages, entries))
 }
 
 fn plan_cached_sprite_pages(
@@ -1324,14 +1446,6 @@ mod tests;
 #[cfg(test)]
 impl UnitAtlas {
     pub(crate) fn from_test_pages(pages: Vec<UnitAtlasPage>) -> Self {
-        Self {
-            pages,
-            entries: HashMap::new(),
-            frame_counts: BTreeMap::new(),
-            rendered_cache: Vec::new(),
-            gpu_rendered: 0,
-            cpu_rendered: 0,
-            shadow_masks: Default::default(),
-        }
+        Self::new(pages, HashMap::new())
     }
 }
