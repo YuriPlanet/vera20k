@@ -809,12 +809,15 @@ pub struct ObjectType {
     /// Infantry type enslaved/spawned by this unit (Enslaves= in rules.ini, YR only).
     /// Used by Slave Miner (SMIN) to spawn SLAV workers.
     pub enslaves: Option<String>,
-    /// Number of slaves to spawn (SlavesNumber= in rules.ini). Default 0.
+    /// `TechnoType+0xD44`, `SlavesNumber=`: the slaves Init_Managers builds.
+    /// `TechnoTypeClass::ReadINI` ReadInt at `0x00714E29`; constructor 0.
     pub slaves_number: i32,
-    /// Frames before a dead slave is regenerated (SlaveRegenRate= in rules.ini). Default 0.
-    pub slave_regen_rate: u32,
-    /// Minimum frames between individual slave respawns (SlaveReloadRate= in rules.ini). Default 0.
-    pub slave_reload_rate: u32,
+    /// `TechnoType+0xD48`, `SlaveRegenRate=`: frames before a lost slave is
+    /// regrown. ReadInt at `0x00714E08`; constructor 0.
+    pub slave_regen_rate: i32,
+    /// `TechnoType+0xD4C`, `SlaveReloadRate=`: frames a slave waits inside
+    /// after paying its load. ReadInt at `0x00714E4A`; constructor 0.
+    pub slave_reload_rate: i32,
     /// Whether this infantry is a slave unit (Slaved=yes in rules.ini).
     /// Slave units are bound to a master (Slave Miner) and have restricted AI.
     pub slaved: bool,
@@ -836,8 +839,11 @@ pub struct ObjectType {
     pub veteran_fearless: bool,
     /// Whether EliteAbilities includes FEARLESS for this type.
     pub elite_fearless: bool,
-    /// Frames between bale pickups for slave harvesters (HarvestRate= in rules.ini). Default 0.
-    pub harvest_rate: u32,
+    /// `InfantryType+0xEB8`, `HarvestRate=`: the delay a slave's
+    /// `InfantryClass::Mission_Harvest @ 0x00522E70` returns after each cut.
+    /// `InfantryTypeClass::ReadINI` ReadInt at `0x0052452B`; the constructor
+    /// writes 1 (`0x00523778`).
+    pub harvest_rate: i32,
     /// AI flag: this unit earns money (ResourceGatherer=yes in rules.ini). Default false.
     pub resource_gatherer: bool,
     /// AI flag: this is a resource delivery point (ResourceDestination=yes in rules.ini). Default false.
@@ -2113,9 +2119,9 @@ impl ObjectType {
 
             // Slave Miner / economy fields
             enslaves: section.get("Enslaves").map(|s| s.to_string()),
-            slaves_number: section.get_i32("SlavesNumber").unwrap_or(0),
-            slave_regen_rate: section.get_i32("SlaveRegenRate").unwrap_or(0).max(0) as u32,
-            slave_reload_rate: section.get_i32("SlaveReloadRate").unwrap_or(0).max(0) as u32,
+            slaves_number: section.read_int("SlavesNumber", 0),
+            slave_regen_rate: section.read_int("SlaveRegenRate", 0),
+            slave_reload_rate: section.read_int("SlaveReloadRate", 0),
             slaved: section.get_bool("Slaved").unwrap_or(false),
             fearless: section.get_bool("Fearless").unwrap_or(false),
             fraidycat: section.get_bool("Fraidycat").unwrap_or(false),
@@ -2126,7 +2132,7 @@ impl ObjectType {
             secondary_prone_frame: 0,
             veteran_fearless: veteran_abilities.has(Ability::Fearless),
             elite_fearless: elite_abilities.has(Ability::Fearless),
-            harvest_rate: section.get_i32("HarvestRate").unwrap_or(0).max(0) as u32,
+            harvest_rate: section.read_int("HarvestRate", 1),
             resource_gatherer: section.get_bool("ResourceGatherer").unwrap_or(false),
             resource_destination: section.get_bool("ResourceDestination").unwrap_or(false),
             ore_purifier: section.get_bool("OrePurifier").unwrap_or(false),

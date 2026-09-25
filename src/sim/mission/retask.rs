@@ -45,6 +45,27 @@ pub enum DockTeardown {
 impl Simulation {
     /// Run the dock-reservation subset selected by `teardown`. Each branch calls
     /// the exact reservation helpers the corresponding command sites call today.
+    /// `TechnoClass::ResetOrdersToGuard` (`vt+0x3D0` = `0x0070F850`, no
+    /// class override): the class setter `vt+0x480(0, 1)` (`0x0070F859`),
+    /// `Assign_Target(0)`, the ArchiveTarget (`+0x218`) cleared and
+    /// `Assign_Mission(Guard)`. Callers: the capture reset (`0x00471E73`)
+    /// and the slave manager (the deploy hand-off `0x006B0D10` and the
+    /// release `0x006B0BC5`).
+    pub(crate) fn reset_orders_to_guard(
+        &mut self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        let now = self.session.binary_frame;
+        self.assign_null_destination(id, Some(rules));
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.movement_target = None;
+            crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+            entity.set_archive_target(None);
+        }
+        let _ = self.mission_assign_exact(id, MissionId::from_known(MissionType::Guard), now);
+    }
+
     pub(crate) fn run_dock_teardown(&mut self, id: u64, teardown: DockTeardown) {
         match teardown {
             DockTeardown::All => {

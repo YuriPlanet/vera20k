@@ -8,45 +8,6 @@ pub fn widen_bytes(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| char::from(*byte)).collect()
 }
 
-#[cfg(windows)]
-#[link(name = "user32")]
-unsafe extern "system" {
-    fn CharToOemBuffA(source: *const u8, destination: *mut u8, length: u32) -> i32;
-}
-
-#[cfg(windows)]
-fn ansi_byte_to_oem(byte: u8) -> u8 {
-    let mut converted = byte;
-    // SAFETY: source and destination are distinct live one-byte objects, and
-    // the explicit length keeps Win32 from reading either as a C string.
-    let succeeded = unsafe { CharToOemBuffA(&byte, &mut converted, 1) };
-    if succeeded == 0 { byte } else { converted }
-}
-
-#[cfg(not(windows))]
-fn ansi_byte_to_oem(byte: u8) -> u8 {
-    byte
-}
-
-/// Convert score-screen text to the byte-valued glyph string used by ScoreFont.
-///
-/// Each UTF-16 unit is truncated independently before ANSI-to-OEM conversion;
-/// this is intentionally unrelated to the ordinary byte widening, player-edit
-/// ACP boundary, CSF Unicode, and shared BitFont paths. An original wide NUL
-/// terminates the input, while a zero low byte from a nonzero unit remains a
-/// valid converted glyph value.
-///
-/// Retail provenance: ScoreFont low-byte ANSI-to-OEM glyph selection — ScoreFont width slot @ `0x006907E0`.
-/// Retail provenance: ScoreFont low-byte ANSI-to-OEM glyph selection — ScoreFont draw slot @ `0x00690850`.
-/// Retail provenance: ScoreFont low-byte ANSI-to-OEM glyph selection — ScoreFont draw slot @ `0x00690910`.
-pub fn score_font_text(text: &str) -> String {
-    let mut converted = String::with_capacity(text.len());
-    for unit in text.encode_utf16().take_while(|unit| *unit != 0) {
-        converted.push(char::from(ansi_byte_to_oem(unit as u8)));
-    }
-    converted
-}
-
 /// Encode UTF-16 text through the Windows active ANSI code page.
 #[cfg(windows)]
 pub fn acp_encode(text: &str) -> Vec<u8> {
@@ -181,42 +142,4 @@ pub fn acp_round_trip(text: &str) -> String {
 #[cfg(not(windows))]
 pub fn acp_round_trip(text: &str) -> String {
     text.to_string()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn score_font_ascii_is_identity() {
-        let ascii: String = (0x20u8..=0x7E).map(char::from).collect();
-        assert_eq!(score_font_text(&ascii), ascii);
-    }
-
-    #[test]
-    fn score_font_truncates_euro_before_oem_mapping() {
-        let expected = char::from(ansi_byte_to_oem(0xAC)).to_string();
-        assert_eq!(score_font_text("\u{20AC}"), expected);
-    }
-
-    #[test]
-    fn score_font_stops_at_an_original_wide_nul() {
-        assert_eq!(score_font_text("A\0ignored"), "A");
-        assert_eq!(score_font_text("\u{100}"), "\0");
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn score_font_e_acute_matches_one_byte_char_to_oem_buff() {
-        let source = 0xE9u8;
-        let mut expected = source;
-        // SAFETY: this independently exercises the native one-byte call with
-        // distinct source and destination objects, matching the verified ABI.
-        let succeeded = unsafe { CharToOemBuffA(&source, &mut expected, 1) };
-        if succeeded == 0 {
-            expected = source;
-        }
-
-        assert_eq!(score_font_text("\u{E9}"), char::from(expected).to_string());
-    }
 }

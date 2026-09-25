@@ -28,8 +28,8 @@ pub(crate) use self::exit_cell_search::find_nearby_passable_cell_with_index;
 pub(crate) use self::harvest_mission::dispatch_harvest_for_object;
 pub(crate) use self::miner_system::extract_bale;
 pub(crate) use self::refinery_dock::{
-    clear_unload_latch, mission_enter, mission_unload, native_dock_miner, per_cell_dock_now,
-    per_cell_release_dock_contact, tick_stage,
+    clear_unload_latch, mission_enter, mission_unload, native_dock_miner, pay_refinery_owner,
+    per_cell_dock_now, per_cell_release_dock_contact, tick_stage,
 };
 
 use crate::rules::object_type::ObjectType;

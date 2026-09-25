@@ -181,7 +181,7 @@ mod tests {
             game_entity::GameEntity,
             intern::StringInterner,
             occupancy::{CellListInsertion, OccupancyGrid},
-            slave_miner::SlaveHarvester,
+            slave_manager::SlaveManager,
         };
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[BuildingTypes]\n0=MASTER\n[MASTER]\nFoundation=1x1\n[InfantryTypes]\n0=SLAV\n",
@@ -194,6 +194,9 @@ mod tests {
         master.owner = owner;
         master.type_ref = interner.intern("MASTER");
         master.category = EntityCategory::Structure;
+        let slav = interner.intern("SLAV");
+        // An existing manager that does not hold the slave refuses it.
+        master.slave_manager = Some(SlaveManager::new(slav, [None; 0], 0, 0, 0));
         entities.insert(master);
         let mut slave = GameEntity::test_default(2, "SLAV", "Owner", 3, 4);
         slave.owner = owner;
@@ -207,7 +210,7 @@ mod tests {
             next_index: 1,
             ..Default::default()
         });
-        slave.slave_harvester = Some(SlaveHarvester::new(1, 4));
+        slave.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(1), Vec::new());
         let current = super::super::ground_pose::position_world_coord(&slave.position);
         entities.insert(slave);
         let terrain = ResolvedTerrainGrid::from_cells(
@@ -235,7 +238,6 @@ mod tests {
         raw_at(&mut raw, owner, current, true, Some(&terrain), None);
         let mut rng = crate::sim::rng::SimRng::new(31);
         let rng_before = rng.logical_state();
-        let mut bindings = std::collections::BTreeMap::from([(1, vec![])]);
         assert!(!prepare_step_head(
             &mut entities,
             2,
@@ -245,7 +247,6 @@ mod tests {
             None,
             Some(&rules),
             &interner,
-            Some(&bindings),
             &mut rng
         ));
         assert_eq!(
@@ -253,7 +254,8 @@ mod tests {
             4,
             "failed selection restores the cleared current slot"
         );
-        bindings.insert(1, vec![2]);
+        entities.get_mut(1).unwrap().slave_manager =
+            Some(SlaveManager::new(slav, [Some(2)], 0, 0, 0));
         assert!(prepare_step_head(
             &mut entities,
             2,
@@ -263,7 +265,6 @@ mod tests {
             None,
             Some(&rules),
             &interner,
-            Some(&bindings),
             &mut rng
         ));
         assert_eq!(
@@ -543,7 +544,6 @@ mod tests {
                 None,
                 None,
                 &StringInterner::new(),
-                None,
                 &mut rng
             ));
             let entity = entities.get_mut(1).unwrap();
@@ -657,7 +657,6 @@ pub(super) fn prepare_step_head(
     grid: Option<&PathGrid>,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     interner: &crate::sim::intern::StringInterner,
-    bindings: Option<&std::collections::BTreeMap<u64, Vec<u64>>>,
     rng: &mut crate::sim::rng::SimRng,
 ) -> bool {
     use super::locomotor::MovementLayer;
@@ -728,10 +727,9 @@ pub(super) fn prepare_step_head(
         }
         //75C434 still executes when the ordinary target already granted
         //priority. Its map lookups cannot be elided by boolean short-circuit.
-        if let (Some(terrain), Some(rules), Some(bindings)) = (terrain, rules, bindings) {
+        if let (Some(terrain), Some(rules)) = (terrain, rules) {
             let query = crate::sim::slave_deposit::SlaveDepositQuery {
                 entities,
-                bindings,
                 occupancy,
                 terrain,
                 rules,

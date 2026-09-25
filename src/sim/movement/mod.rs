@@ -264,6 +264,9 @@ pub(super) struct MoverPathFacts {
     pub is_armed: bool,
     pub warhead_wall: bool,
     pub warhead_wood: bool,
+    /// A slave's deposit Cells (`SlaveManagerClass 0x006B0880`), which its
+    /// `Can_Enter_Cell` admits past the master's footprint.
+    pub slave_deposit_cells: [Option<(u16, u16)>; 2],
 }
 
 impl MoverPathFacts {
@@ -279,6 +282,7 @@ impl MoverPathFacts {
             is_armed: snap.is_armed,
             warhead_wall: snap.warhead_wall,
             warhead_wood: snap.warhead_wood,
+            slave_deposit_cells: snap.slave_deposit_cells,
         }
     }
 
@@ -320,6 +324,7 @@ impl MoverPathFacts {
             is_armed: false,
             warhead_wall: false,
             warhead_wood: false,
+            slave_deposit_cells: [None, None],
         }
     }
 
@@ -335,6 +340,7 @@ impl MoverPathFacts {
             is_armed: false,
             warhead_wall: false,
             warhead_wood: false,
+            slave_deposit_cells: [None, None],
         }
     }
 }
@@ -424,6 +430,10 @@ pub(super) struct MoverSnapshot {
     /// byte. False under live MapClass authority bypasses hierarchy and uses
     /// flat A*; headless fixtures without authority retain hierarchy.
     pub allow_zone_hierarchy: bool,
+    /// A slave's deposit Cells (`sim::slave_deposit::slave_deposit_cells`):
+    /// `InfantryClass::Can_Enter_Cell` (`0x0051C29E..0x0051C2CA`) admits it
+    /// into them past the master's footprint.
+    pub slave_deposit_cells: [Option<(u16, u16)>; 2],
 }
 
 impl MoverSnapshot {

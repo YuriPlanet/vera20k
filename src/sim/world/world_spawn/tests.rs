@@ -1266,11 +1266,13 @@ fn techno_constructor_slave_manager_pool_draws_parent_then_children_and_cancels_
         .construct_object_limbo_at_height("SMIN", "Americans", 0, 0, 0, 0, &rules)
         .expect("factory-held slave miner constructor");
     let slave_ids = sim
-        .production
-        .slave_bindings
-        .get(&parent_id)
+        .substrate
+        .entities
+        .get(parent_id)
+        .and_then(|parent| parent.slave_manager.as_ref())
         .expect("constructor slave manager")
-        .clone();
+        .slaves()
+        .collect::<Vec<_>>();
     assert_eq!(slave_ids, vec![2, 3]);
     assert_eq!(
         sim.substrate
@@ -1283,10 +1285,7 @@ fn techno_constructor_slave_manager_pool_draws_parent_then_children_and_cancels_
     for (index, slave_id) in slave_ids.iter().copied().enumerate() {
         let slave = sim.substrate.entities.get(slave_id).expect("slave child");
         assert_eq!(slave.techno_ctor_random_word, words[index + 1]);
-        assert_eq!(
-            slave.slave_harvester.as_ref().map(|slave| slave.master_id),
-            Some(parent_id)
-        );
+        assert_eq!(slave.slave.owner(), Some(parent_id));
         assert!(slave.lifecycle.in_limbo && !slave.lifecycle.cell_marked);
     }
     assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
@@ -1294,7 +1293,6 @@ fn techno_constructor_slave_manager_pool_draws_parent_then_children_and_cancels_
     let after_constructor = sim.scenario_rng.logical_state();
     assert!(sim.discard_constructed_limbo(parent_id));
     assert!(sim.substrate.entities.is_empty());
-    assert!(sim.production.slave_bindings.is_empty());
     assert_eq!(sim.scenario_rng.logical_state(), after_constructor);
 }
 
@@ -1323,7 +1321,15 @@ fn techno_constructor_manager_pools_survive_delivery_without_reconstruction() {
                 .filter_map(|slot| slot.spawn)
                 .collect::<Vec<_>>()
         } else {
-            sim.production.slave_bindings[&parent_id].clone()
+            sim.substrate
+                .entities
+                .get(parent_id)
+                .unwrap()
+                .slave_manager
+                .as_ref()
+                .unwrap()
+                .slaves()
+                .collect::<Vec<_>>()
         };
         assert_eq!(child_ids.len(), expected_child_count);
         let after_constructor = sim.scenario_rng.logical_state();
@@ -1354,7 +1360,15 @@ fn techno_constructor_manager_pools_survive_delivery_without_reconstruction() {
                 .filter_map(|slot| slot.spawn)
                 .collect::<Vec<_>>()
         } else {
-            sim.production.slave_bindings[&parent_id].clone()
+            sim.substrate
+                .entities
+                .get(parent_id)
+                .unwrap()
+                .slave_manager
+                .as_ref()
+                .unwrap()
+                .slaves()
+                .collect::<Vec<_>>()
         };
         assert_eq!(retained_ids, child_ids);
     }
@@ -1379,7 +1393,6 @@ fn techno_constructor_failed_parent_placement_discards_both_manager_pool_kinds_w
                 .is_none()
         );
         assert!(sim.substrate.entities.is_empty());
-        assert!(sim.production.slave_bindings.is_empty());
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
     }
 }

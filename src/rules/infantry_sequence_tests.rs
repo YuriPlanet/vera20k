@@ -350,13 +350,16 @@ fn test_sequence_kind_from_ini_key_case_insensitive() {
     assert_eq!(sequence_kind_from_ini_key("walk"), Some(SequenceKind::Walk));
     assert_eq!(sequence_kind_from_ini_key("WALK"), Some(SequenceKind::Walk));
     assert_eq!(sequence_kind_from_ini_key("Walk"), Some(SequenceKind::Walk));
+    assert_eq!(
+        sequence_kind_from_ini_key("Shovel"),
+        Some(SequenceKind::Shovel)
+    );
 }
 
 #[test]
 fn test_sequence_kind_from_ini_key_unknown_returns_none() {
     assert_eq!(sequence_kind_from_ini_key("Tumble"), None);
     assert_eq!(sequence_kind_from_ini_key("Carry"), None);
-    assert_eq!(sequence_kind_from_ini_key("Shovel"), None);
     assert_eq!(sequence_kind_from_ini_key("Bogus"), None);
 }
 
@@ -684,6 +687,7 @@ fn action_ids_match_the_native_sequence_name_table() {
         (SequenceKind::Cheer, 32),
         (SequenceKind::Paradrop, 33),
         (SequenceKind::Panic, 37),
+        (SequenceKind::Shovel, 38),
         (SequenceKind::SecondaryFire, 40),
         (SequenceKind::SecondaryProne, 41),
     ];

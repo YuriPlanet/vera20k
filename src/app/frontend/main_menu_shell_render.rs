@@ -34,11 +34,6 @@ use crate::ui::shell::static_reveal::{Kind1PaintWindow, Kind1RevealReceipt, Kind
 /// so the shell loader asks for this one by name instead.
 const RA2_SHELL_MOVIE_ARCHIVE: &str = "language.mix";
 
-const SHELL_LETTERBOX_W_THRESHOLD: i32 = 1023;
-const SHELL_LETTERBOX_H_THRESHOLD: i32 = 767;
-const SHELL_BASE_W: i32 = 800;
-const SHELL_BASE_H: i32 = 600;
-
 /// Dialog 0xE2 owner-draw button policy: native art remains at the cell top-left
 /// while frame selection changes on press. The dialog has no hover flash or
 /// disabled owner-draw button.
@@ -236,21 +231,6 @@ fn main_menu_paint_labels<'a>(
     out
 }
 
-/// Parent-background origin shared by every full-screen shell dialog.
-pub(crate) fn shell_background_origin(screen_w: i32, screen_h: i32) -> (i32, i32) {
-    let x = if screen_w > SHELL_LETTERBOX_W_THRESHOLD {
-        (screen_w - SHELL_BASE_W) / 2
-    } else {
-        0
-    };
-    let y = if screen_h > SHELL_LETTERBOX_H_THRESHOLD {
-        (screen_h - SHELL_BASE_H) / 2
-    } else {
-        0
-    };
-    (x, y)
-}
-
 /// Select the parent-background SHP: MNSCRNS only at exactly 640 wide, else
 /// MNSCRNL (mirrors gamemd's `g_ScreenWidth == 640` switch).
 fn select_parent_background(
@@ -281,7 +261,7 @@ pub(crate) fn shell_parent_background_instances(
     ) else {
         return Vec::new();
     };
-    let (x, y) = shell_background_origin(screen_w, screen_h);
+    let (x, y) = crate::ui::shell::geom::dialog_origin(screen_w, screen_h);
     let mut out = Vec::new();
     push_entry_sized(
         &mut out,
@@ -1036,12 +1016,6 @@ mod tests {
                 Some(mnscrnl)
             );
         }
-    }
-
-    #[test]
-    fn shell_origin_letterboxes_only_above_thresholds() {
-        assert_eq!(shell_background_origin(800, 600), (0, 0));
-        assert_eq!(shell_background_origin(1024, 768), (112, 84));
     }
 
     #[test]

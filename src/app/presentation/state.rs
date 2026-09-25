@@ -62,6 +62,10 @@ pub(crate) struct MatchPresentationState {
     /// Owner name → house color index mapping for atlas key lookups.
     pub(crate) house_color_map: HouseColorMap,
     pub(crate) house_roster: HouseRoster,
+    /// The handle the local player launched this match under: the session
+    /// name skirmish setup copies into the human house's UI name
+    /// (`0x00688094`). `None` for launches without a skirmish session.
+    pub(crate) local_player_handle: Option<String>,
     pub(crate) lighting: super::lighting::MatchLighting,
     pub(crate) combat_lights: crate::app::presentation::combat_lights::CombatLightRuntime,
     pub(crate) minimap: Option<MinimapRenderer>,

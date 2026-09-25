@@ -1,4 +1,6 @@
-//! Synchronous BridgeRepairHut evacuation, after target expiration.
+//! Synchronous BridgeRepairHut evacuation, after target expiration, and the
+//! forced `InfantryClass::Scatter` it shares with the crew exits and the
+//! slave manager's DeploySlaves.
 //!
 //! Native Building4576F0 visits the Infantry registry and calls
 //! Infantry51D0D0(NULL,true,true). The successful FNPC arm installs a Cell
@@ -168,6 +170,9 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) -> Result<bool, String> {
+        if !self.forced_scatter_gates(id, rules)? {
+            return Ok(false);
+        }
         let e = self
             .substrate
             .entities
@@ -176,46 +181,6 @@ impl Simulation {
         let object = self
             .object_type(e.type_ref(), rules)
             .ok_or_else(|| String::from("Scatter requires an Infantry type"))?;
-        let doing = e
-            .mission_leaf
-            .as_infantry()
-            .ok_or_else(|| String::from("Scatter requires an Infantry Doing"))?
-            .doing();
-        if (28..=30).contains(&doing)
-            && rules
-                .animation_sequence(&object.id)
-                .and_then(|set| set.get(&crate::rules::animation_sequence::SequenceKind::Undeploy))
-                .is_some_and(|sequence| sequence.frame_count != 0)
-        {
-            return Err("Scatter requires an accepted DoAction31 lifetime".into());
-        }
-        // 51D103 passes (31,false,false), so Doing27 cannot change through
-        // its permission gate; it is rejected by the Scatter table below.
-        let moving = crate::sim::movement::motion_query::is_moving(e)
-            .ok_or_else(|| String::from("Scatter requires an active locomotor Is_Moving"))?;
-        let mission_scatter = if moving {
-            e.mission
-                .current()
-                .known()
-                .and_then(|mission| rules.mission_control.entry(mission))
-                .ok_or_else(|| String::from("Scatter requires current mission control"))?
-                .scatter
-        } else {
-            true
-        };
-        // Literal third argument true bypasses PlayerScatter/SCATTER after
-        // pure rank/type reads. The last force/Fraidycat gate remains.
-        if !forced_scatter_admitted(
-            doing,
-            moving,
-            mission_scatter,
-            object.fraidycat,
-            e.attack_target.is_some(),
-        )
-        .ok_or_else(|| String::from("Scatter has an invalid Doing"))?
-        {
-            return Ok(false);
-        }
         // Stock infantry locomotors are Walk and Jumpjet. Both reach the same
         // FNPC/SetDestination(+0x480) arm below; only the immediate locomotor
         // Process (51D478 -> ILocomotion+0x40) differs per kind. The stock
@@ -313,5 +278,87 @@ impl Simulation {
             .process_ground_locomotor_one(id, Some(rules), Some(grid), registry)
             .map_err(|error| format!("Scatter Process failed: {error:?}"))?;
         Ok(outcome.bridge_state_changed)
+    }
+
+    /// `InfantryClass::Scatter(coord, 1, 1)` with a real coordinate, the
+    /// call DeploySlaves makes on each slave it lets out (`0x006B0667`, the
+    /// owner's Center_Coord): the forced gates, then the away-from-`source`
+    /// arm (`0x0051D226..0x0051D2D4`, `0x0051D487..0x0051D6E0`). A found
+    /// neighbour takes `Queue_Mission(Move, 0)` and the class setter
+    /// `vt+0x480(cell, 1)`; none leaves the infantryman where it stands. No
+    /// locomotor Process runs on this arm. Answers whether a destination was
+    /// installed.
+    pub(crate) fn scatter_infantry_forced_from(
+        &mut self,
+        id: u64,
+        source: (i32, i32),
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> Result<bool, String> {
+        if !self.forced_scatter_gates(id, rules)? {
+            return Ok(false);
+        }
+        let Some(scatter) = self.select_infantry_scatter_away_from(id, source, rules, registry)?
+        else {
+            return Ok(false);
+        };
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            crate::sim::mission::authority::queue_entity_mission_deferred(
+                entity,
+                crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Move),
+            );
+        }
+        self.assign_infantry_walk_cell_destination(id, scatter, rules, registry)
+    }
+
+    /// The head of `InfantryClass::Scatter` with `forced` and the third
+    /// argument both true (`0x0051D0DD..0x0051D220`): the deploy-Doing arm,
+    /// then [`forced_scatter_admitted`]. Neither reads the coordinate.
+    fn forced_scatter_gates(&self, id: u64, rules: &RuleSet) -> Result<bool, String> {
+        let e = self
+            .substrate
+            .entities
+            .get(id)
+            .expect("Scatter target is a live infantryman");
+        let object = self
+            .object_type(e.type_ref(), rules)
+            .ok_or_else(|| String::from("Scatter requires an Infantry type"))?;
+        let doing = e
+            .mission_leaf
+            .as_infantry()
+            .ok_or_else(|| String::from("Scatter requires an Infantry Doing"))?
+            .doing();
+        if (28..=30).contains(&doing)
+            && rules
+                .animation_sequence(&object.id)
+                .and_then(|set| set.get(&crate::rules::animation_sequence::SequenceKind::Undeploy))
+                .is_some_and(|sequence| sequence.frame_count != 0)
+        {
+            return Err("Scatter requires an accepted DoAction31 lifetime".into());
+        }
+        // 51D103 passes (31,false,false), so Doing27 cannot change through
+        // its permission gate; it is rejected by the Scatter table below.
+        let moving = crate::sim::movement::motion_query::is_moving(e)
+            .ok_or_else(|| String::from("Scatter requires an active locomotor Is_Moving"))?;
+        let mission_scatter = if moving {
+            e.mission
+                .current()
+                .known()
+                .and_then(|mission| rules.mission_control.entry(mission))
+                .ok_or_else(|| String::from("Scatter requires current mission control"))?
+                .scatter
+        } else {
+            true
+        };
+        // Literal third argument true bypasses PlayerScatter/SCATTER after
+        // pure rank/type reads. The last force/Fraidycat gate remains.
+        forced_scatter_admitted(
+            doing,
+            moving,
+            mission_scatter,
+            object.fraidycat,
+            e.attack_target.is_some(),
+        )
+        .ok_or_else(|| String::from("Scatter has an invalid Doing"))
     }
 }

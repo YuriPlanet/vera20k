@@ -68,6 +68,8 @@ pub(crate) enum ShellSlideKind {
     Keyboard,
     /// Dialog 0x6B — Skirmish's Choose Map, a family page of its own.
     ChooseMap,
+    /// Dialog 0x108 — the score screen after a skirmish game.
+    Score,
 }
 
 impl ShellSlideKind {
@@ -87,6 +89,7 @@ impl ShellSlideKind {
             ShellSlideKind::WolWelcome => 0x010E,
             ShellSlideKind::Keyboard => 0x00A3,
             ShellSlideKind::ChooseMap => 0x006B,
+            ShellSlideKind::Score => 0x0108,
         })
     }
 
@@ -148,6 +151,9 @@ pub(crate) enum ShellExitThen {
     ChooseMapRandomMap,
     /// Westwood Online Main Menu (result 0): `0xE2` is recreated.
     WolBack,
+    /// Score Continue (result 1, `0x005CA06C`): `0x108` slides out, the
+    /// match ends and PrepareSession resumes the shell.
+    ScoreContinue,
     /// A Westwood Online action: `0x10E` closes before the WOLAPI object
     /// fails to load and `TXT_APIMISSING` shows.
     WolApiMissing,
@@ -171,6 +177,7 @@ impl ShellExitThen {
                 ShellSlideKind::ChooseMap
             }
             Self::WolBack | Self::WolApiMissing => ShellSlideKind::WolWelcome,
+            Self::ScoreContinue => ShellSlideKind::Score,
         }
     }
 }
@@ -329,6 +336,8 @@ enum ShellWaveCompletion {
     /// Single Player `0x100`, Movies & Credits `0x101` or movie list `0x129`.
     MenuPage,
     Skirmish,
+    /// Score `0x108`: the heading, the status line and the table start.
+    Score,
 }
 
 /// Render-agnostic reducer for dialog-instance, entry-wave, and title state.
@@ -433,6 +442,7 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::Keyboard
             | ShellSlideKind::ChooseMap => ShellWaveCompletion::MenuPage,
             ShellSlideKind::Skirmish => ShellWaveCompletion::Skirmish,
+            ShellSlideKind::Score => ShellWaveCompletion::Score,
         })
     }
 
@@ -577,9 +587,15 @@ pub(crate) fn main_menu_presented_is_poisoned(state: &AppState) -> bool {
 /// main-menu render dispatch order (skirmish > single-player > bare menu); the
 /// egui fallback / skirmish-setup paths are not native shell dialogs and do not
 /// slide. The candidate is gated on its dialog having a slide column. Returns
-/// `None` off the main menu screen.
+/// the score dialog on the result screen and `None` off the shell screens.
 pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideKind> {
     use crate::ui::game_screen::GameScreen;
+    // The score dialog runs after the game, before the shell resumes.
+    if matches!(state.frontend.screen, GameScreen::MissionResult { .. }) {
+        return (crate::app::App::score_shell_active(state)
+            && crate::ui::shell::slide::is_slide_eligible(ShellSlideKind::Score.dialog_id()))
+        .then_some(ShellSlideKind::Score);
+    }
     if state.frontend.screen != GameScreen::MainMenu {
         return None;
     }
@@ -827,6 +843,11 @@ pub(crate) fn render_shell_first_paint_slide(
             )?;
             true
         }
+        ShellSlideKind::Score => crate::app::frontend::score_shell_render::render_score_page(
+            state,
+            encoder,
+            destination,
+        )?,
         ShellSlideKind::SinglePlayer | ShellSlideKind::MoviesAndCredits => matches!(
             crate::app::frontend::menu_page_render::render_active_menu_page(
                 state,
@@ -867,6 +888,19 @@ pub(crate) fn render_shell_first_paint_slide(
             frontend.shell_page_title.set_text(&title, now);
             frontend.shell_page_title.start(now);
             frontend.shell_status_line.start(now);
+        }
+        // 0x108's SHOW completion starts every kind-1 static at once: the
+        // heading, the status line and the 47 table texts.
+        Some(ShellWaveCompletion::Score) => {
+            let now = Instant::now();
+            let title = crate::app::frontend::score_shell_render::score_title_text(state);
+            let frontend = &mut state.frontend;
+            frontend.shell_page_title.set_text(&title, now);
+            frontend.shell_page_title.start(now);
+            frontend.shell_status_line.start(now);
+            if let Some(page) = frontend.score_page.as_mut() {
+                page.start_reveals(now);
+            }
         }
         None => {}
     }

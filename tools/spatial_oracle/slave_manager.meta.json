@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "SlaveManagerClass AI_Update 0x6AF6C0, manager state machine 0x6AFD60 (Building owner, states 0/5/6), DeploySlaves 0x6B04C0, InfantryClass::Mission_Harvest 0x522E70 and the slave deposit 0x522D50",
+  "assumptions": [
+    "harvest_field fixture (refinery_dock map, House, Rules, Scenario RNG, ore/gem tables); a 2x2 Building (vtable 0x7E3EBC, Foundation index 3) at NW (12,12) as the owner, first object of its four foundation cells; the manager and its nodes supplied at REGION without the constructor.",
+    "PlaceInfantryInCell spot offsets (0x89E9F0) seeded as the static initialiser leaves them: centre, then (64,64), (192,64), (64,192), (192,192).",
+    "Slaves: original Infantry vtables (0x7EB058/03C/034/02C) over supplied fields and a constructed Walk (0x75AA90); SLAV type Strength 125, Storage 4, HarvestRate 150, MovementZone Infantry.",
+    "Rules SlaveMiner ranges 8/14/48/3 cells (leptons), KickFrameDelay 150, ApproachTargetResetMultiplier 1 (ReadInt of retail 1.5)."
+  ],
+  "substitutions": [
+    "Infantry setter 0x51AA40 (writes the NavCom), Limbo 0x51DF10 (sets +0x81) and PlayAnim 0x51D6F0 observed and answered; InfantryType CreateObject 0x523B10 returns a prepared spare; InfantryClass::Unlimbo 0x51DFF0 native (its PlaceInfantryInCell and occupy mark) unless a row supplies answers, with FootClass::Unlimbo 0x4D7170 answered after writing the coordinate and the limbo/on-map bytes (no sight reveal or layer submission); Scatter 0x51D0D0 native; harvest_field and refinery_dock observers."
+  ],
+  "entry_points": {
+    "ai_update": "0x006AF6C0",
+    "manager_ai": "0x006AFD60",
+    "deploy_slaves": "0x006B04C0",
+    "slave_mission_harvest": "0x00522E70",
+    "slave_deposit": "0x00522D50",
+    "infantry_unlimbo": "0x0051DFF0"
+  },
+  "payload_sha256": "f62e2a24ee707653fced8305bf6981c99b75bca3d7bd1fa2f66302a8d72bac8b"
+}

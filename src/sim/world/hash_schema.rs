@@ -134,11 +134,16 @@ pub(super) enum HashFeature {
     /// Fly fall counter (`FlyLocomotionClass+0x58`). Earlier schemas fold
     /// nothing: no object crashed before, so every latch and counter was zero.
     AircraftCrash = 208,
+    /// The SlaveManagerClass on its master (`TechnoClass+0x2D8`), a slave's
+    /// SlaveOwner (`+0x2DC`) and Storage replace the retired constructor
+    /// slave pool and slave harvester cursor. Earlier schemas fold the pool
+    /// from the manager's live slaves; the retired cursor has no counterpart.
+    SlaveManager = 209,
     /// Removes folds: the retired VERA copy of the Jumpjet type block in the
     /// common locomotor runtime, which nothing read. Earlier schemas fold the
     /// non-Jumpjet constants every stashed runtime of the pinned fixtures held;
     /// a Jumpjet's own linked values are not reconstructed.
-    RetiredJumpjetLegacyBlock = 209,
+    RetiredJumpjetLegacyBlock = 210,
 }
 
 impl HashSchema {
@@ -174,6 +179,7 @@ impl HashSchema {
                     | HashFeature::RetiredRefineryDockPhase
                     | HashFeature::NativeOreField
                     | HashFeature::AircraftCrash
+                    | HashFeature::SlaveManager
                     | HashFeature::RetiredJumpjetLegacyBlock
             ),
             #[cfg(test)]

@@ -54,6 +54,12 @@ fn corpus() -> Value {
 /// The refinery_dock rules with the row's `SpreadPercentage=` and
 /// `Harvester=`, the stock overlay list and the row's `[General]` values.
 fn rules_for(input: &Value) -> (RuleSet, IniFile) {
+    rules_for_with(input, |_| {})
+}
+
+/// [`rules_for`] with `edit` applied to the rules text before the overlay
+/// and land sections are appended.
+fn rules_for_with(input: &Value, edit: impl FnOnce(&mut String)) -> (RuleSet, IniFile) {
     let percentage = input["spread_percentage"].as_f64().unwrap_or(0.1);
     let mut text = super::refinery_dock_oracle_tests::RULES
         .replace(
@@ -72,6 +78,7 @@ fn rules_for(input: &Value) -> (RuleSet, IniFile) {
         text = text.replacen("1=MTNK\n", "1=MTNK\n2=CMIN\n3=CTNK\n", 1);
         text.push_str(super::cmin_dock_oracle_tests::CMIN);
     }
+    edit(&mut text);
     let overlays = test_support::tiberium_rules_text();
     text.push_str(&overlays[overlays.find("[OverlayTypes]").unwrap()..]);
     for land in LandType::ALL.iter().take(9) {
@@ -120,6 +127,11 @@ fn overlay_name(kind: u64, variant: u64) -> String {
 /// so, its ore cells (LandType recomputed), the queues sized on the oracle's
 /// 16x16 MapSize, the archive, Unit+0x6D2 and the Scenario RNG seed.
 pub(super) fn row_scene(input: &Value) -> Scene {
+    row_scene_with(input, |_| {})
+}
+
+/// [`row_scene`] on rules whose text `edit` extends (more types).
+pub(super) fn row_scene_with(input: &Value, edit: impl FnOnce(&mut String)) -> Scene {
     let mut input = input.clone();
     if input.get("linked").is_none() {
         input["linked"] = false.into();
@@ -130,7 +142,7 @@ pub(super) fn row_scene(input: &Value) -> Scene {
     if input.get("unlimbo_at_cell").is_none() {
         input["unlimbo_at_cell"] = true.into();
     }
-    let (rules, ini) = rules_for(&input);
+    let (rules, ini) = rules_for_with(&input, edit);
     let cmin = input["cmin"] == true;
     let mut s = if cmin {
         let mut s = scene_with(

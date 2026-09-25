@@ -798,12 +798,19 @@ mod tests {
                 &Default::default(),
             )
             .unwrap();
-        sim.substrate
-            .entities
-            .get_mut(slave)
-            .unwrap()
-            .slave_harvester = Some(crate::sim::slave_miner::SlaveHarvester::new(hut, 4));
-        sim.production.slave_bindings.insert(hut, vec![slave]);
+        sim.substrate.entities.get_mut(slave).unwrap().slave =
+            crate::sim::slave_manager::SlaveLink::for_test(Some(hut), Vec::new());
+        let slav = sim.intern("SLAV");
+        let manager = |slaves: &[u64]| {
+            Some(crate::sim::slave_manager::SlaveManager::new(
+                slav,
+                slaves.iter().copied().map(Some),
+                0,
+                0,
+                0,
+            ))
+        };
+        sim.substrate.entities.get_mut(hut).unwrap().slave_manager = manager(&[slave]);
         sim.substrate.raw_cell_occupation.mark_ground(16, 15, 0x20);
         let cell = sim
             .resolved_terrain
@@ -828,9 +835,9 @@ mod tests {
             0,
             "receiver clears only a local latch"
         );
-        sim.production.slave_bindings.get_mut(&hut).unwrap().clear();
+        sim.substrate.entities.get_mut(hut).unwrap().slave_manager = manager(&[]);
         assert!(probe(&mut sim), "empty manager cannot skip the blocker");
-        sim.production.slave_bindings.insert(hut, vec![slave]);
+        sim.substrate.entities.get_mut(hut).unwrap().slave_manager = manager(&[slave]);
         // Supplied overlapping Building list tests native continuation, not
         // ordinary construction legality or a retail repair footprint scene.
         let mut later = GameEntity::test_default(100, "CABHUT", "Americans", 16, 15);
@@ -1273,14 +1280,9 @@ fn foot_entry(
             .rules
             .object(live.sim.interner.resolve(b.type_ref()))
             .ok_or("repair list missing blocker type")?;
-        if infantry
-            && e.slave_harvester
-                .as_ref()
-                .is_some_and(|s| s.master_id == blocker_id)
-        {
+        if infantry && e.slave.owner() == Some(blocker_id) {
             let query = crate::sim::slave_deposit::SlaveDepositQuery {
                 entities: &live.sim.substrate.entities,
-                bindings: &live.sim.production.slave_bindings,
                 occupancy: &live.sim.substrate.occupancy,
                 terrain: live.terrain(),
                 rules: live.rules,

@@ -150,10 +150,14 @@ def observe_field(u, read32, case, events, reach_args):
             target = xy(read32(sp + 8))
             args = [xy(read32(sp + 4)), read32(sp + 12), read32(sp + 16) & 0xFF,
                     read32(sp + 20) & 0xFF, read32(sp + 24) & 0xFF]
-            if reach_args and reach_args[0] != args:
-                raise AssertionError(('Can_Reach_Zone arguments changed within a row', args))
-            reach_args[:1] = [args]
-            events.append(['reach', target])
+            if case.get('many_scanners'):
+                # Several movers scan in one row (slave_manager): per probe.
+                events.append(['reach', target, args])
+            else:
+                if reach_args and reach_args[0] != args:
+                    raise AssertionError(('Can_Reach_Zone arguments changed within a row', args))
+                reach_args[:1] = [args]
+                events.append(['reach', target])
             ret(0x18, tuple(target) not in unreachable)
         elif address == RECALC:
             events.append(['recalc', cell_xy(this)])

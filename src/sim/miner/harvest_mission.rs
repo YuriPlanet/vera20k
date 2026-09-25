@@ -29,8 +29,8 @@
 //! Structural residuals (native returns with no Rust dispatch equivalent):
 //! the 450-frame non-harvester hold — dispatch is gated on Miner-component
 //! presence, so a non-harvester never reaches the handler; and the
-//! slave-host preamble's Rate epilogue — Slave hosts are dispatched by
-//! `slave_miner.rs`, never through this handler.
+//! slave-host preamble (`0x0073E5E9`, HandleReturnedSlaves) — a Slave Miner
+//! never reaches this handler; its slaves are `sim::slave_manager`'s.
 //!
 //! Guard hand-offs (`UnitClass::Mission_Harvest @ 0x0073E5E0`): the preamble
 //! queues Guard when the house owns no instance of any `Dock=` type, and

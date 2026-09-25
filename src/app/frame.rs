@@ -554,19 +554,22 @@ impl App {
                 // screens with no native analogue (a load failure, a
                 // trigger-driven campaign end) carry no model and keep the
                 // non-art card.
-                let score_rendered = if Self::score_shell_active(state) {
-                    matches!(
-                        crate::app::frontend::score_shell_render::render_score_shell(
+                let score_rendered = Self::score_shell_active(state)
+                    && (matches!(
+                        crate::app::frontend::shell_transition::render_shell_first_paint_slide(
                             state,
                             &mut encoder,
                             &output.texture,
                         )?,
-                        crate::app::frontend::score_shell_render::ScoreShellRenderResult::Rendered
-                    )
+                        crate::app::frontend::shell_transition::ShellFirstPaintRenderResult::Rendered { .. }
+                    ) || crate::app::frontend::score_shell_render::render_score_page(
+                        state,
+                        &mut encoder,
+                        &output.texture,
+                    )?);
+                if score_rendered {
+                    presented_shell = PresentedShell::Score;
                 } else {
-                    false
-                };
-                if !score_rendered {
                     transitions::clear_screen(&mut encoder, &view);
                     state.renderer.egui.begin_frame(&state.platform.window);
                     if crate::ui::mission_status::draw_mission_result_screen(
@@ -683,6 +686,9 @@ impl App {
         state.frontend.shell_monitor.commit_presented();
         state.frontend.shell_page_title.commit_presented();
         state.frontend.shell_status_line.commit_presented();
+        if let Some(page) = state.frontend.score_page.as_mut() {
+            page.commit_presented();
+        }
         if let Some(token) = pending_main_menu_entry_token.take() {
             crate::app::frontend::shell_transition::record_main_menu_entry_presented(state, token)?;
         }

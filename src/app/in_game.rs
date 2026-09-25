@@ -721,12 +721,10 @@ impl App {
                 detail,
                 model,
             }) => {
-                state.frontend.score_screen = Some(model);
-                state.frontend.score_shell_state = Default::default();
-                state.frontend.screen = GameScreen::MissionResult { title, detail };
                 // Victory 006857AE restores the shell pair before score
                 // construction/run at 00685884/0068588B, not after Continue.
                 Self::enter_shell_window_mode(state);
+                Self::open_score_page(state, model, title, detail);
             }
             Some(crate::app::match_runtime::scenario_exit::ScenarioExitDestination::MainMenu) => {
                 Self::return_to_main_menu(state);

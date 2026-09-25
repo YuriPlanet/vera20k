@@ -196,9 +196,6 @@ pub struct ProductionState {
     pub ore_growth_config: OreGrowthConfig,
     /// Per-TiberiumClass growth and spread queues, bitmaps and timers.
     pub ore_growth_state: OreGrowthState,
-    /// Slave Miner bindings: master entity stable_id → vec of slave entity stable_ids.
-    /// Used to track which SLAV infantry belong to which deployed SMIN/YAREFN.
-    pub slave_bindings: BTreeMap<u64, Vec<u64>>,
     /// TIBTRE-style ore-spawning terrain objects, keyed by map cell.
     /// Derived from live `terrain_objects`; removal/limbo must remove this index.
     pub terrain_spawners: BTreeMap<(u16, u16), crate::sim::terrain_spawn::TerrainSpawnerState>,
@@ -232,7 +229,6 @@ impl Default for ProductionState {
             next_enqueue_order: 1,
             ore_growth_config: OreGrowthConfig::disabled(),
             ore_growth_state: OreGrowthState::new(0, 0),
-            slave_bindings: BTreeMap::new(),
             terrain_spawners: BTreeMap::new(),
             terrain_objects: BTreeMap::new(),
             terrain_object_cells: BTreeMap::new(),

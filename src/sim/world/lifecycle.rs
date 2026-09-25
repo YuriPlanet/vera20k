@@ -3962,14 +3962,26 @@ impl Simulation {
         self.trace_lifecycle_for_test(LifecycleTestEvent::FinalizedCommon { stable_id });
     }
 
+    /// The rules-less drain of test fixtures (see
+    /// [`Self::process_pending_delete_with`]).
+    #[cfg(test)]
+    pub(crate) fn process_pending_delete(&mut self) {
+        self.process_pending_delete_with(None, None);
+    }
+
     /// Native-shaped pending-delete drain: preserve alive entries, collapse all
     /// duplicate ready IDs, and finalize each selected object exactly once.
+    /// The frame's rules reach the destructors' slave release.
     ///
     /// gamemd-derived: active YR `DrainDeferredFinalizationQueue @ 0x00725C70`
     /// is reached from `Main_Tick` at `0x0055DE9F` after the frame commit; it
     /// preserves non-ready entries, collapses selected duplicates, and finalizes
     /// each selected ready object once.
-    pub(crate) fn process_pending_delete(&mut self) {
+    pub(crate) fn process_pending_delete_with(
+        &mut self,
+        rules: Option<&RuleSet>,
+        registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    ) {
         #[cfg(test)]
         self.trace_lifecycle_for_test(LifecycleTestEvent::PendingDeleteDrainStarted);
         let mut index = 0;
@@ -3982,6 +3994,7 @@ impl Simulation {
             self.substrate
                 .pending_delete
                 .retain(|&queued| queued != stable_id);
+            self.release_slave_links_at_destruction(stable_id, rules, registry);
             self.finalize_and_remove_common(stable_id);
         }
 

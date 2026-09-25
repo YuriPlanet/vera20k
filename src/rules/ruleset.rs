@@ -488,6 +488,11 @@ pub struct GeneralRules {
     /// (`0x00669D3E..0x00669D27`), played on an elite promotion
     /// (`0x006FA0B6..0x006FA0BC`).
     pub upgrade_elite_sound: Option<String>,
+    /// `[AudioVisual] SlavesFreeSound=` — `RulesClass::ReadAudioVisual @
+    /// 0x006691E0` resolves it to a Voc index at `RulesClass+0x234`
+    /// (constructor -1); the slave release plays it at the first freed slave
+    /// (`0x006B0C2C..0x006B0C60`). Absent or empty is silence.
+    pub slaves_free_sound: Option<String>,
     /// `[AudioVisual] EliteFlashTimer=` — `RulesClass+0xBE8`. Seeded into
     /// `TechnoClass+0xF0` on an elite promotion (`0x006FA0D6..0x006FA0DC`),
     /// whatever house owns the object. Constructor default UNCHECKED.
@@ -829,13 +834,16 @@ pub struct GeneralRules {
     /// like TiberiumShortScan (`0x006702AC..0x006702C5`); the constructor
     /// writes `0x2000` (`0x00667642`). Retail `48` is 12288.
     pub tiberium_long_scan: i32,
-    /// Slave Miner short scan distance in cells (SlaveMinerShortScan= in [General]).
-    /// Deployed Slave Miner checks this range to decide if it should reposition.
-    /// Default 8.
+    /// `Rules+0x1780`, `[General] SlaveMinerShortScan=` in leptons: a deployed
+    /// slave refinery with ore this close keeps working where it stands.
+    /// `RulesClass::ReadGeneral` reads it through `CCINIClass::ReadRange
+    /// 0x00474620` at `0x006702E0`; the constructor writes `0x500`
+    /// (`0x0066764C`). Retail `8` is 2048.
     pub slave_miner_short_scan: i32,
-    /// Slave unit scan distance in cells (SlaveMinerSlaveScan= in [General]).
-    /// Slaves scan further than their master since they trust it would reposition if needed.
-    /// Default 14.
+    /// `Rules+0x1784`, `[General] SlaveMinerSlaveScan=` in leptons: how far a
+    /// slave looks for ore (SlaveManagerClass AI_Update state 1,
+    /// `0x006AF748`). ReadRange at `0x00670300`; constructor `0x1000`
+    /// (`0x00667656`). Retail `14` is 3584.
     pub slave_miner_slave_scan: i32,
     /// `[General] DrainMoneyFrameDelay=` (`Rules+0x314`, stock 30). The drained
     /// object's `TechnoClass::AI_Update @ 0x006FA167..0x006FA17B` transfers
@@ -847,20 +855,29 @@ pub struct GeneralRules {
     /// (`Spend_Money @ 0x004F9790`) to the drainer's (`Add_Credits @
     /// 0x004F9950`) at `0x006FA183..0x006FA1C0`. Constructor default UNCHECKED.
     pub drain_money_amount: i32,
-    /// Slave Miner long scan distance in cells (SlaveMinerLongScan= in [General]).
-    /// Used when searching for a new ore field to deploy near. Default 48.
+    /// `Rules+0x1788`, `[General] SlaveMinerLongScan=` in leptons: how far a
+    /// slave miner looks for a field. ReadRange at `0x0067031F`; constructor
+    /// `0x5000` (`0x00667660`). Retail `48` is 12288.
     pub slave_miner_long_scan: i32,
-    /// Cell improvement threshold for Slave Miner repositioning (SlaveMinerScanCorrection=).
-    /// The new spot must be this many cells closer to ore to justify moving. Default 3.
+    /// `Rules+0x178C`, `[General] SlaveMinerScanCorrection=` in leptons: how
+    /// much closer to ore a new spot must be before a deployed slave miner
+    /// moves. ReadRange at `0x0067033F`; constructor `0x300` (`0x0066766A`).
     pub slave_miner_scan_correction: i32,
-    /// Guard duration before deployed Slave Miner re-scans for ore (SlaveMinerKickFrameDelay=).
-    /// In game frames (15 fps). Default 150 (~10 seconds).
-    pub slave_miner_kick_frame_delay: u32,
+    /// `Rules+0x1790`, `[General] SlaveMinerKickFrameDelay=`: frames an idle
+    /// slave miner waits before it looks for a field again. ReadInt at
+    /// `0x0067035F`; constructor `0x7FFFFFFF` (`0x00667674`). Retail 150.
+    pub slave_miner_kick_frame_delay: i32,
     /// `Rules+0xD78`, `[General] HarvesterTooFarDistance=` in cells: a
     /// refinery farther than this is approached before the dock is reserved.
     /// `RulesClass::ReadGeneral` reads it through `CCINIClass::ReadInt
     /// 0x005276D0` at `0x0066FFEB`; the constructor writes 5 (`0x00666835`).
     pub harvester_too_far_distance: i32,
+    /// `Rules+0xDF8`, `[General] ApproachTargetResetMultiplier=`: read through
+    /// `INIClass::ReadInt 0x005276D0` at `0x00670150` (retail `1.5` is 1);
+    /// constructor 1. A returning slave re-paths when its NavCom has drifted
+    /// more than this many cells from the drop cell (SlaveManagerClass
+    /// AI_Update state 4, `0x006AFB13`).
+    pub approach_target_reset_multiplier: i32,
     /// `Rules+0xD7C`, `[General] ChronoHarvTooFarDistance=` in cells, the
     /// Chrono Miner's threshold. Read through `ReadInt` at `0x0067000B`; the
     /// constructor writes 50 (`0x00666846`).
@@ -1331,6 +1348,7 @@ impl Default for GeneralRules {
             cloak_sound: None,
             upgrade_veteran_sound: None,
             upgrade_elite_sound: None,
+            slaves_free_sound: None,
             elite_flash_timer: 0,
             idle_action_frequency_x1000: STOCK_IDLE_ACTION_FREQUENCY_X1000,
             condition_red_sparking_probability: 0.02,
@@ -1397,14 +1415,15 @@ impl Default for GeneralRules {
             barrel_particle: None,
             tiberium_short_scan: 0x600,
             tiberium_long_scan: 0x2000,
-            slave_miner_short_scan: 8,
-            slave_miner_slave_scan: 14,
+            slave_miner_short_scan: 0x500,
+            slave_miner_slave_scan: 0x1000,
             drain_money_frame_delay: 30,
             drain_money_amount: 30,
-            slave_miner_long_scan: 48,
-            slave_miner_scan_correction: 3,
-            slave_miner_kick_frame_delay: 150,
+            slave_miner_long_scan: 0x5000,
+            slave_miner_scan_correction: 0x300,
+            slave_miner_kick_frame_delay: 0x7FFF_FFFF,
             harvester_too_far_distance: 5,
+            approach_target_reset_multiplier: 1,
             chrono_harv_too_far_distance: 50,
             harvester_load_rate: 2,
             harvester_dump_frames: 15,
@@ -2135,6 +2154,11 @@ impl GeneralRules {
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(str::to_string),
+            slaves_free_sound: audio_visual
+                .and_then(|s| s.get("SlavesFreeSound"))
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
             elite_flash_timer: audio_visual
                 .and_then(|s| s.get_i32("EliteFlashTimer"))
                 .unwrap_or(defaults.elite_flash_timer),
@@ -2381,17 +2405,15 @@ impl GeneralRules {
                 .filter(|s| !s.is_empty()),
             tiberium_short_scan: general.read_range("TiberiumShortScan", 0x600),
             tiberium_long_scan: general.read_range("TiberiumLongScan", 0x2000),
-            slave_miner_short_scan: general.get_i32("SlaveMinerShortScan").unwrap_or(8),
-            slave_miner_slave_scan: general.get_i32("SlaveMinerSlaveScan").unwrap_or(14),
+            slave_miner_short_scan: general.read_range("SlaveMinerShortScan", 0x500),
+            slave_miner_slave_scan: general.read_range("SlaveMinerSlaveScan", 0x1000),
             drain_money_frame_delay: general.get_i32("DrainMoneyFrameDelay").unwrap_or(30),
             drain_money_amount: general.get_i32("DrainMoneyAmount").unwrap_or(30),
-            slave_miner_long_scan: general.get_i32("SlaveMinerLongScan").unwrap_or(48),
-            slave_miner_scan_correction: general.get_i32("SlaveMinerScanCorrection").unwrap_or(3),
-            slave_miner_kick_frame_delay: general
-                .get_i32("SlaveMinerKickFrameDelay")
-                .unwrap_or(150)
-                .max(0) as u32,
+            slave_miner_long_scan: general.read_range("SlaveMinerLongScan", 0x5000),
+            slave_miner_scan_correction: general.read_range("SlaveMinerScanCorrection", 0x300),
+            slave_miner_kick_frame_delay: general.read_int("SlaveMinerKickFrameDelay", 0x7FFF_FFFF),
             harvester_too_far_distance: general.read_int("HarvesterTooFarDistance", 5),
+            approach_target_reset_multiplier: general.read_int("ApproachTargetResetMultiplier", 1),
             chrono_harv_too_far_distance: general.read_int("ChronoHarvTooFarDistance", 50),
             harvester_load_rate: general.read_int("HarvesterLoadRate", 2),
             harvester_dump_frames: {
@@ -5644,6 +5666,7 @@ MutateWarhead=MyMutate\n\
              SlaveMinerKickFrameDelay=200\n\
              HarvesterTooFarDistance=8\n\
              ChronoHarvTooFarDistance=40\n\
+             ApproachTargetResetMultiplier=1.5\n\
              PurifierBonus=.30\n",
         );
         let rules = RuleSet::from_ini(&ini).expect("Should parse");
@@ -5651,11 +5674,13 @@ MutateWarhead=MyMutate\n\
         assert_eq!(rules.general.tiberium_short_scan, 10 * 256);
         assert_eq!(rules.general.tiberium_long_scan, 1664);
         assert_eq!(rules.general.harvester_load_rate, 3);
-        assert_eq!(rules.general.slave_miner_short_scan, 12);
-        assert_eq!(rules.general.slave_miner_slave_scan, 20);
-        assert_eq!(rules.general.slave_miner_long_scan, 55);
-        assert_eq!(rules.general.slave_miner_scan_correction, 5);
+        assert_eq!(rules.general.slave_miner_short_scan, 12 * 256);
+        assert_eq!(rules.general.slave_miner_slave_scan, 20 * 256);
+        assert_eq!(rules.general.slave_miner_long_scan, 55 * 256);
+        assert_eq!(rules.general.slave_miner_scan_correction, 5 * 256);
         assert_eq!(rules.general.slave_miner_kick_frame_delay, 200);
+        // ReadInt stops at the decimal point.
+        assert_eq!(rules.general.approach_target_reset_multiplier, 1);
         assert_eq!(rules.general.harvester_too_far_distance, 8);
         assert_eq!(rules.general.chrono_harv_too_far_distance, 40);
         assert_eq!(rules.general.purifier_bonus_ppm, 300_000);
@@ -5676,11 +5701,12 @@ MutateWarhead=MyMutate\n\
         assert_eq!(rules.general.tiberium_short_scan, 0x600);
         assert_eq!(rules.general.tiberium_long_scan, 0x2000);
         assert_eq!(rules.general.harvester_load_rate, 2);
-        assert_eq!(rules.general.slave_miner_short_scan, 8);
-        assert_eq!(rules.general.slave_miner_slave_scan, 14);
-        assert_eq!(rules.general.slave_miner_long_scan, 48);
-        assert_eq!(rules.general.slave_miner_scan_correction, 3);
-        assert_eq!(rules.general.slave_miner_kick_frame_delay, 150);
+        assert_eq!(rules.general.slave_miner_short_scan, 0x500);
+        assert_eq!(rules.general.slave_miner_slave_scan, 0x1000);
+        assert_eq!(rules.general.slave_miner_long_scan, 0x5000);
+        assert_eq!(rules.general.slave_miner_scan_correction, 0x300);
+        assert_eq!(rules.general.slave_miner_kick_frame_delay, 0x7FFF_FFFF);
+        assert_eq!(rules.general.approach_target_reset_multiplier, 1);
         assert_eq!(rules.general.harvester_too_far_distance, 5);
         assert_eq!(rules.general.chrono_harv_too_far_distance, 50);
         assert_eq!(rules.general.purifier_bonus_ppm, 250_000);

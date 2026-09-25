@@ -718,7 +718,13 @@ impl Simulation {
             // (`0x004593A0`). Garrison occupants and absorbed passengers go
             // in the UnInit below (module residual).
             crate::sim::docking::bunker_link::release_sell_destroy(self, target);
-        } else if let Some(entity) = self.substrate.entities.get(target)
+        }
+        // 0x0071AA95..0x0071AAA7: an erased master's slaves pass to the
+        // attacker's house (FreeSlaves, no house). The C4 arm needs a house
+        // to be missing too, so no registry is lent.
+        self.free_slaves(target, Some(head), None, rules, None);
+        if category != EntityCategory::Structure
+            && let Some(entity) = self.substrate.entities.get(target)
             && let Some(object) = self.object_type(entity.type_ref(), rules)
             && let Some(event) = crate::sim::combat::death_announcement_event(
                 object,

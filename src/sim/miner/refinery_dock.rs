@@ -592,8 +592,9 @@ pub(super) fn drain_first_slot(cargo: &mut Vec<super::CargoBale>) -> Option<(i32
 /// owner (`vt+0x3C`): the base amount, then the purifier bonus
 /// `P × PurifierBonus × amount` where P counts the owner's purifiers plus
 /// `AIVirtualPurifiers[difficulty]` for a computer house outside the
-/// campaign (`0x0073E3D5..0x0073E408`).
-pub(super) fn pay_refinery_owner(
+/// campaign (`0x0073E3D5..0x0073E408`). A slave's deposit pays its master
+/// the same way (`0x00522D71..0x00522E36`).
+pub(crate) fn pay_refinery_owner(
     sim: &mut Simulation,
     rules: &RuleSet,
     building: u64,

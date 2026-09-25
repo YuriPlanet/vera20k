@@ -41,7 +41,6 @@ use crate::sim::movement::tube_movement::LowBridgeTubeMovementState;
 use crate::sim::movement::tunnel_movement::TunnelState;
 use crate::sim::passenger::PassengerRole;
 use crate::sim::radio::Contacts;
-use crate::sim::slave_miner::SlaveHarvester;
 use crate::sim::superweapon::invulnerability::InvulnerabilityState;
 use crate::util::native_x87::NativeF64Bits;
 
@@ -815,8 +814,14 @@ pub struct GameEntity {
     pub harvest_overlay: Option<HarvestOverlay>,
     /// Harvester state machine (ore collection, refinery docking, cargo).
     pub miner: Option<Miner>,
-    /// Slave infantry harvest AI (picks up ore, returns to master Slave Miner).
-    pub slave_harvester: Option<SlaveHarvester>,
+    /// `SlaveManagerClass` of an `Enslaves=` master (`TechnoClass+0x2D8`).
+    #[serde(default)]
+    pub(crate) slave_manager: Option<crate::sim::slave_manager::SlaveManager>,
+    /// The slave side of `SlaveManagerClass`: the master whose manager holds
+    /// this slave (`TechnoClass+0x2DC`) and its Storage (`+0x33C`), written
+    /// only by `sim::slave_manager`.
+    #[serde(default)]
+    pub(crate) slave: crate::sim::slave_manager::SlaveLink,
     /// Persistent high-level order (AttackMove, Guard) that survives transient state changes.
     pub order_intent: Option<OrderIntent>,
     /// Evidence-bounded native cloak transition state and visual producer values.
@@ -1527,7 +1532,8 @@ impl GameEntity {
             voxel_animation: None,
             harvest_overlay: None,
             miner: None,
-            slave_harvester: None,
+            slave_manager: None,
+            slave: Default::default(),
             order_intent: None,
             cloak: None,
             sensor_deposit: None,
@@ -1826,6 +1832,19 @@ impl GameEntity {
     /// Deployed phase (not transitioning).
     pub fn is_fully_deployed(&self) -> bool {
         matches!(self.deploy_state, Some(DeployPhase::Deployed))
+    }
+
+    /// A building's current mission is Construction (0x12) or Selling
+    /// (0x13). VERA keeps a building's build-up and its build-down (the
+    /// Construction Yard repack) in `building_up`/`building_down` without
+    /// publishing those missions, so either counts.
+    pub(crate) fn constructing_or_selling(&self) -> bool {
+        self.building_up.is_some()
+            || self.building_down.is_some()
+            || matches!(
+                self.mission.current().known(),
+                Some(MissionType::Selling | MissionType::Construction)
+            )
     }
 }
 

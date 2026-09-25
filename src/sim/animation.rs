@@ -333,6 +333,8 @@ pub fn advance_animation(
 ///
 /// `sequences` maps type_id → SequenceSet for frame timing lookup.
 /// Entities whose type_id isn't in the map are skipped (no animation advance).
+/// `completed_actions` collects each Infantry whose Doing sequence ended.
+#[allow(clippy::too_many_arguments)]
 fn tick_animations_impl(
     entities: &mut crate::sim::entity_store::EntityStore,
     sequences: &BTreeMap<String, SequenceSet>,
@@ -341,6 +343,7 @@ fn tick_animations_impl(
     interner: &crate::sim::intern::StringInterner,
     binary_frame: u32,
     tick_dying: bool,
+    completed_actions: &mut Vec<(u64, i32)>,
 ) -> Vec<u64> {
     let mut dying_finished: Vec<u64> = Vec::new();
     let keys: Vec<u64> = entities.keys_sorted();
@@ -390,6 +393,10 @@ fn tick_animations_impl(
         }
 
         let has_movement: bool = entity.movement_target.is_some();
+        let shoveling = entity
+            .mission_leaf
+            .as_infantry()
+            .is_some_and(|leaf| leaf.doing() == 38);
         let pending_fire_sequence = entity
             .attack_target
             .as_ref()
@@ -435,6 +442,17 @@ fn tick_animations_impl(
                         {
                             anim.switch_to(SequenceKind::Prone);
                         }
+                    }
+                }
+                // A slave digging (Doing 0x26, `InfantryClass::Mission_Harvest @
+                // 0x00522EF3`) shows Shovel until it moves off or its
+                // Do_Action(0) ends the dig; the cascade below then walks it.
+                if !runtime_prone {
+                    if shoveling && !has_movement && anim.sequence == SequenceKind::Stand {
+                        anim.switch_to(SequenceKind::Shovel);
+                    } else if anim.sequence == SequenceKind::Shovel && (has_movement || !shoveling)
+                    {
+                        anim.switch_to(SequenceKind::Stand);
                     }
                 }
                 // Standard cascade for upright entities — preserved verbatim from prior logic.
@@ -492,6 +510,12 @@ fn tick_animations_impl(
                     body_facing.snap(u16::from(facing) << 8, binary_frame);
                 }
             }
+            // The Doing that installed this sequence has played to its end.
+            if let Some(doing) = entity.mission_leaf.as_infantry().map(|leaf| leaf.doing())
+                && doing == i32::from(crate::rules::infantry_sequence::action_id(anim.sequence))
+            {
+                completed_actions.push((id, doing));
+            }
             anim.switch_to(next);
         }
     }
@@ -515,12 +539,18 @@ pub fn tick_animations(
         interner,
         binary_frame,
         true,
+        &mut Vec::new(),
     )
 }
 
 /// Advance only living entity animations. Dying animation completion is owned
 /// by that object's live scheduler turn so UnInit can compact the LogicVector
 /// before the scheduler cursor advances.
+///
+/// Returns each Infantry, in visit order, whose Doing played its sequence to
+/// the end this frame, with that Doing: the stage end
+/// `InfantryClass::DoType_Sequencer` dispatches on
+/// (`Simulation::infantry_action_completed`).
 pub(crate) fn tick_non_dying_animations(
     entities: &mut crate::sim::entity_store::EntityStore,
     sequences: &BTreeMap<String, SequenceSet>,
@@ -528,7 +558,8 @@ pub(crate) fn tick_non_dying_animations(
     game_options: &crate::sim::game_options::GameOptions,
     interner: &crate::sim::intern::StringInterner,
     binary_frame: u32,
-) {
+) -> Vec<(u64, i32)> {
+    let mut completed_actions = Vec::new();
     let _ = tick_animations_impl(
         entities,
         sequences,
@@ -537,7 +568,9 @@ pub(crate) fn tick_non_dying_animations(
         interner,
         binary_frame,
         false,
+        &mut completed_actions,
     );
+    completed_actions
 }
 
 /// Advance one dying object's death sequence during its own scheduler turn.

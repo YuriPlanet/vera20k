@@ -91,18 +91,25 @@ pub struct ListScrollArt {
     pub grip_bottom: Option<MainMenuShellChromeEntry>,
 }
 
-/// Darken encoded RGBA8 texels by one RGB565 unit per channel, saturating at
-/// zero. The shell presenter quantizes encoded bytes with `>> 3` / `>> 2`, so
-/// storing the darkened unit in the high bits reproduces the 16-bit result.
-fn darken_one_rgb565_unit(rgba: &[u8]) -> Vec<u8> {
+/// `AlphaBlendRect` `0x00621B80` with colour 0 over encoded RGBA8 texels:
+/// every RGB565 channel keeps `floor(c * (255 - alpha) / 256)`. Alpha 0 is one
+/// unit darker (what a list or trackbar saves under itself); `0x9F` is the
+/// score table's 37.5 %. The shell presenter quantizes encoded bytes with
+/// `>> 3` / `>> 2`, so storing the result in the high bits reproduces the
+/// 16-bit value.
+fn blend_black_rgb565(rgba: &[u8], alpha: u8) -> Vec<u8> {
+    let weight = u32::from(255 - alpha);
+    let keep = |unit: u8| (u32::from(unit) * weight / 256) as u8;
     rgba.as_chunks::<4>()
         .0
         .iter()
         .flat_map(|texel| {
-            let r = (texel[0] >> 3).saturating_sub(1) << 3;
-            let g = (texel[1] >> 2).saturating_sub(1) << 2;
-            let b = (texel[2] >> 3).saturating_sub(1) << 3;
-            [r, g, b, texel[3]]
+            [
+                keep(texel[0] >> 3) << 3,
+                keep(texel[1] >> 2) << 2,
+                keep(texel[2] >> 3) << 3,
+                texel[3],
+            ]
         })
         .collect()
 }
@@ -159,7 +166,7 @@ pub fn build_main_menu_shell_chrome_atlas(
                 label: format!("{}:list", entry.label),
                 width: entry.width,
                 height: entry.height,
-                rgba: darken_one_rgb565_unit(&entry.rgba),
+                rgba: blend_black_rgb565(&entry.rgba, 0),
             })
             .collect();
         rendered.extend(darkened);
@@ -304,7 +311,7 @@ pub fn build_campaign_shell_art(
             label: "background:dark".into(),
             width: entry.width,
             height: entry.height,
-            rgba: darken_one_rgb565_unit(&entry.rgba),
+            rgba: blend_black_rgb565(&entry.rgba, 0),
         });
         rendered.push(entry);
         labels.extend(["background:dark", "background"]);
@@ -356,6 +363,111 @@ pub struct WolWelcomeArt {
 /// packed format (`OwnerDraw_Static_006153E0`).
 const IMAGE_STATIC_TRANSPARENT_RGB: [u8; 3] = [255, 0, 255];
 
+/// A kind-2 image static's PCX (the PCX cache `0x006BA140`), keyed to its
+/// transparent colour and labelled by its lower-case name.
+fn render_image_static_pcx(assets: &AssetManager, file: &str) -> Option<RenderedChromeEntry> {
+    let bytes = assets.get_ref(file)?;
+    let pcx = PcxFile::from_bytes(bytes)
+        .map_err(|err| log::warn!("Could not parse {file}: {err:#}"))
+        .ok()?;
+    let mut rgba = pcx.to_rgba(None);
+    crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
+        .apply_packed_color_key_rgba8(&mut rgba, IMAGE_STATIC_TRANSPARENT_RGB);
+    Some(RenderedChromeEntry {
+        label: file.to_ascii_lowercase(),
+        width: pcx.width as u32,
+        height: pcx.height as u32,
+        rgba,
+    })
+}
+
+/// Score screen `0x108` art for the local side: the dialog background and the
+/// band bars.
+pub struct ScoreArt {
+    pub texture: BatchTexture,
+    pub background: Option<MainMenuShellChromeEntry>,
+    /// The background at 37.5 % (`0x00621B80`, colour 0, weight `0x9F`): what
+    /// the proc's `WM_PAINT` leaves behind the table.
+    pub background_shaded: Option<MainMenuShellChromeEntry>,
+    /// The ten band images in the proc's band order; `None` where the side has
+    /// no bar or the PCX is missing (the band then keeps kind 0).
+    pub bars: [Option<MainMenuShellChromeEntry>; 10],
+}
+
+/// Background shape and palette by side (`0x0072D830`, `0x0072D730`): the
+/// small shape only at exactly 640 wide, and Yuri's small shape is Soviet's.
+pub fn score_art_names(side: u8, screen_w: u32) -> (&'static str, &'static str) {
+    let (small, large, palette) = match side {
+        0 => ("MPASCRNS.SHP", "MPASCRNL.SHP", "MPASCRN.PAL"),
+        1 => ("MPSSCRNS.SHP", "MPSSCRNL.SHP", "MPSSCRN.PAL"),
+        _ => ("MPSSCRNS.SHP", "MPYSCRNL.SHP", "MPYSCRN.PAL"),
+    };
+    (if screen_w == 640 { small } else { large }, palette)
+}
+
+/// Band `band`'s bar by side (`0x005CA110`, tables `0x00844B24`,
+/// `0x00844B4C`, `0x00844B74`); any other side has none.
+pub fn score_bar_name(side: u8, band: usize) -> Option<String> {
+    let side = match side {
+        0 => 'a',
+        1 => 's',
+        2 => 'y',
+        _ => return None,
+    };
+    Some(format!("mp{side}scrnlbar{:02}.pcx", band + 1))
+}
+
+pub fn build_score_art(
+    gpu: &GpuContext,
+    batch: &BatchRenderer,
+    assets: &AssetManager,
+    side: u8,
+    screen_w: u32,
+) -> Option<ScoreArt> {
+    let (shape, palette) = score_art_names(side, screen_w);
+    let mut rendered = Vec::new();
+    let mut labels: Vec<String> = Vec::new();
+    if let Some(palette) = load_named_palette(assets, palette)
+        && let Some(entry) = render_shp_entry(assets, shape, &palette, 0, None)
+    {
+        rendered.push(RenderedChromeEntry {
+            label: "background:shaded".into(),
+            width: entry.width,
+            height: entry.height,
+            rgba: blend_black_rgb565(&entry.rgba, 0x9F),
+        });
+        rendered.push(entry);
+        labels.extend(["background:shaded".into(), "background".into()]);
+    } else {
+        log::warn!("Missing score background {shape}");
+    }
+    for band in 0..10 {
+        let Some(file) = score_bar_name(side, band) else {
+            break;
+        };
+        match render_image_static_pcx(assets, &file) {
+            Some(entry) => {
+                rendered.push(entry);
+                labels.push(format!("bar:{band}"));
+            }
+            None => log::warn!("Missing score bar {file}"),
+        }
+    }
+    let (texture, packed) = pack_entries(gpu, batch, &rendered)?;
+    let find = |name: &str| {
+        labels
+            .iter()
+            .position(|label| label == name)
+            .map(|index| packed[index])
+    };
+    Some(ScoreArt {
+        texture,
+        background: find("background"),
+        background_shaded: find("background:shaded"),
+        bars: std::array::from_fn(|band| find(&format!("bar:{band}"))),
+    })
+}
+
 pub fn build_wol_welcome_art(
     gpu: &GpuContext,
     batch: &BatchRenderer,
@@ -377,23 +489,11 @@ pub fn build_wol_welcome_art(
         if labels.contains(&name) {
             continue;
         }
-        let Some(bytes) = assets.get_ref(file) else {
+        let Some(entry) = render_image_static_pcx(assets, file) else {
             log::warn!("Missing Westwood Online glossary icon {file}");
             continue;
         };
-        let Ok(pcx) = PcxFile::from_bytes(bytes) else {
-            log::warn!("Could not parse {file}");
-            continue;
-        };
-        let mut rgba = pcx.to_rgba(None);
-        crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
-            .apply_packed_color_key_rgba8(&mut rgba, IMAGE_STATIC_TRANSPARENT_RGB);
-        rendered.push(RenderedChromeEntry {
-            label: name.clone(),
-            width: pcx.width as u32,
-            height: pcx.height as u32,
-            rgba,
-        });
+        rendered.push(entry);
         labels.push(name);
     }
     let (texture, packed) = pack_entries(gpu, batch, &rendered)?;
@@ -616,6 +716,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn score_shading_keeps_three_eighths_of_every_rgb565_unit() {
+        // Retail still at 800x600: art units -> units inside the rectangle.
+        for (art, shaded) in [
+            ([23u8, 27, 7], [8u8, 10, 2]),
+            ([20, 24, 5], [7, 9, 1]),
+            ([9, 10, 1], [3, 3, 0]),
+        ] {
+            let texel = [art[0] << 3, art[1] << 2, art[2] << 3, 255];
+            let out = blend_black_rgb565(&texel, 0x9F);
+            assert_eq!([out[0] >> 3, out[1] >> 2, out[2] >> 3], shaded, "{art:?}");
+        }
+    }
+
+    #[test]
+    fn score_art_follows_the_side_and_the_width() {
+        assert_eq!(score_art_names(0, 800), ("MPASCRNL.SHP", "MPASCRN.PAL"));
+        assert_eq!(score_art_names(1, 640), ("MPSSCRNS.SHP", "MPSSCRN.PAL"));
+        assert_eq!(score_art_names(2, 640), ("MPSSCRNS.SHP", "MPYSCRN.PAL"));
+        assert_eq!(score_art_names(2, 1024), ("MPYSCRNL.SHP", "MPYSCRN.PAL"));
+        assert_eq!(score_art_names(4, 800), ("MPYSCRNL.SHP", "MPYSCRN.PAL"));
+        assert_eq!(score_bar_name(0, 0).as_deref(), Some("mpascrnlbar01.pcx"));
+        assert_eq!(score_bar_name(2, 9).as_deref(), Some("mpyscrnlbar10.pcx"));
+        assert_eq!(score_bar_name(3, 0), None);
+    }
+
+    #[test]
     fn list_darkening_removes_one_rgb565_unit_and_saturates() {
         let texels = [
             8, 4, 8, 255, // one unit each
@@ -623,7 +749,7 @@ mod tests {
             255, 255, 255, 7, // full intensity keeps alpha
             15, 7, 23, 255, // low bits below one unit are dropped
         ];
-        let dark = darken_one_rgb565_unit(&texels);
+        let dark = blend_black_rgb565(&texels, 0);
         assert_eq!(&dark[0..4], &[0, 0, 0, 255]);
         assert_eq!(&dark[4..8], &[0, 0, 0, 255]);
         assert_eq!(&dark[8..12], &[240, 248, 240, 7]);

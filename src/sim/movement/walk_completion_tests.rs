@@ -100,7 +100,6 @@ fn completed_corner_keeps_heading_until_next_head_is_accepted() {
             None,
             Some(&rules),
             &sim.interner,
-            None,
             &mut sim.scenario_rng,
         );
         assert_eq!(accepted, !blocked);

@@ -645,7 +645,7 @@ pub(crate) fn validate_restored_factory_state(
                 "constructed identity has the wrong concrete category",
             ));
         }
-        if entity.spawn_owner_id.is_some() || entity.slave_harvester.is_some() {
+        if entity.spawn_owner_id.is_some() || entity.slave.owner().is_some() {
             return Err(fail(owner, "factory root is itself a manager child"));
         }
         // Factory admission validates retained identity and membership, without
@@ -689,11 +689,10 @@ pub(crate) fn validate_restored_factory_state(
                 .filter_map(|slot| slot.spawn)
                 .any(|id| roots.contains(&id))
         });
-        let slave_alias = sim
-            .production
-            .slave_bindings
-            .get(&parent)
-            .is_some_and(|children| children.iter().any(|id| roots.contains(id)));
+        let slave_alias = entity
+            .slave_manager
+            .as_ref()
+            .is_some_and(|manager| manager.slaves().any(|id| roots.contains(&id)));
         if spawn_alias || slave_alias {
             return Err(fail(owner, "factory root aliases a held constructor child"));
         }
