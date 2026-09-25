@@ -26,9 +26,11 @@
 //! `tools/spatial_oracle/jumpjet_flight.json` (native Unicorn execution; see the
 //! `.meta.json` scope): speed ramps, zones, turn slowdowns, bob, climb and
 //! descent, the low-altitude speed gate, arrival into state 4 or a claimed hold.
-//! The crash fall and its impact are pinned by
-//! `tools/spatial_oracle/jumpjet_crash.json` for every stock Crashable Unit
-//! type. Bridges, building tops and cell objects are Rust-tested only.
+//! The kill and the crash fall to its impact are pinned by
+//! `tools/spatial_oracle/jumpjet_crash.json` for ZEP, SHAD, HIND, SCHP and DISK
+//! (not the deployed SCHD, whose block matches SCHP's) in the hover, and for
+//! kills in the cruise and in the descent's last step. Bridges, building tops
+//! and cell objects are Rust-tested only.
 //!
 //! Numeric model: `WinMain` installs x87 control word `0x0E7F` (53-bit
 //! precision, round toward zero; `_controlfp(0x300, 0x300)` at `0x006BBFC1`),
@@ -294,8 +296,11 @@ pub(crate) trait JumpjetFlightHost {
     /// The owner's mission (`+0xB4`) or its queued mission (vtable `+0x184`)
     /// is 7, which skips State 4's landing admission.
     fn mission_is_seven(&self) -> bool;
-    /// `Stop_Moving` (interface vtable `+0x48`), which re-targets a nearby cell
-    /// through `Move_To` and answers the state that leaves it in.
+    /// State 4's refusal calls `Stop_Moving` (interface vtable `+0x48`) as its
+    /// last act. The host runs the order body
+    /// ([`JumpjetRuntime::stop_moving`](super::jumpjet_movement::JumpjetRuntime::stop_moving))
+    /// once the frame is committed, which lifts the descent into State 1, and
+    /// answers the state the frame keeps until then.
     fn stop_moving(&mut self) -> i32;
     /// `CellClass+0x140 & 0x100`: the cell carries a high bridge.
     fn cell_high_bridge_at(&self, cell: (i16, i16)) -> bool;
@@ -1072,6 +1077,8 @@ pub(crate) fn cell_top_height(
 mod tests {
     use super::*;
     use crate::map::retail_trig::{required_atan_table, required_math_tables};
+    use crate::sim::components::DriveCoord;
+    use crate::sim::movement::jumpjet_movement::{JumpjetOrderHost, JumpjetRuntime};
     use crate::util::fixed_math::SimFixed;
     use serde_json::{Value, json};
 
@@ -1145,7 +1152,8 @@ mod tests {
             self.location[2] = z;
         }
         fn height_above_ground(&self) -> i32 {
-            self.location[2] - self.floor_height([self.location[0], self.location[1]])
+            self.location[2]
+                - JumpjetFlightHost::floor_height(self, [self.location[0], self.location[1]])
         }
         fn on_bridge(&self) -> bool {
             false
@@ -1447,9 +1455,15 @@ mod tests {
         /// The `RandomRanged(0, 7)` draw, supplied from the recorded neighbour.
         scatter_direction: u32,
         scatter_to: Option<(i16, i16)>,
-        /// The state `Stop_Moving` answers, with the destination it re-targets.
-        stop_state: i32,
         stop_requested: bool,
+        /// The cells the searches answer, in call order as the corpus declares
+        /// them; past the end the last answer repeats, and `None` stands for
+        /// `fnpc_default`.
+        fnpc_answers: Vec<Option<(i16, i16)>>,
+        fnpc_default: (i16, i16),
+        fnpc_calls: usize,
+        /// Owner `+0x5A4` as the cell it names.
+        nav_com: Option<(i16, i16)>,
         landing_latched: bool,
         touched_down: bool,
         /// The air-slot calls this frame, in the corpus's own vocabulary.
@@ -1473,6 +1487,89 @@ mod tests {
                 .iter()
                 .find(|(x, _)| *x == cell.0)
                 .map_or((0, 0), |(_, levels)| *levels)
+        }
+
+        fn next_fnpc(&mut self) -> Option<(i16, i16)> {
+            let answer = self
+                .fnpc_answers
+                .get(
+                    self.fnpc_calls
+                        .min(self.fnpc_answers.len().saturating_sub(1)),
+                )
+                .copied()
+                .flatten()
+                .unwrap_or(self.fnpc_default);
+            self.fnpc_calls += 1;
+            Some(answer)
+        }
+
+        /// The locomotor block the order bodies work on.
+        fn order_runtime(
+            params: &JumpjetFlightParams,
+            flight: JumpjetFlight,
+            state: i32,
+            moving: bool,
+            destination: [i32; 3],
+            landing_latched: bool,
+        ) -> JumpjetRuntime {
+            JumpjetRuntime {
+                destination: DriveCoord {
+                    x: destination[0],
+                    y: destination[1],
+                    z: destination[2],
+                },
+                moving,
+                phase: state,
+                params: *params,
+                flight,
+                landing_latched,
+            }
+        }
+    }
+
+    impl JumpjetOrderHost for StatesHost<'_> {
+        fn owner_kind(&self) -> FlightOwnerKind {
+            self.kind
+        }
+        fn balloon_hover(&self) -> bool {
+            self.balloon_hover
+        }
+        fn mission_is_enter(&self) -> bool {
+            false
+        }
+        fn location(&self) -> DriveCoord {
+            DriveCoord {
+                x: self.location[0],
+                y: self.location[1],
+                z: self.location[2],
+            }
+        }
+        fn stop_search(&mut self, _seed: (i16, i16)) -> Option<(i16, i16)> {
+            self.next_fnpc()
+        }
+        fn move_search(
+            &mut self,
+            _seed: (i16, i16),
+            _alt: bool,
+            _allow_bridge: bool,
+        ) -> Option<(i16, i16)> {
+            self.next_fnpc()
+        }
+        fn cell_coords(&self, xy: [i32; 2]) -> [i32; 2] {
+            let cell = (native_cell(xy[0]), native_cell(xy[1]));
+            [i32::from(cell.0) * 256 + 128, i32::from(cell.1) * 256 + 128]
+        }
+        fn floor_height(&self, xy: [i32; 2]) -> i32 {
+            JumpjetFlightHost::floor_height(self, xy)
+        }
+        fn cell_high_bridge(&self, xy: [i32; 2]) -> bool {
+            JumpjetFlightHost::cell_high_bridge(self, xy)
+        }
+        fn infantry_destination(&mut self, _centre: DriveCoord) -> Option<DriveCoord> {
+            unreachable!("the corpora fly Unit owners")
+        }
+        fn set_nav_com(&mut self, destination: DriveCoord) {
+            self.nav_com = Some((native_cell(destination.x), native_cell(destination.y)));
         }
     }
 
@@ -1499,7 +1596,8 @@ mod tests {
             self.location[2] = z;
         }
         fn height_above_ground(&self) -> i32 {
-            self.location[2] - self.floor_height([self.location[0], self.location[1]])
+            self.location[2]
+                - JumpjetFlightHost::floor_height(self, [self.location[0], self.location[1]])
         }
         fn on_bridge(&self) -> bool {
             false
@@ -1621,8 +1719,9 @@ mod tests {
             false
         }
         fn stop_moving(&mut self) -> i32 {
+            // As production: the order body runs once the frame is done.
             self.stop_requested = true;
-            self.stop_state
+            STATE_DESCEND
         }
         fn cell_high_bridge_at(&self, _cell: (i16, i16)) -> bool {
             false
@@ -1789,8 +1888,31 @@ mod tests {
                 owner: 1,
                 scatter_direction,
                 scatter_to: None,
-                stop_state: STATE_ASCEND,
                 stop_requested: false,
+                // The corpus answers each search with the next declared cell,
+                // the ordered one by default; the order's own search was the
+                // first.
+                fnpc_answers: input["fnpc_cells"]
+                    .as_array()
+                    .map(|answers| {
+                        answers
+                            .iter()
+                            .map(|answer| {
+                                answer
+                                    .as_array()
+                                    .map(|cell| (int(&cell[0]) as i16, int(&cell[1]) as i16))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                fnpc_default: input["order"].as_array().map_or((0, 0), |order| {
+                    (
+                        native_cell(int(&order[0]) as i32),
+                        native_cell(int(&order[1]) as i32),
+                    )
+                }),
+                fnpc_calls: 1,
+                nav_com: None,
                 landing_latched: false,
                 touched_down: false,
                 slot_events: Vec::new(),
@@ -1820,21 +1942,6 @@ mod tests {
                     [0, 0, 0],
                 )
             };
-            let fnpc: Vec<Option<(i32, i32)>> = input["fnpc_cells"]
-                .as_array()
-                .map(|answers| {
-                    answers
-                        .iter()
-                        .map(|answer| {
-                            answer
-                                .as_array()
-                                .map(|cell| (int(&cell[0]) as i32, int(&cell[1]) as i32))
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            let mut fnpc_index = 1usize;
-
             for (index, expected) in frames.iter().enumerate().skip(usize::from(seeded)) {
                 host.frame += 1;
                 host.scatter_to = None;
@@ -1847,19 +1954,30 @@ mod tests {
                 }
                 if host.stop_requested {
                     host.stop_requested = false;
-                    // `Stop_Moving` re-runs `Move_To` on the cell its search
-                    // answered, which the corpus declares per row.
-                    if let Some(Some(cell)) = fnpc.get(fnpc_index.min(fnpc.len() - 1)) {
-                        destination = [cell.0 * 256 + 128, cell.1 * 256 + 128, 0];
-                        moving = true;
-                        // Move_To restores `JumpjetHeight=` when it lifts a
-                        // descent back into the climb, undoing State 4's zero.
-                        flight.target_height = params.height;
-                    }
-                    fnpc_index += 1;
+                    // State 4's last act: the ported `Stop_Moving`, which
+                    // re-targets through `Move_To` and lifts the descent.
+                    let mut runtime = StatesHost::order_runtime(
+                        &params,
+                        flight,
+                        state,
+                        moving,
+                        destination,
+                        host.landing_latched,
+                    );
+                    runtime.stop_moving(&mut host);
+                    state = runtime.phase;
+                    moving = runtime.moving;
+                    destination = [
+                        runtime.destination.x,
+                        runtime.destination.y,
+                        runtime.destination.z,
+                    ];
+                    flight = runtime.flight;
+                    host.landing_latched = runtime.landing_latched;
                 }
                 let produced = json!({
                     "coord": host.location,
+                    "destination": destination,
                     "current_speed": flight.current_speed_bits,
                     "target_speed": flight.target_speed_bits,
                     "target_height": flight.target_height,
@@ -1875,6 +1993,7 @@ mod tests {
                 });
                 let native = json!({
                     "coord": expected["coord"],
+                    "destination": expected["destination"],
                     "current_speed": expected["current_speed"],
                     "target_speed": expected["target_speed"],
                     "target_height": expected["target_height"],
@@ -1891,12 +2010,16 @@ mod tests {
         }
     }
 
-    /// Parity with `tools/spatial_oracle/jumpjet_crash.json`: from the state
-    /// the kill leaves (Health 0 and two `Stop_Moving` calls around the
-    /// `+0x425` latch), the native `Process` latch and State 5 `0x0054CA90`
-    /// frame by frame to the impact notice, for every stock Crashable Unit
-    /// type, an idle hover the latch never reaches and a fall outside
-    /// `In_Bounds`.
+    /// Parity with `tools/spatial_oracle/jumpjet_crash.json`. The kill first:
+    /// the ported `Stop_Moving` twice around the `+0x425` latch, its searches
+    /// answered as the native ones were, must leave the locomotor as the
+    /// native kill did (a hover re-targets its own cell, a cruise the cell
+    /// under the wreck, and the descent's last step lifts into State 1). Then
+    /// from that state the native `Process` latch and State 5 `0x0054CA90`
+    /// frame by frame to the impact notice: ZEP, SHAD, HIND, SCHP and DISK in
+    /// the hover, SHAD and ZEP in the cruise, SHAD and HIND one climb step
+    /// above the ground, an idle hover the latch never reaches and a fall
+    /// outside `In_Bounds`.
     #[test]
     fn a_crashing_jumpjet_falls_like_the_native_state5() {
         let (trig, _) = required_math_tables();
@@ -1914,7 +2037,7 @@ mod tests {
         ))
         .expect("corpus parses");
         let rows = corpus["fall"].as_array().expect("fall rows");
-        assert_eq!(rows.len(), 7);
+        assert_eq!(rows.len(), 11);
 
         for row in rows {
             let name = row["name"].as_str().expect("row name");
@@ -1981,8 +2104,11 @@ mod tests {
                 owner: 1,
                 scatter_direction: 0,
                 scatter_to: None,
-                stop_state: STATE_ASCEND,
                 stop_requested: false,
+                fnpc_answers: Vec::new(),
+                fnpc_default: (0, 0),
+                fnpc_calls: 0,
+                nav_com: None,
                 landing_latched: false,
                 touched_down: false,
                 slot_events: Vec::new(),
@@ -1990,6 +2116,64 @@ mod tests {
                 map_size: (int(&map_size[0]) as i32, int(&map_size[1]) as i32),
                 impact_events: Vec::new(),
             };
+
+            // The kill, from the state the flight left.
+            let before = &row["output"]["before"];
+            let cell_of = |value: &Value| {
+                value
+                    .as_array()
+                    .map(|cell| (int(&cell[0]) as i16, int(&cell[1]) as i16))
+            };
+            let mut kill_flight = JumpjetFlight::linked(&params);
+            kill_flight.target_height = int(&before["target_height"]) as i32;
+            let mut runtime = StatesHost::order_runtime(
+                &params,
+                kill_flight,
+                int(&before["phase"]) as i32,
+                before["moving"].as_bool().expect("flag"),
+                triple(&before["destination"]),
+                before["landing_latched"].as_bool().expect("flag"),
+            );
+            let location = host.location;
+            host.location = triple(&before["coord"]);
+            host.fnpc_answers = killed["events"]
+                .as_array()
+                .expect("kill events")
+                .iter()
+                .filter(|event| event[0] == "fnpc")
+                .map(|event| cell_of(&event[1]))
+                .collect();
+            host.nav_com = cell_of(&before["nav_com"]);
+            runtime.stop_moving(&mut host);
+            host.crashing = true;
+            runtime.stop_moving(&mut host);
+            assert_eq!(
+                json!({
+                    "destination": [
+                        runtime.destination.x,
+                        runtime.destination.y,
+                        runtime.destination.z
+                    ],
+                    "moving": runtime.moving,
+                    "phase": runtime.phase,
+                    "target_height": runtime.flight.target_height,
+                    "landing_latched": runtime.landing_latched,
+                    "nav_com": host.nav_com.map(|cell| [cell.0, cell.1]),
+                    "searches": host.fnpc_calls,
+                }),
+                json!({
+                    "destination": killed["destination"],
+                    "moving": killed["moving"],
+                    "phase": killed["phase"],
+                    "target_height": killed["target_height"],
+                    "landing_latched": killed["landing_latched"],
+                    "nav_com": killed["nav_com"],
+                    "searches": host.fnpc_answers.len(),
+                }),
+                "{name}: the kill"
+            );
+            host.location = location;
+
             let mut state = int(&killed["phase"]) as i32;
             let moving = killed["moving"].as_bool().expect("flag");
             let destination = triple(&killed["destination"]);

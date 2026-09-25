@@ -692,11 +692,30 @@ mod tests {
         assert_eq!(loco.air_phase(), AirMovePhase::Ascending);
     }
 
-    /// A vehicle Jumpjet's order is accepted through this function too, but
-    /// its phase is its own state field: `AirMovePhase` stays untouched.
+    /// A vehicle Jumpjet's order takes its own `Move_To`: Foot's NavCom, then
+    /// the locomotor's destination at the ordered cell's floor, which the
+    /// movement adapter publishes as the goal. Its phase is its own state
+    /// field: `AirMovePhase` stays untouched.
     #[test]
     fn a_jumpjet_order_does_not_write_the_fly_phase() {
         let mut sim = crate::sim::world::Simulation::with_seed(0);
+        let cells = (0..32)
+            .flat_map(|y| {
+                (0..32)
+                    .map(move |x| crate::sim::world::common_raw_test_terrain_cell(x, y, 0, false))
+            })
+            .collect();
+        sim.resolved_terrain =
+            Some(crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(32, 32, cells));
+        // A playfield holding cells (10..20, 10..15) for the order's search.
+        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+            base: 16,
+            off_fc: 0,
+            off_100: 0,
+            off_104: 24,
+            off_108: 24,
+        });
+        sim.playfield_size_height = Some(24);
         let mut entity = GameEntity::test_default(1, "SHAD", "Americans", 10, 10);
         entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Jumpjet));
         sim.substrate.entities.insert(entity);
@@ -704,7 +723,29 @@ mod tests {
         assert!(sim.issue_air_cell_destination(1, (20, 15), SimFixed::from_num(10), None,));
 
         let e = sim.substrate.entities.get(1).expect("has entity");
-        assert!(e.movement_target.is_some(), "the order itself is accepted");
+        assert_eq!(
+            e.movement_target.as_ref().and_then(|t| t.final_goal),
+            Some((20, 15)),
+            "the order itself is accepted"
+        );
+        assert_eq!(
+            e.navigation.nav_com,
+            Some(crate::sim::components::NavTargetRef::cell(20, 15))
+        );
+        let runtime = e
+            .locomotor
+            .as_ref()
+            .and_then(|l| l.jumpjet_runtime())
+            .expect("jumpjet runtime");
+        assert!(runtime.moving);
+        assert_eq!(
+            runtime.destination,
+            crate::sim::components::DriveCoord {
+                x: 20 * 256 + 128,
+                y: 15 * 256 + 128,
+                z: 0
+            }
+        );
         assert_eq!(
             e.locomotor.as_ref().unwrap().air_phase(),
             AirMovePhase::Landed

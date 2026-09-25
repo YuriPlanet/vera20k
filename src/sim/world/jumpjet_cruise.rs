@@ -15,35 +15,30 @@
 //! Claims and releases are collected as effects while the substrate stays
 //! borrowed immutably, then applied once the frame's states have run.
 //!
-//! A crashing owner (`FootClass+0x425`) takes no orders: the kill's own
-//! `Stop_Moving` calls are the last the locomotor hears, and `Process` latches
-//! it into State 5, whose impact the object turn finishes
-//! (`Simulation::jumpjet_crash_impact`).
+//! Orders reach the locomotor through `Move_To` and `Stop_Moving`
+//! (`movement::jumpjet_movement`). VERA's movement adapter carries a Jumpjet's
+//! orders in its goal cell, so each frame first applies the native entry the
+//! goal stands for: a fresh goal is `Move_To` on the cell, and a goal dropped
+//! in flight is Foot's null `Set_Destination`, whose `Stop_Moving` re-targets
+//! the cell under the owner. State 4's refused landing runs `Stop_Moving` once
+//! the frame is committed.
 //!
-//! Residuals: `Stop_Moving 0x0054B4D0` has no FNPC search here, so a refused
-//! landing stays in the descent and re-tests admission every frame instead of
-//! re-targeting a nearby cell; `Move_To`'s FNPC relocation of the ordered cell
-//! is not applied; `Can_Enter_Cell`'s graded answer collapses to clear or
-//! refused; `Process`'s owner `+0x90` dispatch gate, the owner missions that
-//! skip landing admission, `RulesClass+0x48`'s deploy facing, owner `+0x134`
-//! and the `JumpJetTurn=` hold facing are unmodelled.
+//! A crashing owner (`FootClass+0x425`) takes no orders: the kill's Stun ran
+//! `Stop_Moving` on it (`Simulation::jumpjet_stun_stop`), which keeps a moving
+//! wreck flying and lifts a descending one into State 1, so `Process` latches
+//! it into State 5 wherever the kill found it, and the object turn finishes
+//! its impact (`Simulation::jumpjet_crash_impact`). A touchdown clears the
+//! latch (`0x0054CA12`).
 //!
-//! RESIDUAL: the kill's `Stop_Moving` calls (`FootClass::Stun @ 0x004D5660`
-//! through `Stop_Driver`, once for the death arm and once inside Crash)
-//! re-target a moving locomotor through FNPC and `Move_To` (`0x0054B5DF`,
-//! `0x0054B683`); here the wreck keeps the destination it was flying to. An
-//! owner that still has a NavCom also runs the Unit's NULL `Set_Destination
-//! @ 0x00741970`, whose locomotor calls are untraced. Trigger: a Jumpjet shot
-//! down on its way somewhere, or while descending. Effect: its fall's Update
-//! reads the old destination cell for the reference height and the
-//! low-altitude speed gate (native: the FNPC cell, usually the one under the
-//! wreck), and a wreck killed in its descent skips the one frame of climb
-//! `Move_To`'s lift into State 1 gives it, so it can land a frame or two
-//! early. Frequency: common (a Kirov shot down en route). Risk: the fall's
-//! last frames and the impact frame; the spin, the fall rate and the wreck's
-//! drift at its cruise target speed are unchanged. A hovering wreck (FNPC
-//! answering its own cell) matches: `tools/spatial_oracle/jumpjet_crash.json`
-//! runs the real kill calls.
+//! Residuals: `Can_Enter_Cell`'s graded answer collapses to clear or refused;
+//! the landing State 4 admits raises only the locomotor latch, not the owner's
+//! cell occupation bit (a Unit's `0x007441B0` sets `0x20`, `0x00744210` clears
+//! it), so a second Jumpjet can pick a cell another is landing in; `Process`'s
+//! owner `+0x90` dispatch gate, `RulesClass+0x48`'s deploy facing, owner
+//! `+0x134` and the `JumpJetTurn=` hold facing are unmodelled. A Health-0
+//! wreck whose kill found no cell to re-target (its search failed at the map's
+//! edge) can land without its crash and stay; native's handling of that owner
+//! is untraced.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on map/, rules/ and sim/ only.
@@ -61,7 +56,8 @@ use crate::sim::intern::StringInterner;
 use crate::sim::movement::air_movement::AirMovementTickStats;
 use crate::sim::movement::ground_pose::{ground_surface_z_at, position_world_xy};
 use crate::sim::movement::jumpjet_flight::{
-    self, FlightOwnerKind, JumpjetFlightHost, STATE_DESCEND, STATE_HOLD, STATE_TRANSLATE,
+    self, FlightOwnerKind, JumpjetFlightHost, STATE_ASCEND, STATE_DESCEND, STATE_HOLD,
+    STATE_TRANSLATE,
 };
 use crate::sim::movement::jumpjet_movement::JumpjetRuntime;
 use crate::sim::movement::locomotor::MovementLayer;
@@ -121,6 +117,8 @@ struct CruiseHost<'a> {
     touched_down: bool,
     /// Owner `+0x425`.
     crashing: bool,
+    /// Owner `+0xB4` or `GetCurrentMission` is Enter (7).
+    mission_enter: bool,
     /// `MapClass+0xF4/+0xF8`; no map size admits no cell.
     map_size: Option<(i32, i32)>,
     /// State 5 moved the owner through its Mark/display transaction.
@@ -390,18 +388,14 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     }
 
     fn mission_is_seven(&self) -> bool {
-        // The owner missions that skip State 4's admission are not modelled.
-        false
+        self.mission_enter
     }
 
     fn stop_moving(&mut self) -> i32 {
-        // Native `Stop_Moving 0x0054B4D0` searches a nearby passable cell and
-        // re-issues `Move_To`, which re-enters state 1. VERA has no FNPC search
-        // here, so it stays in the descent and re-tests admission every frame:
-        // State 4 is in `Is_Moving_Now`, so `Process` keeps running Update and
-        // the owner holds at its current target height instead of freezing.
-        // Answering `STATE_HOLD` here would strand it — the gate would then run
-        // nothing ever again. The re-target itself is a recorded residual.
+        // `Stop_Moving` is State 4's last act and needs the world's search, so
+        // it runs once the frame is committed
+        // (`Simulation::jumpjet_stop_moving`), lifting the descent into State 1
+        // when it re-targets.
         self.stop_requested = true;
         STATE_DESCEND
     }
@@ -522,6 +516,7 @@ impl Simulation {
         {
             return None;
         }
+        self.apply_jumpjet_adapter_order(stable_id, rules);
         // Taken before the substrate borrows so the host can hold the rest.
         let path_grid = self.path_grid_snapshot();
         let map_size = self.map_size_diamond();
@@ -531,51 +526,13 @@ impl Simulation {
             let entity = self.substrate.entities.get(stable_id)?;
             let locomotor = entity.locomotor.as_ref()?;
             let runtime = locomotor.jumpjet_runtime()?;
-
-            // The observable effect of `Move_To 0x0054B1C0`: a fresh order
-            // stores the destination, sets the moving byte and lifts a descent
-            // back into the climb. Its FNPC relocation is a recorded residual.
-            // A wreck takes no orders.
-            let goal = entity.movement_target.as_ref().and_then(|t| t.final_goal);
-            let ordered = !entity.crashing;
-            let mut moving = runtime.moving;
-            let mut state = runtime.phase;
-            let mut lift_from_descent = false;
-            let mut interrupted = false;
-            let mut destination = [
+            let moving = runtime.moving;
+            let state = runtime.phase;
+            let destination = [
                 runtime.destination.x,
                 runtime.destination.y,
                 runtime.destination.z,
             ];
-            if ordered && let Some(goal) = goal {
-                // Infantry keep the subcell their own Move_To selected.
-                let ordered = if entity.category == EntityCategory::Infantry
-                    && runtime.moving
-                    && runtime.destination != JumpjetRuntime::NULL
-                {
-                    destination
-                } else {
-                    [
-                        i32::from(goal.0) * 256 + 128,
-                        i32::from(goal.1) * 256 + 128,
-                        0,
-                    ]
-                };
-                if !moving || destination != ordered {
-                    destination = ordered;
-                    moving = true;
-                    if state == STATE_DESCEND {
-                        state = jumpjet_flight::STATE_ASCEND;
-                        lift_from_descent = true;
-                    }
-                }
-            } else if ordered && moving && state == STATE_TRANSLATE {
-                // The order dropped mid-cruise. Native `Stop_Moving` re-targets
-                // a nearby cell and keeps flying; VERA holds (recorded residual).
-                moving = false;
-                state = STATE_HOLD;
-                interrupted = true;
-            }
 
             let xy = position_world_xy(&entity.position);
             let z = entity.position.exact_z_leptons.unwrap_or_else(|| {
@@ -626,6 +583,8 @@ impl Simulation {
                 landing_latched: runtime.landing_latched,
                 touched_down: false,
                 crashing: entity.crashing,
+                mission_enter: entity.mission.queued().raw() == 7
+                    || entity.mission.effective().raw() == 7,
                 map_size,
                 crash_relocated: false,
                 impact: false,
@@ -633,18 +592,6 @@ impl Simulation {
 
             let params = runtime.params;
             let mut flight = runtime.flight;
-            if lift_from_descent {
-                // `Move_To 0x0054B1C0` restores `JumpjetHeight=` when it lifts a
-                // descent back into the climb, undoing State 4's `+0x80 = 0`.
-                flight.target_height = params.height;
-            }
-            if interrupted {
-                // The hold this drops into is not a native transition, so the
-                // speed the cruise carried has to be dropped here: the Process
-                // gate will not run Update again while the owner sits in it.
-                flight.current_speed_bits = 0;
-                flight.target_speed_bits = 0;
-            }
             let entry_state = state;
             let state = jumpjet_flight::process(
                 moving,
@@ -729,13 +676,15 @@ impl Simulation {
         // the ordered cell: the order is done, and what follows needs no goal.
         let ended_cruise =
             effects.entry_state == STATE_TRANSLATE && matches!(state, STATE_HOLD | STATE_DESCEND);
-        if effects.stop_requested || effects.touched_down || ended_cruise {
+        if effects.touched_down || ended_cruise {
             entity.movement_target = None;
         }
-        if effects.stop_requested || effects.touched_down {
+        if effects.touched_down {
             moving = false;
+            // `0x0054CA12`: touchdown ends a crash the latch never caught.
+            entity.crashing = false;
         }
-        let arrived = effects.touched_down || effects.stop_requested || ended_cruise;
+        let arrived = effects.touched_down || ended_cruise;
 
         let locomotor = entity.locomotor.as_mut()?;
         locomotor.altitude = SimFixed::from_num(effects.height.max(0));
@@ -754,11 +703,117 @@ impl Simulation {
                 JumpjetRuntime::NULL
             };
         }
+        if effects.stop_requested {
+            // State 4 refused the landing and called `Stop_Moving` as its last
+            // act, so it runs on the committed frame. Its re-target is the
+            // order the adapter follows from here.
+            let speed = self.jumpjet_order_speed(stable_id, rules);
+            self.jumpjet_stop_moving(stable_id, rules, None);
+            self.publish_jumpjet_destination(stable_id, speed);
+        }
         Some(AirMovementTickStats {
             air_movers: 1,
             arrivals: u32::from(arrived),
             impact: effects.impact,
         })
+    }
+
+    /// VERA's movement adapter hands a Jumpjet its orders through a goal cell
+    /// rather than through Foot's `Set_Destination`, so before `Process` the
+    /// two native entries are applied from it:
+    /// - a goal the locomotor is not flying to is a fresh
+    ///   `Set_Destination(cell)`: Foot stores the NavCom and hands `Move_To`
+    ///   the cell's `GetCoords` (`0x004D94B0`), and the goal then names the
+    ///   cell `Move_To` chose;
+    /// - a goal dropped while the owner climbs or cruises with its NavCom
+    ///   still set (an Attack order and the attack approach drop only the
+    ///   goal) is a null `Set_Destination`, whose Foot arm runs `Stop_Moving`
+    ///   ([`Simulation::jumpjet_null_destination`]) and clears the NavCom, so
+    ///   it is applied once.
+    ///
+    /// A wreck takes no orders.
+    fn apply_jumpjet_adapter_order(&mut self, id: u64, rules: Option<&RuleSet>) {
+        enum Order {
+            MoveTo((u16, u16)),
+            Stop,
+        }
+        let order = {
+            let Some(entity) = self.substrate.entities.get(id) else {
+                return;
+            };
+            let Some(runtime) = entity
+                .locomotor
+                .as_ref()
+                .and_then(|locomotor| locomotor.jumpjet_runtime())
+            else {
+                return;
+            };
+            if entity.crashing {
+                return;
+            }
+            match entity.movement_target.as_ref().and_then(|t| t.final_goal) {
+                Some(goal) => {
+                    let flying_to = (
+                        native_cell(runtime.destination.x),
+                        native_cell(runtime.destination.y),
+                    );
+                    if runtime.moving
+                        && runtime.destination != JumpjetRuntime::NULL
+                        && flying_to == (goal.0 as i16, goal.1 as i16)
+                    {
+                        return;
+                    }
+                    Order::MoveTo(goal)
+                }
+                None if runtime.moving
+                    && matches!(runtime.phase, STATE_ASCEND | STATE_TRANSLATE)
+                    && entity.navigation.nav_com.is_some() =>
+                {
+                    Order::Stop
+                }
+                None => return,
+            }
+        };
+        match order {
+            Order::MoveTo(goal) => {
+                let speed = self.jumpjet_order_speed(id, rules);
+                let request = crate::sim::movement::target_cell_coord(
+                    goal.0,
+                    goal.1,
+                    self.resolved_terrain.as_ref(),
+                );
+                if let Some(entity) = self.substrate.entities.get_mut(id) {
+                    entity.navigation.nav_com =
+                        Some(crate::sim::components::NavTargetRef::cell(goal.0, goal.1));
+                    entity.navigation.nav_com_aux = None;
+                }
+                self.jumpjet_move_to(id, request, rules);
+                let moving = self.substrate.entities.get(id).is_some_and(|entity| {
+                    entity
+                        .locomotor
+                        .as_ref()
+                        .and_then(|locomotor| locomotor.jumpjet_runtime())
+                        .is_some_and(|runtime| runtime.moving)
+                });
+                if moving {
+                    self.publish_jumpjet_destination(id, speed);
+                } else if let Some(entity) = self.substrate.entities.get_mut(id) {
+                    // A refused Move_To leaves the owner where it was; the goal
+                    // retires instead of being retried every frame.
+                    entity.movement_target = None;
+                }
+            }
+            Order::Stop => {
+                self.jumpjet_null_destination(id, rules, None);
+                if let Some(entity) = self.substrate.entities.get_mut(id) {
+                    crate::sim::movement::DestinationTiming::from_rules(
+                        self.session.binary_frame,
+                        rules,
+                    )
+                    .accept(entity);
+                }
+            }
+        }
     }
 }
 
@@ -806,6 +861,16 @@ mod tests {
     fn hovering_jumpjet(body_facing: u8) -> Simulation {
         let mut sim = Simulation::new();
         super::super::lifecycle_tests::install_common_raw_terrain(&mut sim, 24, 16, 0, None);
+        // A playfield holding the corpus corridor (x 6..20, y 9..11), for the
+        // orders' searches and `In_Bounds`.
+        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+            base: 12,
+            off_fc: 0,
+            off_100: 0,
+            off_104: 16,
+            off_108: 16,
+        });
+        sim.playfield_size_height = Some(16);
         {
             let cell = sim
                 .resolved_terrain
@@ -1027,10 +1092,13 @@ mod tests {
         }
     }
 
-    /// Dropping the move target mid-cruise leaves state 3 for a held, stopped
-    /// locomotor instead of carrying speed into the next order.
+    /// An order dropped mid-cruise (an Attack order, the attack approach at
+    /// range) is Foot's null `Set_Destination`: `Stop_Moving` re-targets the
+    /// cell under the owner and keeps the moving byte, so it flies on to that
+    /// cell's centre and lands there, and the NavCom its `Move_To` wrote is
+    /// cleared again. It is applied once: the next frame finds no NavCom.
     #[test]
-    fn an_interrupted_cruise_holds_with_no_speed() {
+    fn a_dropped_order_stops_at_the_cell_under_the_owner() {
         let mut sim = hovering_jumpjet(0x40);
         for frame in 0..20 {
             sim.session.binary_frame = 1001 + frame;
@@ -1045,19 +1113,49 @@ mod tests {
                 .cloned()
                 .expect("runtime")
         };
-        assert_eq!(runtime(&sim).phase, STATE_TRANSLATE);
-        assert!(runtime(&sim).flight.current_speed() > 0.0);
-        sim.substrate
-            .entities
-            .get_mut(1)
-            .expect("jumpjet")
-            .movement_target = None;
+        let flying = runtime(&sim);
+        assert_eq!(flying.phase, STATE_TRANSLATE);
+        assert_eq!(
+            flying.destination,
+            crate::sim::components::DriveCoord {
+                x: 16 * 256 + 128,
+                y: 10 * 256 + 128,
+                z: 0
+            },
+            "the order's Move_To placed the owner at the ordered cell's floor"
+        );
+        let entity = sim.substrate.entities.get_mut(1).expect("jumpjet");
+        assert!(entity.navigation.nav_com.is_some());
+        let here = (entity.position.rx, entity.position.ry);
+        assert!(here.0 < 16, "still on its way");
+        entity.movement_target = None;
+
         sim.session.binary_frame = 1021;
         sim.tick_air_movement_with_cell_lists_one(1, None);
-        let held = runtime(&sim);
-        assert_eq!(held.phase, STATE_HOLD);
-        assert_eq!(held.flight.current_speed_bits, 0);
-        assert_eq!(held.flight.target_speed_bits, 0);
+        let stopped = runtime(&sim);
+        assert!(stopped.moving, "Stop_Moving keeps the moving byte");
+        assert_eq!(
+            stopped.destination,
+            crate::sim::components::DriveCoord {
+                x: i32::from(here.0) * 256 + 128,
+                y: i32::from(here.1) * 256 + 128,
+                z: 0
+            }
+        );
+        let entity = sim.substrate.entities.get(1).expect("jumpjet");
+        assert!(entity.navigation.nav_com.is_none());
+        assert!(entity.movement_target.is_none());
+
+        for frame in 0..400 {
+            sim.session.binary_frame = 1022 + frame;
+            sim.tick_air_movement_with_cell_lists_one(1, None);
+        }
+        let landed = runtime(&sim);
+        assert_eq!(landed.phase, jumpjet_flight::STATE_GROUND);
+        assert!(!landed.moving);
+        let entity = sim.substrate.entities.get(1).expect("jumpjet");
+        assert_eq!((entity.position.rx, entity.position.ry), here);
+        assert_eq!(entity.position.exact_z_leptons, Some(0));
     }
 
     /// `g_HeightFactor`, read from the native startup chain, is the multiplier

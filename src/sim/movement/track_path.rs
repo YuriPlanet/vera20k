@@ -76,6 +76,17 @@ fn track_unit(entity: &GameEntity) -> bool {
         })
 }
 
+/// A Unit on a Jumpjet locomotor: its null destination reaches the Jumpjet's
+/// `Stop_Moving` through the same Unit setter.
+fn jumpjet_unit(entity: &GameEntity) -> bool {
+    entity.category == EntityCategory::Unit
+        && entity
+            .locomotor
+            .as_ref()
+            .and_then(|loco| loco.jumpjet_runtime())
+            .is_some()
+}
+
 /// A `Teleporter=` Unit (TechnoType+0xCD4): Unit 0x741970 runs its
 /// Teleporter arm, which swaps a Drive in over the Teleport primary or ends
 /// it, before the Foot tail.
@@ -733,10 +744,13 @@ impl Simulation {
     /// (0x70F859), the owner change (0x7014E9, 0x70182F), the parasite
     /// release (0x62A78A, 0x62A3ED, 0x62AAB9) and the Temporal freeze. A
     /// Drive/Ship Unit takes Unit 0x741970(NULL, 1), whose locomotor Stop
-    /// nulls +34, so a track end cannot resume the old order; any other
-    /// receiver keeps the represented NavCom write set.
+    /// nulls +34, so a track end cannot resume the old order, and a Jumpjet
+    /// Unit takes it too, whose locomotor Stop re-targets the cell under it;
+    /// any other receiver keeps the represented NavCom write set.
     pub(crate) fn assign_null_destination(&mut self, id: u64, rules: Option<&RuleSet>) {
-        if self.unit_setter_receiver(id, rules) {
+        if self.unit_setter_receiver(id, rules)
+            || self.substrate.entities.get(id).is_some_and(jumpjet_unit)
+        {
             self.set_unit_null_destination(id, rules);
         } else if let Some(actor) = self.substrate.entities.get_mut(id) {
             crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
@@ -959,6 +973,10 @@ impl Simulation {
     ///   a NULL destination installs a Drive over the Teleport, which the
     ///   FootClass::AI tail ends again once it is stopped.
     ///
+    /// - A Jumpjet Unit's locomotor Stop is `Stop_Moving`, which re-targets
+    ///   the cell under it; Foot then clears the NavCom that re-target wrote
+    ///   ([`Self::jumpjet_null_destination`]).
+    ///
     /// Residual (not represented): the BalloonHover arm (0x741983), the
     /// deploy-byte early return (0x741AA3..0x741ABD), the +2B0 linked-object
     /// branch (0x742E3A) and the unpowered-locomotor PowerOn (0x742F48).
@@ -1005,6 +1023,14 @@ impl Simulation {
         }
         actor.navigation.nav_queue.clear();
         super::navcom::set_destination_internal_null(actor);
+        if jumpjet_unit(actor) {
+            self.jumpjet_null_destination(id, rules, None);
+        }
+        let actor = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .expect("same setter actor");
         timing.accept(actor);
         // The scheduling adapter keeps only the committed head step: the
         // locomotor Stop keeps the head, so the running track still finishes,

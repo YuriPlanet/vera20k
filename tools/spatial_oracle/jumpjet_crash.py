@@ -14,9 +14,15 @@ does to it. Process 0x0054AEC0 then latches state 5 (0x0054AF2E..0x0054B02C)
 and State5 runs until its impact calls the owner's INoticeSink slot 0 with
 (0x117C, 0) (0x0054D090).
 
-Not covered: a kill while the owner still holds a NavCom (Set_Destination's
-locomotor calls are untraced), bridges and building tops in the reference
-height, and the Magnetron-lifted arms (+0x6AD, +0x427).
+Besides kills in the hover, rows kill the owner on its way (State 3) and in
+the descent's last step above the ground (State 4), where the kill's
+Stop_Moving searches from the owner's own cell and Move_To lifts the descent
+back into the climb (0x0054B455..0x0054B467) before the latch.
+
+Not covered: the null Set_Destination a live NavCom adds to the Stun
+(UnitClass 0x00741970 -> FootClass 0x004D94B0 -> Stop_Moving, idempotent for a
+Unit), bridges and building tops in the reference height, and the
+Magnetron-lifted arms (+0x6AD, +0x427).
 
 A second family runs Draw_Matrix 0x0054DCC0 (ILocomotion +0x24) on the same
 owner: TechnoType +0xD22 (TiltCrashJumpjet=) with either rocking angle (owner
@@ -31,13 +37,14 @@ import struct
 from unicorn.x86_const import UC_X86_REG_ESP
 
 from tools.native_oracle import finish_vectors, provenance
-from tools.spatial_oracle.map_queries import dwords
+from tools.spatial_oracle.map_queries import dwords, packed
 from tools.spatial_oracle.jumpjet_states import (
     BASE, LOCO, OWNER, SCRATCH, States, centre,
 )
 from tools.spatial_oracle.walk_head_occupation import TYPE
 
 MAP = 0x87F7E8
+FNPC = 0x56DC20
 NOTICE_VTABLE = SCRATCH + 0xEA00
 NOTICE = SCRATCH + 0xEA40
 LAYER_REMOVE = 0x4A9770
@@ -57,7 +64,18 @@ class Crash(States):
         self.notices = []
 
     def observe(self, u, address, size, data):
-        if address == NOTICE:
+        if address == FNPC and self.row['fnpc_owner'] and self.fnpc_calls:
+            # After the order's own search, every search answers the cell the
+            # owner is in, as the real search does for a Fly-zone query from a
+            # passable cell (its first ring is the seed alone).
+            sp = u.reg_read(UC_X86_REG_ESP)
+            pointer = self.read32(sp + 4)
+            x, y = self.owner_cell()
+            u.mem_write(pointer, packed(x, y))
+            self.fnpc_calls += 1
+            self.events.append(['fnpc', [x, y]])
+            self.ret(60, pointer)
+        elif address == NOTICE:
             sp = u.reg_read(UC_X86_REG_ESP)
             self.notices.append([self.read32(sp + 4), self.read32(sp + 8)])
             self.ret(8, 0)
@@ -66,6 +84,16 @@ class Crash(States):
             self.ret(4, 0)
         else:
             super().observe(u, address, size, data)
+
+    def state(self):
+        frame = super().state()
+        # Locomotor +0x90, the landing latch State 4 raises, and the owner's
+        # NavCom +0x5A4 as the cell it names.
+        frame['landing_latched'] = bool(self.uc.mem_read(LOCO + 0x90, 1)[0])
+        nav_com = self.read32(OWNER + 0x5A4)
+        frame['nav_com'] = (list(struct.unpack('<hh', self.uc.mem_read(nav_com + 0x24, 4)))
+                            if nav_com else None)
+        return frame
 
     def process(self):
         self.fractions = []
@@ -85,10 +113,16 @@ class Crash(States):
         if row['order'] is not None:
             self.events = []
             self.call(0x54B1C0, 0, [LOCO + 4, *row['order']])
-        # Fly to the hover (state 2) the row names before the kill.
+        # Fly to where the row kills the owner: held in the hover (state 2) or
+        # the cruise (state 3) for hold_frames, or the descent's last step
+        # above the ground.
         held = 0
         for _ in range(row['flight_frames']):
-            if self.process()['phase'] == 2:
+            frame = self.process()
+            if row['kill_when'] == 'landing':
+                if frame['phase'] == 4 and 0 < frame['coord'][2] <= row['kill_height']:
+                    break
+            elif frame['phase'] == KILL_PHASE[row['kill_when']]:
                 held += 1
                 if held >= row['hold_frames']:
                     break
@@ -116,8 +150,10 @@ class Crash(States):
         return dict(before=before, killed=killed, frames=frames)
 
 
+KILL_PHASE = {'hover': 2, 'cruise': 3}
 FALL_BASE = dict(BASE, map_size=[13, 20], kill_map_size=None, flight_frames=0, hold_frames=4,
-                 max_frames=200, tarcom=True)
+                 max_frames=200, tarcom=True, kill_when='hover', kill_height=None,
+                 fnpc_owner=False)
 
 
 def stock(turn_rate=4, speed=14, climb=5.0, crash=5.0, height=500, accel=2.0,
@@ -156,6 +192,19 @@ def fall_rows():
     rows.append(('SHAD_shot_down_outside_the_map_bounds',
                  dict(FALL_BASE, **TYPES['SHAD'], order=[*centre(12), 0], flight_frames=600,
                       kill_map_size=[40, 20])))
+    # Shot down on its way: the kill re-targets the cell under the wreck, a
+    # balloon keeping the Stop's own request (0x0054B3F2..0x0054B3FA).
+    for name in ('SHAD', 'ZEP'):
+        rows.append((f'{name}_shot_down_in_the_cruise',
+                     dict(FALL_BASE, **TYPES[name], order=[*centre(16), 0], flight_frames=600,
+                          kill_when='cruise', hold_frames=12, fnpc_owner=True)))
+    # Shot down in the descent's last step, one climb step above the ground:
+    # Move_To lifts State 4 back into State 1, so the latch still engages.
+    for name in ('SHAD', 'HIND'):
+        rows.append((f'{name}_shot_down_touching_down',
+                     dict(FALL_BASE, **TYPES[name], tarcom=False, order=[*centre(12), 0],
+                          flight_frames=600, kill_when='landing',
+                          kill_height=int(TYPES[name]['climb']), fnpc_owner=True)))
     return rows
 
 
@@ -221,7 +270,10 @@ if __name__ == '__main__':
               '0x0054AF2E..0x0054B02C and State5 0x0054CA90 until the 0x117C impact notice. Types: '
               'ZEP, SHAD, HIND, SCHP, DISK with their stock JumpjetSpeed/Climb/Crash/Height/Wobbles/'
               'NoWobbles/Deviation/BalloonHover; a hover without the moving byte; an out-of-bounds '
-              'fall. Not a kill with a live NavCom, bridges, building tops or the lifted arms. '
+              'fall; SHAD and ZEP shot down in the cruise (State 3) and SHAD and HIND in the '
+              'descent one climb step above the ground (State 4, lifted back to State 1 by the '
+              'kill\'s Move_To). Not the null Set_Destination a live NavCom adds to the Stun, '
+              'bridges, building tops or the lifted arms. '
               'draw_matrix: Draw_Matrix 0x0054DCC0 with TiltCrashJumpjet (+0xD22) on and off, four '
               'body facings, rocking angles around the 0.005 gate and to the balloon clamp, and '
               'three voxel half-size pairs (+0x360, +0x368).',
@@ -240,5 +292,7 @@ if __name__ == '__main__':
                      'the caller key 3.'],
         substitutions=['As jumpjet_states.States, plus: the owner INoticeSink (owner +8) slot 0 records '
                        '(notice, argument) and returns; MapClass layer remove 0x004A9770 is recorded and '
-                       'otherwise a no-op.'],
+                       'otherwise a no-op; in the cruise and descent rows every FNPC 0x0056DC20 search after '
+                       'the order\'s own answers the owner\'s current cell, which is what the real search '
+                       'answers for a Fly-zone query from a passable cell.'],
     ))

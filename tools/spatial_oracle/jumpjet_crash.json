@@ -2853,9 +2853,12 @@
         "first_frame": 1000,
         "flight_frames": 600,
         "fnpc_cells": null,
+        "fnpc_owner": false,
         "height": 750,
         "hold_frames": 4,
+        "kill_height": null,
         "kill_map_size": null,
+        "kill_when": "hover",
         "land_types": [],
         "map_size": [
           13,
@@ -2910,7 +2913,12 @@
           ],
           "facing_current": 16383,
           "facing_destination": 16383,
+          "landing_latched": false,
           "moving": true,
+          "nav_com": [
+            12,
+            10
+          ],
           "on_bridge": false,
           "phase": 2,
           "slot_holder": 536883200,
@@ -2941,7 +2949,12 @@
             ],
             "facing_current": 16386,
             "facing_destination": 27903,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -2973,7 +2986,12 @@
             ],
             "facing_current": 17436,
             "facing_destination": 28953,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3005,7 +3023,12 @@
             ],
             "facing_current": 18486,
             "facing_destination": 30003,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3037,7 +3060,12 @@
             ],
             "facing_current": 19536,
             "facing_destination": 31053,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3069,7 +3097,12 @@
             ],
             "facing_current": 20586,
             "facing_destination": 32103,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3101,7 +3134,12 @@
             ],
             "facing_current": 21636,
             "facing_destination": 33153,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3133,7 +3171,12 @@
             ],
             "facing_current": 22686,
             "facing_destination": 34203,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3165,7 +3208,12 @@
             ],
             "facing_current": 23736,
             "facing_destination": 35253,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3197,7 +3245,12 @@
             ],
             "facing_current": 24786,
             "facing_destination": 36303,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3229,7 +3282,12 @@
             ],
             "facing_current": 25836,
             "facing_destination": 37353,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3261,7 +3319,12 @@
             ],
             "facing_current": 26886,
             "facing_destination": 38403,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3293,7 +3356,12 @@
             ],
             "facing_current": 27936,
             "facing_destination": 39453,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3325,7 +3393,12 @@
             ],
             "facing_current": 28986,
             "facing_destination": 40503,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3357,7 +3430,12 @@
             ],
             "facing_current": 30036,
             "facing_destination": 41553,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3389,7 +3467,12 @@
             ],
             "facing_current": 31086,
             "facing_destination": 42603,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3421,7 +3504,12 @@
             ],
             "facing_current": 32136,
             "facing_destination": 43653,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3453,7 +3541,12 @@
             ],
             "facing_current": 33186,
             "facing_destination": 44703,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3485,7 +3578,12 @@
             ],
             "facing_current": 34236,
             "facing_destination": 45753,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3517,7 +3615,12 @@
             ],
             "facing_current": 35286,
             "facing_destination": 46803,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3549,7 +3652,12 @@
             ],
             "facing_current": 36336,
             "facing_destination": 47853,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3581,7 +3689,12 @@
             ],
             "facing_current": 37386,
             "facing_destination": 48903,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3613,7 +3726,12 @@
             ],
             "facing_current": 38436,
             "facing_destination": 49953,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3645,7 +3763,12 @@
             ],
             "facing_current": 39486,
             "facing_destination": 51003,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3677,7 +3800,12 @@
             ],
             "facing_current": 40536,
             "facing_destination": 52053,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3709,7 +3837,12 @@
             ],
             "facing_current": 41586,
             "facing_destination": 53103,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3741,7 +3874,12 @@
             ],
             "facing_current": 42636,
             "facing_destination": 54153,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3773,7 +3911,12 @@
             ],
             "facing_current": 43686,
             "facing_destination": 55203,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3805,7 +3948,12 @@
             ],
             "facing_current": 44736,
             "facing_destination": 56253,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3837,7 +3985,12 @@
             ],
             "facing_current": 45786,
             "facing_destination": 57303,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3869,7 +4022,12 @@
             ],
             "facing_current": 46836,
             "facing_destination": 58353,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3901,7 +4059,12 @@
             ],
             "facing_current": 47886,
             "facing_destination": 59403,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3933,7 +4096,12 @@
             ],
             "facing_current": 48936,
             "facing_destination": 60453,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3965,7 +4133,12 @@
             ],
             "facing_current": 49986,
             "facing_destination": 61503,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -3997,7 +4170,12 @@
             ],
             "facing_current": 51036,
             "facing_destination": 62553,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4029,7 +4207,12 @@
             ],
             "facing_current": 52086,
             "facing_destination": 63603,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4061,7 +4244,12 @@
             ],
             "facing_current": 53136,
             "facing_destination": 64653,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4093,7 +4281,12 @@
             ],
             "facing_current": 54186,
             "facing_destination": 167,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4125,7 +4318,12 @@
             ],
             "facing_current": 55236,
             "facing_destination": 1217,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4157,7 +4355,12 @@
             ],
             "facing_current": 56286,
             "facing_destination": 2267,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4189,7 +4392,12 @@
             ],
             "facing_current": 57336,
             "facing_destination": 3317,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4221,7 +4429,12 @@
             ],
             "facing_current": 58386,
             "facing_destination": 4367,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4254,7 +4467,12 @@
             ],
             "facing_current": 59436,
             "facing_destination": 5417,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [
               [
                 4476,
@@ -4325,7 +4543,12 @@
           ],
           "facing_current": 16383,
           "facing_destination": 16383,
+          "landing_latched": false,
           "moving": true,
+          "nav_com": [
+            12,
+            10
+          ],
           "on_bridge": false,
           "phase": 2,
           "slot_holder": 536883200,
@@ -4347,9 +4570,12 @@
         "first_frame": 1000,
         "flight_frames": 600,
         "fnpc_cells": null,
+        "fnpc_owner": false,
         "height": 500,
         "hold_frames": 4,
+        "kill_height": null,
         "kill_map_size": null,
+        "kill_when": "hover",
         "land_types": [],
         "map_size": [
           13,
@@ -4404,7 +4630,12 @@
           ],
           "facing_current": 16383,
           "facing_destination": 16383,
+          "landing_latched": false,
           "moving": true,
+          "nav_com": [
+            12,
+            10
+          ],
           "on_bridge": false,
           "phase": 2,
           "slot_holder": 536883200,
@@ -4435,7 +4666,12 @@
             ],
             "facing_current": 16386,
             "facing_destination": 27903,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4467,7 +4703,12 @@
             ],
             "facing_current": 17436,
             "facing_destination": 28953,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4499,7 +4740,12 @@
             ],
             "facing_current": 18486,
             "facing_destination": 30003,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4531,7 +4777,12 @@
             ],
             "facing_current": 19536,
             "facing_destination": 31053,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4563,7 +4814,12 @@
             ],
             "facing_current": 20586,
             "facing_destination": 32103,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4595,7 +4851,12 @@
             ],
             "facing_current": 21636,
             "facing_destination": 33153,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4627,7 +4888,12 @@
             ],
             "facing_current": 22686,
             "facing_destination": 34203,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4659,7 +4925,12 @@
             ],
             "facing_current": 23736,
             "facing_destination": 35253,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4691,7 +4962,12 @@
             ],
             "facing_current": 24786,
             "facing_destination": 36303,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4724,7 +5000,12 @@
             ],
             "facing_current": 25836,
             "facing_destination": 37353,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [
               [
                 4476,
@@ -4795,7 +5076,12 @@
           ],
           "facing_current": 16383,
           "facing_destination": 16383,
+          "landing_latched": false,
           "moving": true,
+          "nav_com": [
+            12,
+            10
+          ],
           "on_bridge": false,
           "phase": 2,
           "slot_holder": 536883200,
@@ -4817,9 +5103,12 @@
         "first_frame": 1000,
         "flight_frames": 600,
         "fnpc_cells": null,
+        "fnpc_owner": false,
         "height": 500,
         "hold_frames": 4,
+        "kill_height": null,
         "kill_map_size": null,
+        "kill_when": "hover",
         "land_types": [],
         "map_size": [
           13,
@@ -4874,7 +5163,12 @@
           ],
           "facing_current": 16383,
           "facing_destination": 16383,
+          "landing_latched": false,
           "moving": true,
+          "nav_com": [
+            12,
+            10
+          ],
           "on_bridge": false,
           "phase": 2,
           "slot_holder": 536883200,
@@ -4905,7 +5199,12 @@
             ],
             "facing_current": 16386,
             "facing_destination": 27903,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4937,7 +5236,12 @@
             ],
             "facing_current": 17436,
             "facing_destination": 28953,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -4969,7 +5273,12 @@
             ],
             "facing_current": 18486,
             "facing_destination": 30003,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5001,7 +5310,12 @@
             ],
             "facing_current": 19536,
             "facing_destination": 31053,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5034,7 +5348,12 @@
             ],
             "facing_current": 20586,
             "facing_destination": 32103,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [
               [
                 4476,
@@ -5105,7 +5424,12 @@
           ],
           "facing_current": 16383,
           "facing_destination": 16383,
+          "landing_latched": false,
           "moving": true,
+          "nav_com": [
+            12,
+            10
+          ],
           "on_bridge": false,
           "phase": 2,
           "slot_holder": 536883200,
@@ -5127,9 +5451,12 @@
         "first_frame": 1000,
         "flight_frames": 600,
         "fnpc_cells": null,
+        "fnpc_owner": false,
         "height": 500,
         "hold_frames": 4,
+        "kill_height": null,
         "kill_map_size": null,
+        "kill_when": "hover",
         "land_types": [],
         "map_size": [
           13,
@@ -5184,7 +5511,12 @@
           ],
           "facing_current": 16383,
           "facing_destination": 16383,
+          "landing_latched": false,
           "moving": true,
+          "nav_com": [
+            12,
+            10
+          ],
           "on_bridge": false,
           "phase": 2,
           "slot_holder": 536883200,
@@ -5215,7 +5547,12 @@
             ],
             "facing_current": 16386,
             "facing_destination": 27903,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5247,7 +5584,12 @@
             ],
             "facing_current": 17436,
             "facing_destination": 28953,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5279,7 +5621,12 @@
             ],
             "facing_current": 18486,
             "facing_destination": 30003,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5311,7 +5658,12 @@
             ],
             "facing_current": 19536,
             "facing_destination": 31053,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5343,7 +5695,12 @@
             ],
             "facing_current": 20586,
             "facing_destination": 32103,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5375,7 +5732,12 @@
             ],
             "facing_current": 21636,
             "facing_destination": 33153,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5407,7 +5769,12 @@
             ],
             "facing_current": 22686,
             "facing_destination": 34203,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5439,7 +5806,12 @@
             ],
             "facing_current": 23736,
             "facing_destination": 35253,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5471,7 +5843,12 @@
             ],
             "facing_current": 24786,
             "facing_destination": 36303,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5504,7 +5881,12 @@
             ],
             "facing_current": 25836,
             "facing_destination": 37353,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [
               [
                 4476,
@@ -5575,7 +5957,12 @@
           ],
           "facing_current": 16383,
           "facing_destination": 16383,
+          "landing_latched": false,
           "moving": true,
+          "nav_com": [
+            12,
+            10
+          ],
           "on_bridge": false,
           "phase": 2,
           "slot_holder": 536883200,
@@ -5597,9 +5984,12 @@
         "first_frame": 1000,
         "flight_frames": 600,
         "fnpc_cells": null,
+        "fnpc_owner": false,
         "height": 750,
         "hold_frames": 4,
+        "kill_height": null,
         "kill_map_size": null,
+        "kill_when": "hover",
         "land_types": [],
         "map_size": [
           13,
@@ -5654,7 +6044,12 @@
           ],
           "facing_current": 21911,
           "facing_destination": 21911,
+          "landing_latched": false,
           "moving": true,
+          "nav_com": [
+            12,
+            10
+          ],
           "on_bridge": false,
           "phase": 2,
           "slot_holder": 536883200,
@@ -5685,7 +6080,12 @@
             ],
             "facing_current": 21914,
             "facing_destination": 33431,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5717,7 +6117,12 @@
             ],
             "facing_current": 22964,
             "facing_destination": 34481,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5749,7 +6154,12 @@
             ],
             "facing_current": 24014,
             "facing_destination": 35531,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5781,7 +6191,12 @@
             ],
             "facing_current": 25064,
             "facing_destination": 36581,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5813,7 +6228,12 @@
             ],
             "facing_current": 26114,
             "facing_destination": 37631,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5845,7 +6265,12 @@
             ],
             "facing_current": 27164,
             "facing_destination": 38681,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5877,7 +6302,12 @@
             ],
             "facing_current": 28214,
             "facing_destination": 39731,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5909,7 +6339,12 @@
             ],
             "facing_current": 29264,
             "facing_destination": 40781,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5941,7 +6376,12 @@
             ],
             "facing_current": 30314,
             "facing_destination": 41831,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -5973,7 +6413,12 @@
             ],
             "facing_current": 31364,
             "facing_destination": 42881,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6005,7 +6450,12 @@
             ],
             "facing_current": 32414,
             "facing_destination": 43931,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6037,7 +6487,12 @@
             ],
             "facing_current": 33464,
             "facing_destination": 44981,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6069,7 +6524,12 @@
             ],
             "facing_current": 34514,
             "facing_destination": 46031,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6101,7 +6561,12 @@
             ],
             "facing_current": 35564,
             "facing_destination": 47081,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6133,7 +6598,12 @@
             ],
             "facing_current": 36614,
             "facing_destination": 48131,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6165,7 +6635,12 @@
             ],
             "facing_current": 37664,
             "facing_destination": 49181,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6197,7 +6672,12 @@
             ],
             "facing_current": 38714,
             "facing_destination": 50231,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6229,7 +6709,12 @@
             ],
             "facing_current": 39764,
             "facing_destination": 51281,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6261,7 +6746,12 @@
             ],
             "facing_current": 40814,
             "facing_destination": 52331,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6293,7 +6783,12 @@
             ],
             "facing_current": 41864,
             "facing_destination": 53381,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6325,7 +6820,12 @@
             ],
             "facing_current": 42914,
             "facing_destination": 54431,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6357,7 +6857,12 @@
             ],
             "facing_current": 43964,
             "facing_destination": 55481,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6389,7 +6894,12 @@
             ],
             "facing_current": 45014,
             "facing_destination": 56531,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6421,7 +6931,12 @@
             ],
             "facing_current": 46064,
             "facing_destination": 57581,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6453,7 +6968,12 @@
             ],
             "facing_current": 47114,
             "facing_destination": 58631,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6485,7 +7005,12 @@
             ],
             "facing_current": 48164,
             "facing_destination": 59681,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6517,7 +7042,12 @@
             ],
             "facing_current": 49214,
             "facing_destination": 60731,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6549,7 +7079,12 @@
             ],
             "facing_current": 50264,
             "facing_destination": 61781,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6581,7 +7116,12 @@
             ],
             "facing_current": 51314,
             "facing_destination": 62831,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6613,7 +7153,12 @@
             ],
             "facing_current": 52364,
             "facing_destination": 63881,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6645,7 +7190,12 @@
             ],
             "facing_current": 53414,
             "facing_destination": 64931,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6677,7 +7227,12 @@
             ],
             "facing_current": 54464,
             "facing_destination": 445,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -6710,7 +7265,12 @@
             ],
             "facing_current": 55514,
             "facing_destination": 1495,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [
               [
                 4476,
@@ -6781,7 +7341,12 @@
           ],
           "facing_current": 21911,
           "facing_destination": 21911,
+          "landing_latched": false,
           "moving": true,
+          "nav_com": [
+            12,
+            10
+          ],
           "on_bridge": false,
           "phase": 2,
           "slot_holder": 536883200,
@@ -6803,9 +7368,12 @@
         "first_frame": 1000,
         "flight_frames": 0,
         "fnpc_cells": null,
+        "fnpc_owner": false,
         "height": 500,
         "hold_frames": 4,
+        "kill_height": null,
         "kill_map_size": null,
+        "kill_when": "hover",
         "land_types": [],
         "map_size": [
           13,
@@ -6856,7 +7424,9 @@
           ],
           "facing_current": 16384,
           "facing_destination": 16384,
+          "landing_latched": false,
           "moving": false,
+          "nav_com": null,
           "on_bridge": false,
           "phase": 2,
           "slot_holder": 0,
@@ -6885,7 +7455,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -6915,7 +7487,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -6945,7 +7519,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -6975,7 +7551,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7005,7 +7583,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7035,7 +7615,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7065,7 +7647,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7095,7 +7679,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7125,7 +7711,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7155,7 +7743,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7185,7 +7775,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7215,7 +7807,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7245,7 +7839,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7275,7 +7871,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7305,7 +7903,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7335,7 +7935,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7365,7 +7967,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7395,7 +7999,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7425,7 +8031,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7455,7 +8063,9 @@
             "events": [],
             "facing_current": 16384,
             "facing_destination": 16384,
+            "landing_latched": false,
             "moving": false,
+            "nav_com": null,
             "notices": [],
             "on_bridge": false,
             "phase": 2,
@@ -7486,7 +8096,9 @@
           "events": [],
           "facing_current": 16384,
           "facing_destination": 16384,
+          "landing_latched": false,
           "moving": false,
+          "nav_com": null,
           "on_bridge": false,
           "phase": 2,
           "slot_holder": 0,
@@ -7508,12 +8120,15 @@
         "first_frame": 1000,
         "flight_frames": 600,
         "fnpc_cells": null,
+        "fnpc_owner": false,
         "height": 500,
         "hold_frames": 4,
+        "kill_height": null,
         "kill_map_size": [
           40,
           20
         ],
+        "kill_when": "hover",
         "land_types": [],
         "map_size": [
           13,
@@ -7568,7 +8183,12 @@
           ],
           "facing_current": 16383,
           "facing_destination": 16383,
+          "landing_latched": false,
           "moving": true,
+          "nav_com": [
+            12,
+            10
+          ],
           "on_bridge": false,
           "phase": 2,
           "slot_holder": 536883200,
@@ -7597,7 +8217,12 @@
             "events": [],
             "facing_current": 16386,
             "facing_destination": 27903,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -7627,7 +8252,12 @@
             "events": [],
             "facing_current": 17436,
             "facing_destination": 28953,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -7657,7 +8287,12 @@
             "events": [],
             "facing_current": 18486,
             "facing_destination": 30003,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -7687,7 +8322,12 @@
             "events": [],
             "facing_current": 19536,
             "facing_destination": 31053,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -7717,7 +8357,12 @@
             "events": [],
             "facing_current": 20586,
             "facing_destination": 32103,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -7747,7 +8392,12 @@
             "events": [],
             "facing_current": 21636,
             "facing_destination": 33153,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -7777,7 +8427,12 @@
             "events": [],
             "facing_current": 22686,
             "facing_destination": 34203,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -7807,7 +8462,12 @@
             "events": [],
             "facing_current": 23736,
             "facing_destination": 35253,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -7837,7 +8497,12 @@
             "events": [],
             "facing_current": 24786,
             "facing_destination": 36303,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -7867,7 +8532,12 @@
             "events": [],
             "facing_current": 25836,
             "facing_destination": 37353,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -7897,7 +8567,12 @@
             "events": [],
             "facing_current": 26886,
             "facing_destination": 38403,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -7927,7 +8602,12 @@
             "events": [],
             "facing_current": 27936,
             "facing_destination": 39453,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -7957,7 +8637,12 @@
             "events": [],
             "facing_current": 28986,
             "facing_destination": 40503,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -7987,7 +8672,12 @@
             "events": [],
             "facing_current": 30036,
             "facing_destination": 41553,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8017,7 +8707,12 @@
             "events": [],
             "facing_current": 31086,
             "facing_destination": 42603,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8047,7 +8742,12 @@
             "events": [],
             "facing_current": 32136,
             "facing_destination": 43653,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8077,7 +8777,12 @@
             "events": [],
             "facing_current": 33186,
             "facing_destination": 44703,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8107,7 +8812,12 @@
             "events": [],
             "facing_current": 34236,
             "facing_destination": 45753,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8137,7 +8847,12 @@
             "events": [],
             "facing_current": 35286,
             "facing_destination": 46803,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8167,7 +8882,12 @@
             "events": [],
             "facing_current": 36336,
             "facing_destination": 47853,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8197,7 +8917,12 @@
             "events": [],
             "facing_current": 37386,
             "facing_destination": 48903,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8227,7 +8952,12 @@
             "events": [],
             "facing_current": 38436,
             "facing_destination": 49953,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8257,7 +8987,12 @@
             "events": [],
             "facing_current": 39486,
             "facing_destination": 51003,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8287,7 +9022,12 @@
             "events": [],
             "facing_current": 40536,
             "facing_destination": 52053,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8317,7 +9057,12 @@
             "events": [],
             "facing_current": 41586,
             "facing_destination": 53103,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8347,7 +9092,12 @@
             "events": [],
             "facing_current": 42636,
             "facing_destination": 54153,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8377,7 +9127,12 @@
             "events": [],
             "facing_current": 43686,
             "facing_destination": 55203,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8407,7 +9162,12 @@
             "events": [],
             "facing_current": 44736,
             "facing_destination": 56253,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8437,7 +9197,12 @@
             "events": [],
             "facing_current": 45786,
             "facing_destination": 57303,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8467,7 +9232,12 @@
             "events": [],
             "facing_current": 46836,
             "facing_destination": 58353,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8497,7 +9267,12 @@
             "events": [],
             "facing_current": 47886,
             "facing_destination": 59403,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8527,7 +9302,12 @@
             "events": [],
             "facing_current": 48936,
             "facing_destination": 60453,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8557,7 +9337,12 @@
             "events": [],
             "facing_current": 49986,
             "facing_destination": 61503,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8587,7 +9372,12 @@
             "events": [],
             "facing_current": 51036,
             "facing_destination": 62553,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8617,7 +9407,12 @@
             "events": [],
             "facing_current": 52086,
             "facing_destination": 63603,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8647,7 +9442,12 @@
             "events": [],
             "facing_current": 53136,
             "facing_destination": 64653,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8677,7 +9477,12 @@
             "events": [],
             "facing_current": 54186,
             "facing_destination": 167,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8707,7 +9512,12 @@
             "events": [],
             "facing_current": 55236,
             "facing_destination": 1217,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8737,7 +9547,12 @@
             "events": [],
             "facing_current": 56286,
             "facing_destination": 2267,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8767,7 +9582,12 @@
             "events": [],
             "facing_current": 57336,
             "facing_destination": 3317,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8797,7 +9617,12 @@
             "events": [],
             "facing_current": 58386,
             "facing_destination": 4367,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8827,7 +9652,12 @@
             "events": [],
             "facing_current": 59436,
             "facing_destination": 5417,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8857,7 +9687,12 @@
             "events": [],
             "facing_current": 60486,
             "facing_destination": 6467,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8887,7 +9722,12 @@
             "events": [],
             "facing_current": 61536,
             "facing_destination": 7517,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8917,7 +9757,12 @@
             "events": [],
             "facing_current": 62586,
             "facing_destination": 8567,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [],
             "on_bridge": false,
             "phase": 5,
@@ -8949,7 +9794,12 @@
             ],
             "facing_current": 63636,
             "facing_destination": 9617,
+            "landing_latched": false,
             "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
             "notices": [
               [
                 4476,
@@ -9020,11 +9870,2716 @@
           ],
           "facing_current": 16383,
           "facing_destination": 16383,
+          "landing_latched": false,
           "moving": true,
+          "nav_com": [
+            12,
+            10
+          ],
           "on_bridge": false,
           "phase": 2,
           "slot_holder": 536883200,
           "target_height": 450,
+          "target_speed": 0
+        }
+      }
+    },
+    {
+      "input": {
+        "accel": 2.0,
+        "balloon_hover": false,
+        "can_enter_cells": {},
+        "climb": 10.0,
+        "crash": 40.0,
+        "deploy_to_land": false,
+        "deviation": 1,
+        "facing": 16384,
+        "first_frame": 1000,
+        "flight_frames": 600,
+        "fnpc_cells": null,
+        "fnpc_owner": true,
+        "height": 500,
+        "hold_frames": 12,
+        "kill_height": null,
+        "kill_map_size": null,
+        "kill_when": "cruise",
+        "land_types": [],
+        "map_size": [
+          13,
+          20
+        ],
+        "max_frames": 200,
+        "moving": false,
+        "no_wobbles": false,
+        "occupied_slots": [],
+        "order": [
+          4224,
+          2688,
+          0
+        ],
+        "phase": 0,
+        "piggyback": false,
+        "raw_occupation": [],
+        "rtti": 1,
+        "simple_deployer": false,
+        "speed": 30,
+        "start": [
+          2688,
+          2688,
+          0
+        ],
+        "stop_phase": null,
+        "tarcom": true,
+        "target_height": 0,
+        "terrain": [],
+        "turn_rate": 4,
+        "wobbles": 0.01
+      },
+      "name": "SHAD_shot_down_in_the_cruise",
+      "output": {
+        "before": {
+          "bob_phase": 4587404840331955097,
+          "body_facing": 16383,
+          "cell": [
+            14,
+            10
+          ],
+          "coord": [
+            3588,
+            2688,
+            500
+          ],
+          "current_speed": 4629137466983448576,
+          "destination": [
+            4224,
+            2688,
+            0
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "landing_latched": false,
+          "moving": true,
+          "nav_com": [
+            16,
+            10
+          ],
+          "on_bridge": false,
+          "phase": 3,
+          "slot_holder": 0,
+          "target_height": 500,
+          "target_speed": 4629137466983448576
+        },
+        "frames": [
+          {
+            "bob_phase": 4588008508606635152,
+            "body_facing": 16383,
+            "cell": [
+              14,
+              10
+            ],
+            "coord": [
+              3618,
+              2688,
+              460
+            ],
+            "current_speed": 4629137466983448576,
+            "destination": [
+              3712,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 16386,
+            "facing_destination": 27903,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              14,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4629137466983448576
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 17433,
+            "cell": [
+              14,
+              10
+            ],
+            "coord": [
+              3647,
+              2691,
+              410
+            ],
+            "current_speed": 4629137466983448576,
+            "destination": [
+              3712,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 17436,
+            "facing_destination": 28953,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              14,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4629137466983448576
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 18483,
+            "cell": [
+              14,
+              10
+            ],
+            "coord": [
+              3676,
+              2696,
+              360
+            ],
+            "current_speed": 4629137466983448576,
+            "destination": [
+              3712,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 18486,
+            "facing_destination": 30003,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              14,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4629137466983448576
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 19533,
+            "cell": [
+              14,
+              10
+            ],
+            "coord": [
+              3704,
+              2704,
+              310
+            ],
+            "current_speed": 4629137466983448576,
+            "destination": [
+              3712,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 19536,
+            "facing_destination": 31053,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              14,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4629137466983448576
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 20583,
+            "cell": [
+              14,
+              10
+            ],
+            "coord": [
+              3731,
+              2715,
+              260
+            ],
+            "current_speed": 4629137466983448576,
+            "destination": [
+              3712,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 20586,
+            "facing_destination": 32103,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              14,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4629137466983448576
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 21633,
+            "cell": [
+              14,
+              10
+            ],
+            "coord": [
+              3757,
+              2729,
+              210
+            ],
+            "current_speed": 4629137466983448576,
+            "destination": [
+              3712,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 21636,
+            "facing_destination": 33153,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              14,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4629137466983448576
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 22683,
+            "cell": [
+              14,
+              10
+            ],
+            "coord": [
+              3781,
+              2746,
+              160
+            ],
+            "current_speed": 4629137466983448576,
+            "destination": [
+              3712,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 22686,
+            "facing_destination": 34203,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              14,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4629137466983448576
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 23733,
+            "cell": [
+              14,
+              10
+            ],
+            "coord": [
+              3803,
+              2765,
+              110
+            ],
+            "current_speed": 4629137466983448576,
+            "destination": [
+              3712,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 23736,
+            "facing_destination": 35253,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              14,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4629137466983448576
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 24783,
+            "cell": [
+              14,
+              10
+            ],
+            "coord": [
+              3823,
+              2786,
+              60
+            ],
+            "current_speed": 4629137466983448576,
+            "destination": [
+              3712,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 24786,
+            "facing_destination": 36303,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              14,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4629137466983448576
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 25833,
+            "cell": [
+              15,
+              10
+            ],
+            "coord": [
+              3841,
+              2809,
+              10
+            ],
+            "current_speed": 4629137466983448576,
+            "destination": [
+              3712,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 25836,
+            "facing_destination": 37353,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              14,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4629137466983448576
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 26883,
+            "cell": [
+              15,
+              11
+            ],
+            "coord": [
+              3857,
+              2834,
+              -40
+            ],
+            "current_speed": 4629137466983448576,
+            "destination": [
+              3712,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove",
+              "bucket_remove"
+            ],
+            "facing_current": 26886,
+            "facing_destination": 38403,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              14,
+              10
+            ],
+            "notices": [
+              [
+                4476,
+                0
+              ]
+            ],
+            "on_bridge": false,
+            "phase": 6,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 0
+          }
+        ],
+        "killed": {
+          "bob_phase": 4587404840331955097,
+          "body_facing": 16383,
+          "cell": [
+            14,
+            10
+          ],
+          "coord": [
+            3588,
+            2688,
+            500
+          ],
+          "current_speed": 4629137466983448576,
+          "destination": [
+            3712,
+            2688,
+            0
+          ],
+          "events": [
+            [
+              "fnpc",
+              [
+                14,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                14,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                14,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                14,
+                10
+              ]
+            ]
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "landing_latched": false,
+          "moving": true,
+          "nav_com": [
+            14,
+            10
+          ],
+          "on_bridge": false,
+          "phase": 3,
+          "slot_holder": 0,
+          "target_height": 500,
+          "target_speed": 4629137466983448576
+        }
+      }
+    },
+    {
+      "input": {
+        "accel": 2.0,
+        "balloon_hover": true,
+        "can_enter_cells": {},
+        "climb": 6.0,
+        "crash": 12.0,
+        "deploy_to_land": false,
+        "deviation": 40,
+        "facing": 16384,
+        "first_frame": 1000,
+        "flight_frames": 600,
+        "fnpc_cells": null,
+        "fnpc_owner": true,
+        "height": 750,
+        "hold_frames": 12,
+        "kill_height": null,
+        "kill_map_size": null,
+        "kill_when": "cruise",
+        "land_types": [],
+        "map_size": [
+          13,
+          20
+        ],
+        "max_frames": 200,
+        "moving": false,
+        "no_wobbles": true,
+        "occupied_slots": [],
+        "order": [
+          4224,
+          2688,
+          0
+        ],
+        "phase": 0,
+        "piggyback": false,
+        "raw_occupation": [],
+        "rtti": 1,
+        "simple_deployer": false,
+        "speed": 5,
+        "start": [
+          2688,
+          2688,
+          0
+        ],
+        "stop_phase": null,
+        "tarcom": true,
+        "target_height": 0,
+        "terrain": [],
+        "turn_rate": 4,
+        "wobbles": 0.15
+      },
+      "name": "ZEP_shot_down_in_the_cruise",
+      "output": {
+        "before": {
+          "bob_phase": 0,
+          "body_facing": 16383,
+          "cell": [
+            11,
+            10
+          ],
+          "coord": [
+            3054,
+            2688,
+            750
+          ],
+          "current_speed": 4617315517961601024,
+          "destination": [
+            4224,
+            2688,
+            0
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "landing_latched": false,
+          "moving": true,
+          "nav_com": [
+            16,
+            10
+          ],
+          "on_bridge": false,
+          "phase": 3,
+          "slot_holder": 0,
+          "target_height": 750,
+          "target_speed": 4617315517961601024
+        },
+        "frames": [
+          {
+            "bob_phase": 0,
+            "body_facing": 16383,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3059,
+              2688,
+              738
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 16386,
+            "facing_destination": 27903,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 17433,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3063,
+              2688,
+              720
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 17436,
+            "facing_destination": 28953,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 18483,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3067,
+              2688,
+              702
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 18486,
+            "facing_destination": 30003,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 19533,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3071,
+              2689,
+              684
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 19536,
+            "facing_destination": 31053,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 20583,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3075,
+              2690,
+              666
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 20586,
+            "facing_destination": 32103,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 21633,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3079,
+              2692,
+              648
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 21636,
+            "facing_destination": 33153,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 22683,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3083,
+              2694,
+              630
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 22686,
+            "facing_destination": 34203,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 23733,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3086,
+              2697,
+              612
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 23736,
+            "facing_destination": 35253,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 24783,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3089,
+              2700,
+              594
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 24786,
+            "facing_destination": 36303,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 25833,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3092,
+              2703,
+              576
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 25836,
+            "facing_destination": 37353,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 26883,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3094,
+              2707,
+              558
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 26886,
+            "facing_destination": 38403,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 27933,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3096,
+              2711,
+              540
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 27936,
+            "facing_destination": 39453,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 28983,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3097,
+              2715,
+              522
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 28986,
+            "facing_destination": 40503,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 30033,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3098,
+              2719,
+              504
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 30036,
+            "facing_destination": 41553,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 31083,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3098,
+              2723,
+              486
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 31086,
+            "facing_destination": 42603,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 32133,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3098,
+              2727,
+              468
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 32136,
+            "facing_destination": 43653,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 33183,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3097,
+              2731,
+              450
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 33186,
+            "facing_destination": 44703,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 34233,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3096,
+              2735,
+              432
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 34236,
+            "facing_destination": 45753,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 35283,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3094,
+              2739,
+              414
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 35286,
+            "facing_destination": 46803,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 36333,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3092,
+              2743,
+              396
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 36336,
+            "facing_destination": 47853,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 37383,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3089,
+              2747,
+              378
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 37386,
+            "facing_destination": 48903,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 38433,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3086,
+              2751,
+              360
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 38436,
+            "facing_destination": 49953,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 39483,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3082,
+              2754,
+              342
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 39486,
+            "facing_destination": 51003,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 40533,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3078,
+              2757,
+              324
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 40536,
+            "facing_destination": 52053,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 41583,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3074,
+              2760,
+              306
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 41586,
+            "facing_destination": 53103,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 42633,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3069,
+              2762,
+              288
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 42636,
+            "facing_destination": 54153,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 43683,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3064,
+              2764,
+              270
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 43686,
+            "facing_destination": 55203,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 44733,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3059,
+              2766,
+              252
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 44736,
+            "facing_destination": 56253,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 45783,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3054,
+              2767,
+              234
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 45786,
+            "facing_destination": 57303,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 46833,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3049,
+              2768,
+              216
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 46836,
+            "facing_destination": 58353,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 47883,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3044,
+              2768,
+              198
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 47886,
+            "facing_destination": 59403,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 48933,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3039,
+              2768,
+              180
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 48936,
+            "facing_destination": 60453,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 49983,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3034,
+              2767,
+              162
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 49986,
+            "facing_destination": 61503,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 51033,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3029,
+              2766,
+              144
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 51036,
+            "facing_destination": 62553,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 52083,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3024,
+              2764,
+              126
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 52086,
+            "facing_destination": 63603,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 53133,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3019,
+              2762,
+              108
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 53136,
+            "facing_destination": 64653,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 54183,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3014,
+              2759,
+              90
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 54186,
+            "facing_destination": 167,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 55233,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3009,
+              2756,
+              72
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 55236,
+            "facing_destination": 1217,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 56283,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3005,
+              2752,
+              54
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 56286,
+            "facing_destination": 2267,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 57333,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              3001,
+              2748,
+              36
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 57336,
+            "facing_destination": 3317,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 58383,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              2997,
+              2744,
+              18
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 58386,
+            "facing_destination": 4367,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 4617315517961601024
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 59433,
+            "cell": [
+              11,
+              10
+            ],
+            "coord": [
+              2994,
+              2739,
+              0
+            ],
+            "current_speed": 4617315517961601024,
+            "destination": [
+              2944,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove",
+              "bucket_remove"
+            ],
+            "facing_current": 59436,
+            "facing_destination": 5417,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              11,
+              10
+            ],
+            "notices": [
+              [
+                4476,
+                0
+              ]
+            ],
+            "on_bridge": false,
+            "phase": 6,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 0
+          }
+        ],
+        "killed": {
+          "bob_phase": 0,
+          "body_facing": 16383,
+          "cell": [
+            11,
+            10
+          ],
+          "coord": [
+            3054,
+            2688,
+            750
+          ],
+          "current_speed": 4617315517961601024,
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "events": [
+            [
+              "fnpc",
+              [
+                11,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                11,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                11,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                11,
+                10
+              ]
+            ]
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "landing_latched": false,
+          "moving": true,
+          "nav_com": [
+            11,
+            10
+          ],
+          "on_bridge": false,
+          "phase": 3,
+          "slot_holder": 0,
+          "target_height": 750,
+          "target_speed": 4617315517961601024
+        }
+      }
+    },
+    {
+      "input": {
+        "accel": 2.0,
+        "balloon_hover": false,
+        "can_enter_cells": {},
+        "climb": 10.0,
+        "crash": 40.0,
+        "deploy_to_land": false,
+        "deviation": 1,
+        "facing": 16384,
+        "first_frame": 1000,
+        "flight_frames": 600,
+        "fnpc_cells": null,
+        "fnpc_owner": true,
+        "height": 500,
+        "hold_frames": 4,
+        "kill_height": 10,
+        "kill_map_size": null,
+        "kill_when": "landing",
+        "land_types": [],
+        "map_size": [
+          13,
+          20
+        ],
+        "max_frames": 200,
+        "moving": false,
+        "no_wobbles": false,
+        "occupied_slots": [],
+        "order": [
+          3200,
+          2688,
+          0
+        ],
+        "phase": 0,
+        "piggyback": false,
+        "raw_occupation": [],
+        "rtti": 1,
+        "simple_deployer": false,
+        "speed": 30,
+        "start": [
+          2688,
+          2688,
+          0
+        ],
+        "stop_phase": null,
+        "tarcom": false,
+        "target_height": 0,
+        "terrain": [],
+        "turn_rate": 4,
+        "wobbles": 0.01
+      },
+      "name": "SHAD_shot_down_touching_down",
+      "output": {
+        "before": {
+          "bob_phase": 0,
+          "body_facing": 16383,
+          "cell": [
+            12,
+            10
+          ],
+          "coord": [
+            3200,
+            2688,
+            10
+          ],
+          "current_speed": 0,
+          "destination": [
+            3200,
+            2688,
+            0
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "landing_latched": true,
+          "moving": true,
+          "nav_com": [
+            12,
+            10
+          ],
+          "on_bridge": false,
+          "phase": 4,
+          "slot_holder": 0,
+          "target_height": 0,
+          "target_speed": 0
+        },
+        "frames": [
+          {
+            "bob_phase": 0,
+            "body_facing": 16383,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              -20
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove",
+              "bucket_remove"
+            ],
+            "facing_current": 16386,
+            "facing_destination": 27903,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
+            "notices": [
+              [
+                4476,
+                0
+              ]
+            ],
+            "on_bridge": false,
+            "phase": 6,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 0
+          }
+        ],
+        "killed": {
+          "bob_phase": 0,
+          "body_facing": 16383,
+          "cell": [
+            12,
+            10
+          ],
+          "coord": [
+            3200,
+            2688,
+            10
+          ],
+          "current_speed": 0,
+          "destination": [
+            3200,
+            2688,
+            0
+          ],
+          "events": [
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ]
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "landing_latched": false,
+          "moving": true,
+          "nav_com": [
+            12,
+            10
+          ],
+          "on_bridge": false,
+          "phase": 1,
+          "slot_holder": 0,
+          "target_height": 500,
+          "target_speed": 0
+        }
+      }
+    },
+    {
+      "input": {
+        "accel": 2.0,
+        "balloon_hover": false,
+        "can_enter_cells": {},
+        "climb": 50.0,
+        "crash": 60.0,
+        "deploy_to_land": false,
+        "deviation": 1,
+        "facing": 16384,
+        "first_frame": 1000,
+        "flight_frames": 600,
+        "fnpc_cells": null,
+        "fnpc_owner": true,
+        "height": 500,
+        "hold_frames": 4,
+        "kill_height": 50,
+        "kill_map_size": null,
+        "kill_when": "landing",
+        "land_types": [],
+        "map_size": [
+          13,
+          20
+        ],
+        "max_frames": 200,
+        "moving": false,
+        "no_wobbles": false,
+        "occupied_slots": [],
+        "order": [
+          3200,
+          2688,
+          0
+        ],
+        "phase": 0,
+        "piggyback": false,
+        "raw_occupation": [],
+        "rtti": 1,
+        "simple_deployer": false,
+        "speed": 40,
+        "start": [
+          2688,
+          2688,
+          0
+        ],
+        "stop_phase": null,
+        "tarcom": false,
+        "target_height": 0,
+        "terrain": [],
+        "turn_rate": 4,
+        "wobbles": 0.01
+      },
+      "name": "HIND_shot_down_touching_down",
+      "output": {
+        "before": {
+          "bob_phase": 0,
+          "body_facing": 16383,
+          "cell": [
+            12,
+            10
+          ],
+          "coord": [
+            3200,
+            2688,
+            50
+          ],
+          "current_speed": 0,
+          "destination": [
+            3200,
+            2688,
+            0
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "landing_latched": true,
+          "moving": true,
+          "nav_com": [
+            12,
+            10
+          ],
+          "on_bridge": false,
+          "phase": 4,
+          "slot_holder": 0,
+          "target_height": 0,
+          "target_speed": 0
+        },
+        "frames": [
+          {
+            "bob_phase": 0,
+            "body_facing": 16383,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              40
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove"
+            ],
+            "facing_current": 16386,
+            "facing_destination": 27903,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
+            "notices": [],
+            "on_bridge": false,
+            "phase": 5,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 0
+          },
+          {
+            "bob_phase": 0,
+            "body_facing": 17433,
+            "cell": [
+              12,
+              10
+            ],
+            "coord": [
+              3200,
+              2688,
+              -60
+            ],
+            "current_speed": 0,
+            "destination": [
+              3200,
+              2688,
+              0
+            ],
+            "events": [
+              "layer_remove",
+              "bucket_remove"
+            ],
+            "facing_current": 17436,
+            "facing_destination": 28953,
+            "landing_latched": false,
+            "moving": true,
+            "nav_com": [
+              12,
+              10
+            ],
+            "notices": [
+              [
+                4476,
+                0
+              ]
+            ],
+            "on_bridge": false,
+            "phase": 6,
+            "slot_events": [],
+            "slot_holder": 0,
+            "target_height": -5,
+            "target_speed": 0
+          }
+        ],
+        "killed": {
+          "bob_phase": 0,
+          "body_facing": 16383,
+          "cell": [
+            12,
+            10
+          ],
+          "coord": [
+            3200,
+            2688,
+            50
+          ],
+          "current_speed": 0,
+          "destination": [
+            3200,
+            2688,
+            0
+          ],
+          "events": [
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ],
+            [
+              "fnpc",
+              [
+                12,
+                10
+              ]
+            ]
+          ],
+          "facing_current": 16383,
+          "facing_destination": 16383,
+          "landing_latched": false,
+          "moving": true,
+          "nav_com": [
+            12,
+            10
+          ],
+          "on_bridge": false,
+          "phase": 1,
+          "slot_holder": 0,
+          "target_height": 500,
           "target_speed": 0
         }
       }

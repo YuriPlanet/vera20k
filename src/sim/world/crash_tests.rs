@@ -611,7 +611,8 @@ fn jumpjet_rules(balloon: bool) -> RuleSet {
          [VehicleTypes]\n0=TEST\n1=VICTIM\n\
          [InfantryTypes]\n0=RIDER\n\
          [TEST]\nStrength=300\nArmor=none\nCrashable=yes\nBalloonHover={}\nPassengers=2\n\
-         Locomotor={{92612C46-F71F-11d1-AC9F-006008055BB5}}\nJumpjetHeight=500\n\
+         Locomotor={{92612C46-F71F-11d1-AC9F-006008055BB5}}\nSpeedType=Hover\nMovementZone=Fly\n\
+         JumpjetHeight=500\n\
          JumpjetClimb=10\nJumpjetCrash=40\nJumpjetSpeed=30\nJumpjetNoWobbles=yes\n\
          Primary=CrashGun\nExplosion=BOOM\nCrashingSound=JJDie\nImpactLandSound=TypeLand\n\
          [VICTIM]\nStrength=1000\nArmor=none\n\
@@ -834,11 +835,11 @@ fn shoot_down(sim: &mut Simulation, rules: &RuleSet, shooter: u64) {
 
 /// A hovering Nighthawk-like Jumpjet shot down through the production
 /// receiver: `UnitClass::ReceiveDamage` kills its riders with the shooter's
-/// credit above 0xD0 leptons and crashes it instead of its UnInit. Through
-/// `advance_tick` it then falls by `JumpjetClimb=` plus `JumpjetCrash=` a
-/// frame (the native corpus's `SHAD` row), plays `CrashingSound=` on the
-/// edge, and at the ground releases its air slot, plays its `Explosion=` once
-/// more and is UnInit, with no impact sound.
+/// credit above 0xD0 leptons and crashes it instead of its UnInit, and the
+/// kill's Stun re-targets it through `Stop_Moving`. Through `advance_tick` it
+/// then falls by `JumpjetClimb=` plus `JumpjetCrash=` a frame, plays
+/// `CrashingSound=` on the edge, and at the ground releases its air slot,
+/// plays its `Explosion=` once more and is UnInit, with no impact sound.
 #[test]
 fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
     let (mut sim, rules, victim, shooter) = jumpjet_fixture(false);
@@ -887,14 +888,36 @@ fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
         "the riders' kills go to the shooter; the wreck's comes at its UnInit"
     );
 
+    // The kill's Stop_Moving searched from the hover cell, which the victim's
+    // vehicle bit refuses (`CheckCellPassability @ 0x004834A0`), and
+    // re-targeted a free neighbour.
+    let entity = sim.substrate.entities.get(1).unwrap();
+    let runtime = entity
+        .locomotor
+        .as_ref()
+        .unwrap()
+        .jumpjet_runtime()
+        .unwrap();
+    assert!(runtime.moving);
+    assert_eq!(
+        runtime.destination,
+        DriveCoord {
+            x: START - 256,
+            y: START - 256,
+            z: 0
+        }
+    );
+
     let fall = fall_to_the_impact(&mut sim, &rules);
-    // Hold's Update leaves the hover alone, State 5 drops 40; then Update's
-    // climb and State 5's crash take 50 a frame to the ground.
+    // Over a destination in another cell, the hold's Update reads the cell
+    // top, which the victim lifts by 85: the first frame climbs 10 before
+    // State 5 drops 40, then Update's descent and the crash take 50 a frame,
+    // and near the ground Update climbs against the drop again.
     assert_eq!(
         fall.heights,
-        vec![460, 410, 360, 310, 260, 210, 160, 110, 60, 10]
+        vec![470, 420, 370, 320, 270, 220, 170, 120, 70, 40, 10]
     );
-    assert_eq!(fall.impact_frame, 11);
+    assert_eq!(fall.impact_frame, 12);
     assert_eq!(
         fall.crash_sound_frames,
         vec![1],
@@ -938,6 +961,108 @@ fn a_shot_down_balloon_jumpjet_bombs_its_impact_cell() {
         sim.substrate.entities.get(victim).unwrap().health.current,
         1000 - 150,
         "the death weapon's CrashGun hit the victim below"
+    );
+}
+
+/// An order dropped in the cruise (an Attack order or the attack approach
+/// dropping the goal) runs `Stop_Moving` through Foot's null arm, which keeps
+/// the moving byte: shot down there, the wreck still latches into State 5 and
+/// reaches the ground. (A hold without the moving byte never latches, natively
+/// too; VERA no longer makes one out of a dropped order.)
+#[test]
+fn a_jumpjet_shot_down_after_its_order_dropped_reaches_the_ground() {
+    let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
+    assert!(sim.issue_air_cell_destination(1, (60, 52), SimFixed::from_num(30), Some(&rules)));
+    // Cruise until the owner has left the hover cell.
+    let mut frame = 1001;
+    while sim
+        .substrate
+        .entities
+        .get(1)
+        .is_some_and(|entity| (entity.position.rx, entity.position.ry) == (52, 52))
+    {
+        assert!(frame < 1200, "the cruise never left the hover cell");
+        sim.session.binary_frame = frame;
+        sim.tick_air_movement_with_cell_lists_one(1, Some(&rules));
+        frame += 1;
+    }
+    let runtime = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(1)
+            .and_then(|entity| entity.locomotor.as_ref())
+            .and_then(|locomotor| locomotor.jumpjet_runtime())
+            .cloned()
+            .expect("runtime")
+    };
+    assert_eq!(
+        runtime(&sim).phase,
+        crate::sim::movement::jumpjet_flight::STATE_TRANSLATE
+    );
+    let entity = sim.substrate.entities.get_mut(1).unwrap();
+    let here = (entity.position.rx, entity.position.ry);
+    entity.movement_target = None;
+    sim.session.binary_frame = frame;
+    sim.tick_air_movement_with_cell_lists_one(1, Some(&rules));
+    let stopped = runtime(&sim);
+    assert!(stopped.moving, "Stop_Moving keeps the moving byte");
+    assert_eq!(
+        stopped.destination,
+        DriveCoord {
+            x: i32::from(here.0) * 256 + 128,
+            y: i32::from(here.1) * 256 + 128,
+            z: 0,
+        }
+    );
+
+    shoot_down(&mut sim, &rules, shooter);
+    let fall = fall_to_the_impact(&mut sim, &rules);
+    assert!(fall.impact_frame > 0, "the wreck reached the ground");
+    assert!(fall.heights.windows(2).all(|pair| pair[1] < pair[0]));
+}
+
+/// Shot down one climb step above the ground in State 4, the kill's
+/// `Stop_Moving` lifts the descent back into State 1 (`0x0054B455..0x0054B467`),
+/// so the next frame's Update climbs and the latch still engages: the wreck
+/// crashes instead of touching down (the native corpus's `SHAD` touchdown row).
+#[test]
+fn a_jumpjet_shot_down_touching_down_still_crashes() {
+    let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
+    {
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        entity.position.exact_z_leptons = Some(10);
+        let loco = entity.locomotor.as_mut().unwrap();
+        loco.altitude = SimFixed::from_num(10);
+        let runtime = loco.jumpjet_runtime_mut().unwrap();
+        runtime.phase = crate::sim::movement::jumpjet_flight::STATE_DESCEND;
+        runtime.flight.target_height = 0;
+        runtime.landing_latched = true;
+    }
+    shoot_down(&mut sim, &rules, shooter);
+    let entity = sim.substrate.entities.get(1).unwrap();
+    assert!(entity.crashing);
+    let runtime = entity
+        .locomotor
+        .as_ref()
+        .unwrap()
+        .jumpjet_runtime()
+        .unwrap();
+    assert_eq!(
+        runtime.phase,
+        crate::sim::movement::jumpjet_flight::STATE_ASCEND
+    );
+    assert_eq!(runtime.flight.target_height, 500);
+    assert!(runtime.moving && !runtime.landing_latched);
+
+    let fall = fall_to_the_impact(&mut sim, &rules);
+    assert_eq!(
+        (fall.heights.len(), fall.impact_frame),
+        (0, 1),
+        "climbs to 20, then State 5's drop of 40 hits the ground"
+    );
+    assert_eq!(
+        fall.impact_booms, 1,
+        "Death_Explosion once more at the impact"
     );
 }
 
