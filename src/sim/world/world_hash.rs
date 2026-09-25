@@ -2427,12 +2427,9 @@ fn hash_locomotor_runtime(
     common.altitude.to_bits().hash(hasher);
     0i32.hash(hasher);
     0i32.hash(hasher);
-    common.jumpjet_speed.to_bits().hash(hasher);
-    common.jumpjet_accel.to_bits().hash(hasher);
-    common.jumpjet_current_speed.to_bits().hash(hasher);
-    common.jumpjet_deviation.hash(hasher);
-    common.jumpjet_crash_speed.to_bits().hash(hasher);
-    common.jumpjet_turn_rate.hash(hasher);
+    if !schema.includes(HashFeature::RetiredJumpjetLegacyBlock) {
+        hash_retired_jumpjet_legacy_block(&runtime.payload, hasher);
+    }
     common.balloon_hover.hash(hasher);
     common.hover_attack.hash(hasher);
     common.speed_type.hash(hasher);
@@ -2448,6 +2445,39 @@ fn hash_locomotor_runtime(
     common.hover_speed_request.to_bits().hash(hasher);
     common.hover_bob_offset.to_bits().hash(hasher);
     hash_locomotor_payload(&runtime.payload, hasher, schema);
+}
+
+/// The retired VERA copy of the Jumpjet type block in the common locomotor
+/// runtime (speed, accel, current speed, deviation, climb-plus-crash times 15,
+/// turn rate), which only a Jumpjet linked from its type held; every other
+/// locomotor held zeros and the constructor's turn rate 4. Recomputed from the
+/// linked block, so it reproduces fixtures whose `JumpjetSpeed=` is whole.
+fn hash_retired_jumpjet_legacy_block(
+    payload: &crate::sim::movement::locomotion::piggyback::LocomotorRuntimePayload,
+    hasher: &mut impl Hasher,
+) {
+    use crate::sim::movement::locomotion::piggyback::LocomotorRuntimePayload;
+    use crate::util::fixed_math::{SIM_ZERO, SimFixed, sim_from_f32};
+    let (speed, accel, deviation, crash_speed, turn_rate) = match payload {
+        LocomotorRuntimePayload::Jumpjet(state) => {
+            let params = &state.params;
+            let single = |bits: u32| sim_from_f32(f32::from_bits(bits));
+            (
+                SimFixed::from_num(params.speed),
+                single(params.accel_bits),
+                params.deviation,
+                (single(params.climb_bits) + single(params.crash_bits)) * SimFixed::from_num(15),
+                params.turn_rate,
+            )
+        }
+        _ => (SIM_ZERO, SIM_ZERO, 0, SIM_ZERO, 4),
+    };
+    speed.to_bits().hash(hasher);
+    accel.to_bits().hash(hasher);
+    SIM_ZERO.to_bits().hash(hasher);
+    deviation.hash(hasher);
+    crash_speed.to_bits().hash(hasher);
+    turn_rate.hash(hasher);
 }
 
 fn hash_locomotor_payload(

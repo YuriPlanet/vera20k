@@ -594,12 +594,10 @@ fn test_jumpjet_with_custom_params() {
         no_wobbles: false,
     };
     let state = LocomotorState::from_object_type(&obj, 0);
-    assert_eq!(state.jumpjet_runtime().unwrap().params.height, 750);
-    assert_eq!(state.jumpjet_speed, sim_from_f32(20.0));
-    assert_eq!(
-        state.jumpjet_runtime().unwrap().params.climb_bits,
-        8.0f32.to_bits()
-    );
+    let params = state.jumpjet_runtime().unwrap().params;
+    assert_eq!(params.height, 750);
+    assert_eq!(params.speed, 20);
+    assert_eq!(params.climb_bits, 8.0f32.to_bits());
 }
 
 #[test]
@@ -730,7 +728,7 @@ fn retail_kirov_and_disc_reach_their_authored_hover_altitude() {
     };
 
     // (section, JumpjetSpeed, JumpjetClimb, JumpjetCrash) as authored.
-    for (id, speed, climb, crash) in [("ZEP", 5.0, 6.0_f32, 12.0), ("DISK", 16.0, 8.0, 15.0)] {
+    for (id, speed, climb, crash) in [("ZEP", 5, 6.0_f32, 12.0_f32), ("DISK", 16, 8.0, 15.0)] {
         let obj = ObjectType::from_ini_section(
             id,
             ini.section(id).unwrap_or_else(|| panic!("[{id}] section")),
@@ -739,26 +737,19 @@ fn retail_kirov_and_disc_reach_their_authored_hover_altitude() {
         let state = LocomotorState::from_object_type(&obj, 0);
 
         assert_eq!(state.kind, LocomotorKind::Jumpjet, "[{id}]");
+        let params = state.jumpjet_runtime().unwrap().params;
         assert_eq!(
-            state.jumpjet_runtime().unwrap().params.height,
-            750,
+            params.height, 750,
             "[{id}] hovers at its authored JumpjetHeight"
         );
-        assert_eq!(state.jumpjet_speed, sim_from_f32(speed), "[{id}]");
-        assert_eq!(
-            state.jumpjet_runtime().unwrap().params.climb_bits,
-            climb.to_bits(),
-            "[{id}]"
-        );
-        assert_eq!(
-            state.jumpjet_crash_speed,
-            (sim_from_f32(climb) + sim_from_f32(crash)) * SimFixed::from_num(15),
-            "[{id}] crash descent is (climb + crash)"
-        );
-        // The constructor's acceleration, because stock spells the key
-        // `JumpJetAccel=` and gamemd looks up `JumpjetAccel`.
-        assert_eq!(state.jumpjet_accel, sim_from_f32(2.0), "[{id}]");
-        assert_eq!(state.jumpjet_turn_rate, 4, "[{id}]");
+        assert_eq!(params.speed, speed, "[{id}]");
+        assert_eq!(params.climb_bits, climb.to_bits(), "[{id}]");
+        assert_eq!(params.crash_bits, crash.to_bits(), "[{id}]");
+        // The constructor's acceleration and turn rate, because stock spells
+        // the keys `JumpJetAccel=`/`JumpJetTurnRate=` and gamemd looks up
+        // `JumpjetAccel`/`JumpjetTurnRate`.
+        assert_eq!(params.accel_bits, 2.0f32.to_bits(), "[{id}]");
+        assert_eq!(params.turn_rate, 4, "[{id}]");
     }
 }
 
@@ -790,18 +781,7 @@ fn non_jumpjet_locomotors_ignore_the_types_jumpjet_block() {
         };
         let state = LocomotorState::from_object_type(&obj, 0);
 
-        assert_eq!(
-            state.jumpjet_accel,
-            crate::util::fixed_math::SIM_ZERO,
-            "{kind:?}"
-        );
-        assert_eq!(state.jumpjet_deviation, 0, "{kind:?}");
-        assert_eq!(
-            state.jumpjet_crash_speed,
-            crate::util::fixed_math::SIM_ZERO,
-            "{kind:?}"
-        );
-        assert_eq!(state.jumpjet_turn_rate, 4, "{kind:?}");
+        assert!(state.jumpjet_runtime().is_none(), "{kind:?}");
         if kind != LocomotorKind::Fly {
             assert_eq!(state.fly_target_height(), 0, "{kind:?}");
         }

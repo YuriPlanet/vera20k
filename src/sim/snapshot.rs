@@ -602,7 +602,9 @@ use crate::sim::world::Simulation;
 // cooldown and archive copy (the archive is Techno+0x218).
 // 207 -> 208: an entity keeps the crash latch and its AI edge (Foot+0x425/
 // +0x426) and a Fly its fall counter (+0x58).
-const SNAPSHOT_VERSION: u32 = 208;
+// 208 -> 209: a locomotor no longer keeps the retired copy of the Jumpjet type
+// block (speed, accel, current speed, deviation, crash speed, turn rate).
+const SNAPSHOT_VERSION: u32 = 209;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3551,7 +3553,8 @@ mod tests {
         // 205 -> 206: the retired Chrono dock phases; Techno+0x1F8.
         // 206 -> 207: the native ore field (Unit+0x6D2, the StageClass).
         // 207 -> 208: the crash latch and edge; the Fly fall counter.
-        assert_eq!(super::SNAPSHOT_VERSION, 208);
+        // 208 -> 209: the retired Jumpjet type-block copy.
+        assert_eq!(super::SNAPSHOT_VERSION, 209);
     }
 
     #[test]

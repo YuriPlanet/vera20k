@@ -134,6 +134,10 @@ pub(super) enum HashFeature {
     /// Fly fall counter (`FlyLocomotionClass+0x58`). Earlier schemas fold
     /// nothing: no object crashed before, so every latch and counter was zero.
     AircraftCrash = 208,
+    /// Removes folds: the retired VERA copy of the Jumpjet type block in the
+    /// common locomotor runtime, which nothing read. Earlier schemas fold it
+    /// recomputed from the linked Jumpjet block, or the non-Jumpjet constants.
+    RetiredJumpjetLegacyBlock = 209,
 }
 
 impl HashSchema {
@@ -169,6 +173,7 @@ impl HashSchema {
                     | HashFeature::RetiredRefineryDockPhase
                     | HashFeature::NativeOreField
                     | HashFeature::AircraftCrash
+                    | HashFeature::RetiredJumpjetLegacyBlock
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {
