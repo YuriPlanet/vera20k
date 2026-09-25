@@ -1454,15 +1454,6 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
             )
             .expect("a retail frame");
         let sim = scenario.sim();
-        for event in &output.fire_events {
-            if [nighthawk, kirov].contains(&event.attacker_id) {
-                println!(
-                    "frame {frame}: {} fires {}",
-                    event.attacker_id,
-                    sim.interner.resolve(event.weapon_id)
-                );
-            }
-        }
         for event in &output.sound_events {
             match event {
                 super::SimSoundEvent::VocAt { sound_id, .. } => {

@@ -2710,6 +2710,10 @@ fn admit_attacker_fire<'r>(
 /// out. `UnitClass::AI` returns first on vt+0x1D4, BeingWarpedOut `+0x270`
 /// (`0x007362FB..0x0073635A`), which a Temporal chain and the teleport's
 /// warp-out both set.
+///
+/// Native gates the update on IsAlive (`+0x90`, `0x007365BB`), so a crashing
+/// Unit's wreck still reaches it; here Health does (recorded residual at the
+/// Techno bracket's Guard B, `world::techno_ai`).
 fn unit_reaches_fire_update(world: &Simulation, id: u64) -> bool {
     world
         .substrate

@@ -1316,9 +1316,22 @@ fn unit_techno_bracket(
     ctx: ObjectAiCtx<'_>,
 ) -> BracketReach {
     techno_common_pre(sim, id, rules, ctx.overlay_registry);
-    // Guard B (post-pre IsAlive): a health-0 Unit runs no mission work. No
-    // lethal pre-block step exists yet, so this fires only for an already-dead
-    // Unit.
+    // Guard B (post-pre IsAlive): a health-0 Unit runs no mission work.
+    //
+    // RESIDUAL: native tests IsAlive (`+0x90`, `0x006FA23C`; Guard E
+    // `0x006FA735`), not Health; only `MissionClass::AI` skips a Health-0
+    // object's handler (`0x005B30A7`). A crashing Unit (Health 0, alive until
+    // its impact) therefore still runs, natively, the AI counter and
+    // promotion, the passive block (`0x006FA65A`: on Move, Guard or Harvest
+    // the gate and the scan with its Scenario draws, which can acquire a
+    // target that `UnitClass::Fire_At_Target` then fires at, `0x007365E1`)
+    // and the post block (the self-heal pulse `0x006FA747` among them); here
+    // it runs none of them. Trigger: every Unit wreck while it falls, and the
+    // Fly wrecks' `AircraftClass::AI` likewise. Effect: no passive-scan draws
+    // during a fall, so the Scenario stream shifts from the first crash of a
+    // moving or guarding unit, and a wreck never acquires or fires. Frequency:
+    // every Jumpjet crash. It is the next combat chain: the alive Health-0
+    // object's AI for both.
     if !sim.substrate.entities.get(id).is_some_and(|e| e.is_alive()) {
         return BracketReach::DiedInPre;
     }
