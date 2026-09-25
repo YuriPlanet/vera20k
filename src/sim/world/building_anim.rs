@@ -78,6 +78,24 @@ fn at_or_below_condition_yellow(current: i32, strength: i32, yellow: f64) -> boo
     )
 }
 
+/// Mission_Unload's first pass (`0x0073E013..0x0073E08E`): the unload
+/// building's PreProductionAnim (slot 7) with the live damaged argument. No
+/// stock refinery art defines it, so this plays nothing in retail.
+pub(crate) fn start_refinery_unload(sim: &mut Simulation, rules: &RuleSet, building_id: u64) {
+    let Some(building) = sim.entities().get(building_id) else {
+        return;
+    };
+    let Some(object) = rules.object(sim.interner.resolve(building.type_ref())) else {
+        return;
+    };
+    let damaged = at_or_below_condition_yellow(
+        building.health.current,
+        object.strength,
+        rules.general.condition_yellow,
+    );
+    sim.set_building_anim_slot(building_id, 7, damaged, false, 0, rules);
+}
+
 /// Unit73E37A: emit smoke on every due gate, then if Special slot10 is null
 /// call451750 with the live damaged argument. The empty gate clears it after
 /// that call, so its constructor/identity/RNG effects are retained even empty.
@@ -228,7 +246,7 @@ mod tests {
                 continue;
             }
             let mut text = format!(
-                "[BuildingTypes]\n0=GAREFN\n[GAREFN]\nStrength=100\nRefinery=yes\nRefinerySmokeFrames={}\n",
+                "[BuildingTypes]\n0=GAREFN\n[GAREFN]\nStrength=100\nRefinery=yes\nDockUnload=yes\nRefinerySmokeFrames={}\n",
                 input["frames"]
             );
             if input["has_type"] == true {
@@ -307,7 +325,7 @@ mod tests {
              [Animations]\n\
              0=GAREFN_B\n\
              [GAREFN]\n\
-             Refinery=yes\n\
+             Refinery=yes\nDockUnload=yes\n\
              Strength=100\n\
              Image=GAREFN\n\
              RefinerySmokeParticleSystem=RefSmokeSystem\n\

@@ -1,12 +1,13 @@
 //! `Contacts` — the sparse, capacity-bounded RadioClass contact slot store.
 //!
-//! Replaces the old unbounded `Vec<u64>` with the slot model: a fixed-capacity
-//! array of `Option<u64>`. Inserts fill the first null slot (no append-grow);
-//! removals null a slot in place (no compaction, so slot positions are stable);
-//! a sender that finds itself full self-evicts slot 0. Capacity is
-//! `max(NumberOfDocks, 1)` for buildings, else 1. Navigation uses the contact
-//! slot index to select a docking offset; admission reads membership through
-//! `contains`. Sparse slot positions are therefore hash-relevant.
+//! A fixed-capacity array of `Option<u64>` (`RadioClass+0xE4` items, `+0xE8`
+//! count): inserts fill the first null slot (no append-grow), removals null a
+//! slot in place (no compaction, so slot positions are stable). A HELLO sender
+//! with no free slot first sends OVER_OUT to slot 0 and then reuses it
+//! (`0x0065AA1F..0x0065AA34`). Capacity is `max(NumberOfDocks, 1)` for
+//! buildings, else 1. Navigation uses the contact slot index to select a
+//! docking offset; admission reads membership through `contains`. Sparse slot
+//! positions are therefore hash-relevant.
 //! sim/ only — never render/ui/sidebar/audio/net.
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
@@ -83,19 +84,21 @@ impl Contacts {
         Some(slot)
     }
 
-    /// Sender-side insert with slot-0 self-eviction when full. Returns the slot
-    /// used and the id evicted from slot 0, if any.
-    pub fn insert_evicting(&mut self, id: u64) -> (usize, Option<u64>) {
-        if let Some(existing) = self.find_slot(id) {
-            return (existing, None);
+    /// First null slot, the one a HELLO fills (`0x0065AA02..0x0065AA0C`).
+    pub fn first_free(&self) -> Option<usize> {
+        self.slots.iter().position(|s| s.is_none())
+    }
+
+    /// Store `id` in slot `i` (a HELLO sender's ROGER, `0x0065AA5A`).
+    pub fn set_slot(&mut self, i: usize, id: u64) {
+        if let Some(slot) = self.slots.get_mut(i) {
+            *slot = Some(id);
         }
-        if let Some(slot) = self.slots.iter().position(|s| s.is_none()) {
-            self.slots[slot] = Some(id);
-            return (slot, None);
-        }
-        let evicted = self.slots[0];
-        self.slots[0] = Some(id);
-        (0, evicted)
+    }
+
+    /// `RadioClass @ 0x0065ADF0`: some slot is null or already holds `id`.
+    pub fn has_free_or(&self, id: u64) -> bool {
+        self.slots.iter().any(|s| s.is_none() || *s == Some(id))
     }
 
     /// BREAK: null the first slot holding `id` (no compaction). Returns the slot.
@@ -165,12 +168,14 @@ mod tests {
     }
 
     #[test]
-    fn sender_insert_evicting_takes_slot_zero_when_full() {
+    fn free_slot_probe_and_direct_store() {
         let mut c = Contacts::with_capacity(2);
         c.insert(7);
-        c.insert(8);
-        assert_eq!(c.insert_evicting(9), (0, Some(7))); // evicts slot-0 id 7
-        assert!(c.contains(9) && c.contains(8) && !c.contains(7));
+        assert_eq!(c.first_free(), Some(1));
+        assert!(c.has_free_or(9));
+        c.set_slot(1, 8);
+        assert_eq!(c.first_free(), None);
+        assert!(c.has_free_or(8) && !c.has_free_or(9));
     }
 
     #[test]

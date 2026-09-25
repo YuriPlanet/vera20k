@@ -144,6 +144,51 @@ pub(super) fn refresh_drive_destination_coord(
     drive_set_destination(entity, coord, terrain)
 }
 
+/// The cell of `BuildingClass::GetDockCoord @ 0x00447B20` for `building`, as
+/// `MapClass::operator[](COORD) @ 0x00565730` looks it up: the DOCKING
+/// receiver's forced-MOVE_HERE test (`0x0043C91B..0x0043C93A`) and
+/// Per_Cell_Process's dock-cell test (`0x0073A3B1..0x0073A437`). For a
+/// `Refinery=` type the coordinate is the foundation centre plus 128 leptons
+/// east, which for the stock 4x3 foundation is the cell NW+(2,1), beside the
+/// pad NW+(3,1) (tools/spatial_oracle/refinery_dock, `nav_on_dock_coord`).
+pub(crate) fn building_dock_cell(
+    entities: &EntityStore,
+    building_id: u64,
+    requester: Option<u64>,
+    rules: &crate::rules::ruleset::RuleSet,
+    interner: &crate::sim::intern::StringInterner,
+) -> Option<(u16, u16)> {
+    let building = entities.get(building_id)?;
+    let object = rules.object(interner.resolve(building.type_ref()))?;
+    let coord = super::building_coordinate::dock_coordinate(
+        super::ground_pose::position_world_coord(&building.position),
+        super::ground_pose::object_center_coord(building, object),
+        object,
+        &building.radio_contacts,
+        requester,
+        || {
+            let id = requester.ok_or("Bunker dock coordinate needs a requester")?;
+            let entity = entities
+                .get(id)
+                .ok_or_else(|| format!("Dock requester {id} disappeared"))?;
+            Ok(rules
+                .object(interner.resolve(entity.type_ref()))
+                .map_or_else(
+                    || {
+                        super::ground_pose::object_center_coord_with_foundation(
+                            entity,
+                            &entity.foundation,
+                        )
+                    },
+                    |object| super::ground_pose::object_center_coord(entity, object),
+                ))
+        },
+    )
+    .ok()?;
+    let cell = |value: i32| u16::try_from(value / 256).ok();
+    Some((cell(coord.x)?, cell(coord.y)?))
+}
+
 /// Resolve the live receiver behind a non-null NavCom. The Rust reference tag
 /// does not change the native virtual receiver, and a dangling ID is not NULL.
 pub(crate) fn nav_target_coordinate(
@@ -452,7 +497,7 @@ pub(super) fn track_move_to(
 /// ILocomotion +0x48 Stop_Moving of the active Drive/Ship instance, the only
 /// call of Foot's failed-path receiver 0x4D55C0 (Unit +0x500). It clears the
 /// locomotor destination; NavCom and the committed head are untouched.
-pub(super) fn track_stop_moving(entity: &mut GameEntity) -> bool {
+pub(crate) fn track_stop_moving(entity: &mut GameEntity) -> bool {
     if is_drive_locomotor(entity) {
         drive_stop_moving(entity);
     } else if is_ship_locomotor(entity) {

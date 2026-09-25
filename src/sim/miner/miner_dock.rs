@@ -54,6 +54,7 @@ pub(crate) fn hello(
         refinery_sid,
         RadioMessage::Hello,
         RadioPayload::default(),
+        None,
     ) {
         RadioResponse::Roger => ContactAdmission::Accepted,
         _ => ContactAdmission::Waiting,
@@ -106,43 +107,53 @@ pub(crate) fn same_house(sim: &Simulation, refinery_sid: u64, miner_sid: u64) ->
 }
 
 /// `EventClass::Execute`'s MEGAMISSION arm, `0x004C72E8..0x004C7342`: a unit
-/// that is not tethered (`+0x418` clear) transmits BREAK (`PUSH 3; CALL
-/// [vt+0x274]`, `0x004C72F8`); a tethered one does so only when its contact is
-/// a `Refinery=` building (`Type+0x16B3`, `0x004C732C`), and then also clears
-/// `+0x418` (`0x004C7342`). For a miner both arms end the refinery handshake,
-/// so a retasked miner frees the slot for the next one.
+/// that is not tethered (`+0x418` clear) sends OVER_OUT to `Contacts[0]`
+/// (`PUSH 3; CALL [vt+0x274]`, `0x004C72F8`); a tethered one does so only when
+/// that contact is a live `DockUnload=` building (`Type+0x16B3`,
+/// `0x004C730F..0x004C7334`), and then also clears its `+0x418`
+/// (`0x004C7342`). So a retasked War Miner leaves its refinery handshake — or
+/// its unload, whose contact gate then drops the latch and commences the new
+/// order — while a unit still tethered to its war factory keeps that link.
 ///
-/// What follows the BREAK depends on the mission the miner is in. Before the
-/// unload (Harvest/Enter phases) the handshake simply restarts from HELLO the
-/// next time the miner returns. During the unload the phase is left alone:
-/// the Unload mission's own `In_Radio_Contact` gate (`0x0073DEE7`,
-/// `abort_unload_contact_lost`) finds the contact gone on its next dispatch,
-/// drops the unload latch and image and commences the queued order. Resetting
-/// the phase here instead would leave the latch set, which blocks the queued
-/// mission's readiness while Harvest re-docks the miner. A command that
-/// assigns its mission directly never reaches that gate again and must also
-/// call `abandon_unload_for_direct_retask` (`Command::HarvestCell` does).
-///
-/// Scope: only the refinery contact the miner FSM owns. Other contacts keep
-/// their existing teardown owners (`DockTeardown`). Commands that write their
-/// mission outside the MEGAMISSION funnel (Guard, EjectBunker,
-/// UnloadPassengers, ToggleInfantryDeploy; see `mission::retask`) do not reach
-/// this yet, so a Guard order on a docking miner still holds the slot until
-/// the miner's next return.
-pub(crate) fn break_for_retask(sim: &mut Simulation, miner_sid: u64) {
-    let Some(refinery_sid) = sim
-        .substrate
-        .entities
-        .get(miner_sid)
-        .and_then(|entity| entity.miner.as_ref())
-        .and_then(|miner| miner.reserved_refinery)
-    else {
+/// Scope: only miners reach this in VERA (the funnel predates the other
+/// units' native radio links). A Chrono Miner outside its unload also
+/// restarts its legacy dock phases from HELLO.
+pub(crate) fn break_for_retask(
+    sim: &mut Simulation,
+    miner_sid: u64,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+) {
+    let Some(entity) = sim.substrate.entities.get(miner_sid) else {
         return;
     };
-    if !has_contact(sim, refinery_sid, miner_sid) && !has_entered(sim, refinery_sid, miner_sid) {
+    let Some(miner) = entity.miner.as_ref() else {
+        return;
+    };
+    let chrono = miner.kind == crate::sim::miner::MinerKind::Chrono;
+    if entity.dock_entered_with.is_none() {
+        radio::transmit_to_contact(sim, miner_sid, RadioMessage::Break, rules);
+    } else {
+        let dock_unload = entity
+            .radio_contacts
+            .slot(0)
+            .and_then(|contact| sim.substrate.entities.get(contact))
+            .filter(|contact| {
+                contact.is_alive()
+                    && contact.category == crate::map::entities::EntityCategory::Structure
+            })
+            .zip(rules)
+            .and_then(|(contact, rules)| sim.object_type(contact.type_ref(), rules))
+            .is_some_and(|object| object.dock_unload);
+        if dock_unload {
+            radio::transmit_to_contact(sim, miner_sid, RadioMessage::Break, rules);
+            if let Some(entity) = sim.substrate.entities.get_mut(miner_sid) {
+                entity.dock_entered_with = None;
+            }
+        }
+    }
+    if !chrono {
         return;
     }
-    break_contact(sim, miner_sid, refinery_sid);
     if let Some(miner) = sim
         .substrate
         .entities
@@ -177,8 +188,9 @@ pub(crate) fn enter_dock(sim: &mut Simulation, miner_sid: u64, refinery_sid: u64
         sim,
         miner_sid,
         refinery_sid,
-        RadioMessage::EnterDock,
+        RadioMessage::Tether,
         RadioPayload::default(),
+        None,
     );
 }
 
@@ -191,6 +203,7 @@ pub(crate) fn break_contact(sim: &mut Simulation, miner_sid: u64, refinery_sid: 
         refinery_sid,
         RadioMessage::Break,
         RadioPayload::default(),
+        None,
     );
 }
 

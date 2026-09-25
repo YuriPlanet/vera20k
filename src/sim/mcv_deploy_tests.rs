@@ -1,6 +1,7 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::command::{Command, CommandEnvelope};
+use crate::sim::movement::FacingClass;
 use crate::sim::world::TickResult;
 use std::collections::BTreeMap;
 

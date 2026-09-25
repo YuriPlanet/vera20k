@@ -6846,6 +6846,14 @@ pub(crate) mod tests;
 mod smudge_integration_tests;
 
 #[cfg(test)]
+#[path = "refinery_dock_oracle_tests.rs"]
+mod refinery_dock_oracle_tests;
+
+#[cfg(test)]
+#[path = "refinery_dock_cycle_tests.rs"]
+mod refinery_dock_cycle_tests;
+
+#[cfg(test)]
 #[path = "world_orders_c4_tests.rs"]
 mod world_orders_c4_tests;
 

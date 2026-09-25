@@ -120,12 +120,6 @@ impl DockState {
 /// ~2 seconds at 15 Hz. VERA-internal (native retries without ejecting).
 const NO_FUNDS_GRACE_TICKS: u32 = 30;
 
-/// `[Enter] Rate=.016` ⇒ `ftol(0.016 * 900)` = 14 (stock); used only when the
-/// mission table carries no `[Enter]` rate.
-const ENTER_RETRY_BASE_FRAMES: u32 = 14;
-/// `RandomRanged(0, 2)` jitter added to every `Mission_Enter` epilogue.
-const ENTER_RETRY_JITTER_MAX_FRAMES: u32 = 2;
-
 /// Outcome of one repair-depot service step — the depot's `REPAIR_TICK`
 /// trichotomy. Carries the per-step payload the caller applies, so the money/
 /// heal math lives in one pure place (`repair_tick`) instead of inline in the
@@ -310,14 +304,8 @@ fn cell_distance(ax: u16, ay: u16, bx: u16, by: u16) -> u32 {
 /// then one `RandomRanged(0, 2)` on the Scenario stream (0x004D9483..0x004D9497),
 /// summed. Same draw site and order as the miner's `schedule_enter_retry`.
 fn arm_enter_retry(sim: &mut Simulation, rules: &RuleSet, timer: &mut MissionTimer) {
-    let base = match rules.mission_control.rate_frames(MissionType::Enter) {
-        0 => ENTER_RETRY_BASE_FRAMES,
-        frames => frames,
-    };
-    let jitter = sim
-        .miner_jitter_rng()
-        .next_range_u32_inclusive(0, ENTER_RETRY_JITTER_MAX_FRAMES);
-    timer.arm(sim.session.binary_frame, base.saturating_add(jitter));
+    let delay = sim.mission_rate_epilogue(rules, MissionType::Enter);
+    timer.arm(sim.session.binary_frame, delay.max(0) as u32);
 }
 
 /// Drive the unit straight onto/off the pad (footprint cells are not grid
@@ -355,6 +343,7 @@ fn break_depot_contact(sim: &mut Simulation, unit_id: u64, depot_id: u64) {
             depot_id,
             RadioMessage::Break,
             RadioPayload::default(),
+            None,
         );
     }
 }
@@ -477,6 +466,7 @@ pub(crate) fn mission_enter_dispatch(sim: &mut Simulation, rules: &RuleSet, id: 
                 dock_building_id,
                 RadioMessage::Hello,
                 RadioPayload::default(),
+                None,
             );
         }
     }

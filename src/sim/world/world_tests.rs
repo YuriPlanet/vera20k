@@ -3609,7 +3609,7 @@ fn teleport_command_test_rules() -> RuleSet {
          [BuildingTypes]\n0=GAREFN\n\n\
          [CMIN]\nStrength=400\nArmor=light\nSpeed=4\nHarvester=yes\nTeleporter=yes\nDock=GAREFN\n\n\
          [CHRONO]\nStrength=200\nArmor=light\nSpeed=5\nTeleporter=yes\n\n\
-         [GAREFN]\nStrength=900\nArmor=wood\nFoundation=4x3\nRefinery=yes\n",
+         [GAREFN]\nStrength=900\nArmor=wood\nFoundation=4x3\nRefinery=yes\nDockUnload=yes\n",
     );
     RuleSet::from_ini(&ini).expect("teleport command rules should parse")
 }

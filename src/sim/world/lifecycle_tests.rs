@@ -7326,7 +7326,7 @@ fn retasking_clears_the_override_archives_but_not_the_archived_selector() {
         "Stop is its own opcode and clears no archive"
     );
 
-    sim.queue_megamission_with_teardown(1, MissionType::Move, DockTeardown::All);
+    sim.queue_megamission_with_teardown(1, MissionType::Move, DockTeardown::All, None);
     let mover = sim.substrate.entities.get(1).unwrap();
     assert!(
         mover.suspended_attack_target.is_none(),

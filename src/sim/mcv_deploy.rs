@@ -8,7 +8,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
-use crate::sim::movement::{self, FacingClass};
+use crate::sim::movement;
 use crate::sim::world::Simulation;
 
 pub(crate) fn is_mcv(sim: &Simulation, entity: &GameEntity, rules: &RuleSet) -> bool {
@@ -64,13 +64,7 @@ pub(crate) fn current_direction(entity: &GameEntity, frame: u32) -> u8 {
 }
 
 pub(crate) fn start_turn(entity: &mut GameEntity, target: u8, frame: u32) {
-    // DriveLocomotion::Do_Turn 0x004B0EF0 delegates to FacingClass::Set
-    // 0x004C9220; setting an existing destination must not restart its timer.
-    let rot = entity.locomotor.as_ref().map_or(0, |loco| loco.rot);
-    let body = entity
-        .body_facing
-        .get_or_insert_with(|| FacingClass::new(u16::from(entity.facing) << 8, rot));
-    body.set(u16::from(target) << 8, frame);
+    movement::drive_do_turn(entity, u16::from(target) << 8, frame);
     entity.facing_target = Some(target);
 }
 
@@ -132,11 +126,7 @@ pub(crate) fn mission_unload(sim: &mut Simulation, id: u64, rules: &RuleSet) -> 
         }
         _ => {}
     }
-    let base = rules
-        .mission_control
-        .rate_frames(MissionType::Unload)
-        .min(i32::MAX as u32) as i32;
-    base.saturating_add(sim.scenario_rng.next_range_u32_inclusive(0, 2) as i32)
+    sim.mission_rate_epilogue_for(rules, id, MissionType::Unload)
 }
 
 // Kept as the production result seam so original interior-block oracle outputs

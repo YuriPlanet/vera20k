@@ -55,10 +55,10 @@ fn stock_refinery_completion_rules() -> RuleSet {
          [NACNST]\n\
          Factory=BuildingType\n\
          [GAREFN]\n\
-         Refinery=yes\n\
+         Refinery=yes\nDockUnload=yes\n\
          FreeUnit=CMIN\n\
          [NAREFN]\n\
-         Refinery=yes\n\
+         Refinery=yes\nDockUnload=yes\n\
          FreeUnit=HARV\n\
          [CMIN]\n\
          Harvester=yes\n\
@@ -1105,7 +1105,7 @@ fn refinery_whose_primary_cell_clears_its_footprint_keeps_the_primary_cell_and_f
          [GACNST]\n\
          Foundation=2x2\n\
          [MODPROC]\n\
-         Refinery=yes\n\
+         Refinery=yes\nDockUnload=yes\n\
          FreeUnit=MODHARV\n\
          Foundation=1x1\n\
          [MODHARV]\n\
@@ -1481,7 +1481,7 @@ fn modded_refinery_completion_uses_free_unit_from_rules() {
          [GACNST]\n\
          Foundation=2x2\n\
          [MODPROC]\n\
-         Refinery=yes\n\
+         Refinery=yes\nDockUnload=yes\n\
          FreeUnit=MODHARV\n\
          Foundation=3x3\n\
          [MODHARV]\n\
@@ -1527,7 +1527,7 @@ fn refinery_without_free_unit_spawns_nothing_on_completion() {
          [GACNST]\n\
          Foundation=2x2\n\
          [MODPROC]\n\
-         Refinery=yes\n\
+         Refinery=yes\nDockUnload=yes\n\
          Foundation=3x3\n\
          [MODHARV]\n\
          Harvester=yes\n\
