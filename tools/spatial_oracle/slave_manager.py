@@ -45,6 +45,7 @@ MISSION = {'guard': 5, 'move': 2, 'harvest': 10, 'construction': 18, 'selling': 
 # The deployed refinery: 2x2 (Foundation index 3, art [YAREFN] Foundation=2x2),
 # its drop cell NW + (FoundationWidth - 1, FoundationHeight / 2) = (13, 13).
 YAREFN_NW = (12, 12)
+SPOT_OFFSETS = [(128, 128, 0), (64, 64, 0), (192, 64, 0), (64, 192, 0), (192, 192, 0)]
 
 
 def slave_address(index):
@@ -64,6 +65,10 @@ def make_fixture(case):
         dict(case, miner_cell=case.get('miner_cell', [2, 2]), many_scanners=True))
     u.mem_map(REGION, 0x10000 + SLAVE_SIZE * SLAVE_SLOTS)
     frame = read32(0xA8ED84)
+    # PlaceInfantryInCell's spot offsets (0x89E9F0) and its no-spot answer
+    # (0x89E778), filled by static initialisers the fixture does not run.
+    u.mem_write(0x89E778, dwords(0, 0, 0))
+    u.mem_write(0x89E9F0, dwords(*(v for spot in SPOT_OFFSETS for v in spot)))
     # [General] SlaveMinerShortScan/SlaveScan/LongScan/ScanCorrection (ReadRange
     # leptons) and SlaveMinerKickFrameDelay: retail 8, 14, 48, 3 cells and 150;
     # ApproachTargetResetMultiplier (ReadInt of retail "1.5").
@@ -381,6 +386,8 @@ def main(argv=None):
                          'tables); a 2x2 Building (vtable 0x7E3EBC, Foundation index 3) at NW (12,12) as the '
                          'owner, first object of its four foundation cells; the manager and its nodes '
                          'supplied at REGION without the constructor.',
+                         'PlaceInfantryInCell spot offsets (0x89E9F0) seeded as the static initialiser '
+                         'leaves them: centre, then (64,64), (192,64), (64,192), (192,192).',
                          'Slaves: original Infantry vtables (0x7EB058/03C/034/02C) over supplied fields and a '
                          'constructed Walk (0x75AA90); SLAV type Strength 125, Storage 4, HarvestRate 150, '
                          'MovementZone Infantry.',
