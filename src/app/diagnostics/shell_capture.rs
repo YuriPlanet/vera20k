@@ -41,6 +41,8 @@ const CHECKPOINT_CAMPAIGN_0X94_STEADY: &str = "campaign-0x94-steady";
 const CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT: &str = "campaign-0x94-slider-left";
 const CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT: &str = "campaign-0x94-slider-right";
 const CHECKPOINT_CAMPAIGN_0X94_ENTRY_PREFIX: &str = "campaign-0x94-entry-tick-";
+const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-steady";
+const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
 /// Slider press points of the retail comparison stills.
 const CAMPAIGN_SLIDER_LEFT_POINT: (i32, i32) = (190, 275);
 const CAMPAIGN_SLIDER_RIGHT_POINT: (i32, i32) = (440, 275);
@@ -99,6 +101,12 @@ pub enum ShellCaptureCheckpoint {
     Campaign0x94SliderRight,
     /// Its entry slide held at one tick (`campaign-0x94-entry-tick-<N>`).
     Campaign0x94Entry(u32),
+    /// Single Player -> Load Saved Game: `0xB7` settled. Needs a readable
+    /// save in the saves directory.
+    LoadSavedGame0xB7Steady,
+    /// Its entry slide held at one tick
+    /// (`load-saved-game-0xb7-entry-tick-<N>`).
+    LoadSavedGame0xB7Entry(u32),
     /// Show_Credits pinned at one roll frame (`credits-roll-frame-<N>`).
     CreditsRollFrame(u64),
     /// Sneak Peeks Play_Movie pinned at one video frame (`sneak-peek-frame-<N>`).
@@ -158,6 +166,11 @@ impl ShellCaptureCheckpoint {
                 ShellSlideKind::Campaign,
                 Self::Campaign0x94Entry,
             ),
+            (
+                CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX,
+                ShellSlideKind::LoadSavedGame,
+                Self::LoadSavedGame0xB7Entry,
+            ),
         ] {
             let Some(tick) = value.strip_prefix(prefix) else {
                 continue;
@@ -190,6 +203,7 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_0X94_STEADY => Ok(Self::Campaign0x94Steady),
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT => Ok(Self::Campaign0x94SliderLeft),
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT => Ok(Self::Campaign0x94SliderRight),
+            CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY => Ok(Self::LoadSavedGame0xB7Steady),
             _ => bail!("unsupported shell-capture checkpoint {value:?}"),
         }
     }
@@ -210,6 +224,8 @@ impl ShellCaptureCheckpoint {
             Self::Campaign0x94SliderLeft => CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT,
             Self::Campaign0x94SliderRight => CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT,
             Self::Campaign0x94Entry(_) => "campaign-0x94-entry",
+            Self::LoadSavedGame0xB7Steady => CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY,
+            Self::LoadSavedGame0xB7Entry(_) => "load-saved-game-0xb7-entry",
             Self::CreditsRollFrame(_) => "credits-roll-frame",
             Self::SneakPeekFrame(_) => "sneak-peek-frame",
             Self::MainMenu0xE2SlideOut(_) => "main-menu-0xe2-slide-out",
@@ -242,6 +258,12 @@ impl ShellCaptureCheckpoint {
             },
             Self::Campaign0x94Entry(tick) => movies::MoviesTarget::Campaign0x94 {
                 press: None,
+                entry_tick: Some(tick),
+            },
+            Self::LoadSavedGame0xB7Steady => {
+                movies::MoviesTarget::LoadSavedGame0xB7 { entry_tick: None }
+            }
+            Self::LoadSavedGame0xB7Entry(tick) => movies::MoviesTarget::LoadSavedGame0xB7 {
                 entry_tick: Some(tick),
             },
             Self::CreditsRollFrame(frame) => movies::MoviesTarget::Credits { frame },
@@ -1355,6 +1377,10 @@ mod tests {
             (
                 "campaign-0x94-entry-tick-",
                 ShellCaptureCheckpoint::Campaign0x94Entry(17),
+            ),
+            (
+                "load-saved-game-0xb7-entry-tick-",
+                ShellCaptureCheckpoint::LoadSavedGame0xB7Entry(17),
             ),
         ] {
             assert_eq!(

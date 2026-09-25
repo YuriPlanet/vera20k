@@ -291,6 +291,16 @@ impl App {
                     } else {
                         Self::render_egui_main_menu_fallback(state, &mut encoder, &view, event_loop)?;
                     }
+                } else if Self::load_saved_game_active(state) {
+                    if crate::app::frontend::load_saved_game_render::render_load_saved_game_page(
+                        state,
+                        &mut encoder,
+                        &output.texture,
+                    )? {
+                        presented_shell = PresentedShell::LoadSavedGame;
+                    } else {
+                        Self::render_egui_main_menu_fallback(state, &mut encoder, &view, event_loop)?;
+                    }
                 } else if Self::native_launcher_options_active(state) {
                     pending_launcher_title_receipt = Some(
                         crate::app::frontend::skirmish_shell_render::render_launcher_options(
@@ -321,12 +331,9 @@ impl App {
                                 }
                             };
                             state.renderer.egui.begin_frame(&state.platform.window);
-                            if state.match_state.match_presentation.show_save_load_panel {
-                                Self::handle_save_load_panel(state);
-                            }
-                            // Campaign selector (and any other menu modal) draws
-                            // over the SP shell; confirm-quit cannot originate
-                            // here, so its return value is ignored.
+                            // A menu modal draws over the page; confirm-quit
+                            // cannot originate here, so its return value is
+                            // ignored.
                             let _ = Self::draw_main_menu_dialogs(state, false);
                             state.renderer.egui.end_frame_and_render(
                                 &state.renderer.gpu,

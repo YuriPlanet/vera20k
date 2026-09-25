@@ -158,6 +158,8 @@ pub fn mouse_down<I: Clone + PartialEq>(
                 SeedListGeometry::new(layout.list, browser.entries.len(), browser.top_index)
                     .top_at_pointer(y);
         }
+        // A disabled window takes no press (Load with no rows, 0x00558FE5).
+        Some(SavedSeedControl::Action) if !browser.action_enabled() => {}
         Some(SavedSeedControl::Action | SavedSeedControl::Back0x686) => {
             browser.pressed_control = hit;
             return BrowserInputResult::ButtonPressed;
@@ -312,6 +314,26 @@ mod tests {
             mouse_up(&mut browser, &layout, (800, 600), pointer),
             BrowserInputResult::None
         ));
+    }
+
+    #[test]
+    fn a_disabled_load_takes_no_press() {
+        let (mut browser, layout) = fixture(SavedSeedMode::Load, 0);
+        assert!(!browser.action_enabled());
+        let pointer = (layout.action.x + 5, layout.action.y + 5);
+        let limits = (Duration::from_millis(500), 4, 4);
+        assert!(matches!(
+            mouse_down(
+                &mut browser,
+                &layout,
+                (800, 600),
+                pointer,
+                Instant::now(),
+                limits
+            ),
+            BrowserInputResult::None
+        ));
+        assert_eq!(browser.pressed_control, None);
     }
 
     #[test]

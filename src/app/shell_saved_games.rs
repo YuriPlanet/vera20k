@@ -7,8 +7,7 @@ use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::saved_file_input::{self, BrowserInputResult};
 use crate::ui::skirmish_shell::seed_list::SeedListGeometry;
 use crate::ui::skirmish_shell::{
-    SavedSeedBrowserRow, SavedSeedBrowserState, SavedSeedLayout, SavedSeedMode, SavedSeedOutcome,
-    SavedSeedPrompt, SavedSeedPromptPurpose,
+    SavedSeedLayout, SavedSeedMode, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
 };
 use std::path::PathBuf;
 use winit::keyboard::KeyCode;
@@ -30,28 +29,9 @@ impl App {
         let Some(layout) = Self::saved_game_layout(state, mode) else {
             return;
         };
-        let entries = state
-            .persistence
-            .repository
-            .browser_entries()
-            .into_iter()
-            .map(|(entry, last_write_time)| SavedSeedBrowserRow {
-                file_name: Some(entry.path),
-                description: entry.header.description.into(),
-                last_write_time,
-                visible: true,
-            })
-            .collect();
-        // SetDefaults683A6D..683A9F keeps this localized default for mode5;
-        // the campaign-only map Name/UIName override does not run here.
-        let current = Self::csf_label(state, "GUI:SkirmishGame", "Skirmish Game");
-        let empty = Self::csf_label(state, "TXT_EMPTY_SLOT", "[EMPTY SLOT]");
-        let browser = SavedSeedBrowserState::open_rows(
+        let browser = Self::open_saved_game_rows(
+            state,
             mode,
-            entries,
-            current.into(),
-            empty.into(),
-            crate::map::rmg::saved_seeds::new_slot_file_time(std::time::SystemTime::now()),
             SeedListGeometry::new(layout.list, 0, 0).visible_rows,
         );
         // The child replaces its hidden parent and owns all subsequent input.

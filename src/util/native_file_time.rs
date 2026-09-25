@@ -1,5 +1,8 @@
 //! Retail saved-list timestamp formatting. Native 0x005596A0 uses the active
 //! Windows locale through GetDateFormatA / GetTimeFormatA, then converts ACP.
+//! Other platforms format the same local time with the user's locale short
+//! date and time (`strftime_l` `%x` / `%X`); the strings follow that
+//! platform's locale data, as the Win32 ones follow Windows'.
 
 #[cfg(windows)]
 #[repr(C)]
@@ -23,11 +26,16 @@ struct NativeSystemTime {
     milliseconds: u16,
 }
 
-#[cfg(windows)]
-pub(crate) fn format_timestamp_parts(unix_secs: u64) -> Option<(String, String)> {
-    const WINDOWS_EPOCH_SECONDS: u64 = 11_644_473_600;
-    const TICKS_PER_SECOND: u64 = 10_000_000;
+const WINDOWS_EPOCH_SECONDS: u64 = 11_644_473_600;
+const TICKS_PER_SECOND: u64 = 10_000_000;
 
+/// Saved-list 0x005596A0 omits both columns for either sentinel DWORD.
+fn is_sentinel(ticks: u64) -> bool {
+    ticks as u32 == u32::MAX || (ticks >> 32) as u32 == u32::MAX
+}
+
+#[cfg(any(windows, unix))]
+pub(crate) fn format_timestamp_parts(unix_secs: u64) -> Option<(String, String)> {
     let ticks = unix_secs
         .checked_add(WINDOWS_EPOCH_SECONDS)?
         .checked_mul(TICKS_PER_SECOND)?;
@@ -37,8 +45,7 @@ pub(crate) fn format_timestamp_parts(unix_secs: u64) -> Option<(String, String)>
 /// Format native FILETIME without discarding its epoch or fractional fields.
 #[cfg(windows)]
 pub(crate) fn format_file_time_parts(ticks: u64) -> Option<(String, String)> {
-    // Saved-list 0x005596A0 omits both columns for either sentinel DWORD.
-    if ticks as u32 == u32::MAX || (ticks >> 32) as u32 == u32::MAX {
+    if is_sentinel(ticks) {
         return None;
     }
     #[link(name = "kernel32")]
@@ -138,14 +145,69 @@ fn format_local_system_time(system: &NativeSystemTime) -> Option<(String, String
     ))
 }
 
-#[cfg(not(windows))]
+/// FILETIME ticks as local time in the user's locale short date and time.
+#[cfg(unix)]
+pub(crate) fn format_file_time_parts(ticks: u64) -> Option<(String, String)> {
+    if is_sentinel(ticks) {
+        return None;
+    }
+    let seconds = (ticks / TICKS_PER_SECOND).checked_sub(WINDOWS_EPOCH_SECONDS)?;
+    let seconds = libc::time_t::try_from(seconds).ok()?;
+    // SAFETY: `tm` is plain data that localtime_r fills; the locale handle is
+    // checked, used for two bounded strftime_l calls and freed once.
+    unsafe {
+        let mut local: libc::tm = std::mem::zeroed();
+        if libc::localtime_r(&seconds, &mut local).is_null() {
+            return None;
+        }
+        let mut locale = libc::newlocale(libc::LC_TIME_MASK, c"".as_ptr(), std::ptr::null_mut());
+        if locale.is_null() {
+            locale = libc::newlocale(libc::LC_TIME_MASK, c"C".as_ptr(), std::ptr::null_mut());
+        }
+        if locale.is_null() {
+            return None;
+        }
+        let format = |pattern: &std::ffi::CStr| {
+            let mut out = [0u8; 128];
+            let len = libc::strftime_l(
+                out.as_mut_ptr().cast(),
+                out.len(),
+                pattern.as_ptr(),
+                &local,
+                locale,
+            );
+            (len > 0).then(|| String::from_utf8_lossy(&out[..len]).into_owned())
+        };
+        let parts = format(c"%x").zip(format(c"%X"));
+        let _ = libc::freelocale(locale);
+        parts
+    }
+}
+
+#[cfg(not(any(windows, unix)))]
 pub(crate) fn format_timestamp_parts(_unix_secs: u64) -> Option<(String, String)> {
     None
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, unix)))]
 pub(crate) fn format_file_time_parts(_ticks: u64) -> Option<(String, String)> {
     None
+}
+
+#[cfg(all(test, unix))]
+mod unix_tests {
+    use super::{TICKS_PER_SECOND, WINDOWS_EPOCH_SECONDS, format_file_time_parts};
+
+    #[test]
+    fn unix_formats_a_local_short_date_and_time() {
+        // 2026-07-30 13:45:12 UTC.
+        let ticks = (1_785_419_112 + WINDOWS_EPOCH_SECONDS) * TICKS_PER_SECOND;
+        let (date, time) = format_file_time_parts(ticks).expect("locale formatting");
+        assert!(date.chars().any(|c| c.is_ascii_digit()), "{date:?}");
+        assert!(time.contains(':'), "{time:?}");
+        assert_eq!(format_file_time_parts(u64::from(u32::MAX)), None);
+        assert_eq!(format_file_time_parts(0), None, "before 1970");
+    }
 }
 
 #[cfg(all(test, windows))]

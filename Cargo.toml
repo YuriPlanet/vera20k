@@ -146,6 +146,11 @@ rodio = "0.22"
 # `app::window_icon` sets at startup. These are the objc2 0.6 / AppKit 0.3 versions
 # already in the lock (via arboard/glutin); default features are off because they
 # enable every AppKit framework class.
+# Saved-list timestamps: local time and the user's locale on Unix
+# (src/util/native_file_time.rs). The lockfile already carries libc 0.2.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage", "NSResponder"] }
