@@ -36,14 +36,13 @@ pub struct ArtEntry {
     pub scorch: bool,
     pub crater: bool,
     pub force_big_craters: bool,
-    /// SHP frame 0's visible-content bounding-rect width, in pixels.
-    /// Used by the smudge dispatcher as a damage-tier proxy for size selection.
-    /// Default 30 — matches the original engine's uncached first-call fallback;
-    /// replaced with the actual SHP frame width by `populate_anim_frame_dims`
-    /// for anims with a Crater/Scorch/ForceBigCraters spawn flag.
+    /// The middle frame's width, `AnimTypeClass+0x29C`: `AnimClass::Middle @
+    /// 0x00424F00` sizes its scorch or crater from the frame at `+0x298`,
+    /// the raw SHP frame count halved (`Load_Image 0x00427B50`), through
+    /// `0x0069E7E0`. 30 with no image (`0x00424F57`). Bound by
+    /// `populate_anim_frame_dims` for anims with a Scorch/Crater flag.
     pub frame_width: u16,
-    /// SHP frame 0's visible-content bounding-rect height, in pixels.
-    /// See `frame_width`.
+    /// The middle frame's height, `AnimTypeClass+0x2A0`. See `frame_width`.
     pub frame_height: u16,
     /// Render as VXL+HVA model (true) or SHP sprite (false).
     pub voxel: bool,
@@ -1769,10 +1768,10 @@ impl ArtRegistry {
     }
 
     /// Eagerly populate `frame_width`/`frame_height` on entries whose anim has
-    /// a smudge-spawn flag (Crater/Burn/ForceBigCraters). Reads frame 0 of
-    /// each anim's SHP via the shared `anim_shp_candidates` filename
-    /// pipeline. Anims without a loadable SHP keep the (30, 30) defaults
-    /// from their initial parse.
+    /// a smudge-spawn flag (Crater/Burn/ForceBigCraters). Reads the middle
+    /// frame (the raw frame count halved) of each anim's SHP via the shared
+    /// `anim_shp_candidates` filename pipeline. Anims without a loadable SHP
+    /// keep the (30, 30) defaults from their initial parse.
     ///
     /// Returns `(populated, fallback)` for diagnostic logging:
     ///   `populated` = anims whose SHP was found and dims were stored
@@ -1809,7 +1808,7 @@ impl ArtRegistry {
                 fallback += 1;
                 continue;
             };
-            let Some(frame) = shp.frames.first() else {
+            let Some(frame) = shp.frames.get(shp.frames.len() / 2) else {
                 fallback += 1;
                 continue;
             };

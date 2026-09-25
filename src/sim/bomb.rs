@@ -509,7 +509,6 @@ impl Simulation {
         self.commit_noncombat_aoe_receivers(rules, overlay_registry, &aoe.receivers);
 
         let mut explosions = Vec::new();
-        let mut smudges = Vec::new();
         crate::sim::combat::emit_warhead_detonation_effects(
             warhead,
             damage,
@@ -521,11 +520,7 @@ impl Simulation {
             world_z_leptons,
             &mut self.interner,
             &mut explosions,
-            &mut smudges,
         );
-        for request in smudges {
-            self.commit_smudge_request_inline(rules, overlay_registry, request);
-        }
         for fx in &explosions {
             self.spawn_combat_explosion_anim(
                 rules,
@@ -535,6 +530,7 @@ impl Simulation {
                 fx.sub_x,
                 fx.sub_y,
                 fx.z,
+                fx.world_z,
             );
         }
         if blast.bridge_hut {

@@ -6614,10 +6614,10 @@ fn pursuit_weapon_range_none_for_unarmed_attacker() {
 }
 
 #[test]
-fn v3_non_killing_aoe_emits_one_smudge_request() {
+fn v3_non_killing_aoe_emits_one_detonation_anim() {
     // V3-style splash hits a heavy-armor target with HP > splash damage.
-    // Target survives — currently produces zero smudges in dev HEAD; with
-    // the per-shot helper wired, must emit exactly one Anim smudge request.
+    // The target survives; the shot still starts one AnimList anim, whose
+    // own Middle marks the ground.
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[InfantryTypes]\n\n\
          [VehicleTypes]\n0=MTNK\n1=V3\n\n\
@@ -6654,36 +6654,25 @@ fn v3_non_killing_aoe_emits_one_smudge_request() {
         store.get(2).map(|e| e.health.current > 0).unwrap_or(false),
         "target must survive (test setup invariant)"
     );
-    let anim_count = result
+    let v3exp = interner.intern("V3EXP");
+    let anims: Vec<_> = result
         .consequences
         .effects()
-        .smudge_spawn_requests
+        .explosion_effects
         .iter()
-        .filter(|r| matches!(r, SmudgeSpawnRequest::Anim { .. }))
-        .count();
+        .map(|effect| effect.shp_name)
+        .collect();
     assert_eq!(
-        anim_count, 1,
-        "one detonation must emit one Anim smudge request even on non-kill"
-    );
-    let v3exp = interner.intern("V3EXP");
-    assert!(
-        result
-            .consequences
-            .effects()
-            .smudge_spawn_requests
-            .iter()
-            .any(
-                |r| matches!(r, SmudgeSpawnRequest::Anim { anim_name, .. } if *anim_name == v3exp)
-            ),
-        "Anim smudge must reference the V3 warhead's AnimList entry"
+        anims,
+        vec![v3exp],
+        "one detonation starts one AnimList anim"
     );
 }
 
 #[test]
-fn v3_killing_aoe_emits_exactly_one_smudge_request() {
-    // V3 splash kills a low-HP target. Only ONE detonation occurred → ONE
-    // Anim smudge request. After the kill-handler emission is removed
-    // (Task 4), the per-shot helper is the sole emitter on kills.
+fn v3_killing_aoe_emits_exactly_one_detonation_anim() {
+    // V3 splash kills a low-HP target with no Explosion= list. Only ONE
+    // detonation occurred, so ONE AnimList anim starts; the kill adds none.
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[InfantryTypes]\n\n\
          [VehicleTypes]\n0=MTNK\n1=WEAK\n\n\
@@ -6721,16 +6710,10 @@ fn v3_killing_aoe_emits_exactly_one_smudge_request() {
         1,
         "target must die (test setup invariant)"
     );
-    let anim_count = result
-        .consequences
-        .effects()
-        .smudge_spawn_requests
-        .iter()
-        .filter(|r| matches!(r, SmudgeSpawnRequest::Anim { .. }))
-        .count();
     assert_eq!(
-        anim_count, 1,
-        "kill must emit exactly one Anim smudge — no double from kill-handler"
+        result.consequences.effects().explosion_effects.len(),
+        1,
+        "kill must start exactly one anim — no double from the kill handler"
     );
 }
 
@@ -6777,17 +6760,6 @@ fn gsi_04_11_death_weapon_anim_precedes_outer_detonation_anim() {
 
     let tankexp = interner.intern("TANKEXP");
     let ucexplod = interner.intern("UCEXPLOD");
-    let ordered_anim_names: Vec<_> = result
-        .consequences
-        .effects()
-        .smudge_spawn_requests
-        .iter()
-        .filter_map(|request| match request {
-            SmudgeSpawnRequest::Anim { anim_name, .. } => Some(*anim_name),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(ordered_anim_names, vec![ucexplod, tankexp]);
     assert_eq!(
         result
             .consequences
@@ -6797,30 +6769,6 @@ fn gsi_04_11_death_weapon_anim_precedes_outer_detonation_anim() {
             .map(|effect| effect.shp_name)
             .collect::<Vec<_>>(),
         vec![ucexplod, tankexp]
-    );
-    let unique_anim_names: std::collections::BTreeSet<_> = result
-        .consequences
-        .effects()
-        .smudge_spawn_requests
-        .iter()
-        .filter_map(|r| match r {
-            SmudgeSpawnRequest::Anim { anim_name, .. } => Some(*anim_name),
-            _ => None,
-        })
-        .collect();
-
-    assert!(
-        unique_anim_names.contains(&tankexp),
-        "killing-shot warhead AnimList anim must be emitted"
-    );
-    assert!(
-        unique_anim_names.contains(&ucexplod),
-        "death-explosion warhead AnimList anim must be emitted"
-    );
-    assert_eq!(
-        unique_anim_names.len(),
-        2,
-        "exactly two distinct anim names — killing shot + death explosion"
     );
 }
 
@@ -7123,16 +7071,6 @@ fn inviso_scatter_uses_scenario_rng_only_for_effect_and_paired_smudge() {
             .is_empty(),
         "a non-Tiberium warhead without authoritative overlay context must not reduce ore"
     );
-    match &result.consequences.effects().smudge_spawn_requests[0] {
-        SmudgeSpawnRequest::Anim {
-            rx,
-            ry,
-            sub_x,
-            sub_y,
-            ..
-        } => assert_eq!((*rx, *ry, *sub_x, *sub_y), expected_effect),
-        other => panic!("expected paired animation smudge, got {other:?}"),
-    }
 }
 
 #[test]
@@ -7497,7 +7435,6 @@ fn emit_warhead_detonation_effects_empty_animlist_emits_nothing() {
     let mut interner = crate::sim::intern::StringInterner::new();
     let wh = emit_helper_test_warhead(&[]);
     let mut explosions: Vec<ExplosionEffect> = Vec::new();
-    let mut smudges: Vec<SmudgeSpawnRequest> = Vec::new();
     emit_warhead_detonation_effects(
         &wh,
         100,
@@ -7509,18 +7446,15 @@ fn emit_warhead_detonation_effects_empty_animlist_emits_nothing() {
         0,
         &mut interner,
         &mut explosions,
-        &mut smudges,
     );
     assert!(explosions.is_empty());
-    assert!(smudges.is_empty());
 }
 
 #[test]
-fn emit_warhead_detonation_effects_single_animlist_entry_emits_one_pair() {
+fn emit_warhead_detonation_effects_single_animlist_entry_emits_one_anim() {
     let mut interner = crate::sim::intern::StringInterner::new();
     let wh = emit_helper_test_warhead(&["EXPLOSION1"]);
     let mut explosions: Vec<ExplosionEffect> = Vec::new();
-    let mut smudges: Vec<SmudgeSpawnRequest> = Vec::new();
     emit_warhead_detonation_effects(
         &wh,
         100,
@@ -7532,10 +7466,8 @@ fn emit_warhead_detonation_effects_single_animlist_entry_emits_one_pair() {
         731,
         &mut interner,
         &mut explosions,
-        &mut smudges,
     );
     assert_eq!(explosions.len(), 1);
-    assert_eq!(smudges.len(), 1);
     let expected_id = interner.intern("EXPLOSION1");
     assert_eq!(explosions[0].shp_name, expected_id);
     assert_eq!(explosions[0].rx, 5);
@@ -7543,24 +7475,7 @@ fn emit_warhead_detonation_effects_single_animlist_entry_emits_one_pair() {
     assert_eq!(explosions[0].sub_x.to_num::<i32>(), 160);
     assert_eq!(explosions[0].sub_y.to_num::<i32>(), 96);
     assert_eq!(explosions[0].z, 0);
-    match &smudges[0] {
-        SmudgeSpawnRequest::Anim {
-            anim_name,
-            rx,
-            ry,
-            sub_x,
-            sub_y,
-            world_z_leptons,
-        } => {
-            assert_eq!(*anim_name, expected_id);
-            assert_eq!(*rx, 5);
-            assert_eq!(*ry, 5);
-            assert_eq!(sub_x.to_num::<i32>(), 160);
-            assert_eq!(sub_y.to_num::<i32>(), 96);
-            assert_eq!(*world_z_leptons, 731);
-        }
-        other => panic!("expected Anim variant, got {:?}", other),
-    }
+    assert_eq!(explosions[0].world_z, 731);
 }
 
 #[test]
@@ -7570,7 +7485,6 @@ fn emit_warhead_detonation_effects_animlist_index_is_damage_div_25_clamped() {
 
     // damage=0 → idx=0 → EXP1.
     let mut explosions: Vec<ExplosionEffect> = Vec::new();
-    let mut smudges: Vec<SmudgeSpawnRequest> = Vec::new();
     emit_warhead_detonation_effects(
         &wh,
         0,
@@ -7582,13 +7496,11 @@ fn emit_warhead_detonation_effects_animlist_index_is_damage_div_25_clamped() {
         0,
         &mut interner,
         &mut explosions,
-        &mut smudges,
     );
     assert_eq!(explosions[0].shp_name, interner.intern("EXP1"));
 
     // damage=50 → idx=2 (50/25) → EXP3.
     let mut explosions: Vec<ExplosionEffect> = Vec::new();
-    let mut smudges: Vec<SmudgeSpawnRequest> = Vec::new();
     emit_warhead_detonation_effects(
         &wh,
         50,
@@ -7600,13 +7512,11 @@ fn emit_warhead_detonation_effects_animlist_index_is_damage_div_25_clamped() {
         0,
         &mut interner,
         &mut explosions,
-        &mut smudges,
     );
     assert_eq!(explosions[0].shp_name, interner.intern("EXP3"));
 
     // damage=10000 → idx clamped to len-1 (2) → EXP3.
     let mut explosions: Vec<ExplosionEffect> = Vec::new();
-    let mut smudges: Vec<SmudgeSpawnRequest> = Vec::new();
     emit_warhead_detonation_effects(
         &wh,
         10000,
@@ -7618,7 +7528,6 @@ fn emit_warhead_detonation_effects_animlist_index_is_damage_div_25_clamped() {
         0,
         &mut interner,
         &mut explosions,
-        &mut smudges,
     );
     assert_eq!(explosions[0].shp_name, interner.intern("EXP3"));
 }
@@ -10407,7 +10316,6 @@ fn gsi_08_08_special_arm_suppresses_damage_but_keeps_the_detonation_tail() {
     struct TailOutcome {
         damage_events: usize,
         anims: Vec<(String, u16, u16, u8)>,
-        smudges: usize,
     }
 
     fn run(rules: &RuleSet, warhead_name: &str) -> TailOutcome {
@@ -10468,7 +10376,6 @@ fn gsi_08_08_special_arm_suppresses_damage_but_keeps_the_detonation_tail() {
         TailOutcome {
             damage_events: emitted.damage_events.len(),
             anims,
-            smudges: emitted.effects.smudge_spawn_requests.len(),
         }
     }
 
@@ -10482,10 +10389,6 @@ fn gsi_08_08_special_arm_suppresses_damage_but_keeps_the_detonation_tail() {
         vec![("YURICNTL".to_string(), 8, 5, 0)],
         "LAB_00469AA4 still selects and starts the AnimList explosion"
     );
-    assert_eq!(
-        mind_control.smudges, 1,
-        "the anim's smudge/scorch half runs from the same tail"
-    );
 
     let plain = run(&rules, "Plain");
     assert_eq!(
@@ -10496,7 +10399,6 @@ fn gsi_08_08_special_arm_suppresses_damage_but_keeps_the_detonation_tail() {
         plain.anims, mind_control.anims,
         "the tail selects the same anim at the same place whichever arm reached it"
     );
-    assert_eq!(plain.smudges, mind_control.smudges);
 }
 
 /// `BulletClass::ResolveImpactCoordAndDetonate @ 0x00468D80`: a `Cluster=5`

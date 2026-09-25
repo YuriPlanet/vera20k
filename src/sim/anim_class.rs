@@ -702,6 +702,7 @@ impl Simulation {
         sub_x: crate::util::fixed_math::SimFixed,
         sub_y: crate::util::fixed_math::SimFixed,
         z: u8,
+        world_z: i32,
     ) -> Option<AnimId> {
         let descriptor = AnimClassSpawnDescriptor {
             delay: 0,
@@ -711,7 +712,10 @@ impl Simulation {
             reverse: false,
             ..AnimClassSpawnDescriptor::new(type_name, rx, ry, sub_x, sub_y, z)
         };
-        let world_coord = AnimWorldCoord::from_cell_sub_z(rx, ry, sub_x, sub_y, z);
+        let world_coord = AnimWorldCoord {
+            z: world_z,
+            ..AnimWorldCoord::from_cell_sub_z(rx, ry, sub_x, sub_y, z)
+        };
         match self.spawn_anim_at_world(rules, descriptor, world_coord) {
             Ok(id) => Some(id),
             Err(error) => {
@@ -803,7 +807,7 @@ impl Simulation {
         // delay-zero constructor-time Start call.
         self.reveal_anim(stable_id, Some(rules), None);
         if descriptor.delay == 0 {
-            self.anim_start(stable_id, &config);
+            self.anim_start(stable_id, &config, rules, None);
         }
         Ok(stable_id)
     }
@@ -898,7 +902,7 @@ impl Simulation {
 
         self.reveal_anim(stable_id, Some(rules), Some(art));
         if descriptor.delay == 0 {
-            self.anim_start(stable_id, &config);
+            self.anim_start(stable_id, &config, rules, None);
         }
         Ok(stable_id)
     }
@@ -1025,7 +1029,7 @@ impl Simulation {
                 .insert(object)
                 .is_none()
         );
-        self.anim_start(stable_id, &config);
+        self.anim_start(stable_id, &config, rules, None);
         Ok(stable_id)
     }
 
@@ -1180,7 +1184,7 @@ impl Simulation {
             if anim.runtime.delay_remaining > 0 {
                 anim.runtime.delay_remaining -= 1;
                 if anim.runtime.delay_remaining == 0 {
-                    self.anim_start(id, &config);
+                    self.anim_start(id, &config, rules, overlay_registry);
                 }
                 return;
             }
@@ -1189,7 +1193,7 @@ impl Simulation {
         let mut action = VisitAction::None;
         let mut random_loop_delay = None;
         let current_frame = self.session.binary_frame as i32;
-        {
+        let (middle, boundary) = {
             let Some(anim) = self.anim_mut_by_id(id) else {
                 return;
             };
@@ -1210,21 +1214,31 @@ impl Simulation {
                 .runtime
                 .current_frame
                 .wrapping_add(anim.runtime.frame_step);
-
-            match advance_anim_boundary(anim, &config) {
-                AnimBoundary::Continue | AnimBoundary::Bounce => return,
-                AnimBoundary::Loop => {
-                    random_loop_delay = config.random_loop_delay;
-                }
-                AnimBoundary::Complete => {
-                    action = if let Some(next) = config.next.clone() {
-                        VisitAction::Next(next)
-                    } else if config.make_infantry != -1 {
-                        VisitAction::DestroyAfterMakeInfantryClear
-                    } else {
-                        VisitAction::Destroy
-                    };
-                }
+            // `0x0042465D..0x00424687`: the committed stage reaching the
+            // type's middle frame (`+0x298`, zero meaning Start already ran
+            // Middle) calls Middle unless the anim is a bouncer or meteor
+            // (`+0x194`), before the boundary tail.
+            let middle = middle_frame(&config).is_some_and(|middle| {
+                config.start.wrapping_add(anim.runtime.current_frame) == middle
+            }) && !(config.bouncer || config.is_meteor);
+            (middle, advance_anim_boundary(anim, &config))
+        };
+        if middle {
+            self.anim_middle(id, &config, rules, overlay_registry);
+        }
+        match boundary {
+            AnimBoundary::Continue | AnimBoundary::Bounce => return,
+            AnimBoundary::Loop => {
+                random_loop_delay = config.random_loop_delay;
+            }
+            AnimBoundary::Complete => {
+                action = if let Some(next) = config.next.clone() {
+                    VisitAction::Next(next)
+                } else if config.make_infantry != -1 {
+                    VisitAction::DestroyAfterMakeInfantryClear
+                } else {
+                    VisitAction::Destroy
+                };
             }
         }
 
@@ -1252,7 +1266,7 @@ impl Simulation {
                 );
                 self.destroy_anim(id, rules);
             }
-            VisitAction::Next(next) => self.switch_anim_type(id, &next, rules),
+            VisitAction::Next(next) => self.switch_anim_type(id, &next, rules, overlay_registry),
         }
     }
 
@@ -1778,30 +1792,111 @@ impl Simulation {
     ///
     /// The particle/scorch/crater half (`0x00424F00`) is not wired — see the
     /// module header.
-    fn anim_start(&mut self, id: AnimId, config: &AnimTypeRuntimeConfig) {
+    /// `AnimClass::Start @ 0x00424CE0`: the start sound, then Middle when the
+    /// type has no middle frame (`+0x298 == 0`, `0x00424D48..0x00424D5A`).
+    /// Constructor-time starts pass no overlay registry; no retail marking
+    /// anim has fewer than two frames, so none marks from here.
+    fn anim_start(
+        &mut self,
+        id: AnimId,
+        config: &AnimTypeRuntimeConfig,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    ) {
         let sound_name = config
             .start_sound
             .as_ref()
             .or(config.report.as_ref())
             .cloned();
-        let Some(sound_name) = sound_name else {
-            return;
-        };
-        let sound_id = self.interner.intern(&sound_name);
-        let Some(world) = self.anim_absolute_coord(id) else {
-            return;
-        };
-        if let Some(anim) = self.anim_mut_by_id(id) {
-            anim.start_sound_active = true;
+        if let Some(sound_name) = sound_name
+            && let Some(world) = self.anim_absolute_coord(id)
+        {
+            let sound_id = self.interner.intern(&sound_name);
+            if let Some(anim) = self.anim_mut_by_id(id) {
+                anim.start_sound_active = true;
+            }
+            self.sound_events.push(SimSoundEvent::AnimationStarted {
+                anim_id: id,
+                sound_id,
+                world,
+            });
         }
-        self.sound_events.push(SimSoundEvent::AnimationStarted {
-            anim_id: id,
-            sound_id,
-            world,
-        });
+        if middle_frame(config).is_none() {
+            self.anim_middle(id, config, rules, overlay_registry);
+        }
     }
 
-    fn switch_anim_type(&mut self, id: AnimId, next: &str, rules: &RuleSet) {
+    /// `AnimClass::Middle @ 0x00424F00`: marks the ground under the anim.
+    ///
+    /// The size is the type's middle-frame size (`ArtEntry::frame_width`,
+    /// 30 x 30 without an image). Nothing lands when the anim stands 30
+    /// leptons or more above the ground (`vtable+0x1C8`, `ObjectClass::
+    /// GetHeight @ 0x005F5F40`, measured from the stored Location; anims
+    /// never set OnBridge). The marks land at `GetCoords` (`vtable+0x48`).
+    ///
+    /// RESIDUAL: the `SpawnsParticle=`/`NumParticles=` loop
+    /// (`0x00425008..0x0042504B`, `0x0062E430` at the raw Location) is not
+    /// ported. Trigger: VIRUSD, the only retail type with the key.
+    fn anim_middle(
+        &mut self,
+        id: AnimId,
+        config: &AnimTypeRuntimeConfig,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    ) {
+        if !(config.scorch || config.crater) {
+            return;
+        }
+        let (Some(stored), Some(coord)) = (
+            self.anim(id).map(|anim| anim.world_coord),
+            self.anim_absolute_coord(id),
+        ) else {
+            return;
+        };
+        let stored = crate::sim::projectile::ProjectileCoord::new(stored.x, stored.y, stored.z);
+        let ground = crate::sim::projectile::projectile_ground_z(
+            self.resolved_terrain.as_ref(),
+            &self.effective_shared_cell_dummy(),
+            stored,
+        );
+        if stored.z.wrapping_sub(ground) >= ANIM_MIDDLE_MAX_HEIGHT {
+            return;
+        }
+        let type_name = self
+            .anim(id)
+            .map(|anim| self.interner.resolve(anim.type_id).to_ascii_uppercase());
+        let (width, height) = type_name
+            .as_deref()
+            .and_then(|name| rules.art_registry.get(name))
+            .map_or((30, 30), |entry| {
+                (i32::from(entry.frame_width), i32::from(entry.frame_height))
+            });
+        let marks = crate::sim::combat::smudge_dispatch::AnimMiddleMarks {
+            scorch: config.scorch,
+            crater: config.crater,
+            force_big_craters: config.force_big_craters,
+            width,
+            height,
+        };
+        let coord = crate::sim::smudge_grid::SimCoord {
+            x: coord.x,
+            y: coord.y,
+            z: coord.z,
+        };
+        self.commit_smudge_request_inline(
+            rules,
+            overlay_registry,
+            crate::sim::combat::SmudgeSpawnRequest::AnimMiddle { coord, marks },
+        );
+    }
+
+    fn switch_anim_type(
+        &mut self,
+        id: AnimId,
+        next: &str,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    ) {
         let Some(config) = rules.art_registry.anim_runtime_config(next).cloned() else {
             self.destroy_anim(id, rules);
             return;
@@ -1840,7 +1935,7 @@ impl Simulation {
             anim.runtime.first_ai_guard = false;
             anim.runtime.inactive = false;
         }
-        self.anim_start(id, &config);
+        self.anim_start(id, &config, rules, overlay_registry);
     }
 }
 
@@ -1865,6 +1960,19 @@ fn effective_bounds(
         config.loop_end
     };
     Ok((effective_end, effective_loop_end))
+}
+
+/// `AnimClass::Middle @ 0x00424F00`'s height gate (`0x00425057`).
+pub(crate) const ANIM_MIDDLE_MAX_HEIGHT: i32 = 30;
+
+/// The type's middle frame, `AnimTypeClass+0x298`: the raw SHP frame count
+/// halved (`AnimTypeClass::Load_Image @ 0x00427B50`). None when it is zero,
+/// where Start runs Middle instead.
+fn middle_frame(config: &AnimTypeRuntimeConfig) -> Option<i32> {
+    config
+        .raw_shp_frame_count
+        .map(|raw| raw / 2)
+        .filter(|&middle| middle != 0)
 }
 
 fn native_loop_remaining(loop_count: i32, constructor_loop: i32) -> u8 {
@@ -2175,7 +2283,7 @@ mod tests {
                 .unwrap();
             // Native corpus deliberately has type+340=999 and a different
             // retained instance+104. Exercise the real Next type transition.
-            sim.switch_anim_type(id, "A_NEXT", &rules);
+            sim.switch_anim_type(id, "A_NEXT", &rules, None);
             assert_eq!(
                 sim.anim(id).unwrap().display.y_sort_adjust,
                 input["adjust"].as_i64().unwrap() as i32
@@ -2500,6 +2608,7 @@ mod tests {
                     crate::util::fixed_math::SIM_ZERO,
                     crate::util::fixed_math::SIM_ZERO,
                     0,
+                    0,
                 )
                 .unwrap();
             let neighbor = sim
@@ -2510,6 +2619,7 @@ mod tests {
                     9,
                     crate::util::fixed_math::SIM_ZERO,
                     crate::util::fixed_math::SIM_ZERO,
+                    0,
                     0,
                 )
                 .unwrap();
@@ -2705,6 +2815,7 @@ mod tests {
                 crate::util::fixed_math::SimFixed::from_num(128),
                 crate::util::fixed_math::SimFixed::from_num(64),
                 3,
+                3 * LEVEL_HEIGHT_LEPTONS,
             )
             .expect("bound explosion art constructs an AnimClass");
 
@@ -2767,6 +2878,7 @@ mod tests {
                 1,
                 crate::util::fixed_math::SIM_ZERO,
                 crate::util::fixed_math::SIM_ZERO,
+                0,
                 0,
             )
             .is_none()
@@ -2981,6 +3093,98 @@ mod tests {
             "height-only clear targets deck after a nonstructural ground mark"
         );
         assert_eq!(grid.deck_bits(7, 8), 0);
+    }
+
+    /// A world whose flat 8x8 map takes a 1x1 crater and a 1x1 scorch.
+    fn middle_world(art_text: &str, frames: i32) -> (RuleSet, Simulation) {
+        let mut rules = runtime_rules(art_text, &[("MARK", frames)]);
+        rules.smudge_types =
+            crate::rules::smudge_type::SmudgeTypeRegistry::from_rules_ini(&IniFile::from_str(
+                "[SmudgeTypes]\n0=CR1\n1=BURN1\n\
+                 [CR1]\nCrater=yes\nWidth=1\nHeight=1\n\
+                 [BURN1]\nBurn=yes\nWidth=1\nHeight=1\n",
+            ));
+        let mut sim = Simulation::new();
+        let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(8);
+        for ry in 0..8 {
+            for rx in 0..8 {
+                terrain.cell_mut(rx, ry).unwrap().accepts_smudge = true;
+            }
+        }
+        sim.resolved_terrain = Some(terrain);
+        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
+        sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(8, 8));
+        (rules, sim)
+    }
+
+    fn spawn_mark(sim: &mut Simulation, rules: &RuleSet, world_z: i32) -> AnimId {
+        let name = sim.interner.intern("MARK");
+        let center = crate::util::lepton::CELL_CENTER_LEPTON;
+        sim.spawn_combat_explosion_anim(rules, name, 4, 4, center, center, 0, world_z)
+            .unwrap()
+    }
+
+    fn marks_placed(sim: &Simulation) -> usize {
+        sim.smudge_grid.as_ref().unwrap().iter_occupied().count()
+    }
+
+    /// `AnimClass::AI 0x0042465D`: a 13-frame crater anim (S_CLSN22, the
+    /// AP warhead's large AnimList entry) marks the ground once, on the
+    /// visit that commits stage 6 (`13 / 2`), not at construction.
+    #[test]
+    fn a_crater_anim_marks_the_ground_at_its_middle_frame() {
+        let (rules, mut sim) = middle_world("[MARK]\nRate=900\nCrater=yes\n", 13);
+        let id = spawn_mark(&mut sim, &rules, 0);
+        assert_eq!(
+            marks_placed(&sim),
+            0,
+            "Start leaves a 13-frame anim to its middle frame"
+        );
+        let mut saw_middle = false;
+        for frame in 1..40 {
+            sim.session.binary_frame = frame;
+            sim.visit_anim(id, &rules, None);
+            let Some(anim) = sim.anim(id) else {
+                break;
+            };
+            let stage = anim.runtime.current_frame;
+            saw_middle |= stage == 6;
+            assert_eq!(marks_placed(&sim), usize::from(stage >= 6), "stage {stage}");
+        }
+        assert!(saw_middle);
+        assert_eq!(marks_placed(&sim), 1);
+        assert_eq!(
+            sim.smudge_grid.as_ref().unwrap().cell(4, 4).type_id,
+            Some(0)
+        );
+    }
+
+    /// `AnimClass::Middle 0x00425057`: an anim 30 leptons or more above the
+    /// ground leaves no mark; 29 still marks.
+    #[test]
+    fn an_anim_thirty_leptons_up_leaves_no_mark() {
+        for (world_z, expected) in [(30, 0), (29, 1)] {
+            let (rules, mut sim) = middle_world("[MARK]\nRate=900\nScorch=yes\n", 13);
+            let id = spawn_mark(&mut sim, &rules, world_z);
+            for frame in 1..40 {
+                sim.session.binary_frame = frame;
+                sim.visit_anim(id, &rules, None);
+            }
+            assert_eq!(marks_placed(&sim), expected, "z {world_z}");
+        }
+    }
+
+    /// `AnimClass::Start 0x00424D48`: a type without a middle frame (one raw
+    /// frame, so `+0x298` is 0) marks at Start, before any AI visit.
+    #[test]
+    fn a_single_frame_anim_marks_at_start() {
+        let (rules, mut sim) = middle_world("[MARK]\nRate=900\nScorch=yes\n", 1);
+        spawn_mark(&mut sim, &rules, 0);
+        assert_eq!(marks_placed(&sim), 1);
+        assert_eq!(
+            sim.smudge_grid.as_ref().unwrap().cell(4, 4).type_id,
+            Some(1)
+        );
     }
 
     #[test]

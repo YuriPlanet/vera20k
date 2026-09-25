@@ -1371,6 +1371,9 @@ pub struct ExplosionEffect {
     /// Sub-cell impact Y in leptons.
     pub sub_y: SimFixed,
     pub z: u8,
+    /// Exact absolute Z in leptons; the anim is constructed there (its Middle
+    /// height gate reads it). `z` is the level byte of the same point.
+    pub world_z: i32,
     /// A death producer's own constructor call (`Death_Explosion`, the
     /// Aircraft death arm, `DestructionEffects`): `AnimClass(type, coord,
     /// delay, 1, 0x600, 0, 0)` at an exact coordinate. `None` rows construct
@@ -1410,18 +1413,12 @@ pub struct CombatLightRequest {
 /// a test adapter.
 #[derive(Debug, Clone)]
 pub enum SmudgeSpawnRequest {
-    /// Emitted alongside ExplosionEffect when a warhead's AnimList anim spawns.
-    /// Carries the anim's interned SHP name for AnimType flag lookup.
-    Anim {
-        anim_name: InternedId,
-        rx: u16,
-        ry: u16,
-        sub_x: SimFixed,
-        sub_y: SimFixed,
-        /// Exact absolute CoordStruct Z. ExplosionEffect keeps its separate
-        /// coarse presentation byte; the native smudge altitude gate is in
-        /// leptons and must never reconstruct this value from that byte.
-        world_z_leptons: i32,
+    /// `AnimClass::Middle @ 0x00424F00` past its height gate: the anim's
+    /// coordinate (vt+0x48) and its marks. The anim runtime emits it at Start
+    /// or at the anim's middle frame.
+    AnimMiddle {
+        coord: crate::sim::smudge_grid::SimCoord,
+        marks: smudge_dispatch::AnimMiddleMarks,
     },
     /// Emitted once per >=2x2 building destruction (DestructionEffects path).
     BuildingCenter {
@@ -1465,7 +1462,6 @@ pub(crate) fn emit_infantry_death_anim(
     world_z_leptons: i32,
     interner: &mut StringInterner,
     explosion_effects: &mut Vec<ExplosionEffect>,
-    smudge_spawn_requests: &mut Vec<SmudgeSpawnRequest>,
 ) {
     let Some(anim_name) = general.infantry_death_anim(inf_death) else {
         return;
@@ -1478,22 +1474,14 @@ pub(crate) fn emit_infantry_death_anim(
         sub_x,
         sub_y,
         z,
+        world_z: world_z_leptons,
         death: None,
-    });
-    smudge_spawn_requests.push(SmudgeSpawnRequest::Anim {
-        anim_name,
-        rx,
-        ry,
-        sub_x,
-        sub_y,
-        world_z_leptons,
     });
 }
 
-/// Emit the warhead's AnimList animation and a paired smudge spawn request
-/// for one detonation at (rx, ry, z). Mirrors gamemd's WarheadType::Detonate
-/// dispatch into AnimClass::Start: every detonation that spawns an anim
-/// also runs the anim's first-frame smudge logic.
+/// Emit the warhead's AnimList animation for one detonation at (rx, ry, z).
+/// Its scorch or crater is the anim's own `AnimClass::Middle`, which the anim
+/// runtime runs at the anim's middle frame.
 ///
 /// Pushes nothing if `warhead.anim_list` is empty.
 ///
@@ -1513,7 +1501,6 @@ pub(crate) fn emit_warhead_detonation_effects(
     world_z_leptons: i32,
     interner: &mut StringInterner,
     explosion_effects: &mut Vec<ExplosionEffect>,
-    smudge_spawn_requests: &mut Vec<SmudgeSpawnRequest>,
 ) {
     if warhead.anim_list.is_empty() {
         return;
@@ -1528,15 +1515,8 @@ pub(crate) fn emit_warhead_detonation_effects(
         sub_x,
         sub_y,
         z,
+        world_z: world_z_leptons,
         death: None,
-    });
-    smudge_spawn_requests.push(SmudgeSpawnRequest::Anim {
-        anim_name: interned_name,
-        rx,
-        ry,
-        sub_x,
-        sub_y,
-        world_z_leptons,
     });
 }
 
@@ -2133,9 +2113,7 @@ fn throw_debris_for_death(
             ShpDebrisSource::RulesMetallicDebris => rules.general.metallic_debris.get(row.index),
         };
         // Native lifts the anim coordinate by 20 leptons (`ADD EAX, 0x14` at
-        // `0x00702443`). `ExplosionEffect` carries Z as a height LEVEL, and 20
-        // leptons is under a sixth of one, so the lift is below this row's
-        // resolution and is not represented.
+        // `0x00702443`).
         if let Some(name) = name {
             let shp_name = interner.intern(name);
             explosion_effects.push(ExplosionEffect {
@@ -2145,6 +2123,7 @@ fn throw_debris_for_death(
                 sub_x,
                 sub_y,
                 z,
+                world_z: world_z_leptons.wrapping_add(0x14),
                 death: None,
             });
         }
@@ -3347,7 +3326,7 @@ mod impact_height_tests {
     }
 
     #[test]
-    fn gsi_04_11_fatal_infantry_special_anim_emits_effect_and_smudge_request() {
+    fn gsi_04_11_fatal_infantry_special_anim_emits_effect_at_the_body_height() {
         let mut interner = test_interner();
         let general = crate::rules::ruleset::GeneralRules::default();
         let cases = [
@@ -3364,7 +3343,6 @@ mod impact_height_tests {
         ];
         for (inf_death, expected_name) in cases {
             let mut effects = Vec::new();
-            let mut smudges = Vec::new();
             emit_infantry_death_anim(
                 &general,
                 inf_death,
@@ -3376,38 +3354,21 @@ mod impact_height_tests {
                 208,
                 &mut interner,
                 &mut effects,
-                &mut smudges,
             );
             let Some(expected_name) = expected_name else {
                 assert!(effects.is_empty(), "InfDeath {inf_death}");
-                assert!(smudges.is_empty(), "InfDeath {inf_death}");
                 continue;
             };
             assert_eq!(effects.len(), 1, "InfDeath {inf_death}");
-            assert_eq!(smudges.len(), 1, "InfDeath {inf_death}");
             assert_eq!(interner.resolve(effects[0].shp_name), expected_name);
-            assert_eq!((effects[0].rx, effects[0].ry, effects[0].z), (7, 8, 2));
-            let SmudgeSpawnRequest::Anim {
-                anim_name,
-                rx,
-                ry,
-                sub_x,
-                sub_y,
-                world_z_leptons,
-            } = &smudges[0]
-            else {
-                panic!("special death effect must run the Anim smudge start path");
-            };
-            assert_eq!(interner.resolve(*anim_name), expected_name);
             assert_eq!(
                 (
-                    *rx,
-                    *ry,
-                    sub_x.to_num::<i32>(),
-                    sub_y.to_num::<i32>(),
-                    *world_z_leptons,
+                    effects[0].rx,
+                    effects[0].ry,
+                    effects[0].z,
+                    effects[0].world_z
                 ),
-                (7, 8, 64, 192, 208)
+                (7, 8, 2, 208)
             );
         }
     }

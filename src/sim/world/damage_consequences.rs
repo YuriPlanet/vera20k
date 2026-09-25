@@ -191,6 +191,7 @@ impl DamageConsequences {
                         fx.sub_x,
                         fx.sub_y,
                         fx.z,
+                        fx.world_z,
                     );
                 }
             }

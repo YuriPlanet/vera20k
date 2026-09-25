@@ -144,6 +144,7 @@ impl Simulation {
             sub_x,
             sub_y,
             z,
+            world_z: coord.z,
             death: Some(DeathAnimSpawn { coord, delay }),
         });
     }

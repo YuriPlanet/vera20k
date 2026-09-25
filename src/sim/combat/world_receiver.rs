@@ -1263,7 +1263,6 @@ pub(crate) fn handle_death(
             #[cfg(test)]
             receiver_stage_trace.append(&mut nested.receiver_stage_trace);
             under_attack_events.append(&mut pings);
-            let outer_anim_start = smudge_spawn_requests.len();
             emit_warhead_detonation_effects(
                 warhead,
                 *dmg,
@@ -1275,15 +1274,6 @@ pub(crate) fn handle_death(
                 *world_z_leptons,
                 &mut world.interner,
                 &mut explosion_effects,
-                &mut smudge_spawn_requests,
-            );
-            let outer_anim_requests = smudge_spawn_requests.split_off(outer_anim_start);
-            commit_smudges(
-                world,
-                rules,
-                overlay_registry,
-                outer_anim_requests,
-                &mut smudge_spawn_requests,
             );
             // `0x0043896A`/`0x00438982`: a bombed bridge-repair hut drops
             // its bridge after the blast.
@@ -1474,7 +1464,7 @@ fn finish_concrete_death(
     for plan in concrete_smudge_plans {
         match plan {
             ConcreteDeathSmudgePlan::Infantry(postlude) => {
-                postlude.commit(world, rules, overlay_registry, effects);
+                postlude.commit(world, rules, effects);
             }
             ConcreteDeathSmudgePlan::Building => {
                 // DestructionEffects (`0x004415F0`): the building's own anims
@@ -1825,7 +1815,6 @@ fn emit_detonation_anim(
         world_z_leptons,
         &mut world.interner,
         &mut out.effects.explosion_effects,
-        &mut out.effects.smudge_spawn_requests,
     );
 }
 
@@ -1976,8 +1965,6 @@ fn emit_missile_detonations(
         let world_z_leptons = air_impact
             .map(|impact| impact.z_leptons)
             .unwrap_or_else(|| impact_z.wrapping_mul(LEPTONS_PER_LEVEL as i32));
-        let mut outer_explosions = Vec::new();
-        let mut outer_smudges = Vec::new();
         emit_warhead_detonation_effects(
             warhead,
             det.damage,
@@ -1988,16 +1975,7 @@ fn emit_missile_detonations(
             impact_z_byte(impact_z),
             world_z_leptons,
             &mut world.interner,
-            &mut outer_explosions,
-            &mut outer_smudges,
-        );
-        out.effects.explosion_effects.extend(outer_explosions);
-        commit_smudges(
-            world,
-            rules,
-            overlay_registry,
-            outer_smudges,
-            &mut out.effects.smudge_spawn_requests,
+            &mut out.effects.explosion_effects,
         );
         let aoe = {
             let collected = collect_area(
