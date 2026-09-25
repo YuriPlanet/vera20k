@@ -2428,7 +2428,7 @@ fn hash_locomotor_runtime(
     0i32.hash(hasher);
     0i32.hash(hasher);
     if !schema.includes(HashFeature::RetiredJumpjetLegacyBlock) {
-        hash_retired_jumpjet_legacy_block(&runtime.payload, hasher);
+        hash_retired_jumpjet_legacy_block(hasher);
     }
     common.balloon_hover.hash(hasher);
     common.hover_attack.hash(hasher);
@@ -2448,36 +2448,19 @@ fn hash_locomotor_runtime(
 }
 
 /// The retired VERA copy of the Jumpjet type block in the common locomotor
-/// runtime (speed, accel, current speed, deviation, climb-plus-crash times 15,
-/// turn rate), which only a Jumpjet linked from its type held; every other
-/// locomotor held zeros and the constructor's turn rate 4. Recomputed from the
-/// linked block, so it reproduces fixtures whose `JumpjetSpeed=` is whole.
-fn hash_retired_jumpjet_legacy_block(
-    payload: &crate::sim::movement::locomotion::piggyback::LocomotorRuntimePayload,
-    hasher: &mut impl Hasher,
-) {
-    use crate::sim::movement::locomotion::piggyback::LocomotorRuntimePayload;
-    use crate::util::fixed_math::{SIM_ZERO, SimFixed, sim_from_f32};
-    let (speed, accel, deviation, crash_speed, turn_rate) = match payload {
-        LocomotorRuntimePayload::Jumpjet(state) => {
-            let params = &state.params;
-            let single = |bits: u32| sim_from_f32(f32::from_bits(bits));
-            (
-                SimFixed::from_num(params.speed),
-                single(params.accel_bits),
-                params.deviation,
-                (single(params.climb_bits) + single(params.crash_bits)) * SimFixed::from_num(15),
-                params.turn_rate,
-            )
-        }
-        _ => (SIM_ZERO, SIM_ZERO, 0, SIM_ZERO, 4),
-    };
-    speed.to_bits().hash(hasher);
-    accel.to_bits().hash(hasher);
+/// runtime (speed, accel, current speed, deviation, crash speed, turn rate).
+/// It never followed the payload: every stashed runtime in stock play (only
+/// the Chrono Miner piggybacks) and in the pinned fixtures held a
+/// non-Jumpjet's zeros and the constructor's turn rate 4, which is what
+/// earlier schemas fold here.
+fn hash_retired_jumpjet_legacy_block(hasher: &mut impl Hasher) {
+    use crate::util::fixed_math::SIM_ZERO;
+    for _ in 0..3 {
+        SIM_ZERO.to_bits().hash(hasher);
+    }
+    0i32.hash(hasher);
     SIM_ZERO.to_bits().hash(hasher);
-    deviation.hash(hasher);
-    crash_speed.to_bits().hash(hasher);
-    turn_rate.hash(hasher);
+    4i32.hash(hasher);
 }
 
 fn hash_locomotor_payload(
