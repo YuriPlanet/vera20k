@@ -1043,7 +1043,7 @@ pub(super) fn dying_infantry_techno_ai(
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity
             .estimated_health
-            .recover(i32::from(entity.health.current), sim.session.binary_frame);
+            .recover(entity.health.current, sim.session.binary_frame);
     }
     allied_target_drop_step(sim, id, rules);
     illegal_target_drop_step(sim, id, rules);
@@ -1337,19 +1337,10 @@ fn unit_techno_bracket(
 
 // ===== Passive / opportunity target acquisition =====
 //
-// This is what makes an idle Grizzly shoot a tank that drives past and a
-// Patriot Missile engage on its own. The original runs it inside the common
-// Techno AI body, after mission dispatch and before the object's locomotion,
-// behind a per-object cadence timer: when the timer expires and the object is
-// on Move, Harvest or Guard, the shared target scanner runs, re-arms the timer
-// and (with no target already installed) installs one.
-//
-// The whole block is behind the object's OWN mission and type flags — no
-// order, no prior damage, and no player input is involved.
-
-/// Largest value of the scanner's timer jitter draw (`RandomRanged(0, 2)` —
-/// three outcomes, inclusive).
-const PASSIVE_SCAN_DELAY_JITTER_MAX: u32 = 2;
+// What makes an idle Grizzly shoot a tank that drives past: the passive block
+// of TechnoClass::AI_Update (`0x006FA65A`) asks the gate and runs
+// Retaliate_And_Scan. Both live in `target_scan`; this section keeps the
+// mission-change drop of a scanner-installed target.
 
 /// Missions on which a passively-acquired target is dropped, before the AI
 /// counter runs. Meaning: the moment an object takes a job that should not be
@@ -2647,7 +2638,7 @@ mod tests {
         insert_scannable(&mut sim, 1, "Americans", "MTNK", EntityCategory::Unit);
 
         let mut probe = sim.scenario_rng.clone();
-        let expected_jitter = probe.next_range_u32_inclusive(0, PASSIVE_SCAN_DELAY_JITTER_MAX);
+        let expected_jitter = probe.next_range_u32_inclusive(0, 2);
 
         passive_acquire_step(&mut sim, 1, Some(&rules), ObjectAiCtx::default());
 
@@ -2678,7 +2669,7 @@ mod tests {
         insert_scannable(&mut sim, 1, "Americans", "MTNK", EntityCategory::Unit);
 
         let mut expected_scenario = sim.scenario_rng.clone();
-        expected_scenario.next_range_u32_inclusive(0, PASSIVE_SCAN_DELAY_JITTER_MAX);
+        expected_scenario.next_range_u32_inclusive(0, 2);
         let main_before = sim.main_rng.state();
         let mapgen_before = sim.mapgen_rng.state();
 

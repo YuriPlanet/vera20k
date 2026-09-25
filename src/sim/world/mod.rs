@@ -3785,6 +3785,11 @@ impl Simulation {
             }
             id
         };
+        #[cfg(not(test))]
+        debug_assert!(
+            !self.substrate.entities.contains(id),
+            "stable id {id} is already live"
+        );
         self.substrate.next_stable_object_id = id.saturating_add(1);
         id
     }

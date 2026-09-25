@@ -2109,7 +2109,7 @@ fn admit_attacker_fire<'r>(
         }),
         TargetKind::Cell(rx, ry) => {
             // Synthetic target_data for force-fire-on-cell.
-            // - hp = 1 so the "target dead" retarget branch never fires for cells.
+            // - hp = 1: a cell is never a dead target.
             // - category = Structure so weapon-vs-armor selection picks an
             //   anti-structure weapon when one exists; otherwise falls
             //   through to primary (matches "fire your default weapon at
@@ -3065,6 +3065,8 @@ fn reveal_on_fire(world: &mut Simulation, rules: &RuleSet, firer_id: u64, target
         if owned && firer.category == EntityCategory::Aircraft {
             return;
         }
+        // `0x006FF692..0x006FF6B4`: IsShrouded, else `0x005865E0`, which is
+        // `XOR AL,AL; RET 4` and never admits, so IsShrouded alone decides.
         let shrouded = match world.resolved_terrain.as_ref() {
             Some(terrain) => {
                 let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
@@ -3213,6 +3215,7 @@ fn emit_admitted_fire(
     // unique id (`0x00410230`) before the launch math, so a launch that then
     // fails has still spent one.
     let bullet_id = world.allocate_stable_id();
+    fireat_estimate_debit(world, rules, snap.stable_id, obj, weapon);
     let launched = {
         let impact_world_z_leptons = attack_world_z_leptons(
             snap.target,
@@ -3575,9 +3578,6 @@ fn emit_admitted_fire(
         occupied_building: snap.garrison.is_some(),
         firer_category: snap.category,
     });
-    if weapon.reveal_on_fire {
-        reveal_on_fire(world, rules, snap.stable_id, snap.target);
-    }
 
     // `TechnoClass::FireAt @ 0x006FF031..0x006FF085`, right after
     // `BulletClass::Fire`: an occupied building advances its firing occupant,
@@ -3585,8 +3585,7 @@ fn emit_admitted_fire(
     // rearm below (`GetROF` at `0x006FF289` takes the building's weapon
     // through `BuildingClass::GetWeapon @ 0x004526F0`, i.e. the NEXT
     // occupant's ROF and Burst) and the shot's own kill credit, since its
-    // Inviso bullet detonates later in its own AI (VERA's inline commit after
-    // this emission).
+    // Inviso bullet detonates later, in its own AI in this frame's Logic tail.
     if is_garrison
         && let Some(cargo) = world
             .substrate
@@ -3701,6 +3700,10 @@ fn emit_admitted_fire(
     {
         out.ammo_deduct.push(snap.stable_id);
     }
+    // `0x006FF66C`, after DecreaseAmmo (`0x006FF656`): RevealOnFire.
+    if weapon.reveal_on_fire {
+        reveal_on_fire(world, rules, snap.stable_id, snap.target);
+    }
 
     fireat_tail(world, rules, snap, weapon, Some(bullet_id));
 }
@@ -3729,6 +3732,54 @@ fn fireat_tail(
 ) {
     if weapon.limbo_launch {
         world.parasite_limbo_launch(snap.stable_id, snap.target, weapon, bullet, rules);
+    }
+}
+
+/// `TechnoClass::FireAt 0x006FE582..0x006FE622`, right after the bullet is
+/// built and before the launch math, so a launch that then fails has debited
+/// too. A Foot firer whose locomotor `Is_Moving` (vt `+0x10`) and whose type
+/// is not `JumpJet=` (`+0xD94`) marks the bullet (`+0xB4`, read nowhere in the
+/// bullet's AI, Fire or Detonate), and a marked bullet skips the debit.
+/// Otherwise, unless the BulletType is `Inaccurate=` (`+0x2A2`), a TarCom
+/// (`+0x2B4`) that is a Techno has `EstimateDamage(TarCom, weapon)` taken off
+/// its retained estimate (`+0x70`). The weapon is the one FireAt just
+/// installed on the bullet (`SetWeaponType 0x0046B260`); a shot with no
+/// BulletType fires the default Inviso type, which is not Inaccurate.
+/// RESIDUAL: `motion_query::is_moving` has no answer for a Hover or Teleport
+/// firer and reads as not moving, so such a firer debits while moving.
+/// Trigger: a hover or Chrono unit firing on the move. Effect: its target's
+/// estimate runs lower than native's until the next recovery.
+fn fireat_estimate_debit(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    firer_id: u64,
+    obj: &ObjectType,
+    weapon: &WeaponType,
+) {
+    let Some(firer) = world.substrate.entities.get(firer_id) else {
+        return;
+    };
+    let foot = matches!(
+        firer.category,
+        EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+    );
+    let marked = foot
+        && crate::sim::movement::motion_query::is_moving(firer).unwrap_or(false)
+        && !obj.jumpjet;
+    let inaccurate = weapon
+        .projectile
+        .as_deref()
+        .and_then(|id| rules.projectile(id))
+        .is_some_and(|projectile| projectile.inaccurate);
+    let Some(TargetKind::Entity(target_id)) = firer.attack_target.as_ref().map(|a| a.target) else {
+        return;
+    };
+    if marked || inaccurate {
+        return;
+    }
+    let estimate = super::estimated_damage_on(world, rules, firer_id, target_id, weapon);
+    if let Some(target) = world.substrate.entities.get_mut(target_id) {
+        target.estimated_health.debit(estimate);
     }
 }
 
@@ -4335,7 +4386,7 @@ pub(crate) fn tick_combat(
     // inline loop, preserving both event order and inline Scenario-RNG draws.
     // Fire is category-agnostic (Units fire through the same body here); Unit
     // FACING destinations use the preseeded native read window above, with
-    // own-retarget/remove replacement below, then are applied post-batch by
+    // the attacker's own target-removal replacement below, then are applied post-batch by
     // `unit_post::apply_unit_facing`.
     //
     // The firing update's tail (`UnitClass::AI @ 0x007365E1`, the Gattling

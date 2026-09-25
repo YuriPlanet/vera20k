@@ -219,13 +219,17 @@ struct ProjectileDelivery {
 /// `0x006FE55D`). Such a shot is fired as a default BulletType with
 /// `Inviso=yes`, so fixtures land in the firing frame like the small-arms shots
 /// they stand for; its detonation takes no scatter or cluster draws.
-fn missing_projectile_fallback() -> crate::rules::projectile_type::ProjectileType {
-    let ini = crate::rules::ini_parser::IniFile::from_str("[MissingBulletType]\nInviso=yes\n");
-    crate::rules::projectile_type::ProjectileType::from_ini_section(
-        "MissingBulletType",
-        ini.section("MissingBulletType").expect("fallback section"),
-        None,
-    )
+fn missing_projectile_fallback() -> &'static crate::rules::projectile_type::ProjectileType {
+    static FALLBACK: std::sync::OnceLock<crate::rules::projectile_type::ProjectileType> =
+        std::sync::OnceLock::new();
+    FALLBACK.get_or_init(|| {
+        let ini = crate::rules::ini_parser::IniFile::from_str("[MissingBulletType]\nInviso=yes\n");
+        crate::rules::projectile_type::ProjectileType::from_ini_section(
+            "MissingBulletType",
+            ini.section("MissingBulletType").expect("fallback section"),
+            None,
+        )
+    })
 }
 
 /// The BulletType facts a weapon's shot is fired with, and its flight arm.
@@ -287,18 +291,11 @@ fn classify_projectile_delivery(
     weapon: &crate::rules::weapon_type::WeaponType,
     rules: &RuleSet,
 ) -> ProjectileDelivery {
-    let fallback;
-    let projectile = match weapon
+    let projectile = weapon
         .projectile
         .as_deref()
         .and_then(|projectile_id| rules.projectile(projectile_id))
-    {
-        Some(projectile) => projectile,
-        None => {
-            fallback = missing_projectile_fallback();
-            &fallback
-        }
-    };
+        .unwrap_or_else(|| missing_projectile_fallback());
     // `BulletClass::AI @ 0x004666E0` selects an arm exactly twice: `ROT < 1` at
     // `0x004668D1`, then `Vertical` (`+0x2C0`) at `0x004671D0`. Nothing else
     // participates.
@@ -372,15 +369,14 @@ mod projectile_delivery_tests {
         );
         let rules = RuleSet::from_ini(&ini).expect("projectile fixture parses");
 
-        for weapon_name in ["ProxGun", "CliffGun"] {
+        // Only ROT picks the homing arm; Proximity= and SubjectToCliffs= pick
+        // no flight arm at all.
+        for (weapon_name, homing) in [("ProxGun", true), ("CliffGun", false)] {
             let weapon = rules.weapon(weapon_name).expect("weapon");
-            assert!(
-                matches!(
-                    classify_projectile_delivery(weapon, &rules),
-                    ProjectileDelivery { .. }
-                ),
-                "{weapon_name} must stay on the tracked path"
-            );
+            let delivery = classify_projectile_delivery(weapon, &rules);
+            assert_eq!(delivery.tracks_target, homing, "{weapon_name}");
+            assert_eq!(delivery.vertical, None, "{weapon_name}");
+            assert!(!delivery.inviso, "{weapon_name}");
         }
     }
 
@@ -435,15 +431,13 @@ mod projectile_delivery_tests {
              [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
         );
         let rules = RuleSet::from_ini(&ini).expect("projectile fixture parses");
-        for weapon_name in ["W0", "W1", "W2", "W3"] {
+        // Bouncy=, Degenerates=, Inaccurate=/FlakScatter= and Dropping= select
+        // no flight arm: ROT alone does.
+        for (weapon_name, homing) in [("W0", false), ("W1", false), ("W2", false), ("W3", true)] {
             let weapon = rules.weapon(weapon_name).expect("weapon");
-            assert!(
-                matches!(
-                    classify_projectile_delivery(weapon, &rules),
-                    ProjectileDelivery { .. }
-                ),
-                "{weapon_name} must stay on the tracked path"
-            );
+            let delivery = classify_projectile_delivery(weapon, &rules);
+            assert_eq!(delivery.tracks_target, homing, "{weapon_name}");
+            assert_eq!(delivery.vertical, None, "{weapon_name}");
         }
         // The flak arm is only selected when `FlakScatter && !Inviso`.
         let flak = rules.weapon("W2").expect("weapon");
@@ -1569,7 +1563,9 @@ pub struct TiberiumReductionRequest {
 /// The frame admits bullets and applies facing before committing the packet at
 /// its existing post-SpawnManager boundary.
 pub struct CombatTickResult {
-    /// Bullets admitted after the current BulletClass pass; no recursive advance.
+    /// Shrapnel bullets from detonations the combat pass committed; the frame
+    /// admits them before its Logic tail visits the new objects. FireAt admits
+    /// its own bullets directly.
     pub projectile_spawns: Vec<ProjectileSpawn>,
     /// Phase-2 entry facing slots, amended by explicit retarget/removal and
     /// Fire_At_Target hull turns, applied by unit_post before SpawnManager.

@@ -2567,6 +2567,12 @@ pub(crate) fn initialize_map_roster_houses(
             sim.session.game_options.tech_level,
         );
         house_state.player_control = player_control;
+        // RESIDUAL: a map-declared house keeps the constructor's difficulty
+        // and ROF bias 1.0 (`HouseClass+0x1A8`); only launch slots pass
+        // through `set_difficulty`. Native's difficulty assignment for map
+        // houses (campaign computer houses, map civilians) is not traced.
+        // Trigger: a weapon reload of such a house. Effect: its GetROF lacks
+        // the difficulty row.
         house_state.base_plan.percent_built = house.base_plan.percent_built;
         house_state.base_plan.nodes = house
             .base_plan

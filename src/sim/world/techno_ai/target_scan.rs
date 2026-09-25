@@ -283,6 +283,10 @@ fn passive_acquire_gate(sim: &Simulation, id: u64, rules: &RuleSet, mission: Mis
 /// - it is not armed (vt+0x2AC).
 ///
 /// Every term is a pure predicate, so their order is not observable.
+/// RESIDUAL: the slave term reads `slave_harvester`, which liberation
+/// (`0x006B0AE0`, not ported) never clears. Trigger: a Slave Miner dies and
+/// frees its slaves. Effect: they never acquire, where native's pick fights
+/// with `SHOVEL` (Damage=30); the same liberation residual as ShouldRetaliate.
 pub(super) fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;

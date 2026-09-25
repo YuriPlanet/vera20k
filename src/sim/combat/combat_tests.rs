@@ -5149,6 +5149,48 @@ fn undeployed_guardian_gi_vs_infantry_uses_m60() {
     assert_eq!(store.get(2).unwrap().health.current, 110);
 }
 
+/// `TechnoClass::FireAt 0x006FE5E2..0x006FE622`: every launched shot whose
+/// BulletType is not `Inaccurate=` takes `EstimateDamage` off its TarCom's
+/// retained estimate (`+0x70`), apart from the bullet's own damage.
+#[test]
+fn a_shot_debits_its_targets_estimate_unless_inaccurate() {
+    for inaccurate in [false, true] {
+        let ini = format!(
+            "[InfantryTypes]\n0=GGI\n1=E2\n\n[VehicleTypes]\n\n[AircraftTypes]\n\n[BuildingTypes]\n\n\
+             [GGI]\nStrength=100\nArmor=none\nSpeed=4\nPrimary=M60\n\n\
+             [E2]\nStrength=125\nArmor=none\nSpeed=4\n\n\
+             [M60]\nDamage=15\nROF=20\nRange=4\nProjectile=Shot\nWarhead=SA\n\n\
+             [Shot]\nInviso=yes\nInaccurate={}\n\n\
+             [SA]\nVerses=100%,80%,80%,50%,25%,25%,75%,50%,25%,100%,100%\n",
+            if inaccurate { "yes" } else { "no" }
+        );
+        let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
+        let mut store = EntityStore::new();
+        store.insert(make_infantry_entity(1, "GGI", 0, 0, 100));
+        store.insert(make_infantry_entity(2, "E2", 3, 0, 125));
+        let before = store.get(2).unwrap().estimated_health.get();
+        let mut interner = test_interner();
+        issue_attack_command(&mut store, 1, 2, None, &interner);
+        tick_combat(
+            &mut store,
+            &mut OccupancyGrid::new(),
+            &rules,
+            &mut interner,
+            0,
+            100,
+            0,
+            &mut SimRng::new(1),
+        );
+        let target = store.get(2).unwrap();
+        assert_eq!(target.health.current, 110, "the bullet lands either way");
+        assert_eq!(
+            target.estimated_health.get(),
+            if inaccurate { before } else { before - 15 },
+            "Inaccurate={inaccurate}"
+        );
+    }
+}
+
 #[test]
 fn deployed_guardian_gi_vs_rhino_at_six_cells_uses_missilelauncher() {
     let rules = guardian_gi_rules();
