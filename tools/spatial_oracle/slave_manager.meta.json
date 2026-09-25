@@ -9,12 +9,12 @@
   ],
   "scope": "SlaveManagerClass AI_Update 0x6AF6C0, manager state machine 0x6AFD60 (Building owner, states 0/5/6), DeploySlaves 0x6B04C0, InfantryClass::Mission_Harvest 0x522E70 and the slave deposit 0x522D50",
   "assumptions": [
-    "harvest_field fixture (refinery_dock map, House, Rules, Scenario RNG, ore/gem tables); a 2x2 Building (vtable 0x7E3EBC, Foundation index 3) at NW (12,12) as the owner; the manager and its nodes supplied at REGION without the constructor.",
+    "harvest_field fixture (refinery_dock map, House, Rules, Scenario RNG, ore/gem tables); a 2x2 Building (vtable 0x7E3EBC, Foundation index 3) at NW (12,12) as the owner, first object of its four foundation cells; the manager and its nodes supplied at REGION without the constructor.",
     "Slaves: original Infantry vtables (0x7EB058/03C/034/02C) over supplied fields and a constructed Walk (0x75AA90); SLAV type Strength 125, Storage 4, HarvestRate 150, MovementZone Infantry.",
     "Rules SlaveMiner ranges 8/14/48/3 cells (leptons), KickFrameDelay 150, ApproachTargetResetMultiplier 1 (ReadInt of retail 1.5)."
   ],
   "substitutions": [
-    "Infantry setter 0x51AA40 (writes the NavCom), Limbo 0x51DF10 (sets +0x81), Scatter 0x51D0D0 and PlayAnim 0x51D6F0 observed and answered; InfantryType CreateObject 0x523B10 returns a prepared spare; InfantryClass::Unlimbo 0x51DFF0 native (its PlaceInfantryInCell and occupy mark) unless a row supplies answers, with FootClass::Unlimbo 0x4D7170 answered after writing the coordinate and the limbo/on-map bytes (no sight reveal or layer submission); harvest_field and refinery_dock observers."
+    "Infantry setter 0x51AA40 (writes the NavCom), Limbo 0x51DF10 (sets +0x81) and PlayAnim 0x51D6F0 observed and answered; InfantryType CreateObject 0x523B10 returns a prepared spare; InfantryClass::Unlimbo 0x51DFF0 native (its PlaceInfantryInCell and occupy mark) unless a row supplies answers, with FootClass::Unlimbo 0x4D7170 answered after writing the coordinate and the limbo/on-map bytes (no sight reveal or layer submission); Scatter 0x51D0D0 native; harvest_field and refinery_dock observers."
   ],
   "entry_points": {
     "ai_update": "0x006AF6C0",
@@ -24,5 +24,5 @@
     "slave_deposit": "0x00522D50",
     "infantry_unlimbo": "0x0051DFF0"
   },
-  "payload_sha256": "31e274e4860fbf19c6352f2f2565e6737377aac4a1cbfcc611d6437ea9cdccb9"
+  "payload_sha256": "269d587d255c405e5d7aeb6de97f9e98103af10e6a23fad4981e3e2c21a076e1"
 }

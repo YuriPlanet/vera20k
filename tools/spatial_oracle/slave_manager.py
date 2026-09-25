@@ -8,10 +8,12 @@ harvest_field map fixture (its ore and gem tables, House, Rules and Scenario
 RNG).
 
 The manager and its slave nodes are supplied (no constructor). The slave's
-class setter (0x51AA40), Limbo (0x51DF10), Scatter (0x51D0D0) and PlayAnim
-(0x51D6F0) are observed and answered, and the slave type's CreateObject
-(0x523B10) hands out a prepared spare; their Rust owners carry their own
-evidence. Unlimbo (0x51DFF0) runs natively unless a row supplies its answer.
+class setter (0x51AA40), Limbo (0x51DF10) and PlayAnim (0x51D6F0) are
+observed and answered, and the slave type's CreateObject (0x523B10) hands out
+a prepared spare; their Rust owners carry their own evidence. Unlimbo
+(0x51DFF0, its PlaceInfantryInCell and occupy mark) and Scatter (0x51D0D0)
+run natively; FootClass::Unlimbo (0x4D7170) is answered after writing its
+placement, without the sight reveal and layer submission.
 State 5's relocation check (no ore within SlaveMinerShortScan) is not
 exercised: every state-5 row keeps ore within that range.
 
@@ -73,6 +75,10 @@ def make_fixture(case):
     u.mem_write(YAREFN + 0x520, dwords(YTYPE))
     u.mem_write(YAREFN + 0x6C, dwords(2000))
     u.mem_write(YAREFN + 0xAC, dwords(MISSION[case.get('owner_mission', 'guard')]))
+    # Place_Down lists it in all four foundation cells (0x5683C0).
+    for fy in range(YAREFN_NW[1], YAREFN_NW[1] + 2):
+        for fx in range(YAREFN_NW[0], YAREFN_NW[0] + 2):
+            u.mem_write(cell(fx, fy) + 0xE4, dwords(YAREFN))
     u.mem_write(YTYPE, dwords(0x7E4570))
     u.mem_write(YTYPE + 0xEF0, dwords(3))
     u.mem_write(YTYPE + 0xA0, dwords(2000))
@@ -171,7 +177,8 @@ def observe(u, read32, events, case):
         elif address == SCATTER:
             events.append(['scatter', slave_index(this), coord(read32(sp + 4)),
                            read32(sp + 8) & 0xFF, read32(sp + 12) & 0xFF])
-            ret(12)
+            if case.get('supply_scatter'):
+                ret(12)
         elif address == PLAY_ANIM:
             events.append(['play_anim', slave_index(this), read32(sp + 4)])
             u.mem_write(this + 0x6C4, dwords(read32(sp + 4)))
@@ -372,19 +379,20 @@ def main(argv=None):
                           'infantry_unlimbo': UNLIMBO},
             assumptions=['harvest_field fixture (refinery_dock map, House, Rules, Scenario RNG, ore/gem '
                          'tables); a 2x2 Building (vtable 0x7E3EBC, Foundation index 3) at NW (12,12) as the '
-                         'owner; the manager and its nodes supplied at REGION without the constructor.',
+                         'owner, first object of its four foundation cells; the manager and its nodes '
+                         'supplied at REGION without the constructor.',
                          'Slaves: original Infantry vtables (0x7EB058/03C/034/02C) over supplied fields and a '
                          'constructed Walk (0x75AA90); SLAV type Strength 125, Storage 4, HarvestRate 150, '
                          'MovementZone Infantry.',
                          'Rules SlaveMiner ranges 8/14/48/3 cells (leptons), KickFrameDelay 150, '
                          'ApproachTargetResetMultiplier 1 (ReadInt of retail 1.5).'],
-            substitutions=['Infantry setter 0x51AA40 (writes the NavCom), Limbo 0x51DF10 (sets +0x81), '
-                           'Scatter 0x51D0D0 and PlayAnim 0x51D6F0 observed and answered; InfantryType '
-                           'CreateObject 0x523B10 returns a prepared spare; InfantryClass::Unlimbo 0x51DFF0 '
-                           'native (its PlaceInfantryInCell and occupy mark) unless a row supplies answers, '
-                           'with FootClass::Unlimbo 0x4D7170 answered after writing the coordinate and the '
-                           'limbo/on-map bytes (no sight reveal or layer submission); harvest_field and '
-                           'refinery_dock observers.']),
+            substitutions=['Infantry setter 0x51AA40 (writes the NavCom), Limbo 0x51DF10 (sets +0x81) and '
+                           'PlayAnim 0x51D6F0 observed and answered; InfantryType CreateObject 0x523B10 '
+                           'returns a prepared spare; InfantryClass::Unlimbo 0x51DFF0 native (its '
+                           'PlaceInfantryInCell and occupy mark) unless a row supplies answers, with '
+                           'FootClass::Unlimbo 0x4D7170 answered after writing the coordinate and the '
+                           'limbo/on-map bytes (no sight reveal or layer submission); Scatter 0x51D0D0 '
+                           'native; harvest_field and refinery_dock observers.']),
         argv=argv)
 
 
