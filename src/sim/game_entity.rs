@@ -1056,10 +1056,11 @@ pub struct GameEntity {
     /// modelled so the object's hashed state matches what the scan performed.
     #[serde(default)]
     pub last_target_scan_frame: u32,
-    /// True while the current `attack_target` was chosen by the passive
-    /// scanner rather than given by an order or by retaliation. Gates both the
-    /// stale-target drop inside the scanner and the off-mission clear that runs
-    /// before the AI counter.
+    /// `TechnoClass+0x50C`: the passive block's scan changed the target
+    /// (`0x006FA6EE`; the teleport clone `0x007094C8` is unported). Every
+    /// Assign_Target clears it first (`0x006FCDC4`). Read by the scan's drop
+    /// step (`0x007098C3`), the off-mission clear (`0x006FA5F0`) and the Unit
+    /// approach (`0x0074162D`, VERA's pursuit skip).
     #[serde(default)]
     pub passively_acquired_target: bool,
     /// Category-specific bytes read by Mission readiness and Aircraft policy.
@@ -1563,7 +1564,8 @@ impl GameEntity {
                 construction_frame,
                 PASSIVE_SCAN_CONSTRUCTION_DELAY_FRAMES,
             ),
-            last_target_scan_frame: 0,
+            // `TechnoClass::Constructor 0x006F3106`: `+0x4FC = Frame`.
+            last_target_scan_frame: construction_frame,
             passively_acquired_target: false,
             mission_leaf: MissionLeafState::for_entity_category(category),
             suspended_attack_target: None,

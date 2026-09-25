@@ -106,7 +106,6 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
         None,
         None,
         false,
-        false,
         17,
         67,
         true,
@@ -121,48 +120,9 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
     assert!(emit.projectile_spawns.is_empty());
     assert!(emit.current_weapon_updates.is_empty());
     assert_eq!(entities.get(1).unwrap().rearm_timer, rearm_before);
-    assert!(emit.retarget_events.is_empty());
     assert!(emit.remove_attack.is_empty());
     assert_eq!(rng.logical_state(), rng_before);
     assert_eq!(entities.get(1).unwrap().current_weapon_index, 1);
-}
-
-#[test]
-fn gsi_08_05_rof_is_a_native_frame_count_plus_a_zero_to_two_jitter() {
-    // `TechnoClass::GetROF @ 0x006FCFA0` returns
-    // `ftol(ROF * difficulty + RandomRanged(0, 2))`. The jitter is ADDED, so a
-    // 20-frame weapon reloads in 20, 21 or 22 frames — never 40, and never a
-    // flat 20.
-    let mut rng = crate::sim::rng::SimRng::new(0xC0FFEE_1234);
-    let mut seen = std::collections::BTreeSet::new();
-    for _ in 0..256 {
-        seen.insert(rof_to_cooldown_frames(20, &mut rng));
-    }
-    assert_eq!(
-        seen.into_iter().collect::<Vec<_>>(),
-        vec![20, 21, 22],
-        "the jitter spans exactly RandomRanged(0, 2)"
-    );
-    // The floor and the saturating ceiling still hold with the jitter applied.
-    assert!((1..=3).contains(&rof_to_cooldown_frames(-1, &mut rng)));
-    assert!((1..=2).contains(&rof_to_cooldown_frames(0, &mut rng)));
-    assert_eq!(
-        rof_to_cooldown_frames(i32::from(u16::MAX) + 1, &mut rng),
-        u16::MAX
-    );
-}
-
-#[test]
-fn gsi_08_05_rof_jitter_is_deterministic_for_a_seed() {
-    let mut a = crate::sim::rng::SimRng::new(7);
-    let mut b = crate::sim::rng::SimRng::new(7);
-    let left: Vec<u16> = (0..32)
-        .map(|_| rof_to_cooldown_frames(26, &mut a))
-        .collect();
-    let right: Vec<u16> = (0..32)
-        .map(|_| rof_to_cooldown_frames(26, &mut b))
-        .collect();
-    assert_eq!(left, right);
 }
 
 #[test]
@@ -794,6 +754,8 @@ fn gsi_04_05_building_attack_frame_remains_live_after_world_receiver_dispatch() 
 fn make_infantry_entity(id: u64, type_ref: &str, rx: u16, ry: u16, hp: i32) -> GameEntity {
     let mut e = make_entity(id, type_ref, rx, ry, hp);
     e.category = EntityCategory::Infantry;
+    e.mission_leaf =
+        crate::sim::mission::leaf::MissionLeafState::for_entity_category(EntityCategory::Infantry);
     e.is_voxel = false;
     e.animation = Some(Animation::new(SequenceKind::Stand));
     e.infantry = Some(crate::sim::game_entity::InfantryRuntime::new());
@@ -876,7 +838,6 @@ fn gsi_04_10_projectile_inert_suppresses_bridge_ore_and_collector_rng() {
             base_damage: 100,
             warhead,
             weapon,
-            owner,
         },
         reason: ProjectileDetonationReason::ReachedTarget,
     };
@@ -1713,7 +1674,7 @@ fn gsi_04_07_damage_wad_precedes_wall_and_wood_armor_routing() {
 }
 
 #[test]
-fn gsi_04_07_damage_live_order_second_attacker_reads_restored_target() {
+fn gsi_04_07_damage_wall_dies_in_the_tail_after_both_attackers_fire() {
     let ini = IniFile::from_str(
         "[InfantryTypes]\n\
          [VehicleTypes]\n0=MTNK\n\
@@ -1730,11 +1691,10 @@ fn gsi_04_07_damage_live_order_second_attacker_reads_restored_target() {
     let registry = OverlayTypeRegistry::from_ini(&ini, None);
     let mut entities = EntityStore::new();
     entities.insert(make_entity(10, "MTNK", 5, 5, 300));
-    // The second attacker sits WEST of both the wall cell and the target it
-    // will have restored mid-tick, so one hull heading serves both. Under the
-    // turretless body gate (`UnitClass::GetFireError @ 0x00740FD0` step 17) a
-    // restored target behind the hull would simply be refused for facing, and
-    // the tick would consume one reload jitter instead of two.
+    // Both tanks fire at the wall cell in the object pass. Their (Inviso)
+    // bullets detonate in the same frame's Logic tail, where the first one
+    // razes the wall and its detach restores the second tank's suspended
+    // target (`0x0070D4A0`) for its next AI.
     let mut second = make_entity(20, "MTNK", 4, 5, 300);
     second.mission.apply_test_fixture(MissionTestFixture {
         current: MissionId::from_known(MissionType::Attack),
@@ -1811,8 +1771,8 @@ fn gsi_04_07_damage_live_order_second_attacker_reads_restored_target() {
             .iter()
             .map(|event| (event.attacker_id, event.target))
             .collect::<Vec<_>>(),
-        vec![(10, TargetKind::Cell(8, 5)), (20, TargetKind::Entity(10))],
-        "second live-order attacker must not fire its stale cell snapshot"
+        vec![(10, TargetKind::Cell(8, 5)), (20, TargetKind::Cell(8, 5))],
+        "both shots are Inviso bullets, so the wall stands until the tail"
     );
     assert_eq!(
         result
@@ -1903,7 +1863,6 @@ fn gsi_04_07_damage_prior_projectile_fatal_death_weapon_is_inline() {
                 base_damage: 10,
                 warhead: interner.intern("NoWallWH"),
                 weapon: interner.intern("Gun"),
-                owner: interner.intern("Test"),
             },
             reason: ProjectileDetonationReason::ReachedTarget,
         };
@@ -2144,7 +2103,6 @@ fn retaliates(case: RetaliationCase) -> bool {
             base_damage: 10,
             warhead: incoming_wh,
             weapon: incoming_weapon,
-            owner: source_owner,
         },
         reason: ProjectileDetonationReason::ReachedTarget,
     };
@@ -2403,60 +2361,6 @@ fn retaliation_gate_world(
     (sim, rules)
 }
 
-/// Puts `member` in a one-member team whose TeamType has `Suicide=suicide`.
-fn join_retaliation_team(sim: &mut crate::sim::world::Simulation, member: u64, suicide: bool) {
-    use crate::rules::object_type::ObjectCategory;
-    use crate::rules::team_ai_ini::TeamAiDefinitionSource;
-    use crate::sim::team_script_vm::{
-        TeamMemberTypeIdentity, TeamScriptDefinition, TeamScriptMember, TeamTaskForceDefinition,
-        TeamTaskForceEntry, TeamTypeDefinition,
-    };
-    let owner = sim.substrate.entities.get(member).unwrap().owner();
-    let member_type = TeamMemberTypeIdentity {
-        category: ObjectCategory::Vehicle,
-        id: sim.substrate.entities.get(member).unwrap().type_ref(),
-    };
-    let script_id = sim.interner.intern("GATE_SCRIPT");
-    let task_force_id = sim.interner.intern("GATE_TASK_FORCE");
-    let team_type_id = sim.interner.intern("GATE_TEAM");
-    let teams = &mut sim.team_script_vm;
-    teams.register_script(TeamScriptDefinition {
-        id: script_id,
-        source: TeamAiDefinitionSource::FixedAimd,
-        actions: Vec::new(),
-    });
-    teams.register_task_force(TeamTaskForceDefinition {
-        id: task_force_id,
-        source: TeamAiDefinitionSource::FixedAimd,
-        group: -1,
-        entries: vec![TeamTaskForceEntry {
-            member_type,
-            count: 1,
-        }],
-    });
-    teams.register_team_type(TeamTypeDefinition {
-        id: team_type_id,
-        script_id,
-        task_force_id,
-        priority: 0,
-        is_base_defense: false,
-        suicide,
-        combined_movement_zone: crate::rules::locomotor_type::MovementZone::Normal,
-        base_zone_relation_enforced: true,
-        transport_crossing_required: false,
-    });
-    teams.create_team_from_type(
-        owner,
-        team_type_id,
-        &[TeamScriptMember {
-            entity_id: member,
-            member_type,
-        }],
-        None,
-        0,
-    );
-}
-
 /// `ShouldRetaliate @ 0x007087C0`'s refusals that read world state. Each case
 /// changes one fact of a world whose baseline retaliates.
 #[test]
@@ -2535,7 +2439,12 @@ fn gsi_04_07_should_retaliate_world_refusals() {
     // `0x00708A2C..0x00708A54`: a member of a `Suicide=` team.
     for suicide in [false, true] {
         let (mut sim, rules) = tank(false);
-        join_retaliation_team(&mut sim, GATE_VICTIM, suicide);
+        crate::sim::team_script_vm::join_one_member_team_for_test(
+            &mut sim,
+            GATE_VICTIM,
+            suicide,
+            false,
+        );
         assert_eq!(
             should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE),
             !suicide,
@@ -2701,7 +2610,6 @@ fn gsi_04_07_damage_retaliation_is_receiver_synchronous_and_uses_mission_overrid
                 base_damage: 10,
                 warhead: incoming_wh,
                 weapon: incoming_weapon,
-                owner: source_owner,
             },
             reason: ProjectileDetonationReason::ReachedTarget,
         };
@@ -3734,7 +3642,6 @@ fn gsi_04_07_damage_repair_bullet_cellspread_zero_keeps_signed_area_record() {
             base_damage: weapon.damage,
             warhead: warhead_ref,
             weapon: weapon_ref,
-            owner: interner.intern("Test"),
         },
         reason: ProjectileDetonationReason::ReachedTarget,
     };
@@ -3762,8 +3669,9 @@ fn gsi_04_07_damage_repair_bullet_cellspread_zero_keeps_signed_area_record() {
         &mut inline_hooks,
         &mut emitted,
     );
-    let mut expected =
-        EntityDamageEvent::area(10, -50, 0, 77, Some(interner.intern("Test")), warhead_ref);
+    // Firer 77 is gone, so the bullet has no Owner and DamageArea takes no
+    // source house (`0x00469A69..0x00469A75`).
+    let mut expected = EntityDamageEvent::area(10, -50, 0, 77, None, warhead_ref);
     expected.near_center_ic_isolation_eligible = true;
     assert_eq!(
         emitted.damage_events,
@@ -3771,34 +3679,8 @@ fn gsi_04_07_damage_repair_bullet_cellspread_zero_keeps_signed_area_record() {
         "CellSpread=0 still enters the center receiver scan with raw signed damage"
     );
 
-    let mut main_rng = SimRng::new(3);
-    let mut handled_deaths = Vec::new();
-    let mut houses = BTreeMap::new();
-    let mut fatal_lifecycle = None;
-    let mut sound_sink = None;
-    let (death, pings) = commit_area_damage_receivers(
-        &emitted.damage_events,
-        &mut entities,
-        &mut occupancy,
-        &rules,
-        &mut interner,
-        &mut houses,
-        &[],
-        &HouseAllianceMap::new(),
-        &mut main_rng,
-        &mut scenario_rng,
-        &mut handled_deaths,
-        None,
-        None,
-        None,
-        None,
-        0,
-        &mut fatal_lifecycle,
-        &mut sound_sink,
-    );
+    // The detonation commits its receivers inline: one heal of 50.
     assert_eq!(entities.get(10).unwrap().health.current, 150);
-    assert!(death.despawned_ids.is_empty());
-    assert!(pings.is_empty());
 }
 
 /// `Apply_area_damage`'s dispatch skips an `InvisibleInGame=` building
@@ -5151,7 +5033,7 @@ fn fatal_sound_selection_uses_human_voice_then_die_sound_main_draws() {
     assert_eq!(
         scenario_rng.state(),
         scenario_before,
-        "death-sound choices must not consume Scenario RNG beyond the reload jitter"
+        "death-sound choices must not consume Scenario RNG beyond the shot's own draws"
     );
     let mut two_draw_reference = SimRng::new(1);
     two_draw_reference.next_u32();
@@ -5265,6 +5147,48 @@ fn undeployed_guardian_gi_vs_infantry_uses_m60() {
     assert_eq!(interner.resolve(ev.weapon_id), "M60");
     assert_eq!(ev.weapon_slot, WeaponSlot::Primary);
     assert_eq!(store.get(2).unwrap().health.current, 110);
+}
+
+/// `TechnoClass::FireAt 0x006FE5E2..0x006FE622`: every launched shot whose
+/// BulletType is not `Inaccurate=` takes `EstimateDamage` off its TarCom's
+/// retained estimate (`+0x70`), apart from the bullet's own damage.
+#[test]
+fn a_shot_debits_its_targets_estimate_unless_inaccurate() {
+    for inaccurate in [false, true] {
+        let ini = format!(
+            "[InfantryTypes]\n0=GGI\n1=E2\n\n[VehicleTypes]\n\n[AircraftTypes]\n\n[BuildingTypes]\n\n\
+             [GGI]\nStrength=100\nArmor=none\nSpeed=4\nPrimary=M60\n\n\
+             [E2]\nStrength=125\nArmor=none\nSpeed=4\n\n\
+             [M60]\nDamage=15\nROF=20\nRange=4\nProjectile=Shot\nWarhead=SA\n\n\
+             [Shot]\nInviso=yes\nInaccurate={}\n\n\
+             [SA]\nVerses=100%,80%,80%,50%,25%,25%,75%,50%,25%,100%,100%\n",
+            if inaccurate { "yes" } else { "no" }
+        );
+        let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
+        let mut store = EntityStore::new();
+        store.insert(make_infantry_entity(1, "GGI", 0, 0, 100));
+        store.insert(make_infantry_entity(2, "E2", 3, 0, 125));
+        let before = store.get(2).unwrap().estimated_health.get();
+        let mut interner = test_interner();
+        issue_attack_command(&mut store, 1, 2, None, &interner);
+        tick_combat(
+            &mut store,
+            &mut OccupancyGrid::new(),
+            &rules,
+            &mut interner,
+            0,
+            100,
+            0,
+            &mut SimRng::new(1),
+        );
+        let target = store.get(2).unwrap();
+        assert_eq!(target.health.current, 110, "the bullet lands either way");
+        assert_eq!(
+            target.estimated_health.get(),
+            if inaccurate { before } else { before - 15 },
+            "Inaccurate={inaccurate}"
+        );
+    }
 }
 
 #[test]
@@ -5781,19 +5705,25 @@ fn test_cell_distance() {
     assert!((cell_distance(0, 0, 1, 0) - 1.0).abs() < f32::EPSILON);
 }
 
+/// No fire path reads shroud or fog: GetFireError `0x006FC0B0`, the class
+/// fire routines and Greatest_Threat never call `IsShrouded @ 0x00586360`,
+/// and `IsFogged @ 0x005865E0` is a constant false. A target on a cell its
+/// attacker's house cannot see is shot like any other.
 #[test]
-fn test_tick_combat_visibility_blocks_fire() {
+fn an_unseen_target_is_fired_at() {
     let rules: RuleSet = test_rules();
     let mut store = EntityStore::new();
     store.insert(make_entity_owned(1, "MTNK", 5, 5, 300, "Americans"));
     store.insert(make_entity_owned(2, "MTNK", 8, 5, 300, "Soviet"));
     let mut interner = test_interner();
     issue_attack_command(&mut store, 1, 2, None, &interner);
+    align_attackers_to_targets(&mut store, &rules, &interner);
 
     let fog = FogState::default();
+    assert!(!fog.is_cell_visible(test_intern("Americans"), 8, 5));
     let mut occupancy = mark_fixture_entities(&mut store);
     let mut main_rng = SimRng::new(1);
-    tick_combat_with_fog(
+    let result = tick_combat_with_fog(
         &mut store,
         &mut occupancy,
         &rules,
@@ -5812,193 +5742,8 @@ fn test_tick_combat_visibility_blocks_fire() {
         &mut main_rng,
     );
 
-    let target_health = store.get(2).expect("target alive").health.current;
-    assert_eq!(target_health, 300, "Hidden target should not be damaged");
-    // Acquisition has no shroud gate. `TechnoClass::Evaluate_Candidate @
-    // 0x006F7CA0` was read end to end for GSI-08.01: its only visibility gates
-    // are the cloak/sensor arm at `0x006F7DA9` and the "discovered by the local
-    // player" arm at `0x006F81B8`, and the latter is guarded by `g_GameMode ==
-    // 0` — campaign only; a skirmish runs mode 5. So the re-acquire that the
-    // invisible-target branch triggers hands the attacker the SAME enemy back,
-    // and the shroud is enforced where native enforces it, at fire time.
-    assert!(
-        matches!(
-            store
-                .get(1)
-                .unwrap()
-                .attack_target
-                .as_ref()
-                .map(|t| t.target),
-            Some(crate::sim::combat::TargetKind::Entity(2))
-        ),
-        "the scan re-picks the hidden enemy; only firing is blocked"
-    );
-}
-
-#[derive(Clone, Copy)]
-enum PlayfieldRetargetBranch {
-    DeadOrMissing,
-    NewlyFriendly,
-    Invisible,
-}
-
-fn run_playfield_retarget_branch(
-    branch: PlayfieldRetargetBranch,
-    require_playfield_membership: bool,
-) -> u64 {
-    let rules = test_rules();
-    let mut store = EntityStore::new();
-    store.insert(make_entity_owned(10, "MTNK", 5, 5, 300, "Americans"));
-    let (current_hp, current_owner) = match branch {
-        PlayfieldRetargetBranch::DeadOrMissing => (0, "Soviet"),
-        PlayfieldRetargetBranch::NewlyFriendly => (300, "Allies"),
-        PlayfieldRetargetBranch::Invisible => (300, "Soviet"),
-    };
-    store.insert(make_entity_owned(
-        99,
-        "MTNK",
-        8,
-        5,
-        current_hp,
-        current_owner,
-    ));
-    let mut false_candidate = make_entity_owned(20, "MTNK", 6, 5, 300, "Soviet");
-    false_candidate.in_playfield = false;
-    store.insert(false_candidate);
-    let mut true_candidate = make_entity_owned(30, "MTNK", 7, 5, 300, "Soviet");
-    true_candidate.in_playfield = true;
-    store.insert(true_candidate);
-
-    let mut interner = test_interner();
-    issue_attack_command(&mut store, 10, 99, None, &interner);
-    let mut fog = FogState::default();
-    let american = test_intern("Americans");
-    fog.mark_visible_for_owner(american, 6, 5);
-    fog.mark_visible_for_owner(american, 7, 5);
-    if !matches!(branch, PlayfieldRetargetBranch::Invisible) {
-        fog.mark_visible_for_owner(american, 8, 5);
-    }
-    if matches!(branch, PlayfieldRetargetBranch::NewlyFriendly) {
-        fog.alliances
-            .entry("AMERICANS".to_string())
-            .or_default()
-            .insert("ALLIES".to_string());
-        fog.alliances
-            .entry("ALLIES".to_string())
-            .or_default()
-            .insert("AMERICANS".to_string());
-    }
-
-    let mut occupancy = mark_fixture_entities(&mut store);
-    let mut scenario_rng = SimRng::new(1);
-    if require_playfield_membership {
-        let handles = Some(crate::sim::type_handle_table::ResolvedRuleHandles::resolve(
-            &rules,
-            &mut interner,
-        ));
-        let mut main_rng = SimRng::new(0);
-        tick_combat_with_fog_and_main_rng_with_terrain_area(
-            &mut store,
-            &mut occupancy,
-            &rules,
-            &mut interner,
-            handles,
-            Some(&fog),
-            &BTreeMap::new(),
-            &mut BTreeMap::new(),
-            &[],
-            &HouseAllianceMap::new(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            false,
-            true,
-            0,
-            100,
-            0,
-            &[],
-            &BTreeSet::new(),
-            &BTreeSet::new(),
-            &[],
-            &[],
-            None,
-            &[],
-            &mut scenario_rng,
-            &mut main_rng,
-            None,
-            None,
-        );
-    } else {
-        // Public/headless adapter deliberately has no live MapClass authority.
-        tick_combat_with_fog(
-            &mut store,
-            &mut occupancy,
-            &rules,
-            &mut interner,
-            Some(&fog),
-            &BTreeMap::new(),
-            None,
-            None,
-            None,
-            None,
-            0,
-            100,
-            0,
-            &[],
-            None,
-            &mut scenario_rng,
-        );
-    }
-
-    match store
-        .get(10)
-        .and_then(|entity| entity.attack_target.as_ref())
-        .map(|attack| attack.target)
-        .expect("attacker retargets")
-    {
-        TargetKind::Entity(stable_id) => stable_id,
-        TargetKind::Cell(_, _) => panic!("retarget must stay object-backed"),
-    }
-}
-
-#[test]
-fn techno_playfield_dead_target_reacquisition_rejects_false_candidate() {
-    assert_eq!(
-        run_playfield_retarget_branch(PlayfieldRetargetBranch::DeadOrMissing, false),
-        20,
-        "headless adapter preserves candidate admission without MapClass authority"
-    );
-    assert_eq!(
-        run_playfield_retarget_branch(PlayfieldRetargetBranch::DeadOrMissing, true),
-        30,
-        "Evaluate_Candidate 0x006F7DB0 rejects stored +0x3D5=false"
-    );
-}
-
-#[test]
-fn techno_playfield_newly_friendly_reacquisition_rejects_false_candidate() {
-    assert_eq!(
-        run_playfield_retarget_branch(PlayfieldRetargetBranch::NewlyFriendly, false),
-        20
-    );
-    assert_eq!(
-        run_playfield_retarget_branch(PlayfieldRetargetBranch::NewlyFriendly, true),
-        30
-    );
-}
-
-#[test]
-fn techno_playfield_invisible_target_reacquisition_rejects_false_candidate() {
-    assert_eq!(
-        run_playfield_retarget_branch(PlayfieldRetargetBranch::Invisible, false),
-        20
-    );
-    assert_eq!(
-        run_playfield_retarget_branch(PlayfieldRetargetBranch::Invisible, true),
-        30
-    );
+    assert!(!result.consequences.fire_events().is_empty());
+    assert!(store.get(2).expect("target alive").health.current < 300);
 }
 
 /// Two identical enemies share one cell. `TechnoClass::Scan_Cell_For_Target @
@@ -6017,40 +5762,32 @@ fn gsi_08_01_a_shared_cell_offers_only_its_list_head() {
     store.insert(make_entity_owned(99, "MTNK", 6, 5, 0, "Soviet")); // dead
     store.insert(make_entity_owned(20, "MTNK", 7, 5, 300, "Soviet"));
     store.insert(make_entity_owned(3, "MTNK", 7, 5, 300, "Soviet"));
-    let mut interner = test_interner();
-    issue_attack_command(&mut store, 10, 99, None, &interner);
+    let interner = test_interner();
 
     let mut fog = FogState::default();
     fog.mark_visible_for_owner(test_intern("Americans"), 7, 5);
-    let mut occupancy = mark_fixture_entities(&mut store);
-    let mut main_rng = SimRng::new(1);
-    tick_combat_with_fog(
-        &mut store,
-        &mut occupancy,
+    let occupancy = mark_fixture_entities(&mut store);
+    // `TechnoClass::Greatest_Threat @ 0x006F8DF0` with the passive mask.
+    let pick = acquire_best_target_for_entity(
+        &store,
+        &occupancy,
         &rules,
-        &mut interner,
+        &interner,
+        10,
         Some(&fog),
-        &BTreeMap::<InternedId, PowerState>::new(),
         None,
+        false,
+        crate::sim::combat::ScanMission::Guard,
         None,
+        crate::sim::combat::line_of_fire::LineOfFireInputs {
+            overlay_grid: None,
+            overlay_registry: None,
+            alliances: Some(&fog.alliances),
+        },
         None,
-        None,
-        0u64,
-        100,
-        0u32,
-        &[],
-        None,
-        &mut main_rng,
     );
-
-    let attack = store
-        .get(10)
-        .unwrap()
-        .attack_target
-        .as_ref()
-        .expect("attacker should retarget");
     assert!(
-        matches!(attack.target, crate::sim::combat::TargetKind::Entity(20)),
+        pick == Some(20),
         "the cell's list head is the candidate, not the lower stable id"
     );
 }
@@ -6065,44 +5802,36 @@ fn gsi_08_01_unarmed_building_loses_to_a_tank_at_equal_distance() {
     building.category = crate::map::entities::EntityCategory::Structure;
     store.insert(building);
     store.insert(make_entity_owned(200, "MTNK", 7, 5, 300, "Soviet"));
-    let mut interner = test_interner();
-    issue_attack_command(&mut store, 10, 99, None, &interner);
+    let interner = test_interner();
 
     let mut fog = FogState::default();
     fog.mark_visible_for_owner(test_intern("Americans"), 7, 5);
-    let mut occupancy = mark_fixture_entities(&mut store);
-    let mut main_rng = SimRng::new(1);
-    tick_combat_with_fog(
-        &mut store,
-        &mut occupancy,
+    let occupancy = mark_fixture_entities(&mut store);
+    // `TechnoClass::Greatest_Threat @ 0x006F8DF0` with the passive mask.
+    let pick = acquire_best_target_for_entity(
+        &store,
+        &occupancy,
         &rules,
-        &mut interner,
+        &interner,
+        10,
         Some(&fog),
-        &BTreeMap::<InternedId, PowerState>::new(),
         None,
+        false,
+        crate::sim::combat::ScanMission::Guard,
         None,
+        crate::sim::combat::line_of_fire::LineOfFireInputs {
+            overlay_grid: None,
+            overlay_registry: None,
+            alliances: Some(&fog.alliances),
+        },
         None,
-        None,
-        0u64,
-        100,
-        0u32,
-        &[],
-        None,
-        &mut main_rng,
     );
-
-    let attack = store
-        .get(10)
-        .unwrap()
-        .attack_target
-        .as_ref()
-        .expect("attacker should retarget");
     // Not a "threat class" tie-break — gamemd has none. `[GAPOWR]` carries no
     // weapon and `ThreatPosed=0`, so the human-attacker building gate at
     // `TechnoClass::Evaluate_Candidate @ 0x006F85AB` refuses it outright and
     // the tank is the only candidate the cell can offer that survives.
     assert!(
-        matches!(attack.target, crate::sim::combat::TargetKind::Entity(200)),
+        pick == Some(200),
         "an unarmed enemy building is not a legal passive target for a human unit"
     );
 }
@@ -7176,7 +6905,7 @@ fn persistent_projectile_delays_damage_across_save_load_continuation() {
     let rules = persistent_projectile_rules();
     assert!(matches!(
         classify_projectile_delivery(rules.weapon("GUN").unwrap(), &rules),
-        ProjectileDelivery::Persistent { .. }
+        ProjectileDelivery { .. }
     ));
     let mut entities = EntityStore::new();
     entities.insert(make_entity(1, "SHOOTER", 5, 5, 300));
@@ -7281,6 +7010,20 @@ fn persistent_projectile_delays_damage_across_save_load_continuation() {
     assert_eq!(entities.get(2).unwrap().health.current, 490);
 }
 
+/// One Inviso bullet's detonation draws in the frame's tail: the anim
+/// scatter (one raw draw), then the cluster successor
+/// (`RandomRanged(0x100, 0x200)` and one raw draw, `0x00469057`).
+fn inviso_detonation_draws(
+    rng: &mut SimRng,
+    coord: (u16, u16, SimFixed, SimFixed),
+) -> (u16, u16, SimFixed, SimFixed) {
+    let effect =
+        inviso_scatter::scatter_inviso_effect_coord(rng, coord.0, coord.1, coord.2, coord.3);
+    let _ =
+        crate::sim::projectile::projectile_next_cluster_coord(ProjectileCoord::new(0, 0, 0), rng);
+    effect
+}
+
 fn explosion_coord(effect: &ExplosionEffect) -> (u16, u16, SimFixed, SimFixed) {
     (effect.rx, effect.ry, effect.sub_x, effect.sub_y)
 }
@@ -7302,17 +7045,10 @@ fn inviso_scatter_uses_scenario_rng_only_for_effect_and_paired_smudge() {
 
     let mut scenario_rng = SimRng::new(1);
     let mut expected_rng = scenario_rng.clone();
-    let expected_effect = inviso_scatter::scatter_inviso_effect_coord(
-        &mut expected_rng,
-        target_coord.0,
-        target_coord.1,
-        target_coord.2,
-        target_coord.3,
-    );
-    // `TechnoClass::GetROF @ 0x006FCFA0` draws its `RandomRanged(0, 2)` reload
-    // jitter after the shot, on this same instance (`[0x00A8B230] + 0x218` —
-    // the one `FootClass::Mission_Attack @ 0x004D4DC0` also uses).
+    // FireAt's `GetROF @ 0x006FCFA0` jitter, then the bullet's detonation in
+    // the same frame's tail.
     expected_rng.next_range_u32_inclusive(0, 2);
+    let expected_effect = inviso_detonation_draws(&mut expected_rng, target_coord);
     align_attackers_to_targets(&mut store, &rules, &interner);
     let result = tick_combat(
         &mut store,
@@ -7364,9 +7100,12 @@ fn inviso_empty_animlist_still_consumes_one_draw() {
 
     let mut scenario_rng = SimRng::new(1);
     let mut expected_rng = scenario_rng.clone();
-    expected_rng.next_u32();
-    // Plus the end-of-burst reload jitter, `GetROF @ 0x006FCFA0`.
+    // GetROF in FireAt, then the tail's scatter and cluster draws.
     expected_rng.next_range_u32_inclusive(0, 2);
+    let _ = inviso_detonation_draws(
+        &mut expected_rng,
+        (8, 5, SimFixed::from_num(128), SimFixed::from_num(128)),
+    );
     align_attackers_to_targets(&mut store, &rules, &interner);
     let result = tick_combat(
         &mut store,
@@ -7439,8 +7178,13 @@ fn gsi_08_05_non_inviso_projectile_advances_scenario_rng_by_the_reload_jitter() 
     );
 }
 
+/// Both shots' FireAt draws come first, in live order; then the tail visits
+/// the bullets in the order FireAt appended them. The first bullet's
+/// detonation removes it from the Logic vector, which shifts the second into
+/// its slot, and the cursor moves past it (`0x0055B613`): the second bullet
+/// detonates next frame.
 #[test]
-fn two_inviso_attackers_consume_consecutive_draws_in_live_order() {
+fn two_inviso_attackers_fire_in_live_order_and_the_second_bullet_waits_a_frame() {
     let rules = inviso_weapon_rules(true, true);
     let mut store = EntityStore::new();
     store.insert(make_entity(1, "SHOOTER", 5, 5, 300));
@@ -7459,23 +7203,9 @@ fn two_inviso_attackers_consume_consecutive_draws_in_live_order() {
 
     let mut scenario_rng = SimRng::new(1);
     let mut expected_rng = scenario_rng.clone();
-    // Per attacker, in live order: the inviso scatter draws, then that
-    // attacker's own `GetROF` reload jitter.
-    let mut expected_shot = |rng: &mut SimRng| {
-        let coord = inviso_scatter::scatter_inviso_effect_coord(
-            rng,
-            target_coord.0,
-            target_coord.1,
-            target_coord.2,
-            target_coord.3,
-        );
-        rng.next_range_u32_inclusive(0, 2);
-        coord
-    };
-    let expected = [
-        expected_shot(&mut expected_rng),
-        expected_shot(&mut expected_rng),
-    ];
+    expected_rng.next_range_u32_inclusive(0, 2);
+    expected_rng.next_range_u32_inclusive(0, 2);
+    let expected = inviso_detonation_draws(&mut expected_rng, target_coord);
     align_attackers_to_targets(&mut store, &rules, &interner);
     let result = tick_combat_with_fog(
         &mut store,
@@ -7506,15 +7236,17 @@ fn two_inviso_attackers_consume_consecutive_draws_in_live_order() {
         vec![2, 1]
     );
     assert_eq!(scenario_rng.logical_state(), expected_rng.logical_state());
-    assert_eq!(result.consequences.effects().explosion_effects.len(), 2);
+    assert_eq!(result.consequences.effects().explosion_effects.len(), 1);
     assert_eq!(
         explosion_coord(&result.consequences.effects().explosion_effects[0]),
-        expected[0]
+        expected
     );
     assert_eq!(
-        explosion_coord(&result.consequences.effects().explosion_effects[1]),
-        expected[1]
+        result.projectile_spawns.len(),
+        1,
+        "attacker 1's bullet was skipped"
     );
+    assert_eq!(result.projectile_spawns[0].source_id, 1);
 }
 
 /// `inviso_weapon_rules(true, true)` with one special warhead key added.
@@ -7569,14 +7301,8 @@ fn inviso_special_arms_claim_the_impact_and_keep_the_shared_tail() {
         );
         let mut scenario_rng = SimRng::new(1);
         let mut expected_rng = scenario_rng.clone();
-        let expected_effect = inviso_scatter::scatter_inviso_effect_coord(
-            &mut expected_rng,
-            target_coord.0,
-            target_coord.1,
-            target_coord.2,
-            target_coord.3,
-        );
         expected_rng.next_range_u32_inclusive(0, 2);
+        let expected_effect = inviso_detonation_draws(&mut expected_rng, target_coord);
         align_attackers_to_targets(&mut store, &rules, &interner);
         let result = tick_combat(
             &mut store,
@@ -7602,7 +7328,7 @@ fn inviso_special_arms_claim_the_impact_and_keep_the_shared_tail() {
         assert_eq!(
             scenario_rng.logical_state(),
             expected_rng.logical_state(),
-            "{special_key}: the tail's Inviso draw and the reload jitter, nothing else"
+            "{special_key}: the reload jitter, then the tail's scatter and cluster draws"
         );
         let effects = result.consequences.effects();
         assert_eq!(effects.explosion_effects.len(), 1, "{special_key}");
@@ -7703,9 +7429,8 @@ fn retail_special_inviso_weapons_claim_their_impact() {
         );
         assert_eq!(action, expected, "{weapon_id}");
         assert!(action.suppresses_ordinary_damage(), "{weapon_id}");
-        assert_eq!(
-            classify_projectile_delivery(weapon, &rules),
-            ProjectileDelivery::Immediate(ImmediateProjectileReason::Invisible),
+        assert!(
+            classify_projectile_delivery(weapon, &rules).inviso,
             "{weapon_id} is an Inviso shot"
         );
     }
@@ -7854,10 +7579,11 @@ fn emit_warhead_detonation_effects_animlist_index_is_damage_div_25_clamped() {
 
 #[test]
 fn combat_resolves_in_live_object_order_not_stable_id() {
-    // Two attackers A (stable_id 1) and B (stable_id 2), same owner, both able to
-    // lethally hit a shared enemy target T (stable_id 3) this tick. T has 50 HP, so
-    // the single 58-damage 105mm shot (65 * 90% AP-vs-heavy) from the FIRST-resolved
-    // attacker drops it to 0 and records the despawn.
+    // Two attackers A (stable_id 1) and B (stable_id 2), same owner, both fire
+    // at a shared enemy target T (stable_id 3) this tick. Each 105mm shot deals
+    // 48 (65 * 75% AP-vs-heavy) to T's 50 HP. The first-resolved attacker's
+    // bullet leads the Logic tail and lands this frame; the second is skipped
+    // past when the first leaves the vector, so T survives on 2.
     //
     // Phase 4 of tick_combat_with_fog applies damage_events in resolution order;
     // damage_events is built in Phase 2 by walking the snapshots in their sorted
@@ -7907,10 +7633,10 @@ fn combat_resolves_in_live_object_order_not_stable_id() {
             2,
             "live order [2,1]: B (live-order-first) must fire first"
         );
-        assert!(
-            result.consequences.effects().despawned_ids.contains(&3),
-            "target must die this tick"
-        );
+        // B's bullet leads the Logic tail and lands; A's is skipped this frame.
+        assert_eq!(store.get(3).unwrap().health.current, 2);
+        assert_eq!(result.projectile_spawns.len(), 1);
+        assert_eq!(result.projectile_spawns[0].source_id, 1);
     }
 
     // Run 2: empty live order falls back to stable-id order [A(1), B(2)]. A now
@@ -7942,10 +7668,9 @@ fn combat_resolves_in_live_object_order_not_stable_id() {
             1,
             "empty live order: stable-id fallback fires A first"
         );
-        assert!(
-            result.consequences.effects().despawned_ids.contains(&3),
-            "target must die this tick"
-        );
+        assert_eq!(store.get(3).unwrap().health.current, 2);
+        assert_eq!(result.projectile_spawns.len(), 1);
+        assert_eq!(result.projectile_spawns[0].source_id, 2);
     }
 }
 
@@ -8750,7 +8475,6 @@ fn projectile_shrapnel_targets_hostile_head_before_random_cell_child() {
             base_damage: 20,
             warhead: interner.intern("WH"),
             weapon: interner.intern("PARENT"),
-            owner: interner.intern("SOVIET"),
         },
         reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
     };
@@ -8834,7 +8558,6 @@ fn projectile_shrapnel_aims_at_a_building_foundation_center() {
             base_damage: 20,
             warhead: interner.intern("WH"),
             weapon: interner.intern("PARENT"),
-            owner: interner.intern("SOVIET"),
         },
         reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
     };
@@ -8920,7 +8643,6 @@ fn gsi_04_01_projectile_shrapnel_captures_each_shared_dummy_lookup() {
             base_damage: 20,
             warhead: interner.intern("WH"),
             weapon: interner.intern("PARENT"),
-            owner: interner.intern("SOVIET"),
         },
         reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
     };
@@ -10657,7 +10379,6 @@ fn gsi_08_08_special_arm_suppresses_damage_but_keeps_the_detonation_tail() {
                 base_damage: 50,
                 warhead: warhead_ref,
                 weapon: interner.intern("MissingWeapon"),
-                owner: interner.intern("Test"),
             },
             reason: ProjectileDetonationReason::ReachedTarget,
         };
@@ -10764,7 +10485,6 @@ fn clusters_scatter_around_the_impact() {
             base_damage: 10,
             warhead: interner.intern("Blast"),
             weapon: interner.intern("ClusterGun"),
-            owner: interner.intern("Test"),
         },
         reason: ProjectileDetonationReason::ReachedTarget,
     };
@@ -10858,7 +10578,6 @@ fn gsi_08_33_direct_rocker_only_claims_a_vehicle_target() {
                 base_damage: 50,
                 warhead: interner.intern("Rocker"),
                 weapon: interner.intern("MissingWeapon"),
-                owner: interner.intern("Test"),
             },
             reason: ProjectileDetonationReason::ReachedTarget,
         };
@@ -10904,66 +10623,6 @@ fn gsi_08_33_direct_rocker_only_claims_a_vehicle_target() {
         1,
         "infantry falls through 0x004697b2 to the next test, so damage runs"
     );
-}
-
-/// The real receiver checks visible directly, so newly concealed transient
-/// mapping must not leave a bright-object targeting loophole over dark terrain.
-#[test]
-fn shroud_current_sight_concealed_transient_rejects_combat_fire() {
-    for psychic in [false, true] {
-        let rules = test_rules();
-        let mut interner = test_interner();
-        let owner = test_intern("Americans");
-        let enemy = test_intern("Soviet");
-        let mut fog = FogState {
-            width: 24,
-            height: 24,
-            ..Default::default()
-        };
-        if psychic {
-            crate::sim::vision::reveal_radius_for_direct_allies(
-                &mut fog, owner, 8, 5, 2, &interner,
-            );
-            crate::sim::vision::apply_gap_generators(&mut fog, &[(enemy, 8, 5, 3)], &interner);
-        } else {
-            crate::sim::vision::reveal_radius(&mut fog, owner, 8, 5, 2);
-            fog.flush_pending_gap_conceal(120);
-        }
-        assert!(!fog.is_cell_revealed(owner, 8, 5));
-        assert!(!fog.is_cell_visible(owner, 8, 5));
-        let mut store = EntityStore::new();
-        store.insert(make_entity_owned(1, "MTNK", 5, 5, 300, "Americans"));
-        store.insert(make_entity_owned(2, "MTNK", 8, 5, 300, "Soviet"));
-        issue_attack_command(&mut store, 1, 2, None, &interner);
-        let mut main_rng = SimRng::new(1);
-        let result = tick_combat_with_fog(
-            &mut store,
-            &mut OccupancyGrid::new(),
-            &rules,
-            &mut interner,
-            Some(&fog),
-            &BTreeMap::<InternedId, PowerState>::new(),
-            None,
-            None,
-            None,
-            None,
-            0u64,
-            100,
-            0u32,
-            &[],
-            None,
-            &mut main_rng,
-        );
-        assert!(
-            result.consequences.fire_events().is_empty(),
-            "concealed transient must not emit a fire event"
-        );
-        assert_eq!(
-            store.get(2).unwrap().health.current,
-            300,
-            "concealed transient source psychic={psychic}"
-        );
-    }
 }
 
 /// A Drive `Crusher=yes` vehicle that is not `CrusherAll` leaves a plain wall

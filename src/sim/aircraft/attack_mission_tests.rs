@@ -338,18 +338,16 @@ fn original_state10_rows() {
                 ammo.begin_release();
             }
             ammo.consume_release(true);
-            let house = crate::sim::house_state::HouseState {
-                is_human: get("house_1ec").as_i64().unwrap() != 0,
-                player_control: get("house_1ed").as_i64().unwrap() != 0,
-                ..crate::sim::house_state::HouseState::new(
-                    crate::sim::intern::InternedId::default(),
-                    0,
-                    None,
-                    false,
-                    0,
-                    1,
-                )
-            };
+            let mut house = crate::sim::house_state::HouseState::new(
+                crate::sim::intern::InternedId::default(),
+                0,
+                None,
+                false,
+                0,
+                1,
+            );
+            house.is_human = get("house_1ec").as_i64().unwrap() != 0;
+            house.player_control = get("house_1ed").as_i64().unwrap() != 0;
             let facts = ExitFacts {
                 ammo: ammo.current,
                 target: get("target").as_bool().unwrap(),

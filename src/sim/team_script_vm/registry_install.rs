@@ -115,6 +115,7 @@ impl TeamScriptVm {
                 priority: team_type.read_int("Priority", 7),
                 is_base_defense: team_type.read_bool("IsBaseDefense", false),
                 suicide: team_type.read_bool("Suicide", false),
+                aggressive: team_type.read_bool("Aggressive", false),
                 combined_movement_zone: MovementZone::Fly,
                 base_zone_relation_enforced: true,
                 transport_crossing_required: false,

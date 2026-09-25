@@ -198,7 +198,7 @@ mod tests {
             {
                 break;
             }
-            assert!(sim.visit_infantry_terminal(terror, Some(&rules)));
+            assert!(sim.visit_infantry_terminal(terror, Some(&rules), Default::default()));
         }
         assert!(
             sim.substrate

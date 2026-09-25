@@ -1791,7 +1791,6 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
                 base_damage: 10,
                 warhead: sim.interner.intern("KillWH"),
                 weapon: sim.interner.intern("Gun"),
-                owner,
             },
             reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
         };
@@ -1978,7 +1977,6 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
             base_damage: 100,
             warhead: sim.interner.intern("OREWH"),
             weapon: sim.interner.intern("TestWeapon"),
-            owner,
         },
         reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
     };
@@ -3014,8 +3012,9 @@ fn sonic_wave_test_rules() -> RuleSet {
         "[VehicleTypes]\n0=DLPH\n1=TARGET\n\n\
          [DLPH]\nStrength=200\nArmor=light\nSpeed=8\nPrimary=SonicZap\nElitePrimary=SonicZapE\n\n\
          [TARGET]\nStrength=100\nArmor=wood\n\n\
-         [SonicZap]\nDamage=4\nAmbientDamage=10\nROF=20\nRange=6\nWarhead=SonicWH\nIsSonic=yes\n\n\
-         [SonicZapE]\nDamage=8\nAmbientDamage=15\nROF=20\nRange=6\nWarhead=SonicWH\nIsSonic=yes\n\n\
+         [SonicZap]\nDamage=4\nAmbientDamage=10\nROF=20\nRange=6\nProjectile=Sonic\nSpeed=100\nWarhead=SonicWH\nIsSonic=yes\n\n\
+         [SonicZapE]\nDamage=8\nAmbientDamage=15\nROF=20\nRange=6\nProjectile=Sonic\nSpeed=100\nWarhead=SonicWH\nIsSonic=yes\n\n\
+         [Sonic]\nLevel=yes\n\n\
          [SonicWH]\nWood=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n",
     ))
     .expect("Sonic Wave fixture")
@@ -3027,8 +3026,9 @@ fn sonic_tail_order_test_rules() -> RuleSet {
          [DLPH]\nStrength=200\nArmor=light\nSpeed=8\nSight=8\nPrimary=SonicZap\n\n\
          [LATER]\nStrength=200\nArmor=light\nSpeed=8\nSight=8\nPrimary=LaterGun\n\n\
          [TARGET]\nStrength=100\nArmor=none\nSpeed=1\n\n\
-         [SonicZap]\nDamage=4\nAmbientDamage=10\nROF=20\nRange=6\nWarhead=SonicWH\nIsSonic=yes\n\n\
+         [SonicZap]\nDamage=4\nAmbientDamage=10\nROF=20\nRange=6\nProjectile=Sonic\nSpeed=100\nWarhead=SonicWH\nIsSonic=yes\n\n\
          [LaterGun]\nDamage=7\nROF=20\nRange=6\nWarhead=LaterWH\n\n\
+         [Sonic]\nLevel=yes\n\n\
          [SonicWH]\nWood=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n\n\
          [LaterWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n",
     ))
@@ -3145,7 +3145,7 @@ fn sonic_constructor_at_240_registers_then_runs_at_same_pass_tail() {
     assert!(wave.in_logic_vector);
     assert_eq!(wave.lifetime, 100, "FireAt only registers the Logic tail");
 
-    sim.visit_combat_appended_wave_tail(&BTreeSet::new(), &rules, None);
+    sim.visit_combat_tail(0, &rules, None);
 
     let wave = sim.waves.get(wave_id).expect("Wave survives first tail AI");
     assert_eq!(wave.lifetime, 99, "first AI belongs to the firing pass");
@@ -3214,7 +3214,7 @@ fn sonic_cell_target_uses_persistent_dummy_gettargetcoords_on_create_and_refresh
         "coordinate restamps preserve the dummy's live non-coordinate fields",
     );
 
-    sim.visit_combat_appended_wave_tail(&BTreeSet::new(), &rules, None);
+    sim.visit_combat_tail(0, &rules, None);
     let wave = sim.waves.get(wave_id).expect("Wave survives first live AI");
     assert_eq!(wave.lifetime, 99);
     assert_eq!(wave.target.z, 674);
@@ -3223,6 +3223,109 @@ fn sonic_cell_target_uses_persistent_dummy_gettargetcoords_on_create_and_refresh
         (0, 6),
         "UpdateCells keeps the shared identity but leaves the final miss restamp live",
     );
+}
+
+/// Chain 1 end to end through the production frame: a GI placed on the map
+/// enters Guard on Unlimbo (`0x0051CBA0`), its passive block
+/// (`0x006FA65A`) scans the enemy infantryman into range, and it fires Inviso
+/// bullets that land in each frame's Logic tail until the target dies, then
+/// holds no target.
+#[test]
+fn a_gi_on_guard_acquires_an_enemy_infantryman_and_fires_until_it_dies() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n\n[VehicleTypes]\n\n[AircraftTypes]\n\n[BuildingTypes]\n\n\
+         [E1]\nStrength=125\nArmor=none\nSpeed=4\nSight=5\nPrimary=M60\n\
+         Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\n\
+         [M60]\nDamage=25\nROF=20\nRange=5\nProjectile=InvisibleLow\nSpeed=100\nWarhead=SA\n\n\
+         [InvisibleLow]\nInviso=yes\nImage=none\n\n\
+         [SA]\nVerses=100%,80%,80%,50%,25%,25%,75%,50%,25%,100%,100%\n",
+    ))
+    .expect("GI fixture");
+    let mut sim = Simulation::with_seed(0x5EED_0061);
+    sim.input_delay_ticks = 0;
+    let terrain = ResolvedTerrainGrid::from_cells(
+        12,
+        3,
+        (0..3)
+            .flat_map(|ry| (0..12).map(move |rx| bridgehead_base_cell(rx, ry)))
+            .collect(),
+    );
+    install_rectangular_test_playfield(&mut sim, terrain.width(), terrain.height());
+    sim.install_resolved_terrain_for_new_map(terrain);
+    let heights = empty_heights();
+    let gi = sim
+        .spawn_object("E1", "Americans", 2, 1, 64, &rules, &heights)
+        .expect("GI");
+    let enemy = sim
+        .spawn_object("E1", "Russians", 5, 1, 64, &rules, &heights)
+        .expect("enemy infantryman");
+    sim.path_grid = Some(std::sync::Arc::new(PathGrid::test_all_passable(12, 3)));
+    let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
+    runtime.resources.rules = rules;
+    runtime.resources.height_map = heights;
+
+    let mut gi_shots = 0;
+    let mut enemy_health = Vec::new();
+    for _ in 0..600 {
+        let output = runtime
+            .advance_frame(&[], 67, TickLane::Ordinary)
+            .expect("fixture frame must complete");
+        assert!(output.tick.frame_committed);
+        let sim = &runtime.simulation;
+        gi_shots += output
+            .fire_events
+            .iter()
+            .filter(|event| event.attacker_id == gi)
+            .count();
+        match sim.substrate.entities.get(enemy) {
+            Some(target) if !target.dying => enemy_health.push(target.health.current),
+            _ => break,
+        }
+    }
+    let sim = &runtime.simulation;
+    assert!(
+        sim.substrate
+            .entities
+            .get(enemy)
+            .is_none_or(|target| target.dying),
+        "the enemy infantryman dies"
+    );
+    enemy_health.dedup();
+    assert_eq!(enemy_health.first(), Some(&125));
+    assert!(
+        enemy_health.windows(2).all(|pair| pair[0] - pair[1] == 25),
+        "every hit is one M60 bullet: {enemy_health:?}"
+    );
+    assert_eq!(gi_shots, 5, "five 25-damage shots kill 125 HP");
+    // The enemy fired back, which put the GI on Attack (retaliation). With its
+    // target gone, Mission_Attack's next visits return it to Guard, where it
+    // idles holding nothing.
+    let guard = crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard);
+    for _ in 0..60 {
+        if runtime
+            .simulation
+            .substrate
+            .entities
+            .get(gi)
+            .unwrap()
+            .mission
+            .current()
+            == guard
+        {
+            break;
+        }
+        runtime
+            .advance_frame(&[], 67, TickLane::Ordinary)
+            .expect("fixture frame must complete");
+    }
+    let gi = runtime
+        .simulation
+        .substrate
+        .entities
+        .get(gi)
+        .expect("the GI survives");
+    assert_eq!(gi.mission.current(), guard);
+    assert!(gi.attack_target.is_none());
 }
 
 #[test]
@@ -3365,7 +3468,7 @@ fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai()
 }
 
 #[test]
-fn sonic_cell_fire_same_frame_wave_damage_selects_level_two_bridge_plane() {
+fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
     let rules = sonic_wave_test_rules();
     let mut sim = Simulation::with_seed(0x5EED_6240);
     sim.input_delay_ticks = 0;
@@ -3422,17 +3525,23 @@ fn sonic_cell_fire_same_frame_wave_damage_selects_level_two_bridge_plane() {
         .advance_frame(&[], 67, TickLane::Ordinary)
         .expect("fixture frame must complete");
     assert!(output.tick.frame_committed);
-    let sim = &runtime.simulation;
-
-    let wave_id = *sim
+    let wave_id = *runtime
+        .simulation
         .active_wave_links
         .get(&dolphin_id)
         .expect("cell FireAt registered its Wave");
-    let wave = sim.waves.get(wave_id).expect("same-frame Wave survives");
-    assert_eq!(
-        wave.lifetime, 99,
-        "the appended tail ran in the firing pass"
-    );
+    // The Sonic bullet, Logic-appended just ahead of its Wave, strikes the
+    // deck on its first AI in the same tail. Its removal shifts the Wave into
+    // the visited slot (`0x0055B608..0x0055B619`), so the Wave's first AI is
+    // the next frame's.
+    assert_eq!(runtime.simulation.waves.get(wave_id).unwrap().lifetime, 100);
+    let output = runtime
+        .advance_frame(&[], 67, TickLane::Ordinary)
+        .expect("fixture frame must complete");
+    assert!(output.tick.frame_committed);
+    let sim = &runtime.simulation;
+    let wave = sim.waves.get(wave_id).expect("Wave survives its first AI");
+    assert_eq!(wave.lifetime, 99);
     assert_eq!(
         wave.target.z, 674,
         "level 2 CellClass target is 2*104 + structural 416 + Sonic 50",

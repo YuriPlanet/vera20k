@@ -281,6 +281,20 @@ pub struct ObjectType {
     /// sets `Trainable=yes` on one building (`[YAREFN]`) and `no` on 82 other
     /// sections.
     pub trainable: bool,
+    /// A Unit's `BurstDelay0..3=` (UnitType `+0xE48 + i*4`; constructor -1 at
+    /// `0x0074726D..0x0074727F`, ReadInteger with the current value as default
+    /// at `0x00747B03..0x00747B47`). GetROF returns `BurstDelay{i-1}` without a
+    /// draw for burst index `i` in 1..=4 when it is not -1. `[-1; 4]` for other
+    /// classes; no retail section authors them.
+    pub burst_delays: [i32; 4],
+    /// An InfantryType's `DeadBodies=` (`+0xE50`, TypeList read at
+    /// `0x005241FB`): the corpse anims its Die1..Die5 completion picks from
+    /// (`0x00520BC6`). Empty for other classes; no retail infantry sets it.
+    pub dead_bodies: Vec<String>,
+    /// An InfantryType's `NotHuman=` (`+0xEAD`, read at `0x005243D2`,
+    /// constructor 0 at `0x0052375A`): a death completion with no own
+    /// `DeadBodies=` leaves no `[General] DeadBodies=` corpse (`0x00520C42`).
+    pub not_human: bool,
     /// Hit points (health). 0 = invincible or not applicable.
     pub strength: i32,
     /// `DontScore=` — this object's destruction is invisible to the end-of-match
@@ -589,6 +603,10 @@ pub struct ObjectType {
     /// was explicitly given. Default **yes**; stock `rulesmd.ini` opts 17 types
     /// out ("Won't try to pick up own targets").
     pub can_passive_acquire: bool,
+    /// `SprayAttack=` (TechnoType `+0x691`, read at `0x0071491A`, constructor
+    /// 0 at `0x00711104`): the passive-acquire gate's AreaFire test reads
+    /// weapon slot 0 instead of 1 (`0x0070DD70`).
+    pub spray_attack: bool,
     /// `DistributedFire=` — the type spreads fire across several nearby targets
     /// instead of committing to one. VERA parses it only to keep those types
     /// OFF the single-target passive-acquire commit; the spread-fire mechanism
@@ -1817,6 +1835,20 @@ impl ObjectType {
             trainable: section
                 .get_bool("Trainable")
                 .unwrap_or(category != ObjectCategory::Building),
+            burst_delays: std::array::from_fn(|index| {
+                if category == ObjectCategory::Vehicle {
+                    section.read_int(&format!("BurstDelay{index}"), -1)
+                } else {
+                    -1
+                }
+            }),
+            dead_bodies: if category == ObjectCategory::Infantry {
+                parse_csv_string_list(section.get("DeadBodies"))
+            } else {
+                Vec::new()
+            },
+            not_human: category == ObjectCategory::Infantry
+                && section.get_bool("NotHuman").unwrap_or(false),
             strength: section.get_i32("Strength").unwrap_or(0),
             dont_score: section.get_bool("DontScore").unwrap_or(false),
             special_threat_value: section.get_f64("SpecialThreatValue").unwrap_or(0.0),
@@ -1972,6 +2004,7 @@ impl ObjectType {
             can_retaliate: section.get_bool("CanRetaliate").unwrap_or(true),
             // Default yes. The INI spelling really is "Aquire" — do not correct it.
             can_passive_acquire: section.get_bool("CanPassiveAquire").unwrap_or(true),
+            spray_attack: section.get_bool("SprayAttack").unwrap_or(false),
             distributed_fire: section.get_bool("DistributedFire").unwrap_or(false),
             vhp_scan: VhpScan::read_ini(section),
             explodes: section.get_bool("Explodes").unwrap_or(false),

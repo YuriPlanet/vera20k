@@ -165,30 +165,6 @@ fn clicked_coordinate(
     Ok(point)
 }
 
-///586360 queries the projected Cell's ground-open bit. Keep its odd-height
-///481810(3) lookup conditional and use the first receiver's own coordinates.
-fn coordinate_is_shrouded(
-    cells: &NativeCellQuery<'_>,
-    point: DriveCoord,
-    open: &impl Fn(NativeCellIdentity) -> Result<bool, String>,
-) -> Result<bool, String> {
-    let level = point.z / GROUND_LEVEL_HEIGHT_LEPTONS;
-    let shift = level / 2 + i32::from(level & 1 != 0);
-    let first = cells.lookup((
-        ((point.x / 256) as i16).wrapping_sub(shift as i16),
-        ((point.y / 256) as i16).wrapping_sub(shift as i16),
-    ));
-    if open(first)? {
-        return Ok(false);
-    }
-    if level & 1 != 0 {
-        let (x, y) = cells.coord(first);
-        let next = cells.lookup((x.wrapping_add(1), y.wrapping_add(1)));
-        return open(next).map(|open| !open);
-    }
-    Ok(true)
-}
-
 /// Original 4DE1D0 under the ordinary grounded Foot type/actor gates. No A*
 /// search and no entity/mission/navigation mutation occurs here. Native
 /// comparisons live in tools/spatial_oracle/walk_move_admission (Infantry and
@@ -211,7 +187,7 @@ fn resolve_foot_cell_click(
         Some(cells),
     );
     let point = clicked_coordinate(cells, click.clicked)?;
-    if !click.move_to_shroud && coordinate_is_shrouded(cells, point, &open)? {
+    if !click.move_to_shroud && crate::sim::vision::coordinate_is_shrouded(cells, point, &open)? {
         return Ok(None);
     }
     let source = cells.lookup_world(click.coordinate.x, click.coordinate.y);
@@ -243,7 +219,7 @@ fn resolve_foot_cell_click(
         click.in_tube,
     )?;
     let point = clicked_coordinate(cells, click.clicked)?;
-    let shrouded = coordinate_is_shrouded(cells, point, &open)?;
+    let shrouded = crate::sim::vision::coordinate_is_shrouded(cells, point, &open)?;
     let unrestricted = special && click.action == 2;
     if !unrestricted && in_playfield && !shrouded {
         if special || (click.teleporter && click.action != 2) {

@@ -337,8 +337,11 @@ fn outside_reentry_clears_current_discovery_only_after_successful_alive_mark() {
 #[test]
 fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
     use crate::sim::mission::{MissionId, MissionType};
+    // A vehicle: an infantryman's Unlimbo commits Enter_Idle_Mode's Guard over
+    // the queued mission (`0x006F6E2A`), which would hide the discovery arm.
     let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\nSpeed=4\nSight=8\n",
+        "[VehicleTypes]\n0=E1\n[E1]\nStrength=100\nSpeed=4\nSight=8\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
     ))
     .unwrap();
     let mut sim = Simulation::with_seed(0);

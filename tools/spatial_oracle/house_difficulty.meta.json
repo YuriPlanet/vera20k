@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "SetDifficulty over difficulty 0..2, GameMode nonzero and zero, HouseType ROF (1.0, 1.1f, 0.9f, the largest double below 1) and difficulty-row ROF values (the retail rows, and odd values including zero and negative): the stored difficulty index and ROF bias.",
+  "assumptions": [
+    "x87 control word 0x0E7F (PC53, chop), the harness default.",
+    "Row values are ReadDouble's widened singles, as rulesmd.ini yields.",
+    "The other row fields and Rules+0x1418/+0x115C are fixed fixture values; only +0x184 and +0x1A8 are recorded."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "set_difficulty": "0x004F6EC0"
+  },
+  "payload_sha256": "1f63bf607d7a4b3e03903f68094b67e57f2f1ef56b0fbd2730bba6e8d2593206"
+}

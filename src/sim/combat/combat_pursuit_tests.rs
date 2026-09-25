@@ -274,10 +274,11 @@ fn sticky_drops_the_target_instead_of_chasing_it() {
 }
 
 /// The same object on Guard — the mission Sticky shares its handler with —
-/// still pursues. This is the tripwire proving the clause keys on the mission
-/// id and not on something both missions share.
+/// keeps its target but does not approach: `FootClass::Mission_Guard @
+/// 0x004D5070` never calls the approach search (vt+0x53C). The Sticky clause
+/// keys on the mission id, so Guard does not drop the target either.
 #[test]
-fn guard_still_chases_where_sticky_would_not() {
+fn guard_keeps_its_target_without_approaching() {
     let mut guard = make_unit(1, "MTNK", "Americans", 0, 0, 300);
     guard.attack_target = Some(AttackTarget::new(2));
     guard
@@ -301,10 +302,10 @@ fn guard_still_chases_where_sticky_would_not() {
     sim.tick_attack_pursuit(&rules, Some(&grid));
 
     let entity = sim.substrate.entities.get(1).unwrap();
-    assert!(entity.attack_target.is_some());
+    assert!(entity.attack_target.is_some(), "Guard keeps the target");
     assert!(
-        entity.movement_target.is_some(),
-        "Guard is not short-circuited"
+        entity.movement_target.is_none(),
+        "Guard produces no pursuit cell"
     );
 }
 

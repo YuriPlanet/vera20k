@@ -264,14 +264,7 @@ impl CombatStrike<'_, '_> {
                 shot.selected.index as u8,
                 self.world.interner.intern(shot.selected.weapon_id),
             ));
-            emit_admitted_fire(
-                self.world,
-                self.rules,
-                self.overlay_registry,
-                shot,
-                self.binary_frame,
-                self.out,
-            );
+            emit_admitted_fire(self.world, self.rules, shot, self.binary_frame, self.out);
         }
         boundary.commit(
             self.world,

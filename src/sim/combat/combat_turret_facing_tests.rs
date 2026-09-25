@@ -448,48 +448,6 @@ fn removed_attacker_returns_to_body_same_tick() {
 }
 
 #[test]
-fn retargeted_attacker_aims_new_target_same_tick() {
-    // A unit whose own resolution retargeted aims at the NEW target the same
-    // tick — the gamemd analog is upstream same-pass acquisition, which the
-    // unit's Facing_Update sees in the same AI pass.
-    let mut sim = Simulation::new();
-    spawn_turreted(&mut sim, 1, 5, 5, 5);
-    spawn_target(&mut sim, 2, 5, 8);
-    sim.substrate.entities.get_mut(2).unwrap().health.current = 0; // dead → re-acquire
-    // Hostile alternative in range (2 cells east).
-    let mut alt = GameEntity::test_default(4, "MTNK", "Soviet", 7, 5);
-    alt.barrel_facing = Some(FacingClass::new(body_facing_to_turret(0), 5));
-    alt.lifecycle.in_limbo = false;
-    sim.substrate.entities.insert(alt);
-    sim.add_entity_occupancy(4);
-    use_test_interner(&mut sim);
-    let rules = rules_with_mtnk_rot(5);
-    sim.substrate.entities.get_mut(1).unwrap().attack_target = Some(AttackTarget::new(2));
-
-    let want = {
-        let e = sim.substrate.entities.get(1).unwrap();
-        let t = sim.substrate.entities.get(4).unwrap();
-        crate::sim::movement::turret::facing_toward_lepton(
-            e.position.rx,
-            e.position.ry,
-            e.position.sub_x,
-            e.position.sub_y,
-            t.position.rx,
-            t.position.ry,
-            t.position.sub_x,
-            t.position.sub_y,
-        )
-    };
-    let result = run_combat_direct(&mut sim, &rules);
-
-    assert_eq!(
-        unit_facing_of(&result, 1),
-        Some(want),
-        "own-retarget → aim the new target same tick"
-    );
-}
-
-#[test]
 fn kill_tick_unit_facing_holds_target() {
     // THE S3 fidelity pin: a unit whose target dies from this tick's fire
     // keeps aiming at it this tick (gamemd: the munition is deferred and the

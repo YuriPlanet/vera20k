@@ -44,7 +44,6 @@ fn projectile(source_id: u64) -> ProjectileSpawn {
             base_damage: 10,
             warhead: InternedId::from_index(0),
             weapon: InternedId::from_index(0),
-            owner: InternedId::from_index(0),
         },
         speed_leptons_per_frame: 64,
         velocity: ProjectileVelocity::new(64, 0, 0),
@@ -129,10 +128,22 @@ fn gsi_05_01_runtime_objects_share_identity_and_continue_after_roundtrip() {
 
     assert_eq!(restored.state_hash(), hash_before);
     assert!(restored.substrate.entities.contains(entity_id));
-    assert!(restored.production.terrain_objects.contains_key(&terrain_id));
-    assert_eq!(restored.projectiles.get(projectile_id).unwrap().id, projectile_id);
+    assert!(
+        restored
+            .production
+            .terrain_objects
+            .contains_key(&terrain_id)
+    );
     assert_eq!(
-        restored.waves.iter().next().map(|(&id, wave)| (id, wave.id)),
+        restored.projectiles.get(projectile_id).unwrap().id,
+        projectile_id
+    );
+    assert_eq!(
+        restored
+            .waves
+            .iter()
+            .next()
+            .map(|(&id, wave)| (id, wave.id)),
         Some((wave_id, wave_id))
     );
     assert_eq!(restored.substrate.next_stable_object_id, next_id);

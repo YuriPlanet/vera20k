@@ -71,8 +71,9 @@ pub struct WeaponType {
     /// Number of rapid shots per attack cycle (default 1).
     /// After the full burst, the ROF cooldown begins.
     pub burst: i32,
-    /// When true, firing this weapon clears shroud around the fire location.
-    /// Used on some support powers and special weapons.
+    /// `RevealOnFire=` (`+0x137`, default yes): a launched shot reveals the
+    /// firer to a human victim (FireAt `0x006FF66C`). Retail turns it off on
+    /// the sniper, Virus, disguise and Mirage weapons.
     pub reveal_on_fire: bool,
 
     // ── Int/fixed-point fields ───────────────────────────────────────
@@ -247,7 +248,9 @@ impl WeaponType {
             warhead: section.get("Warhead").map(|s| s.to_string()),
             report: section.get("Report").map(|s| s.to_string()),
             burst: section.get_i32("Burst").unwrap_or(1),
-            reveal_on_fire: section.get_bool("RevealOnFire").unwrap_or(false),
+            // Constructor 1 (`0x00771DBB`); ReadINI passes it as the default
+            // (`0x00772182..0x00772196`).
+            reveal_on_fire: section.get_bool("RevealOnFire").unwrap_or(true),
 
             // Int/fixed-point fields
             ambient_damage: section.get_i32("AmbientDamage").unwrap_or(0),
@@ -356,6 +359,19 @@ fn parse_rgb_color(raw: &str) -> [u8; 3] {
 
 #[cfg(test)]
 mod tests {
+    /// Retail `RevealOnFire=` through the production reader: the constructor's
+    /// yes stands unless a section says no (the sniper and disguise weapons).
+    #[test]
+    fn retail_reveal_on_fire_defaults_to_yes() {
+        let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).expect("retail rules parse");
+        assert!(rules.weapon("M60").unwrap().reveal_on_fire);
+        assert!(rules.weapon("105mm").unwrap().reveal_on_fire);
+        assert!(!rules.weapon("AWP").unwrap().reveal_on_fire);
+    }
+
     use super::*;
     use crate::rules::ini_parser::IniFile;
 

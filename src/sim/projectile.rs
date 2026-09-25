@@ -997,8 +997,6 @@ pub struct ProjectilePayload {
     pub warhead: InternedId,
     /// Weapon identity retained for impact-only effects such as radiation.
     pub weapon: InternedId,
-    /// Firing house retained when the source dies before impact.
-    pub owner: InternedId,
 }
 
 /// Immutable admission data for an ordinary, non-vertical projectile.
@@ -1071,6 +1069,12 @@ pub struct Projectile {
     pub tracks_target: bool,
     pub target_expiry: TargetExpiryPolicy,
     pub collision: ProjectileCollisionPolicy,
+    /// Bullet `+0x8C`: FireAt copies the target's OnBridge onto an `Inviso=`
+    /// bullet (`0x006FF08B..0x006FF0B0`); every other bullet keeps the
+    /// constructor's false. `ObjectClass::GetHeight @ 0x005F5F40` then
+    /// measures from the bridge deck.
+    #[serde(default)]
+    pub on_bridge: bool,
 }
 
 /// Why a projectile reached its combat detonation handoff.
@@ -1168,9 +1172,8 @@ impl ProjectileStore {
 
     /// Admit one projectile. All three `BulletClass::AI` flight arms are
     /// represented — `ROT >= 1` homing, the `ROT < 1` ballistic arm, and the
-    /// `ROT < 1, Vertical` arm; an `Inviso` bullet still resolves on combat's
-    /// immediate path because native's `BulletClass::Fire` scales its velocity
-    /// by `0.0 / |v|` at `0x00468A0E` and resolves the impact in the same call.
+    /// `ROT < 1, Vertical` arm. An `Inviso` bullet is then placed on its
+    /// target by [`Self::fire_inviso`] and detonates on its first AI.
     // AbstractClass::AssignUniqueID @ 0x00410230 obtains this identity from
     // ScenarioClass::NextUniqueID @ 0x0068BCB0; the store never owns a second
     // allocator.
@@ -1214,9 +1217,47 @@ impl ProjectileStore {
                 tracks_target: spawn.tracks_target,
                 target_expiry: spawn.target_expiry,
                 collision: spawn.collision,
+                on_bridge: false,
             },
         );
         id
+    }
+
+    /// `BulletClass::Construct @ 0x004664C0`'s Owner (`+0xB0`) on a re-fired
+    /// bullet.
+    pub(crate) fn set_owner(&mut self, id: u64, owner: u64) {
+        if let Some(projectile) = self.projectiles.get_mut(&id) {
+            projectile.source_id = owner;
+        }
+    }
+
+    /// `BulletClass::Fire @ 0x00468670` for an `Inviso=` BulletType
+    /// (`+0x29E`, `0x004688B7..0x00468A39`), after the common Unlimbo at the
+    /// launch source: the bullet stands on `placement`, the target coordinate
+    /// (`0x0046897D`; the firestorm and cliff walks are dormant or
+    /// overwritten), its speed `+0x110` is 0, and its velocity is scaled by
+    /// `0.0 / |v|` (an all-zero vector first becoming `(100, 0, 0)`), which a
+    /// `ROT > 0` type then renormalises to `(1, 0, 0)` (`0x00468A98..0x00468B57`).
+    /// The proximity detector's reference is the placement, so its starting
+    /// distance is 0 (`ProximityDetector::Setup @ 0x004E1130`). FireAt then
+    /// copies the target's OnBridge (`0x006FF08B`).
+    pub(crate) fn fire_inviso(&mut self, id: u64, placement: ProjectileCoord, on_bridge: bool) {
+        let Some(projectile) = self.projectiles.get_mut(&id) else {
+            return;
+        };
+        projectile.position = placement;
+        projectile.speed_leptons_per_frame = 0;
+        projectile.velocity = if projectile.guidance.is_some() {
+            ProjectileVelocity::new(1, 0, 0)
+        } else {
+            ProjectileVelocity::new(0, 0, 0)
+        };
+        if let Some(guidance) = projectile.guidance.as_mut() {
+            guidance.max_speed = 0;
+            guidance.fuse_reference = placement;
+        }
+        projectile.last_distance_half = proximity_initial_distance(placement, placement);
+        projectile.on_bridge = on_bridge;
     }
 
     /// Advance every currently admitted projectile in ascending stable id.
@@ -1452,15 +1493,21 @@ impl ProjectileStore {
                 // gamemd-derived: `BulletClass::AI 0x00466DB1..0x00466E6B`.
                 // The +0x1C8 receiver is ObjectClass::GetHeight @ 0x005F5F40
                 // on the OLD object coordinate; HomingTrack has only updated
-                // the stack candidate. Stock persistent (non-Inviso) bullets
-                // retain the constructor's OnBridge=false, so this height is
-                // above terrain, even when the cell contains a bridge.
+                // the stack candidate. Only an Inviso bullet can be OnBridge
+                // (`Projectile::on_bridge`); it measures from the deck.
                 let reached_distance = coord_distance(candidate, target_position);
-                let old_height = previous_position.z.wrapping_sub(projectile_ground_z(
-                    terrain,
-                    shared_cell_dummy,
-                    previous_position,
-                ));
+                let old_height = previous_position
+                    .z
+                    .wrapping_sub(projectile_ground_z(
+                        terrain,
+                        shared_cell_dummy,
+                        previous_position,
+                    ))
+                    .wrapping_sub(if projectile.on_bridge {
+                        crate::util::lepton::BRIDGE_HEIGHT_DELTA_LEPTONS as i32
+                    } else {
+                        0
+                    });
                 let (admit_impact, snap_to_target) = homing_impact_admission(
                     reached_distance,
                     projectile.velocity,
@@ -2332,7 +2379,6 @@ mod tests {
                 base_damage: 40,
                 warhead: InternedId::from_index(3),
                 weapon: InternedId::from_index(4),
-                owner: InternedId::from_index(5),
             },
             speed_leptons_per_frame: 64,
             velocity: ProjectileVelocity::new(64, 0, 0),

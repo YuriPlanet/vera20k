@@ -1568,7 +1568,16 @@ pub(crate) fn populate_launch_houses(
             sim.session.game_options.starting_credits,
             sim.session.game_options.tech_level,
         );
-        house.difficulty = slot.difficulty;
+        // `ScenarioClass::Create_Houses` passes every launch house through
+        // `HouseClass::SetDifficulty` (humans with 1, `0x00688132`; computer
+        // slots with their own, `0x006882B9`); Neutral and Special are never
+        // passed and keep the constructor's values.
+        house.set_difficulty(
+            slot.difficulty,
+            &rules.general.difficulty_rof,
+            rules.country_rof(country_name),
+            sim.session.game_mode_nonzero,
+        );
         // ScenarioClass::Create_Houses leaves generated human CurrentIQ at
         // the constructor value zero and stamps generated computer slots with
         // Rules.MaxIQLevels in non-campaign sessions.
@@ -2558,6 +2567,12 @@ pub(crate) fn initialize_map_roster_houses(
             sim.session.game_options.tech_level,
         );
         house_state.player_control = player_control;
+        // RESIDUAL: a map-declared house keeps the constructor's difficulty
+        // and ROF bias 1.0 (`HouseClass+0x1A8`); only launch slots pass
+        // through `set_difficulty`. Native's difficulty assignment for map
+        // houses (campaign computer houses, map civilians) is not traced.
+        // Trigger: a weapon reload of such a house. Effect: its GetROF lacks
+        // the difficulty row.
         house_state.base_plan.percent_built = house.base_plan.percent_built;
         house_state.base_plan.nodes = house
             .base_plan

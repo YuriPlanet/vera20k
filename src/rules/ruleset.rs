@@ -68,6 +68,10 @@ pub struct CountryRules {
     pub armor_aircraft_mult: f32,
     pub armor_buildings_mult: f32,
     pub armor_defenses_mult: f32,
+    /// `ROF=` (HouseType `+0xE8`; constructor 1.0 at `0x00511457`, ReadDouble
+    /// at `0x00511A0C`). `HouseClass::SetDifficulty` multiplies it into the
+    /// house's ROF bias outside campaigns. No retail country sets it.
+    pub rof: f64,
     /// `UIName=` — the country's string-table key (e.g. `Name:Americans`).
     /// gamemd fills a house's stored display name from this key's localized text,
     /// which is what the end-of-match score screen shows in the Player column.
@@ -94,6 +98,7 @@ impl Default for CountryRules {
             armor_aircraft_mult: 1.0,
             armor_buildings_mult: 1.0,
             armor_defenses_mult: 1.0,
+            rof: 1.0,
             ui_name: None,
             name: None,
         }
@@ -116,6 +121,7 @@ impl CountryRules {
             armor_aircraft_mult: section.get_f32("ArmorAircraftMult").unwrap_or(1.0),
             armor_buildings_mult: section.get_f32("ArmorBuildingsMult").unwrap_or(1.0),
             armor_defenses_mult: section.get_f32("ArmorDefensesMult").unwrap_or(1.0),
+            rof: section.read_double("ROF", 1.0),
             ui_name: section
                 .get("UIName")
                 .map(|s| s.trim().to_string())
@@ -265,8 +271,20 @@ pub struct GeneralRules {
     /// `[General] VeteranROF=` — `RulesClass+0x690`, read at `0x0066EF61`.
     /// `TechnoClass::GetROF @ 0x006FCFA0` multiplies the jittered reload by it
     /// at `0x006FD136..0x006FD145` for a `ROF`-ability holder. Constructor
-    /// default UNCHECKED.
+    /// default 1.0 (`0x00665F86`).
     pub veteran_rof: f64,
+    /// `[Easy]`, `[Normal]` and `[Difficult]` `ROF=`, the `ROF` field
+    /// (`+0x20`) of the three difficulty rows at `RulesClass+0x1538`
+    /// (stride `0x50`), in that order. `RulesClass::Process` reads them at
+    /// `0x00668EF5..0x00668F26` through `ReadDifficulty @ 0x0066D270`, which
+    /// runs only when the section exists and reads `ROF` with ReadDouble and
+    /// an explicit default of 1.0 (`0x0066D2E9..0x0066D2FD`). The row index is
+    /// `HouseClass+0x184` ([`HouseDifficulty`](crate::sim::house_state::HouseDifficulty)
+    /// order: 0 is a Hard AI, 2 an Easy AI). The constructor leaves the rows
+    /// unset (it skips from `+0x1530` to `+0x1638`, `0x006673E2`), so a
+    /// missing section is undefined natively; retail defines all three, and
+    /// VERA reads a missing one as 1.0.
+    pub difficulty_rof: [f64; 3],
     /// Receiver-side divisor selected by the rank-specific `STRONGER`
     /// ability (`VeteranArmor=` in `[General]`).
     pub veteran_armor: f64,
@@ -537,6 +555,10 @@ pub struct GeneralRules {
     /// target scans for every mission except Area Guard. The per-object scan
     /// timer is re-armed to this value plus a 0..=2 scenario-RNG jitter.
     pub normal_targeting_delay: u32,
+    /// `[General] DeadBodies=` (`Rules+0x124`): the corpse anims an
+    /// infantryman's Die1..Die5 completion picks from when its type names none
+    /// (`0x00520C42..0x00520C91`). Retail: `DEATH_A`..`DEATH_F`.
+    pub dead_bodies: Vec<String>,
     /// `GuardAreaTargetingDelay=` ([General], stock 36) — the same cadence for
     /// an Area Guard object, which scans twice as far and so scans less often.
     pub guard_area_targeting_delay: u32,
@@ -1199,6 +1221,7 @@ impl Default for GeneralRules {
             veteran_combat: 1.0,
             veteran_speed: 1.0,
             veteran_rof: 1.0,
+            difficulty_rof: [1.0; 3],
             veteran_armor: 1.0,
             curley_shuffle: false,
             repair_rate_minutes: 0.016,
@@ -1305,6 +1328,7 @@ impl Default for GeneralRules {
             target_distance_coefficient_default: -10.0,
             threat_per_occupant: 5,
             normal_targeting_delay: 27,
+            dead_bodies: Vec::new(),
             guard_area_targeting_delay: 36,
             building_garrisoned_sound: None,
             sell_sound: None,
@@ -1457,13 +1481,19 @@ pub struct GarrisonRules {
     /// Damage multiplier applied to garrison fire: the f32 at `Rules+0xF40`
     /// that FireAt multiplies on the x87 (`0x006FE3F1`).
     pub occupy_damage_multiplier: f32,
-    /// ROF divisor for garrison fire -- higher = faster.
-    pub occupy_rof_multiplier: SimFixed,
+    /// `[CombatDamage] OccupyROFMultiplier=`, the single at `Rules+0xF44`
+    /// (ReadDouble stored with `FSTP dword`, `0x0066C6A9..0x0066C6B4`;
+    /// constructor 1.0f, `0x00666AB6`). GetROF divides a garrison's reload by
+    /// it on the x87 when it is greater than zero (`0x006FD19C`).
+    pub occupy_rof_multiplier: f32,
     /// Fixed weapon range in cells for garrisoned fire, replaces weapon's own range.
     pub occupy_weapon_range: i32,
     /// Damage multiplier for bunker passengers.
     pub bunker_damage_multiplier: f32,
-    /// ROF divisor for bunker passengers.
+    /// `[CombatDamage] BunkerROFMultiplier=`, the single at `Rules+0xF50`
+    /// (`0x0066C712..0x0066C71D`; constructor 1.0f, `0x00666ACD`). GetROF
+    /// divides a bunkered unit's reload by it when it is non-zero
+    /// (`0x006FD1B1..0x006FD1EF`).
     pub bunker_rof_multiplier: f32,
     /// Range bonus in cells for bunker passengers.
     pub bunker_weapon_range_bonus: i32,
@@ -1477,7 +1507,7 @@ impl Default for GarrisonRules {
     fn default() -> Self {
         Self {
             occupy_damage_multiplier: 1.0,
-            occupy_rof_multiplier: SimFixed::ONE,
+            occupy_rof_multiplier: 1.0,
             occupy_weapon_range: 5,
             bunker_damage_multiplier: 1.0,
             bunker_rof_multiplier: 1.0,
@@ -1499,7 +1529,7 @@ impl GarrisonRules {
         };
         Self {
             occupy_damage_multiplier: get_f32("OccupyDamageMultiplier", 1.0),
-            occupy_rof_multiplier: sim_from_f32(get_f32("OccupyROFMultiplier", 1.0)),
+            occupy_rof_multiplier: get_f32("OccupyROFMultiplier", 1.0),
             occupy_weapon_range: get_i32("OccupyWeaponRange", 5),
             bunker_damage_multiplier: get_f32("BunkerDamageMultiplier", 1.0),
             bunker_rof_multiplier: get_f32("BunkerROFMultiplier", 1.0),
@@ -1862,6 +1892,13 @@ impl GeneralRules {
             // Passive-scan cadence, in frames. Both keys are present in stock
             // rulesmd.ini with exactly the constructor defaults (27 / 36); read
             // them rather than hardcoding so a mod's values take effect.
+            dead_bodies: general
+                .get_list("DeadBodies")
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect(),
             normal_targeting_delay: general
                 .get_i32("NormalTargetingDelay")
                 .map(|v| v.max(0) as u32)
@@ -1888,6 +1925,10 @@ impl GeneralRules {
             veteran_rof: general
                 .get_f64("VeteranROF")
                 .unwrap_or(defaults.veteran_rof),
+            difficulty_rof: ["Easy", "Normal", "Difficult"].map(|name| {
+                ini.section(name)
+                    .map_or(1.0, |section| section.read_double("ROF", 1.0))
+            }),
             veteran_armor: general.get_f64("VeteranArmor").unwrap_or(1.0),
             curley_shuffle: general
                 .get_bool("CurleyShuffle")
@@ -3951,6 +3992,11 @@ impl RuleSet {
     pub fn country_multiplay_passive(&self, id: &str) -> bool {
         self.country_rules(id)
             .is_some_and(|country| country.multiplay_passive)
+    }
+
+    /// The country's `ROF=` (HouseType `+0xE8`); 1.0 for an unknown country.
+    pub fn country_rof(&self, id: &str) -> f64 {
+        self.country_rules(id).map_or(1.0, |country| country.rof)
     }
 
     /// Whether a country/house type may claim nearby map walls. Native default is true.
@@ -7702,5 +7748,48 @@ Projectile=Invisible
             first.simulation_config_hash(),
             changed.simulation_config_hash()
         );
+    }
+
+    /// Retail difficulty rows and country ROF through the production reader:
+    /// `[Easy] ROF=.8`, `[Normal] ROF=1.0`, `[Difficult] ROF=1.2` (ReadDouble
+    /// widens the `%f` single), and no retail country sets `ROF=`, so every
+    /// country keeps the constructor's 1.0.
+    #[test]
+    fn retail_difficulty_and_country_rof() {
+        let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let rules = RuleSet::from_ini(&ini).expect("retail rules parse");
+        assert_eq!(
+            rules.general.difficulty_rof,
+            [f64::from(0.8f32), 1.0, f64::from(1.2f32)]
+        );
+        for country in ["Americans", "Russians", "YuriCountry"] {
+            assert_eq!(rules.country_rof(country), 1.0, "{country}");
+        }
+    }
+
+    /// Retail corpse anims through the production reader: `[General]
+    /// DeadBodies=` lists six, and the GI and Conscript name none of their own
+    /// and are not `NotHuman=`, so their deaths pick from the six.
+    #[test]
+    fn retail_dead_bodies() {
+        let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let rules = RuleSet::from_ini(&ini).expect("retail rules parse");
+        assert_eq!(
+            rules.general.dead_bodies,
+            [
+                "DEATH_A", "DEATH_B", "DEATH_C", "DEATH_D", "DEATH_E", "DEATH_F"
+            ]
+        );
+        for infantry in ["E1", "E2"] {
+            let object = rules.object(infantry).unwrap();
+            assert!(
+                object.dead_bodies.is_empty() && !object.not_human,
+                "{infantry}"
+            );
+        }
     }
 }

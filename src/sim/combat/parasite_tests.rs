@@ -59,7 +59,13 @@ Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
 Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n";
 
 fn rules() -> RuleSet {
-    RuleSet::from_ini(&IniFile::from_str(RULES)).expect("parasite fixture rules")
+    // Retail `[DRON] PrimaryFireFLH=`: a jump from ground height would
+    // detonate on its first AI (`0x00466DB1`, old height <= 0).
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(RULES)).expect("parasite fixture rules");
+    rules.art_registry = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
+        "[DRON]\nPrimaryFireFLH=0,0,30\n",
+    ));
+    rules
 }
 
 struct Arena {

@@ -814,7 +814,7 @@ impl Simulation {
         self.hash_smudge_grid(&mut hasher);
         self.hash_radiation(&mut hasher);
         if schema.includes(HashFeature::MasterFrame) {
-            self.hash_projectiles(&mut hasher);
+            self.hash_projectiles(&mut hasher, schema);
             let shared_dummy_handle = self.effective_shared_cell_dummy();
             let shared_dummy = shared_dummy_handle.snapshot();
             let gap_flags = shared_dummy_handle.retained_bridge_flags() & 0xC00;
@@ -954,7 +954,7 @@ impl Simulation {
         }
     }
 
-    fn hash_projectiles(&self, hasher: &mut impl Hasher) {
+    fn hash_projectiles(&self, hasher: &mut impl Hasher, schema: HashSchema) {
         self.projectiles.len().hash(hasher);
         for (&id, projectile) in self.projectiles.iter() {
             id.hash(hasher);
@@ -973,7 +973,14 @@ impl Simulation {
             projectile.payload.base_damage.hash(hasher);
             projectile.payload.warhead.index().hash(hasher);
             projectile.payload.weapon.index().hash(hasher);
-            projectile.payload.owner.index().hash(hasher);
+            if !schema.includes(HashFeature::InvisoBullet) {
+                // The retired owner-house snapshot: the live source's house.
+                self.substrate
+                    .entities
+                    .get(projectile.source_id)
+                    .map_or(0, |source| source.owner().index())
+                    .hash(hasher);
+            }
             projectile.speed_leptons_per_frame.hash(hasher);
             projectile.velocity.hash(hasher);
             projectile.trajectory.hash(hasher);
@@ -996,6 +1003,9 @@ impl Simulation {
             projectile.collision.inaccurate.hash(hasher);
             projectile.collision.floater.hash(hasher);
             projectile.collision.elasticity_bits.hash(hasher);
+            if schema.includes(HashFeature::InvisoBullet) {
+                projectile.on_bridge.hash(hasher);
+            }
         }
     }
 
@@ -1085,6 +1095,9 @@ impl Simulation {
             house.is_human.hash(hasher);
             house.player_control.hash(hasher);
             (house.difficulty as i32).hash(hasher);
+            if schema.includes(HashFeature::InvisoBullet) {
+                house.rof_bias().bits().hash(hasher);
+            }
             house.is_defeated.hash(hasher);
             house.has_won.hash(hasher);
             house.has_lost.hash(hasher);
@@ -3377,6 +3390,31 @@ mod rally_hash_tests {
         sim_b.houses.insert(owner_b, hard_house);
 
         assert_ne!(sim_a.state_hash(), sim_b.state_hash());
+    }
+
+    #[test]
+    fn house_rof_bias_changes_state_hash_at_its_difficulty() {
+        use crate::sim::house_state::{HouseDifficulty, HouseState};
+
+        // Same stored difficulty, different bias: only the game-mode arm of
+        // `set_difficulty` folds the country's ROF into `HouseClass+0x1A8`.
+        let hashes: Vec<u64> = [false, true]
+            .into_iter()
+            .map(|game_mode_nonzero| {
+                let mut sim = Simulation::new();
+                let owner = sim.interner.intern("Computer1");
+                let mut house = HouseState::new(owner, 0, None, false, 0, 10);
+                house.set_difficulty(
+                    HouseDifficulty::Hard,
+                    &[0.8, 1.0, 1.2],
+                    0.9,
+                    game_mode_nonzero,
+                );
+                sim.houses.insert(owner, house);
+                sim.state_hash()
+            })
+            .collect();
+        assert_ne!(hashes[0], hashes[1]);
     }
 
     #[test]
