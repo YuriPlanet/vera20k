@@ -880,6 +880,11 @@ impl App {
             .frontend.shell_controller
             .ensure_active(Self::validation_modal_dialog_id(), true);
         state.frontend.shell_controller.on_pointer_down(x, y, &feed);
+        // `0xCE`'s owner-draw OK plays GUIMainButtonSound on the press
+        // (`0x00612B70` via the message box `0x005D3490`).
+        if state.frontend.shell_controller.pressed().is_some() {
+            Self::play_main_menu_button_sound(state);
+        }
         state.platform.window.request_redraw();
         true
     }
