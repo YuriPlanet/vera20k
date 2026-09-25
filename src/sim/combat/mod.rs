@@ -316,6 +316,7 @@ fn classify_projectile_delivery(
             inaccurate: projectile.inaccurate,
             floater: projectile.floater,
             elasticity_bits: projectile.elasticity.to_bits(),
+            arcing: projectile.arcing,
         },
         ballistic,
         vertical: projectile
@@ -2890,6 +2891,7 @@ fn emit_projectile_shrapnel(
                 inaccurate: child_projectile.inaccurate,
                 floater: child_projectile.floater,
                 elasticity_bits: child_projectile.elasticity.to_bits(),
+                arcing: child_projectile.arcing,
             },
         });
     }

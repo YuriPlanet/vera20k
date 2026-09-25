@@ -235,24 +235,15 @@ pub struct WarheadType {
     pub nuke_maker: bool,
 
     // --- Int fields ---
-    /// EMP flag. RESIDUAL — native type mismatch, pre-existing, NOT fixed here
-    /// (M15a is documentation-only). `EMEffect=` is a **bool** in gamemd, at
-    /// `WarheadTypeClass+0x154`: `ReadBool` at `0x0075d7c1`, stored
-    /// `0x0075d7d5`, key string `0x00847d60`. VERA reads it as an `i32`.
-    /// `+0x170` — the offset previously claimed here — is a *different* key,
-    /// `Paralyzes=`, which is genuinely an int (`ReadInt` at `0x0075d92a`,
-    /// stored `0x0075d93e`, key string `0x00847d18`) and which VERA does not
-    /// parse at all.
-    /// - Trigger: a warhead authoring `EMEffect=` or `Paralyzes=`.
-    /// - Player effect: none in stock. The one stock `EMEffect=yes` is
-    ///   `[EMPuls]`, which retail itself annotates `;gs disabled in code` and
-    ///   which no stock weapon mounts; `get_i32("yes")` yields 0 where native
-    ///   would read `true`. The one stock `Paralyzes=32767` is `[ParasitePlus]`
-    ///   (SquidGrab) and belongs to the unported parasite effect (M15b).
-    /// - Frequency: zero observable occurrences in stock skirmish.
-    /// - Downstream risk: fixing the type is a rules-parse change, so it lands
-    ///   with whichever port first reads either field.
-    pub em_effect: i32,
+    /// `EMEffect=`, a bool at `WarheadTypeClass+0x154`: `ReadBool` at
+    /// `0x0075D7C1` with the field as default, which the constructor zeroes
+    /// (`0x0075CFB3`). The bullet's impact resolution skips its last snaps
+    /// for it (`0x00468E9F`). The one stock `EMEffect=yes`, `[EMPuls]`, is
+    /// mounted by no stock weapon.
+    /// RESIDUAL: `Paralyzes=` (`+0x170`, `ReadInt` at `0x0075D92A`) is not
+    /// parsed; its one stock user, `[ParasitePlus]`, belongs to the unported
+    /// parasite effect.
+    pub em_effect: bool,
     /// Money transfer on hit. Native offset **UNKNOWN** — VERA-internal,
     /// gamemd equivalent UNCHECKED. `WarheadTypeClass::ReadINI_Body` reads no
     /// `TransactMoney=` key (and no such string exists in the image);
@@ -423,7 +414,7 @@ impl WarheadType {
             nuke_maker: section.get_bool("NukeMaker").unwrap_or(false),
 
             // Int fields — all default 0
-            em_effect: section.get_i32("EMEffect").unwrap_or(0),
+            em_effect: section.get_bool("EMEffect").unwrap_or(false),
             transact_money: section.get_i32("TransactMoney").unwrap_or(0),
             cell_inf_death: section.get_i32("CellInfDeath").unwrap_or(0),
 

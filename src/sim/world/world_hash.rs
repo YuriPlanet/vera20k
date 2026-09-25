@@ -1006,6 +1006,9 @@ impl Simulation {
             if schema.includes(HashFeature::InvisoBullet) {
                 projectile.on_bridge.hash(hasher);
             }
+            if schema.includes(HashFeature::BulletArcing) {
+                projectile.collision.arcing.hash(hasher);
+            }
         }
     }
 
