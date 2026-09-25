@@ -474,7 +474,6 @@ pub fn paint_labels_at_depth(
                     label.align,
                     [0.0, 0.0],
                     depth,
-                    None,
                 ),
             }
         })
@@ -664,7 +663,6 @@ mod tests {
             ShellAlign::H_CENTER,
             [0.0, 0.0],
             TEXT_DEPTH,
-            None,
         );
         assert_eq!(
             bytemuck::cast_slice::<SpriteInstance, u8>(&actual.instances),

@@ -485,72 +485,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn family_windows_match_the_executed_relayout() {
-        // Research score-0x108 statics_108_{640x480,800x600,1024x768}: the
-        // right-panel children move, the table keeps its template windows.
-        for (w, h, heading, monitor, status, continue_button) in [
-            (
-                800,
-                600,
-                RectPx::new(635, 9, 163, 18),
-                RectPx::new(670, 47, 93, 55),
-                RectPx::new(10, 575, 456, 24),
-                RectPx::new(644, 535, 156, 42),
-            ),
-            (
-                640,
-                480,
-                RectPx::new(475, 9, 163, 18),
-                RectPx::new(510, 47, 93, 55),
-                RectPx::new(10, 455, 456, 24),
-                RectPx::new(484, 409, 156, 42),
-            ),
-            (
-                1024,
-                768,
-                RectPx::new(747, 93, 163, 18),
-                RectPx::new(782, 131, 93, 55),
-                RectPx::new(122, 659, 456, 24),
-                RectPx::new(756, 619, 156, 42),
-            ),
-        ] {
-            let layout = compute_layout(w, h);
-            assert_eq!(layout.page.title, heading, "{w}x{h}");
-            assert_eq!(layout.page.warning_monitor, monitor, "{w}x{h}");
-            assert_eq!(layout.page.status_help, status, "{w}x{h}");
-            assert_eq!(layout.continue_button(), continue_button, "{w}x{h}");
+    fn every_window_matches_the_executed_relayout() {
+        // tools/storage_oracle/shell_relayout.py: the right-panel children
+        // move with the screen, the table keeps its template windows.
+        use crate::ui::shell::layout::tests::executed_child_window as executed;
+        const BANDS: [u16; 10] = [
+            0x790, 0x791, 0x78F, 0x792, 0x793, 0x794, 0x795, 0x796, 0x797, 0x798,
+        ];
+        for (w, h) in [(640, 480), (800, 600), (1024, 768)] {
+            let layout = compute_layout(w as u32, h as u32);
+            let at = |control| executed(0x108, control, w, h);
+            assert_eq!(layout.page.title, at(0x694), "{w}x{h}");
+            assert_eq!(layout.page.warning_monitor, at(0x71C), "{w}x{h}");
+            assert_eq!(layout.page.status_help, at(0x695), "{w}x{h}");
+            assert_eq!(layout.continue_button(), at(CONTINUE_BUTTON), "{w}x{h}");
             let table = layout.table;
-            assert_eq!(table.game_label, RectPx::new(99, 124, 174, 17), "{w}x{h}");
-            assert_eq!(table.time_label, RectPx::new(372, 124, 159, 17), "{w}x{h}");
-            assert_eq!(table.bands[0], RectPx::new(96, 117, 441, 37), "{w}x{h}");
-            assert_eq!(table.bands[9], RectPx::new(96, 441, 441, 37), "{w}x{h}");
+            assert_eq!(table.game_label, at(GAME_LABEL), "{w}x{h}");
+            assert_eq!(table.time_label, at(TIME_LABEL), "{w}x{h}");
             assert_eq!(
-                table.rows[7].score,
-                RectPx::new(462, 445, 69, 17),
+                table.header.cells(),
+                HEADER_IDS.map(|control| at(control)),
                 "{w}x{h}"
             );
+            for (row, ids) in table.rows.iter().zip(ROW_CELL_IDS) {
+                assert_eq!(row.cells(), ids.map(|control| at(control)), "{w}x{h}");
+            }
+            assert_eq!(table.bands, BANDS.map(|control| at(control)), "{w}x{h}");
         }
-    }
-
-    #[test]
-    fn table_cells_match_the_executed_relayout() {
-        let layout = ScoreTableLayout::template();
-        assert_eq!(layout.game_label, RectPx::new(99, 124, 174, 17));
-        assert_eq!(layout.time_label, RectPx::new(372, 124, 159, 17));
-        assert_eq!(
-            layout.header.cells(),
-            [
-                RectPx::new(99, 159, 114, 17),
-                RectPx::new(221, 159, 69, 17),
-                RectPx::new(303, 159, 69, 17),
-                RectPx::new(386, 159, 69, 17),
-                RectPx::new(462, 159, 69, 17),
-            ]
-        );
-        let tops: Vec<i32> = layout.rows.iter().map(|row| row.name.y).collect();
-        assert_eq!(tops, [195, 231, 267, 302, 338, 374, 410, 445]);
-        let bands: Vec<i32> = layout.bands.iter().map(|band| band.y).collect();
-        assert_eq!(bands, [117, 153, 189, 225, 261, 297, 333, 369, 405, 441]);
     }
 
     #[test]

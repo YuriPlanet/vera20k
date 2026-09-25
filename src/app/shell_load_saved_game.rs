@@ -94,7 +94,7 @@ impl App {
     pub(super) fn handle_load_saved_game_mouse_move(state: &mut AppState) {
         Self::update_load_saved_game_scroll(state, true);
         // Every hover message repaints the status line (0x00615EF7).
-        state.frontend.shell_status_line.hover_repaint();
+        state.frontend.shell_status_line.repaint();
         state.platform.window.request_redraw();
     }
 

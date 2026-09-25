@@ -6,8 +6,8 @@ use crate::skirmish_launch::{SKIRMISH_PLAYER_SLOT_COUNT, SkirmishLaunchOptions};
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 use crate::ui::main_menu::{SkirmishCountry, SkirmishSettings, StartPosition};
 
+use super::super::SkirmishStatics;
 use super::super::layout::{SkirmishShellLayout, SkirmishTrackbarId};
-use super::super::static_reveal::StaticReveal;
 use super::trackbars::{SkirmishTrackbarBounds, trackbar_control_id, trackbar_hscroll_wparam};
 use super::{
     ChooseMapModalState, DropdownScrollDragState, DropdownScrollbarPressState, OpenComboDropdown,
@@ -276,15 +276,10 @@ pub struct SkirmishShellState {
     /// the setup dialog on screen while that dialog keeps its working options.
     pub saved_seed_browser: Option<super::SavedSeedBrowserState>,
     pub validation_modal: Option<SkirmishValidationModalState>,
-    pub status_help_text: String,
     pub pending_trackbar_hscrolls: Vec<SkirmishTrackbarHScrollNotification>,
     pub pending_ui_sounds: Vec<SkirmishShellUiSound>,
-    /// Title static 0x694 reveal cursor.
-    pub title_reveal: StaticReveal,
-    /// Game-type static 0x6EC reveal cursor.
-    pub game_type_reveal: StaticReveal,
-    /// Map-label static 0x5A8 reveal cursor.
-    pub map_label_reveal: StaticReveal,
+    /// The kind-1 statics; the status line holds the hover help.
+    pub(crate) statics: SkirmishStatics,
 }
 
 impl Default for SkirmishShellState {
@@ -326,12 +321,9 @@ impl Default for SkirmishShellState {
             random_map_setup_modal: None,
             saved_seed_browser: None,
             validation_modal: None,
-            status_help_text: String::new(),
             pending_trackbar_hscrolls: Vec::new(),
             pending_ui_sounds: Vec::new(),
-            title_reveal: StaticReveal::default(),
-            game_type_reveal: StaticReveal::default(),
-            map_label_reveal: StaticReveal::default(),
+            statics: SkirmishStatics::default(),
         }
     }
 }
@@ -385,37 +377,12 @@ impl SkirmishShellState {
     pub fn drain_pending_ui_sounds(&mut self) -> Vec<SkirmishShellUiSound> {
         std::mem::take(&mut self.pending_ui_sounds)
     }
-
-    /// Start the reveal for all three right-panel statics using their current
-    /// text. Called at shell first-paint slide completion (the 0x4EC->0x4EE
-    /// event).
-    pub fn start_right_panel_static_reveals(
-        &mut self,
-        title: &str,
-        game_type: &str,
-        map_label: &str,
-        now: std::time::Instant,
-    ) {
-        self.title_reveal.start(title, now);
-        self.game_type_reveal.start(game_type, now);
-        self.map_label_reveal.start(map_label, now);
-    }
-
-    /// Advance all three reveals one cadence step (each is internally 30 ms-gated).
-    pub fn advance_right_panel_static_reveals(&mut self, now: std::time::Instant) {
-        self.title_reveal.advance(now);
-        self.game_type_reveal.advance(now);
-        self.map_label_reveal.advance(now);
-    }
 }
 
+/// A hover message to the status line ([`SkirmishStatics::hover`]). Returns
+/// whether the help changed.
 pub fn set_status_help_text(state: &mut SkirmishShellState, text: impl Into<String>) -> bool {
-    let text = text.into();
-    if state.status_help_text == text {
-        return false;
-    }
-    state.status_help_text = text;
-    true
+    state.statics.hover(&text.into(), std::time::Instant::now())
 }
 
 pub fn clear_status_help_text(state: &mut SkirmishShellState) -> bool {
@@ -676,23 +643,6 @@ pub fn handle_player_name_tab(state: &mut SkirmishShellState) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{Duration, Instant};
-
-    #[test]
-    fn map_change_restarts_map_label_reveal_from_count_one() {
-        let now = Instant::now();
-        let mut s = SkirmishShellState::default();
-        s.map_label_reveal.start("OLD MAP", now);
-        for i in 1..=4 {
-            s.map_label_reveal
-                .advance(now + Duration::from_millis(30 * i));
-        }
-        // Selecting a new map restarts the reveal with the new text (the 0x4B2
-        // text-update path the use-map handler drives), from the first character.
-        s.map_label_reveal
-            .start("NEW MAP", now + Duration::from_millis(500));
-        assert_eq!(s.map_label_reveal.window().unwrap().count, 1);
-    }
 
     #[test]
     fn fresh_shell_starts_with_an_unreserved_random_position() {
