@@ -18,6 +18,7 @@ pub(crate) enum PresentedShell {
     LoadSavedGame,
     Options,
     WolWelcome,
+    Score,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +38,12 @@ enum Phase {
     /// The game's Leave was confirmed: the abort exit runs and the shell
     /// resumes.
     Quitting,
+    /// In the game: the MCV deploys, then the Construction Yard is sold.
+    Defeating,
+    /// The score page `0x108` is up after the defeat.
+    Scoring,
+    /// Continue was pressed on the settled score page.
+    Continuing,
 }
 
 /// What a Start Game checkpoint captures.
@@ -49,6 +56,11 @@ pub(super) enum LoadingTarget {
     /// The game runs [`QUIT_AFTER_FRAMES`] frames, then Leave through the
     /// in-game abort; the new `0x102` settled after its entry slide.
     AfterQuit,
+    /// A real defeat: the local MCV deploys and its Construction Yard is sold
+    /// through the production commands; the score page settled.
+    DefeatScore,
+    /// The same, then Continue: the new `0x102` settled.
+    DefeatContinue,
 }
 
 /// In-game frames before the quit route presses Leave.
@@ -87,6 +99,8 @@ pub(super) struct SkirmishCapture {
     pointer_rested: bool,
     loading: Option<LoadingTarget>,
     in_game_frames: u32,
+    deploy_sent: bool,
+    sell_sent: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -131,7 +145,7 @@ fn guard(state: &AppState, chooser: Option<ChooserTarget>, loading: bool) -> Res
             || (loading
                 && matches!(
                     state.frontend.screen,
-                    GameScreen::Loading | GameScreen::InGame
+                    GameScreen::Loading | GameScreen::InGame | GameScreen::MissionResult { .. }
                 )),
         surface: (state.render_width(), state.render_height()),
         failed: state.frontend.main_menu_shell_failed,
@@ -261,7 +275,14 @@ impl SkirmishCapture {
         guard(
             state,
             self.chooser,
-            matches!(self.phase, Phase::Starting | Phase::Quitting),
+            matches!(
+                self.phase,
+                Phase::Starting
+                    | Phase::Quitting
+                    | Phase::Defeating
+                    | Phase::Scoring
+                    | Phase::Continuing
+            ),
         )
     }
 
@@ -314,9 +335,116 @@ impl SkirmishCapture {
         Ok(())
     }
 
-    /// The route's time budget: the quit route loads and plays a game.
+    fn defeat_route(&self) -> bool {
+        matches!(
+            self.loading,
+            Some(LoadingTarget::DefeatScore | LoadingTarget::DefeatContinue)
+        )
+    }
+
+    /// The local player's first entity (stable order) whose rules type
+    /// matches.
+    fn local_entity(
+        state: &AppState,
+        wanted: impl Fn(&crate::rules::object_type::ObjectType) -> bool,
+    ) -> Option<u64> {
+        let owner = crate::app::input::commands::preferred_local_owner_name(state)?;
+        let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+        let rules = state.rules()?;
+        sim.entities()
+            .values_sorted()
+            .filter(|entity| sim.interner.resolve(entity.owner()) == owner)
+            .find(|entity| {
+                rules
+                    .object(sim.interner.resolve(entity.type_ref()))
+                    .is_some_and(&wanted)
+            })
+            .map(|entity| entity.stable_id())
+    }
+
+    /// Deploy the MCV, then sell the Construction Yard it becomes: with Short
+    /// Game on the house has no base left and loses. The score page follows
+    /// through the production exit cascade.
+    fn lose_the_game(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        if matches!(state.frontend.screen, GameScreen::MissionResult { .. }) {
+            ensure!(
+                App::score_shell_active(state),
+                "the defeat reached a result screen without the score page"
+            );
+            let page = state
+                .frontend
+                .score_page
+                .as_ref()
+                .context("score page missing")?;
+            let rows: Vec<Value> = page
+                .model
+                .rows
+                .iter()
+                .map(|row| {
+                    json!({"name": row.name, "rgb": row.rgb, "kills": row.kills,
+                        "losses": row.losses, "built": row.built, "score": row.score})
+                })
+                .collect();
+            self.route.push(
+                json!({"dialog": 0x108, "frame": frame, "action": "score page",
+                "title_key": page.model.title_key, "game": page.model.game_number,
+                "seconds": page.model.elapsed_seconds, "side": page.model.side, "rows": rows}),
+            );
+            self.phase = Phase::Scoring;
+            return Ok(());
+        }
+        let owner = crate::app::input::commands::preferred_local_owner_name(state)
+            .context("no local owner in the game")?;
+        if !self.deploy_sent {
+            let mcv = Self::local_entity(state, |object| object.deploys_into.is_some())
+                .context("the local player has no MCV")?;
+            crate::app::input::commands::schedule_command(
+                state,
+                &owner,
+                crate::sim::command::Command::DeployMcv { entity_id: mcv },
+            );
+            self.route.push(json!({"screen": "in game", "frame": frame,
+                "action": "deploy MCV", "entity": mcv}));
+            self.deploy_sent = true;
+        } else if !self.sell_sent
+            && let Some(yard) = Self::local_entity(state, |object| object.construction_yard)
+        {
+            crate::app::input::commands::schedule_command(
+                state,
+                &owner,
+                crate::sim::command::Command::SellBuilding { entity_id: yard },
+            );
+            self.route.push(json!({"screen": "in game", "frame": frame,
+                "action": "sell Construction Yard", "entity": yard}));
+            self.sell_sent = true;
+        }
+        Ok(())
+    }
+
+    /// The score page shows with no slide and every reveal finished.
+    fn score_settled(state: &AppState) -> bool {
+        state.frontend.shell_first_paint_slide.is_none()
+            && state.frontend.shell_exit.is_none()
+            && state.frontend.shell_page_title.is_terminal()
+            && state.frontend.shell_status_line.is_terminal()
+            && state
+                .frontend
+                .score_page
+                .as_ref()
+                .is_some_and(|page| page.reveals_terminal())
+    }
+
+    /// The route's time budget: the quit and defeat routes load and play a
+    /// game.
     pub(super) fn timeout(&self) -> std::time::Duration {
-        if self.loading == Some(LoadingTarget::AfterQuit) {
+        if matches!(
+            self.loading,
+            Some(
+                LoadingTarget::AfterQuit
+                    | LoadingTarget::DefeatScore
+                    | LoadingTarget::DefeatContinue
+            )
+        ) {
             std::time::Duration::from_secs(180)
         } else {
             std::time::Duration::from_secs(60)
@@ -345,7 +473,9 @@ impl SkirmishCapture {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
-        if self.phase == Phase::Quitting && state.frontend.screen == GameScreen::MainMenu {
+        if matches!(self.phase, Phase::Quitting | Phase::Continuing)
+            && state.frontend.screen == GameScreen::MainMenu
+        {
             // Back in the shell the pointer rests at the centre again.
             state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
             state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
@@ -530,6 +660,34 @@ impl SkirmishCapture {
                     self.phase = Phase::Quitting;
                 }
             }
+            (Phase::Starting, _)
+                if self.defeat_route() && state.frontend.screen == GameScreen::InGame =>
+            {
+                self.in_game_frames += 1;
+                if self.in_game_frames == QUIT_AFTER_FRAMES {
+                    self.phase = Phase::Defeating;
+                }
+            }
+            (Phase::Defeating, _) => self.lose_the_game(state, frame)?,
+            (Phase::Scoring, PresentedShell::Score) if Self::score_settled(state) => {
+                if self.loading == Some(LoadingTarget::DefeatContinue) {
+                    // Continue through the page's production handlers.
+                    state.match_state.input.cursor_x = 720.0;
+                    state.match_state.input.cursor_y = 556.0;
+                    App::handle_score_shell_mouse_move(state);
+                    App::handle_score_shell_mouse_down(state);
+                    App::handle_score_shell_mouse_up(state);
+                    state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
+                    state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
+                    ensure!(
+                        state.frontend.shell_exit.is_some(),
+                        "Continue did not start the 0x108 teardown slide"
+                    );
+                    self.route
+                        .push(json!({"dialog": 0x108, "frame": frame, "action": "Continue"}));
+                    self.phase = Phase::Continuing;
+                }
+            }
             (Phase::SlideOut, PresentedShell::Skirmish) => {
                 let target = self
                     .slide_out_tick
@@ -618,6 +776,18 @@ impl SkirmishCapture {
             }
             None => {}
         }
+        if self.loading == Some(LoadingTarget::DefeatScore) {
+            return Ok(self.phase == Phase::Scoring
+                && self.last_presented == Some(PresentedShell::Score)
+                && App::score_shell_active(state)
+                && Self::score_settled(state));
+        }
+        if self.loading == Some(LoadingTarget::DefeatContinue) {
+            return Ok(self.phase == Phase::Continuing
+                && state.frontend.screen == GameScreen::MainMenu
+                && self.last_presented == Some(PresentedShell::Skirmish)
+                && self.settled(state)?);
+        }
         if self.loading == Some(LoadingTarget::AfterQuit) {
             return Ok(self.phase == Phase::Quitting
                 && state.frontend.screen == GameScreen::MainMenu
@@ -631,7 +801,10 @@ impl SkirmishCapture {
         if let Some(target) = self.loading {
             let next = match target {
                 LoadingTarget::Blank => crate::app::loading::pump::NextLoadingFrame::Blank,
-                LoadingTarget::FirstFrame | LoadingTarget::AfterQuit => {
+                LoadingTarget::FirstFrame
+                | LoadingTarget::AfterQuit
+                | LoadingTarget::DefeatScore
+                | LoadingTarget::DefeatContinue => {
                     crate::app::loading::pump::NextLoadingFrame::First
                 }
             };

@@ -12,7 +12,7 @@ use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::{MainMenuShellChromeAtlas, MainMenuShellChromeEntry};
 use crate::render::shell_paint::{
     self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
-    SHELL_TEXT_RGB_ENABLED, push_entry_native,
+    SHELL_TEXT_RGB_ENABLED, push_entry_crop, push_entry_native,
 };
 use crate::render::shell_surface_present::SurfaceEffects;
 use crate::render::shell_text::{ShellAlign, ShellTextDraw};
@@ -37,41 +37,6 @@ const LIST_FILL_DEPTH: f32 = CHROME_DEPTH - 0.00003;
 
 fn rgb(color: [u8; 3]) -> [f32; 3] {
     color.map(|channel| f32::from(channel) / 255.0)
-}
-
-fn push_entry_crop(
-    out: &mut Vec<SpriteInstance>,
-    entry: MainMenuShellChromeEntry,
-    entry_origin: (i32, i32),
-    rect: RectPx,
-    depth: f32,
-) {
-    // Clip the destination to the entry canvas, then map it to atlas UVs.
-    let left = rect.x.max(entry_origin.0);
-    let top = rect.y.max(entry_origin.1);
-    let right = (rect.x + rect.w).min(entry_origin.0 + entry.pixel_size[0] as i32);
-    let bottom = (rect.y + rect.h).min(entry_origin.1 + entry.pixel_size[1] as i32);
-    if right <= left || bottom <= top {
-        return;
-    }
-    let u_per_px = entry.uv_size[0] / entry.pixel_size[0];
-    let v_per_px = entry.uv_size[1] / entry.pixel_size[1];
-    out.push(SpriteInstance {
-        position: [left as f32, top as f32],
-        size: [(right - left) as f32, (bottom - top) as f32],
-        uv_origin: [
-            entry.uv_origin[0] + (left - entry_origin.0) as f32 * u_per_px,
-            entry.uv_origin[1] + (top - entry_origin.1) as f32 * v_per_px,
-        ],
-        uv_size: [
-            (right - left) as f32 * u_per_px,
-            (bottom - top) as f32 * v_per_px,
-        ],
-        depth,
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
-        ..Default::default()
-    });
 }
 
 fn push_solid(
@@ -228,9 +193,7 @@ pub(crate) fn family_backdrop(
     FamilyBackdrop {
         background,
         darkened,
-        origin: crate::app::frontend::main_menu_shell_render::shell_background_origin(
-            screen_w, screen_h,
-        ),
+        origin: crate::ui::shell::geom::dialog_origin(screen_w, screen_h),
     }
 }
 

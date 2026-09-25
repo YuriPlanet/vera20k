@@ -80,9 +80,12 @@ one frame per 91 ms.
 
 ## Heading colours
 
-The reveal colours are the encoded COLORREF interpolation of the BITFONT
-Path-A print (`src/render/shell_text_reveal.rs`; yellow toward white over the
-8-unit trail). The shell batch shader
+The reveal colours are the BITFONT Path-A blend (`src/render/shell_text_reveal.rs`;
+yellow toward white over the 8-unit trail). The blend starts from the font's
+16-bit text colour: `0x00621040` truncates the COLORREF to R5G6B5 units and
+`0x00434DED..0x00434E2E` shifts them back to bytes with the low bits clear,
+so yellow blends from (248, 252, 0) (every step keeps the same RGB565 units as
+blending from (255, 255, 0); a row colour on the score screen does not). The shell batch shader
 multiplies a UI tint into the *encoded* texel (`palette_light` in
 `src/render/palette_light.wgsl`), so the Path-A glyph tint is the encoded byte
 over 255. Before this change the tint was additionally linearized, which darkened
@@ -90,7 +93,7 @@ every trail step (terminal step blue 30 reached the surface as 3, i.e. RGB565
 unit 0 instead of 3).
 
 The final paint is the one before the count reaches `len + range + 1`, so the
-last unit keeps trail step 1 (`0xFFFF1E`, RGB565 `(31, 63, 3)`): retail
+last unit keeps trail step 1 (bytes (248, 252, 30), RGB565 `(31, 63, 3)`): retail
 `mm3.png`, `sp-0x100-settled.png` and `options-0xd5-settled.png` show it. A later
 repaint without a timer (for example after the window is re-activated) paints
 count `len + range + 1` and turns that unit fully yellow, as in `mm-now.png`;

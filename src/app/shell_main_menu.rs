@@ -236,55 +236,119 @@ impl App {
         crate::app::frontend::menu_page_render::ActiveMenuPage::from_state(state).is_some()
     }
 
-    /// The end-of-match score screen owns input whenever it has both a resolved
-    /// model and the shell chrome to draw it with; without either, the result
-    /// screen falls back to its egui form and egui keeps the input.
+    /// The score page `0x108` owns the result screen once its model is set
+    /// and its art and the shell chrome exist; otherwise the result screen
+    /// keeps its egui form and egui keeps the input.
     pub(super) fn score_shell_active(state: &AppState) -> bool {
         matches!(state.frontend.screen, GameScreen::MissionResult { .. })
-            && state.frontend.score_screen.is_some()
+            && state.frontend.score_page.is_some()
+            && state.frontend.score_art.is_some()
             && state.frontend.main_menu_shell_chrome.is_some()
     }
 
-    fn score_shell_layout(state: &AppState) -> crate::ui::score_shell::ScoreShellLayout {
+    /// `ScoreDialog__Run` `0x005C9720` after a skirmish win or loss: the side
+    /// art (`ScoreArt__Load` `0x0072D730`), then dialog `0x108` with every
+    /// text its init (`0x497`) sets. The exit cascade has already restored the
+    /// shell size and started SCORE.
+    pub(crate) fn open_score_page(
+        state: &mut AppState,
+        model: crate::ui::score_shell::ScoreScreenModel,
+        title: String,
+        detail: String,
+    ) {
+        use crate::app::frontend::shell_pass::resolve_csf;
+        use crate::ui::score_shell::{ScorePage, ScoreTexts, format_elapsed, format_game_number};
+        let texts = ScoreTexts {
+            game: format_game_number(&model, &resolve_csf(state, "TXT_GAME")),
+            time: format_elapsed(&model, &resolve_csf(state, "TXT_TIME_FORMAT_HOURS")),
+            headers: [
+                "GUI:Player",
+                "GUI:Kills",
+                "GUI:Losses",
+                "GUI:Built",
+                "GUI:Score",
+            ]
+            .map(|key| resolve_csf(state, key).into_owned()),
+        };
+        state.frontend.score_art = state.process_assets.manager().and_then(|assets| {
+            crate::render::main_menu_shell_chrome::build_score_art(
+                &state.renderer.gpu,
+                &state.renderer.batch_renderer,
+                assets,
+                model.side,
+                state.renderer.gpu.config.width,
+            )
+        });
+        if state.frontend.score_art.is_none() {
+            log::warn!("Could not prepare the score art; the result screen falls back");
+        }
+        state.frontend.score_page = Some(ScorePage::open(model, &texts, Instant::now()));
+        state.frontend.screen = GameScreen::MissionResult { title, detail };
+        state
+            .frontend
+            .shell_controller
+            .reset_to(crate::ui::score_shell::SCORE_DIALOG, false);
+    }
+
+    fn score_layout(state: &AppState) -> crate::ui::score_shell::ScoreLayout {
         crate::ui::score_shell::compute_layout(
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,
         )
     }
 
-    pub(super) fn handle_score_shell_mouse_move(state: &mut AppState) {
-        let layout = Self::score_shell_layout(state);
-        state.frontend.score_shell_state.continue_hovered = layout.hit_continue(
+    /// Continue, the page's only button, through the shared controller.
+    fn score_input(
+        state: &mut AppState,
+    ) -> (
+        crate::ui::score_shell::ScoreLayout,
+        Vec<crate::ui::shell::layout::LaidOutControl>,
+        (i32, i32),
+    ) {
+        let layout = Self::score_layout(state);
+        let feed = Self::menu_page_button_feed(&layout.page);
+        state
+            .frontend
+            .shell_controller
+            .ensure_active(crate::ui::score_shell::SCORE_DIALOG, false);
+        let cursor = (
             state.match_state.input.cursor_x.round() as i32,
             state.match_state.input.cursor_y.round() as i32,
         );
+        (layout, feed, cursor)
+    }
+
+    /// Only Continue has help. Everywhere else the proc's common handler
+    /// (`0x00622B50`, `WM_NCHITTEST` at `0x00622CCB..0x00622E83`) finds the
+    /// dialog, a band (bands sit above the cells in Z-order) or another
+    /// static without help and writes an empty text: every move writes the
+    /// status line, which repaints it (`0x00615EF7`).
+    pub(super) fn handle_score_shell_mouse_move(state: &mut AppState) {
+        let (_, feed, (x, y)) = Self::score_input(state);
+        state.frontend.shell_controller.on_pointer_move(x, y, &feed);
+        state.frontend.shell_status_line.hover_repaint();
     }
 
     pub(super) fn handle_score_shell_mouse_down(state: &mut AppState) {
-        let layout = Self::score_shell_layout(state);
-        let inside = layout.hit_continue(
-            state.match_state.input.cursor_x.round() as i32,
-            state.match_state.input.cursor_y.round() as i32,
-        );
-        state.frontend.score_shell_state.continue_pressed = inside;
-        if inside {
+        let (_, feed, (x, y)) = Self::score_input(state);
+        state.frontend.shell_controller.on_pointer_down(x, y, &feed);
+        // GUIMainButtonSound through the owner-draw subclass (0x0061376B).
+        if state.frontend.shell_controller.pressed().is_some() {
             Self::play_main_menu_button_sound(state);
         }
     }
 
-    /// Release inside the button leaves the score screen. This is the only exit:
-    /// the native dialog is modal with one Continue button and dismisses to the
-    /// shell, so there is no cancel path to mirror.
+    /// Continue (`0x6D1`, result 1 at `0x005CA06C`) tears `0x108` down with
+    /// its slide; the match then ends and the shell resumes.
     pub(super) fn handle_score_shell_mouse_up(state: &mut AppState) {
-        let layout = Self::score_shell_layout(state);
-        let inside = layout.hit_continue(
-            state.match_state.input.cursor_x.round() as i32,
-            state.match_state.input.cursor_y.round() as i32,
-        );
-        let activated = state.frontend.score_shell_state.continue_pressed && inside;
-        state.frontend.score_shell_state.continue_pressed = false;
-        if activated {
-            Self::leave_mission_result_screen(state);
+        let (_, feed, (x, y)) = Self::score_input(state);
+        if state.frontend.shell_controller.on_pointer_up(x, y, &feed)
+            == Some(crate::ui::score_shell::CONTINUE_BUTTON)
+        {
+            Self::leave_shell_dialog(
+                state,
+                crate::app::frontend::shell_transition::ShellExitThen::ScoreContinue,
+            );
         }
     }
 
@@ -296,8 +360,9 @@ impl App {
         Self::capture_returned_skirmish_rng(state);
         state.match_state.startup.clear();
         state.match_state.scenario_elapsed_clock.reset();
-        state.frontend.score_screen = None;
-        state.frontend.score_shell_state = Default::default();
+        state.frontend.score_page = None;
+        // 0x0072D780 releases the score art.
+        state.frontend.score_art = None;
         state.frontend.screen = GameScreen::MainMenu;
         Self::enter_shell_window_mode(state);
         state.match_state.input.zoom_level = 1.0;
@@ -1041,6 +1106,7 @@ impl App {
             ShellExitThen::ChooseMapCancel => Self::close_choose_map_modal(state),
             ShellExitThen::ChooseMapRandomMap => Self::commit_choose_map_random_map(state),
             ShellExitThen::WolBack => Self::return_from_wol(state),
+            ShellExitThen::ScoreContinue => Self::leave_mission_result_screen(state),
             ShellExitThen::WolApiMissing => Self::commit_wol_api_missing(state),
         }
     }

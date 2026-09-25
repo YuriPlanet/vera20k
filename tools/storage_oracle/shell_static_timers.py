@@ -6,7 +6,9 @@ table (``[AC1B04]`` count, ``[AC1B18]`` hash, ``[AC1B0C]`` bits, ``[AC1B00]``
 buckets; record+0 HWND, +0x204 next, +0x70 dialog id), reads the child's id with
 GetDlgCtrlID and walks compare chains. This fixture runs the complete original
 bodies for heading ``0x694``, status line ``0x695`` and monitor ``0x71C`` of the
-main-menu family and Options/Skirmish/saved-game neighbours:
+main-menu family and Options/Skirmish/saved-game neighbours, and for the score
+dialog ``0x108``'s table statics (Game, Time, the five headers and the eight
+rows' name, Kills, Losses, Built and Score cells, template order):
 
 - ``602490`` kind-1 classifier (``60AA60`` sends ``0x4EE`` to every accepted child
   at the shell SHOW completion),
@@ -45,6 +47,24 @@ GETTERS = {
 }
 DIALOGS = (0xE2, 0x100, 0x101, 0x129, 0xD5, 0x102, 0xB7)
 CONTROLS = (0x694, 0x695, 0x71C)
+SCORE_DIALOG = 0x108
+# RT_DIALOG 0x108: Game 0x6D2, the headers, the per-row cells (the proc's
+# table at 0x0082FD5C: name, Kills, Losses, Built, Score) and Time 0x3EA.
+SCORE_TABLE = (
+    (0x6D2, 0x69D, 0x69E, 0x69F, 0x6A0, 0x78B)
+    + tuple(
+        control
+        for row in range(8)
+        for control in (
+            0x411 + row,
+            0x419 + row,
+            (0x6A3, 0x6A4, 0x6A9, 0x6AC, 0x6AF, 0x6B2, 0x6B5, 0x6B8)[row],
+            (0x6A5, 0x6A7, 0x6AA, 0x6AD, 0x6B0, 0x6B3, 0x6B6, 0x6B9)[row],
+            (0x6A6, 0x6A8, 0x6AB, 0x6AE, 0x6B1, 0x6B4, 0x6B7, 0x6BA)[row],
+        )
+    )
+    + (0x3EA,)
+)
 
 
 def read_u32(uc, address):
@@ -109,20 +129,21 @@ def run_getter(entry, dialog_id, control_id):
 
 
 def generate():
+    pairs = [(dialog_id, control_id) for dialog_id in DIALOGS for control_id in CONTROLS]
+    pairs += [(SCORE_DIALOG, control_id) for control_id in CONTROLS + SCORE_TABLE]
     cases = []
-    for dialog_id in DIALOGS:
-        for control_id in CONTROLS:
-            case = {"dialog_id": dialog_id, "control_id": control_id}
-            for name, entry in GETTERS.items():
-                case[name] = run_getter(entry, dialog_id, control_id)
-            cases.append(case)
+    for dialog_id, control_id in pairs:
+        case = {"dialog_id": dialog_id, "control_id": control_id}
+        for name, entry in GETTERS.items():
+            case[name] = run_getter(entry, dialog_id, control_id)
+        cases.append(case)
     return {"source": "unicorn/gamemd.exe", "cases": cases}
 
 
 if __name__ == "__main__":
     finish_vectors(generate, Path(__file__).with_suffix(".json"),
                    provenance=lambda: provenance(
-        scope="Complete original kind-1 classifier/interval/step/range getters and the kind-4 startup timer for 0x694/0x695/0x71C in seven shell dialogs",
+        scope="Complete original kind-1 classifier/interval/step/range getters and the kind-4 startup timer for 0x694/0x695/0x71C in seven shell dialogs and the score dialog 0x108, plus 0x108's 47 table statics",
         assumptions=[
             "Pre-match shell: the network-session predicate 69BBE0 returns false",
             "The parent dialog's record is found by the original lookup loop in a supplied one-bucket table; record fields other than HWND, next and dialog id stay zero",

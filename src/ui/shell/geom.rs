@@ -90,6 +90,24 @@ pub fn child_window(x: i32, y: i32, w: i32, h: i32) -> RectPx {
     RectPx::new(rect.x, rect.y, rect.w + 1, rect.h + 1)
 }
 
+/// The dialog origin `[0xB0FC1C]` (`0x0072EC70`): half the screen beyond
+/// 800x600, from 1024x768 up only. A dialog's own background is drawn there
+/// (`Background_Overlay` `0x0072E730`).
+pub fn dialog_origin(screen_w: i32, screen_h: i32) -> (i32, i32) {
+    (
+        if screen_w > 1023 {
+            (screen_w - 800) / 2
+        } else {
+            0
+        },
+        if screen_h > 767 {
+            (screen_h - 600) / 2
+        } else {
+            0
+        },
+    )
+}
+
 /// `(screen - base) / 2` clamped to >= 0. Canonical form; algebraically equal to
 /// the single-player `if screen > base` guard and the main-menu inline guard for
 /// every i32.
@@ -212,6 +230,16 @@ pub fn snap_button_biased_truncate(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dialog_origin_letterboxes_only_from_1024x768() {
+        assert_eq!(dialog_origin(640, 480), (0, 0));
+        assert_eq!(dialog_origin(800, 600), (0, 0));
+        assert_eq!(dialog_origin(1023, 767), (0, 0));
+        // Executed 0x0072EC70 (research origin.out.txt).
+        assert_eq!(dialog_origin(1024, 768), (112, 84));
+        assert_eq!(dialog_origin(1280, 1024), (240, 212));
+    }
 
     #[test]
     fn mul_div_round_matches_round_half_up_muldiv_all_odd_dlu() {

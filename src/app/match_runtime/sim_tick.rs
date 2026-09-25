@@ -173,47 +173,94 @@ pub(crate) fn drive_local_player_outcome_voice_wait(state: &mut AppState, wall_m
     );
 }
 
-/// The name one score row shows.
-///
-/// Native copies a stored per-house display name into every row, so no row ever
-/// shows the raw house key. The local player's is the handle they launched
-/// under; every other house shows its country's display name, which is what
-/// native derives that slot from.
+/// A score row's name: the house's UI name (`house+0x1602A`, copied at
+/// `0x005C98FE`). Skirmish setup gives a human house its player's handle
+/// (`0x00688094`) and every computer house `TXT_COMPUTER`
+/// (`0x00688252..0x00688270`). A human without a recorded handle (a launch
+/// with no skirmish session) shows `fallback`.
 fn score_row_display_name(
-    owner_name: &str,
-    local_owner: &Option<String>,
-    local_handle: &Option<String>,
-    country_name: Option<&str>,
+    is_human: bool,
+    handle: Option<&str>,
+    computer: &str,
+    fallback: &str,
 ) -> String {
-    let is_local = local_owner
-        .as_deref()
-        .is_some_and(|local| local.eq_ignore_ascii_case(owner_name));
-    if is_local && let Some(handle) = local_handle {
-        return handle.clone();
+    if !is_human {
+        return computer.to_string();
     }
-    // The raw house key is the last resort: it only surfaces for a house with no
-    // resolvable country at all.
-    country_name.unwrap_or(owner_name).to_string()
+    handle.unwrap_or(fallback).to_string()
+}
+
+/// A score row's colour: `HSV_To_RGB` of the house colour scheme's base HSV
+/// (`0x005C9E0C`, scheme `+0x308`, the `[Colors]` entry).
+pub(crate) fn score_row_rgb(
+    schemes: &[crate::rules::color_scheme::ColorSchemeEntry],
+    color: crate::rules::house_colors::HouseColorIndex,
+) -> [u8; 3] {
+    crate::rules::color_scheme::scheme_hsv_by_entry(schemes, usize::from(color.0))
+        .map_or([0xFF; 3], crate::rules::color_scheme::hsv_to_rgb)
+}
+
+/// What names and colours the score rows.
+struct ScoreRowSources<'a> {
+    handle: Option<&'a str>,
+    computer: &'a str,
+    schemes: &'a [crate::rules::color_scheme::ColorSchemeEntry],
+    colors: &'a crate::map::houses::HouseColorMap,
+}
+
+/// The dialog's rows from the sim's snapshot, in its order (`0x005C9D7A`).
+fn resolve_score_rows(
+    sim: &crate::sim::world::Simulation,
+    snapshot: &crate::sim::score::TerminalScoreSnapshot,
+    sources: &ScoreRowSources<'_>,
+    country_name: impl Fn(crate::sim::intern::InternedId) -> Option<String>,
+) -> Vec<crate::ui::score_shell::ScoreRow> {
+    let mut rows: Vec<_> = snapshot
+        .rows
+        .iter()
+        .map(|raw| {
+            let owner_name = sim.interner.resolve(raw.owner).to_string();
+            let is_human = sim
+                .houses
+                .get(&raw.owner)
+                .is_some_and(|house| house.is_human);
+            let fallback = raw.country.and_then(&country_name);
+            let color = sources
+                .colors
+                .get(&owner_name)
+                .copied()
+                .unwrap_or(crate::rules::house_colors::NO_REMAP);
+            crate::ui::score_shell::ScoreRow {
+                name: score_row_display_name(
+                    is_human,
+                    sources.handle,
+                    sources.computer,
+                    fallback.as_deref().unwrap_or(&owner_name),
+                ),
+                rgb: score_row_rgb(sources.schemes, color),
+                kills: raw.kills,
+                losses: raw.losses,
+                built: raw.built,
+                score: raw.score,
+            }
+        })
+        .collect();
+    crate::ui::score_shell::sort_rows(&mut rows);
+    rows
 }
 
 /// Resolve the end-of-match score presentation from a sim-owned raw snapshot.
 ///
 /// Simulation owns contender admission, raw statistics, displayed-score bonus
-/// calculation, and its Scenario RNG draws. This app helper only resolves names,
-/// colours, elapsed wall time, and display order. The existing Rust bonus formula
-/// and contender admission rules are preserved, while sim now uses its canonical
-/// house registration order. Exact native score-dialog traversal remains UNCHECKED.
+/// calculation, and its Scenario RNG draws. This app helper resolves names,
+/// colours, the local side, elapsed wall time, and display order. Exact native
+/// score-dialog traversal remains UNCHECKED.
 fn build_score_screen_model(
     state: &AppState,
     elapsed_seconds: i32,
 ) -> crate::ui::score_shell::ScoreScreenModel {
-    use crate::ui::score_shell::{ScoreRow, ScoreScreenModel};
+    use crate::ui::score_shell::ScoreScreenModel;
 
-    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
-    // Use the launch handle while it is still available. Current map handoff
-    // clears LoadingSession instead of pinning the handle for the match, so the
-    // ordinary fallback remains a recorded presentation residual.
-    let local_handle = crate::app::loading::pump::launch_player_name(state);
     let Some(sim) = state
         .match_state
         .sim_runtime
@@ -222,14 +269,24 @@ fn build_score_screen_model(
     else {
         return ScoreScreenModel::default();
     };
-    let Some(raw_snapshot) = sim.terminal_score_snapshot().cloned() else {
+    let Some(raw_snapshot) = sim.terminal_score_snapshot() else {
         log::error!("Natural match exit reached the score screen without a sim snapshot");
         return ScoreScreenModel::default();
     };
-    let mut rows: Vec<ScoreRow> = Vec::with_capacity(raw_snapshot.rows.len());
-    for raw in raw_snapshot.rows {
-        let owner_name = sim.interner.resolve(raw.owner).to_string();
-        let country_name = raw.country.and_then(|country| {
+    let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
+    let presentation = &state.match_state.match_presentation;
+    let rows = resolve_score_rows(
+        sim,
+        raw_snapshot,
+        &ScoreRowSources {
+            handle: presentation.local_player_handle.as_deref(),
+            computer: &computer,
+            schemes: state
+                .rules()
+                .map_or(&[][..], |rules| rules.color_schemes.as_slice()),
+            colors: &presentation.house_color_map,
+        },
+        |country| {
             let country = sim.interner.resolve(country);
             let (ui_key, plain) = state
                 .rules()
@@ -240,41 +297,15 @@ fn build_score_screen_model(
                 .map(|(key, csf)| csf.text(key).into_owned())
                 .filter(|text| Some(text.as_str()) != ui_key);
             localized.or_else(|| plain.map(str::to_string))
-        });
-        let display_name = score_row_display_name(
-            &owner_name,
-            &local_owner,
-            &local_handle,
-            country_name.as_deref(),
-        );
-        let color_index = state
-            .match_state
-            .match_presentation
-            .house_color_map
-            .get(&owner_name)
-            .copied()
-            .unwrap_or(crate::rules::house_colors::NO_REMAP);
-        // Shade 0 is the brightest band of the scheme ramp — the same colour
-        // the radar draws this house's dots with.
-        let rgb = state
-            .rules()
-            .map(|rules| {
-                let color = rules.house_color_ramps.ramp(color_index)[0];
-                [color.r, color.g, color.b]
-            })
-            .unwrap_or([0xFF, 0xFF, 0xFF]);
-        rows.push(ScoreRow {
-            name: display_name,
-            rgb,
-            kills: raw.kills,
-            losses: raw.losses,
-            built: raw.built,
-            score: raw.score,
-        });
-    }
-    // Highest score first. A stable sort keeps ties in house order, so the table
-    // is reproducible across peers rather than depending on a sort's tie-break.
-    rows.sort_by(|a, b| b.score.cmp(&a.score));
+        },
+    );
+    // Scenario +0x34B8: the side of session player 0's country, the local
+    // player in a skirmish (0x0068779A..0x0068782D).
+    let side = crate::app::input::commands::preferred_local_owner_name(state)
+        .as_deref()
+        .and_then(|owner| sim.interner.get(owner))
+        .and_then(|owner| sim.houses.get(&owner))
+        .map_or(0, |house| house.side_index);
 
     ScoreScreenModel {
         // A stock offline skirmish takes the skirmish heading; the networked
@@ -285,6 +316,7 @@ fn build_score_screen_model(
         // model is unsigned and applies the native 99:59:59 ceiling, so keep
         // the pathological rollover representation local to this boundary.
         elapsed_seconds: elapsed_seconds as u32,
+        side,
         rows,
     }
 }
@@ -1718,8 +1750,8 @@ mod tests {
 #[cfg(test)]
 mod modal_pump_tests {
     use super::{
-        SessionMode, modal_pump_should_advance_sim, score_row_display_name,
-        should_record_replay_tick, wall_clock_service_admission,
+        ScoreRowSources, SessionMode, modal_pump_should_advance_sim, resolve_score_rows,
+        score_row_rgb, should_record_replay_tick, wall_clock_service_admission,
     };
 
     #[test]
@@ -1949,62 +1981,98 @@ mod modal_pump_tests {
     }
 
     #[test]
-    fn score_rows_never_show_the_raw_house_key() {
-        let local = Some("Americans".to_string());
-        let handle = Some("Commander".to_string());
-        // Local player: the handle they launched under.
-        assert_eq!(
-            score_row_display_name("Americans", &local, &handle, Some("Americans!")),
-            "Commander"
-        );
-        // Owner-key match is case-insensitive, as elsewhere in the owner paths.
-        assert_eq!(
-            score_row_display_name("AMERICANS", &local, &handle, Some("Americans!")),
-            "Commander"
-        );
-        // Every other house shows its country's display name. Two computer
-        // opponents of different countries read differently, as they do natively.
-        assert_eq!(
-            score_row_display_name("Russians", &local, &handle, Some("Russia")),
-            "Russia"
-        );
-        assert_eq!(
-            score_row_display_name("Africans", &local, &handle, Some("Libya")),
-            "Libya"
-        );
-    }
-
-    #[test]
-    fn current_house_collision_score_label_uses_the_separate_handle() {
-        let local_owner = Some("Player".to_string());
-        for handle in ["Neutral", "SPECIAL", "computer1"] {
-            let local_handle = Some(handle.to_string());
-            assert_eq!(
-                score_row_display_name("Player", &local_owner, &local_handle, Some("America")),
-                handle,
+    fn retail_score_row_colours_match_the_retail_still() {
+        // Retail still at 800x600: the Easy AI (DarkRed) and the local player
+        // (DarkBlue, Color=2) rows, in RGB565 units.
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let schemes = crate::rules::color_scheme::parse_color_schemes(&rules);
+        for (name, units) in [("DarkRed", [31, 6, 3]), ("DarkBlue", [4, 26, 26])] {
+            let entry = crate::rules::color_scheme::scheme_entry_by_name(&schemes, name)
+                .unwrap_or_else(|| panic!("[Colors] {name}"));
+            let rgb = score_row_rgb(
+                &schemes,
+                crate::rules::house_colors::HouseColorIndex(entry as u8),
             );
-            assert_eq!(
-                score_row_display_name("Computer1", &local_owner, &local_handle, Some("Russia")),
-                "Russia",
-            );
+            assert_eq!([rgb[0] >> 3, rgb[1] >> 2, rgb[2] >> 3], units, "{name}");
         }
     }
 
     #[test]
-    fn score_row_name_falls_back_when_no_launch_handle_was_recorded() {
-        // Outside a skirmish launch there is no handle, so even the local row
-        // takes the country name.
-        assert_eq!(
-            score_row_display_name("Americans", &None, &None, Some("America")),
-            "America"
+    fn score_rows_follow_the_houses_names_colours_and_the_native_order() {
+        use crate::sim::house_state::HouseState;
+        // Retail still: the local player (DarkBlue) and one Easy AI (DarkRed),
+        // both at score 0; the dialog lists "Computer" first.
+        let schemes = crate::rules::color_scheme::parse_color_schemes(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[Colors]\nDarkRed=0,230,255\nDarkBlue=153,214,212\n",
+            ),
         );
-    }
-
-    #[test]
-    fn score_row_name_uses_the_house_key_only_with_no_resolvable_country() {
-        assert_eq!(
-            score_row_display_name("Americans", &None, &None, None),
-            "Americans"
+        let mut sim = crate::sim::world::Simulation::with_seed(1);
+        let player = sim.interner.intern("Player");
+        let computer = sim.interner.intern("Computer1");
+        sim.houses
+            .insert(player, HouseState::new(player, 0, None, true, 0, 10));
+        sim.houses
+            .insert(computer, HouseState::new(computer, 1, None, false, 0, 10));
+        let row = |owner, losses| crate::sim::score::TerminalScoreRowSnapshot {
+            owner,
+            country: None,
+            survived: owner == computer,
+            kills: 0,
+            losses,
+            built: 0,
+            raw_score: 0,
+            score: 0,
+        };
+        let snapshot = crate::sim::score::TerminalScoreSnapshot {
+            rows: vec![row(player, 15), row(computer, 0)],
+        };
+        let colors = crate::map::houses::HouseColorMap::from([
+            (
+                "Player".to_string(),
+                crate::rules::house_colors::HouseColorIndex(1),
+            ),
+            (
+                "Computer1".to_string(),
+                crate::rules::house_colors::HouseColorIndex(0),
+            ),
+        ]);
+        let rows = resolve_score_rows(
+            &sim,
+            &snapshot,
+            &ScoreRowSources {
+                handle: Some("[New Player]"),
+                computer: "Computer",
+                schemes: &schemes,
+                colors: &colors,
+            },
+            |_| None,
         );
+        let shown: Vec<(&str, [u8; 3], u32)> = rows
+            .iter()
+            .map(|row| (row.name.as_str(), row.rgb, row.losses))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("Computer", [255, 25, 25], 0),
+                ("[New Player]", [34, 105, 212], 15)
+            ]
+        );
+        // Without a skirmish session a human row falls back.
+        let rows = resolve_score_rows(
+            &sim,
+            &snapshot,
+            &ScoreRowSources {
+                handle: None,
+                computer: "Computer",
+                schemes: &schemes,
+                colors: &colors,
+            },
+            |_| None,
+        );
+        assert_eq!(rows[1].name, "Player");
     }
 }

@@ -312,9 +312,13 @@ impl PresentedKind1Static {
         *self = Self::new(self.reveal.params());
     }
 
-    #[cfg(test)]
     pub(crate) fn text(&self) -> &str {
         &self.text
+    }
+
+    #[cfg(test)]
+    pub(crate) fn params(&self) -> Kind1Params {
+        self.reveal.params()
     }
 
     /// `0x4B2`: replace the text. A started reveal whose text changed starts

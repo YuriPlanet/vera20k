@@ -744,17 +744,6 @@ fn retire_failed_loading_attempt(
     policy
 }
 
-/// The handle the player launched this skirmish under, as shown on the loading
-/// screen's progress row. `None` outside a skirmish launch.
-pub(crate) fn launch_player_name(state: &AppState) -> Option<String> {
-    state
-        .frontend
-        .loading_session
-        .as_ref()
-        .and_then(|session| session.stage.request().skirmish_launch_session())
-        .map(|launch| launch.player_name.clone())
-}
-
 fn is_native_loading_session(state: &AppState) -> bool {
     state
         .frontend
