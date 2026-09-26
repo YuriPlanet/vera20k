@@ -363,8 +363,10 @@ Death anims (`feature/combat-destruction-anims`, snapshot 195), owner
 - Tests: exact draw ledgers for the building, unit override, aircraft and empty/single lists; the
   former `gsi_08_11` fixture test plus production-receiver kills (the anims' draws precede
   SpawnSurvivors' on the same cells; the ship-sinking gate on and off water, below the weight and
-  underwater); an ignored retail Dustbowl run pinned to its seed (GAPOWR: `S_CLSN58`, `S_TUMU60`
-  and two art-less `gtpowexp` picks; MCV: its own `S_CLSN58`). Rust regression only.
+  underwater): Rust regression only. The ignored retail Dustbowl run compares GAPOWR's debris,
+  centre-mark roll and explosions with native execution over ten seeds
+  (`tools/spatial_oracle/building_death_anims.json`; on ore, CanPlace's supplied answer admits
+  no mark); the MCV's explosion stays structural.
 - Residuals (module doc): construction order (the transaction's anims and voxel debris construct
   at the consequence boundary while crew, survivors and damaged-art anims construct inline, so
   natively the first crewman follows its death's anims in the live order and here precedes them;
@@ -372,7 +374,7 @@ Death anims (`feature/combat-destruction-anims`, snapshot 195), owner
   deaths); the ship sink, the DeathFrames deferral and the water splash; the other
   `Death_Explosion` callers (a crushed vehicle `7418E5` -> `746D60`, the DeathFrames completion;
   the `Crashable=` crash `7461D1` since ported by chain 4); AnimClass::Middle `424F00` (the scorch/crater a
-  multi-frame explosion leaves at its middle frame); art-less `gtpowexp`/`tstlexp`; DestroyAnim
+  multi-frame explosion leaves at its middle frame; since ported, e2482f54); art-less `gtpowexp`/`tstlexp`; DestroyAnim
   palette; `RevealToAll=` (step 5, stock, shroud only); steps 2-4, 9-12, 14 (dead or absent on
   stock); a vehicle's spent ammo. Corrected: the FIRE3 trigger text (a neighbour cell's
   `Explodes=yes` overlay; none in stock), the stale warhead-debris residual, and the crush doc
@@ -1218,9 +1220,9 @@ Whole-combat gaps (plan list plus review coverage top 10):
   outer impact anim after its receivers; the fatal prelude after the Techno death arm; verify the
   InfDeath anim's native constructor arguments); the ship sink (`+3CD`, `vt+3A0`, the
   `UnitClass::AI` sinking); a crushed vehicle's `Death_Explosion` (`746D60`); the building
-  NowDead contact loop (`442511`, radio 0x17 and the C4 kill of contacts),
-  AnimClass::Middle for every explosion anim, the deferred death of `Explodes=`/Selling
-  buildings, death specials, the sale crew, passenger escape from dying transports.
+  NowDead contact loop (`442511`, radio 0x17 and the C4 kill of contacts), the deferred death of
+  `Explodes=`/Selling buildings, death specials, the sale crew, passenger escape from dying
+  transports.
 - Infantry DoTypes beyond the Jumpjet-flown (`movement::infantry_action`): the locomotion action
   tail (`520F40`, Walk/Crawl/Ready/Prone) and the firing arm's Do_Action (FireUp/FireProne/
   DeployedFire/secondary, `520844..5208FE`) for walkers, whose display and stage stay the
