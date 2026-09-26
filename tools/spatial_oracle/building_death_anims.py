@@ -20,7 +20,8 @@ and Explosion (+0x72C):
    step 7, Width/Height, a RandomRanged(0, dimension - 2) per dimension over 2,
    the RandomRanged(0, 99) roll at 0x00441819 and the real placer 0x006B59A0
    (roll < 50, Burn types) or 0x006B5C90 (Crater types) with force 1 and size
-   0x64 at the Location cell's centre; step 8 over the caller's fourth argument,
+   0x64 at the Location cell's centre, whose CanPlace 0x006B5F80 runs over
+   MapClass's cell table (`smudge_can_place`); step 8 over the caller's fourth argument,
    the foundation cell list `vt+0x108(0)` returns (BuildingTypeClass vt+0x90
    0x0045EC20 reads +0xDFC, which 0x00461541 sets to 0x0089C900 + index * 0x78,
    the lists the static initializer 0x0045B1C0 builds; executed here): per cell
@@ -35,21 +36,32 @@ draw arms are gated by Scorch (+0x36B), Crater (+0x36D) and SpawnsParticle
 (+0x2CC), unset for it. The Report sound 0x007509E0 returns at its audio gate
 (0x008464AC clear); its variation picks use the NonCritical stream 0x00886B88.
 
+The cell table is `smudge_can_place`'s: MapClass's Size and CellClass pointer
+array with the retail Dustbowl cells each Location's CanPlace reads (VERA20k's
+retail load of the map: IsoTileTypeIndex, overlay, smudge and slope, and the
+TEMPERATE theater's Morphable ranges; the Rust test asserts the production map
+holds them), cells and the dummy built by the original CellClass constructor.
+Every GetCell 0x005657A0 on the path runs natively over it. After the run the
+recorded SmudgeClass's SmudgeTypeClass::Place 0x006B6080 executes on the table
+(`marked`).
+
 Supplied: GAPOWR's retail values (rulesmd.ini [GAPOWR], artmd.ini Foundation=2x2
 and the AnimTypes' Bouncer/RandomRate/Elasticity/MaxXYVel/MinZVel/Report/
-Scorch/Crater), the [SmudgeTypes] table (Burn +0x2A1, Crater +0x2A0, Width
-+0x298, Height +0x29C), the anim-constructor environment of
-`anim_bouncer_launch.Machine`, SmudgeTypeClass CanPlace 0x006B5F80 answering the
-case's admit mask, MapClass::GetCell 0x005657A0 and the floor height 0x00578080
-(a fixed cell; height 0), operator delete 0x007C8B3D (no-op) and the SmudgeClass
-constructor 0x006B4A50 (recorded).
+Scorch/Crater), the [SmudgeTypes] table (ArrayIndex +0x294, Width +0x298, Height
++0x29C, Crater +0x2A0, Burn +0x2A1), the anim-constructor environment of
+`anim_bouncer_launch.Machine`, the floor height 0x00578080 (height 0),
+operator delete 0x007C8B3D (no-op) and the SmudgeClass constructor 0x006B4A50
+(recorded; `smudge_can_place` reads its Unlimbo -> Mark -> Place path).
 
 Schema: `smudge_types` is the supplied [SmudgeTypes] table (index order);
-`rows[]` hold `input`, `events` (ordered `ranged`/`next` draws with call
-site and result, `can_place`, `smudge`, `anim_ctor` {type, coord, delay, loop,
-flags}, `start`, `middle`, `unlimbo`, ...), `debris` (per debris piece: its constructor
-event and `location`/`bounce` state), `raw_draw_count`, and the Scenario RNG
-states `rng_before`, `rng_after_debris` and `rng_after` (0x3F4-byte hex).
+`map` the Dustbowl cell table (`smudge_can_place.maps` schema); `rows[]` hold
+`input`, `events` (ordered `ranged`/`next` draws with call site and result,
+`can_place` {type, origin, force, result, dummy_read}, `smudge` {type, coord,
+house}, `anim_ctor` {type, coord, delay, loop, flags}, `start`, `middle`,
+`unlimbo`, ...), `debris` (per debris piece: its constructor event and
+`location`/`bounce` state), `marked` (Place's writes: cell, dummy, type index,
+SmudgeData), `raw_draw_count`, and the Scenario RNG states `rng_before`,
+`rng_after_debris` and `rng_after` (0x3F4-byte hex).
 
 Rust consumer: `retail_dustbowl_death_anims_use_the_types_lists` in
 src/sim/combat/destruction_effects_tests.rs (the production receiver on the
@@ -62,20 +74,19 @@ from unicorn.x86_const import UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_ESI, UC
 
 from tools.native_oracle import finish_vectors, provenance, run_checked
 from tools.spatial_oracle import anim_bouncer_launch as launch
-from tools.spatial_oracle.anim_bouncer_launch import dwords, read32
+from tools.spatial_oracle import smudge_can_place
+from tools.spatial_oracle.anim_bouncer_launch import dwords
+from tools.spatial_oracle.smudge_can_place import SMUDGE_TYPES
 
 DEBRIS_BEGIN, DEBRIS_END = 0x702281, 0x702572
 EFFECTS_BEGIN, EFFECTS_END = 0x44177E, 0x441A2B
 FOUNDATION_INIT, FOUNDATION_LISTS, FOUNDATION_STRIDE = 0x45B1C0, 0x89C900, 0x78
 BUILDING_VT = 0x7E3EBC
-CAN_PLACE, SMUDGE_CTOR, DELETE, CELL_AT, FLOOR = 0x6B5F80, 0x6B4A50, 0x7C8B3D, 0x5657A0, 0x578080
-MIDDLE = 0x424F00
-SMUDGE_ITEMS, SMUDGE_COUNT = 0xA8EC1C, 0xA8EC28
+FLOOR, MIDDLE = 0x578080, 0x424F00
 
 BUILDING = launch.MEM + 0x100000
 BUILDING_TYPE = launch.MEM + 0x101000
 VECTORS = launch.MEM + 0x104000
-SMUDGES = launch.MEM + 0x110000
 
 # rulesmd.ini [GAPOWR]; Foundation=2x2 from artmd.ini is table index 3.
 GAPOWR = dict(foundation=3, max_debris=6, min_debris=4,
@@ -91,46 +102,20 @@ EXPLOSION_ART = {
     "S_TUMU60": (True, True, 1, 1),
     "gtpowexp": (False, False, 0, 0),
 }
-# rulesmd.ini [SmudgeTypes] in list order: (name, Burn, Crater, Width, Height).
-SMUDGE_TYPES = ([(f"CR{i}", 0, 0, 1, 1) for i in range(1, 7)]
-                + [(f"BURN{i:02}", 0, 0, 1, 1) for i in range(1, 17)]
-                + [(f"BURNT{i:02}", 1, 0, 1, 1) for i in range(1, 7)]
-                + [("BURNT07", 1, 0, 2, 1), ("BURNT08", 1, 0, 2, 1),
-                   ("BURNT09", 1, 0, 1, 2), ("BURNT10", 1, 0, 1, 2),
-                   ("BURNT11", 1, 0, 2, 2), ("BURNT12", 1, 0, 2, 2)]
-                + [(f"CRATER{i:02}", 0, 1, 1, 1) for i in range(1, 11)]
-                + [("CRATER11", 0, 1, 2, 2), ("CRATER12", 0, 1, 2, 2)])
 # The image-bound AnimTypes' frame count in `Machine.anim_type` is 16.
 MIDDLE_FRAME = 8
 
 
-class Machine(launch.Machine):
-    def __init__(self, seed, admit_mask):
+class Machine(smudge_can_place.Machine):
+    def __init__(self, seed):
         super().__init__(seed)
-        self.admit_mask = admit_mask
         self.constructed = []
 
     def hook(self, uc, address, size, data):
-        sp = uc.reg_read(UC_X86_REG_ESP)
         if address in (launch.START, MIDDLE):
             # Recorded, then executed.
             self.events.append(dict(call="start" if address == launch.START else "middle",
                                     anim=uc.reg_read(UC_X86_REG_ECX) - launch.HEAP))
-        elif address == CAN_PLACE:
-            index = read32(uc, uc.reg_read(UC_X86_REG_ECX) + 0x3F0)
-            self.events.append(dict(call="can_place", type=SMUDGE_TYPES[index][0],
-                                    force=read32(uc, sp + 8) & 0xFF))
-            self.ret(1 if (self.admit_mask >> index) & 1 else 0, 8)
-        elif address == SMUDGE_CTOR:
-            smudge = read32(uc, sp + 4)
-            coord = list(struct.unpack("<iii", uc.mem_read(read32(uc, sp + 8), 12)))
-            self.events.append(dict(call="smudge", type=SMUDGE_TYPES[read32(uc, smudge + 0x3F0)][0],
-                                    coord=coord))
-            self.ret(uc.reg_read(UC_X86_REG_ECX), 12)
-        elif address == DELETE:
-            self.ret(0, 0)
-        elif address == CELL_AT:
-            self.ret(launch.CELL, 4)
         elif address == FLOOR:
             self.ret(0, 4)
         else:
@@ -145,8 +130,10 @@ class Machine(launch.Machine):
 
 
 def execute(case):
-    machine = Machine(case["seed"], case["admit_mask"])
+    machine = Machine(case["seed"])
     uc = machine.uc
+    machine.cells.install_map(DUSTBOWL)
+    machine.cells.install_smudge_types(SMUDGE_TYPES)
     uc.mem_write(launch.SP - 0x100, dwords(launch.STOP))
     uc.reg_write(UC_X86_REG_ESP, launch.SP - 0x100)
     run_checked(uc, FOUNDATION_INIT, launch.STOP, count=200_000)
@@ -182,15 +169,6 @@ def execute(case):
     uc.mem_write(BUILDING + 0x9C, struct.pack("<iii", *case["location"]))
     uc.mem_write(BUILDING + 0x520, dwords(BUILDING_TYPE))
 
-    uc.mem_write(SMUDGE_ITEMS, dwords(SMUDGES))
-    uc.mem_write(SMUDGE_COUNT, dwords(len(SMUDGE_TYPES)))
-    for index, (_, burn, crater, width, height) in enumerate(SMUDGE_TYPES):
-        smudge = SMUDGES + 0x100 + index * 0x400
-        uc.mem_write(SMUDGES + index * 4, dwords(smudge))
-        uc.mem_write(smudge + 0x298, dwords(width, height))
-        uc.mem_write(smudge + 0x2A0, bytes([crater, burn]))
-        uc.mem_write(smudge + 0x3F0, dwords(index))
-
     before = machine.rng()
     machine.events.clear()
     machine.advances = 0
@@ -213,31 +191,56 @@ def execute(case):
     run_checked(uc, EFFECTS_BEGIN, EFFECTS_END, count=20_000_000,
                 required_addresses=(0x441819, 0x4419DC, 0x441A1F))
     return dict(input=case, events=machine.events, debris=debris,
-                raw_draw_count=machine.advances, rng_before=before,
-                rng_after_debris=after_debris, rng_after=machine.rng())
+                marked=machine.cells.place_recorded(), raw_draw_count=machine.advances,
+                rng_before=before, rng_after_debris=after_debris, rng_after=machine.rng())
 
 
-# The retail Dustbowl fixture's power plant: origin cell (68, 40) at level 1. That cell
-# carries ore (TIB01), and every candidate's footprint starts there, so CanPlace
-# (OverlayTypeIndex +0x44 must be -1, 0x006B6002) admits none: the mask is 0, and the
-# placer draws nothing (0x006B5BF0). On a clean Morphable origin the force-1 placer
-# prefers types over one cell each way (0x006B5B55) and otherwise picks among every
-# admitted one, 1x1 included (0x006B5C1A); `anim_middle` covers that pick for supplied
-# masks, and no row here places a mark.
-DUSTBOWL_LOCATION = [68 * 256 + 0x80, 40 * 256 + 0x80, 104]
+# VERA20k's retail Dustbowl load (TEMPERATE, Size 70x76; temperatmd.ini's 838
+# IsoTileTypes, Morphable=yes on these ranges): the cells step 7's CanPlace reads
+# at each Location, all at level 1 (z 104). The Rust test asserts the production
+# map holds them.
+DUSTBOWL = dict(
+    size=[70, 76], allocate_diamond=False, tile_count=838,
+    morphable=smudge_can_place.ranges((0, 48), (131, 147), (404, 413), (510, 533), (551, 565)),
+    cells=[
+        # The fixture's power plant at (68, 40): ore (overlay 102) on all four cells, so
+        # CanPlace (OverlayTypeIndex +0x44 must be -1, 0x006B6002) admits no candidate
+        # and the placer draws nothing (0x006B5BF0).
+        dict(x=68, y=40, tile=135, overlay=102, overlay_data=10),
+        dict(x=69, y=40, tile=506, overlay=102, overlay_data=8),
+        dict(x=68, y=41, tile=131, overlay=102, overlay_data=11),
+        dict(x=69, y=41, tile=133, overlay=102, overlay_data=11),
+        # Clean ground at (73, 116), its 0xFFFF tiles read as tile 0; (74, 117) is not
+        # Morphable, so no 2x2 type fits and the force-1 placer, with nothing to prefer
+        # (0x006B5B55), picks among every admitted 1x1, 2x1 and 1x2 type (0x006B5C1A).
+        dict(x=73, y=116, tile=0xFFFF),
+        dict(x=74, y=116, tile=0xFFFF),
+        dict(x=73, y=117, tile=0xFFFF),
+        dict(x=74, y=117, tile=507),
+        # Clean ground at (81, 123), tile 0 on all four cells (the map's only flat,
+        # Morphable 2x2 block free of overlay and terrain objects): every candidate fits
+        # and the force-1 placer picks among the 2x2 types it prefers.
+        dict(x=81, y=123, tile=0),
+        dict(x=82, y=123, tile=0),
+        dict(x=81, y=124, tile=0),
+        dict(x=82, y=124, tile=0),
+    ])
+LOCATIONS = [[68 * 256 + 0x80, 40 * 256 + 0x80, 104], [73 * 256 + 0x80, 116 * 256 + 0x80, 104],
+             [81 * 256 + 0x80, 123 * 256 + 0x80, 104]]
 # 22 and 49 construct a zero-delay `gtpowexp` (Start runs Middle) ahead of later cells.
 SEEDS = [1, 7, 22, 31, 42, 49, 1000, 0x5CA1AB1E, 0xDEADBEEF, 2024]
 
 
 def cases():
-    for seed in SEEDS:
-        yield dict(GAPOWR, location=DUSTBOWL_LOCATION, admit_mask=0, seed=seed)
+    for location in LOCATIONS:
+        for seed in SEEDS:
+            yield dict(GAPOWR, location=location, seed=seed)
 
 
 def generate():
     return dict(smudge_types=[dict(name=name, burn=burn, crater=crater, width=width, height=height)
                               for name, burn, crater, width, height in SMUDGE_TYPES],
-                rows=[execute(case) for case in cases()])
+                map=DUSTBOWL, rows=[execute(case) for case in cases()])
 
 
 if __name__ == "__main__":
@@ -247,9 +250,12 @@ if __name__ == "__main__":
                "constructor and Start) then BuildingClass::DestructionEffects steps 7 and 8 "
                "0x0044177E..0x00441A2B (the centre scorch/crater roll and real placer, the "
                "per-foundation-cell scatter, delay and Explosion= pick, constructor and Start), "
-               "at the retail Dustbowl fixture's Location over ten Scenario seeds; its origin "
-               "cell carries ore, so CanPlace's supplied answer admits no SmudgeType, step 7 "
-               "draws only its roll and no row places a mark."),
+               "over ten Scenario seeds at three retail Dustbowl Locations: the fixture's, whose "
+               "cells carry ore, so CanPlace admits no SmudgeType and step 7 draws only its "
+               "roll, and two clean ones (no 2x2 fits at the first; at the second the 2x2 "
+               "types are preferred) where the placer's pick and SmudgeTypeClass::Place "
+               "0x006B6080 mark the map; CanPlace 0x006B5F80 and GetCell 0x005657A0 run "
+               "natively over MapClass's cell table (smudge_can_place)."),
         assumptions=[
             "x87 control word 0x0E7F (PC53, chop) on entry, as anim_bouncer_launch.",
             "No Scenario draw separates the debris block from step 7 for a GAPOWR (the death "
@@ -262,19 +268,25 @@ if __name__ == "__main__":
             "image-bound types get 16 frames (MiddleFrameIndex 8, nonzero like their retail "
             "images'), the art-less gtpowexp 0.",
             "Audio disabled (0x008464AC clear): the Report sound returns at its gate.",
+            "The Dustbowl cells (IsoTileTypeIndex, overlay, smudge, slope) and the TEMPERATE "
+            "Morphable ranges are VERA20k's retail load of the map and theater, asserted "
+            "against the production map by the Rust test; cells step 7 does not read are "
+            "not allocated.",
+            "The SmudgeClass constructor's Unlimbo -> Mark -> Place path is read, not run "
+            "(smudge_can_place).",
         ],
         substitutions=[
             "anim_bouncer_launch.Machine's constructor environment (MapClass cell lookup "
             "0x00565730, 0x005F5850, layer submit 0x004A9720, operator new 0x007C8E17 as a bump "
             "allocator)",
-            "SmudgeTypeClass CanPlace 0x006B5F80 answers the case's admit mask",
-            "MapClass::GetCell 0x005657A0 returns a fixed cell; the floor height 0x00578080 "
-            "returns 0",
+            "the floor height 0x00578080 returns 0",
             "operator delete 0x007C8B3D is a no-op; the SmudgeClass constructor 0x006B4A50 "
-            "records its type and coordinate",
+            "records its type, coordinate and house; SmudgeTypeClass::Place 0x006B6080 then "
+            "runs on the recorded type and truncated cell, its redraw 0x00486E70 recorded",
         ],
         entry_points={"debris_block": DEBRIS_BEGIN, "destruction_effects_step7": EFFECTS_BEGIN,
                       "foundation_lists": FOUNDATION_INIT, "anim_ctor": launch.CTOR,
                       "anim_start": launch.START, "scorch": 0x6B59A0, "crater": 0x6B5C90,
+                      "can_place": smudge_can_place.CAN_PLACE, "place": smudge_can_place.PLACE,
                       "seed": launch.SEED},
     ))
