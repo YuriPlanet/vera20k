@@ -52,7 +52,8 @@ Distinguish and cite:
   bounded by stated coverage. A sample cannot certify the whole mechanism.
 
 Parity goldens come from native execution/emulation, capture or retail bytes,
-not hand calculations or prior Rust. Avoid unqualified “VERIFIED”/“complete”.
+not hand calculations or prior Rust; inputs a comparison takes from VERA need
+their own native evidence. Avoid unqualified “VERIFIED”/“complete”.
 
 Arithmetic, rounding, RNG draws (count, order, stream) and timer cadences derived from
 reading are uncertain until executed. Before merging a mechanism, compare them against
