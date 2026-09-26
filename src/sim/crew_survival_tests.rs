@@ -1033,19 +1033,27 @@ fn retail_rules_crew_the_power_plant_and_the_mcv() {
     assert!(plant_crew > 0 && mcv_crew > 0, "{plant_crew} {mcv_crew}");
 }
 
-/// Keep the fixture's Americans undefeated: the house rung's defeat pass
-/// (`house_defeat`) blows up everything a skirmish house owns once it has no
-/// building and no base unit left, so a power plant twelve or more cells
-/// from the scene outlives it.
+/// A second power plant well away from the scene keeps the fixture's
+/// Americans in the game: with the retail `ShortGame=yes`, a house left with
+/// no counted building and no `BaseUnit=` vehicle is defeated on its next
+/// update, and `HouseClass::Blowup_All` kills everything it still owns
+/// (`sim::world::house_defeat`).
 fn keep_undefeated(
     sim: &mut Simulation,
     resources: &crate::sim::runtime::SimResources,
     scene: (u16, u16),
-) {
-    let spare = (20..120_u16)
-        .flat_map(|y| (20..120_u16).map(move |x| (x, y)))
-        .filter(|&(x, y)| x.abs_diff(scene.0).max(y.abs_diff(scene.1)) >= 12)
+) -> u64 {
+    (40..100_u16)
+        .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
+        .filter(|&(x, y)| x.abs_diff(scene.0) + y.abs_diff(scene.1) >= 16)
         .find_map(|(x, y)| {
+            let grid = sim.path_grid()?;
+            let open = (x..=x + 1).all(|cx| {
+                (y..=y + 1).all(|cy| grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable))
+            });
+            if !open {
+                return None;
+            }
             sim.spawn_object(
                 "GAPOWR",
                 "Americans",
@@ -1055,8 +1063,8 @@ fn keep_undefeated(
                 &resources.rules,
                 &resources.height_map,
             )
-        });
-    assert!(spare.is_some(), "a spare power plant");
+        })
+        .expect("room for a power plant away from the scene")
 }
 
 /// Retail Dustbowl runtime: a power plant and an MCV die through the
@@ -1132,15 +1140,15 @@ fn retail_dustbowl_crews_scatter_off_their_wrecks() {
                 Some((mcv, plant))
             })
             .expect("an MCV cell with room for a power plant");
-        sim.resolve_type_handles(&resources.rules);
-        let registry = Some(&resources.overlay_registry);
         let (plant_cell, mcv_cell) = [plant, mcv]
             .map(|id| {
                 let entity = sim.substrate.entities.get(id).unwrap();
                 (entity.position.rx, entity.position.ry)
             })
             .into();
-        keep_undefeated(sim, resources, mcv_cell);
+        let guard = keep_undefeated(sim, resources, mcv_cell);
+        sim.resolve_type_handles(&resources.rules);
+        let registry = Some(&resources.overlay_registry);
         let before = sim.substrate.entities.keys_sorted();
         kill_with(sim, &resources.rules, registry, plant, "Super", ORDINARY);
         kill_with(sim, &resources.rules, registry, mcv, "Super", ORDINARY);
@@ -1163,6 +1171,8 @@ fn retail_dustbowl_crews_scatter_off_their_wrecks() {
         for _ in 0..45 {
             scenario.tick();
         }
+        assert!(scenario.sim().substrate.entities.get(guard).is_some());
+        assert!(!scenario.sim().houses[&owner].is_defeated);
         for (id, from_plant, spawn, destination) in crew {
             let entity = scenario
                 .sim()
@@ -1281,7 +1291,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
             .collect();
         loads.push((kind, transport, (tx, ty), gis));
     }
-    keep_undefeated(sim, resources, loads[0].2);
+    let guard = keep_undefeated(sim, resources, loads[0].2);
     sim.resolve_type_handles(rules);
     crate::sim::passenger::tick_passenger_system(sim, rules);
     for (kind, transport, _, gis) in &loads {
@@ -1338,6 +1348,8 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
             left[index] |= (gi.position.rx, gi.position.ry) != *wreck;
         }
     }
+    assert!(scenario.sim().substrate.entities.get(guard).is_some());
+    assert!(!scenario.sim().houses[&owner].is_defeated);
     for ((kind, id, wreck, destination), left) in destinations.into_iter().zip(left) {
         println!("{kind} GI {id}: wreck {wreck:?}, Scatter to {destination:?}");
         assert!(left, "{kind}: GI {id} walked off the wreck");

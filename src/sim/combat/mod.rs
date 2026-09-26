@@ -2598,7 +2598,7 @@ pub(crate) struct CombatEmit {
     pub(crate) animation_switches: Vec<(u64, SequenceKind)>,
     /// Native `CurrentWeaponNumber` writes emitted by live weapon selection.
     /// The per-attacker host commits these before that attack's receivers run.
-    pub(crate) current_weapon_updates: Vec<(u64, u8, InternedId)>,
+    pub(crate) current_weapon_updates: Vec<(u64, u8)>,
     /// Per-Unit post-Foot Facing slot output — captured at Phase-2 entry before
     /// current-frame attacker damage; that Unit's own explicit retarget/remove
     /// may replace it. Applied post-batch by `unit_post::apply_unit_facing`.
