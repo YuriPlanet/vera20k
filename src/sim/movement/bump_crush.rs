@@ -11,10 +11,8 @@
 //! - Part of sim/ — depends on sim/entity_store, sim/game_entity, sim/locomotor,
 //!   sim/pathfinding, sim/rng, rules/locomotor_type.
 
-use std::collections::BTreeSet;
-
 use crate::sim::cell_kernel::{self, CellQueryPoint};
-use crate::sim::pathfinding::{BlockerNeighborCounts, LayeredEntityBlockMap};
+use crate::sim::pathfinding::BlockerNeighborCounts;
 
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -56,72 +54,6 @@ const NEIGHBOR_OFFSETS: [(i32, i32); 8] = [
     (-1, 0),  // W
     (-1, -1), // NW
 ];
-
-/// Build the set of cells blocked by entities for pathfinding purposes.
-///
-/// RA2 key optimization: **moving friendly units are treated as passable terrain**
-/// during path calculation. Only stationary units/buildings and enemy units block.
-/// This prevents convoy deadlocks and constant repath thrashing in group movement.
-///
-/// `mover_owner` is the owner of the unit requesting the path.
-/// `alliances` is the house alliance graph for friendship checks.
-/// Build layer-separated sets of cells blocked by entities for pathfinding.
-///
-/// Returns `(ground_blocks, bridge_blocks)`. Units on the bridge layer only
-/// block bridge pathfinding, and ground units only block ground pathfinding.
-/// This enables units to coexist above and below a bridge simultaneously,
-/// matching the original engine's `FirstObject`/`AltObject` dual-layer system.
-///
-/// RA2 cooperative pathfinding: friendly-moving units are recorded in an
-/// `entity_block_map` keyed by selected object-list layer and the blocker's
-/// current cell, with value equal to the blocker's next cell
-/// (movement_target.path[next_index]). The A* cost function walks this map to
-/// compute the code-2 dynamic cost per gamemd.exe AStar_compute_edge_cost
-/// (0x00429830). Stationary units/buildings and enemies hard-block via the
-/// BTreeSet outputs.
-///
-/// When `rules` is provided, structure footprints are expanded across all
-/// occupied cells (foundation + AddOccupy − RemoveOccupy). Without `rules`
-/// only the anchor cell is marked, which can let A* route through buildings.
-///
-/// Returns `(ground_blocks, bridge_blocks, entity_block_map)`.
-pub fn build_entity_block_sets(
-    entities: &EntityStore,
-    mover_owner: &str,
-    alliances: &crate::map::houses::HouseAllianceMap,
-    interner: &crate::sim::intern::StringInterner,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
-) -> (
-    BTreeSet<(u16, u16)>,
-    BTreeSet<(u16, u16)>,
-    LayeredEntityBlockMap,
-) {
-    // One rule and one fold, shared with the index that keeps these sets
-    // current between movement passes (`block_index`). Buildings are always on
-    // the ground layer, so the bridge set is empty.
-    let (ground_blocked, entity_block_map) = super::block_index::build_owner_block_set(
-        entities,
-        mover_owner,
-        alliances,
-        interner,
-        rules,
-    );
-    (ground_blocked, BTreeSet::new(), entity_block_map)
-}
-
-/// Build a combined block set (both layers merged) for the flat A* pathfinder
-/// which doesn't distinguish layers. Returns `(blocks, entity_block_map)`.
-pub fn build_entity_block_set(
-    entities: &EntityStore,
-    mover_owner: &str,
-    alliances: &crate::map::houses::HouseAllianceMap,
-    interner: &crate::sim::intern::StringInterner,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
-) -> (BTreeSet<(u16, u16)>, LayeredEntityBlockMap) {
-    let (ground, bridge, entity_block_map) =
-        build_entity_block_sets(entities, mover_owner, alliances, interner, rules);
-    (ground.union(&bridge).copied().collect(), entity_block_map)
-}
 
 #[cfg(test)]
 pub(crate) fn build_blocker_neighbor_counts(
@@ -1573,6 +1505,7 @@ mod tests {
     use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainClass};
     use crate::sim::game_entity::{GameEntity, InfantryRuntime};
     use crate::sim::occupancy::CellListInsertion;
+    use std::collections::BTreeSet;
 
     fn flat_resolved_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
         let land = LandType::Clear.as_index();
@@ -2124,10 +2057,10 @@ mod tests {
         let interner = crate::sim::intern::test_interner();
         let alliances = crate::map::houses::HouseAllianceMap::new();
 
-        let (ground, bridge, dynamic) =
-            build_entity_block_sets(&entities, "Russians", &alliances, &interner, None);
+        let (ground, dynamic) = super::super::block_index::build_owner_block_set(
+            &entities, "Russians", &alliances, &interner, None,
+        );
         assert!(ground.is_empty());
-        assert!(bridge.is_empty());
         assert!(!dynamic.contains_any(&(2, 2)));
 
         let counts = build_blocker_neighbor_counts_with_overlays(

@@ -36,7 +36,7 @@ use crate::sim::passenger::{
 };
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::passability::LandType;
-use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::sim::world::{GroundMove, SimSoundEvent, Simulation};
 use crate::util::fixed_math::SIM_ZERO;
 use crate::util::lepton::CELL_CENTER_LEPTON;
 
@@ -440,46 +440,19 @@ fn issue_pathed_move(
     let Some(info) = sim.resolve_move_info(id, Some(rules)) else {
         return;
     };
-    let owner = sim
-        .substrate
-        .entities
-        .get(id)
-        .map(|entity| sim.interner.resolve(entity.owner()).to_string())
-        .unwrap_or_default();
-    let (entity_blocks, entity_block_map) = bump_crush::build_entity_block_set(
-        &sim.substrate.entities,
-        &owner,
-        &sim.house_alliances,
-        &sim.interner,
-        Some(rules),
-    );
-    let cost_grid = sim.terrain_costs.get(&info.speed_type);
-    let blocker_neighbor_counts = bump_crush::build_blocker_neighbor_counts_with_overlays(
-        &sim.substrate.entities,
-        grid.width(),
-        grid.height(),
-        sim.resolved_terrain.as_ref(),
-        sim.overlay_grid.as_ref(),
-        overlay_registry,
-        &sim.interner,
-        Some(rules),
-    );
-    let _ = crate::sim::movement::issue_move_command_with_layered(
-        &mut sim.substrate.entities,
+    let _ = sim.issue_ground_move(
         grid,
-        id,
-        dest,
-        info.speed,
-        false,
-        cost_grid,
-        Some(&entity_blocks),
-        sim.resolved_terrain.as_ref(),
-        sim.zone_grid.as_ref(),
-        Some(&entity_block_map),
-        Some(&blocker_neighbor_counts),
-        sim.playfield_bounds,
-        Some(&mut sim.substrate.cell_occupation),
-        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, rules.into()),
+        GroundMove {
+            entity_id: id,
+            target: dest,
+            speed: info.speed,
+            queue: false,
+            speed_type: Some(info.speed_type),
+            owner_blocks: true,
+            object_destination: None,
+        },
+        overlay_registry,
+        Some(rules),
     );
 }
 

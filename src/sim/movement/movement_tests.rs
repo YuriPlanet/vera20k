@@ -3805,7 +3805,6 @@ fn test_friendly_scatter_issues_move_command() {
 fn test_friendly_passable_moving_unit_not_blocked() {
     // A moving friendly unit should NOT appear in the entity block set.
     use crate::map::houses::HouseAllianceMap;
-    use crate::sim::movement::bump_crush;
 
     let mut entities = EntityStore::new();
     let _grid = PathGrid::new(10, 10);
@@ -3833,11 +3832,11 @@ fn test_friendly_passable_moving_unit_not_blocked() {
     entities.insert(b);
 
     let alliances = HouseAllianceMap::new();
-    let (blocks, _penalty) = bump_crush::build_entity_block_set(
+    let (blocks, _penalty) = block_index::build_owner_block_set(
         &entities,
         "Americans",
         &alliances,
-        &mut test_interner(),
+        &test_interner(),
         None,
     );
 
@@ -3893,7 +3892,6 @@ fn test_friendly_passable_moving_unit_not_blocked() {
 #[test]
 fn test_enemy_unit_always_blocks_even_when_moving() {
     use crate::map::houses::HouseAllianceMap;
-    use crate::sim::movement::bump_crush;
 
     let mut entities = EntityStore::new();
 
@@ -3914,11 +3912,11 @@ fn test_enemy_unit_always_blocks_even_when_moving() {
     entities.insert(enemy);
 
     let alliances = HouseAllianceMap::new();
-    let (blocks, _penalty) = bump_crush::build_entity_block_set(
+    let (blocks, _penalty) = block_index::build_owner_block_set(
         &entities,
         "Americans",
         &alliances,
-        &mut test_interner(),
+        &test_interner(),
         None,
     );
 
@@ -4741,7 +4739,7 @@ fn drive_accelerates_true_tick_ramps_fraction_before_movement_speed() {
 
 /// One Structure per 2x2 foundation cell at (5,5), so the per-owner block
 /// set the first Process search reads contains every foundation cell (no
-/// rules: `build_entity_block_set` adds each Structure's anchor cell).
+/// rules: a Structure contributes only its anchor cell).
 fn footprint_fixture(entities: &mut EntityStore) -> std::collections::BTreeSet<(u16, u16)> {
     use crate::sim::production::building_footprint_cells;
     let foundation: std::collections::BTreeSet<(u16, u16)> =
@@ -4859,12 +4857,12 @@ fn test_segment_exhaustion_repath_avoids_friendly_building_footprint() {
     // 24-step segment). The initial segment doesn't see the foundation; the
     // auto-repath at segment exhaustion must avoid it.
     //
-    // The auto-repath at movement_tick.rs:166 builds its hard-block set freshly
-    // from EntityStore via bump_crush::build_entity_block_set, NOT from the
-    // entity_blocks arg passed to issue_move_command. So the foundation must be
-    // present as Structure entities in the store. Without rules wired into the
-    // test, build_entity_block_set adds the anchor cell of each Structure to
-    // mover_entity_blocks, so we insert one Structure per foundation cell.
+    // The auto-repath reads the owner block sets the movement pass keeps from
+    // the entities in the store (`block_index`), NOT the entity_blocks arg
+    // passed to issue_move_command. So the foundation must be present as
+    // Structure entities in the store. Without rules wired into the test, a
+    // Structure contributes only its anchor cell, so we insert one Structure
+    // per foundation cell.
     use crate::sim::movement::tick_movement_with_grid;
     use crate::sim::production::building_footprint_cells;
     use std::collections::BTreeSet;
@@ -4877,8 +4875,8 @@ fn test_segment_exhaustion_repath_avoids_friendly_building_footprint() {
         .into_iter()
         .collect();
 
-    // Insert one Structure entity per foundation cell so build_entity_block_set
-    // (called inside tick_movement_with_grid) puts every cell in mover_entity_blocks.
+    // Insert one Structure entity per foundation cell so the owner block sets
+    // (read inside tick_movement_with_grid) hold every foundation cell.
     for (i, &(rx, ry)) in foundation.iter().enumerate() {
         let mut blocker = GameEntity::test_default(100 + i as u64, "GAWALL", "Americans", rx, ry);
         blocker.category = EntityCategory::Structure;

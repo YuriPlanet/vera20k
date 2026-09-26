@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 
-use super::{SimSoundEvent, Simulation};
+use super::{GroundMove, SimSoundEvent, Simulation};
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat;
@@ -15,7 +15,6 @@ use crate::sim::components::OrderIntent;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionType;
 use crate::sim::movement;
-use crate::sim::movement::bump_crush;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::pathfinding::PathGrid;
 use crate::util::fixed_math::SimFixed;
@@ -253,36 +252,19 @@ impl Simulation {
                 let _ =
                     self.issue_air_cell_destination(stable_id, (goal_rx, goal_ry), speed, rules);
             } else {
-                let blocker_neighbor_counts =
-                    bump_crush::build_blocker_neighbor_counts_with_overlays(
-                        &self.substrate.entities,
-                        grid.width(),
-                        grid.height(),
-                        self.resolved_terrain.as_ref(),
-                        self.overlay_grid.as_ref(),
-                        overlay_registry,
-                        &self.interner,
-                        rules,
-                    );
-                let _ = movement::issue_move_command_with_layered(
-                    &mut self.substrate.entities,
+                let _ = self.issue_ground_move(
                     grid,
-                    stable_id,
-                    (goal_rx, goal_ry),
-                    speed,
-                    false,
-                    None,
-                    None,
-                    self.resolved_terrain.as_ref(),
-                    self.zone_grid.as_ref(),
-                    None,
-                    Some(&blocker_neighbor_counts),
-                    self.playfield_bounds,
-                    Some(&mut self.substrate.cell_occupation),
-                    crate::sim::movement::DestinationTiming::from_rules(
-                        self.session.binary_frame,
-                        rules,
-                    ),
+                    GroundMove {
+                        entity_id: stable_id,
+                        target: (goal_rx, goal_ry),
+                        speed,
+                        queue: false,
+                        speed_type: None,
+                        owner_blocks: false,
+                        object_destination: None,
+                    },
+                    overlay_registry,
+                    rules,
                 );
             }
         }
@@ -1310,50 +1292,19 @@ impl Simulation {
                     let Some(info) = self.resolve_move_info(entity_id, Some(rules)) else {
                         continue;
                     };
-                    let owner_str = self
-                        .substrate
-                        .entities
-                        .get(entity_id)
-                        .map(|e| self.interner.resolve(e.owner()).to_string())
-                        .unwrap_or_default();
-                    let (entity_blocks, entity_block_map) = bump_crush::build_entity_block_set(
-                        &self.substrate.entities,
-                        &owner_str,
-                        &self.house_alliances,
-                        &self.interner,
-                        Some(rules),
-                    );
-                    let cost_grid = self.terrain_costs.get(&info.speed_type);
-                    let blocker_neighbor_counts =
-                        bump_crush::build_blocker_neighbor_counts_with_overlays(
-                            &self.substrate.entities,
-                            grid.width(),
-                            grid.height(),
-                            self.resolved_terrain.as_ref(),
-                            self.overlay_grid.as_ref(),
-                            overlay_registry,
-                            &self.interner,
-                            Some(rules),
-                        );
-                    let _issued = movement::issue_move_command_with_layered(
-                        &mut self.substrate.entities,
+                    let _issued = self.issue_ground_move(
                         grid,
-                        entity_id,
-                        goal,
-                        info.speed,
-                        false, // queue
-                        cost_grid,
-                        Some(&entity_blocks),
-                        self.resolved_terrain.as_ref(),
-                        self.zone_grid.as_ref(),
-                        Some(&entity_block_map),
-                        Some(&blocker_neighbor_counts),
-                        self.playfield_bounds,
-                        Some(&mut self.substrate.cell_occupation),
-                        crate::sim::movement::DestinationTiming::new(
-                            self.session.binary_frame,
-                            rules.general.blockage_path_delay_ticks,
-                        ),
+                        GroundMove {
+                            entity_id,
+                            target: goal,
+                            speed: info.speed,
+                            queue: false,
+                            speed_type: Some(info.speed_type),
+                            owner_blocks: true,
+                            object_destination: None,
+                        },
+                        overlay_registry,
+                        Some(rules),
                     );
                     // No-op if A* fails — pursuit retries next tick.
                 }

@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::ground_move::GroundMove;
 use super::{SimSoundEvent, Simulation, SimulationWallRuntimeHost};
 use crate::map::houses::are_houses_friendly;
 #[cfg(test)]
@@ -29,7 +30,6 @@ use crate::sim::docking::building_dock::{self, DockState};
 use crate::sim::mission::concrete_effects::represented_assign_target;
 use crate::sim::mission::{DockTeardown, MissionType};
 use crate::sim::movement;
-use crate::sim::movement::bump_crush;
 use crate::sim::movement::jumpjet_movement;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::movement::teleport_movement;
@@ -76,8 +76,8 @@ pub(crate) struct MoveInfo {
 
 #[cfg(test)]
 impl MoveInfo {
-    pub(crate) fn crush_capability(&self) -> bump_crush::CrushCapability {
-        bump_crush::CrushCapability::new(self.regular_crusher, self.omni_crusher)
+    pub(crate) fn crush_capability(&self) -> movement::bump_crush::CrushCapability {
+        movement::bump_crush::CrushCapability::new(self.regular_crusher, self.omni_crusher)
     }
 
     pub(crate) fn can_crush_units(&self) -> bool {
@@ -684,14 +684,6 @@ impl Simulation {
                 let use_teleport_move = !info.is_harvester
                     && (info.loco_kind == Some(LocomotorKind::Teleport) || info.is_teleporter);
 
-                // Build entity block set for friendly-passable pathfinding.
-                let (entity_blocks, entity_block_map) = bump_crush::build_entity_block_set(
-                    &self.substrate.entities,
-                    command_owner,
-                    &self.house_alliances,
-                    &self.interner,
-                    rules,
-                );
                 let general_rules = rules.map(|r| &r.general);
                 let result = if use_teleport_move {
                     // Teleport locomotor or non-harvester Teleporter=yes: instant relocation.
@@ -717,37 +709,19 @@ impl Simulation {
                             dist_cells,
                         ) {
                             let Some(grid) = path_grid else { return false };
-                            let cost_grid = self.terrain_costs.get(&info.speed_type);
-                            let blocker_neighbor_counts =
-                                bump_crush::build_blocker_neighbor_counts_with_overlays(
-                                    &self.substrate.entities,
-                                    grid.width(),
-                                    grid.height(),
-                                    self.resolved_terrain.as_ref(),
-                                    self.overlay_grid.as_ref(),
-                                    overlay_registry,
-                                    &self.interner,
-                                    rules,
-                                );
-                            return movement::issue_move_command_with_layered(
-                                &mut self.substrate.entities,
+                            return self.issue_ground_move(
                                 grid,
-                                *entity_id,
-                                (*target_rx, *target_ry),
-                                info.speed,
-                                *queue,
-                                cost_grid,
-                                Some(&entity_blocks),
-                                self.resolved_terrain.as_ref(),
-                                self.zone_grid.as_ref(),
-                                Some(&entity_block_map),
-                                Some(&blocker_neighbor_counts),
-                                self.playfield_bounds,
-                                Some(&mut self.substrate.cell_occupation),
-                                crate::sim::movement::DestinationTiming::from_rules(
-                                    self.session.binary_frame,
-                                    rules.into(),
-                                ),
+                                GroundMove {
+                                    entity_id: *entity_id,
+                                    target: (*target_rx, *target_ry),
+                                    speed: info.speed,
+                                    queue: *queue,
+                                    speed_type: Some(info.speed_type),
+                                    owner_blocks: true,
+                                    object_destination: None,
+                                },
+                                overlay_registry,
+                                rules,
                             );
                         }
                     }
@@ -773,37 +747,19 @@ impl Simulation {
                     ok
                 } else {
                     let Some(grid) = path_grid else { return false };
-                    let cost_grid = self.terrain_costs.get(&info.speed_type);
-                    let blocker_neighbor_counts =
-                        bump_crush::build_blocker_neighbor_counts_with_overlays(
-                            &self.substrate.entities,
-                            grid.width(),
-                            grid.height(),
-                            self.resolved_terrain.as_ref(),
-                            self.overlay_grid.as_ref(),
-                            overlay_registry,
-                            &self.interner,
-                            rules,
-                        );
-                    movement::issue_move_command_with_layered(
-                        &mut self.substrate.entities,
+                    self.issue_ground_move(
                         grid,
-                        *entity_id,
-                        (*target_rx, *target_ry),
-                        info.speed,
-                        *queue,
-                        cost_grid,
-                        Some(&entity_blocks),
-                        self.resolved_terrain.as_ref(),
-                        self.zone_grid.as_ref(),
-                        Some(&entity_block_map),
-                        Some(&blocker_neighbor_counts),
-                        self.playfield_bounds,
-                        Some(&mut self.substrate.cell_occupation),
-                        crate::sim::movement::DestinationTiming::from_rules(
-                            self.session.binary_frame,
-                            rules.into(),
-                        ),
+                        GroundMove {
+                            entity_id: *entity_id,
+                            target: (*target_rx, *target_ry),
+                            speed: info.speed,
+                            queue: *queue,
+                            speed_type: Some(info.speed_type),
+                            owner_blocks: true,
+                            object_destination: None,
+                        },
+                        overlay_registry,
+                        rules,
                     )
                 };
                 // Stamp acceleration/deceleration parameters onto the newly created
@@ -1147,13 +1103,6 @@ impl Simulation {
                 let use_teleport_move = !info.is_harvester
                     && (info.loco_kind == Some(LocomotorKind::Teleport) || info.is_teleporter);
 
-                let (entity_blocks, entity_block_map) = bump_crush::build_entity_block_set(
-                    &self.substrate.entities,
-                    command_owner,
-                    &self.house_alliances,
-                    &self.interner,
-                    rules,
-                );
                 let default_general = crate::rules::ruleset::GeneralRules::default();
                 let general_rules_ref = rules.map(|r| &r.general).unwrap_or(&default_general);
                 let issued = if use_teleport_move {
@@ -1187,37 +1136,19 @@ impl Simulation {
                     ok
                 } else {
                     let Some(grid) = path_grid else { return false };
-                    let cost_grid = self.terrain_costs.get(&info.speed_type);
-                    let blocker_neighbor_counts =
-                        bump_crush::build_blocker_neighbor_counts_with_overlays(
-                            &self.substrate.entities,
-                            grid.width(),
-                            grid.height(),
-                            self.resolved_terrain.as_ref(),
-                            self.overlay_grid.as_ref(),
-                            overlay_registry,
-                            &self.interner,
-                            rules,
-                        );
-                    movement::issue_move_command_with_layered(
-                        &mut self.substrate.entities,
+                    self.issue_ground_move(
                         grid,
-                        *entity_id,
-                        (*target_rx, *target_ry),
-                        info.speed,
-                        *queue,
-                        cost_grid,
-                        Some(&entity_blocks),
-                        self.resolved_terrain.as_ref(),
-                        self.zone_grid.as_ref(),
-                        Some(&entity_block_map),
-                        Some(&blocker_neighbor_counts),
-                        self.playfield_bounds,
-                        Some(&mut self.substrate.cell_occupation),
-                        crate::sim::movement::DestinationTiming::from_rules(
-                            self.session.binary_frame,
-                            rules.into(),
-                        ),
+                        GroundMove {
+                            entity_id: *entity_id,
+                            target: (*target_rx, *target_ry),
+                            speed: info.speed,
+                            queue: *queue,
+                            speed_type: Some(info.speed_type),
+                            owner_blocks: true,
+                            object_destination: None,
+                        },
+                        overlay_registry,
+                        rules,
                     )
                 };
                 if issued {
@@ -1637,45 +1568,20 @@ impl Simulation {
                     .as_ref()
                     .map(|i| i.speed_type)
                     .unwrap_or(SpeedType::Track);
-                let (entity_blocks, entity_block_map) = bump_crush::build_entity_block_set(
-                    &self.substrate.entities,
-                    command_owner,
-                    &self.house_alliances,
-                    &self.interner,
-                    Some(rules),
-                );
                 if let Some(grid) = path_grid {
-                    let cost_grid = self.terrain_costs.get(&speed_type);
-                    let blocker_neighbor_counts =
-                        bump_crush::build_blocker_neighbor_counts_with_overlays(
-                            &self.substrate.entities,
-                            grid.width(),
-                            grid.height(),
-                            self.resolved_terrain.as_ref(),
-                            self.overlay_grid.as_ref(),
-                            overlay_registry,
-                            &self.interner,
-                            Some(rules),
-                        );
-                    movement::issue_move_command_with_layered(
-                        &mut self.substrate.entities,
+                    self.issue_ground_move(
                         grid,
-                        *entity_id,
-                        (dock_rx, dock_ry),
-                        speed,
-                        false,
-                        cost_grid,
-                        Some(&entity_blocks),
-                        self.resolved_terrain.as_ref(),
-                        self.zone_grid.as_ref(),
-                        Some(&entity_block_map),
-                        Some(&blocker_neighbor_counts),
-                        self.playfield_bounds,
-                        Some(&mut self.substrate.cell_occupation),
-                        crate::sim::movement::DestinationTiming::from_rules(
-                            self.session.binary_frame,
-                            rules.into(),
-                        ),
+                        GroundMove {
+                            entity_id: *entity_id,
+                            target: (dock_rx, dock_ry),
+                            speed,
+                            queue: false,
+                            speed_type: Some(speed_type),
+                            owner_blocks: true,
+                            object_destination: None,
+                        },
+                        overlay_registry,
+                        Some(rules),
                     );
                 }
                 true
@@ -1768,45 +1674,20 @@ impl Simulation {
                     .as_ref()
                     .map(|i| i.speed_type)
                     .unwrap_or(SpeedType::Track);
-                let (entity_blocks, entity_block_map) = bump_crush::build_entity_block_set(
-                    &self.substrate.entities,
-                    command_owner,
-                    &self.house_alliances,
-                    &self.interner,
-                    Some(rules),
-                );
                 if let Some(grid) = path_grid {
-                    let cost_grid = self.terrain_costs.get(&speed_type);
-                    let blocker_neighbor_counts =
-                        bump_crush::build_blocker_neighbor_counts_with_overlays(
-                            &self.substrate.entities,
-                            grid.width(),
-                            grid.height(),
-                            self.resolved_terrain.as_ref(),
-                            self.overlay_grid.as_ref(),
-                            overlay_registry,
-                            &self.interner,
-                            Some(rules),
-                        );
-                    movement::issue_move_command_with_layered(
-                        &mut self.substrate.entities,
+                    self.issue_ground_move(
                         grid,
-                        *passenger_id,
-                        (trx, try_),
-                        speed,
-                        false,
-                        cost_grid,
-                        Some(&entity_blocks),
-                        self.resolved_terrain.as_ref(),
-                        self.zone_grid.as_ref(),
-                        Some(&entity_block_map),
-                        Some(&blocker_neighbor_counts),
-                        self.playfield_bounds,
-                        Some(&mut self.substrate.cell_occupation),
-                        crate::sim::movement::DestinationTiming::from_rules(
-                            self.session.binary_frame,
-                            rules.into(),
-                        ),
+                        GroundMove {
+                            entity_id: *passenger_id,
+                            target: (trx, try_),
+                            speed,
+                            queue: false,
+                            speed_type: Some(speed_type),
+                            owner_blocks: true,
+                            object_destination: None,
+                        },
+                        overlay_registry,
+                        Some(rules),
                     );
                 }
                 true
@@ -2060,46 +1941,20 @@ impl Simulation {
                     .as_ref()
                     .map(|i| i.speed_type)
                     .unwrap_or(crate::rules::locomotor_type::SpeedType::Foot);
-                let (entity_blocks, entity_block_map) =
-                    crate::sim::movement::bump_crush::build_entity_block_set(
-                        &self.substrate.entities,
-                        command_owner,
-                        &self.house_alliances,
-                        &self.interner,
-                        Some(rules),
-                    );
                 if let Some(grid) = path_grid {
-                    let cost_grid = self.terrain_costs.get(&speed_type);
-                    let blocker_neighbor_counts =
-                        crate::sim::movement::bump_crush::build_blocker_neighbor_counts_with_overlays(
-                            &self.substrate.entities,
-                            grid.width(),
-                            grid.height(),
-                            self.resolved_terrain.as_ref(),
-                            self.overlay_grid.as_ref(),
-                            overlay_registry,
-                            &self.interner,
-                            Some(rules),
-                        );
-                    movement::issue_move_command_with_layered(
-                        &mut self.substrate.entities,
+                    self.issue_ground_move(
                         grid,
-                        *attacker_id,
-                        (trx, try_),
-                        speed,
-                        false,
-                        cost_grid,
-                        Some(&entity_blocks),
-                        self.resolved_terrain.as_ref(),
-                        self.zone_grid.as_ref(),
-                        Some(&entity_block_map),
-                        Some(&blocker_neighbor_counts),
-                        self.playfield_bounds,
-                        Some(&mut self.substrate.cell_occupation),
-                        crate::sim::movement::DestinationTiming::from_rules(
-                            self.session.binary_frame,
-                            rules.into(),
-                        ),
+                        GroundMove {
+                            entity_id: *attacker_id,
+                            target: (trx, try_),
+                            speed,
+                            queue: false,
+                            speed_type: Some(speed_type),
+                            owner_blocks: true,
+                            object_destination: None,
+                        },
+                        overlay_registry,
+                        Some(rules),
                     );
                 }
                 true
@@ -2214,52 +2069,25 @@ impl Simulation {
                     .as_ref()
                     .map(|i| i.speed_type)
                     .unwrap_or(crate::rules::locomotor_type::SpeedType::Foot);
-                let (entity_blocks, entity_block_map) =
-                    crate::sim::movement::bump_crush::build_entity_block_set(
-                        &self.substrate.entities,
-                        command_owner,
-                        &self.house_alliances,
-                        &self.interner,
-                        Some(rules),
-                    );
                 if let Some(grid) = path_grid {
-                    let cost_grid = self.terrain_costs.get(&speed_type);
-                    let blocker_neighbor_counts =
-                        crate::sim::movement::bump_crush::build_blocker_neighbor_counts_with_overlays(
-                            &self.substrate.entities,
-                            grid.width(),
-                            grid.height(),
-                            self.resolved_terrain.as_ref(),
-                            self.overlay_grid.as_ref(),
-                            overlay_registry,
-                            &self.interner,
-                            Some(rules),
-                        );
-                    movement::issue_move_command_with_destination(
-                        &mut self.substrate.entities,
+                    self.issue_ground_move(
                         grid,
-                        *engineer_id,
-                        (trx, try_),
-                        speed,
-                        false,
-                        cost_grid,
-                        Some(&entity_blocks),
-                        self.resolved_terrain.as_ref(),
-                        self.zone_grid.as_ref(),
-                        Some(&entity_block_map),
-                        Some(&blocker_neighbor_counts),
-                        self.playfield_bounds,
-                        Some(&mut self.substrate.cell_occupation),
-                        Some((
-                            crate::sim::components::NavTargetRef::Building {
-                                id: *target_building_id,
-                            },
-                            target_coord,
-                        )),
-                        crate::sim::movement::DestinationTiming::from_rules(
-                            self.session.binary_frame,
-                            rules.into(),
-                        ),
+                        GroundMove {
+                            entity_id: *engineer_id,
+                            target: (trx, try_),
+                            speed,
+                            queue: false,
+                            speed_type: Some(speed_type),
+                            owner_blocks: true,
+                            object_destination: Some((
+                                crate::sim::components::NavTargetRef::Building {
+                                    id: *target_building_id,
+                                },
+                                target_coord,
+                            )),
+                        },
+                        overlay_registry,
+                        Some(rules),
                     );
                 }
                 true
@@ -2489,45 +2317,20 @@ impl Simulation {
                         .as_ref()
                         .map(|i| i.speed_type)
                         .unwrap_or(SpeedType::Track);
-                    let (entity_blocks, entity_block_map) = bump_crush::build_entity_block_set(
-                        &self.substrate.entities,
-                        command_owner,
-                        &self.house_alliances,
-                        &self.interner,
-                        Some(rules),
-                    );
                     if let Some(grid) = path_grid {
-                        let cost_grid = self.terrain_costs.get(&speed_type);
-                        let blocker_neighbor_counts =
-                            bump_crush::build_blocker_neighbor_counts_with_overlays(
-                                &self.substrate.entities,
-                                grid.width(),
-                                grid.height(),
-                                self.resolved_terrain.as_ref(),
-                                self.overlay_grid.as_ref(),
-                                overlay_registry,
-                                &self.interner,
-                                Some(rules),
-                            );
-                        movement::issue_move_command_with_layered(
-                            &mut self.substrate.entities,
+                        self.issue_ground_move(
                             grid,
-                            *unit_id,
-                            (brx, bry),
-                            speed,
-                            false,
-                            cost_grid,
-                            Some(&entity_blocks),
-                            self.resolved_terrain.as_ref(),
-                            self.zone_grid.as_ref(),
-                            Some(&entity_block_map),
-                            Some(&blocker_neighbor_counts),
-                            self.playfield_bounds,
-                            Some(&mut self.substrate.cell_occupation),
-                            crate::sim::movement::DestinationTiming::from_rules(
-                                self.session.binary_frame,
-                                rules.into(),
-                            ),
+                            GroundMove {
+                                entity_id: *unit_id,
+                                target: (brx, bry),
+                                speed,
+                                queue: false,
+                                speed_type: Some(speed_type),
+                                owner_blocks: true,
+                                object_destination: None,
+                            },
+                            overlay_registry,
+                            Some(rules),
                         );
                     }
                 }
@@ -3174,7 +2977,7 @@ mod tests {
         assert!(info.can_crush_units());
         assert_eq!(
             info.crush_capability(),
-            bump_crush::CrushCapability::new(true, false)
+            movement::bump_crush::CrushCapability::new(true, false)
         );
     }
 
