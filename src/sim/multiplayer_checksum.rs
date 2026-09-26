@@ -227,17 +227,6 @@ fn wave_world_xy(wave: &crate::sim::wave::Wave) -> Option<(i32, i32)> {
 
 #[cfg(test)]
 #[inline]
-fn primary_facing(entity: &GameEntity, frame: u32) -> u16 {
-    entity
-        .body_facing
-        .as_ref()
-        .map_or(u16::from(entity.facing) << 8, |facing| {
-            facing.current(frame)
-        })
-}
-
-#[cfg(test)]
-#[inline]
 fn secondary_facing(entity: &GameEntity, frame: u32) -> u16 {
     entity
         .barrel_facing
@@ -279,7 +268,7 @@ impl Simulation {
         for entity in self.substrate.entities.values_sorted() {
             if entity.category == EntityCategory::Infantry {
                 let (x, y) = entity_world_xy(entity);
-                checksum.fold_infantry(x, y, primary_facing(entity, frame));
+                checksum.fold_infantry(x, y, entity.body_facing_current(frame));
             }
         }
         for entity in self.substrate.entities.values_sorted() {
@@ -288,7 +277,7 @@ impl Simulation {
                 checksum.fold_unit(
                     x,
                     y,
-                    primary_facing(entity, frame),
+                    entity.body_facing_current(frame),
                     secondary_facing(entity, frame),
                 );
             }
@@ -296,7 +285,7 @@ impl Simulation {
         for entity in self.substrate.entities.values_sorted() {
             if entity.category == EntityCategory::Structure {
                 let (x, y) = entity_world_xy(entity);
-                checksum.fold_building(x, y, primary_facing(entity, frame));
+                checksum.fold_building(x, y, entity.body_facing_current(frame));
             }
         }
 

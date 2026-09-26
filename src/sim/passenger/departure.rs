@@ -21,6 +21,10 @@ pub(crate) enum DepartureRoute {
     Vehicle,
     LandedAircraft,
     Paradrop,
+    /// A dying Unit's passenger (`UnitClass::ReceiveDamage` `0x00737FD4`,
+    /// `FootClass::RemoveFirstPassenger @ 0x004DE710`). Its attempt never
+    /// fails: a refused passenger dies instead of re-boarding.
+    DeathEscape,
 }
 
 /// The phase which refused departure, rather than a caller-owned rollback plan.
@@ -55,11 +59,11 @@ pub(crate) fn depart_cargo_head(
         .ok_or(DepartureFailure::NoCargo)?;
     let (passenger_id, passenger_size) = cargo.unload_first().ok_or(DepartureFailure::NoCargo)?;
     // FUN_004DE710's empty-hold weapon reset occurs before placement for these
-    // two callers. Garrison resets only after successful scatter; paradrop does
+    // callers. Garrison resets only after successful scatter; paradrop does
     // not reset the carrier override at all.
     let emptied = matches!(
         route,
-        DepartureRoute::Vehicle | DepartureRoute::LandedAircraft
+        DepartureRoute::Vehicle | DepartureRoute::LandedAircraft | DepartureRoute::DeathEscape
     ) && cargo.is_empty();
     if emptied {
         transport.weapon_override = None;
@@ -131,6 +135,9 @@ fn restore_departure(
                 unreachable!("invalid paradrop departure phase")
             }
         },
+        DepartureRoute::DeathEscape => {
+            unreachable!("a dying transport's passenger never re-boards")
+        }
         DepartureRoute::Garrison | DepartureRoute::Vehicle | DepartureRoute::LandedAircraft => {
             assert!(
                 matches!(

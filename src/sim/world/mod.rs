@@ -1689,6 +1689,12 @@ impl Simulation {
                 );
             }
             crate::sim::combat::FatalLifecycleStage::BeforeDeathEffects => {
+                // A building's occupants. A unit's passengers stay for its own
+                // arms: an exploding unit kills them before its death weapon
+                // (`world_receiver::handle_death`), and the rest leave or die
+                // in its UnitClass arm
+                // (`crew_survival::release_dying_unit_passengers`).
+                //
                 // RESIDUAL: this runs before the Techno death arm (sounds,
                 // debris, death weapon). Natively that arm returns first, and
                 // the Building NowDead block then ejects the occupants
@@ -1696,13 +1702,10 @@ impl Simulation {
                 // before DestructionEffects (`0x00442665`), so an ejected
                 // garrison's Scatter draws follow the debris and death-weapon
                 // draws there and precede them here.
-                if !matches!(category, EntityCategory::Unit | EntityCategory::Structure) {
+                if category != EntityCategory::Structure {
                     return;
                 }
                 let garrison = self.substrate.entities.get(stable_id).and_then(|entity| {
-                    if category != EntityCategory::Structure {
-                        return None;
-                    }
                     let object = rules.object(self.interner.resolve(entity.type_ref()))?;
                     let passenger_ids = entity
                         .passenger_role
@@ -1729,27 +1732,11 @@ impl Simulation {
                 // An absorbing building's passengers leave through
                 // SpawnSurvivors' Phase A; its KillPassengers (`0x00441F27`)
                 // runs after that and finds the list empty.
-                let absorbs = category == EntityCategory::Structure
-                    && self
-                        .substrate
-                        .entities
-                        .get(stable_id)
-                        .is_some_and(|entity| {
-                            rules
-                                .object(self.interner.resolve(entity.type_ref()))
-                                .is_some_and(|object| object.infantry_absorb || object.unit_absorb)
-                        });
-                // A `Crashable=` unit's passengers stay for its own death arm,
-                // which kills them (`world_receiver::finish_concrete_death`).
-                let crashable = category == EntityCategory::Unit
-                    && self
-                        .substrate
-                        .entities
-                        .get(stable_id)
-                        .is_some_and(|entity| {
-                            self.object_type(entity.type_ref(), rules)
-                                .is_some_and(|object| object.crashable)
-                        });
+                let absorbs = self.substrate.entities.get(stable_id).is_some_and(|entity| {
+                    rules
+                        .object(self.interner.resolve(entity.type_ref()))
+                        .is_some_and(|object| object.infantry_absorb || object.unit_absorb)
+                });
                 if let Some(event) = garrison {
                     production::eject_destruction_garrison_with_context(
                         self,
@@ -1757,13 +1744,11 @@ impl Simulation {
                         &event,
                         uninit_context,
                     );
-                } else if !absorbs && !crashable {
+                } else if !absorbs {
                     self.purge_carried_passengers_for_fatal(stable_id, uninit_context);
                 }
-                if category == EntityCategory::Structure {
-                    //44264C precedes the recursive destruction effects.
-                    self.set_building_light_active(stable_id, false);
-                }
+                //44264C precedes the recursive destruction effects.
+                self.set_building_light_active(stable_id, false);
             }
             crate::sim::combat::FatalLifecycleStage::AfterDeathEffects => {
                 if !matches!(category, EntityCategory::Unit | EntityCategory::Structure) {
@@ -6887,6 +6872,10 @@ mod cmin_dock_oracle_tests;
 #[cfg(test)]
 #[path = "cmin_dock_cycle_tests.rs"]
 mod cmin_dock_cycle_tests;
+
+#[cfg(test)]
+#[path = "passenger_escape_oracle_tests.rs"]
+mod passenger_escape_oracle_tests;
 
 #[cfg(test)]
 #[path = "world_orders_c4_tests.rs"]

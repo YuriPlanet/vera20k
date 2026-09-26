@@ -853,6 +853,10 @@ fn actual_turn_and_arrival_crush_use_binary_frame_for_both_shield_kinds() {
                         victim.type_ref = sim.intern("E1");
                         victim.owner = sim.intern("Soviets");
                         victim.category = EntityCategory::Infantry;
+                        victim.mission_leaf =
+                            crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+                                EntityCategory::Infantry,
+                            );
                         victim.is_voxel = false;
                         victim.sub_cell = Some(0);
                         victim.position = position.clone();

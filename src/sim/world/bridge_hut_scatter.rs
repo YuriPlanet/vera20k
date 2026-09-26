@@ -34,6 +34,37 @@ fn forced_scatter_admitted(
     Some(permitted && (!moving || fraidycat))
 }
 
+/// Test-only answer for the immediate locomotor Process (`0x0051D478`), for
+/// replays of oracles that answer the Walk Process slot (`0x0075AC80`) as
+/// not moving: while installed, each Process is recorded and its body does
+/// not run.
+#[cfg(test)]
+pub(crate) mod answered_process {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static PROCESSED: RefCell<Option<Vec<u64>>> = const { RefCell::new(None) };
+    }
+
+    pub(crate) fn install() {
+        PROCESSED.with(|seam| *seam.borrow_mut() = Some(Vec::new()));
+    }
+
+    /// The objects whose Process was answered, in call order.
+    pub(crate) fn finish() -> Vec<u64> {
+        PROCESSED.with(|seam| seam.borrow_mut().take().unwrap_or_default())
+    }
+
+    pub(super) fn answer(id: u64) -> bool {
+        PROCESSED.with(|seam| {
+            seam.borrow_mut()
+                .as_mut()
+                .map(|processed| processed.push(id))
+                .is_some()
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,6 +305,10 @@ impl Simulation {
         );
         // 51D478 is an immediate locomotor invocation, without another object
         // AI, mission timer, global animation tick, or frame-tail deletion.
+        #[cfg(test)]
+        if answered_process::answer(id) {
+            return Ok(false);
+        }
         let outcome = self
             .process_ground_locomotor_one(id, Some(rules), Some(grid), registry)
             .map_err(|error| format!("Scatter Process failed: {error:?}"))?;

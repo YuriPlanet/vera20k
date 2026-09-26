@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "SmudgeTypeClass::CanPlace 0x006B5F80 over MapClass's cell table (GetCell 0x005657A0, In_Bounds 0x00568300, the building lookup 0x0047C520 and the IsoTileType Morphable table, all original) for every origin of a Size 6x4 map and seven outside it, six footprints and both force values on three map variants; the Burn/Crater placers 0x006B59A0/0x006B5C90 at eleven coordinates; BuildingClass::DestructionEffects step 7 0x0044177E..0x004418EC for all 22 foundation indices at four locations and two seeds; each recorded SmudgeClass is followed by SmudgeTypeClass::Place 0x006B6080; every row records the shared dummy cell afterwards.",
+  "assumptions": [
+    "x87 control word 0x0E7F (PC53, chop) on entry, as anim_bouncer_launch.",
+    "g_GameActive 0x00A8E9A0 set, as in a running game.",
+    "Cells and the dummy come from the CellClass constructor 0x0047BBF0; rows write only the fields listed in `maps` (a synthetic map; its cells are not a retail map's).",
+    "SmudgeType fields: the retail [SmudgeTypes] list's Burn=, Crater=, Width=, Height= (rulesmd.ini).",
+    "The constructor's Unlimbo -> SmudgeClass::Mark -> Place path is read, not run: Location is the coordinate, Mark's cell is its truncation and Mark's CanPlace with force 1 passes on the footprint the placer admitted, looking up the cells Place then looks up.",
+    "centre_mark_discard_pins comes from extra step 7 runs with one `sub eax, 2` patched to `sub eax, 1`; no recorded row comes from a patched run."
+  ],
+  "substitutions": [
+    "the SmudgeClass constructor 0x006B4A50 records its type, coordinate and house and returns; SmudgeTypeClass::Place 0x006B6080 then runs on the recorded type and truncated cell",
+    "the per-cell redraw 0x00486E70 in Place records its cell and returns",
+    "operator new 0x007C8E17 is a bump allocator; operator delete 0x007C8B3D is a no-op",
+    "the dummy cell's coordinate (+0x24) is set to dummy_coord_before when a map is installed and before each can_place row"
+  ],
+  "entry_points": {
+    "can_place": "0x006B5F80",
+    "get_cell": "0x005657A0",
+    "in_bounds": "0x00568300",
+    "building_lookup": "0x0047C520",
+    "cell_ctor": "0x0047BBF0",
+    "burn": "0x006B59A0",
+    "crater": "0x006B5C90",
+    "place": "0x006B6080",
+    "step7": "0x0044177E",
+    "seed": "0x0065C6D0"
+  },
+  "payload_sha256": "d2c7d8d569921dd3ede7572d7b1d636c8598727e112959dd95174729e1a64f1a"
+}
