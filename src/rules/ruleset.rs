@@ -1596,8 +1596,8 @@ impl GarrisonRules {
 /// Bridge damage/destruction rules parsed from `rules(md).ini`.
 #[derive(Debug, Clone)]
 pub struct BridgeRules {
-    /// Hit points shared by a destroyable bridge span.
-    pub strength: u16,
+    /// Signed upper bound of the per-hit bridge damage admission draw.
+    pub strength: i32,
     /// Reset/default value for `SpecialFlags::DestroyableBridges`.
     ///
     /// `[CombatDamage] DestroyableBridges=` exists in retail INI text but is
@@ -1621,7 +1621,7 @@ pub struct BridgeRules {
 impl Default for BridgeRules {
     fn default() -> Self {
         Self {
-            strength: 1500,
+            strength: 1000,
             destroyable_by_default: true,
             explosions: Vec::new(),
             voxel_max: 3,
@@ -1632,11 +1632,11 @@ impl Default for BridgeRules {
 
 impl BridgeRules {
     fn from_ini(ini: &IniFile) -> Self {
+        // Rules ctor6675DA sets1000; ReadCombatDamage66CD66..66CD86 retains
+        // the current signed dword as ReadInteger's default, with no clamp.
         let strength = ini
             .section("CombatDamage")
-            .and_then(|section| section.get_i32("BridgeStrength"))
-            .unwrap_or(1500)
-            .max(1) as u16;
+            .map_or(1000, |section| section.read_int("BridgeStrength", 1000));
         let destroyable_by_default = true;
         let explosions = ini
             .section("General")
@@ -5293,7 +5293,7 @@ CellSpread=0
         assert!((rules.production.low_power_penalty_modifier - 1.25).abs() < 0.0001);
         assert!((rules.production.min_low_power_production_speed - 0.4).abs() < 0.0001);
         assert!((rules.production.max_low_power_production_speed - 0.85).abs() < 0.0001);
-        assert_eq!(rules.bridge_rules.strength, 1500);
+        assert_eq!(rules.bridge_rules.strength, 1000);
         assert!(rules.bridge_rules.destroyable_by_default);
     }
 

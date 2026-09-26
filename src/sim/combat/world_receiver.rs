@@ -986,9 +986,6 @@ pub(crate) fn handle_death(
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
 ) -> DeathEffects {
-    let handles = world.rule_handles;
-    let scenario_no_damage = world.session.no_damage;
-
     debug_assert!(
         dead_entities.len() <= 1,
         "ReceiveDamage enters one concrete fatal postlude at a time"
@@ -1006,7 +1003,7 @@ pub(crate) fn handle_death(
     let mut explosion_effects: Vec<ExplosionEffect> = Vec::new();
     let mut voxel_debris: Vec<crate::sim::voxel_anim::VoxelDebrisSpawn> = Vec::new();
     let mut combat_light_requests: Vec<CombatLightRequest> = Vec::new();
-    let mut bridge_damage_events: Vec<BridgeDamageEvent> = Vec::new();
+    let mut bridge_state_changed = false;
     #[cfg(test)]
     let mut wall_mutations: Vec<WallMutation> = Vec::new();
     #[cfg(test)]
@@ -1256,22 +1253,6 @@ pub(crate) fn handle_death(
 
             #[cfg(test)]
             cell_target_detaches.extend(aoe.cell_target_detaches);
-            // The bullet's DetonateAtCoord damages a bridge; a bomb calls
-            // Apply_area_damage directly.
-            if weapon.is_some() && !scenario_no_damage && !routed_wall && warhead.wall && *dmg > 0 {
-                let wh_iid = *wh_id;
-                bridge_damage_events.push(BridgeDamageEvent {
-                    rx: *rx,
-                    ry: *ry,
-                    damage: (*dmg).min(i32::from(u16::MAX)) as u16,
-                    warhead_ref: wh_iid,
-                    is_ion_cannon: wh_iid
-                        == handles
-                            .expect("Simulation::resolve_type_handles must run before combat")
-                            .ion_cannon,
-                    impact_z: *z as i32,
-                });
-            }
             if let Some(weapon) =
                 weapon.and_then(|weapon| rules.weapon(world.interner.resolve(weapon)))
                 && weapon.rad_level > 0
@@ -1294,7 +1275,7 @@ pub(crate) fn handle_death(
             explosion_effects.append(&mut nested.explosion_effects);
             voxel_debris.append(&mut nested.voxel_debris);
             combat_light_requests.append(&mut nested.combat_light_requests);
-            bridge_damage_events.append(&mut nested.bridge_damage_events);
+            bridge_state_changed |= nested.bridge_state_changed;
             #[cfg(test)]
             wall_mutations.append(&mut nested.wall_mutations);
 
@@ -1308,6 +1289,19 @@ pub(crate) fn handle_death(
             #[cfg(test)]
             receiver_stage_trace.append(&mut nested.receiver_stage_trace);
             under_attack_events.append(&mut pings);
+            // Both a DeathWeapon and BombClass's direct Apply_area_damage
+            // reach 489E87 after their receivers. Nested areas have completed
+            // their own bridge continuations before this parent resumes.
+            bridge_state_changed |= continue_area_bridge_damage(
+                world,
+                rules,
+                overlay_registry,
+                (*rx, *ry),
+                *dmg,
+                *wh_id,
+                *world_z_leptons,
+                routed_wall,
+            );
             emit_warhead_detonation_effects(
                 warhead,
                 *dmg,
@@ -1339,7 +1333,7 @@ pub(crate) fn handle_death(
         explosion_effects,
         voxel_debris,
         combat_light_requests,
-        bridge_damage_events,
+        bridge_state_changed,
         #[cfg(test)]
         wall_mutations,
         #[cfg(test)]
@@ -1702,10 +1696,56 @@ fn run_special_detonation_arm(
     }
 }
 
+/// Apply_area_damage's bridge continuation489E87..48A2C4 runs after all
+/// ordinary receivers and their recursive deaths, before returning to the
+/// caller. In particular Bullet469033 completes it before cluster RNG469057.
+/// A negative nonzero packet still reaches the native strength draw.
+#[allow(clippy::too_many_arguments)]
+fn continue_area_bridge_damage(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    cell: (u16, u16),
+    damage: i32,
+    warhead_ref: InternedId,
+    impact_z_leptons: i32,
+    routed_wall: bool,
+) -> bool {
+    if world.session.no_damage
+        || damage == 0
+        || routed_wall
+        || !rules
+            .warhead(world.interner.resolve(warhead_ref))
+            .is_some_and(|warhead| warhead.wall)
+    {
+        return false;
+    }
+    let event = BridgeDamageEvent {
+        rx: cell.0,
+        ry: cell.1,
+        damage,
+        warhead_ref,
+        is_ion_cannon: warhead_ref
+            == world
+                .rule_handles
+                .expect("Simulation::resolve_type_handles must run before combat")
+                .ion_cannon,
+        impact_z_leptons,
+    };
+    crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(
+        world,
+        rules,
+        std::slice::from_ref(&event),
+        overlay_registry,
+    )
+}
+
 /// `BulletClass::DetonateAtCoord @ 0x004690B0` up to its receivers: the
 /// radiation site, then the special-warhead chain or, in its final else, the
 /// shrapnel (`0x00469A51`) and `Apply_area_damage` (`0x00489280`) records,
-/// then bridge damage. The receivers commit before the anim tail
+/// then bridge damage. Returns the ordinary area's wall-route decision, or
+/// None for a special arm without Apply_area_damage. The receivers and bridge
+/// continuation commit before the anim tail
 /// ([`emit_detonation_anim`]), as native's area damage returns before
 /// `LAB_00469AA4`.
 ///
@@ -1719,9 +1759,7 @@ fn emit_detonation_receivers(
     detonation: &ProjectileDetonation,
     warhead: &WarheadType,
     out: &mut CombatEmit,
-) {
-    let handles = world.rule_handles;
-    let scenario_no_damage = world.session.no_damage;
+) -> Option<bool> {
     let (impact_rx, impact_ry, impact_sub_x, impact_sub_y, world_z_leptons) =
         projectile_impact_cell(detonation.impact);
     let impact_z = world_z_leptons.div_euclid(LEPTONS_PER_LEVEL as i32);
@@ -1830,22 +1868,7 @@ fn emit_detonation_receivers(
                 .extend(aoe.cell_target_detaches);
             out.damage_events.extend(aoe.receivers);
 
-            if !scenario_no_damage && detonation.payload.base_damage > 0 {
-                let damage = detonation.payload.base_damage.min(i32::from(u16::MAX)) as u16;
-                if !routed_wall && warhead.wall {
-                    out.effects.bridge_damage_events.push(BridgeDamageEvent {
-                        rx: impact_rx,
-                        ry: impact_ry,
-                        damage,
-                        warhead_ref: detonation.payload.warhead,
-                        is_ion_cannon: detonation.payload.warhead
-                            == handles
-                                .expect("Simulation::resolve_type_handles must run before combat")
-                                .ion_cannon,
-                        impact_z,
-                    });
-                }
-            }
+            Some(routed_wall)
         }
         claimed => {
             let target = match detonation.target {
@@ -1856,6 +1879,7 @@ fn emit_detonation_receivers(
                 ProjectileTarget::None => SpecialArmTarget::None,
             };
             run_special_detonation_arm(world, rules, claimed, detonation.source_id, target);
+            None
         }
     }
 }
@@ -1979,7 +2003,8 @@ pub(crate) fn commit_projectile_detonations_inline(
             let damage_start = emit.damage_events.len();
             let explosion_start = emit.effects.explosion_effects.len();
             let smudge_start = emit.effects.smudge_spawn_requests.len();
-            emit_detonation_receivers(world, rules, overlay_registry, &clustered, warhead, emit);
+            let area_wall_route =
+                emit_detonation_receivers(world, rules, overlay_registry, &clustered, warhead, emit);
             let outer_explosion_effects = emit.effects.explosion_effects.split_off(explosion_start);
             let outer_anim_requests = emit.effects.smudge_spawn_requests.split_off(smudge_start);
             let (inline_death, mut pings) = commit_area(
@@ -1990,6 +2015,19 @@ pub(crate) fn commit_projectile_detonations_inline(
                 overlay_registry,
             );
             emit.effects.append(inline_death);
+            if let Some(routed_wall) = area_wall_route {
+                let (rx, ry, _, _, z) = projectile_impact_cell(clustered.impact);
+                emit.effects.bridge_state_changed |= continue_area_bridge_damage(
+                    world,
+                    rules,
+                    overlay_registry,
+                    (rx, ry),
+                    clustered.payload.base_damage,
+                    clustered.payload.warhead,
+                    z,
+                    routed_wall,
+                );
+            }
             emit.effects
                 .explosion_effects
                 .extend(outer_explosion_effects);
@@ -3513,11 +3551,7 @@ fn emit_admitted_fire(
     let launched = {
         let impact_world_z_leptons = attack_world_z_leptons(
             snap.target,
-            target_rx,
-            target_ry,
-            target_sub_x,
-            target_sub_y,
-            &mut world.substrate.entities,
+            &world.substrate.entities,
             world.resolved_terrain.as_ref(),
         );
         let origin_world_z_leptons = fire.source_z;

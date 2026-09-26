@@ -7175,6 +7175,35 @@ fn detach_sweep_never_matches_a_cell_target() {
     );
 }
 
+#[test]
+fn bridge_cell_success_restores_before_conditional_target_clear() {
+    let mut sim = Simulation::new();
+    insert_entity(&mut sim, 1, EntityCategory::Infantry);
+    insert_entity(&mut sim, 2, EntityCategory::Unit);
+    let attacker = sim.substrate.entities.get_mut(1).unwrap();
+    attacker.attack_target = Some(AttackTarget::for_cell(9, 11));
+    attacker.suspended_attack_target = Some(TargetKind::Entity(2));
+    attacker.navigation.suspended_nav_com = Some(NavTargetRef::Cell { rx: 7, ry: 8 });
+    attacker.mission.apply_test_fixture(attack_fixture(
+        MissionType::Attack,
+        MissionId::from_known(MissionType::Move),
+    ));
+    sim.stop_all_targeting_cell(9, 11, None);
+    let attacker = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(
+        attacker.attack_target.as_ref().map(|target| target.target),
+        Some(TargetKind::Entity(2))
+    );
+    assert_eq!(
+        attacker.navigation.nav_com,
+        Some(NavTargetRef::Cell { rx: 7, ry: 8 })
+    );
+    assert_eq!(
+        attacker.mission.current(),
+        MissionId::from_known(MissionType::Move)
+    );
+}
+
 /// The whole loop end to end, in the shape the deferred item names: an
 /// infantryman is overridden onto a blocker, the blocker LEAVES ALIVE (owner
 /// change â€” engineer capture, Yuri, Psychic Beacon), and the infantryman comes

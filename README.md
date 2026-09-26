@@ -37,7 +37,7 @@ a placeholder AI.
 | Building, power, tech tree, selling and repair | Mind control | The original AI (a placeholder for now) |
 | War, Chrono and Slave Miners | Crate pickup | Campaign and most map triggers |
 | Infantry, vehicle, naval and base-defense combat | Death effects (ship sinking and a few others missing) | Chrono Legionnaire, Crazy Ivan, Magnetron and other special weapons |
-| Attack dogs and Terror Drones | | Gattling spin-up, Prism chaining, Tesla charging |
+| Attack dogs and Terror Drones | Bridge damage and repair | Gattling spin-up, Prism chaining, Tesla charging |
 | Garrisons, transports, engineers and cloaking | | Nuke, Chronosphere, Psychic Dominator, Spy Plane |
 | Lightning Storm, Iron Curtain and other support powers | | Movies and credits |
 | Save and load | | 30 players / 20,000 units (not demonstrated yet) |

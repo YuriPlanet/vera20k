@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Two consecutive original Scenario RandomRanged(1,65536) draws and four original raw continuations from native seed1. This is scalar RNG support, not nested receiver execution.",
+  "assumptions": [
+    "Native65C6D0-seeded Scenario Random state reused from seed_bytes."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "range": "0x0065C7E0",
+    "raw": "0x0065C780",
+    "seed": "0x0065C6D0"
+  },
+  "payload_sha256": "7fab31baaf47c500fb1c98123dd4a1a969e97b31e03b0de62f85557f7ebd3370"
+}

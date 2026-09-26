@@ -1,19 +1,20 @@
 //! Bridge damage orchestrator — 4-path dispatcher + cascade consumers.
 //!
-//! Per-tick entry that drains `BridgeDamageEvent`s emitted by combat, runs
-//! each event through the 4-path dispatcher (HighSM → LowSM → LowDirect →
-//! HighDirect, in fixed order), applies the per-path BridgeStrength RNG
-//! gate, runs the IonCannon retry loop on state-machine paths only, then
-//! applies the BlowUpBridge cascade: ground-occupant kill, bridge-deck
-//! DropIn, debris spawn, rim refresh, trigger broadcast, zone rebuild.
-//! `notify_bridge_span_collapse` is an intentional no-op on skirmish
-//! (TriggerEvent 31 is bound only by campaign / map triggers).
+//! Each area-damage continuation calls this owner synchronously after its
+//! receivers and before returning to the bullet's animation/cluster tail.
+//! The four native admission blocks run in fixed order, selecting drivers from
+//! live state. Concrete-body publication is synchronous; other driver outcomes
+//! still feed the existing cascade. Tagged collapse notification and debris
+//! construction remain required dependencies (see bridge-damage-admission.md).
 //!
 //! ## Dependency rules
 //! Same as sim/world: depends on sim/bridge_state, sim/rng, rules/, map/;
 //! never render / ui / audio / net.
 
 use std::collections::BTreeSet;
+
+#[path = "bridge_damage_dispatch.rs"]
+mod damage_dispatch;
 
 #[path = "bridge_ground.rs"]
 mod ground_fallout;
@@ -30,7 +31,7 @@ use crate::map::bridge_facts::{
 use crate::map::resolved_terrain::{BridgeDirection, ResolvedTerrainGrid};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::bridge_state::{
-    Axis, BridgeCellRole, BridgeDamageContext, BridgeDamageEvent, BridgeOverlayProjectionOp,
+    Axis, BridgeCellRole, BridgeDamageEvent, BridgeOverlayProjectionOp,
     BridgeRuntimeCell, BridgeRuntimeState, DamageState, DispatchPath, StateOutcome,
 };
 use crate::sim::world::Simulation;
@@ -38,25 +39,25 @@ use crate::sim::{intern::InternedId, rng::SimRng};
 use crate::util::fixed_math::SimFixed;
 use crate::util::lepton::CELL_CENTER_LEPTON;
 
-/// Drain a batch of `BridgeDamageEvent`s through the 4-path dispatcher.
+/// Apply bridge inputs through the four native admission blocks.
 ///
 /// Per-event behavior:
 /// 1. Outer gate: if `SpecialFlags::DestroyableBridges` is clear, bail
 ///    early — bridges are immune.
 /// 2. For each event, evaluate paths in fixed order
-///    `HighSM → LowSM → LowDirect → HighDirect`.
+///    concrete/wood admission, then low/high direct-overlay admission.
 /// 3. For each matching path, run the per-path RNG gate against
 ///    BridgeStrength (`damage > rand(1..=BridgeStrength)`). IonCannon
 ///    bypasses the gate.
 /// 4. State-machine paths get up to 3 retries when the warhead is
 ///    IonCannon (4 attempts total). Direct-overlay paths are single-shot.
-/// 5. The first path that produces a non-`NoChange` outcome is the
-///    winner; subsequent paths skip for that event.
+/// 5. All four blocks run against live post-callback state, even after a
+///    prior block succeeds. Successful calls detach the targeted cell.
 ///
 /// Returns `true` if any event in the batch produced a `StateOutcome::Collapsed`
 /// — i.e. at least one bridge cell transitioned to `DamageState::Destroyed`.
 /// Callers use this to signal `TickResult.bridge_state_changed` so the app
-/// rebuilds the PathGrid before next tick's movement runs.
+/// consumes the already-published navigation and refreshes presentation.
 ///
 /// Cascade side-effects (kill / DropIn / debris / rim / zone) run unconditionally
 /// when matching outcomes are present in this batch — they don't depend on
@@ -1761,143 +1762,10 @@ fn drop_in_bridge_deck_entities(sim: &mut Simulation, rx: u16, ry: u16) {
 fn run_dispatch_loop(
     sim: &mut Simulation,
     events: &[BridgeDamageEvent],
-    bridge_strength: u16,
-    publication: Option<(
-        &RuleSet,
-        Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-    )>,
+    bridge_strength: i32,
+    publication: Option<(&RuleSet, Option<&crate::map::overlay_types::OverlayTypeRegistry>)>,
 ) -> (Vec<StateOutcome>, bool) {
-    let mut outcomes = Vec::with_capacity(events.len());
-    let mut published_collapse = false;
-
-    if sim.resolved_terrain.is_none() {
-        return (outcomes, false);
-    }
-    if sim.bridge_state.is_none() {
-        return (outcomes, false);
-    }
-
-    for event in events {
-        let ctx = BridgeDamageContext {
-            damage: event.damage,
-            warhead_ref: event.warhead_ref,
-            is_ion_cannon: event.is_ion_cannon,
-            bridge_strength,
-            impact_z: event.impact_z,
-        };
-
-        // 4 paths in fixed order — RNG draw order is parity-critical.
-        for path in [
-            DispatchPath::HighStateMachine,
-            DispatchPath::LowStateMachine,
-            DispatchPath::LowDirect,
-            DispatchPath::HighDirect,
-        ] {
-            let path_matches = {
-                let terrain = sim
-                    .resolved_terrain
-                    .as_ref()
-                    .expect("terrain presence checked before dispatch");
-                let bridge_state = sim
-                    .bridge_state
-                    .as_ref()
-                    .expect("bridge-state presence checked before dispatch");
-                bridge_state.path_matches_cell(path, event.rx, event.ry, &ctx, terrain)
-            };
-            if !path_matches {
-                continue;
-            }
-
-            // Per-path BridgeStrength RNG gate. IonCannon bypasses.
-            if !ctx.is_ion_cannon {
-                // bridge collapse — scenario stream. Direct field, preserving
-                // the native four-block draw order.
-                let roll = sim
-                    .scenario_rng
-                    .next_range_u32_inclusive(1, ctx.bridge_strength as u32);
-                if !((roll as u16) < ctx.damage) {
-                    // Gate failed — try next path.
-                    continue;
-                }
-            }
-
-            // Retry: state-machine paths get up to 3 retries on IonCannon
-            // (4 attempts total). Direct-overlay paths are single-shot
-            // regardless of warhead.
-            let max_attempts = if ctx.is_ion_cannon && path.is_state_machine() {
-                4
-            } else {
-                1
-            };
-            for _attempt in 0..max_attempts {
-                if matches!(path, DispatchPath::HighStateMachine)
-                    && let Some((rules, registry)) = publication
-                    && let Some(result) = live_publication::try_body(
-                        sim,
-                        rules,
-                        registry,
-                        (event.rx as i16, event.ry as i16),
-                    )
-                {
-                    published_collapse |= result.collapsed;
-                    if result.returned {
-                        break;
-                    }
-                    continue;
-                }
-                let outcome = {
-                    let terrain = sim
-                        .resolved_terrain
-                        .as_mut()
-                        .expect("terrain presence checked before dispatch");
-                    let bridge_state = sim
-                        .bridge_state
-                        .as_mut()
-                        .expect("bridge-state presence checked before dispatch");
-                    match path {
-                        // Blocks A/B call the overlay-first inner dispatcher
-                        // (`ApplyDamageToCell`): in-band overlays route to the
-                        // direct walker, overlay-miss cells to the state machine.
-                        DispatchPath::HighStateMachine => {
-                            bridge_state.apply_damage_to_cell(event.rx, event.ry, true, terrain)
-                        }
-                        DispatchPath::LowStateMachine => {
-                            bridge_state.apply_damage_to_cell(event.rx, event.ry, false, terrain)
-                        }
-                        DispatchPath::HighDirect => {
-                            bridge_state.destroy_bridge_high(event.rx, event.ry, terrain)
-                        }
-                        DispatchPath::LowDirect => {
-                            bridge_state.destroy_bridge_low(event.rx, event.ry, terrain)
-                        }
-                    }
-                };
-                let success = outcome.apply_damage_success();
-                if outcome.has_effect() {
-                    // Ramp helpers already applied every native setter call
-                    // immediately to their transaction-local live 0x1180
-                    // seam, so recursive state gates observed current 0x80.
-                    // Dummy effects already executed synchronously at each
-                    // native setter call. Commit the identical ordered
-                    // transcript only to allocated real terrain values and
-                    // serialized authority before the next path/event; never
-                    // sort or deduplicate it.
-                    apply_runtime_bridge_flag_transcript_from_outcome(sim, &outcome);
-                    outcomes.push(outcome);
-                }
-                if success {
-                    break;
-                }
-            }
-            // BR-01: NO inter-block early-out. The binary's `Apply_area_damage`
-            // runs all four blocks A/B/C/D in fixed order; a cell matching more
-            // than one block consumes one `RandomRanged(1,BridgeStrength)` draw
-            // per eligible non-Ion block. Continue scanning the remaining blocks
-            // for this event instead of stopping at the first that did work.
-        }
-    }
-
-    (outcomes, published_collapse)
+    damage_dispatch::run(sim, events, bridge_strength, publication)
 }
 
 fn apply_runtime_bridge_flag_transcript_from_outcome(sim: &mut Simulation, outcome: &StateOutcome) {
@@ -2753,12 +2621,19 @@ mod tests {
         let mut sim = Simulation::new();
         let seed = 0x0B11_D6E5_u64;
         sim.reseed_scenario_and_main(seed);
-        sim.resolved_terrain = Some(water_below_bridge_terrain(4));
+        let mut terrain = water_below_bridge_terrain(4);
+        // A raw overlay alone admits only D. A also needs a real concrete
+        // Middle tile class (without0x100 its height gate is bypassed).
+        terrain.cell_mut(5, 5).unwrap().final_tile_index = 1019;
+        terrain.test_set_high_bridge_rim_tiles(
+            crate::map::bridge_rim_tiles::HighBridgeRimTiles::from_ini(
+                1000, b"[General]\nBridgeMiddle1=20\nBridgeMiddle2=40\n"));
+        sim.resolved_terrain = Some(terrain);
         let mut bs = BridgeRuntimeState::default();
         bs.test_seed_cell(5, 5, seed_bridge_cell(0xCD));
         sim.bridge_state = Some(bs);
 
-        let bridge_strength = 1500u16;
+        let bridge_strength = 1500i32;
         // Predict exactly two BridgeStrength gate draws (block A + block D).
         let mut predicted = crate::sim::rng::SimRng::new(seed);
         predicted.next_range_u32_inclusive(1, bridge_strength as u32);
@@ -2772,7 +2647,7 @@ mod tests {
             damage: 2000,
             warhead_ref: crate::sim::intern::InternedId::default(),
             is_ion_cannon: false,
-            impact_z: 0,
+            impact_z_leptons: 0,
         };
         let _ = run_dispatch_loop(&mut sim, &[event], bridge_strength, None);
 
@@ -2797,7 +2672,7 @@ mod tests {
         sim.resolved_terrain = Some(terrain);
 
         let mut bridge_state = BridgeRuntimeState::default();
-        let mut anchor = seed_bridge_cell(0);
+        let mut anchor = seed_bridge_cell(24);
         anchor.deck_level = 4;
         anchor.damage_state = DamageState::Damaged;
         anchor.axis = Some(Axis::NS);
@@ -2828,7 +2703,7 @@ mod tests {
             damage: 1,
             warhead_ref: crate::sim::intern::InternedId::default(),
             is_ion_cannon: true,
-            impact_z: 0,
+            impact_z_leptons: 416,
         };
         let (outcomes, _) = run_dispatch_loop(&mut sim, &[event], 1500, None);
         assert_eq!(outcomes.len(), 1);

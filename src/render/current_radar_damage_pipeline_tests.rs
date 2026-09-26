@@ -20,7 +20,6 @@ use crate::sim::bridge_state::{
     AnchorSpan, BridgeCellRole, BridgeDamageEvent, BridgeRuntimeCell, BridgeRuntimeState,
     DamageState, Direction,
 };
-use crate::sim::combat::AttackTarget;
 use crate::sim::command::Command;
 use crate::sim::components::Health;
 use crate::sim::game_entity::GameEntity;
@@ -350,22 +349,13 @@ fn gsi_04_01_production_tick_keeps_pavement_damage_through_ordinary_overlay_repa
         "Americans",
         "MTNK",
         EntityCategory::Unit,
-        CENTER,
+        (CENTER.0 - 2, CENTER.1),
         4,
         10_000,
         64,
     );
-    let target = spawn(
-        &mut sim,
-        "Soviets",
-        "TARGB",
-        EntityCategory::Structure,
-        CENTER,
-        4,
-        10_000,
-        192,
-    );
-    sim.add_entity_occupancy(target);
+    // This regression attacks the bridge deck. A ground-level building below
+    // it lies outside native Apply_area_damage's structural height window.
     let owner = sim.interner.get("Americans").expect("owner interned");
     sim.fog = crate::sim::vision::FogState {
         width: SIDE,
@@ -373,11 +363,17 @@ fn gsi_04_01_production_tick_keeps_pavement_damage_through_ordinary_overlay_repa
         ..Default::default()
     };
     crate::sim::vision::reveal_radius(&mut sim.fog, owner, CENTER.0, CENTER.1, 6);
-    sim.substrate
-        .entities
-        .get_mut(attacker)
-        .expect("attacker")
-        .attack_target = Some(AttackTarget::new(target));
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::ForceAttackCell {
+            attacker_id: attacker,
+            target_rx: CENTER.0,
+            target_ry: CENTER.1,
+        },
+        Some(&rules),
+        None,
+        &BTreeMap::new(),
+    ));
     let mut radar = projection(&sim, &grid);
     let mut last_generation = 0;
     assert_eq!(raw_pair(&radar, FLOOD[0]), [PRISTINE; 2]);
@@ -562,7 +558,7 @@ fn gsi_04_01_bridge_collapse_publishes_variant_preorder_before_setter_radar() {
             damage: 1,
             warhead_ref: Default::default(),
             is_ion_cannon: true,
-            impact_z: 4,
+            impact_z_leptons: 8 * 104, // Ground level4 plus the structural deck.
         }],
     );
 

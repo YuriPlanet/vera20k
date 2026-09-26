@@ -332,11 +332,9 @@ impl ProjectileCoord {
     }
 }
 
-/// Resolve the current virtual `CellClass::GetTargetCoords` value for a stable
-/// CellClass target. The cell identity is retained by the projectile; terrain
-/// level/slope and the live CellClass structural bit are read again on every
-/// visit.
-pub(crate) fn cell_target_coord(
+/// CellClass virtual +0x48 @ 0x00486840: cell centre and its ground surface.
+/// This remains distinct from +0x58's structural bridge aim offset.
+pub(crate) fn cell_ground_coord(
     terrain: Option<&ResolvedTerrainGrid>,
     rx: u16,
     ry: u16,
@@ -350,36 +348,36 @@ pub(crate) fn cell_target_coord(
     let z = terrain
         .and_then(|grid| grid.cell(rx, ry))
         .map(|cell| {
-            // gamemd-derived: `CellClass::GetTargetCoords +0x58 @ 0x00486890`
-            // delegates `+0x48 @ 0x00486840` to
-            // `CellClass::ComputeGroundHeightAtCoord @ 0x0047B3A0`, then adds 416 iff
-            // this CellClass's own `+0x140 & 0x100` is set. Bridge runtime
-            // walkability is not consulted.
             crate::util::lepton::ground_height_leptons(cell.level, cell.slope_type, x, y)
                 .expect("resolved CellClass target must have a supported slope")
-                .wrapping_add(
-                    if cell.bridge_facts.raw_flags
-                        & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
-                        != 0
-                    {
-                        crate::util::lepton::BRIDGE_HEIGHT_DELTA_LEPTONS as i32
-                    } else {
-                        0
-                    },
-                )
         })
-        // Mapless store fixtures use a flat cell. Production misses retain
-        // ProjectileTarget::DummyCell and use its live level/slope/bridge
-        // fields through dummy_cell_target_coord; the native dummy is not
-        // all-zero (its ctor initializes tile+38 to DWORD0xFFFF, for example).
+        // Mapless fixtures use flat ground. Production misses retain the
+        // shared CellClass and use dummy_cell_ground_coord instead.
         .unwrap_or(0);
     ProjectileCoord::new(x, y, z)
 }
 
-/// Resolve the current virtual `CellClass::GetTargetCoords` value for the one
-/// shared fallback CellClass. Unlike a stable allocated cell, every later miss
-/// can change the coordinate observed through this retained identity.
-pub(crate) fn dummy_cell_target_coord(dummy: &SharedCellDummy) -> ProjectileCoord {
+/// CellClass virtual +0x58 @ 0x00486890: +0x48 ground coordinate plus 416
+/// leptons iff the cell's own structural bit is live. FireAt, Bullet::Fire
+/// and the final impact ladder all read this aim, independently of walkability.
+pub(crate) fn cell_target_coord(
+    terrain: Option<&ResolvedTerrainGrid>,
+    rx: u16,
+    ry: u16,
+) -> ProjectileCoord {
+    let structural = terrain
+        .and_then(|grid| grid.cell(rx, ry))
+        .is_some_and(|cell| cell.bridge_facts.has_structural_bridge());
+    let mut coord = cell_ground_coord(terrain, rx, ry);
+    if structural {
+        coord.z = coord.z.wrapping_add(crate::util::lepton::BRIDGE_HEIGHT_DELTA_LEPTONS as i32);
+    }
+    coord
+}
+
+/// The shared fallback CellClass's +0x48 coordinate. Read the retained dummy
+/// at the receiver boundary; later map misses can change this same identity.
+pub(crate) fn dummy_cell_ground_coord(dummy: &SharedCellDummy) -> ProjectileCoord {
     let snapshot = dummy.snapshot();
     let x = snapshot
         .coord
@@ -391,27 +389,23 @@ pub(crate) fn dummy_cell_target_coord(dummy: &SharedCellDummy) -> ProjectileCoor
         .1
         .wrapping_mul(crate::sim::cell_kernel::LEPTONS_PER_CELL)
         .wrapping_add(crate::sim::cell_kernel::CELL_CENTER_LEPTONS);
-    // `CellClass` target virtual +0x58 at `0x00486890` delegates +0x48 at
-    // `0x00486840`, which calls
-    // `CellClass::ComputeGroundHeightAtCoord @ 0x0047B3A0`.
-    // Active retail initializes the Cell-owned scalar independently, but its
-    // captured value is the same 104 used by the shared ground evaluator.
     let z =
         crate::util::lepton::ground_height_leptons(snapshot.level as u8, snapshot.slope_type, x, y)
-            .expect("shared CellClass target must have a supported slope")
-            // `CellClass::GetTargetCoords @ 0x00486890` adds the process-global
-            // high-bridge delta when `CellClass+0x140 & 0x100` is live. The floor
-            // beneath it remains the verified 104-lepton CellClass kernel above.
-            .wrapping_add(
-                if snapshot.bridge_flags_0x1180 & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
-                    != 0
-                {
-                    crate::util::lepton::BRIDGE_HEIGHT_DELTA_LEPTONS as i32
-                } else {
-                    0
-                },
-            );
+            .expect("shared CellClass target must have a supported slope");
     ProjectileCoord::new(x, y, z)
+}
+
+/// Resolve the current virtual `CellClass::GetTargetCoords` value for the one
+/// shared fallback CellClass. Unlike a stable allocated cell, every later miss
+/// can change the coordinate observed through this retained identity.
+pub(crate) fn dummy_cell_target_coord(dummy: &SharedCellDummy) -> ProjectileCoord {
+    let structural =
+        dummy.retained_bridge_flags() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0;
+    let mut coord = dummy_cell_ground_coord(dummy);
+    if structural {
+        coord.z = coord.z.wrapping_add(crate::util::lepton::BRIDGE_HEIGHT_DELTA_LEPTONS as i32);
+    }
+    coord
 }
 
 /// The original target retained by a projectile after weapon fire.
@@ -1940,21 +1934,10 @@ impl ProjectileStore {
                         _ if !snap => None,
                         ProjectileTarget::Entity(id) => resolve_target_position(id),
                         ProjectileTarget::Cell { rx, ry } => {
-                            let mut location = cell_target_coord(terrain, rx, ry);
-                            location.z = projectile_ground_z(terrain, shared_cell_dummy, location);
-                            Some(location)
+                            Some(cell_ground_coord(terrain, rx, ry))
                         }
                         ProjectileTarget::DummyCell => {
-                            let mut location = dummy_cell_target_coord(shared_cell_dummy);
-                            let snapshot = shared_cell_dummy.snapshot();
-                            location.z = crate::util::lepton::ground_height_leptons(
-                                snapshot.level as u8,
-                                snapshot.slope_type,
-                                location.x,
-                                location.y,
-                            )
-                            .expect("shared CellClass target must have a supported slope");
-                            Some(location)
+                            Some(dummy_cell_ground_coord(shared_cell_dummy))
                         }
                         ProjectileTarget::None => None,
                     };

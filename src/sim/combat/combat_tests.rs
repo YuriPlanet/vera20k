@@ -873,7 +873,7 @@ fn gsi_04_10_projectile_inert_suppresses_bridge_ore_and_collector_rng() {
     assert!(emit.damage_events.is_empty());
     assert!(emit.effects.wall_mutations.is_empty());
     assert!(emit.effects.cell_target_detaches.is_empty());
-    assert!(emit.effects.bridge_damage_events.is_empty());
+    assert!(!emit.effects.bridge_state_changed);
     assert!(emit.effects.tiberium_reduction_requests.is_empty());
     assert_eq!(scenario_rng.state(), before_rng);
 }
@@ -1092,7 +1092,7 @@ fn test_armor_index_lookup() {
 }
 
 #[test]
-fn cell_center_coords_remains_ground_z_for_cell_targets() {
+fn cell_center_coords_and_mapless_launch_height() {
     let (rx, ry, sub_x, sub_y) = cell_center_coords(7, 9);
     assert_eq!((rx, ry), (7, 9));
     assert_eq!(sub_x.to_num::<i32>(), 128);
@@ -1100,7 +1100,7 @@ fn cell_center_coords_remains_ground_z_for_cell_targets() {
 
     let entities = EntityStore::new();
     assert_eq!(
-        attack_impact_z(TargetKind::Cell(7, 9), &entities, None),
+        attack_world_z_leptons(TargetKind::Cell(7, 9), &entities, None),
         0,
         "with no loaded terrain there is no cell floor to read; the cell-centre \
          helper never invents one. The terrain-backed cases live in \
@@ -1501,103 +1501,6 @@ fn ic_target_takes_zero_damage() {
 }
 
 #[test]
-fn test_tick_combat_only_emits_bridge_damage_for_wall_warheads() {
-    let mut store = EntityStore::new();
-    let rules_without_wall = test_rules();
-    store.insert(make_entity(1, "MTNK", 5, 5, 300));
-    store.insert(make_entity(2, "MTNK", 8, 5, 300));
-    let mut interner = test_interner();
-    issue_attack_command(&mut store, 1, 2, None, &interner);
-    let mut main_rng = SimRng::new(1);
-    align_attackers_to_targets(&mut store, &rules_without_wall, &interner);
-    let result = tick_combat_with_fog(
-        &mut store,
-        &mut OccupancyGrid::new(),
-        &rules_without_wall,
-        &mut interner,
-        None,
-        &BTreeMap::<InternedId, PowerState>::new(),
-        None,
-        None,
-        None,
-        None,
-        0u64,
-        100,
-        0u32,
-        &[],
-        None,
-        &mut main_rng,
-    );
-    assert!(
-        result
-            .consequences
-            .effects()
-            .bridge_damage_events
-            .is_empty(),
-        "non-wall warheads must not emit bridge damage"
-    );
-    assert!(
-        result.consequences.effects().wall_mutations.is_empty(),
-        "non-wall warheads must not emit wall damage"
-    );
-
-    let mut bridge_rules = RuleSet::from_ini(&IniFile::from_str(
-        "[InfantryTypes]\n\
-         [VehicleTypes]\n0=MTNK\n\n\
-         [AircraftTypes]\n\n\
-         [BuildingTypes]\n\n\
-         [MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=105mm\n\n\
-         [105mm]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\n\n\
-         [AP]\nWall=yes\nVerses=100%,100%,90%,75%,75%,75%,60%,30%,20%,0%,0%\n",
-    ))
-    .expect("bridge combat rules should parse");
-    // Combat reads IonCannonWarhead at the bridge-damage emit boundary; tests
-    // that drive tick_combat must resolve before invoking it.
-    let _handles =
-        crate::sim::type_handle_table::ResolvedRuleHandles::resolve(&bridge_rules, &mut interner);
-    let mut wall_store = EntityStore::new();
-    wall_store.insert(make_entity(3, "MTNK", 5, 5, 300));
-    wall_store.insert(make_entity(4, "MTNK", 8, 5, 300));
-    issue_attack_command(&mut wall_store, 3, 4, None, &interner);
-    align_attackers_to_targets(&mut wall_store, &bridge_rules, &interner);
-    let wall_result = tick_combat_with_fog(
-        &mut wall_store,
-        &mut OccupancyGrid::new(),
-        &bridge_rules,
-        &mut interner,
-        None,
-        &BTreeMap::<InternedId, PowerState>::new(),
-        None,
-        None,
-        None,
-        None,
-        0u64,
-        100,
-        0u32,
-        &[],
-        None,
-        &mut main_rng,
-    );
-    assert_eq!(
-        wall_result.consequences.effects().bridge_damage_events,
-        vec![BridgeDamageEvent {
-            rx: 8,
-            ry: 5,
-            damage: 65,
-            warhead_ref: interner
-                .get("AP")
-                .expect("AP warhead interned by tick_combat"),
-            is_ion_cannon: false,
-            impact_z: 0,
-        }]
-    );
-    // Without an overlay grid+registry, the discriminator can't identify a wall
-    // cell — events fall through to bridge_damage_events. Immediate wall
-    // mutation requires both a grid lookup and Wall=yes in the registry.
-    assert!(wall_result.consequences.effects().wall_mutations.is_empty());
-}
-
-#[test]
 fn gsi_04_07_damage_wad_precedes_wall_and_wood_armor_routing() {
     fn fire(extra_warhead_flags: &str, overlay_armor: &str) -> (CombatTickResult, OverlayGrid) {
         let ini = IniFile::from_str(&format!(
@@ -1657,13 +1560,7 @@ fn gsi_04_07_damage_wad_precedes_wall_and_wood_armor_routing() {
         "WallAbsoluteDestroyer wins and commits forced removal inline"
     );
     assert_eq!(absolute_grid.cell(8, 5).overlay_id, None);
-    assert!(
-        absolute
-            .consequences
-            .effects()
-            .bridge_damage_events
-            .is_empty()
-    );
+    assert!(!absolute.consequences.effects().bridge_state_changed);
 
     let (wood, wood_grid) = fire("Wood=yes", "wood");
     assert!(!wood.consequences.effects().wall_mutations.is_empty());

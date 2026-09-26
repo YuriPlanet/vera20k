@@ -1,0 +1,9228 @@
+[
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -65536,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1199
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 466
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "distance": 466,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 3879883985
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": -65536,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_d-65536_c1",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      615944872,
+      594350709,
+      1828753889,
+      1900114041
+    ],
+    "raw_words": [
+      2025287381,
+      660436142,
+      3663968561,
+      2901129938,
+      3879883985
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -65536,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1199
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 466
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "distance": 466,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 3879883985
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "damage": -65536,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 424
+      },
+      {
+        "coord": [
+          2801,
+          5656,
+          624
+        ],
+        "distance": 424,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 594350709
+      },
+      {
+        "coord": [
+          2801,
+          5656,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2801,
+          5656,
+          624
+        ],
+        "damage": -65536,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 377
+      },
+      {
+        "coord": [
+          2779,
+          4882,
+          624
+        ],
+        "distance": 377,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 382579722
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": -65536,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_d-65536_c3",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      677359813,
+      833118263,
+      1459931743,
+      1997489564
+    ],
+    "raw_words": [
+      2025287381,
+      660436142,
+      3663968561,
+      2901129938,
+      3879883985,
+      615944872,
+      594350709,
+      1828753889,
+      1900114041,
+      382579722
+    ],
+    "rng_indices": [
+      10,
+      113
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1199
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 466
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "distance": 466,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 3879883985
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": -1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_d-1_c1",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      615944872,
+      594350709,
+      1828753889,
+      1900114041
+    ],
+    "raw_words": [
+      2025287381,
+      660436142,
+      3663968561,
+      2901129938,
+      3879883985
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1199
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 466
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "distance": 466,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 3879883985
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 424
+      },
+      {
+        "coord": [
+          2801,
+          5656,
+          624
+        ],
+        "distance": 424,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 594350709
+      },
+      {
+        "coord": [
+          2801,
+          5656,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2801,
+          5656,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 377
+      },
+      {
+        "coord": [
+          2779,
+          4882,
+          624
+        ],
+        "distance": 377,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 382579722
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": -1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_d-1_c3",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      677359813,
+      833118263,
+      1459931743,
+      1997489564
+    ],
+    "raw_words": [
+      2025287381,
+      660436142,
+      3663968561,
+      2901129938,
+      3879883985,
+      615944872,
+      594350709,
+      1828753889,
+      1900114041,
+      382579722
+    ],
+    "rng_indices": [
+      10,
+      113
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "area_damage": 1,
+      "cell_ground_coords": 2,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "ground_z": 1,
+      "impact_ladder": 1,
+      "random_ranged": 1,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 0,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 469
+      },
+      {
+        "coord": [
+          2264,
+          5448,
+          624
+        ],
+        "distance": 469,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 660436142
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 0,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_d0_c1",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      3663968561,
+      2901129938,
+      3879883985,
+      615944872
+    ],
+    "raw_words": [
+      2025287381,
+      660436142
+    ],
+    "rng_indices": [
+      2,
+      105
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "area_damage": 3,
+      "cell_ground_coords": 2,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 3,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 0,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 469
+      },
+      {
+        "coord": [
+          2264,
+          5448,
+          624
+        ],
+        "distance": 469,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 660436142
+      },
+      {
+        "coord": [
+          2264,
+          5448,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2264,
+          5448,
+          624
+        ],
+        "damage": 0,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 466
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "distance": 466,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 3879883985
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "damage": 0,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 424
+      },
+      {
+        "coord": [
+          2801,
+          5656,
+          624
+        ],
+        "distance": 424,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 594350709
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": 0,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_d0_c3",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      1828753889,
+      1900114041,
+      382579722,
+      677359813
+    ],
+    "raw_words": [
+      2025287381,
+      660436142,
+      3663968561,
+      2901129938,
+      3879883985,
+      615944872,
+      594350709
+    ],
+    "rng_indices": [
+      7,
+      110
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1199
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 466
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "distance": 466,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 3879883985
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_d1_c1",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      615944872,
+      594350709,
+      1828753889,
+      1900114041
+    ],
+    "raw_words": [
+      2025287381,
+      660436142,
+      3663968561,
+      2901129938,
+      3879883985
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1199
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 466
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "distance": 466,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 3879883985
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "damage": 1,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 424
+      },
+      {
+        "coord": [
+          2801,
+          5656,
+          624
+        ],
+        "distance": 424,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 594350709
+      },
+      {
+        "coord": [
+          2801,
+          5656,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2801,
+          5656,
+          624
+        ],
+        "damage": 1,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 377
+      },
+      {
+        "coord": [
+          2779,
+          4882,
+          624
+        ],
+        "distance": 377,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 382579722
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": 1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_d1_c3",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      677359813,
+      833118263,
+      1459931743,
+      1997489564
+    ],
+    "raw_words": [
+      2025287381,
+      660436142,
+      3663968561,
+      2901129938,
+      3879883985,
+      615944872,
+      594350709,
+      1828753889,
+      1900114041,
+      382579722
+    ],
+    "rng_indices": [
+      10,
+      113
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1199
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 466
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "distance": 466,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 3879883985
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_d2000_c1",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      615944872,
+      594350709,
+      1828753889,
+      1900114041
+    ],
+    "raw_words": [
+      2025287381,
+      660436142,
+      3663968561,
+      2901129938,
+      3879883985
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1199
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 466
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "distance": 466,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 3879883985
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 424
+      },
+      {
+        "coord": [
+          2801,
+          5656,
+          624
+        ],
+        "distance": 424,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 594350709
+      },
+      {
+        "coord": [
+          2801,
+          5656,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2801,
+          5656,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 377
+      },
+      {
+        "coord": [
+          2779,
+          4882,
+          624
+        ],
+        "distance": 377,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 382579722
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_d2000_c3",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      677359813,
+      833118263,
+      1459931743,
+      1997489564
+    ],
+    "raw_words": [
+      2025287381,
+      660436142,
+      3663968561,
+      2901129938,
+      3879883985,
+      615944872,
+      594350709,
+      1828753889,
+      1900114041,
+      382579722
+    ],
+    "rng_indices": [
+      10,
+      113
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 65536,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1199
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 466
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "distance": 466,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 3879883985
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 65536,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_d65536_c1",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      615944872,
+      594350709,
+      1828753889,
+      1900114041
+    ],
+    "raw_words": [
+      2025287381,
+      660436142,
+      3663968561,
+      2901129938,
+      3879883985
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 65536,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1199
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 466
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "distance": 466,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 3879883985
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "damage": 65536,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 424
+      },
+      {
+        "coord": [
+          2801,
+          5656,
+          624
+        ],
+        "distance": 424,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 594350709
+      },
+      {
+        "coord": [
+          2801,
+          5656,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2801,
+          5656,
+          624
+        ],
+        "damage": 65536,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 377
+      },
+      {
+        "coord": [
+          2779,
+          4882,
+          624
+        ],
+        "distance": 377,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 382579722
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": 65536,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_d65536_c3",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      677359813,
+      833118263,
+      1459931743,
+      1997489564
+    ],
+    "raw_words": [
+      2025287381,
+      660436142,
+      3663968561,
+      2901129938,
+      3879883985,
+      615944872,
+      594350709,
+      1828753889,
+      1900114041,
+      382579722
+    ],
+    "rng_indices": [
+      10,
+      113
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -65536,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 340
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 422
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "distance": 422,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 107402731
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": -65536,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s31_d-65536_c1",
+      "no_damage": false,
+      "seed": 31,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      577279072,
+      1766806041,
+      2171444653,
+      789772035
+    ],
+    "raw_words": [
+      2026076499,
+      2287577493,
+      2225548056,
+      1502837926,
+      107402731
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -65536,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 340
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 422
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "distance": 422,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 107402731
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "damage": -65536,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 352
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "distance": 352,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1766806041
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "damage": -65536,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 300
+      },
+      {
+        "coord": [
+          2919,
+          5057,
+          624
+        ],
+        "distance": 300,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 55574052
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": -65536,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s31_d-65536_c3",
+      "no_damage": false,
+      "seed": 31,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      3334067941,
+      389688841,
+      2376448012,
+      4147418851
+    ],
+    "raw_words": [
+      2026076499,
+      2287577493,
+      2225548056,
+      1502837926,
+      107402731,
+      577279072,
+      1766806041,
+      2171444653,
+      789772035,
+      777716780,
+      55574052
+    ],
+    "rng_indices": [
+      11,
+      114
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 340
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 422
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "distance": 422,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 107402731
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": -1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s31_d-1_c1",
+      "no_damage": false,
+      "seed": 31,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      577279072,
+      1766806041,
+      2171444653,
+      789772035
+    ],
+    "raw_words": [
+      2026076499,
+      2287577493,
+      2225548056,
+      1502837926,
+      107402731
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 340
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 422
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "distance": 422,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 107402731
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 352
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "distance": 352,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1766806041
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 300
+      },
+      {
+        "coord": [
+          2919,
+          5057,
+          624
+        ],
+        "distance": 300,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 55574052
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": -1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s31_d-1_c3",
+      "no_damage": false,
+      "seed": 31,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      3334067941,
+      389688841,
+      2376448012,
+      4147418851
+    ],
+    "raw_words": [
+      2026076499,
+      2287577493,
+      2225548056,
+      1502837926,
+      107402731,
+      577279072,
+      1766806041,
+      2171444653,
+      789772035,
+      777716780,
+      55574052
+    ],
+    "rng_indices": [
+      11,
+      114
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "area_damage": 1,
+      "cell_ground_coords": 2,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "ground_z": 1,
+      "impact_ladder": 1,
+      "random_ranged": 1,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 0,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 422
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "distance": 422,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 107402731
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 0,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s31_d0_c1",
+      "no_damage": false,
+      "seed": 31,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      577279072,
+      1766806041,
+      2171444653,
+      789772035
+    ],
+    "raw_words": [
+      2026076499,
+      2287577493,
+      2225548056,
+      1502837926,
+      107402731
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "area_damage": 3,
+      "cell_ground_coords": 2,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 3,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 0,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 422
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "distance": 422,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 107402731
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "damage": 0,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 352
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "distance": 352,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1766806041
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "damage": 0,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 300
+      },
+      {
+        "coord": [
+          2919,
+          5057,
+          624
+        ],
+        "distance": 300,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 55574052
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": 0,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s31_d0_c3",
+      "no_damage": false,
+      "seed": 31,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      3334067941,
+      389688841,
+      2376448012,
+      4147418851
+    ],
+    "raw_words": [
+      2026076499,
+      2287577493,
+      2225548056,
+      1502837926,
+      107402731,
+      577279072,
+      1766806041,
+      2171444653,
+      789772035,
+      777716780,
+      55574052
+    ],
+    "rng_indices": [
+      11,
+      114
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 340
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 422
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "distance": 422,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 107402731
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s31_d1_c1",
+      "no_damage": false,
+      "seed": 31,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      577279072,
+      1766806041,
+      2171444653,
+      789772035
+    ],
+    "raw_words": [
+      2026076499,
+      2287577493,
+      2225548056,
+      1502837926,
+      107402731
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 340
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 422
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "distance": 422,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 107402731
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "damage": 1,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 352
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "distance": 352,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1766806041
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "damage": 1,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 300
+      },
+      {
+        "coord": [
+          2919,
+          5057,
+          624
+        ],
+        "distance": 300,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 55574052
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": 1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s31_d1_c3",
+      "no_damage": false,
+      "seed": 31,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      3334067941,
+      389688841,
+      2376448012,
+      4147418851
+    ],
+    "raw_words": [
+      2026076499,
+      2287577493,
+      2225548056,
+      1502837926,
+      107402731,
+      577279072,
+      1766806041,
+      2171444653,
+      789772035,
+      777716780,
+      55574052
+    ],
+    "rng_indices": [
+      11,
+      114
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 340
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 422
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "distance": 422,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 107402731
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s31_d2000_c1",
+      "no_damage": false,
+      "seed": 31,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      577279072,
+      1766806041,
+      2171444653,
+      789772035
+    ],
+    "raw_words": [
+      2026076499,
+      2287577493,
+      2225548056,
+      1502837926,
+      107402731
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 340
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 422
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "distance": 422,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 107402731
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 352
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "distance": 352,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1766806041
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 300
+      },
+      {
+        "coord": [
+          2919,
+          5057,
+          624
+        ],
+        "distance": 300,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 55574052
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s31_d2000_c3",
+      "no_damage": false,
+      "seed": 31,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      3334067941,
+      389688841,
+      2376448012,
+      4147418851
+    ],
+    "raw_words": [
+      2026076499,
+      2287577493,
+      2225548056,
+      1502837926,
+      107402731,
+      577279072,
+      1766806041,
+      2171444653,
+      789772035,
+      777716780,
+      55574052
+    ],
+    "rng_indices": [
+      11,
+      114
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 65536,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 340
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 422
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "distance": 422,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 107402731
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 65536,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s31_d65536_c1",
+      "no_damage": false,
+      "seed": 31,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      577279072,
+      1766806041,
+      2171444653,
+      789772035
+    ],
+    "raw_words": [
+      2026076499,
+      2287577493,
+      2225548056,
+      1502837926,
+      107402731
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 65536,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 340
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 422
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "distance": 422,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 107402731
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2479,
+          4880,
+          624
+        ],
+        "damage": 65536,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 352
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "distance": 352,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1766806041
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2890,
+          4960,
+          624
+        ],
+        "damage": 65536,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 300
+      },
+      {
+        "coord": [
+          2919,
+          5057,
+          624
+        ],
+        "distance": 300,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 55574052
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": 65536,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s31_d65536_c3",
+      "no_damage": false,
+      "seed": 31,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      3334067941,
+      389688841,
+      2376448012,
+      4147418851
+    ],
+    "raw_words": [
+      2026076499,
+      2287577493,
+      2225548056,
+      1502837926,
+      107402731,
+      577279072,
+      1766806041,
+      2171444653,
+      789772035,
+      777716780,
+      55574052
+    ],
+    "rng_indices": [
+      11,
+      114
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -65536,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1183
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 333
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "distance": 333,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2044028184
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": -65536,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_d-65536_c1",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      539506682,
+      3414363877,
+      4002149980,
+      4037411532
+    ],
+    "raw_words": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184
+    ],
+    "rng_indices": [
+      4,
+      107
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -65536,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1183
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 333
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "distance": 333,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2044028184
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "damage": -65536,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 485
+      },
+      {
+        "coord": [
+          3062,
+          5555,
+          624
+        ],
+        "distance": 485,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4002149980
+      },
+      {
+        "coord": [
+          3062,
+          5555,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          3062,
+          5555,
+          624
+        ],
+        "damage": -65536,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 460
+      },
+      {
+        "coord": [
+          3021,
+          4930,
+          624
+        ],
+        "distance": 460,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1154181921
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": -65536,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_d-65536_c3",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      621284645,
+      2852657692,
+      885862829,
+      4037895322
+    ],
+    "raw_words": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184,
+      539506682,
+      3414363877,
+      4002149980,
+      4037411532,
+      1154181921
+    ],
+    "rng_indices": [
+      9,
+      112
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1183
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 333
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "distance": 333,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2044028184
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": -1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_d-1_c1",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      539506682,
+      3414363877,
+      4002149980,
+      4037411532
+    ],
+    "raw_words": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184
+    ],
+    "rng_indices": [
+      4,
+      107
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1183
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 333
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "distance": 333,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2044028184
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 485
+      },
+      {
+        "coord": [
+          3062,
+          5555,
+          624
+        ],
+        "distance": 485,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4002149980
+      },
+      {
+        "coord": [
+          3062,
+          5555,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          3062,
+          5555,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 460
+      },
+      {
+        "coord": [
+          3021,
+          4930,
+          624
+        ],
+        "distance": 460,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1154181921
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": -1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_d-1_c3",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      621284645,
+      2852657692,
+      885862829,
+      4037895322
+    ],
+    "raw_words": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184,
+      539506682,
+      3414363877,
+      4002149980,
+      4037411532,
+      1154181921
+    ],
+    "rng_indices": [
+      9,
+      112
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "area_damage": 1,
+      "cell_ground_coords": 2,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "ground_z": 1,
+      "impact_ladder": 1,
+      "random_ranged": 1,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 0,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 414
+      },
+      {
+        "coord": [
+          2627,
+          4838,
+          624
+        ],
+        "distance": 414,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2828347898
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 0,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_d0_c1",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      1264662605,
+      2044028184,
+      539506682,
+      3414363877
+    ],
+    "raw_words": [
+      398029982,
+      2828347898
+    ],
+    "rng_indices": [
+      2,
+      105
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "area_damage": 3,
+      "cell_ground_coords": 2,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 3,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 0,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 414
+      },
+      {
+        "coord": [
+          2627,
+          4838,
+          624
+        ],
+        "distance": 414,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2828347898
+      },
+      {
+        "coord": [
+          2627,
+          4838,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2627,
+          4838,
+          624
+        ],
+        "damage": 0,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 333
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "distance": 333,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2044028184
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "damage": 0,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 485
+      },
+      {
+        "coord": [
+          3062,
+          5555,
+          624
+        ],
+        "distance": 485,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4002149980
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": 0,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_d0_c3",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      4037411532,
+      1154181921,
+      621284645,
+      2852657692
+    ],
+    "raw_words": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184,
+      539506682,
+      3414363877,
+      4002149980
+    ],
+    "rng_indices": [
+      7,
+      110
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1183
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 333
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "distance": 333,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2044028184
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_d1_c1",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      539506682,
+      3414363877,
+      4002149980,
+      4037411532
+    ],
+    "raw_words": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184
+    ],
+    "rng_indices": [
+      4,
+      107
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1183
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 333
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "distance": 333,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2044028184
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "damage": 1,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 485
+      },
+      {
+        "coord": [
+          3062,
+          5555,
+          624
+        ],
+        "distance": 485,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4002149980
+      },
+      {
+        "coord": [
+          3062,
+          5555,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          3062,
+          5555,
+          624
+        ],
+        "damage": 1,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 460
+      },
+      {
+        "coord": [
+          3021,
+          4930,
+          624
+        ],
+        "distance": 460,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1154181921
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": 1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_d1_c3",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      621284645,
+      2852657692,
+      885862829,
+      4037895322
+    ],
+    "raw_words": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184,
+      539506682,
+      3414363877,
+      4002149980,
+      4037411532,
+      1154181921
+    ],
+    "rng_indices": [
+      9,
+      112
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1183
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 333
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "distance": 333,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2044028184
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_d2000_c1",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      539506682,
+      3414363877,
+      4002149980,
+      4037411532
+    ],
+    "raw_words": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184
+    ],
+    "rng_indices": [
+      4,
+      107
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1183
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 333
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "distance": 333,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2044028184
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 485
+      },
+      {
+        "coord": [
+          3062,
+          5555,
+          624
+        ],
+        "distance": 485,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4002149980
+      },
+      {
+        "coord": [
+          3062,
+          5555,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          3062,
+          5555,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 460
+      },
+      {
+        "coord": [
+          3021,
+          4930,
+          624
+        ],
+        "distance": 460,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1154181921
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_d2000_c3",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      621284645,
+      2852657692,
+      885862829,
+      4037895322
+    ],
+    "raw_words": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184,
+      539506682,
+      3414363877,
+      4002149980,
+      4037411532,
+      1154181921
+    ],
+    "rng_indices": [
+      9,
+      112
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 65536,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1183
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 333
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "distance": 333,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2044028184
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 65536,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_d65536_c1",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      539506682,
+      3414363877,
+      4002149980,
+      4037411532
+    ],
+    "raw_words": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184
+    ],
+    "rng_indices": [
+      4,
+      107
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 65536,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1183
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 333
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "distance": 333,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2044028184
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "damage": 65536,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 485
+      },
+      {
+        "coord": [
+          3062,
+          5555,
+          624
+        ],
+        "distance": 485,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4002149980
+      },
+      {
+        "coord": [
+          3062,
+          5555,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          3062,
+          5555,
+          624
+        ],
+        "damage": 65536,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 460
+      },
+      {
+        "coord": [
+          3021,
+          4930,
+          624
+        ],
+        "distance": 460,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1154181921
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": 65536,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_d65536_c3",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      621284645,
+      2852657692,
+      885862829,
+      4037895322
+    ],
+    "raw_words": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184,
+      539506682,
+      3414363877,
+      4002149980,
+      4037411532,
+      1154181921
+    ],
+    "rng_indices": [
+      9,
+      112
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -65536,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 98
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 385
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "distance": 385,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4253075751
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": -65536,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s12345_d-65536_c1",
+      "no_damage": false,
+      "seed": 12345,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      1529225317,
+      1718853923,
+      1121963225,
+      702719438
+    ],
+    "raw_words": [
+      2979637345,
+      186607930,
+      1812860918,
+      2666226305,
+      4253075751
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -65536,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 98
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 385
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "distance": 385,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4253075751
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "damage": -65536,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 357
+      },
+      {
+        "coord": [
+          2958,
+          5014,
+          624
+        ],
+        "distance": 357,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1718853923
+      },
+      {
+        "coord": [
+          2958,
+          5014,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2958,
+          5014,
+          624
+        ],
+        "damage": -65536,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 473
+      },
+      {
+        "coord": [
+          2242,
+          5088,
+          624
+        ],
+        "distance": 473,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 702719438
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": -65536,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s12345_d-65536_c3",
+      "no_damage": false,
+      "seed": 12345,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      2707336974,
+      3808544461,
+      3662420308,
+      937947183
+    ],
+    "raw_words": [
+      2979637345,
+      186607930,
+      1812860918,
+      2666226305,
+      4253075751,
+      1529225317,
+      1718853923,
+      1121963225,
+      702719438
+    ],
+    "rng_indices": [
+      9,
+      112
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 98
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 385
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "distance": 385,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4253075751
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": -1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s12345_d-1_c1",
+      "no_damage": false,
+      "seed": 12345,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      1529225317,
+      1718853923,
+      1121963225,
+      702719438
+    ],
+    "raw_words": [
+      2979637345,
+      186607930,
+      1812860918,
+      2666226305,
+      4253075751
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 98
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 385
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "distance": 385,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4253075751
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 357
+      },
+      {
+        "coord": [
+          2958,
+          5014,
+          624
+        ],
+        "distance": 357,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1718853923
+      },
+      {
+        "coord": [
+          2958,
+          5014,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2958,
+          5014,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 473
+      },
+      {
+        "coord": [
+          2242,
+          5088,
+          624
+        ],
+        "distance": 473,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 702719438
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": -1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s12345_d-1_c3",
+      "no_damage": false,
+      "seed": 12345,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      2707336974,
+      3808544461,
+      3662420308,
+      937947183
+    ],
+    "raw_words": [
+      2979637345,
+      186607930,
+      1812860918,
+      2666226305,
+      4253075751,
+      1529225317,
+      1718853923,
+      1121963225,
+      702719438
+    ],
+    "rng_indices": [
+      9,
+      112
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "area_damage": 1,
+      "cell_ground_coords": 2,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "ground_z": 1,
+      "impact_ladder": 1,
+      "random_ranged": 1,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 0,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 353
+      },
+      {
+        "coord": [
+          3037,
+          5196,
+          624
+        ],
+        "distance": 353,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 186607930
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 0,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s12345_d0_c1",
+      "no_damage": false,
+      "seed": 12345,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      1812860918,
+      2666226305,
+      4253075751,
+      1529225317
+    ],
+    "raw_words": [
+      2979637345,
+      186607930
+    ],
+    "rng_indices": [
+      2,
+      105
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "area_damage": 3,
+      "cell_ground_coords": 2,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 3,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 0,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 353
+      },
+      {
+        "coord": [
+          3037,
+          5196,
+          624
+        ],
+        "distance": 353,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 186607930
+      },
+      {
+        "coord": [
+          3037,
+          5196,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          3037,
+          5196,
+          624
+        ],
+        "damage": 0,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 385
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "distance": 385,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4253075751
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "damage": 0,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 357
+      },
+      {
+        "coord": [
+          2958,
+          5014,
+          624
+        ],
+        "distance": 357,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1718853923
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": 0,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s12345_d0_c3",
+      "no_damage": false,
+      "seed": 12345,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      1121963225,
+      702719438,
+      2707336974,
+      3808544461
+    ],
+    "raw_words": [
+      2979637345,
+      186607930,
+      1812860918,
+      2666226305,
+      4253075751,
+      1529225317,
+      1718853923
+    ],
+    "rng_indices": [
+      7,
+      110
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 98
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 385
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "distance": 385,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4253075751
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s12345_d1_c1",
+      "no_damage": false,
+      "seed": 12345,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      1529225317,
+      1718853923,
+      1121963225,
+      702719438
+    ],
+    "raw_words": [
+      2979637345,
+      186607930,
+      1812860918,
+      2666226305,
+      4253075751
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 98
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 385
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "distance": 385,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4253075751
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "damage": 1,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 357
+      },
+      {
+        "coord": [
+          2958,
+          5014,
+          624
+        ],
+        "distance": 357,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1718853923
+      },
+      {
+        "coord": [
+          2958,
+          5014,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2958,
+          5014,
+          624
+        ],
+        "damage": 1,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 473
+      },
+      {
+        "coord": [
+          2242,
+          5088,
+          624
+        ],
+        "distance": 473,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 702719438
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": 1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s12345_d1_c3",
+      "no_damage": false,
+      "seed": 12345,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      2707336974,
+      3808544461,
+      3662420308,
+      937947183
+    ],
+    "raw_words": [
+      2979637345,
+      186607930,
+      1812860918,
+      2666226305,
+      4253075751,
+      1529225317,
+      1718853923,
+      1121963225,
+      702719438
+    ],
+    "rng_indices": [
+      9,
+      112
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 98
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 385
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "distance": 385,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4253075751
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s12345_d2000_c1",
+      "no_damage": false,
+      "seed": 12345,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      1529225317,
+      1718853923,
+      1121963225,
+      702719438
+    ],
+    "raw_words": [
+      2979637345,
+      186607930,
+      1812860918,
+      2666226305,
+      4253075751
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 98
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 385
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "distance": 385,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4253075751
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 357
+      },
+      {
+        "coord": [
+          2958,
+          5014,
+          624
+        ],
+        "distance": 357,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1718853923
+      },
+      {
+        "coord": [
+          2958,
+          5014,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2958,
+          5014,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 473
+      },
+      {
+        "coord": [
+          2242,
+          5088,
+          624
+        ],
+        "distance": 473,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 702719438
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s12345_d2000_c3",
+      "no_damage": false,
+      "seed": 12345,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      2707336974,
+      3808544461,
+      3662420308,
+      937947183
+    ],
+    "raw_words": [
+      2979637345,
+      186607930,
+      1812860918,
+      2666226305,
+      4253075751,
+      1529225317,
+      1718853923,
+      1121963225,
+      702719438
+    ],
+    "rng_indices": [
+      9,
+      112
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 65536,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 98
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 385
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "distance": 385,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4253075751
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 65536,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s12345_d65536_c1",
+      "no_damage": false,
+      "seed": 12345,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      1529225317,
+      1718853923,
+      1121963225,
+      702719438
+    ],
+    "raw_words": [
+      2979637345,
+      186607930,
+      1812860918,
+      2666226305,
+      4253075751
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 10,
+      "ground_z": 7,
+      "impact_ladder": 1,
+      "random_ranged": 4,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 65536,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 98
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 385
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "distance": 385,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 4253075751
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          3002,
+          5026,
+          624
+        ],
+        "damage": 65536,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 357
+      },
+      {
+        "coord": [
+          2958,
+          5014,
+          624
+        ],
+        "distance": 357,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1718853923
+      },
+      {
+        "coord": [
+          2958,
+          5014,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2958,
+          5014,
+          624
+        ],
+        "damage": 65536,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 473
+      },
+      {
+        "coord": [
+          2242,
+          5088,
+          624
+        ],
+        "distance": 473,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 702719438
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 3,
+      "damage": 65536,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s12345_d65536_c3",
+      "no_damage": false,
+      "seed": 12345,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      2707336974,
+      3808544461,
+      3662420308,
+      937947183
+    ],
+    "raw_words": [
+      2979637345,
+      186607930,
+      1812860918,
+      2666226305,
+      4253075751,
+      1529225317,
+      1718853923,
+      1121963225,
+      702719438
+    ],
+    "rng_indices": [
+      9,
+      112
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 3,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 1,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 469
+      },
+      {
+        "coord": [
+          2264,
+          5448,
+          624
+        ],
+        "distance": 469,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 660436142
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_wall_no",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": false
+    },
+    "next_rng": [
+      3663968561,
+      2901129938,
+      3879883985,
+      615944872
+    ],
+    "raw_words": [
+      2025287381,
+      660436142
+    ],
+    "rng_indices": [
+      2,
+      105
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "area_damage": 1,
+      "cell_ground_coords": 2,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "ground_z": 1,
+      "impact_ladder": 1,
+      "random_ranged": 1,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 469
+      },
+      {
+        "coord": [
+          2264,
+          5448,
+          624
+        ],
+        "distance": 469,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 660436142
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_no_damage",
+      "no_damage": true,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      3663968561,
+      2901129938,
+      3879883985,
+      615944872
+    ],
+    "raw_words": [
+      2025287381,
+      660436142
+    ],
+    "rng_indices": [
+      2,
+      105
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 3,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 1,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 469
+      },
+      {
+        "coord": [
+          2264,
+          5448,
+          624
+        ],
+        "distance": 469,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 660436142
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": false,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_indestructible",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      3663968561,
+      2901129938,
+      3879883985,
+      615944872
+    ],
+    "raw_words": [
+      2025287381,
+      660436142
+    ],
+    "rng_indices": [
+      2,
+      105
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_deck_coords": 1,
+      "cell_ground_coords": 4,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 1,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          208
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          208
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 469
+      },
+      {
+        "coord": [
+          2264,
+          5448,
+          208
+        ],
+        "distance": 469,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 660436142
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 208,
+      "level": 2,
+      "name": "s1_ground_z",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      3663968561,
+      2901129938,
+      3879883985,
+      615944872
+    ],
+    "raw_words": [
+      2025287381,
+      660436142
+    ],
+    "rng_indices": [
+      2,
+      105
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 3,
+      "ground_z": 2,
+      "impact_ladder": 1,
+      "random_ranged": 1,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 469
+      },
+      {
+        "coord": [
+          2264,
+          5448,
+          624
+        ],
+        "distance": 469,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 660436142
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 0,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_no_structural",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      3663968561,
+      2901129938,
+      3879883985,
+      615944872
+    ],
+    "raw_words": [
+      2025287381,
+      660436142
+    ],
+    "rng_indices": [
+      2,
+      105
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0048A17E",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1199
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -96,
+          -96,
+          192,
+          192
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 466
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "distance": 466,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 3879883985
+      }
+    ],
+    "input": {
+      "anchor_overlay": 237,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_wood_anchor",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      615944872,
+      594350709,
+      1828753889,
+      1900114041
+    ],
+    "raw_words": [
+      2025287381,
+      660436142,
+      3663968561,
+      2901129938,
+      3879883985
+    ],
+    "rng_indices": [
+      5,
+      108
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "cell_ground_coords": 2,
+      "impact_ladder": 1
+    },
+    "events": [],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 0,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_cluster_zero",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      2025287381,
+      660436142,
+      3663968561,
+      2901129938
+    ],
+    "raw_words": [],
+    "rng_indices": [
+      0,
+      103
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "cell_ground_coords": 2,
+      "impact_ladder": 1
+    },
+    "events": [],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": -1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_cluster_negative",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      2025287381,
+      660436142,
+      3663968561,
+      2901129938
+    ],
+    "raw_words": [],
+    "rng_indices": [
+      0,
+      103
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 12,
+      "ground_z": 9,
+      "impact_ladder": 1,
+      "random_ranged": 6,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1199
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 466
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "distance": 466,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 3879883985
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2261,
+          5059,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 681
+      },
+      {
+        "coord": [
+          8,
+          19
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 373
+      },
+      {
+        "coord": [
+          2430,
+          4977,
+          624
+        ],
+        "distance": 373,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 1828753889
+      },
+      {
+        "coord": [
+          2430,
+          4977,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2430,
+          4977,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 122
+      },
+      {
+        "coord": [
+          9,
+          19
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 266
+      },
+      {
+        "coord": [
+          2424,
+          5215,
+          624
+        ],
+        "distance": 266,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 677359813
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": true,
+      "cluster": 3,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_patch_c3",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      833118263,
+      1459931743,
+      1997489564,
+      229143700
+    ],
+    "raw_words": [
+      2025287381,
+      660436142,
+      3663968561,
+      2901129938,
+      3879883985,
+      615944872,
+      594350709,
+      1828753889,
+      1900114041,
+      382579722,
+      677359813
+    ],
+    "rng_indices": [
+      11,
+      114
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790",
+      "00587180",
+      "006D2140",
+      "006D2790",
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": -1,
+        "kind": "range",
+        "low": 1,
+        "result": 0
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 430
+      },
+      {
+        "coord": [
+          3089,
+          5093,
+          624
+        ],
+        "distance": 430,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 3663968561
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": -1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_strength_negative",
+      "no_damage": false,
+      "seed": 1,
+      "strength": -1,
+      "wall": true
+    },
+    "next_rng": [
+      2901129938,
+      3879883985,
+      615944872,
+      594350709
+    ],
+    "raw_words": [
+      2025287381,
+      660436142,
+      3663968561
+    ],
+    "rng_indices": [
+      3,
+      106
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 0,
+        "kind": "range",
+        "low": 1,
+        "result": 1
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 430
+      },
+      {
+        "coord": [
+          3089,
+          5093,
+          624
+        ],
+        "distance": 430,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 3663968561
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_strength_zero",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 0,
+      "wall": true
+    },
+    "next_rng": [
+      2901129938,
+      3879883985,
+      615944872,
+      594350709
+    ],
+    "raw_words": [
+      2025287381,
+      660436142,
+      3663968561
+    ],
+    "rng_indices": [
+      3,
+      106
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 65536,
+        "kind": "range",
+        "low": 1,
+        "result": 28374
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 430
+      },
+      {
+        "coord": [
+          3089,
+          5093,
+          624
+        ],
+        "distance": 430,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 3663968561
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s1_strength_65536",
+      "no_damage": false,
+      "seed": 1,
+      "strength": 65536,
+      "wall": true
+    },
+    "next_rng": [
+      2901129938,
+      3879883985,
+      615944872,
+      594350709
+    ],
+    "raw_words": [
+      2025287381,
+      660436142,
+      3663968561
+    ],
+    "rng_indices": [
+      3,
+      106
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 3,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 1,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 414
+      },
+      {
+        "coord": [
+          2627,
+          4838,
+          624
+        ],
+        "distance": 414,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2828347898
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_wall_no",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": false
+    },
+    "next_rng": [
+      1264662605,
+      2044028184,
+      539506682,
+      3414363877
+    ],
+    "raw_words": [
+      398029982,
+      2828347898
+    ],
+    "rng_indices": [
+      2,
+      105
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "area_damage": 1,
+      "cell_ground_coords": 2,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "ground_z": 1,
+      "impact_ladder": 1,
+      "random_ranged": 1,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 414
+      },
+      {
+        "coord": [
+          2627,
+          4838,
+          624
+        ],
+        "distance": 414,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2828347898
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_no_damage",
+      "no_damage": true,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      1264662605,
+      2044028184,
+      539506682,
+      3414363877
+    ],
+    "raw_words": [
+      398029982,
+      2828347898
+    ],
+    "rng_indices": [
+      2,
+      105
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 3,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 1,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 414
+      },
+      {
+        "coord": [
+          2627,
+          4838,
+          624
+        ],
+        "distance": 414,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2828347898
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": false,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_indestructible",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      1264662605,
+      2044028184,
+      539506682,
+      3414363877
+    ],
+    "raw_words": [
+      398029982,
+      2828347898
+    ],
+    "rng_indices": [
+      2,
+      105
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_deck_coords": 1,
+      "cell_ground_coords": 4,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 1,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          208
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          208
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 414
+      },
+      {
+        "coord": [
+          2627,
+          4838,
+          208
+        ],
+        "distance": 414,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2828347898
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 208,
+      "level": 2,
+      "name": "s42_ground_z",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      1264662605,
+      2044028184,
+      539506682,
+      3414363877
+    ],
+    "raw_words": [
+      398029982,
+      2828347898
+    ],
+    "rng_indices": [
+      2,
+      105
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 3,
+      "ground_z": 2,
+      "impact_ladder": 1,
+      "random_ranged": 1,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 414
+      },
+      {
+        "coord": [
+          2627,
+          4838,
+          624
+        ],
+        "distance": 414,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2828347898
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 0,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_no_structural",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      1264662605,
+      2044028184,
+      539506682,
+      3414363877
+    ],
+    "raw_words": [
+      398029982,
+      2828347898
+    ],
+    "rng_indices": [
+      2,
+      105
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0048A17E",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1183
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -96,
+          -96,
+          192,
+          192
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 333
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "distance": 333,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2044028184
+      }
+    ],
+    "input": {
+      "anchor_overlay": 237,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_wood_anchor",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      539506682,
+      3414363877,
+      4002149980,
+      4037411532
+    ],
+    "raw_words": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184
+    ],
+    "rng_indices": [
+      4,
+      107
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "cell_ground_coords": 2,
+      "impact_ladder": 1
+    },
+    "events": [],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 0,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_cluster_zero",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184
+    ],
+    "raw_words": [],
+    "rng_indices": [
+      0,
+      103
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "cell_ground_coords": 2,
+      "impact_ladder": 1
+    },
+    "events": [],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": -1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_cluster_negative",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184
+    ],
+    "raw_words": [],
+    "rng_indices": [
+      0,
+      103
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 3,
+      "air_first": 3,
+      "area_damage": 3,
+      "bridge_blocks": 3,
+      "cell_ground_coords": 5,
+      "cluster_coordinate": 3,
+      "detonate": 3,
+      "get_cell": 11,
+      "ground_z": 8,
+      "impact_ladder": 1,
+      "random_ranged": 5,
+      "random_raw": 3,
+      "select_animation": 3
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 1183
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 333
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "distance": 333,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2044028184
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 1500,
+        "kind": "range",
+        "low": 1,
+        "result": 717
+      },
+      {
+        "coord": [
+          11,
+          19
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 284
+      },
+      {
+        "coord": [
+          2434,
+          5375,
+          624
+        ],
+        "distance": 284,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 885862829
+      },
+      {
+        "coord": [
+          2434,
+          5375,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2434,
+          5375,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 410
+      },
+      {
+        "coord": [
+          2301,
+          5386,
+          624
+        ],
+        "distance": 410,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2596327602
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": true,
+      "cluster": 3,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_patch_c3",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 1500,
+      "wall": true
+    },
+    "next_rng": [
+      391630928,
+      1923527398,
+      2135253279,
+      1751456579
+    ],
+    "raw_words": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184,
+      539506682,
+      3414363877,
+      4002149980,
+      4037411532,
+      1154181921,
+      621284645,
+      2852657692,
+      885862829,
+      4037895322,
+      2596327602
+    ],
+    "rng_indices": [
+      14,
+      117
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790",
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": -1,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": -1,
+        "kind": "range",
+        "low": 1,
+        "result": 1
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 333
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "distance": 333,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2044028184
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": -1,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_strength_negative",
+      "no_damage": false,
+      "seed": 42,
+      "strength": -1,
+      "wall": true
+    },
+    "next_rng": [
+      539506682,
+      3414363877,
+      4002149980,
+      4037411532
+    ],
+    "raw_words": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184
+    ],
+    "rng_indices": [
+      4,
+      107
+    ],
+    "substitutions": []
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 0,
+        "kind": "range",
+        "low": 1,
+        "result": 0
+      },
+      {
+        "coord": [
+          10,
+          20
+        ],
+        "entry": "00587180",
+        "kind": "driver_false"
+      },
+      {
+        "kind": "project_supplied_zero"
+      },
+      {
+        "kind": "dirty_rect",
+        "rect": [
+          -128,
+          -128,
+          256,
+          256
+        ]
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 333
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "distance": 333,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2044028184
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_strength_zero",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 0,
+      "wall": true
+    },
+    "next_rng": [
+      539506682,
+      3414363877,
+      4002149980,
+      4037411532
+    ],
+    "raw_words": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184
+    ],
+    "rng_indices": [
+      4,
+      107
+    ],
+    "substitutions": [
+      "00587180",
+      "006D2140",
+      "006D2790"
+    ]
+  },
+  {
+    "calls": {
+      "air_collection": 1,
+      "air_first": 1,
+      "area_damage": 1,
+      "bridge_blocks": 1,
+      "cell_ground_coords": 3,
+      "cluster_coordinate": 1,
+      "detonate": 1,
+      "get_cell": 4,
+      "ground_z": 3,
+      "impact_ladder": 1,
+      "random_ranged": 2,
+      "random_raw": 1,
+      "select_animation": 1
+    },
+    "events": [
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "kind": "detonate"
+      },
+      {
+        "coord": [
+          2688,
+          5248,
+          624
+        ],
+        "damage": 2000,
+        "kind": "area"
+      },
+      {
+        "caller": "00489FFA",
+        "high": 65536,
+        "kind": "range",
+        "low": 1,
+        "result": 29855
+      },
+      {
+        "caller": "0046905C",
+        "high": 512,
+        "kind": "range",
+        "low": 256,
+        "result": 333
+      },
+      {
+        "coord": [
+          2873,
+          4971,
+          624
+        ],
+        "distance": 333,
+        "kind": "cluster_coord"
+      },
+      {
+        "caller": "0049F444",
+        "kind": "raw",
+        "result": 2044028184
+      }
+    ],
+    "input": {
+      "anchor_overlay": 24,
+      "bridge_patch": false,
+      "cluster": 1,
+      "damage": 2000,
+      "destroyable": true,
+      "flags": 256,
+      "impact_z": 624,
+      "level": 2,
+      "name": "s42_strength_65536",
+      "no_damage": false,
+      "seed": 42,
+      "strength": 65536,
+      "wall": true
+    },
+    "next_rng": [
+      539506682,
+      3414363877,
+      4002149980,
+      4037411532
+    ],
+    "raw_words": [
+      398029982,
+      2828347898,
+      1264662605,
+      2044028184
+    ],
+    "rng_indices": [
+      4,
+      107
+    ],
+    "substitutions": []
+  }
+]

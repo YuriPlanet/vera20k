@@ -37,6 +37,7 @@
 //!   `sim::movement::movement_bridge`; this one cannot be bound without a
 //!   reference.
 pub mod walker;
+pub(crate) mod damage_dispatch;
 mod damaged_variant;
 mod record_scan;
 mod zone_activation;
@@ -284,15 +285,15 @@ impl AnchorSpan {
     }
 }
 
-/// Per-cell bridge damage event emitted by combat. World drains via the
-/// `bridge_orchestrator` 4-path dispatcher. The Apply_area_damage gate +
-/// retry happen in the world orchestrator (not in combat) so the RNG draw
-/// order matches the binary's dispatcher.
+/// One area's bridge-damage input. Combat calls the world orchestrator
+/// synchronously after that area's receivers; it is never queued across the
+/// bullet's animation/cluster tail. The orchestrator owns native admission,
+/// strength RNG, driver retries, publication and target release.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct BridgeDamageEvent {
     pub rx: u16,
     pub ry: u16,
-    pub damage: u16,
+    pub damage: i32,
     /// Interned warhead ID — used for IonCannon identity check (combat
     /// boundary pre-resolves `is_ion_cannon`) and for InfDeath selection in
     /// the C4Warhead ground-kill cascade.
@@ -301,27 +302,10 @@ pub struct BridgeDamageEvent {
     /// Bypasses the BridgeStrength RNG gate; enables the 3-retry loop on
     /// state-machine paths only (direct-overlay paths are single-shot).
     pub is_ion_cannon: bool,
-    /// Explosion z in tile-step level units (signed). Used by the
-    /// state-machine Z-height gate: state-machine paths fire only when
-    /// `impact_z ∈ [cell.level - 1, cell.level + 1]`. Direct-overlay paths
-    /// skip this gate.
-    pub impact_z: i32,
-}
-
-/// Per-event context passed from world orchestrator to `BridgeRuntimeState`
-/// for the 4-path dispatcher. Carries the pre-resolved IonCannon flag, the
-/// impact z (for state-machine Z-height gate), and the interner-resolved
-/// warhead reference. The orchestrator owns the `&mut SimRng` and does the
-/// actual RNG draws — drivers themselves are pure of RNG.
-#[derive(Debug, Clone, Copy)]
-pub struct BridgeDamageContext {
-    pub damage: u16,
-    pub warhead_ref: crate::sim::intern::InternedId,
-    pub is_ion_cannon: bool,
-    pub bridge_strength: u16,
-    /// Tile-step level units (signed for safety). State-machine Z-gate fires
-    /// when `impact_z ∈ [cell.level - 1, cell.level + 1]` (3-level window).
-    pub impact_z: i32,
+    /// Exact signed world height in leptons, retained from the detonation.
+    /// Structural state-machine paths admit (ground + 208, ground + 520];
+    /// nonstructural tiles and direct-overlay paths have no height gate.
+    pub impact_z_leptons: i32,
 }
 
 /// Path discriminator for the bridge-damage 4-path dispatcher.
@@ -600,9 +584,9 @@ pub struct BridgeRuntimeState {
     height: u16,
     cells: Vec<Option<BridgeRuntimeCell>>,
     group_cells: BTreeMap<u16, Vec<(u16, u16)>>,
-    /// Strength constant from `[CombatDamage] BridgeStrength=` (default 1500).
+    /// Strength constant from `[CombatDamage] BridgeStrength=` (default 1000).
     /// Used by the dispatcher's per-path BridgeStrength RNG gate.
-    bridge_strength: u16,
+    bridge_strength: i32,
     endpoint_records: Vec<BridgeEndpointRecord>,
     /// Source Map Size paired with this derived record set. Only construction
     /// writes it; this receipt is not an independently editable map authority.
@@ -627,7 +611,7 @@ impl BridgeRuntimeState {
     pub(crate) fn from_resolved_terrain_with_map_size(
         terrain: &ResolvedTerrainGrid,
         destroyable: bool,
-        bridge_strength: u16,
+        bridge_strength: i32,
         size: (i32, i32),
     ) -> Self {
         Self::build_from_terrain(terrain, destroyable, bridge_strength, Some(size))
@@ -637,7 +621,7 @@ impl BridgeRuntimeState {
     pub fn from_resolved_terrain(
         terrain: &ResolvedTerrainGrid,
         destroyable: bool,
-        bridge_strength: u16,
+        bridge_strength: i32,
     ) -> Self {
         Self::build_from_terrain(terrain, destroyable, bridge_strength, None)
     }
@@ -645,7 +629,7 @@ impl BridgeRuntimeState {
     fn build_from_terrain(
         terrain: &ResolvedTerrainGrid,
         destroyable: bool,
-        bridge_strength: u16,
+        bridge_strength: i32,
         size: Option<(i32, i32)>,
     ) -> Self {
         let width = terrain.width();
@@ -852,7 +836,7 @@ impl BridgeRuntimeState {
             height,
             cells,
             group_cells,
-            bridge_strength: bridge_strength.max(1),
+            bridge_strength,
             endpoint_records,
             native_zone_source_size: size,
             anchor_spans,
@@ -950,7 +934,7 @@ impl BridgeRuntimeState {
 
     /// `[CombatDamage] BridgeStrength=` value used by the per-path RNG gate
     /// in the bridge-damage dispatcher. Read-only; set at construction.
-    pub fn bridge_strength(&self) -> u16 {
+    pub fn bridge_strength(&self) -> i32 {
         self.bridge_strength
     }
 
@@ -958,84 +942,6 @@ impl BridgeRuntimeState {
     /// gate of the bridge-damage dispatcher; if false, bridges are immune.
     pub fn is_destroyable(&self) -> bool {
         self.bridge_destroyable_flag
-    }
-
-    /// Per-path entry-condition classifier for the world orchestrator. Pure
-    /// function; no mutation. Returns true iff the cell at `(rx, ry)`
-    /// matches the entry conditions for `path` under `ctx`.
-    ///
-    /// Mirrors the binary's per-block entry checks (`Apply_area_damage`):
-    /// - HighStateMachine / LowStateMachine (binary blocks A/B): cell is a
-    ///   bridge-structural candidate of the matching FAMILY (high/low). The
-    ///   block's driver is overlay-first (`apply_damage_to_cell`), so this
-    ///   gate does NOT reject in-band overlays — an in-band cell is hit by
-    ///   the SM block (→ direct walker) AND, separately, by the matching
-    ///   direct block C/D, consuming two `BridgeStrength` draws (BR-02). The
-    ///   Z-gate restricts `impact_z` to `[cell.level - 1, cell.level + 1]`.
-    /// - HighDirect (block D): `overlay_byte ∈ [0xCD..=0xE6]`. Single-shot, no Z-gate.
-    /// - LowDirect  (block C): `overlay_byte ∈ [0x4A..=0x63]`. Single-shot, no Z-gate.
-    pub(crate) fn path_matches_cell(
-        &self,
-        path: DispatchPath,
-        rx: u16,
-        ry: u16,
-        ctx: &BridgeDamageContext,
-        terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
-    ) -> bool {
-        let Some(cell) = self.cell(rx, ry) else {
-            return false;
-        };
-        match path {
-            DispatchPath::HighDirect => is_high_dispatch_overlay(cell.overlay_byte),
-            DispatchPath::LowDirect => is_low_dispatch_overlay(cell.overlay_byte),
-            DispatchPath::HighStateMachine | DispatchPath::LowStateMachine => {
-                // BR-02: the SM block (binary block A/B) gates on bridge tile
-                // FAMILY, not the overlay band. Its driver is overlay-first
-                // (`apply_damage_to_cell`): an in-band cell routes to the direct
-                // walker here AND is hit again by the matching direct block
-                // C/D, consuming two draws. Do NOT reject in-band overlays — the
-                // second block draw is lockstep-significant.
-                if !matches!(
-                    cell.role,
-                    BridgeCellRole::Anchor
-                        | BridgeCellRole::Body
-                        | BridgeCellRole::Tail
-                        | BridgeCellRole::Bridgehead
-                ) {
-                    return false;
-                }
-                // Pass-4 bridgeheads (registered by `from_resolved_terrain`'s
-                // bridgehead pass) have axis=None and would cause
-                // `bridgehead_advance_state` to return NoChange — but only
-                // after the per-path BridgeStrength RNG roll already burned a
-                // draw. Reject them here so the dispatcher never rolls RNG
-                // for a pass-4-targeted event (lockstep). Pass-3 bridgeheads
-                // (axis=Some, registered from `bridge_layer.direction`) keep
-                // their existing routing into the bridgehead state machine.
-                if matches!(cell.role, BridgeCellRole::Bridgehead) && cell.axis.is_none() {
-                    return false;
-                }
-                // High vs low discriminator: deck_level >= 4 is "high"
-                // (matches binary's tile-step gate). Bridgehead cells share
-                // the same axis classification.
-                let is_high = cell.deck_level >= 4;
-                let want_high = matches!(path, DispatchPath::HighStateMachine);
-                if is_high != want_high {
-                    return false;
-                }
-                // Z-height range gate: pass when `impact_z` is within one
-                // level above or below the bridge deck level. Direct-overlay
-                // paths skip this gate.
-                let level_i32 = terrain
-                    .cell(rx, ry)
-                    .map(|c| c.level as i32)
-                    .unwrap_or(cell.deck_level as i32);
-                if ctx.impact_z < level_i32 - 1 || ctx.impact_z > level_i32 + 1 {
-                    return false;
-                }
-                true
-            }
-        }
     }
 
     /// Overlay-first inner dispatcher for a state-machine block (binary
