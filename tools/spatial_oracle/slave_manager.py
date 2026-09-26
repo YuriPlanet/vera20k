@@ -10,7 +10,10 @@ RNG).
 The manager and its slave nodes are supplied (no constructor). The slave's
 class setter (0x51AA40), Limbo (0x51DF10) and PlayAnim (0x51D6F0) are
 observed and answered, and the slave type's CreateObject (0x523B10) hands out
-a prepared spare; their Rust owners carry their own evidence. Unlimbo
+a prepared spare; their Rust owners carry their own evidence. Limbo's answer
+makes the body's own stores (0x51DF38..0x51DF49: +0x6E8 = 2, not prone
++0x6DB, Doing +0x6C4 = 0) and sets InLimbo; its locomotor call and
+FootClass::Limbo do not run. Unlimbo
 (0x51DFF0, its PlaceInfantryInCell and occupy mark) and Scatter (0x51D0D0)
 run natively; FootClass::Unlimbo (0x4D7170) is answered after writing its
 placement, without the sight reveal and layer submission.
@@ -217,6 +220,9 @@ def observe(u, read32, events, case):
             ret(8)
         elif address == LIMBO:
             events.append(['limbo', slave_index(this)])
+            u.mem_write(this + 0x6E8, dwords(2))
+            u.mem_write(this + 0x6DB, b'\x00')
+            u.mem_write(this + 0x6C4, dwords(0))
             u.mem_write(this + 0x81, b'\x01')
             ret(0, 1)
         elif address == UNLIMBO:

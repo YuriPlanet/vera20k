@@ -1,0 +1,9265 @@
+{
+  "rows": [
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ]
+      ],
+      "input": {
+        "name": "computer_one"
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          1,
+          104
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ]
+      ],
+      "input": {
+        "human": true,
+        "name": "human_one"
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          1,
+          104
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            15,
+            16
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            15,
+            16
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ]
+      ],
+      "input": {
+        "frame": 203,
+        "human": true,
+        "name": "human_one_frame_203"
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              15,
+              16
+            ],
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          1,
+          104
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          2
+        ],
+        [
+          "can_enter",
+          2,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          2,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          2,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          2,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          2,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          2
+        ],
+        [
+          "queue_mission",
+          2,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          3
+        ],
+        [
+          "can_enter",
+          3,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          3,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          3,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          3,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          3,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          3
+        ],
+        [
+          "queue_mission",
+          3,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          4
+        ],
+        [
+          "can_enter",
+          4,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          4,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          4,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          4,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          1
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          4,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          4
+        ],
+        [
+          "queue_mission",
+          4,
+          15
+        ]
+      ],
+      "input": {
+        "name": "computer_five",
+        "passengers": [
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          7,
+          110
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "record_kill",
+          0,
+          "attacker"
+        ],
+        [
+          "uninit",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "record_kill",
+          1,
+          "attacker"
+        ],
+        [
+          "uninit",
+          1
+        ],
+        [
+          "remove_first_passenger",
+          2
+        ],
+        [
+          "can_enter",
+          2,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "record_kill",
+          2,
+          "attacker"
+        ],
+        [
+          "uninit",
+          2
+        ]
+      ],
+      "input": {
+        "ignore_defenses": true,
+        "name": "ignore_defenses",
+        "passengers": [
+          {},
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 0,
+          "owners": [
+            -1,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "record_kill",
+          0,
+          null
+        ],
+        [
+          "uninit",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "record_kill",
+          1,
+          null
+        ],
+        [
+          "uninit",
+          1
+        ]
+      ],
+      "input": {
+        "attacker": false,
+        "ignore_defenses": true,
+        "name": "ignore_defenses_no_attacker",
+        "passengers": [
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 0,
+          "owners": [
+            -1,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "record_kill",
+          0,
+          "attacker"
+        ],
+        [
+          "uninit",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "record_kill",
+          1,
+          "attacker"
+        ],
+        [
+          "uninit",
+          1
+        ]
+      ],
+      "input": {
+        "dropped": true,
+        "name": "dropped_as_bomb",
+        "passengers": [
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 0,
+          "owners": [
+            -1,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          7
+        ],
+        [
+          "record_kill",
+          0,
+          "attacker"
+        ],
+        [
+          "uninit",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          7
+        ],
+        [
+          "record_kill",
+          1,
+          "attacker"
+        ],
+        [
+          "uninit",
+          1
+        ]
+      ],
+      "input": {
+        "name": "water",
+        "passengers": [
+          {},
+          {}
+        ],
+        "water": true
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 0,
+          "owners": [
+            -1,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          6
+        ],
+        [
+          "record_kill",
+          0,
+          "attacker"
+        ],
+        [
+          "uninit",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          6
+        ],
+        [
+          "record_kill",
+          1,
+          "attacker"
+        ],
+        [
+          "uninit",
+          1
+        ]
+      ],
+      "input": {
+        "name": "three_allied_standing",
+        "occupants": [
+          {
+            "spot": 2
+          },
+          {
+            "spot": 3
+          },
+          {
+            "spot": 4
+          }
+        ],
+        "passengers": [
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 28,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "name": "two_allied_standing",
+        "occupants": [
+          {
+            "spot": 2
+          },
+          {
+            "spot": 3
+          }
+        ],
+        "passengers": [
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 13,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          7
+        ],
+        [
+          "record_kill",
+          0,
+          "attacker"
+        ],
+        [
+          "uninit",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          7
+        ],
+        [
+          "record_kill",
+          1,
+          "attacker"
+        ],
+        [
+          "uninit",
+          1
+        ]
+      ],
+      "input": {
+        "name": "enemy_standing",
+        "occupants": [
+          {
+            "foreign": true,
+            "spot": 2
+          }
+        ],
+        "passengers": [
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 4,
+          "owners": [
+            1,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "foreign_allied": true,
+        "name": "enemy_standing_allied",
+        "occupants": [
+          {
+            "foreign": true,
+            "spot": 2
+          }
+        ],
+        "passengers": [
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 5,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          209
+        ],
+        [
+          "kill_passengers",
+          "transport",
+          "attacker"
+        ],
+        [
+          "kill_passengers",
+          0,
+          0
+        ],
+        [
+          "record_kill",
+          0,
+          "attacker"
+        ],
+        [
+          "uninit",
+          0
+        ],
+        [
+          "kill_passengers",
+          1,
+          1
+        ],
+        [
+          "record_kill",
+          1,
+          "attacker"
+        ],
+        [
+          "uninit",
+          1
+        ]
+      ],
+      "input": {
+        "height": 209,
+        "name": "high",
+        "passengers": [
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 0,
+          "owners": [
+            -1,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          208
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "height": 208,
+        "name": "at_threshold",
+        "passengers": [
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ]
+      ],
+      "input": {
+        "crashable": true,
+        "name": "crashable",
+        "passengers": [
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          2,
+          0
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 0,
+          "owners": [
+            -1,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          209
+        ],
+        [
+          "kill_passengers",
+          "transport",
+          "attacker"
+        ],
+        [
+          "kill_passengers",
+          0,
+          0
+        ],
+        [
+          "record_kill",
+          0,
+          "attacker"
+        ],
+        [
+          "uninit",
+          0
+        ],
+        [
+          "kill_passengers",
+          1,
+          1
+        ],
+        [
+          "record_kill",
+          1,
+          "attacker"
+        ],
+        [
+          "uninit",
+          1
+        ]
+      ],
+      "input": {
+        "crashable": true,
+        "height": 209,
+        "name": "crashable_high",
+        "passengers": [
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 0,
+          "owners": [
+            -1,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "remove_gunner",
+          "transport",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "gunner": true,
+        "name": "gunner",
+        "passengers": [
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "record_kill",
+          0,
+          "attacker"
+        ],
+        [
+          "uninit",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "remove_gunner",
+          "transport",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "record_kill",
+          1,
+          "attacker"
+        ],
+        [
+          "uninit",
+          1
+        ]
+      ],
+      "input": {
+        "gunner": true,
+        "ignore_defenses": true,
+        "name": "gunner_ignore_defenses",
+        "passengers": [
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 0,
+          "owners": [
+            -1,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "clear_all_in_open_transport",
+          "transport"
+        ],
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "name": "open_topped",
+        "open_topped": true,
+        "passengers": [
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "clear_all_in_open_transport",
+          "transport"
+        ],
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "assign_target",
+          0,
+          0
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          7
+        ],
+        [
+          "record_kill",
+          1,
+          "attacker"
+        ],
+        [
+          "uninit",
+          1
+        ]
+      ],
+      "input": {
+        "name": "open_topped_foreign",
+        "open_topped": true,
+        "passengers": [
+          {
+            "foreign": true
+          },
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            1,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          }
+        ],
+        "random_indices": [
+          1,
+          104
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "clear_all_in_open_transport",
+          "transport"
+        ],
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "assign_target",
+          0,
+          0
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "foreign_allied": true,
+        "name": "open_topped_foreign_allied",
+        "open_topped": true,
+        "passengers": [
+          {
+            "foreign": true
+          },
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "select",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "select",
+          1
+        ]
+      ],
+      "input": {
+        "human": true,
+        "name": "selected",
+        "passengers": [
+          {},
+          {}
+        ],
+        "selected": true
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "team_add",
+          0,
+          0
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "team_add",
+          1,
+          0
+        ]
+      ],
+      "input": {
+        "name": "team",
+        "passengers": [
+          {},
+          {}
+        ],
+        "team": true
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          0,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          0
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ]
+      ],
+      "input": {
+        "facing": 0,
+        "name": "facing_north"
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          1,
+          104
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          18,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          18
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ]
+      ],
+      "input": {
+        "facing": 4660,
+        "name": "facing_0x1234"
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          1,
+          104
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          0,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          0
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ]
+      ],
+      "input": {
+        "facing": 65408,
+        "name": "facing_0xFF80"
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          1,
+          104
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            4040,
+            3880,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            4040,
+            3880,
+            0
+          ],
+          1,
+          [
+            4032,
+            3904,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            4032,
+            3904,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            4040,
+            3880,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            4040,
+            3880,
+            0
+          ],
+          1,
+          [
+            4032,
+            3904,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            4032,
+            3904,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "name": "north_east",
+        "passengers": [
+          {},
+          {}
+        ],
+        "sub": [
+          200,
+          40
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 4,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              4032,
+              3904,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              4032,
+              3904,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3880,
+            4040,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3880,
+            4040,
+            0
+          ],
+          1,
+          [
+            3904,
+            4032,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3904,
+            4032,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3880,
+            4040,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3880,
+            4040,
+            0
+          ],
+          1,
+          [
+            3904,
+            4032,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3904,
+            4032,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "name": "south_west",
+        "passengers": [
+          {},
+          {}
+        ],
+        "sub": [
+          40,
+          200
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 8,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3904,
+              4032,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3904,
+              4032,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3880,
+            3880,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3880,
+            3880,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3880,
+            3880,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3880,
+            3880,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "name": "north_west",
+        "passengers": [
+          {},
+          {}
+        ],
+        "sub": [
+          40,
+          40
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            4040,
+            3880,
+            52
+          ],
+          192,
+          1
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            4040,
+            3880,
+            52
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            4040,
+            3880,
+            52
+          ],
+          192,
+          1
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            4040,
+            3880,
+            52
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "name": "ramp_off_centre",
+        "passengers": [
+          {},
+          {}
+        ],
+        "slope": 1,
+        "sub": [
+          200,
+          40
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 4,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              4040,
+              3880,
+              52
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              4040,
+              3880,
+              52
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            52
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            52
+          ],
+          1,
+          [
+            3968,
+            3968,
+            52
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            52
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            52
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            52
+          ],
+          1,
+          [
+            3968,
+            3968,
+            52
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            52
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "name": "ramp_centre",
+        "passengers": [
+          {},
+          {}
+        ],
+        "slope": 1
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              52
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              52
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3880,
+            4040,
+            52
+          ],
+          192,
+          1
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3880,
+            4040,
+            52
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3880,
+            4040,
+            52
+          ],
+          192,
+          1
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3880,
+            4040,
+            52
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "name": "ramp_2_off_centre",
+        "passengers": [
+          {},
+          {}
+        ],
+        "slope": 2,
+        "sub": [
+          40,
+          200
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 8,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3880,
+              4040,
+              52
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3880,
+              4040,
+              52
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            4040,
+            4040,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            4040,
+            4040,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            4040,
+            4040,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            4040,
+            4040,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "name": "corner_ramp_off_centre",
+        "passengers": [
+          {},
+          {}
+        ],
+        "slope": 5,
+        "sub": [
+          200,
+          200
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 16,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              4040,
+              4040,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              4040,
+              4040,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            4040,
+            4040,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            4040,
+            4040,
+            0
+          ],
+          1,
+          [
+            4032,
+            4032,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            4032,
+            4032,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            4040,
+            4040,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            4040,
+            4040,
+            0
+          ],
+          1,
+          [
+            4032,
+            4032,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            4032,
+            4032,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "name": "south_east",
+        "passengers": [
+          {},
+          {}
+        ],
+        "sub": [
+          200,
+          200
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 16,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              4032,
+              4032,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              4032,
+              4032,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            416
+          ],
+          192,
+          1
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            416
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            15
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            15
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            416
+          ],
+          192,
+          1
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            416
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            15
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            15
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "bridge": true,
+        "name": "bridge_deck",
+        "on_bridge": true,
+        "passengers": [
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 1,
+          "ground": 0,
+          "owners": [
+            -1,
+            0
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              416
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              15
+            ],
+            "on_bridge": 1,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              416
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              15
+            ],
+            "on_bridge": 1,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            416
+          ],
+          192,
+          1
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            416
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            15
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            15
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            416
+          ],
+          192,
+          1
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            416
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            15
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            15
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "bridge": true,
+        "name": "bridge_deck_over_water",
+        "on_bridge": true,
+        "passengers": [
+          {},
+          {}
+        ],
+        "water": true
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 1,
+          "ground": 0,
+          "owners": [
+            -1,
+            0
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              416
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              15
+            ],
+            "on_bridge": 1,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              416
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              15
+            ],
+            "on_bridge": 1,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            4040,
+            3880,
+            416
+          ],
+          192,
+          1
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            4040,
+            3880,
+            416
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            15
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            15
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            4040,
+            3880,
+            416
+          ],
+          192,
+          1
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            4040,
+            3880,
+            416
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            14,
+            15
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            15
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "bridge": true,
+        "name": "bridge_deck_off_centre",
+        "on_bridge": true,
+        "passengers": [
+          {},
+          {}
+        ],
+        "sub": [
+          200,
+          40
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 4,
+          "ground": 0,
+          "owners": [
+            -1,
+            0
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              4040,
+              3880,
+              416
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              15
+            ],
+            "on_bridge": 1,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              4040,
+              3880,
+              416
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              15
+            ],
+            "on_bridge": 1,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            15,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            15,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            15,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            15,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "bridge": true,
+        "name": "under_bridge",
+        "passengers": [
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              15,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              15,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          0
+        ],
+        [
+          "remove_first_passenger",
+          0
+        ],
+        [
+          "can_enter",
+          0,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          0,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          3
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            15,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            15,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          0
+        ],
+        [
+          "queue_mission",
+          0,
+          15
+        ],
+        [
+          "remove_first_passenger",
+          1
+        ],
+        [
+          "can_enter",
+          1,
+          [
+            15,
+            15
+          ],
+          -1,
+          -1,
+          0,
+          1,
+          0
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192,
+          1
+        ],
+        [
+          "place_infantry_in_cell",
+          [
+            15,
+            15
+          ],
+          [
+            3968,
+            3968,
+            0
+          ],
+          1,
+          [
+            3968,
+            3968,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3968,
+            3968,
+            0
+          ],
+          192
+        ],
+        [
+          "scatter",
+          1,
+          "0xb1cfe8",
+          1,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            15,
+            15
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          [
+            0,
+            0
+          ],
+          0,
+          0,
+          [
+            15,
+            14
+          ]
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            15,
+            14
+          ],
+          1
+        ],
+        [
+          "process",
+          1
+        ],
+        [
+          "queue_mission",
+          1,
+          15
+        ]
+      ],
+      "input": {
+        "bridge": true,
+        "name": "under_bridge_on_water",
+        "passengers": [
+          {},
+          {}
+        ],
+        "water": true
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 1,
+          "owners": [
+            0,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              15,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              15,
+              14
+            ],
+            "on_bridge": 0,
+            "queued": 15,
+            "transporter": null
+          }
+        ],
+        "random_indices": [
+          3,
+          106
+        ],
+        "scenario_init": 0
+      }
+    },
+    {
+      "events": [
+        [
+          "height",
+          209
+        ],
+        [
+          "kill_passengers",
+          "transport",
+          "attacker"
+        ],
+        [
+          "kill_passengers",
+          0,
+          0
+        ],
+        [
+          "record_kill",
+          0,
+          "attacker"
+        ],
+        [
+          "uninit",
+          0
+        ],
+        [
+          "kill_passengers",
+          1,
+          1
+        ],
+        [
+          "record_kill",
+          1,
+          "attacker"
+        ],
+        [
+          "uninit",
+          1
+        ]
+      ],
+      "input": {
+        "bridge": true,
+        "height": 209,
+        "name": "bridge_deck_high",
+        "on_bridge": true,
+        "passengers": [
+          {},
+          {}
+        ]
+      },
+      "state": {
+        "cargo": [
+          0,
+          null
+        ],
+        "occupation": {
+          "deck": 0,
+          "ground": 0,
+          "owners": [
+            -1,
+            -1
+          ]
+        },
+        "passengers": [
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          },
+          {
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "in_open_topped": 0,
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "on_bridge": 0,
+            "queued": -1,
+            "transporter": "transport"
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "scenario_init": 0
+      }
+    }
+  ],
+  "source": "unicorn/gamemd.exe"
+}
