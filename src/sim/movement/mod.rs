@@ -73,6 +73,7 @@ pub(crate) use foot_path::FootPathOutcome;
 pub(crate) use track_fresh::ProcessMovementArgs;
 mod foot_speed;
 pub(crate) mod ground_pose;
+pub(crate) mod infantry_action;
 pub(crate) mod infantry_entry;
 mod infantry_scatter;
 pub(crate) mod locomotor_owner;

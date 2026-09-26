@@ -2419,10 +2419,19 @@ fn admit_attacker_fire<'r>(
         if let Some(pending) = snap.pending_infantry_fire {
             if snap.has_movement || snap.animation_sequence != Some(pending.sequence) {
                 out.pending_infantry_updates.push((snap.stable_id, None));
-                out.animation_switches.push((
-                    snap.stable_id,
-                    infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
-                ));
+                // An infantryman whose Doing owns its sequence keeps the one
+                // its last action started.
+                if !world
+                    .substrate
+                    .entities
+                    .get(snap.stable_id)
+                    .is_some_and(crate::sim::movement::infantry_action::doing_owns_sequence)
+                {
+                    out.animation_switches.push((
+                        snap.stable_id,
+                        infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
+                    ));
+                }
                 return None;
             }
             if snap.animation_frame != Some(pending.fire_frame) {
@@ -2689,8 +2698,29 @@ fn admit_attacker_fire<'r>(
     };
 
     if infantry_fire_sync && !pending_at_fire_frame {
-        let sequence =
-            infantry_fire_sequence(obj, selected.slot, snap.is_prone, snap.is_fully_deployed);
+        // The fire action `InfantryClass::Fire_At_Target` starts
+        // (`0x0052078F..0x00520904`): a `JumpJet=` type flown by the Jumpjet
+        // locomotor fires in FireFly (`0x00520827`), through Do_Action, and its
+        // FireUp frame still names the discharge (`0x0052095A`).
+        let fire_fly = obj.jumpjet
+            && world
+                .substrate
+                .entities
+                .get(snap.stable_id)
+                .is_some_and(crate::sim::movement::infantry_action::doing_owns_sequence);
+        let sequence = if fire_fly {
+            if let Err(cause) = world.infantry_do_action(
+                snap.stable_id,
+                crate::sim::movement::infantry_action::DO_FIRE_FLY,
+                false,
+                rules,
+            ) {
+                log::debug!("infantry {} FireFly: {cause}", snap.stable_id);
+            }
+            crate::sim::animation::SequenceKind::FireFly
+        } else {
+            infantry_fire_sequence(obj, selected.slot, snap.is_prone, snap.is_fully_deployed)
+        };
         let fire_frame =
             infantry_fire_frame(obj, selected.slot, snap.is_prone, snap.is_fully_deployed);
         out.animation_switches.push((snap.stable_id, sequence));

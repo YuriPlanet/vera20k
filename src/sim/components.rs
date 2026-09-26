@@ -498,6 +498,45 @@ impl FootSpeedState {
         self.crate_multiplier
     }
 
+    /// `FootClass::SetSpeedFraction @ 0x004D3710` for a locomotor that computes
+    /// its fraction as a native double (the Jumpjet's `Process`): at least 1.0
+    /// stores 1.0 (`0x004D3714`), at most 0 or NaN stores 0 (`0x004D373C`),
+    /// anything between is stored as given.
+    ///
+    /// The stored double becomes `SimFixed` by truncation, from its bits, so the
+    /// fraction readers' thresholds (`> 0.1` in the Infantry fire error and the
+    /// sequencer, `> 0.8` in the locomotion action AI) compare against the
+    /// truncated threshold, as `fire_error_world` already does for 0.1. A
+    /// Jumpjet fraction is a multiple of `JumpJetAccel` over its speed cap, which
+    /// divides with truncation natively: 3/30 and 24/30 land just below 0.1 and
+    /// 0.8 and stay below after truncation. A double within 2^-16 above a
+    /// threshold would read as not above it; no stock Jumpjet produces one.
+    pub(crate) fn set_speed_fraction_native_bits(&mut self, bits: u64) {
+        const ONE_BITS: u64 = 0x3ff0_0000_0000_0000;
+        let negative = bits >> 63 != 0;
+        let exponent = ((bits >> 52) & 0x7ff) as i32;
+        let mantissa = bits & ((1 << 52) - 1);
+        self.applied_fraction = if exponent == 0x7ff || negative || bits << 1 == 0 {
+            // NaN, a negative value or a zero of either sign.
+            crate::util::fixed_math::SIM_ZERO
+        } else if bits >= ONE_BITS {
+            crate::util::fixed_math::SIM_ONE
+        } else {
+            // 0 < value < 1: floor(value * 2^16) from the significand.
+            let significand = if exponent == 0 {
+                mantissa
+            } else {
+                mantissa | (1 << 52)
+            };
+            let shift = 1075 - i64::from(exponent.max(1)) - 16;
+            SimFixed::from_bits(if shift >= 64 {
+                0
+            } else {
+                (significand >> shift) as i32
+            })
+        };
+    }
+
     /// Cell48303A..483072: an already-modified Foot never stacks this effect.
     /// Class/radius eligibility belongs to the pickup effect caller.
     pub(crate) fn accept_speed_crate(

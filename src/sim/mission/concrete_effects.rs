@@ -262,10 +262,26 @@ pub(crate) fn represented_assign_target_admitted(
 
     // `InfantryClass::Assign_Target @ 0x0051B1F0` returns its receiver to an
     // idle sequence only while the receiver itself is alive (`0x0051B203`).
+    //
+    // RESIDUAL: natively the idle sequence is `Do_Action` of Deployed, Prone
+    // or Ready (`0x0051B214..0x0051B24F`), which needs the type's records, so
+    // this entity-local setter clears the Doing instead. An infantryman whose
+    // Doing owns its sequence (a Jumpjet-flown one, `infantry_action`) keeps
+    // its action instead of losing it. Trigger: a Rocketeer's target changes
+    // while it fires or flies. Effect: its FireFly plays out (at most 6
+    // frames) where native turns to Hover, and a cruising one skips the
+    // one-frame Hover before its Fly resumes. Frequency: every target change
+    // mid-shot. Risk: a kill in that window stops its locomotor once more
+    // natively than in VERA (the crash chain's draw count).
     if entity.category == crate::map::entities::EntityCategory::Infantry
         && entity.health.current > 0
     {
         entity.mission_leaf.set_infantry_firing_sequence(0);
+    }
+    if entity.category == crate::map::entities::EntityCategory::Infantry
+        && entity.health.current > 0
+        && !crate::sim::movement::infantry_action::doing_owns_sequence(entity)
+    {
         entity
             .mission_leaf
             .set_infantry_doing_verified(-1)
