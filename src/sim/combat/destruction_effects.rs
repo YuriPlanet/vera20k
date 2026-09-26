@@ -67,13 +67,6 @@
 //!     anim. Trigger: the Battle Fortress, stock's only `OmniCrusher=`,
 //!     crushing any vehicle but the five `OmniCrushResistant=` types.
 //!   - The `DeathFrames=` completion (`0x00736381`), dead on stock.
-//! - `AnimClass::Middle @ 0x00424F00` is not run for these anims, so the
-//!   scorch/crater a multi-frame explosion leaves at its middle frame (and its
-//!   Scenario coin flip and candidate pick in `AnimClass::AI`) is missing.
-//!   Trigger: every building, vehicle and aircraft death with `Explosion=`
-//!   (TWLT070, S_BANG48, S_BRNL58, S_TUMU60 mark; S_CLSN58 craters). Effect:
-//!   no marks under the death explosions; later Scenario draws are absent.
-//!   Frequency: continuous. It belongs to a shared AnimClass Middle port.
 //! - An art-less type (stock `gtpowexp` on GAPOWR, YAPOWR and YAROCK,
 //!   `tstlexp` on NAPOWR) constructs nothing, where native constructs an
 //!   End=0 anim that draws nothing; the pick is still drawn, so only anim
