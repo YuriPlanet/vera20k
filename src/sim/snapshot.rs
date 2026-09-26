@@ -611,7 +611,10 @@ use crate::sim::world::Simulation;
 // animation's StageClass (stage, rate, timer, the type's control), the
 // Construction mission's progress or Sell's stage, and the `+0x6DD` byte
 // instead of fixed elapsed/total tick counts.
-const SNAPSHOT_VERSION: u32 = 211;
+// 211 -> 212: an entity no longer keeps the weapon id of its last live
+// selection (`current_weapon_ref`), which nothing read; `CurrentWeaponNumber`
+// (`TechnoClass+0x138`) stays.
+const SNAPSHOT_VERSION: u32 = 212;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3570,7 +3573,8 @@ mod tests {
         // 209 -> 210: the retired Jumpjet type-block copy.
         // 210 -> 211: the construction animation's StageClass on build-ups
         // and pack-ups.
-        assert_eq!(super::SNAPSHOT_VERSION, 211);
+        // 211 -> 212: no copy of the last selection's weapon id.
+        assert_eq!(super::SNAPSHOT_VERSION, 212);
     }
 
     #[test]
