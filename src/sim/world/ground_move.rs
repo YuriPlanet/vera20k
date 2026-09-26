@@ -1,12 +1,24 @@
-//! The one path that gives an order's ground mover its destination.
+//! Ground move orders: the path-search inputs an order's move reads.
 //!
-//! Commands, resumed and pursuing orders, miners and ejected passengers all
-//! issue the same move: the owner's friendly-passable block sets and the
-//! blocker plane, then `issue_move_command_with_destination`. Both inputs are
-//! pure functions of the entities, so they come from the kept products
-//! (`MovementPassCache`) the movement pass already maintains through the
-//! entity touch log. They equal a whole-world build at this point of the
-//! frame; debug builds compare the two on every read.
+//! Command orders, pursuing and resumed orders, miners, ejected passengers
+//! and the factory rally give a ground mover its destination through
+//! [`Simulation::issue_ground_move`]: the blocker plane and, where the site
+//! asks for them, the mover's owner block sets, then
+//! `issue_move_command_with_destination`. Both come from the products the
+//! movement pass keeps current through the entity touch log
+//! (`MovementPassCache`). Each equals a whole-world build from the entities,
+//! terrain, overlays, alliances and rules at this point of the frame; debug
+//! builds compare the two on every read. Scatter, teleport, air and other
+//! direct moves do not come through here.
+//!
+//! Residual, carried over unchanged: the sites differ in what they hand the
+//! search, with no recorded native reason. The resumed-order, both miner and
+//! the factory-rally moves search without owner block sets; the resumed-order
+//! and idle-miner moves also search without terrain costs. Only a mover that
+//! searches when the order is given reads these inputs: not Drive, Ship or a
+//! Walk mover taking a fresh destination, which accept first and search in
+//! their own turn. Aligning the sites changes paths and needs native evidence
+//! per site.
 
 use super::Simulation;
 use crate::map::overlay_types::OverlayTypeRegistry;

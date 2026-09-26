@@ -11,12 +11,13 @@
 //! between passes and re-derives only the entities the store handed out
 //! mutably since (`EntityStore::take_touched`), at exactly the points where the
 //! sets used to be rebuilt, so a pass sees what a fresh build would give it.
+//! Move orders read the same kept sets (`Simulation::issue_ground_move`).
 //! Debug builds make that fresh build and compare.
 //!
 //! One rule says what an entity contributes ([`contribution`]) and one insert
 //! says what an occupant does to its cell's entry ([`insert_unit`]); the
-//! whole-world build (`bump_crush::build_entity_block_sets`) applies the same
-//! two to everyone in id order.
+//! whole-world build ([`build_owner_block_set`]) applies the same two to
+//! everyone in id order.
 //!
 //! ## Dependency rules
 //! - Part of sim/movement: depends on sim/entity_store, sim/game_entity,
@@ -354,8 +355,8 @@ impl OwnerView {
 }
 
 /// The owner block sets built from every entity, in id order, with none of
-/// the index's bookkeeping. O(entities): path searches outside a movement pass,
-/// tests, and the debug-build check of the index.
+/// the index's bookkeeping. O(entities): tests and the debug-build check of
+/// the index.
 pub(crate) fn build_owner_block_set(
     entities: &EntityStore,
     owner: &str,

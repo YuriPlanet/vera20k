@@ -419,7 +419,7 @@ fn diagnose_rejected_order(
             sim.resolved_terrain.is_some(),
             sim.playfield_bounds.is_some(),
         );
-        let (blocks, block_map) = crate::sim::movement::bump_crush::build_entity_block_set(
+        let (blocks, block_map) = crate::sim::movement::block_index::build_owner_block_set(
             sim.entities(),
             owner_name,
             &sim.house_alliances,

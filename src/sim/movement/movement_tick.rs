@@ -2321,6 +2321,10 @@ struct BlockerPlaneKey {
     /// A building's foundation size comes from its type. By address, never
     /// dereferenced.
     rules: Option<usize>,
+    /// The overlay registry a grid without a retained wall plane rebuilds its
+    /// walls from (`bump_crush::blocker_plane_base`); `None` when the plane
+    /// does not read it. By address, never dereferenced.
+    wall_registry: Option<usize>,
 }
 
 impl MovementPassCache {
@@ -2421,6 +2425,10 @@ impl MovementPassCache {
             width: grid.width(),
             height: grid.height(),
             rules: rules.map(|rules| std::ptr::from_ref(rules) as usize),
+            wall_registry: overlay_grid
+                .filter(|grid| grid.retained_neighbor_counts().is_none())
+                .and(overlay_registry)
+                .map(|registry| std::ptr::from_ref(registry) as usize),
         };
         let retained_foot =
             overlay_grid.is_some_and(|grid| grid.retained_neighbor_counts().is_some());
