@@ -44,29 +44,45 @@ Groups:
   tables 0x008192B8/0x00819310, recorded as `foundation_size`): the >= 2x2
   gate, a RandomRanged(0, dimension - 2) per dimension over 2 (0x004417D3,
   0x00441805), the RandomRanged(0, 99) roll (0x00441819) and the placer with
-  force 1 and size 0x64 at the Location cell's centre (z 0).
+  force 1 and size 0x64 at the Location cell's centre (z 0). RandomRanged
+  rejects draws above the range, so a discarded draw's range shows only in
+  how many raw draws it takes: `centre_mark_discard_pins` lists, per site,
+  the dimensions for which some row's raw draw count or final RNG state
+  changes when that site's `sub eax, 2` (0x004417C8, 0x004417F5) is patched
+  to `sub eax, 1`, and the generator requires every dimension over 2.
 
-The SmudgeClass constructor 0x006B4A50 is recorded, not run. Read: it
-Unlimbos 0x005F4EC0 at the coordinate (vt+0x1AC 0x004264C0 returns 0; the
-SmudgeType's vt+0x6C 0x0041CF80 copies the coordinate; vt+0x1B4 0x005F6940
-stores it as Location), whose vt+0x124 is SmudgeClass::Mark 0x006B4BE0: the
-cell by truncation (vt+0x1B8 0x0041BEA0), CanPlace with force 1 (passing on the
-footprint the placer just admitted with force 0 or 1) and
-SmudgeTypeClass::Place 0x006B6080. The harness executes that Place natively on
-the recorded type and truncated cell; its per-cell redraw 0x00486E70 is
-recorded (the cell and the SmudgeTypeIndex/SmudgeData Place just wrote there)
-and returns.
+The shared dummy's coordinate is set to `dummy_coord_before` when a map is
+installed and before each `can_place` row, so a row that stamps nothing is
+visible; every row records the dummy afterwards.
+
+The SmudgeClass constructor 0x006B4A50 is recorded, not run. Read: after the
+ObjectClass constructor 0x005F3900 it takes a UniqueID (0x00410230, through
+the Scenario's 0x0068BCB0) and joins the SmudgeClass vector 0x00A8B1E0; unless
+the coordinate is the static 0x00B0B728 it Unlimbos 0x005F4EC0 there (the
+house in 0x0083FFD8 meanwhile; UnInit 0x005F65F0 on failure). Unlimbo:
+vt+0x1AC 0x004264C0 returns 0; the SmudgeType's vt+0x6C 0x0041CF80 copies the
+coordinate; vt+0x1B4 0x005F6940 stores it as Location; vt+0x124 is
+SmudgeClass::Mark 0x006B4BE0: the cell by truncation (vt+0x1B8 0x0041BEA0),
+CanPlace with force 1 unless [0x00A8E7AC] > 0 or byte [0x00A8ED6B] is set
+(passing on the footprint the placer just admitted with force 0 or 1, since
+nothing is written in between), SmudgeTypeClass::Place 0x006B6080 when it
+passes, then UnInit through vt+0xF8 0x005F65F0 either way. That CanPlace
+looks up the cells Place then looks up, in the same order, so the dummy ends
+with Place's stamps. The harness executes that Place natively on the recorded
+type and truncated cell; its per-cell redraw 0x00486E70 is recorded (the cell
+and the SmudgeTypeIndex/SmudgeData Place just wrote there) and returns.
 
 Schema: `smudge_types` (index order); `maps.<name>` {size, allocate_diamond,
 cells[] {x, y, tile, overlay, overlay_data, smudge, smudge_data, slope,
 objects}, tile_count, morphable (tile indices; the rest are not Morphable),
 dummy (fields written over the constructor's)}; `can_place[]` {map, origin,
-width, height, force, result, dummy_read (some GetCell returned the dummy)};
-`placer[]` and `centre_mark[]` {input, events (`ranged`/`next` draws with call
-site and result, `can_place` {type, origin, force, result, dummy_read},
-`smudge` {type, coord, house}), marked [{cell, dummy, type, data}] (Place's
-writes in order), raw_draw_count, rng_after}; `seed_states` holds each seed's
-Scenario RNG state after 0x0065C6D0 (every row's state before).
+width, height, force, result, dummy_read (some GetCell returned the dummy),
+dummy_coord (afterwards)}; `placer[]` and `centre_mark[]` {input, events
+(`ranged`/`next` draws with call site and result, `can_place` {type, origin,
+force, result, dummy_read}, `smudge` {type, coord, house}), marked [{cell,
+dummy, type, data}] (Place's writes in order), dummy {coord, smudge,
+smudge_data} (afterwards), raw_draw_count, rng_after}; `seed_states` holds each
+seed's Scenario RNG state after 0x0065C6D0 (every row's state before).
 
 Rust consumers: src/sim/smudge_grid.rs (`passes_placement_gates`, `try_place`)
 and src/sim/combat/smudge_dispatch.rs (`try_dispatch_building_destruction_smudges`);
@@ -94,6 +110,8 @@ ISO_ITEMS, ISO_COUNT = 0xA8ED2C, 0xA8ED38
 SMUDGE_ITEMS, SMUDGE_COUNT = 0xA8EC1C, 0xA8EC28
 GAME_ACTIVE = 0xA8E9A0
 STEP7_BEGIN, STEP7_END = 0x44177E, 0x4418EC
+# `sub eax, 2` (83 E8 02) before each discarded draw's push.
+DISCARD_SUBS = {"width": 0x4417C8, "height": 0x4417F5}
 FOUNDATION_WIDTHS, FOUNDATION_HEIGHTS = 0x8192B8, 0x819310
 # Original class vtables for the ground list; What_Am_I (+0x2C) returns 6, 1, 15, 2.
 OBJECT_VT = {"building": 0x7E3EBC, "unit": 0x7F5C70, "infantry": 0x7EB058,
@@ -108,6 +126,8 @@ SMUDGE_OBJECTS, SMUDGE_TABLE = CELLMEM + 0x240000, CELLMEM + 0x258000
 OBJECTS = CELLMEM + 0x260000
 BUILDING, BUILDING_TYPE = CELLMEM + 0x280000, CELLMEM + 0x281000
 SCRATCH = CELLMEM + 0x290000
+# The dummy's coordinate before each row; no row looks up this cell.
+DUMMY_COORD = (0x2222, -0x3333)
 
 # rulesmd.ini [SmudgeTypes] in list order: (name, Burn, Crater, Width, Height).
 SMUDGE_TYPES = ([(f"CR{i}", 0, 0, 1, 1) for i in range(1, 7)]
@@ -186,6 +206,7 @@ class Cells:
         self.construct(DUMMY)
         if spec.get("dummy"):
             self.write_fields(DUMMY, spec["dummy"])
+        self.reset_dummy_coord()
         count = spec["tile_count"]
         assert count * 4 <= ISO_PLAIN - ISO
         morphable = set(spec["morphable"])
@@ -215,6 +236,18 @@ class Cells:
             head = obj
         if head:
             uc.mem_write(address + 0xE4, dwords(head))
+
+    def reset_dummy_coord(self):
+        self.uc.mem_write(DUMMY + 0x24, struct.pack("<hh", *DUMMY_COORD))
+
+    def dummy_coord(self):
+        return list(struct.unpack("<hh", self.uc.mem_read(DUMMY + 0x24, 4)))
+
+    def dummy_state(self):
+        """The dummy's coordinate (+0x24), SmudgeTypeIndex (+0x48) and SmudgeData (+0x11F)."""
+        uc = self.uc
+        return dict(coord=self.dummy_coord(), smudge=signed(read32(uc, DUMMY + 0x48)),
+                    smudge_data=uc.mem_read(DUMMY + 0x11F, 1)[0])
 
     def install_smudge_types(self, table):
         uc = self.uc
@@ -349,18 +382,24 @@ def can_place_rows():
                     uc.reg_write(UC_X86_REG_ESP, launch.SP - 0x100)
                     uc.reg_write(UC_X86_REG_ECX, smudge)
                     machine.events.clear()
+                    machine.cells.reset_dummy_coord()
                     run_checked(uc, CAN_PLACE, launch.STOP, count=100_000)
                     assert uc.reg_read(UC_X86_REG_ESP) == launch.SP - 0x100 + 12
                     [event] = machine.events
                     rows.append(dict(map=name, origin=list(origin), width=w, height=h, force=force,
-                                     result=event["result"], dummy_read=event["dummy_read"]))
+                                     result=event["result"], dummy_read=event["dummy_read"],
+                                     dummy_coord=machine.cells.dummy_coord()))
     return rows
 
 
 def finish(machine, case, before):
     assert before == seed_state(case["seed"])
     events = [event for event in machine.events if event["call"] != "new"]
-    return dict(input=case, events=events, marked=machine.cells.place_recorded(),
+    calls = [event["call"] for event in events]
+    # Nothing looks a cell up between the constructor and its Mark.
+    assert "smudge" not in calls or "can_place" not in calls[calls.index("smudge"):], case
+    marked = machine.cells.place_recorded()
+    return dict(input=case, events=events, marked=marked, dummy=machine.cells.dummy_state(),
                 raw_draw_count=machine.advances, rng_after=machine.rng())
 
 
@@ -411,11 +450,14 @@ def placer_cases():
                                force=force, seed=seed)
 
 
-def run_centre_mark(case):
+def run_centre_mark(case, patch=None):
     machine = Machine(case["seed"])
     machine.cells.install_map(MAPS[case["map"]])
     machine.cells.install_smudge_types(SMUDGE_TYPES)
     uc = machine.uc
+    if patch is not None:
+        assert bytes(uc.mem_read(patch, 3)) == b"\x83\xe8\x02"
+        uc.mem_write(patch + 2, b"\x01")
     foundation = case["foundation"]
     uc.mem_write(BUILDING_TYPE, bytes(0x1000))
     uc.mem_write(BUILDING_TYPE + 0xEF0, dwords(foundation))
@@ -446,19 +488,45 @@ def centre_mark_cases():
     ]
     for foundation in range(22):
         for location in locations:
-            for seed in (1, 0xDEADBEEF):
+            # 0x1D pins every discarded draw's range (`centre_mark_discard_pins`).
+            for seed in (1, 0x1D):
                 yield dict(map="gates", foundation=foundation, location=location, seed=seed)
+
+
+def discard_pins(rows):
+    """Per discard site, the dimensions whose range the rows pin: a row with that
+    dimension changes its raw draw count or final RNG state when the site draws
+    RandomRanged(0, dimension - 1) instead."""
+    pinned = {site: set() for site in DISCARD_SUBS}
+    for row in rows:
+        width, height = row["foundation_size"]
+        if width < 2 or height < 2:
+            continue
+        for site, dimension in (("width", width), ("height", height)):
+            if dimension <= 2 or dimension in pinned[site]:
+                continue
+            mutant = run_centre_mark(row["input"], patch=DISCARD_SUBS[site])
+            if (mutant["raw_draw_count"], mutant["rng_after"]) != (row["raw_draw_count"],
+                                                                     row["rng_after"]):
+                pinned[site].add(dimension)
+    return {site: sorted(dimensions) for site, dimensions in pinned.items()}
 
 
 def generate():
     placer = [run_placer(case) for case in placer_cases()]
     centre_mark = [run_centre_mark(case) for case in centre_mark_cases()]
+    pins = discard_pins(centre_mark)
+    discarded = {site: sorted({row["foundation_size"][axis] for row in centre_mark
+                               if min(row["foundation_size"]) >= 2
+                               and row["foundation_size"][axis] > 2})
+                 for axis, site in enumerate(DISCARD_SUBS)}
+    assert pins == discarded, (pins, discarded)
     seeds = sorted({row["input"]["seed"] for row in placer + centre_mark})
     return dict(smudge_types=[dict(name=name, burn=burn, crater=crater, width=width, height=height)
                               for name, burn, crater, width, height in SMUDGE_TYPES],
                 seed_states={str(seed): seed_state(seed) for seed in seeds},
-                maps=MAPS, can_place=can_place_rows(),
-                placer=placer, centre_mark=centre_mark)
+                dummy_coord_before=list(DUMMY_COORD), maps=MAPS, can_place=can_place_rows(),
+                placer=placer, centre_mark=centre_mark, centre_mark_discard_pins=pins)
 
 
 if __name__ == "__main__":
@@ -469,8 +537,9 @@ if __name__ == "__main__":
                "map and seven outside it, six footprints and both force values on three map "
                "variants; the Burn/Crater placers 0x006B59A0/0x006B5C90 at eleven "
                "coordinates; BuildingClass::DestructionEffects step 7 0x0044177E..0x004418EC "
-               "for all 22 foundation indices at four locations; each recorded SmudgeClass is "
-               "followed by SmudgeTypeClass::Place 0x006B6080."),
+               "for all 22 foundation indices at four locations and two seeds; each recorded "
+               "SmudgeClass is followed by SmudgeTypeClass::Place 0x006B6080; every row "
+               "records the shared dummy cell afterwards."),
         assumptions=[
             "x87 control word 0x0E7F (PC53, chop) on entry, as anim_bouncer_launch.",
             "g_GameActive 0x00A8E9A0 set, as in a running game.",
@@ -481,7 +550,10 @@ if __name__ == "__main__":
             "Height= (rulesmd.ini).",
             "The constructor's Unlimbo -> SmudgeClass::Mark -> Place path is read, not run: "
             "Location is the coordinate, Mark's cell is its truncation and Mark's CanPlace "
-            "with force 1 passes on the footprint the placer admitted.",
+            "with force 1 passes on the footprint the placer admitted, looking up the cells "
+            "Place then looks up.",
+            "centre_mark_discard_pins comes from extra step 7 runs with one `sub eax, 2` "
+            "patched to `sub eax, 1`; no recorded row comes from a patched run.",
         ],
         substitutions=[
             "the SmudgeClass constructor 0x006B4A50 records its type, coordinate and house "
@@ -489,6 +561,8 @@ if __name__ == "__main__":
             "and truncated cell",
             "the per-cell redraw 0x00486E70 in Place records its cell and returns",
             "operator new 0x007C8E17 is a bump allocator; operator delete 0x007C8B3D is a no-op",
+            "the dummy cell's coordinate (+0x24) is set to dummy_coord_before when a map is "
+            "installed and before each can_place row",
         ],
         entry_points={"can_place": CAN_PLACE, "get_cell": GET_CELL, "in_bounds": IN_BOUNDS,
                       "building_lookup": 0x47C520, "cell_ctor": CELL_CTOR, "burn": BURN,

@@ -197,7 +197,7 @@ def execute(case):
 
 # VERA20k's retail Dustbowl load (TEMPERATE, Size 70x76; temperatmd.ini's 838
 # IsoTileTypes, Morphable=yes on these ranges): the cells step 7's CanPlace reads
-# at each Location, both at level 1 (z 104). The Rust test asserts the production
+# at each Location, all at level 1 (z 104). The Rust test asserts the production
 # map holds them.
 DUSTBOWL = dict(
     size=[70, 76], allocate_diamond=False, tile_count=838,
@@ -217,8 +217,16 @@ DUSTBOWL = dict(
         dict(x=74, y=116, tile=0xFFFF),
         dict(x=73, y=117, tile=0xFFFF),
         dict(x=74, y=117, tile=507),
+        # Clean ground at (81, 123), tile 0 on all four cells (the map's only flat,
+        # Morphable 2x2 block free of overlay and terrain objects): every candidate fits
+        # and the force-1 placer picks among the 2x2 types it prefers.
+        dict(x=81, y=123, tile=0),
+        dict(x=82, y=123, tile=0),
+        dict(x=81, y=124, tile=0),
+        dict(x=82, y=124, tile=0),
     ])
-LOCATIONS = [[68 * 256 + 0x80, 40 * 256 + 0x80, 104], [73 * 256 + 0x80, 116 * 256 + 0x80, 104]]
+LOCATIONS = [[68 * 256 + 0x80, 40 * 256 + 0x80, 104], [73 * 256 + 0x80, 116 * 256 + 0x80, 104],
+             [81 * 256 + 0x80, 123 * 256 + 0x80, 104]]
 # 22 and 49 construct a zero-delay `gtpowexp` (Start runs Middle) ahead of later cells.
 SEEDS = [1, 7, 22, 31, 42, 49, 1000, 0x5CA1AB1E, 0xDEADBEEF, 2024]
 
@@ -242,9 +250,10 @@ if __name__ == "__main__":
                "constructor and Start) then BuildingClass::DestructionEffects steps 7 and 8 "
                "0x0044177E..0x00441A2B (the centre scorch/crater roll and real placer, the "
                "per-foundation-cell scatter, delay and Explosion= pick, constructor and Start), "
-               "over ten Scenario seeds at two retail Dustbowl Locations: the fixture's, whose "
+               "over ten Scenario seeds at three retail Dustbowl Locations: the fixture's, whose "
                "cells carry ore, so CanPlace admits no SmudgeType and step 7 draws only its "
-               "roll, and clean ground where the placer's pick and SmudgeTypeClass::Place "
+               "roll, and two clean ones (no 2x2 fits at the first; at the second the 2x2 "
+               "types are preferred) where the placer's pick and SmudgeTypeClass::Place "
                "0x006B6080 mark the map; CanPlace 0x006B5F80 and GetCell 0x005657A0 run "
                "natively over MapClass's cell table (smudge_can_place)."),
         assumptions=[

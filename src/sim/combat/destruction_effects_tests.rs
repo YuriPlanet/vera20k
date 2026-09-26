@@ -571,8 +571,9 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
 /// comparison). At the fixture's plant the origin cells carry ore, which
 /// CanPlace's overlay check (`0x006B6002`) rejects for every candidate, so
 /// no mark lands; on the clean ground at (73, 116) the placer picks among the
-/// 1x1, 2x1 and 1x2 types (no 2x2 fits: (74, 117) is not Morphable) and the
-/// mark's type, cells and SmudgeData are compared. An art-less `gtpowexp`
+/// 1x1, 2x1 and 1x2 types (no 2x2 fits: (74, 117) is not Morphable), and at
+/// (81, 123) among the preferred 2x2 types; the mark's type, cells and
+/// SmudgeData are compared. An art-less `gtpowexp`
 /// pick constructs nothing (a residual). At the fixture's plant an MCV then
 /// plays one of its own `Explosion=` anims and throws `MetallicDebris=`
 /// chunks, all with `0x600`/0. Ignored: needs the retail install (`RA2_DIR`
@@ -595,7 +596,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
     ))
     .unwrap();
     let rows = golden["rows"].as_array().unwrap();
-    assert_eq!(rows.len(), 20);
+    assert_eq!(rows.len(), 30);
     let map_spec = &golden["map"];
     let tile_lookup = crate::sim::smudge_grid::oracle_fixture::tile_lookup(map_spec);
     let smudge_names: Vec<&str> = golden["smudge_types"]

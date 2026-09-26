@@ -6,6 +6,7 @@
 //! Dependency rules: depends on rules/, map/, and other sim/ modules.
 //! Never depends on render/, ui/, sidebar/, audio/, net/.
 
+use crate::map::cell_index::NativeCellIdentity;
 use crate::map::map_file::MapSmudgeEntry;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::smudge_type::SmudgeTypeRegistry;
@@ -182,13 +183,14 @@ impl SmudgeGrid {
             let Some(def) = registry.get(type_id) else {
                 continue;
             };
+            let origin = (entry.rx as i16, entry.ry as i16);
             // Map load has no occupancy grid yet, so `allow_building` is moot.
             if !grid.passes_placement_gates(
-                entry.rx, entry.ry, def.width, def.height, terrain, overlay, None, false,
+                origin, def.width, def.height, terrain, overlay, None, false,
             ) {
                 continue;
             }
-            grid.write_footprint(entry.rx, entry.ry, type_id, def.width, def.height);
+            grid.write_footprint(origin, type_id, def.width, def.height, terrain);
         }
         // Keep native construction invalidation visible; app initialization
         // publishes this queue synchronously after installing the grid.
@@ -197,11 +199,15 @@ impl SmudgeGrid {
 }
 
 impl SmudgeGrid {
-    /// `SmudgeTypeClass::CanPlace @ 0x006B5F80`: every cell of the W×H
-    /// footprint must be allocated (native tests the origin's In_Bounds; the
-    /// allocated cells are exactly the Size diamond), unsloped, free of smudge
-    /// and overlay, on a Morphable current tile (`accepts_smudge`, with its
-    /// tile-0 fallback) and, unless `allow_building`, hold no building.
+    /// `SmudgeTypeClass::CanPlace @ 0x006B5F80`. Each footprint cell, y outer
+    /// and x inner, is `origin + (x, y)` in 16-bit sums resolved by
+    /// `MapClass::GetCell @ 0x005657A0`: a real cell, or the shared dummy with
+    /// its coordinate stamped. After that lookup the cell fails unless the
+    /// origin is In_Bounds, the cell is unsloped and free of smudge and
+    /// overlay, holds no building (skipped when `allow_building`), and its
+    /// current tile is Morphable (an index outside the theater, the dummy's
+    /// 0xFFFF included, reads tile 0). The first failing cell ends the check,
+    /// so later cells are not looked up.
     ///
     /// `allow_building` is gamemd's force argument: when set, the building
     /// lookup is skipped entirely and a smudge may land under a structure. The
@@ -209,25 +215,22 @@ impl SmudgeGrid {
     /// building-destruction centre mark is exempt while ordinary anim and
     /// survivor marks are not.
     ///
-    /// Residual: native `GetCell @ 0x005657A0` answers a footprint cell off the
-    /// Size diamond with the shared dummy cell, whose slope, smudge, overlay,
-    /// objects and tile (the constructor's 0xFFFF, read as theater tile 0)
-    /// CanPlace then reads, and `SmudgeTypeClass::Place @ 0x006B6080` writes
-    /// the dummy's smudge slot, after which no footprint touching the dummy
-    /// passes. The dummy's smudge slot has no Rust owner, so such a cell fails
-    /// here. Trigger: a footprint over one cell wide or tall at an origin on the
-    /// diamond's right or bottom edge. Effect: while the dummy is unmarked and
-    /// tile 0 is Morphable (as in the retail theaters), native admits the type
-    /// and places the in-map part of its mark; here the pick runs over the
-    /// remaining types (one pick draw either way with the retail types, since
-    /// their 1x1 types fit such an origin). Frequency: marks on the outermost
-    /// cells of the full map, outside the usual playable area. Evidence:
-    /// `smudge_can_place` rows whose passing CanPlace read the dummy.
+    /// A footprint running off the Size diamond reads the dummy, and passes
+    /// while the dummy is unsloped, unmarked and free of overlay, and tile 0 is
+    /// Morphable (as in the retail theaters). `write_footprint` then marks the
+    /// dummy, so no later footprint touching it passes until the dummy is
+    /// constructed again.
+    ///
+    /// Residual: the dummy's ground object list (+0xE4) has no Rust owner, so
+    /// the building lookup finds nothing there. Trigger: a building on that
+    /// list (whether a foundation running off the diamond links one there is
+    /// not traced). Effect: native refuses a non-forced mark touching the
+    /// dummy; here it passes. Frequency: such a building plus a mark over one
+    /// cell wide or tall on the diamond's right or bottom edge.
     #[allow(clippy::too_many_arguments)]
     fn passes_placement_gates(
         &self,
-        rx: u16,
-        ry: u16,
+        origin: (i16, i16),
         w: u8,
         h: u8,
         terrain: &ResolvedTerrainGrid,
@@ -235,57 +238,93 @@ impl SmudgeGrid {
         occupancy: Option<&OccupancyGrid>,
         allow_building: bool,
     ) -> bool {
-        for dy in 0..h as u16 {
-            for dx in 0..w as u16 {
-                let cx = rx + dx;
-                let cy = ry + dy;
-                if cx >= self.width || cy >= self.height {
+        let in_bounds = origin_in_bounds(terrain, origin);
+        for dy in 0..h {
+            for dx in 0..w {
+                let cell = terrain.native_cell_identity((
+                    origin.0.wrapping_add(i16::from(dx)),
+                    origin.1.wrapping_add(i16::from(dy)),
+                ));
+                if !in_bounds || terrain.native_cell_ground_fields(cell).1 != 0 {
                     return false;
                 }
-                if self.cell(cx, cy).type_id.is_some() {
-                    return false;
-                }
-                if overlay.cell(cx, cy).overlay_id.is_some() {
-                    return false;
-                }
-                let Some(tcell) = terrain.cell(cx, cy) else {
-                    return false;
-                };
-                if tcell.slope_type != 0 {
-                    return false;
-                }
-                if !tcell.accepts_smudge {
-                    return false;
-                }
-                if !allow_building {
-                    if let Some(occ) = occupancy {
-                        if cell_has_building(occ, cx, cy) {
-                            return false;
-                        }
+                let clear = match cell {
+                    NativeCellIdentity::Real(_) => {
+                        let (x, y) = terrain.native_cell_coord(cell);
+                        let (x, y) = (x as u16, y as u16);
+                        self.cell(x, y).type_id.is_none()
+                            && overlay.cell(x, y).overlay_id.is_none()
+                            && (allow_building
+                                || occupancy.is_none_or(|occ| !cell_has_building(occ, x, y)))
                     }
+                    NativeCellIdentity::Dummy => {
+                        let dummy = terrain.shared_cell_dummy();
+                        dummy.smudge_identity_data().0 == -1
+                            && dummy.overlay_identity_state().0 == -1
+                    }
+                };
+                if !clear || !terrain.native_cell_accepts_smudge(cell) {
+                    return false;
                 }
             }
         }
         true
     }
 
-    fn write_footprint(&mut self, rx: u16, ry: u16, type_id: u16, w: u8, h: u8) {
-        for dy in 0..h as u16 {
-            for dx in 0..w as u16 {
-                let cx = rx + dx;
-                let cy = ry + dy;
-                let Some(idx) = self.index_of(cx, cy) else {
+    /// `SmudgeTypeClass::Place @ 0x006B6080`: each footprint cell, in
+    /// CanPlace's order and through GetCell again, takes the type (+0x48) and
+    /// SmudgeData `y * Width + x` in byte arithmetic (+0x11F). The dummy's
+    /// slot belongs to [`SharedCellDummy`](crate::map::resolved_terrain::SharedCellDummy);
+    /// a later dummy cell of the same footprint overwrites an earlier one.
+    fn write_footprint(
+        &mut self,
+        origin: (i16, i16),
+        type_id: u16,
+        w: u8,
+        h: u8,
+        terrain: &ResolvedTerrainGrid,
+    ) {
+        // CanPlace admitted the origin, an allocated slot.
+        let footprint_origin = (origin.0 as u16, origin.1 as u16);
+        for dy in 0..h {
+            for dx in 0..w {
+                let data = dy.wrapping_mul(w).wrapping_add(dx);
+                let cell = terrain.native_cell_identity((
+                    origin.0.wrapping_add(i16::from(dx)),
+                    origin.1.wrapping_add(i16::from(dy)),
+                ));
+                if cell == NativeCellIdentity::Dummy {
+                    terrain
+                        .shared_cell_dummy()
+                        .write_smudge_identity_data(i32::from(type_id), data);
+                    continue;
+                }
+                let (x, y) = terrain.native_cell_coord(cell);
+                let (x, y) = (x as u16, y as u16);
+                let Some(index) = self.index_of(x, y) else {
                     continue;
                 };
-                self.cells[idx] = SmudgeCell {
+                self.cells[index] = SmudgeCell {
                     type_id: Some(type_id),
-                    footprint_origin: Some((rx, ry)),
-                    frame_offset: (dx as u8) + (dy as u8) * w,
+                    footprint_origin: Some(footprint_origin),
+                    frame_offset: data,
                 };
-                self.dirty_cells.push((cx, cy));
+                self.dirty_cells.push((x, y));
             }
         }
     }
+}
+
+/// `MapClass::In_Bounds @ 0x00568300` on CanPlace's origin. Map load
+/// allocates a CellClass for exactly the Size diamond's cells (the terrain
+/// grid's allocation plane), so an origin in the diamond is an allocated
+/// slot; an x outside 0..512 is excluded because the 512-wide stride would
+/// alias it onto another row's slot.
+fn origin_in_bounds(terrain: &ResolvedTerrainGrid, origin: (i16, i16)) -> bool {
+    (0..512).contains(&origin.0)
+        && terrain
+            .native_fixed_cell_index(origin.0, origin.1)
+            .is_some()
 }
 
 /// gamemd's placement check asks the cell for a *building*, not for an
@@ -345,13 +384,12 @@ impl SmudgeGrid {
         rng: &mut SimRng,
     ) -> bool {
         // The placers' cell: the coordinate over 256 toward zero (`cdq; and edx,
-        // 0xFF; add; sar 8`). Cell (0, 0), the sentinel `0x00B0B788` (zeroed
-        // by `0x006B5210`), places nothing without a draw; a negative cell, like
-        // any cell off the map, fails every candidate's origin check.
-        let (Ok(rx), Ok(ry)) = (u16::try_from(coord.x / 256), u16::try_from(coord.y / 256)) else {
-            return false;
-        };
-        if rx == 0 && ry == 0 {
+        // 0xFF; add; sar 8`) in 16-bit words. Cell (0, 0), the sentinel
+        // `0x00B0B788` (zeroed by `0x006B5210`), places nothing without a draw;
+        // a cell off the map, negative included, fails every candidate's origin
+        // check after its lookups.
+        let origin = ((coord.x / 256) as i16, (coord.y / 256) as i16);
+        if origin == (0, 0) {
             return false;
         }
 
@@ -366,8 +404,7 @@ impl SmudgeGrid {
                 continue;
             }
             if self.passes_placement_gates(
-                rx,
-                ry,
+                origin,
                 def.width,
                 def.height,
                 terrain,
@@ -382,7 +419,7 @@ impl SmudgeGrid {
             return false;
         };
         let chosen = registry.get(chosen_id).unwrap();
-        self.write_footprint(rx, ry, chosen_id, chosen.width, chosen.height);
+        self.write_footprint(origin, chosen_id, chosen.width, chosen.height, terrain);
         true
     }
 }
@@ -477,8 +514,8 @@ pub(crate) mod oracle_fixture {
     /// `maps.<name>`: the allocated Size diamond and each cell's current tile
     /// (Morphable through the production query over a one-tile-per-set theater
     /// INI and the production reader; the constructor's 0xFFFF where unset),
-    /// slope, overlay, smudge and ground objects. The dummy cell's smudge state
-    /// has no Rust owner (the residual at `passes_placement_gates`).
+    /// slope, overlay, smudge and ground objects; the shared dummy's smudge
+    /// slot, its 0xFFFF tile's Morphable and `dummy_coord_before`.
     pub(crate) fn map(name: &str) -> OracleMap {
         let spec = &corpus()["maps"][name];
         let size: Vec<i32> = spec["size"]
@@ -512,6 +549,14 @@ pub(crate) mod oracle_fixture {
             .collect();
         assert_eq!(diamond.len(), 44);
         terrain.test_set_native_allocated_cells(&diamond);
+        terrain.test_set_dummy_accepts_smudge(current_tile_permissions(&lookup, 0xFFFF).0);
+        let dummy = &spec["dummy"];
+        if let Some(smudge) = dummy["smudge"].as_i64() {
+            terrain
+                .shared_cell_dummy()
+                .write_smudge_identity_data(smudge as i32, int(&dummy["smudge_data"]) as u8);
+        }
+        reset_dummy_coord(&terrain);
         let mut overlay = OverlayGrid::new(SIDE, SIDE);
         let mut smudges = SmudgeGrid::new(SIDE, SIDE);
         let mut occupancy = OccupancyGrid::new();
@@ -620,25 +665,34 @@ pub(crate) mod oracle_fixture {
         rng
     }
 
-    /// Whether some CanPlace passed on the dummy cell: the residual at
-    /// `passes_placement_gates`, where Rust rejects that type.
-    pub(crate) fn passed_on_dummy(row: &Value) -> bool {
-        row["events"].as_array().unwrap().iter().any(|event| {
-            event["call"] == "can_place"
-                && event["dummy_read"] == true
-                && int(&event["result"]) == 1
-        })
+    /// The shared dummy's coordinate as the harness sets it before a row.
+    pub(crate) fn reset_dummy_coord(terrain: &ResolvedTerrainGrid) {
+        let coord = corpus()["dummy_coord_before"].as_array().unwrap();
+        terrain
+            .shared_cell_dummy()
+            .stamp_coord(int(&coord[0]) as i32, int(&coord[1]) as i32);
     }
 
-    /// Place's writes as (cell, SmudgeTypeIndex, SmudgeData), in its y-outer
-    /// order; `after`'s marks that `before` lacks, in the same order.
-    pub(crate) fn assert_marks(before: &SmudgeGrid, after: &SmudgeGrid, row: &Value) {
+    pub(crate) fn dummy_coord(terrain: &ResolvedTerrainGrid) -> Value {
+        let (x, y) = terrain.shared_cell_dummy().snapshot().coord;
+        serde_json::json!([x, y])
+    }
+
+    /// Place's writes to real cells as (cell, SmudgeTypeIndex, SmudgeData), in
+    /// its y-outer order, against `after`'s marks that `before` lacks; then the
+    /// shared dummy's coordinate, SmudgeTypeIndex and SmudgeData afterwards.
+    pub(crate) fn assert_marks(
+        before: &SmudgeGrid,
+        after: &SmudgeGrid,
+        terrain: &ResolvedTerrainGrid,
+        row: &Value,
+    ) {
         let native: Vec<_> = row["marked"]
             .as_array()
             .unwrap()
             .iter()
+            .filter(|mark| mark["dummy"] == false)
             .map(|mark| {
-                assert_eq!(mark["dummy"], false, "{}", row["input"]);
                 let cell = mark["cell"].as_array().unwrap();
                 (
                     (int(&cell[1]) as u16, int(&cell[0]) as u16),
@@ -654,6 +708,17 @@ pub(crate) mod oracle_fixture {
             .collect();
         actual.sort();
         assert_eq!(actual, native, "{}", row["input"]);
+        let (smudge, smudge_data) = terrain.shared_cell_dummy().smudge_identity_data();
+        assert_eq!(
+            serde_json::json!({
+                "coord": dummy_coord(terrain),
+                "smudge": smudge,
+                "smudge_data": smudge_data,
+            }),
+            row["dummy"],
+            "{}",
+            row["input"]
+        );
     }
 }
 
@@ -1206,37 +1271,22 @@ mod tests {
     /// `SmudgeTypeClass::CanPlace @ 0x006B5F80` executed over MapClass's cell
     /// table (`tools/spatial_oracle/smudge_can_place.py`, `can_place`): every
     /// origin of a Size 6x4 map and seven off it, six footprints, both force
-    /// values, on three variants of the map. A passing CanPlace that read the
-    /// dummy cell is the residual at `passes_placement_gates`; a negative
-    /// origin is no cell here (`try_place` rejects it; the `placer` rows).
+    /// values, on three variants of the map (tile 0 Morphable or not, the
+    /// dummy already marked), with the dummy's coordinate afterwards.
     #[test]
     fn can_place_matches_the_original_over_the_cell_table() {
         use oracle_fixture::{corpus, int};
         let rows = corpus()["can_place"].as_array().unwrap();
         let mut maps = std::collections::HashMap::new();
-        let (mut compared, mut residual) = (0, 0);
         for row in rows {
             let name = row["map"].as_str().unwrap();
             let map = maps
                 .entry(name)
                 .or_insert_with(|| oracle_fixture::map(name));
             let origin = row["origin"].as_array().unwrap();
-            let (Ok(rx), Ok(ry)) = (
-                u16::try_from(int(&origin[0])),
-                u16::try_from(int(&origin[1])),
-            ) else {
-                continue;
-            };
-            let native = int(&row["result"]) == 1;
-            if native && row["dummy_read"] == true {
-                // Only a clean dummy on a theater whose tile 0 is Morphable passes.
-                assert_eq!(name, "gates");
-                residual += 1;
-                continue;
-            }
+            oracle_fixture::reset_dummy_coord(&map.terrain);
             let actual = map.smudges.passes_placement_gates(
-                rx,
-                ry,
+                (int(&origin[0]) as i16, int(&origin[1]) as i16),
                 int(&row["width"]) as u8,
                 int(&row["height"]) as u8,
                 &map.terrain,
@@ -1244,27 +1294,31 @@ mod tests {
                 Some(&map.occupancy),
                 int(&row["force"]) == 1,
             );
-            assert_eq!(actual, native, "{row}");
-            compared += 1;
+            assert_eq!(actual, int(&row["result"]) == 1, "{row}");
+            assert_eq!(
+                oracle_fixture::dummy_coord(&map.terrain),
+                row["dummy_coord"],
+                "{row}"
+            );
         }
-        assert!(compared > 1500 && residual > 0, "{compared} {residual}");
+        let passed_on_dummy = rows
+            .iter()
+            .filter(|row| row["dummy_read"] == true && int(&row["result"]) == 1)
+            .count();
+        assert_eq!((rows.len(), passed_on_dummy), (1836, 156));
     }
 
     /// The Burn/Crater placers `0x006B59A0` / `0x006B5C90` executed over the
     /// same cell table (`smudge_can_place.py`, `placer`) against `try_place`:
     /// the truncated cell, the (0, 0) sentinel, cells off the map, the CanPlace
     /// sweep, the preference and pick, Place's footprint (type and SmudgeData
-    /// per cell) and the Scenario RNG afterwards.
+    /// per cell, the shared dummy's included) and the Scenario RNG afterwards.
     #[test]
     fn placers_match_the_original_over_the_cell_table() {
         use oracle_fixture::{corpus, int};
         let registry = oracle_fixture::registry();
-        let (mut compared, mut residual) = (0, 0);
-        for row in corpus()["placer"].as_array().unwrap() {
-            if oracle_fixture::passed_on_dummy(row) {
-                residual += 1;
-                continue;
-            }
+        let rows = corpus()["placer"].as_array().unwrap();
+        for row in rows {
             let input = &row["input"];
             let mut map = oracle_fixture::map(input["map"].as_str().unwrap());
             let before = map.smudges.clone();
@@ -1291,15 +1345,24 @@ mod tests {
                 &map.occupancy,
                 &mut rng,
             );
-            oracle_fixture::assert_marks(&before, &map.smudges, row);
+            oracle_fixture::assert_marks(&before, &map.smudges, &map.terrain, row);
             assert_eq!(placed, !row["marked"].as_array().unwrap().is_empty());
             assert_eq!(
                 rng.native_state_hex(),
                 row["rng_after"].as_str().unwrap(),
                 "{input}"
             );
-            compared += 1;
         }
-        assert!(compared > 100 && residual > 0, "{compared} {residual}");
+        let marked_dummy = rows
+            .iter()
+            .filter(|row| {
+                row["marked"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|m| m["dummy"] == true)
+            })
+            .count();
+        assert_eq!((rows.len(), marked_dummy), (132, 4));
     }
 }

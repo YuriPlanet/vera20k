@@ -899,10 +899,11 @@ mod dispatch_tests {
         /// `BuildingClass::DestructionEffects` step 7 executed over MapClass's
         /// cell table (`tools/spatial_oracle/smudge_can_place.py`,
         /// `centre_mark`: `0x0044177E..0x004418EC` for all 22 foundation
-        /// indices at four Locations): the >= 2x2 gate, the discarded
-        /// RandomRanged per dimension over two, the roll, the placer's CanPlace
-        /// sweep and pick, Place's footprint and the Scenario RNG afterwards.
-        /// No footprint there leaves the Size diamond, so every row compares.
+        /// indices at four Locations and two seeds): the >= 2x2 gate, the
+        /// discarded RandomRanged per dimension over two (the oracle requires
+        /// the rows to pin each range, `centre_mark_discard_pins`), the roll,
+        /// the placer's CanPlace sweep and pick, Place's footprint, the shared
+        /// dummy and the Scenario RNG afterwards.
         #[test]
         fn centre_mark_matches_the_original_for_every_foundation() {
             use crate::sim::smudge_grid::oracle_fixture::{self, corpus, int};
@@ -911,7 +912,6 @@ mod dispatch_tests {
             let rows = corpus()["centre_mark"].as_array().unwrap();
             assert_eq!(rows.len(), 176);
             for row in rows {
-                assert!(!oracle_fixture::passed_on_dummy(row));
                 let input = &row["input"];
                 let mut map = oracle_fixture::map(input["map"].as_str().unwrap());
                 let before = map.smudges.clone();
@@ -943,7 +943,7 @@ mod dispatch_tests {
                     &mut tiberium,
                     &mut rng,
                 );
-                oracle_fixture::assert_marks(&before, &map.smudges, row);
+                oracle_fixture::assert_marks(&before, &map.smudges, &map.terrain, row);
                 assert_eq!(
                     rng.native_state_hex(),
                     row["rng_after"].as_str().unwrap(),

@@ -7,7 +7,7 @@
     1,
     33621247
   ],
-  "scope": "A retail GAPOWR's death anims: TechnoClass::ReceiveDamage's debris block 0x00702281..0x00702572 (count draw, DebrisAnims arm, each piece's AnimClass constructor and Start) then BuildingClass::DestructionEffects steps 7 and 8 0x0044177E..0x00441A2B (the centre scorch/crater roll and real placer, the per-foundation-cell scatter, delay and Explosion= pick, constructor and Start), over ten Scenario seeds at two retail Dustbowl Locations: the fixture's, whose cells carry ore, so CanPlace admits no SmudgeType and step 7 draws only its roll, and clean ground where the placer's pick and SmudgeTypeClass::Place 0x006B6080 mark the map; CanPlace 0x006B5F80 and GetCell 0x005657A0 run natively over MapClass's cell table (smudge_can_place).",
+  "scope": "A retail GAPOWR's death anims: TechnoClass::ReceiveDamage's debris block 0x00702281..0x00702572 (count draw, DebrisAnims arm, each piece's AnimClass constructor and Start) then BuildingClass::DestructionEffects steps 7 and 8 0x0044177E..0x00441A2B (the centre scorch/crater roll and real placer, the per-foundation-cell scatter, delay and Explosion= pick, constructor and Start), over ten Scenario seeds at three retail Dustbowl Locations: the fixture's, whose cells carry ore, so CanPlace admits no SmudgeType and step 7 draws only its roll, and two clean ones (no 2x2 fits at the first; at the second the 2x2 types are preferred) where the placer's pick and SmudgeTypeClass::Place 0x006B6080 mark the map; CanPlace 0x006B5F80 and GetCell 0x005657A0 run natively over MapClass's cell table (smudge_can_place).",
   "assumptions": [
     "x87 control word 0x0E7F (PC53, chop) on entry, as anim_bouncer_launch.",
     "No Scenario draw separates the debris block from step 7 for a GAPOWR (the death sounds use the NonCritical stream; steps 1-6 of DestructionEffects draw nothing for it); the two blocks run back to back on one stream.",
@@ -34,5 +34,5 @@
     "place": "0x006B6080",
     "seed": "0x0065C6D0"
   },
-  "payload_sha256": "e014e673ce748129f69cd484cdc0387a7241f903a90cd4fb4993a52910d8b34b"
+  "payload_sha256": "484e24192039c3381f87c897c4572cf61965f97639a245eacf229ee0b5d75a65"
 }
