@@ -13,10 +13,9 @@
 //! aircraft type that fits beside the player, so the map-load unit atlas holds
 //! nearly every stock voxel model (used to compare two builds' sprites).
 //!
-//! Run (release, so timings resemble the shipped game; the lib tests need
-//! debug assertions):
-//! RA2_DIR=<retail root> cargo --config 'profile.release.package.vera20k.debug-assertions=true' \
-//!     test -p vera20k --lib --release retail_atlas_refresh_costs -- --ignored --nocapture
+//! Run (release, so timings resemble the shipped game):
+//! RA2_DIR=<retail root> cargo test -p vera20k --lib --release \
+//!     retail_atlas_refresh_costs -- --ignored --nocapture
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;

@@ -1027,12 +1027,9 @@ impl Simulation {
             },
             bounce: None,
         };
-        debug_assert!(
-            self.substrate
-                .multiplayer_feedback_anims
-                .insert(object)
-                .is_none()
-        );
+        // The insert stays outside `debug_assert!`, which release builds drop.
+        let replaced = self.substrate.multiplayer_feedback_anims.insert(object);
+        debug_assert!(replaced.is_none());
         self.anim_start(stable_id, &config, rules, None);
         Ok(stable_id)
     }
