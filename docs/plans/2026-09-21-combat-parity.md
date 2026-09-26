@@ -986,6 +986,7 @@ Sidecars record binary identity; landing-era SHA-256 `1cdd1180e49024fbda8ad568ca
 | fire_error | `6FC0B0` through `740FD0`/`51C8B0`/`447F10`/`41A9E0`, with GetWeapon, `6F3970`, `4555D0`, `4527D0`, the timers and spawn counts | 1191 | InRange, flying, layer, cells, sensor, alliance, bridge, CanInfect, CanCapture, locomotor and facing queries supplied |
 | jumpjet_infantry_actions | Do_Action `51D6F0`; `520F40`; the sequencer `520AE0`'s default arm and tables; the firing arm; on the real Jumpjet locomotor | 531 | retail `[RocketeerSequence]` records only; no walker |
 | jumpjet_infantry_crash | the Infantry kill (Stun `4D5660`, Stop_Driver `51DAF0`, Crash `4DEBB0`), then per frame the Health reset `51BC57`, the stage tick `6FABC4`, Process `54AEC0` with the impact notice `522A60`, the sequencer and `520F40` | 9 (255 frames) | radio, Detach_All, KillPassengers, SetHeight, UnInit seamed; no mission or scans; no bridge |
+| passive_acquire_gate | `709290` with `7091D0` (the team arm, CanAcquireTarget, the parked Move arms, OpportunityFire, the Guard AreaFire refusal) | 51 | queries and `50B730`/`4722A0` supplied; no planning token in VERA |
 | launch_scatter (`tools/projectile_oracle`) | `6FE663..6FE8EE`; `46A5B2..46A875`, `46AA66..46AD29`; `49F420`; the cluster loop `469008..469091` (with Sqrt_Approx, sin/cos/atan2, ftol) | 87 + 54 + 792 + 6 | draws, GetWeaponRange, GetCoords supplied; child launch and DetonateAtCoord observed |
 
 Also `tools/infantry_scatter_oracle`, `tools/mcv_deploy_oracle`. Pre-branch main harnesses (review): techno_target_scan 171,
@@ -1003,6 +1004,7 @@ All saved and read back; no byte or prototype edits. One boundary repair (below,
 - `54CA90` JumpjetLocomotionClass__State5_Crash (was State5_Touchdown); `54AE50` JumpjetLocomotionClass__Is_Moving
 - `520F40` InfantryClass__Movement_Actions (was FootClass__Locomotion_AI); EOLs `521161`, `52117D`, `521228`, `52123C` (the airborne Fly/Hover arm), `51D8C3` (Do_Action's Ready->Hover remap), `51DA96` (Health-0 Stop_Driver re-entry), `520827` (FireFly), `4D3710` (SetSpeedFraction)
 - Jumpjet Infantry crash: EOLs `5180FE` (the death arm's Stop_Driver and Stun), `518313` (JumpJet= InfantryExplode), `5185F1` (the Crashable= crash), `54B02C` (the latch's AirDeathStart; `54AF2E` restated), `522AF7`/`522B9B` (the Infantry impact notice), `51BC57` (the Health reset), `51BF6A` (sequencer then tail), `520BB9`/`520CB8` (the AirDeath arms; `520E42` restated), `6FABC4` (the stage tick), `51DA96`/`51D919` restated; `522CB0` plate (inline copies `51BC5E`, `51C8B8`); label `522C60` InfantryClass__Is_Death_DoType (unreferenced)
+- Parked passive acquire: `709290` plate (the gate's order); EOLs `709301`, `709366` (the Move arms), `747699` (IsSimpleDeployer=); `636DC0` PlanningToken__Node_Count (was FUN_00636dc0)
 - Missions: `417300` Patrol, `4158E0` ParadropApproach, `415960` ParadropOverfly, `4155F0` SpyplaneApproach, `4157C0` SpyplaneOverfly
 - `4197C0` FindFireLocation (was Find_Approach_Cell)
 - `4CE680` Takeoff_Facing_Callback (was Ascent_Step); `4CD2A0` Process_Phase_Transitions; `4CFE20` Get_Current_Speed

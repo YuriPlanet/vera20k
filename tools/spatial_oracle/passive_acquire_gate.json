@@ -1,0 +1,1062 @@
+[
+  {
+    "input": {
+      "name": "parked_rocketeer"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "cell"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "name": "nav_com_other",
+      "nav_com": "other"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "cell",
+        "what_am_i",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "name": "nav_com_none",
+      "nav_com": null
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "cell",
+        "what_am_i",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "name": "token_0",
+      "token": 0
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "cell"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "name": "token_-1",
+      "token": -1
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "cell"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "name": "token_1",
+      "token": 1
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "cell",
+        "what_am_i",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "name": "token_7",
+      "token": 7
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "cell",
+        "what_am_i",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "foot": false,
+      "name": "balloon_not_foot"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "balloon_hover": false,
+      "name": "not_balloon"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "what_am_i",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "mission": "attack",
+      "name": "attack_mission"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "mission": "sleep",
+      "name": "sleep_mission"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "mission": "hunt",
+      "name": "hunt_mission"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "mission": "area_guard",
+      "name": "area_guard_mission"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "mission": "none",
+      "name": "none_mission"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "name": "opportunity_fire_elsewhere",
+      "nav_com": "other",
+      "opportunity_fire": true
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "cell",
+        "what_am_i",
+        "type"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "mission": "attack",
+      "name": "opportunity_fire_attack",
+      "opportunity_fire": true
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "class": "unit",
+      "name": "balloon_unit"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "cell"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "class": "aircraft",
+      "name": "balloon_aircraft"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "cell"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "class": "building",
+      "name": "balloon_building"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "balloon_hover": true,
+      "class": "unit",
+      "name": "unit_simple1_balloon1_own",
+      "nav_com": "own",
+      "simple_deployer": true
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "cell"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "balloon_hover": true,
+      "class": "unit",
+      "name": "unit_simple1_balloon1_other",
+      "nav_com": "other",
+      "simple_deployer": true
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "cell",
+        "what_am_i",
+        "what_am_i",
+        "cell",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "balloon_hover": false,
+      "class": "unit",
+      "name": "unit_simple1_balloon0_own",
+      "nav_com": "own",
+      "simple_deployer": true
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "what_am_i",
+        "what_am_i",
+        "cell"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "balloon_hover": false,
+      "class": "unit",
+      "name": "unit_simple1_balloon0_other",
+      "nav_com": "other",
+      "simple_deployer": true
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "what_am_i",
+        "what_am_i",
+        "cell",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "balloon_hover": true,
+      "class": "unit",
+      "name": "unit_simple0_balloon1_own",
+      "nav_com": "own",
+      "simple_deployer": false
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "cell"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "balloon_hover": true,
+      "class": "unit",
+      "name": "unit_simple0_balloon1_other",
+      "nav_com": "other",
+      "simple_deployer": false
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "cell",
+        "what_am_i",
+        "what_am_i",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "balloon_hover": false,
+      "class": "unit",
+      "name": "unit_simple0_balloon0_own",
+      "nav_com": "own",
+      "simple_deployer": false
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "what_am_i",
+        "what_am_i",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "balloon_hover": false,
+      "class": "unit",
+      "name": "unit_simple0_balloon0_other",
+      "nav_com": "other",
+      "simple_deployer": false
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "what_am_i",
+        "what_am_i",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "balloon_hover": false,
+      "name": "simple_deployer_infantry",
+      "simple_deployer": true
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "what_am_i",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "balloon_hover": false,
+      "class": "unit",
+      "name": "unit_simple_token_1",
+      "simple_deployer": true,
+      "token": 1
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "what_am_i",
+        "what_am_i",
+        "cell",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "name": "warping",
+      "warping": 1
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "name": "slave",
+      "slave": true
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "can_passive_acquire": false,
+      "name": "no_passive_acquire"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "capture_full": true,
+      "name": "capture_full"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "capture_full",
+        "engineer"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "capture_full": false,
+      "name": "capture_not_full"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "capture_full",
+        "engineer",
+        "armed",
+        "type",
+        "cell"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "engineer": 1,
+      "name": "engineer_human"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "human"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "engineer": 1,
+      "human": false,
+      "name": "engineer_ai"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "human",
+        "armed",
+        "type",
+        "cell"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "armed": 0,
+      "name": "unarmed"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "balloon_hover": false,
+      "can_be_occupied": true,
+      "class": "building",
+      "mission": "guard",
+      "name": "empty_garrison",
+      "nav_com": null,
+      "occupants": 0
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "occupants"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "balloon_hover": false,
+      "can_be_occupied": true,
+      "class": "building",
+      "mission": "guard",
+      "name": "garrisoned",
+      "nav_com": null,
+      "occupants": 2
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "occupants",
+        "engineer",
+        "armed",
+        "type",
+        "weapon_slot",
+        "weapon",
+        "select_weapon"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "armed": 0,
+      "human": false,
+      "name": "team_aggr1_suicide0",
+      "nav_com": "other",
+      "team": {
+        "aggressive": true,
+        "suicide": false
+      }
+    },
+    "output": {
+      "calls": [
+        "human"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "armed": 0,
+      "human": false,
+      "name": "team_aggr1_suicide1",
+      "nav_com": "other",
+      "team": {
+        "aggressive": true,
+        "suicide": true
+      }
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "armed": 0,
+      "human": false,
+      "name": "team_aggr0_suicide0",
+      "nav_com": "other",
+      "team": {
+        "aggressive": false,
+        "suicide": false
+      }
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "armed": 0,
+      "human": false,
+      "name": "team_aggr0_suicide1",
+      "nav_com": "other",
+      "team": {
+        "aggressive": false,
+        "suicide": true
+      }
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "armed": 0,
+      "human": false,
+      "name": "team_with_target",
+      "nav_com": "other",
+      "target": true,
+      "team": {
+        "aggressive": true,
+        "suicide": false
+      }
+    },
+    "output": {
+      "calls": [
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "armed": 0,
+      "human": true,
+      "name": "team_human",
+      "nav_com": "other",
+      "team": {
+        "aggressive": true,
+        "suicide": false
+      }
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "area_fire": false,
+      "mission": "guard",
+      "name": "guard_area0_select0",
+      "nav_com": "other",
+      "select_weapon": 0,
+      "weapon_slot": 1
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "weapon_slot",
+        "weapon",
+        "select_weapon"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "area_fire": false,
+      "mission": "guard",
+      "name": "guard_area0_select1",
+      "nav_com": "other",
+      "select_weapon": 1,
+      "weapon_slot": 1
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "weapon_slot",
+        "weapon",
+        "select_weapon"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "area_fire": true,
+      "mission": "guard",
+      "name": "guard_area1_select0",
+      "nav_com": "other",
+      "select_weapon": 0,
+      "weapon_slot": 1
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "weapon_slot",
+        "weapon",
+        "select_weapon"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "area_fire": true,
+      "mission": "guard",
+      "name": "guard_area1_select1",
+      "nav_com": "other",
+      "select_weapon": 1,
+      "weapon_slot": 1
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "weapon_slot",
+        "weapon",
+        "select_weapon"
+      ],
+      "passes": false
+    }
+  },
+  {
+    "input": {
+      "has_weapon": false,
+      "mission": "guard",
+      "name": "guard_no_weapon",
+      "nav_com": "other"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "weapon_slot",
+        "weapon",
+        "select_weapon"
+      ],
+      "passes": true
+    }
+  },
+  {
+    "input": {
+      "mission": "guard",
+      "name": "guard_parked"
+    },
+    "output": {
+      "calls": [
+        "human",
+        "warping",
+        "type",
+        "what_am_i",
+        "engineer",
+        "armed",
+        "type",
+        "weapon_slot",
+        "weapon",
+        "select_weapon"
+      ],
+      "passes": true
+    }
+  }
+]

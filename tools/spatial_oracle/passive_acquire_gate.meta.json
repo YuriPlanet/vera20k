@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original TechnoClass::PassiveAcquireGate 0x00709290 with its CanAcquireTarget 0x007091D0, on a scratch object: the computer team arm, CanAcquireTarget, the Move arms for a parked BalloonHover= Foot and IsSimpleDeployer= Unit (0x00709301..0x007093D3), OpportunityFire= and the Guard AreaFire refusal.",
+  "assumptions": [
+    "The object +0x14 bit 2 is AbstractClass IsFoot; +0x5A4 NavCom, +0x514 the waypoint-planning token (its +0x14 read by 0x00636DC0), +0x5D4 Team (TeamType +0x24: Suicide +0xAF, Aggressive +0xAD), +0x2DC slave owner, +0x2BC CaptureManager, +0x520 the building type (+0x157B CanBeOccupied), a Unit's +0x6C4 type (+0xE13 IsSimpleDeployer); TechnoType BalloonHover +0xD6A, CanPassiveAquire +0xD99, OpportunityFire +0x6AF."
+  ],
+  "substitutions": [
+    "Scratch vtable queries (what_am_i, type, warping, occupants, engineer, armed, cell, weapon_slot, weapon, select_weapon) return the row's values; HouseClass 0x0050B730 (human) and CaptureManagerClass 0x004722A0 (full) are entry-hooked returns."
+  ],
+  "entry_points": {
+    "passive_acquire_gate": "0x00709290",
+    "can_acquire_target": "0x007091D0"
+  },
+  "payload_sha256": "6ae7927fba95b547defa4767a05bd681fdcd74e9a56e096a742f1c47b08495fa"
+}
