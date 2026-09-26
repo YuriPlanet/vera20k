@@ -180,7 +180,6 @@ opt-level = 1
 # `cargo test` inherits the dev profile (dependencies stay at opt-level 1) but
 # compiles vera20k unoptimized. Measured on an M4 Mac mini on 2026-09-26:
 # incremental lib test builds fell from 78-117 s to 24-59 s, while the full lib
-# suite's run time rose from 12 s to 55-93 s. Timing benchmarks need an optimized
-# build: see the release command in src/render/atlas_refresh_retail_tests.rs.
+# suite's run time rose from 12 s to 55-93 s. Run timing benchmarks with --release.
 [profile.test]
 opt-level = 0

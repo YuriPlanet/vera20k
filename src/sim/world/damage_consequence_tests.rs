@@ -84,6 +84,7 @@ fn delivered_ids(sim: &Simulation) -> Vec<u64> {
     let live = sim.live_object_order_snapshot();
     let selected: Vec<_> = live.into_iter().filter(|id| ids.contains(id)).collect();
     assert_eq!(selected, ids);
+    #[cfg(debug_assertions)]
     sim.debug_assert_logic_membership_consistent();
     ids
 }
