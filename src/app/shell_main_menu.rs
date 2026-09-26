@@ -1107,6 +1107,8 @@ impl App {
             ShellExitThen::ChooseMapUse(selection) => Self::commit_choose_map_use(state, selection),
             ShellExitThen::ChooseMapCancel => Self::close_choose_map_modal(state),
             ShellExitThen::ChooseMapRandomMap => Self::commit_choose_map_random_map(state),
+            ShellExitThen::RandomMapUse => Self::accept_random_map_setup(state),
+            ShellExitThen::RandomMapCancel => Self::cancel_random_map_setup(state),
             ShellExitThen::WolBack => Self::return_from_wol(state),
             ShellExitThen::ScoreContinue => Self::leave_mission_result_screen(state),
             ShellExitThen::WolApiMissing => Self::commit_wol_api_missing(state),

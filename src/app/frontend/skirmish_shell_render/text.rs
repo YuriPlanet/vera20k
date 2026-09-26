@@ -13,14 +13,15 @@ use crate::render::shell_text::{self, ShellAlign, ShellTextDraw, TextRect};
 use crate::skirmish_modes::mode_by_id;
 use crate::ui::main_menu::SkirmishCountry;
 use crate::ui::shell::modal::BodyOkLayout;
+use crate::ui::shell::static_reveal::StaticPaint;
 use crate::ui::skirmish_shell::{
-    CHOOSE_MAP_TITLE_KEY, COMBO_DROPDOWN_ROW_H, COMBO_FACE_H, COMBO_TEXT_LEFT_INSET,
-    ChooseMapModalButton, ChooseMapModalLayout, OwnerDrawButton, RandomMapSetupLayout, RectPx,
+    COMBO_DROPDOWN_ROW_H, COMBO_FACE_H, COMBO_TEXT_LEFT_INSET, ChooseMapModalButton,
+    ChooseMapModalLayout, OwnerDrawButton, RandomMapSetupControl, RandomMapSetupLayout, RectPx,
     SETUP_COMBO_ROWS, SavedSeedLayout, SkirmishAiRowType, SkirmishCheckboxId, SkirmishComboId,
     SkirmishComboItem, SkirmishCountryChoice, SkirmishShellLayout, SkirmishShellOpponent,
-    SkirmishShellState, SkirmishTrackbarId, StaticPaint, checkbox_text_rect,
-    combo_dropdown_content_rect, combo_dropdown_rect, combo_dropdown_visible_row_count,
-    combo_enabled, combo_items, combo_text_rect, player_name_edit_text_rect, player_row_visible,
+    SkirmishShellState, SkirmishTrackbarId, checkbox_text_rect, combo_dropdown_content_rect,
+    combo_dropdown_rect, combo_dropdown_visible_row_count, combo_enabled, combo_items,
+    combo_text_rect, player_name_edit_text_rect, player_row_visible,
     random_map_setup_dropdown_rect, setup_combo_items, trackbar_value_text_rect,
     trackbar_visual_value,
 };
@@ -165,10 +166,11 @@ pub(super) fn button_label_color() -> [f32; 3] {
 }
 
 /// Retail provenance: disabled `OwnerDraw_Button_00612B70` replaces the normal
-/// yellow label with its disabled palette color at `0x00612F5F`.
+/// yellow label with its disabled color at `0x00612F5F`
+/// ([`crate::render::shell_paint::SHELL_TEXT_RGB_DISABLED`]).
 pub(super) fn button_label_color_for_disabled(disabled: bool) -> [f32; 3] {
     if disabled {
-        SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
+        crate::render::shell_paint::SHELL_TEXT_RGB_DISABLED
     } else {
         button_label_color()
     }
@@ -435,52 +437,74 @@ pub(crate) fn skirmish_right_panel_label_strings(state: &AppState) -> (String, S
     (title, game_type, map_label)
 }
 
-/// Paint `0x102`'s kind-1 statics for this recomposition: the heading, game
-/// type and map name centred in their windows and the status line top-left
+/// A kind-1 static's label: the Path-A reveal of its text in its window
 /// (kind-1 paint passes the window's horizontal alignment only,
-/// `0x00615A81`). Hidden statics and a blank status line draw nothing.
-pub(super) fn paint_skirmish_statics(
-    state: &mut AppState,
-    layout: &SkirmishShellLayout,
-) -> Vec<PaintLabel<'static>> {
-    let paint = state
-        .frontend
-        .skirmish_shell_state
-        .statics
-        .paint(std::time::Instant::now());
-    let label = |shown: StaticPaint<'_>, rect: RectPx, align: ShellAlign| PaintLabel {
+/// `0x00615A81`).
+pub(super) fn static_label(
+    shown: StaticPaint<'_>,
+    rect: RectPx,
+    align: ShellAlign,
+) -> PaintLabel<'static> {
+    PaintLabel {
         text: shown.text.to_owned().into(),
         rect,
         align,
         rgb: SHELL_LABEL_TEXT_RGB,
         path_a_reveal: Some(shell_reveal_path_a(shown.window)),
-    };
+    }
+}
+
+/// A status line's label, top-left in its window; nothing while it is
+/// hidden or blank.
+pub(super) fn status_line_label(
+    shown: Option<StaticPaint<'_>>,
+    rect: RectPx,
+) -> Option<PaintLabel<'static>> {
+    shown
+        .filter(|shown| !shown.text.is_empty())
+        .map(|shown| static_label(shown, rect, ShellAlign::NONE))
+}
+
+/// Paint `0x102`'s kind-1 statics for this recomposition. While a slide runs
+/// it blits the top panel over the heading, game type and map name; the
+/// status line keeps what it painted when the dialog showed.
+pub(super) fn paint_skirmish_statics(
+    state: &mut AppState,
+    layout: &SkirmishShellLayout,
+    sliding: bool,
+) -> Vec<PaintLabel<'static>> {
+    let shown = state
+        .frontend
+        .skirmish_shell_state
+        .statics
+        .paint(std::time::Instant::now(), sliding);
+    let text = &layout.right_panel_text;
     [
-        paint
-            .heading
-            .map(|shown| label(shown, layout.right_panel_text.title, ShellAlign::H_CENTER)),
-        paint.game_type.map(|shown| {
-            label(
-                shown,
-                layout.right_panel_text.game_type,
-                ShellAlign::H_CENTER,
-            )
-        }),
-        paint.map_label.map(|shown| {
-            label(
-                shown,
-                layout.right_panel_text.map_label,
-                ShellAlign::H_CENTER,
-            )
-        }),
-        paint
-            .status_line
-            .filter(|shown| !shown.text.is_empty())
-            .map(|shown| label(shown, layout.status_help, ShellAlign::NONE)),
+        (shown.heading, text.title),
+        (shown.game_type, text.game_type),
+        (shown.map_label, text.map_label),
     ]
     .into_iter()
-    .flatten()
+    .filter_map(|(shown, rect)| shown.map(|shown| static_label(shown, rect, ShellAlign::H_CENTER)))
+    .chain(status_line_label(shown.status_line, layout.status_help))
     .collect()
+}
+
+/// A family dialog's heading and status line for this recomposition
+/// ([`crate::ui::shell::static_reveal::DialogStatics::paint`]).
+pub(super) fn dialog_statics_labels(
+    statics: &mut crate::ui::shell::static_reveal::DialogStatics,
+    title: RectPx,
+    status_line: RectPx,
+    sliding: bool,
+) -> Vec<PaintLabel<'static>> {
+    let shown = statics.paint(std::time::Instant::now(), sliding);
+    shown
+        .heading
+        .map(|shown| static_label(shown, title, ShellAlign::H_CENTER))
+        .into_iter()
+        .chain(status_line_label(shown.status_line, status_line))
+        .collect()
 }
 
 pub(super) fn push_player_name_edit_text_draw(
@@ -789,20 +813,12 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     out: &mut Vec<ShellTextDraw>,
     state: &AppState,
     layout: &RandomMapSetupLayout,
+    // While a slide runs the column draws the right buttons without captions.
+    sliding: bool,
 ) {
     let Some(modal) = state.frontend.skirmish_shell_state.random_map_setup_modal.as_ref() else {
         return;
     };
-
-    push_text_draw(
-        out,
-        state,
-        &localized_label(state, "GUI:GenerateMap", "Generate Map"),
-        rect_to_text_rect(layout.title),
-        SHELL_LABEL_TEXT_RGB,
-        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-        SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
-    );
 
     // Row order: map type, time, theater, size, resources, players. The 0x405
     // label reads "Environment" even though the control writes the map type.
@@ -828,25 +844,86 @@ pub(super) fn push_random_map_setup_modal_text_draws(
         );
     }
 
-    for (key, fallback, rect) in [
-        ("GUI:SurpriseMe", "Surprise Me", layout.randomize),
-        ("GUI:PreviewMap", "Preview Map", layout.generate),
-        ("GUI:UseMap", "Use Map", layout.use_map),
-        ("GUI:LoadMap", "Load Map", layout.load),
-        ("GUI:SaveMap", "Save Map", layout.save),
-        ("GUI:DeleteMap", "Delete Map", layout.delete),
-        ("GUI:Cancel", "Cancel", layout.cancel),
+    for (key, fallback, rect, control) in [
+        (
+            "GUI:SurpriseMe",
+            "Surprise Me",
+            layout.randomize,
+            RandomMapSetupControl::Randomize0x621,
+        ),
+        (
+            "GUI:PreviewMap",
+            "Preview Map",
+            layout.generate,
+            RandomMapSetupControl::Generate0x620,
+        ),
     ] {
         push_text_draw(
             out,
             state,
             &localized_label(state, key, fallback),
             rect_to_text_rect(rect),
-            SHELL_LABEL_TEXT_RGB,
+            button_label_color_for_disabled(!modal.is_enabled(control)),
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
             SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
         );
     }
+    // The column's owner-draw type-1 captions, as on `0x102` and `0x6B`.
+    for (key, fallback, rect, control) in [
+        (
+            "GUI:UseMap",
+            "Use Map",
+            layout.use_map,
+            RandomMapSetupControl::Ok0x6c5,
+        ),
+        (
+            "GUI:LoadMap",
+            "Load Map",
+            layout.load,
+            RandomMapSetupControl::Load0x6c2,
+        ),
+        (
+            "GUI:SaveMap",
+            "Save Map",
+            layout.save,
+            RandomMapSetupControl::Save0x6c3,
+        ),
+        (
+            "GUI:DeleteMap",
+            "Delete Map",
+            layout.delete,
+            RandomMapSetupControl::Delete0x6c4,
+        ),
+        (
+            "GUI:Cancel",
+            "Cancel",
+            layout.cancel,
+            RandomMapSetupControl::Cancel0x5c0,
+        ),
+    ]
+    .into_iter()
+    .filter(|_| !sliding)
+    {
+        push_text_draw(
+            out,
+            state,
+            &localized_label(state, key, fallback),
+            button_text_rect(rect, modal.pressed_control == Some(control)),
+            button_label_color_for_disabled(!modal.is_enabled(control)),
+            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
+        );
+    }
+
+    // An open list covers the faces and the trackbar under it; each ends in
+    // the gap above a row, so a covered text is covered whole.
+    let open_list: Vec<RectPx> = modal
+        .open_combo
+        .map(|combo| {
+            random_map_setup_dropdown_rect(layout, combo.row(), setup_combo_items(combo).len())
+        })
+        .into_iter()
+        .collect();
 
     // Selected entry on each closed combo face. A value with no entry -- map
     // type 0, which the list omits -- leaves the face blank, as the original's
@@ -856,12 +933,16 @@ pub(super) fn push_random_map_setup_modal_text_draws(
         let Some(selected) = modal.selected_item_index(*combo) else {
             continue;
         };
+        let rect = combo_text_rect(layout.control_rects[row]);
+        if text_covered_by_overlay(rect, &open_list) {
+            continue;
+        }
         let entry = items[selected];
         push_text_draw(
             out,
             state,
             &localized_label(state, entry.key, entry.fallback),
-            rect_to_text_rect(combo_text_rect(layout.control_rects[row])),
+            rect_to_text_rect(rect),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::V_CENTER,
             SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
@@ -869,15 +950,18 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     }
 
     // The players trackbar carries its value in the plaque at its right end.
-    push_text_draw(
-        out,
-        state,
-        &modal.options.num_players.to_string(),
-        rect_to_text_rect(trackbar_value_text_rect(layout.control_rects[PLAYERS_ROW])),
-        SHELL_LABEL_TEXT_RGB,
-        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-        SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
-    );
+    let value_rect = trackbar_value_text_rect(layout.control_rects[PLAYERS_ROW]);
+    if !text_covered_by_overlay(value_rect, &open_list) {
+        push_text_draw(
+            out,
+            state,
+            &modal.options.num_players.to_string(),
+            rect_to_text_rect(value_rect),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
+        );
+    }
 
     if modal.generating {
         push_text_draw(
@@ -916,32 +1000,19 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     }
 }
 
-/// Text of Choose Map `0x6B`. The heading is the family kind-1 static (its
-/// reveal starts when the entry slide ends); the status line is painted by
-/// the caller. While a slide runs the column draws the buttons without
-/// captions; the labels and lists (left-side children) still paint.
+/// Text of Choose Map `0x6B` besides its heading and status line, which the
+/// caller paints ([`dialog_statics_labels`]). While a slide runs the column
+/// draws the buttons without captions; the labels and lists (left-side
+/// children) still paint.
 pub(super) fn push_choose_map_modal_text_draws(
     out: &mut Vec<ShellTextDraw>,
     state: &AppState,
     layout: &ChooseMapModalLayout,
-    title: Option<crate::ui::shell::static_reveal::Kind1RevealWindow>,
     sliding: bool,
 ) {
     let Some(modal) = state.frontend.skirmish_shell_state.choose_map_modal.as_ref() else {
         return;
     };
-    if let Some(window) = title {
-        let heading = localized_label(state, CHOOSE_MAP_TITLE_KEY, "Choose Map");
-        out.push(shell_text::draw_in_rect_path_a(
-            &state.renderer.bit_font,
-            &heading,
-            rect_to_text_rect(layout.title),
-            ShellAlign::H_CENTER,
-            [0.0; 2],
-            SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
-            crate::app::frontend::main_menu_shell_render::shell_reveal_path_a(window),
-        ));
-    }
     for (key, fallback, rect) in [
         (
             "GUI:SelectEngagement",
@@ -1125,6 +1196,36 @@ mod tests {
         assert!(text_covered_by_overlay(covered_combo_text, &[dropdown]));
         assert!(!text_covered_by_overlay(clear_combo_text, &[dropdown]));
         assert!(!text_covered_by_overlay(covered_combo_text, &[]));
+    }
+
+    /// `0x105` hides a text an open list touches; that is exact only while
+    /// every list ends in the gap between rows.
+    #[test]
+    fn every_random_map_list_covers_the_texts_under_it_whole() {
+        for (width, height) in [(640, 480), (800, 600), (1024, 768)] {
+            let layout = crate::ui::skirmish_shell::compute_random_map_setup_layout(width, height);
+            let texts: Vec<RectPx> = (0..PLAYERS_ROW)
+                .map(|row| combo_text_rect(layout.control_rects[row]))
+                .chain([trackbar_value_text_rect(layout.control_rects[PLAYERS_ROW])])
+                .collect();
+            for combo in SETUP_COMBO_ROWS {
+                let list = random_map_setup_dropdown_rect(
+                    &layout,
+                    combo.row(),
+                    setup_combo_items(combo).len(),
+                );
+                for text in &texts {
+                    let inside = text.x >= list.x
+                        && text.y >= list.y
+                        && text.x + text.w <= list.x + list.w
+                        && text.y + text.h <= list.y + list.h;
+                    assert!(
+                        !text_covered_by_overlay(*text, &[list]) || inside,
+                        "{width}x{height}: {combo:?}'s list {list:?} cuts {text:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

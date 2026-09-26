@@ -686,11 +686,14 @@ impl App {
         if let Some(page) = state.frontend.score_page.as_mut() {
             page.commit_presented();
         }
-        state
-            .frontend
-            .skirmish_shell_state
-            .statics
-            .commit_presented();
+        let skirmish = &mut state.frontend.skirmish_shell_state;
+        skirmish.statics.commit_presented();
+        if let Some(modal) = skirmish.choose_map_modal.as_mut() {
+            modal.statics.commit_presented();
+        }
+        if let Some(setup) = skirmish.random_map_setup_modal.as_mut() {
+            setup.statics.commit_presented();
+        }
         if let Some(token) = pending_main_menu_entry_token.take() {
             crate::app::frontend::shell_transition::record_main_menu_entry_presented(state, token)?;
         }

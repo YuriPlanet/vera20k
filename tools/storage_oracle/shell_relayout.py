@@ -131,11 +131,14 @@ class Image:
 
 
 def parse_template(data):
-    """DLGTEMPLATEEX (the shell dialogs' form): the controls in template order."""
-    if struct.unpack_from("<HH", data, 0) != (1, 0xFFFF):
-        raise OracleError("expected a DLGTEMPLATEEX")
-    _help, _exstyle, style, count = struct.unpack_from("<IIIH", data, 4)
-    offset = 26
+    """DLGTEMPLATE or DLGTEMPLATEEX: the controls in template order."""
+    extended = struct.unpack_from("<HH", data, 0) == (1, 0xFFFF)
+    if extended:
+        _help, _exstyle, style, count = struct.unpack_from("<IIIH", data, 4)
+        offset = 26
+    else:
+        style, _exstyle, count = struct.unpack_from("<IIH", data, 0)
+        offset = 18
 
     def variable():
         nonlocal offset
@@ -149,15 +152,20 @@ def parse_template(data):
         return data[start:offset - 2].decode("utf-16-le")
 
     variable(), variable(), variable()  # Menu, class, title.
-    if style & 0x40:  # DS_SETFONT: point size, weight, italic, charset, face.
-        offset += 6
+    if style & 0x40:  # DS_SETFONT: point size (EX: weight, italic, charset), face.
+        offset += 6 if extended else 2
         variable()
     controls = []
     for _ in range(count):
         offset = (offset + 3) & ~3
-        _help, _exstyle, control_style, x, y, w, h, control = struct.unpack_from(
-            "<III4hI", data, offset)
-        offset += 24
+        if extended:
+            _help, _exstyle, control_style, x, y, w, h, control = struct.unpack_from(
+                "<III4hI", data, offset)
+            offset += 24
+        else:
+            control_style, _exstyle, x, y, w, h, control = struct.unpack_from(
+                "<II4hH", data, offset)
+            offset += 18
         kind, caption = variable(), variable()
         offset += 2 + struct.unpack_from("<H", data, offset)[0]
         controls.append({"id": control, "class": CLASSES.get(kind, kind),

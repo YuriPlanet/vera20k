@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "A dying Unit's passengers (UnitClass::ReceiveDamage 0x737F80..0x7381BC, after its Mark(UP)): the open-topped clear, the height kill, the Crashable skip and the escape loop, with native Can_Enter_Cell, Unlimbo placement and occupation, Scatter (its Scenario draw and Find_Nearby_Passable_Cell) and Queue_Mission. Infantry passengers of one type on flat, ramp, water and bridge cells of the 32x32 map, with standing allied or enemy infantry, one or two houses, teams and selection.",
+  "assumptions": [
+    "The refinery_dock fixture (seed 31, the row frame, default 200): its Unit on Guard, unlinked, as the transport, absent from its cell's list and bits; its House (ArrayIndex 0) human or computer by row, game mode 1.",
+    "Passengers and standing infantry: the Infantry vtable over the original Walk constructor, FacingClass ctor + SetROT(8), Strength 125, Guard, Doing 0, one unarmed InfantryType (SpeedType Foot); passengers in limbo with Transporter set, chained from the head +0x118 as boarding leaves them.",
+    "Standing infantry are listed in the cell (+0xE4 via +0x30) with their spot bit and owner index in the ground occupation, as the occupation mark leaves them.",
+    "A second house at ArrayIndex 1, allied both ways only when the row says (Allies +0x5788).",
+    "The ten Infantry startup initialisers (table 0x813490) run; LevelHeight 104 (0x89E7C0, 0xAC13C8) and the 416 bridge scalars (0xAC13BC, 0xABC5DC, 0x8B3CAC) are written as the scenario leaves them; the spot offsets 0x89E9F0, the no-spot answer 0x89E778 and the empty coordinate 0xA8F200 are written.",
+    "Water: LandType 2 with a zero ground-speed row; the fixture's LandType 0 row is 1.0. A bridge is the cell flag 0x100 on three cells in a west-east line.",
+    "The transport stands on MapClass floor 0x578080 under its XY, 416 higher on a bridge deck, plus the row height. The ReceiveDamage frame supplies the attacker ([esp+0x54], EBX), IgnoreDefenses ([esp+0x58]) and the selected-by-the-player byte ([esp+0x13])."
+  ],
+  "substitutions": [
+    "RecordKill 0x702D40, FootClass::UnInit 0x4DE5D0, the Unit RemoveGunner 0x7464E0, InfantryClass::Assign_Target 0x51B1F0, Select 0x6FBFA0, TeamClass::Add_Member 0x6EA500 and Remove_Member 0x6EA870 are recorded and return without effect.",
+    "FootClass::Unlimbo 0x4D7170 is recorded and only writes the coordinate, clears limbo and sets IsOnMap: no facing, cell list, reveal, layer or Enter_Idle_Mode. Later escapees therefore do not see earlier ones in the cell list (Can_Enter_Cell's stationary count) but do see their occupation bits and owner.",
+    "The Infantry destination setter 0x51AA40 is recorded and writes only the NavCom +0x5A4; the Walk Process slot 0x75AC80 is recorded and returns not moving."
+  ],
+  "entry_points": {
+    "escape_block": "0x00737F80",
+    "remove_first_passenger": "0x004DE710",
+    "infantry_can_enter_cell": "0x0051BF90",
+    "infantry_unlimbo": "0x0051DFF0",
+    "place_infantry_in_cell": "0x00481180",
+    "infantry_scatter": "0x0051D0D0",
+    "find_nearby_passable_cell": "0x0056DC20",
+    "kill_passengers": "0x00707CB0",
+    "queue_mission": "0x005B35E0",
+    "map_floor": "0x00578080"
+  },
+  "payload_sha256": "64cee8199fb720c171c5adda1864888bb2f0170fb7fd14455de262d4a081cdc8"
+}

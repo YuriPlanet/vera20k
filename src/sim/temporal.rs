@@ -140,9 +140,10 @@
 //! - `UnitClass::Receive_Radio` answers WANT_RIDE (`0x24`) with 0 while
 //!   warped (`0x0073745C..0x00737473`); the message is dormant in stock YR
 //!   and not represented.
-//! - A transport's death or grinding ejects its first passenger through
-//!   RemoveGunner (`0x00737FD4`, `0x0073A0C8`/`0x0073A0DF`); VERA's passenger
-//!   escape residual (`crew_survival`) covers those paths.
+//! - A transport put through a Grinder loses its passengers through
+//!   RemoveGunner (`0x0073A0C8`/`0x0073A0DF`); VERA has no grinding. A dying
+//!   transport's pop (`0x00737FD4`) runs RemoveGunner through
+//!   `DepartureRoute::DeathEscape`.
 //! - Open-topped passengers do not fire yet, so the open-topped release
 //!   (`0x0071A841`) has no production producer; the corpus pins its
 //!   boundary.

@@ -342,6 +342,8 @@ pub(super) fn push_right_panel_button_shp(
         _ => atlas.right_panel_button_sdbtnanm_frame2,
     };
     if let Some(entry) = entry {
+        // A disabled column button keeps its art: the disabled black blend
+        // runs only for owner-draw type 0 (`0x006135F3`, record `+0xB0`).
         push_entry_sized_alpha(
             out,
             entry,
@@ -349,7 +351,7 @@ pub(super) fn push_right_panel_button_shp(
             rect.y as f32,
             [rect.w as f32, rect.h as f32],
             depth,
-            right_panel_button_sdbtnanm_alpha(disabled),
+            1.0,
         );
     } else {
         push_button_30(out, atlas, rect, pressed, disabled, depth);
@@ -361,12 +363,6 @@ pub(super) const fn right_panel_button_sdbtnanm_frame_index(
     disabled: bool,
 ) -> usize {
     if pressed && !disabled { 4 } else { 2 }
-}
-
-/// Retail provenance: disabled `OwnerDraw_Button_00612B70` applies a black
-/// alpha-0x80 blend at `0x006135FD..0x0061360D` after selecting idle art.
-pub(super) const fn right_panel_button_sdbtnanm_alpha(disabled: bool) -> f32 {
-    if disabled { BUTTON_DISABLED_ALPHA } else { 1.0 }
 }
 
 /// Look up a baked SDBTNANM frame by index for the slide-in wave path.

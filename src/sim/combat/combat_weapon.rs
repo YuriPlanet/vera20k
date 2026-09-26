@@ -366,16 +366,6 @@ pub(crate) fn weapon_for_index(
     Some((weapon_id, slot))
 }
 
-/// Alias kept for the fatal-receiver Suicide gate, which stores the last
-/// selected index as a `u8`.
-pub(crate) fn weapon_for_slot_index(
-    obj: &ObjectType,
-    veterancy: u16,
-    index: i32,
-) -> Option<(&str, WeaponSlot)> {
-    weapon_for_index(obj, veterancy, index)
-}
-
 /// `GetWeapon(0)` weapon id at the given veterancy.
 pub(crate) fn primary_for_tier(obj: &ObjectType, veterancy: u16) -> Option<&str> {
     weapon_for_index(obj, veterancy, 0).map(|(weapon_id, _)| weapon_id)
