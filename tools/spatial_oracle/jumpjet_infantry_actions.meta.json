@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Jumpjet Infantry DoTypes on the original Infantry Do_Action 0x0051D6F0 and the real Jumpjet locomotor: the Ready->Hover airborne remap, gates and stage-timer writes and the Health-0 Stop_Driver re-entry; the locomotion action tail of 0x00520F40 (Fly/Hover by speed fraction, the firing latch, the return to Ready); the firing arm 0x0052078F..0x00520904 (FireFly); the DoType sequencer 0x00520AE0 default, AirDeathStart and AirDeathFinish arms. Not the stage tick, the Stun chain, the crash or anything drawn.",
+  "assumptions": [
+    "Everything jumpjet_states.States assumes, with owner RTTI 15 and the retail [JUMPJET] Jumpjet block; type JumpJet +0xD94 per row, MovementZone +0x5B4 9 (Fly); level height 104 at 0x00AC13C8; stored game speed 1 at 0x00A8EB60 unless the row says otherwise; owner +0x74 set, Health 125 unless the row says 0, stage timer (17, 91, 92) with increment 1, the owner at the height the row gives over a flat corridor; Guard with no NavCom in the movement rows; the retail [RocketeerSequence] records built by the original ReadSequenceData."
+  ],
+  "substitutions": [
+    "As jumpjet_states.States, plus: Stop_Driver (vtable +0x500) and UnInit (+0xF8) record their call and return; the OS InterlockedIncrement/Decrement imports the locomotor AddRef/Release call emulate their integer operation and stdcall cleanup; the firing arm runs as a region with EBP the owner, ECX the type and weapon index 0."
+  ],
+  "entry_points": {
+    "do_action": "0x0051D6F0",
+    "is_high_flying": "0x004DE620",
+    "movement_actions": "0x00520F40",
+    "firing_arm": "0x0052078F",
+    "sequencer": "0x00520AE0",
+    "speed_normalize": "0x005FB2E0",
+    "read_sequence_data": "0x00523D00"
+  },
+  "payload_sha256": "b8bd5b768b953c77a6c461ff0c741f2d7c9e470f8903449af715f94b785d30fa"
+}

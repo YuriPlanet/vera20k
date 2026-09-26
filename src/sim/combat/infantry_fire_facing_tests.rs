@@ -231,6 +231,91 @@ fn infantry_speed_refusal_at_fire_frame_clears_pending_sequence() {
     assert_eq!(firer.body_facing, body);
 }
 
+/// A Rocketeer (`JumpJet=` on the Jumpjet locomotor, the retail
+/// `[RocketeerSequence]`) hovering at 500 over (5, 5), firing at a GI three
+/// cells off.
+fn rocketeer_pair() -> (EntityStore, RuleSet) {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=JJ\n1=E2\n\
+         [JJ]\nStrength=125\nArmor=flak\nSpeed=9\nImage=ROCK\nPrimary=M60\nJumpJet=yes\n\
+         BalloonHover=yes\nLocomotor={92612C46-F71F-11d1-AC9F-006008055BB5}\n\
+         SpeedType=Hover\nMovementZone=Fly\nJumpjetSpeed=30\nJumpjetHeight=500\n\
+         [E2]\nStrength=125\nArmor=flak\nSpeed=4\n\
+         [M60]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\n\
+         [SA]\nVerses=100%,100%,100%,90%,70%,0%,100%,25%,25%,0%,0%\n",
+    ))
+    .unwrap();
+    let art_ini = IniFile::from_str(
+        "[ROCK]\nSequence=RocketeerSequence\nFireUp=2\n\
+         [RocketeerSequence]\nReady=0,1,1\nGuard=0,1,1\nWalk=8,6,6\nFireUp=164,6,6\n\
+         Fly=292,6,6\nHover=292,6,6\nFireFly=370,6,6\n",
+    );
+    rules.merge_art_data(&crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
+    let registry = crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini);
+    rules.replace_animation_sequences_for_test(
+        crate::rules::animation_sequence::build_animation_sequence_catalog(&rules, Some(&registry)),
+    );
+    let mut store = EntityStore::new();
+    let mut firer = make_infantry_entity(1, "JJ", 5, 5, 125);
+    firer.body_facing = Some(FacingClass::new(0x4000, 127));
+    firer.position.exact_z_leptons = Some(500);
+    let mut locomotor = crate::sim::movement::locomotor::LocomotorState::from_object_type(
+        rules.object("JJ").unwrap(),
+        0,
+    );
+    locomotor.altitude = SimFixed::from_num(500);
+    let runtime = locomotor.jumpjet_runtime_mut().unwrap();
+    runtime.phase = crate::sim::movement::jumpjet_flight::STATE_HOLD;
+    runtime.moving = true;
+    firer.locomotor = Some(locomotor);
+    store.insert(firer);
+    store.insert(make_infantry_entity(2, "E2", 8, 5, 125));
+    (store, rules)
+}
+
+/// A Rocketeer's FireFly refused at its fire frame (here by I4, the speed
+/// gate) takes the idle Do_Action (`0x00520A03..0x00520A51`): Ready, which
+/// is Hover in the air, and its Hover sequence, not the walker's Stand.
+#[test]
+fn a_rocketeer_refused_at_its_fire_frame_hovers() {
+    use crate::sim::movement::infantry_action::{DO_FIRE_FLY, DO_HOVER};
+    let (mut store, rules) = rocketeer_pair();
+    store.get_mut(1).unwrap().attack_target = Some(AttackTarget::new(2));
+    visit(&mut store, &rules, 100);
+    let doing = |store: &EntityStore| {
+        store
+            .get(1)
+            .unwrap()
+            .mission_leaf
+            .as_infantry()
+            .unwrap()
+            .doing()
+    };
+    assert_eq!(doing(&store), DO_FIRE_FLY);
+    assert_eq!(
+        store.get(1).unwrap().animation.as_ref().unwrap().sequence,
+        SequenceKind::FireFly
+    );
+    set_anim_frame(&mut store, 1, 2);
+    store.get_mut(1).unwrap().foot_speed.applied_fraction = SimFixed::ONE;
+    let result = visit(&mut store, &rules, 101);
+    assert!(result.consequences.fire_events().is_empty());
+    let firer = store.get(1).unwrap();
+    assert!(
+        firer
+            .attack_target
+            .as_ref()
+            .unwrap()
+            .pending_infantry_fire
+            .is_none()
+    );
+    assert_eq!(doing(&store), DO_HOVER);
+    assert_eq!(
+        firer.animation.as_ref().unwrap().sequence,
+        SequenceKind::Hover
+    );
+}
+
 #[test]
 fn pending_sequence_keeps_start_facing_when_target_moves() {
     let rules = infantry_fire_frame_rules();

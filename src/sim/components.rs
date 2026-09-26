@@ -498,6 +498,63 @@ impl FootSpeedState {
         self.crate_multiplier
     }
 
+    /// `FootClass::SetSpeedFraction @ 0x004D3710` for a locomotor that computes
+    /// its fraction as a native double (the Jumpjet's `Process`): at least 1.0,
+    /// +infinity included, stores 1.0 (`0x004D3714`); at most 0, or NaN, stores
+    /// 0 (`0x004D373C`); anything between is stored as given.
+    ///
+    /// The stored double becomes `SimFixed` by truncation, from its bits, so
+    /// the fraction's readers compare against the truncated thresholds
+    /// ([`Self::above_tenth`], [`Self::above_eight_tenths`]). A double within
+    /// 2^-16 above a threshold would read as not above it. The Jumpjet's speed
+    /// is always a whole number k (it steps by the constructor's 2.0 up and
+    /// 3.0 down: stock spells `JumpJetAccel=`, which the case-sensitive reader
+    /// never sees, and clamps to its integer cap C and 0), so k/C above 0.1 is
+    /// at least 0.1 + 1/(10C), outside that window for any C up to 6553, and
+    /// above 0.8 for any C up to 13107; k/C exactly 0.1 or 0.8 divides with
+    /// truncation to just below it, as native reads it.
+    pub(crate) fn set_speed_fraction_native_bits(&mut self, bits: u64) {
+        const ONE_BITS: u64 = 0x3ff0_0000_0000_0000;
+        const INFINITY_BITS: u64 = 0x7ff0_0000_0000_0000;
+        let negative = bits >> 63 != 0;
+        let exponent = ((bits >> 52) & 0x7ff) as i32;
+        let mantissa = bits & ((1 << 52) - 1);
+        self.applied_fraction = if negative || bits << 1 == 0 || bits > INFINITY_BITS {
+            // A negative value, a zero of either sign, or NaN.
+            crate::util::fixed_math::SIM_ZERO
+        } else if bits >= ONE_BITS {
+            crate::util::fixed_math::SIM_ONE
+        } else {
+            // 0 < value < 1: floor(value * 2^16) from the significand.
+            let significand = if exponent == 0 {
+                mantissa
+            } else {
+                mantissa | (1 << 52)
+            };
+            let shift = 1075 - i64::from(exponent.max(1)) - 16;
+            SimFixed::from_bits(if shift >= 64 {
+                0
+            } else {
+                (significand >> shift) as i32
+            })
+        };
+    }
+
+    /// Foot `+0x578` above 0.1 (`0x007E3860`): the Infantry fire error's
+    /// moving gate (`0x0051C9B8`) and the sequencer's default arm
+    /// (`0x00520D45`). 0.1 lies between `SimFixed` raw 6553 and 6554; the
+    /// truncated threshold keeps a fraction that truncated to 6553 below it.
+    /// Original boundary witnesses: `tools/spatial_oracle/infantry_fire_speed.json`.
+    pub(crate) fn above_tenth(&self) -> bool {
+        self.applied_fraction > SimFixed::ONE / SimFixed::from_num(10)
+    }
+
+    /// Foot `+0x578` above 0.8 (`0x007EB5C8`): the Jumpjet infantryman's Fly
+    /// over Hover (`0x0052123C`). floor(0.8 * 2^16) = 52428.
+    pub(crate) fn above_eight_tenths(&self) -> bool {
+        self.applied_fraction > SimFixed::from_bits(52_428)
+    }
+
     /// Cell48303A..483072: an already-modified Foot never stacks this effect.
     /// Class/radius eligibility belongs to the pickup effect caller.
     pub(crate) fn accept_speed_crate(

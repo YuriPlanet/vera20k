@@ -246,7 +246,8 @@ impl SequenceSet {
         self.infantry_actions = Some(actions);
     }
 
-    #[cfg(test)]
+    /// The type's native record for an action id (Type `+0xE3C`), as the
+    /// original ReadSequenceData stores it; `None` for a set without them.
     pub(crate) fn infantry_action(
         &self,
         action: i32,

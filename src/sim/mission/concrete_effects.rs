@@ -151,7 +151,13 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             .entities
             .get_mut(prepared.receiver)
             .expect("preflight guaranteed receiver");
+        let changes = entity.attack_target.as_ref().map(|attack| attack.target) != requested;
         represented_assign_target_admitted(entity, requested, commits);
+        // `InfantryClass::Assign_Target @ 0x0051B1F0`'s idle action, which
+        // needs the type's records.
+        if changes && let Some(rules) = self.rules {
+            sim.infantry_target_change_action(prepared.receiver, rules);
+        }
     }
 
     fn apply_destination_mode_one(
@@ -262,10 +268,33 @@ pub(crate) fn represented_assign_target_admitted(
 
     // `InfantryClass::Assign_Target @ 0x0051B1F0` returns its receiver to an
     // idle sequence only while the receiver itself is alive (`0x0051B203`).
+    //
+    // Natively the idle sequence is `Do_Action` of Deployed, Prone or Ready
+    // (`0x0051B214..0x0051B24F`), which needs the type's records: this
+    // entity-local setter clears the Doing instead, and for an infantryman
+    // whose Doing owns its sequence (a Jumpjet-flown one, `infantry_action`)
+    // leaves it to the represented Mission effects, which run the Do_Action
+    // with the rules (`Simulation::infantry_target_change_action`): the
+    // PointerExpired walk when its target dies, the scans and the
+    // Restores.
+    //
+    // RESIDUAL: the entity-local callers (orders' target clears in
+    // `world_commands`, capture, temporal, parasite, crew, spawn and
+    // base-defense paths) run no Do_Action for it. Trigger: an order or one
+    // of those events changes a Rocketeer's target while it fires or cruises.
+    // Effect: its FireFly plays out (at most 6 frames) where native turns to
+    // Hover, and a cruising one skips a one-frame Hover. Frequency: an order
+    // given mid-shot. Risk: a kill in that window stops its locomotor once
+    // more natively (the crash's draw count).
     if entity.category == crate::map::entities::EntityCategory::Infantry
         && entity.health.current > 0
     {
         entity.mission_leaf.set_infantry_firing_sequence(0);
+    }
+    if entity.category == crate::map::entities::EntityCategory::Infantry
+        && entity.health.current > 0
+        && !crate::sim::movement::infantry_action::doing_owns_sequence(entity)
+    {
         entity
             .mission_leaf
             .set_infantry_doing_verified(-1)

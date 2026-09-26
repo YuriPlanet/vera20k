@@ -287,10 +287,12 @@ fn receiver_writes_the_ready_action_only_when_do_action_admits_it() {
         .as_infantry()
         .unwrap()
         .doing();
+    // The gate reads the type's native Ready record (Type `+0xE3C`), whose
+    // count the constructor leaves 0 without a `Sequence=`.
     let has_ready = rules
         .animation_sequence("ENGINEER")
-        .and_then(|set| set.get(&crate::rules::animation_sequence::SequenceKind::Stand))
-        .is_some_and(|sequence| sequence.frame_count != 0);
+        .and_then(|set| set.infantry_action(0))
+        .is_some_and(|record| record.frames_per_facing != 0);
     assert_eq!(doing, if has_ready { 0 } else { -1 });
 }
 

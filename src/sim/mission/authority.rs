@@ -836,11 +836,12 @@ impl Simulation {
         &mut self,
         receiver: u64,
         requested: Option<TargetKind>,
+        rules: Option<&RuleSet>,
     ) -> Result<(), MissionAuthorityError> {
         if !self.substrate.entities.contains(receiver) {
             return Err(MissionAuthorityError::MissingReceiver(receiver));
         }
-        let mut effects = RepresentedConcreteMissionEffects::default();
+        let mut effects = RepresentedConcreteMissionEffects { rules };
         let prepared =
             effects.preflight(self, receiver, ConcreteSetterRequest::Target { requested })?;
         effects.apply_target(self, &prepared, requested);
