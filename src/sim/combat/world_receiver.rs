@@ -2410,7 +2410,6 @@ fn admit_attacker_fire<'r>(
                 WeaponSlot::Primary => 0,
                 WeaponSlot::Secondary => 1,
             },
-            world.interner.intern(selected.weapon_id),
         ));
     }
 
@@ -4100,12 +4099,9 @@ impl FireCommitBoundary {
         } = self;
         let outer_explosion_effects = emit.effects.explosion_effects.split_off(explosion_start);
         let outer_anim_requests = emit.effects.smudge_spawn_requests.split_off(smudge_start);
-        for &(entity_id, weapon_index, weapon_ref) in
-            &emit.current_weapon_updates[current_weapon_start..]
-        {
+        for &(entity_id, weapon_index) in &emit.current_weapon_updates[current_weapon_start..] {
             if let Some(entity) = world.substrate.entities.get_mut(entity_id) {
                 entity.current_weapon_index = weapon_index;
-                entity.current_weapon_ref = Some(weapon_ref);
             }
         }
         let (inline_death, mut pings) = commit_area(

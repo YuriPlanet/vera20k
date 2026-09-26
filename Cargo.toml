@@ -157,16 +157,15 @@ objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage", "NSResponder"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData"] }
 
-# --- Build speed ---
-# Optimize all code at opt-level 1 in dev builds. The game rebuilds sprite
-# instances, sorts them, and iterates over thousands of cells every frame —
-# unoptimized Rust is 10-50x slower than opt-level 1. Incremental recompiles
-# stay fast because opt-level 1 is lightweight (no heavy inlining/LTO).
 [lints.clippy]
 # A side effect inside `debug_assert!` vanishes from release builds. This
 # hid every scheduler anim (wakes, explosions) in shipped binaries for weeks.
 debug_assert_with_mut_call = "deny"
 
+# --- Build speed ---
+# Optimize all code at opt-level 1 in dev builds. The game rebuilds sprite
+# instances, sorts them, and iterates over thousands of cells every frame —
+# unoptimized Rust is 10-50x slower than opt-level 1.
 [profile.dev]
 opt-level = 1
 # Emit line-table debuginfo only (keeps panic/backtrace line numbers) instead of
@@ -177,3 +176,11 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 opt-level = 1
+
+# `cargo test` inherits the dev profile (dependencies stay at opt-level 1) but
+# compiles vera20k unoptimized. Measured on an M4 Mac mini on 2026-09-26:
+# incremental lib test builds fell from 78-117 s to 24-59 s, while the full lib
+# suite's run time rose from 12 s to 55-93 s. Timing benchmarks need an optimized
+# build: see the release command in src/render/atlas_refresh_retail_tests.rs.
+[profile.test]
+opt-level = 0

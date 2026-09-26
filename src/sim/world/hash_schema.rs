@@ -19,6 +19,14 @@
 //! Pre-190 projections omit Foot+55C but cannot recover the former wall-only
 //! plane after Foot events mutate it. Historical probes without a retained
 //! plane remain comparable; arbitrary pre-190 counter histories do not.
+//! No policy folds the retired weapon id of an object's last live selection
+//! (`current_weapon_ref`, dropped at snapshot 212): nothing retained records
+//! it, so every projection lost that fold at once and the harness pins were
+//! re-baselined in that one step. Since then a weapon name is first interned
+//! when its shot is emitted (after its warhead), not at selection, so later
+//! interned ids can be numbered differently from a pre-212 run: raw-index
+//! folds such as a bullet's weapon and warhead move with them, gameplay does
+//! not (nothing orders or looks up by weapon ids).
 
 #[derive(Clone, Copy)]
 pub(super) enum HashSchema {
