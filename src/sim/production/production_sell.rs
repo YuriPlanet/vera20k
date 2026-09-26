@@ -1330,6 +1330,9 @@ mod tests {
     ) -> u64 {
         let mut pax = GameEntity::test_default(stable_id, "E1", owner, 0, 0);
         pax.category = EntityCategory::Infantry;
+        pax.mission_leaf = crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+            EntityCategory::Infantry,
+        );
         pax.sub_cell = sub_cell;
         pax.owner = sim.interner.intern(owner);
         pax.type_ref = sim.interner.intern("E1");
@@ -1364,6 +1367,9 @@ mod tests {
     fn insert_map_infantry(sim: &mut Simulation, stable_id: u64, rx: u16, ry: u16, sub_cell: u8) {
         let mut infantry = GameEntity::test_default(stable_id, "E1", "Neutral", rx, ry);
         infantry.category = EntityCategory::Infantry;
+        infantry.mission_leaf = crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+            EntityCategory::Infantry,
+        );
         infantry.sub_cell = Some(sub_cell);
         sim.substrate.entities.insert(infantry);
         sim.substrate.occupancy.add(

@@ -480,23 +480,36 @@ impl Simulation {
                 entity.passenger_role = crate::sim::passenger::PassengerRole::None;
             }
             self.kill_passengers(passenger, Some(passenger), rules);
-            let killer = attacker.and_then(|a| self.substrate.entities.get(a).map(|k| k.owner()));
-            if let Some(attacker) = attacker {
-                crate::sim::combat::award_kill_experience(
-                    &mut self.substrate.entities,
-                    rules,
-                    &self.interner,
-                    &self.house_alliances,
-                    attacker,
-                    passenger,
-                );
-            }
-            if let Some(entity) = self.substrate.entities.get_mut(passenger) {
-                entity.health.current = 0;
-                crate::sim::combat::record_kill_credit(entity, killer, rules, &self.interner);
-            }
-            self.uninit_with_rules(passenger, rules);
+            self.record_kill_and_uninit(passenger, attacker, rules);
         }
+    }
+
+    /// A passenger dying with its transport: `RecordKill(attacker)` (vtable
+    /// `+0xE0`) then UnInit (vtable `+0xF8`), in KillPassengers
+    /// (`0x00707CFF`/`0x00707D09`) and in a dying unit's refused escape
+    /// (`UnitClass::ReceiveDamage 0x00738188..0x0073819B`).
+    pub(crate) fn record_kill_and_uninit(
+        &mut self,
+        victim: u64,
+        attacker: Option<u64>,
+        rules: &RuleSet,
+    ) {
+        let killer = attacker.and_then(|a| self.substrate.entities.get(a).map(|k| k.owner()));
+        if let Some(attacker) = attacker {
+            crate::sim::combat::award_kill_experience(
+                &mut self.substrate.entities,
+                rules,
+                &self.interner,
+                &self.house_alliances,
+                attacker,
+                victim,
+            );
+        }
+        if let Some(entity) = self.substrate.entities.get_mut(victim) {
+            entity.health.current = 0;
+            crate::sim::combat::record_kill_credit(entity, killer, rules, &self.interner);
+        }
+        self.uninit_with_rules(victim, rules);
     }
 }
 

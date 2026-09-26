@@ -1222,6 +1222,15 @@ impl GameEntity {
         self.type_ref
     }
 
+    /// The body FacingClass's Current (Foot `+0x388`, the value
+    /// `FacingClass::Current @ 0x004C93D0` returns); an object without a
+    /// retained FacingClass rests at its facing byte.
+    pub(crate) fn body_facing_current(&self, frame: u32) -> u16 {
+        self.body_facing
+            .as_ref()
+            .map_or(u16::from(self.facing) << 8, |facing| facing.current(frame))
+    }
+
     pub(crate) fn set_owner_from_store(
         &mut self,
         owner: InternedId,

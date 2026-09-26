@@ -425,6 +425,9 @@ fn accepted_chain_per_cell_crush_finishes_lifecycle_in_list_order_before_continu
     for id in [20, 10] {
         let mut victim = GameEntity::test_default(id, "E1", "Soviets", position.rx, position.ry);
         victim.category = EntityCategory::Infantry;
+        victim.mission_leaf = crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+            EntityCategory::Infantry,
+        );
         victim.is_voxel = false;
         victim.sub_cell = Some(0);
         victim.position = position.clone();

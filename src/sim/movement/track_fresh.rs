@@ -135,17 +135,6 @@ fn path_word(entity: &GameEntity, index: usize) -> Option<u8> {
         .copied()
 }
 
-/// The FacingClass Current of the body (Foot+388), the value 0x4C93D0
-/// returns; an entity without a retained FacingClass rests at its facing.
-fn body_facing_current(entity: &GameEntity, frame: u32) -> u16 {
-    entity
-        .body_facing
-        .as_ref()
-        .map_or(u16::from(entity.facing) << 8, |facing| {
-            facing.current(frame)
-        })
-}
-
 impl Simulation {
     /// `Process_Movement(&out, args)` for a Drive/Ship Unit. Returns the out
     /// byte: true when the Foot is gone (0x4B3A21, 0x4B3F4E and the no-queue
@@ -394,7 +383,7 @@ impl Simulation {
             .get(id)
             .ok_or("retired Drive/Ship fresh owner")?;
         let desired = u16::from(direction) << 13;
-        if body_facing_current(actor, frame) != desired {
+        if actor.body_facing_current(frame) != desired {
             self.track_do_turn(id, desired);
             return Ok(false);
         }

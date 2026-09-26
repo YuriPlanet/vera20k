@@ -1733,6 +1733,10 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
         passenger.owner = enemy;
         passenger.type_ref = sim.interner.intern("PASSENGER");
         passenger.category = EntityCategory::Infantry;
+        passenger.mission_leaf =
+            crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+                EntityCategory::Infantry,
+            );
         passenger.is_voxel = false;
         passenger.passenger_role =
             crate::sim::passenger::PassengerRole::Inside { transport_id: 10 };
@@ -8114,6 +8118,8 @@ fn animated_death_uninit_waits_for_ordinary_tail_drain() {
     inf.owner = sim.interner.intern("Americans");
     inf.type_ref = sim.interner.intern("E1");
     inf.category = EntityCategory::Infantry;
+    inf.mission_leaf =
+        crate::sim::mission::leaf::MissionLeafState::for_entity_category(EntityCategory::Infantry);
     sim.substrate.entities.insert(inf);
     sim.reveal(5);
 

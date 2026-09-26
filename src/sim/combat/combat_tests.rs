@@ -4329,6 +4329,20 @@ fn gsi_04_07_damage_postmortem_fresh_null_expiry_does_not_recredit_initial_kille
     );
 }
 
+/// The death arm's gate, then the payload it admits.
+fn death_weapon_aoe(
+    rules: &RuleSet,
+    obj: &crate::rules::object_type::ObjectType,
+    veterancy: u16,
+    current_weapon_number: i32,
+    current_weapon: Option<&str>,
+    interner: &mut StringInterner,
+) -> Option<(i32, InternedId, InternedId)> {
+    super::death_arm_explodes(rules, obj, veterancy, current_weapon_number)
+        .then(|| super::fire_death_weapon_payload(rules, obj, current_weapon, interner))
+        .flatten()
+}
+
 #[test]
 fn gsi_04_07_damage_death_weapon_gate_selection_and_native_damage() {
     let ini = IniFile::from_str(
