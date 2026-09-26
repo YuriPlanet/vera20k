@@ -2664,8 +2664,10 @@ impl Simulation {
                     entity.category,
                     entity.destruction_recorded,
                     // A Temporal erase leaves at full health with its kill
-                    // already recorded (`combat::record_kill_credit`).
-                    entity.health.current == 0 || entity.killed_by.is_some(),
+                    // already recorded (`combat::record_kill_credit`); a
+                    // crashing infantryman falls at Health 1 (`0x0051BC57`)
+                    // after the kill that booked its loss.
+                    entity.health.current == 0 || entity.killed_by.is_some() || entity.crashing,
                     entity.killed_by,
                     entity.kill_award_points,
                     entity.dont_score,
@@ -2958,6 +2960,16 @@ impl Simulation {
         }
     }
 
+    /// The tail of Foot's accepted null `Set_Destination`
+    /// (`0x004D96C2..0x004D9707`): the retry byte, blocked timer and movement
+    /// timer restart, as every other caller of the Jumpjet null setter runs it.
+    fn foot_null_setter_tail(&mut self, stable_id: u64, rules: Option<&RuleSet>) {
+        let frame = self.session.binary_frame;
+        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+            crate::sim::movement::DestinationTiming::from_rules(frame, rules).accept(entity);
+        }
+    }
+
     /// The Stun of TechnoClass::ReceiveDamage's death arm (`0x00702210`),
     /// after the death sounds and before the debris: `FootClass::Stun @
     /// 0x004D5660` (Assign_Destination(NULL,1), Path[0] = -1, Stop_Driver) for
@@ -2988,7 +3000,10 @@ impl Simulation {
     /// Stop_Driver (`0x0051DAF0`) runs its Do_Action (which at Health 0
     /// re-enters Stop_Driver once more when it accepts) and the locomotor's
     /// Stop_Moving, and `TechnoClass::Stun`'s second null setter repeats the
-    /// first. Native execution: `tools/spatial_oracle/jumpjet_infantry_crash`.
+    /// first. Each null setter ends with Foot's timer tail (`0x004D96C2`).
+    /// Infantry's setter also clears the mutual `+0x2A8` link
+    /// (`0x0051AB34`), which only the dormant `DirectRocker=` arm raises.
+    /// Native execution: `tools/spatial_oracle/jumpjet_infantry_crash`.
     pub(crate) fn techno_death_stun(&mut self, stable_id: u64, context: UninitContext<'_>) {
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return;
@@ -3001,6 +3016,7 @@ impl Simulation {
             crate::sim::movement::stop_navigation_at_committed_head(entity);
             if let (true, Some(rules)) = (jumpjet_infantry, context.rules) {
                 self.jumpjet_null_destination(stable_id, Some(rules), None);
+                self.foot_null_setter_tail(stable_id, Some(rules));
                 if let Err(cause) = self.infantry_stop_driver(stable_id, rules, None) {
                     log::debug!("infantry {stable_id} Stun Stop_Driver: {cause}");
                 }
@@ -3014,6 +3030,7 @@ impl Simulation {
         crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
         if jumpjet_infantry {
             self.jumpjet_null_destination(stable_id, context.rules, None);
+            self.foot_null_setter_tail(stable_id, context.rules);
         }
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return;

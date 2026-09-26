@@ -206,6 +206,9 @@ def rows():
     # A second kill while it falls (splash): Health stays 0, and the forced
     # AirDeathFinish re-enters Stop_Driver.
     out.append(('second_kill_in_the_fall', dict(BASE, doing=0x17, second_kill_frame=4)))
+    # A fall longer than AirDeathStart's 24 frames: its end forces
+    # AirDeathFalling (0x00520BB9), whose end takes the default arm.
+    out.append(('long_fall', dict(BASE, doing=0x17, height=1200)))
     # Grounded: the crash is refused (height 0; ReceiveDamage then UnInits,
     # 0x0051861D) and no Stop_Moving finds the moving byte.
     out.append(('grounded', dict(BASE, doing=0, owner=dict(phase=0, moving=False),
@@ -228,7 +231,8 @@ if __name__ == '__main__':
               '0x6FABC4, Process 0x54AEC0 (crash latch Do_Action 0x22, State5, impact notice to '
               'the Infantry sink 0x522A60), the sequencer 0x520AE0 and the tail 0x520F40, to the '
               'UnInit. Kills in the hover with Doing Hover/Fly/FireFly/none/Cheer, in the cruise, '
-              'a second kill in the fall, and a grounded kill. Not bridges.',
+              'a second kill in the fall, a fall from 1200 leptons (AirDeathFalling), and a '
+              'grounded kill. Not bridges.',
         entry_points={'foot_stun': 0x4D5660, 'infantry_stop_driver': 0x51DAF0,
                       'infantry_set_destination': 0x51AA40, 'infantry_assign_target': 0x51B1F0,
                       'techno_stun': 0x6FCD40, 'foot_crash': 0x4DEBB0, 'stop_moving': STOP_MOVING,

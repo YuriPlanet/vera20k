@@ -6202,9 +6202,11 @@ impl Simulation {
             // Driven from the logic vector, not the entity store: limboed
             // objects never reach this in the original.
             // DEPENDS ON: prone bit, deploy phase, attack target, mission.
-            // PRODUCES: Idle1/Idle2 sequence switches, idle facing changes, and
-            //   scenario-RNG draws — the one idle path that moves the cursor.
-            crate::sim::infantry::tick_idle_actions(
+            // PRODUCES: Idle1/Idle2 sequence switches (Do_Action for an
+            //   infantryman whose Doing owns its sequence), idle facing
+            //   changes, and scenario-RNG draws — the one idle path that moves
+            //   the cursor.
+            let fidgets = crate::sim::infantry::tick_idle_actions(
                 &mut self.substrate.entities,
                 self.substrate.logic.as_slice(),
                 &self.houses,
@@ -6213,6 +6215,11 @@ impl Simulation {
                 &mut self.scenario_rng,
                 self.session.binary_frame,
             );
+            for (id, action) in fidgets {
+                if let Err(cause) = self.infantry_do_action(id, action, false, rules) {
+                    log::debug!("infantry {id} idle action {action}: {cause}");
+                }
+            }
 
             // --- Phase 5: Combat + Turret rotation ---
             // DEPENDS ON: vision/fog (targeting uses fog state), power (cloaking).

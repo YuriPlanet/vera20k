@@ -115,6 +115,20 @@ impl Simulation {
     /// infantry death. Effect: none observable: its Walk stop and Stun repeat
     /// the death arm's, and its death sequence or removal overwrites the Doing
     /// and cell-entry byte they write.
+    ///
+    /// RESIDUAL (kill frame): VERA resolves the frame's shots in the combat
+    /// pass after every object's turn; native kills during the shooter's own
+    /// turn. Trigger: a shooter ahead of the Rocketeer in the Logic order.
+    /// Effect: native's crash latch engages in the kill's frame, VERA's one
+    /// frame later, so the whole fall and its removal come a frame late.
+    /// Frequency: about half of Rocketeer kills. Risk: the fall's Scenario
+    /// draws (its landing) move by a frame against other objects' draws.
+    ///
+    /// RESIDUAL (score): a second kill in the fall runs native `RecordKill @
+    /// 0x00702D40` again, which books the loss, the kill and the points twice;
+    /// VERA books the first kill only (`combat::record_kill_credit`). Trigger:
+    /// splash on a falling Rocketeer. Effect: the score screen's counts.
+    /// Frequency: rare (a two-second fall). Risk: none to the simulation.
     pub(crate) fn begin_infantry_receiver_death(
         &mut self,
         id: u64,

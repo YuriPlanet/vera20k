@@ -40,11 +40,14 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::world::Simulation;
 
 pub(crate) const DO_READY: i32 = 0;
+pub(crate) const DO_GUARD: i32 = 1;
 pub(crate) const DO_PRONE: i32 = 2;
 pub(crate) const DO_WALK: i32 = 3;
 pub(crate) const DO_DOWN: i32 = 5;
 pub(crate) const DO_CRAWL: i32 = 6;
 pub(crate) const DO_UP: i32 = 7;
+pub(crate) const DO_IDLE1: i32 = 9;
+pub(crate) const DO_IDLE2: i32 = 0x0A;
 pub(crate) const DO_TREAD: i32 = 0x10;
 pub(crate) const DO_SWIM: i32 = 0x11;
 pub(crate) const DO_HOVER: i32 = 0x17;
@@ -155,15 +158,20 @@ impl Simulation {
     ///   record starts past frame 0.
     /// - Walk becomes Panic at fear 200 (`0x0051D8F5..0x0051D906`).
     /// - Then admission ([`do_action_admits`]), the Doing write
-    ///   (`0x0051D9D2`) and the prone byte: Down lies down, Up and Deploy stand
-    ///   up (`0x0051DAA7..0x0051DAC8`).
+    ///   (`0x0051D9D2`), at Health exactly 0 the re-entry into Stop_Driver
+    ///   (`0x0051DA96`, which only a crashing Jumpjet infantryman reaches), and
+    ///   the prone byte: Down lies down, Up and Deploy stand up
+    ///   (`0x0051DAA7..0x0051DAC8`).
     ///
     /// Not represented:
     /// - the carried Walk remap (`+0x2DC`, `0x0051D739`): only a Jumpjet-flown
     ///   infantryman requests Walk, and none is ever carried;
     /// - the Deploy and Undeploy sounds;
-    /// - a zero-Health infantryman's re-entry into Stop_Driver
-    ///   (`0x0051DA96`), which only a crashing Jumpjet infantryman reaches.
+    /// - the random first stage a caller's third argument asks for
+    ///   (`0x0051DA4A..0x0051DA84`, a Scenario draw): the crash latch, the
+    ///   impact notice, the AirDeath arm and the idle fidgets pass 0, and the
+    ///   native corpora's restarted stages show it for the other callers VERA
+    ///   ports.
     ///
     /// Stage and timer: for an infantryman whose Doing owns its sequence
     /// ([`doing_owns_sequence`]), the stage and timer the action arms are its
@@ -304,6 +312,17 @@ impl Simulation {
     /// (`0x00518E18`, `resolve_shp_frame`) and the sequencer reads its end.
     /// A rate of 0 never steps.
     ///
+    /// RESIDUAL (timer): native's stage timer is a frame timer that Do_Action
+    /// starts at the current frame with the action's rate
+    /// (`0x0051DA13..0x0051DA44`); VERA counts the object's own ticks since
+    /// the action started, at the rate of the current game speed. Trigger: an
+    /// action started earlier in the frame than the object's own AI (a
+    /// player's order reaching a Rocketeer mid-shot, whose target-change idle
+    /// action runs before its turn), or a game-speed change mid-action.
+    /// Effect: that action's stage steps one frame early. Frequency: orders to
+    /// a Rocketeer that is firing. Risk: the actions those reach (Hover,
+    /// Ready) loop under a refused default arm, so only the pose moves.
+    ///
     /// RESIDUAL: the stage is 16 bits where native's is 32, so a Hover held
     /// for 65,536 steps (about 2.4 hours at rate 2) wraps to 0: one skipped
     /// pose in its loop, nothing else (its default arm is refused anyway).
@@ -371,9 +390,10 @@ impl Simulation {
     /// default arm every frame (`0x00520AEF`); otherwise once the stage
     /// reaches the action's frame count (`0x00520B09`), it dispatches through
     /// the byte table at `0x00520F1C`:
-    /// - the default arm ([`Self::infantry_default_action`]), refused while
-    ///   the action it asks for is the one playing, so a held Hover's stage
-    ///   keeps growing and its draw wraps;
+    /// - the default arm ([`Self::infantry_default_action`]), after the
+    ///   completed action's facing hint (`0x00520CEB..0x00520D16`), refused
+    ///   while the action it asks for is the one playing, so a held Hover's
+    ///   stage keeps growing and its draw wraps;
     /// - AirDeathStart forces AirDeathFalling (`0x00520BB9`);
     /// - WetDie and AirDeathFinish UnInit the infantryman (`0x00520CB8`);
     ///   AirDeathFinish leaves no body (`DeadBodies=` is Die1..5's, `0x00520BC6`).
@@ -389,6 +409,7 @@ impl Simulation {
         let Some(doing) = actor.mission_leaf.as_infantry().map(|leaf| leaf.doing()) else {
             return false;
         };
+        let actor_type = actor.type_ref();
         if doing != -1 {
             let stage = actor.animation.as_ref().map_or(0, |a| a.frame_index);
             let sequences = rules.animation_sequence(self.interner.resolve(actor.type_ref()));
@@ -419,6 +440,22 @@ impl Simulation {
                 true
             }
             action if takes_default_arm(action) => {
+                // `0x00520CE6..0x00520D16`: a completed action (not -1) turns
+                // the body to its record's facing hint first.
+                if let Some(facing) = action_kind(action).and_then(|kind| {
+                    rules
+                        .animation_sequence(self.interner.resolve(actor_type))
+                        .and_then(|set| set.get(&kind))
+                        .and_then(|def| def.completion_facing)
+                }) && let Some(actor) = self.substrate.entities.get_mut(id)
+                {
+                    crate::sim::animation::snap_completion_facing(
+                        &mut actor.facing,
+                        &mut actor.body_facing,
+                        facing,
+                        self.session.binary_frame,
+                    );
+                }
                 self.infantry_default_action(id, action, rules);
                 false
             }
@@ -639,10 +676,12 @@ impl Simulation {
     /// or Crawl again, and the walk's end clears both (`0x00521B20`), so its
     /// moving request clears the Doing instead.
     ///
-    /// The completion facing (`0x00520CEB..0x00520D16`) is the animation
-    /// clock's. The secondary-fire repeat (`0x00520D7E..0x00520E00`) is not
-    /// reached: no Jumpjet infantryman has a secondary fire action, and the
-    /// walker arm runs for the Cheer alone.
+    /// Its callers apply the completed action's facing hint
+    /// (`0x00520CEB..0x00520D16`) first: the sequencer for an infantryman
+    /// whose Doing owns its sequence, the animation cascade for a walker. The
+    /// secondary-fire repeat (`0x00520D7E..0x00520E00`) is not reached: no
+    /// Jumpjet infantryman has a secondary fire action, and the walker arm runs
+    /// for the Cheer alone.
     fn infantry_default_action(&mut self, id: u64, action: i32, rules: &RuleSet) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;

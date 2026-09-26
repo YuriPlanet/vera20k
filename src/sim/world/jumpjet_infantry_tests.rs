@@ -280,6 +280,46 @@ fn retail_dustbowl_rocketeer_flies_hovers_and_fires_in_its_airborne_poses() {
     assert_eq!(after.doing, DO_HOVER, "back to its hover: {after:?}");
 }
 
+/// A grounded Rocketeer idling on Guard fidgets as native does: its idle turn
+/// requests `Do_Action(Idle1 or Idle2)` (`0x0051CEE0`, `0x0051CF42`), and when
+/// the fidget has played, the sequencer's default arm turns it to the fidget's
+/// facing hint (`0x00520CEB..0x00520D16`; `Idle1=..,S`, `Idle2=..,E`) and
+/// returns it to Ready, where it idles again. With the pose alone its fidget
+/// never ended, and it never idled again.
+#[test]
+fn a_grounded_rocketeer_fidgets_and_turns_to_the_fidgets_facing() {
+    use crate::sim::movement::infantry_action::{DO_IDLE1, DO_IDLE2, DO_READY};
+    use std::collections::BTreeMap;
+    let row = serde_json::json!({"doing": DO_READY, "fraction": 0.0, "height": 0,
+        "owner": {"phase": 0, "moving": false}});
+    let (mut sim, rules, _) = rocketeer_crash_fixture(&row);
+    let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
+    let mut fidgets = Vec::new();
+    let mut playing: Option<i32> = None;
+    for _ in 0..3000 {
+        sim.advance_tick(&[], Some(&rules), &BTreeMap::new(), Some(&grid), None, 67);
+        let entity = sim.substrate.entities.get(1).unwrap();
+        let doing = entity.mission_leaf.as_infantry().unwrap().doing();
+        match (playing, doing) {
+            (None, DO_IDLE1 | DO_IDLE2) => {
+                let kind = crate::rules::infantry_sequence::action_kind(doing);
+                assert_eq!(entity.animation.as_ref().map(|a| a.sequence), kind);
+                playing = Some(doing);
+            }
+            (Some(action), DO_READY) => {
+                fidgets.push((action, entity.facing));
+                playing = None;
+            }
+            _ => {}
+        }
+    }
+    assert!(fidgets.len() >= 2, "it fidgets again: {fidgets:?}");
+    for (action, facing) in &fidgets {
+        let hint = if *action == DO_IDLE1 { 128 } else { 64 };
+        assert_eq!(*facing, hint, "{fidgets:?}");
+    }
+}
+
 /// One frame of a shot-down Rocketeer: the Pose, Health, crash latch, and the
 /// anims and Rocketeer sounds the frame produced.
 #[derive(Debug)]
@@ -619,7 +659,9 @@ fn rocketeer_crash_fixture(
         runtime.moving = input["owner"]["moving"].as_bool().unwrap();
         runtime.destination = crate::sim::components::DriveCoord { x: 0, y: 0, z: 0 };
         runtime.flight.facing.snap(0x4000, 1000);
-        runtime.flight.target_height = height;
+        // The oracle's locomotor holds `JumpjetHeight=` as its target height
+        // whatever the row's height (`jumpjet_infantry_actions` ROCKETEER).
+        runtime.flight.target_height = 500;
     }
     sim.add_entity_occupancy(1);
     if height > 0 {
@@ -692,8 +734,12 @@ fn scenario_draws(before: i32, after: i32) -> i32 {
 /// latch as native does, and then, through `advance_tick`, falls,
 /// plays AirDeathStart, lands in AirDeathFinish at Health 1 and is removed
 /// on the native frame. A second kill in the fall draws 10 more and one at
-/// its landing (the Health-0 re-entry into Stop_Driver); a grounded kill
-/// crashes nothing and draws nothing.
+/// its landing (the Health-0 re-entry into Stop_Driver); a fall from 1200
+/// leptons outlasts AirDeathStart, plays AirDeathFalling and takes the default
+/// arm to Hover before it lands; a grounded kill crashes nothing and draws
+/// nothing. Every frame, Assign_Target refuses the faller exactly while its
+/// native action is a death action (`0x006FCF2D`): a Cheer faller stays a
+/// target.
 ///
 /// Not compared: the Scenario draws of the fall's other frames. VERA's also
 /// carry the faller's Guard mission, which native runs too (InfantryClass::AI
@@ -817,6 +863,16 @@ fn a_shot_down_rocketeer_falls_like_the_native_crash() {
             if events.iter().any(|event| event[0] == "set_height") {
                 assert_eq!(draws.0, draws.1, "{at}: landing Scenario draws");
             }
+            let native_doing = expected["doing"].as_i64().unwrap() as i32;
+            assert_eq!(
+                crate::sim::mission::concrete_effects::assign_target_commits(
+                    &sim.substrate.entities,
+                    Some(crate::sim::combat::TargetKind::Entity(1)),
+                ),
+                expected["health"].as_i64() != Some(0)
+                    && !crate::sim::movement::infantry_action::in_death_sequence(native_doing),
+                "{at}: a target"
+            );
         }
     }
 }

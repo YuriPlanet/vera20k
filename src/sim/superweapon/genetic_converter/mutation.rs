@@ -113,7 +113,9 @@ fn apply_mutate_explosion(
     // Mutation is infantry-only, but its damage still enters the ordinary
     // ReceiveDamage -> death helper transaction. Snapshot the transformation
     // cells first, preserve the AoE's object-list order, then create Brutes only
-    // after every nested death detonation has returned.
+    // after every nested death detonation has returned. A `JumpJet=` type's
+    // death explodes ahead of the InfDeath table (`0x00518313`, before the
+    // mutation arm `0x005188AE`), so it never mutates.
     let candidates: Vec<(u64, u16, u16)> = receivers
         .iter()
         .filter_map(|receiver| {
@@ -124,8 +126,14 @@ fn apply_mutate_explosion(
                 .entities
                 .get(event.target_id)
                 .and_then(|entity| {
-                    (entity.category == EntityCategory::Infantry)
-                        .then(|| (event.target_id, entity.position.rx, entity.position.ry))
+                    let jumpjet = sim
+                        .object_type(entity.type_ref(), rules)
+                        .is_some_and(|object| object.jumpjet);
+                    (entity.category == EntityCategory::Infantry && !jumpjet).then_some((
+                        event.target_id,
+                        entity.position.rx,
+                        entity.position.ry,
+                    ))
                 })
         })
         .collect();
@@ -356,6 +364,42 @@ mod tests {
         }
         assert!(boundary.substrate.pending_delete.is_empty());
         assert_eq!(boundary_rng, SimRng::new(1).state());
+    }
+
+    /// A `JumpJet=` infantryman in the blast dies without mutating: its death
+    /// builds InfantryExplode ahead of the InfDeath table (`0x00518313`, before
+    /// the mutation arm `0x005188AE`), so only the rifleman becomes a Brute.
+    #[test]
+    fn mutate_explosion_leaves_a_jumpjet_infantryman_unmutated() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n0=E1\n1=BRUTE\n2=ROCKET\n\n\
+             [VehicleTypes]\n\n[AircraftTypes]\n\n[BuildingTypes]\n\n\
+             [Warheads]\n0=MutateExplosion\n\n\
+             [General]\nMutateExplosion=yes\n\n\
+             [CombatDamage]\nMaxDamage=10000\nMutateExplosionWarhead=MutateExplosion\n\n\
+             [E1]\nStrength=100\nArmor=none\nSpeed=4\n\n\
+             [ROCKET]\nStrength=100\nArmor=none\nSpeed=9\nJumpJet=yes\nCrashable=yes\n\n\
+             [BRUTE]\nStrength=200\nArmor=none\nSpeed=4\n\n\
+             [MutateExplosion]\nCellSpread=1\nPercentAtMax=1\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        ))
+        .expect("mutation rules");
+        let mut sim = Simulation::with_seed(1);
+        let owner = sim.interner.intern("Americans");
+        let soviet = sim.interner.intern("Soviet");
+        for (id, type_id, rx) in [(10, "E1", 5), (11, "ROCKET", 6)] {
+            let mut infantry = GameEntity::test_default(id, type_id, "Soviet", rx, 5);
+            infantry.owner = soviet;
+            infantry.type_ref = sim.interner.intern(type_id);
+            infantry.category = EntityCategory::Infantry;
+            infantry.is_voxel = false;
+            infantry.health = Health { current: 100 };
+            sim.substrate.entities.insert(infantry);
+            let _ = sim.reveal(id);
+        }
+        let killed = apply_mutate_explosion(&mut sim, &rules, 5, 5, owner, None);
+        assert_eq!(killed, vec![(5, 5)]);
+        assert_eq!(sim.substrate.entities.get(11).unwrap().health.current, 0);
     }
 
     fn genetic_test_rules() -> RuleSet {
