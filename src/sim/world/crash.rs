@@ -15,7 +15,10 @@
 //! 0x00737C90` (`0x00738457..0x00738475`), after its `Death_Explosion`, its
 //! passengers and its crew; a Jumpjet falls under the locomotor's State 5
 //! (`movement::jumpjet_flight`) and its impact notice finishes it
-//! ([`Simulation::jumpjet_crash_impact`]).
+//! ([`Simulation::jumpjet_crash_impact`]). A `Crashable=` `JumpJet=`
+//! infantryman crashes from `InfantryClass::ReceiveDamage` (`0x005185F1`,
+//! `world::infantry_terminal`) and falls and lands in its AirDeath actions
+//! (`movement::infantry_action`).
 //!
 //! While it falls a wreck keeps the AI its native IsAlive (`+0x90`) gates: the
 //! Techno body with its passive scan, and a Unit's fire update, so a guarding
@@ -235,8 +238,8 @@ impl Simulation {
     /// sound the wreck holds plays out as it goes (`FootClass::~FootClass`,
     /// `0x004D3677`).
     ///
-    /// Only Units crash on this locomotor in VERA; a crashing Jumpjet
-    /// Infantry (`InfantryClass`'s notice, the Rocketeer's) is not wired.
+    /// An Infantry owner's notice (the Rocketeer's) keeps the infantryman
+    /// instead: [`Simulation::infantry_crash_impact`].
     pub(crate) fn jumpjet_crash_impact(
         &mut self,
         id: u64,

@@ -96,6 +96,15 @@ fn rocketeer(input: &Value) -> (Simulation, RuleSet, u64) {
             ),
         );
     }
+    // A sequencer row's action plays at the row's stage (`+0xF8`).
+    if let (Some(stage), Some(kind)) = (
+        input["stage"].as_u64(),
+        action_kind(input["doing"].as_i64().unwrap_or(-1) as i32),
+    ) {
+        let mut animation = crate::sim::animation::Animation::new(kind);
+        animation.frame_index = stage as u16;
+        entity.animation = Some(animation);
+    }
     let locomotor = entity.locomotor.as_mut().expect("Jumpjet locomotor");
     locomotor.altitude = SimFixed::from_num(height);
     let runtime = locomotor.jumpjet_runtime_mut().expect("Jumpjet runtime");
@@ -164,10 +173,11 @@ fn doing(sim: &Simulation, id: u64) -> i32 {
 
 /// Parity with `tools/spatial_oracle/jumpjet_infantry_actions.json`: the
 /// original Do_Action, locomotion action tail, firing arm and sequencer on a
-/// Rocketeer flown by the real Jumpjet locomotor. Not compared here: the
-/// requests of the AirDeath actions and their sequencer arms, and the
-/// Health-0 Stop_Driver re-entry, which the crash owns; and the firing arm's
-/// FireUp for a walker, whose Doing VERA does not write.
+/// Rocketeer flown by the real Jumpjet locomotor, the sequencer's AirDeath
+/// arms included (AirDeathFinish's end UnInits it). Not compared here: the
+/// locomotor stop of the Health-0 Stop_Driver re-entry, which needs a map
+/// (`world::jumpjet_infantry_tests` compares it through the crash); and the
+/// firing arm's FireUp for a walker, whose Doing VERA does not write.
 #[test]
 fn jumpjet_infantry_actions_match_the_native_bodies() {
     let corpus: Value = serde_json::from_str(include_str!(
@@ -192,31 +202,32 @@ fn jumpjet_infantry_actions_match_the_native_bodies() {
         match kind {
             "do_action" => {
                 let request = input["request"].as_i64().unwrap() as i32;
-                if (0x22..=0x24).contains(&request) {
-                    continue;
-                }
                 let force = input["force"].as_bool().unwrap_or(false);
                 let accepted = sim.infantry_do_action(id, request, force, &rules).unwrap();
                 assert_eq!(accepted, output["accepted"].as_bool().unwrap(), "{name}");
             }
             "movement" => sim.infantry_movement_actions(id, &rules),
             "sequencer" => {
-                let action = input["doing"].as_i64().unwrap() as i32;
-                if matches!(action, 0x22 | 0x24) {
+                // The object turn (`infantry_action_turn`) follows the
+                // sequencer with the locomotion actions, which this row does
+                // not run.
+                let removed = sim.infantry_sequencer(id, &rules);
+                let native_removed = output["recorded"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|event| event == "uninit");
+                assert_eq!(removed, native_removed, "{name}: UnInit");
+                if removed {
+                    assert!(
+                        sim.substrate
+                            .entities
+                            .get(id)
+                            .is_none_or(|entity| !entity.lifecycle.object_alive),
+                        "{name}: removed"
+                    );
+                    compared += 1;
                     continue;
-                }
-                // The sequencer dispatches once the stage reaches the record's
-                // count (`0x00520B09`); VERA's animation clock reports that end.
-                if action == -1 {
-                    // No action takes the default arm every frame; the object
-                    // turn (`infantry_action_turn`) follows it with the
-                    // locomotion actions, which this row does not run.
-                    sim.infantry_default_action(id, -1, &rules);
-                } else {
-                    let count = corpus["records"][action as usize][1].as_i64().unwrap();
-                    if input["stage"].as_i64().unwrap() >= count && takes_default_arm(action) {
-                        sim.infantry_default_action(id, action, &rules);
-                    }
                 }
             }
             "firing" => {
@@ -243,7 +254,7 @@ fn jumpjet_infantry_actions_match_the_native_bodies() {
         assert_stage(&sim, &rules, id, &before, output, &name);
         compared += 1;
     }
-    assert_eq!((compared, truncated), (413, 30));
+    assert_eq!((compared, truncated), (497, 30));
 }
 
 /// `FootClass::SetSpeedFraction @ 0x004D3710`'s clamp and the truncation to

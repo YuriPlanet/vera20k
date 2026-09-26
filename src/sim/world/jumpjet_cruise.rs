@@ -128,6 +128,8 @@ struct CruiseHost<'a> {
     /// The last `SetSpeedFraction` (owner vtable `+0x544`) of the frame, as the
     /// native double's bits.
     speed_fraction: Option<u64>,
+    /// The crash latch engaged this frame.
+    crash_latched: bool,
 }
 
 impl CruiseHost<'_> {
@@ -459,6 +461,12 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         // runs them once the frame's states are committed.
         self.impact = true;
     }
+
+    fn crash_latched(&mut self) {
+        // The Infantry owner's Do_Action is applied once the frame's states
+        // are committed; it touches nothing State 5 reads.
+        self.crash_latched = true;
+    }
 }
 
 /// Write a world-lepton coordinate back into the cell/sub-cell position and
@@ -502,6 +510,7 @@ struct HostEffects {
     crash_relocated: bool,
     impact: bool,
     speed_fraction: Option<u64>,
+    crash_latched: bool,
 }
 
 impl Simulation {
@@ -595,6 +604,7 @@ impl Simulation {
                 crash_relocated: false,
                 impact: false,
                 speed_fraction: None,
+                crash_latched: false,
             };
 
             let params = runtime.params;
@@ -623,6 +633,7 @@ impl Simulation {
                 crash_relocated: host.crash_relocated,
                 impact: host.impact,
                 speed_fraction: host.speed_fraction,
+                crash_latched: host.crash_latched,
             };
             (state, flight, host.location, effects)
         };
@@ -724,6 +735,23 @@ impl Simulation {
             let speed = self.jumpjet_order_speed(stable_id, rules);
             self.jumpjet_stop_moving(stable_id, rules, None);
             self.publish_jumpjet_destination(stable_id, speed);
+        }
+        // The crash latch's AirDeathStart for an Infantry owner (`0x0054B02C`).
+        if effects.crash_latched
+            && let Some(rules) = rules
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| entity.category == EntityCategory::Infantry)
+            && let Err(cause) = self.infantry_do_action(
+                stable_id,
+                crate::sim::movement::infantry_action::DO_AIR_DEATH_START,
+                false,
+                rules,
+            )
+        {
+            log::debug!("infantry {stable_id} AirDeathStart: {cause}");
         }
         Some(AirMovementTickStats {
             air_movers: 1,

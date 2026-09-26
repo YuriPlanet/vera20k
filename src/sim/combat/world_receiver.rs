@@ -1482,6 +1482,8 @@ fn finish_concrete_death(
         let postlude = world.begin_infantry_receiver_death(
             dead_id,
             inf_death,
+            rules,
+            overlay_registry,
             &mut effects.immediate_uninit_ids,
         );
         concrete_smudge_plans.push(ConcreteDeathSmudgePlan::Infantry(postlude));

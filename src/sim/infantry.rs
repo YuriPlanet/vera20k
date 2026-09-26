@@ -330,10 +330,13 @@ fn idle_action_for_roll(roll: u32) -> IdleAction {
 ///
 /// gamemd asks the question in two places and this is both of them folded
 /// together: the guard/area-guard/hunt handlers only reach the idle call with no
-/// target, and the readiness predicate then requires an expired timer, a still
-/// locomotor, an upright stance, no live fire loop, and a current action of
-/// Ready, Guard or Tread. Ready and Guard are one sequence here, and Tread is a
-/// water action nothing enters yet, so `Stand` is the whole admissible set.
+/// target, and the readiness predicate (`0x005216D0`) then requires an expired
+/// timer, a still locomotor, an upright stance, no live fire loop, and a
+/// current action of Ready, Guard or Tread (`0x00521722..0x00521752`). An
+/// infantryman whose Doing owns its sequence (`sim::movement::infantry_action`)
+/// is tested on its Doing and its Jumpjet's moving byte. For every other,
+/// Ready and Guard are one sequence here, and Tread is a water action nothing
+/// enters yet, so `Stand` is the whole admissible set.
 fn idle_action_ready(entity: &GameEntity, frame: u32) -> bool {
     use crate::sim::mission::MissionType;
 
@@ -370,6 +373,19 @@ fn idle_action_ready(entity: &GameEntity, frame: u32) -> bool {
     }
     if fear_prone_is_under_way(entity) {
         return false;
+    }
+    if crate::sim::movement::infantry_action::doing_owns_sequence(entity) {
+        use crate::sim::movement::infantry_action::{DO_GUARD, DO_READY, DO_TREAD};
+        let moving = entity
+            .locomotor
+            .as_ref()
+            .and_then(|locomotor| locomotor.jumpjet_runtime())
+            .is_some_and(|runtime| runtime.moving);
+        return !moving
+            && entity
+                .mission_leaf
+                .as_infantry()
+                .is_some_and(|leaf| matches!(leaf.doing(), DO_READY | DO_GUARD | DO_TREAD));
     }
     entity
         .animation
@@ -414,6 +430,13 @@ fn set_idle_facing(entity: &mut GameEntity, facing_index: u8, frame: u32) {
 /// more for the facing when the roll lands on a turn arm. The biased type spends
 /// one extra sub-roll immediately *after* the action roll, before the arm is
 /// selected. That order is the whole determinism contract of this function.
+///
+/// ## Fidgets
+/// Native fidgets through `Do_Action(Idle1 or Idle2)`, unforced
+/// (`0x0051CEE0`, `0x0051CF42`). An infantryman whose Doing owns its sequence
+/// gets exactly that: its requests are returned, in visit order, for the caller
+/// to apply through the Do_Action owner (they draw nothing). Every other plays
+/// the pose, which its animation cascade ends.
 pub fn tick_idle_actions(
     entities: &mut crate::sim::entity_store::EntityStore,
     order: &[u64],
@@ -425,7 +448,9 @@ pub fn tick_idle_actions(
     interner: &crate::sim::intern::StringInterner,
     rng: &mut crate::sim::rng::SimRng,
     frame: u32,
-) {
+) -> Vec<(u64, i32)> {
+    use crate::sim::movement::infantry_action::{DO_IDLE1, DO_IDLE2, doing_owns_sequence};
+    let mut fidgets = Vec::new();
     for &id in order {
         let Some(entity) = entities.get_mut(id) else {
             continue;
@@ -469,9 +494,9 @@ pub fn tick_idle_actions(
             roll = 8;
         }
 
-        let sequence = match idle_action_for_roll(roll) {
-            IdleAction::Fidget1 => SequenceKind::Idle1,
-            IdleAction::Fidget2 => SequenceKind::Idle2,
+        let (sequence, action) = match idle_action_for_roll(roll) {
+            IdleAction::Fidget1 => (SequenceKind::Idle1, DO_IDLE1),
+            IdleAction::Fidget2 => (SequenceKind::Idle2, DO_IDLE2),
             IdleAction::TurnInPlace => {
                 let index = rng.next_range_u32_inclusive(0, IDLE_FACING_MAX) as u8;
                 set_idle_facing(entity, index, frame);
@@ -479,10 +504,13 @@ pub fn tick_idle_actions(
             }
             IdleAction::Nothing => continue,
         };
-        if let Some(anim) = entity.animation.as_mut() {
+        if doing_owns_sequence(entity) {
+            fidgets.push((id, action));
+        } else if let Some(anim) = entity.animation.as_mut() {
             anim.switch_to(sequence);
         }
     }
+    fidgets
 }
 
 pub fn is_prone_for_damage(entity: &GameEntity) -> bool {

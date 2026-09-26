@@ -592,7 +592,19 @@ impl Simulation {
         }
 
         let air = sim.tick_air_movement_with_cell_lists_one(stable_id, rules);
-        if air.impact {
+        let infantry = sim
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.category == EntityCategory::Infantry);
+        if air.impact && infantry {
+            // The Infantry notice keeps the infantryman: its AI runs on to the
+            // sequencer and locomotion actions below.
+            if let Some(rules) = rules {
+                sim.aircraft_tracker_remove(stable_id);
+                sim.infantry_crash_impact(stable_id, rules);
+            }
+        } else if air.impact {
             // The impact UnInits the object; `FootClass::AI` returns on the
             // cleared Object+90 (`0x004DA87E`) and the class AI after it
             // (`AircraftClass::AI 0x00414DAA`).
@@ -614,13 +626,11 @@ impl Simulation {
         // locomotion actions of 0x00520F40 (`0x0051BF7B`), which read the
         // fraction and state Process just left.
         if let Some(rules) = rules
-            && sim
-                .substrate
-                .entities
-                .get(stable_id)
-                .is_some_and(|entity| entity.category == EntityCategory::Infantry)
+            && infantry
+            && sim.infantry_action_turn(stable_id, rules)
         {
-            sim.infantry_action_turn(stable_id, rules);
+            // Its AirDeathFinish (or WetDie) ended in UnInit.
+            return Ok(outcome);
         }
         let teleport_armed = sim
             .substrate

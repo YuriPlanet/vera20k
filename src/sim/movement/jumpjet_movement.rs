@@ -724,13 +724,8 @@ impl Simulation {
     /// NavCom is set, which is idempotent for a Unit: no Scenario draw, the
     /// same frame's search.
     ///
-    /// RESIDUAL: a dying Jumpjet Infantry (Rocketeer, Cosmonaut) skips it.
-    /// Trigger: every such death. Effect: the sub-cell `Move_To` of each Stun
-    /// call draws on the Scenario RNG natively, and how many run depends on
-    /// `InfantryClass::Set_Destination`'s untraced null path; the owner is
-    /// removed the same frame, so only the draws differ. Frequency: every
-    /// Rocketeer death. Risk: the Scenario RNG sequence after it. Belongs to
-    /// the Jumpjet Infantry crash chain.
+    /// A Jumpjet Infantry's Stun stops its locomotor through its own setter
+    /// and Stop_Driver instead (`Simulation::techno_death_stun`).
     pub(crate) fn jumpjet_stun_stop(
         &mut self,
         id: u64,

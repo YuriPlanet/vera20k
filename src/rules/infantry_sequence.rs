@@ -465,6 +465,9 @@ pub fn sequence_kind_from_ini_key(key: &str) -> Option<SequenceKind> {
         "WETIDLE1" => Some(SequenceKind::WetIdle1),
         "WETIDLE2" => Some(SequenceKind::WetIdle2),
         "SHOVEL" => Some(SequenceKind::Shovel),
+        "AIRDEATHSTART" => Some(SequenceKind::AirDeathStart),
+        "AIRDEATHFALLING" => Some(SequenceKind::AirDeathFalling),
+        "AIRDEATHFINISH" => Some(SequenceKind::AirDeathFinish),
         _ => None,
     }
 }
@@ -481,8 +484,8 @@ pub fn sequence_kind_from_ini_key(key: &str) -> Option<SequenceKind> {
 /// a specific frame of the fire sequence rather than at its start, that slowed
 /// the Brute's building-smash rate to a third.
 ///
-/// Ids 20/21 (WetDie1/WetDie2), 25 (Tumble), 34–36 (AirDeath*) and 39
-/// (Carry) have no `SequenceKind` yet and so are absent below.
+/// Ids 20/21 (WetDie1/WetDie2), 25 (Tumble) and 39 (Carry) have no
+/// `SequenceKind` yet and so are absent below.
 pub(crate) fn action_id(kind: SequenceKind) -> u8 {
     match kind {
         SequenceKind::Stand => 0,
@@ -517,6 +520,9 @@ pub(crate) fn action_id(kind: SequenceKind) -> u8 {
         SequenceKind::Paradrop => 33,
         SequenceKind::Panic => 37,
         SequenceKind::Shovel => 38,
+        SequenceKind::AirDeathStart => 34,
+        SequenceKind::AirDeathFalling => 35,
+        SequenceKind::AirDeathFinish => 36,
         SequenceKind::SecondaryFire => 40,
         SequenceKind::SecondaryProne => 41,
     }
@@ -557,6 +563,9 @@ pub(crate) fn action_kind(action: i32) -> Option<SequenceKind> {
         32 => SequenceKind::Cheer,
         33 => SequenceKind::Paradrop,
         37 => SequenceKind::Panic,
+        34 => SequenceKind::AirDeathStart,
+        35 => SequenceKind::AirDeathFalling,
+        36 => SequenceKind::AirDeathFinish,
         38 => SequenceKind::Shovel,
         40 => SequenceKind::SecondaryFire,
         41 => SequenceKind::SecondaryProne,
@@ -609,6 +618,11 @@ fn default_loop_mode(kind: SequenceKind) -> LoopMode {
         SequenceKind::Down => LoopMode::TransitionTo(SequenceKind::Prone),
         SequenceKind::Up | SequenceKind::Undeploy => LoopMode::TransitionTo(SequenceKind::Stand),
         SequenceKind::Deploy => LoopMode::TransitionTo(SequenceKind::Deployed),
+        // Their ends belong to the sequencer of the infantryman whose Doing
+        // owns its sequence (`sim::movement::infantry_action`).
+        SequenceKind::AirDeathStart
+        | SequenceKind::AirDeathFalling
+        | SequenceKind::AirDeathFinish => LoopMode::HoldLast,
     }
 }
 

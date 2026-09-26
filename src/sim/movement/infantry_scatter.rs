@@ -180,7 +180,7 @@ impl Simulation {
         {
             let actor = self.substrate.entities.get(id).unwrap();
             if actor.mission.current().raw() != 1 || actor.navigation.nav_com != Some(requested) {
-                self.run_infantry_failed_path_receiver(id, rules, registry)?;
+                self.infantry_stop_driver(id, rules, registry)?;
             }
         }
         super::movement_commands::clear_destination_path_head(

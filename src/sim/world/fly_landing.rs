@@ -71,7 +71,7 @@ impl Simulation {
 
     /// `ObjectClass::SetHeight` (vtable `+0x1CC`): the Location's Z at
     /// `height` above the floor, or above the deck for an object on a bridge.
-    pub(super) fn set_object_height(&mut self, id: u64, height: i32) {
+    pub(crate) fn set_object_height(&mut self, id: u64, height: i32) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
