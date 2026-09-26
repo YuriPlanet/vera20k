@@ -191,7 +191,7 @@ mod schema166_receipt {
 // Schema171: retained timers/track ownership and signed-health/hash composition.
 // All201 baseline/candidate positions and RNG states matched. See the PR415
 // section of docs/research/TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md.
-const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 878034761769452076;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 11838927963457097324;
 // Schema174 removes folds instead of adding them: OreGrowthState's node-era
 // scanner cursor, candidate lists and sample counters, and ProductionState's
 // fallback ore overlay id. The pre-174 projection folds the values those fields
@@ -200,10 +200,10 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 878034761
 // id. It is not a general reconstruction; a scenario finalized by the map
 // loader held Some(first TIB* id). The projection must still equal the previous
 // current pin, asserted below. Rust hash-composition ratchet, not a native golden.
-const BRIDGE_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 6938168863139048597;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_CRATE_SPEED_V181: u64 = 7192367217818587128;
 // v181 folds Foot+580, including default1.0. The pre-181 assertion below
 // reproduces the previous whole fixture hash; path and RNG pins are unchanged.
-const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 7561855454504905019;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 3444561876719230631;
 // Snapshot182 adds ordered display vectors. The pre-182 projection below
 // must reproduce the previous whole-fixture hash, including all RNG/state.
 // Schema186 removes the always-None release-tail byte. No aircraft participate;
@@ -254,10 +254,27 @@ const BRIDGE_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 75618554545049050
 // +0x426) and a Fly's fall counter: composition only. Before(208) reproduces
 // the v207 pin (the ore-field schema moved nothing here);
 // per-tick replay and the route tripwires are unchanged.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x8186_0D2B_AC68_26D5;
-const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_CRASH_V208: u64 = 0x9D26_63FE_1130_9E06;
-const BRIDGE_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0xD647_5869_EE05_41D7;
-const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 4350841866948950648;
+// 2026-09-26 retired weapon identity (snapshot 212, composition only): the
+// entity hash no longer folds `current_weapon_ref`, the weapon id of the last
+// live selection, so this one step re-pins every projection in this test.
+// Nothing here ever selects a weapon, so the field held the constructor's
+// `None` throughout; a pre-212 projection folding `None` could have kept this
+// file's historical pins, but the global harness's per-fire values cannot be
+// rebuilt, so none was added. Ceremony: with only that fold line deleted from
+// the previous tree, these pins fail and nothing else in the lib suite moves;
+// their `left` values are pasted here, and the full retirement reproduces
+// every one. The absolute RNG pin, per-tick record/replay equality and the
+// route tripwires are unchanged: the only change to these pins is the removed
+// fold. The new Before(208) equals the old Before(202) pin, not a paste slip:
+// at the end no object holds a target or a cloak, all were built at frame 0,
+// and schemas 204-207 add nothing here (no house, bullet, anim or miner), so
+// the dropped `None` and schema 202's zero rearm timer are both eight zero
+// bytes in one run of zero bytes, which the unframed stream cannot tell apart.
+// Old values: the commit that moved them.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0xB586_50E0_619A_A412;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_CRASH_V208: u64 = 0xD647_5869_EE05_41D7;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_REARM_TIMER_V202: u64 = 0xF2A5_29CE_BDD0_47F6;
+const BRIDGE_HARNESS_FINAL_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 13377637447152312575;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
@@ -856,17 +873,17 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(187)),
-        13132899633947150139,
+        274424878741453394,
         "schema187 only replaces zero remaining-shot fields with the retained index in this fixture"
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
-        17836007346589956114,
+        11167769303923804794,
         "v189 adds only the retained Techno+3D4 hash fold"
     );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
-        16757600261337163915,
+        8810378849024474892,
         "v190 changes only the Foot neighbor-history hash composition in this fixture"
     );
     assert_eq!(

@@ -259,11 +259,9 @@ impl CombatStrike<'_, '_> {
         let id = self.id();
         let boundary = FireCommitBoundary::capture(self.out);
         if let Some((_, Some(shot))) = live_shot(self.world, self.rules, id) {
-            self.out.current_weapon_updates.push((
-                id,
-                shot.selected.index as u8,
-                self.world.interner.intern(shot.selected.weapon_id),
-            ));
+            self.out
+                .current_weapon_updates
+                .push((id, shot.selected.index as u8));
             emit_admitted_fire(self.world, self.rules, shot, self.binary_frame, self.out);
         }
         boundary.commit(
