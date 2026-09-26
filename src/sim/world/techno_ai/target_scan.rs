@@ -16,7 +16,9 @@
 //! Native execution: `tools/spatial_oracle/techno_target_scan.py` runs the
 //! original `0x00709820` with supplied callees; [`tests`] replays every row
 //! (callee order and arguments, the draw, the timer, the target, the flag and
-//! the estimate debit).
+//! the estimate debit). `tools/spatial_oracle/passive_acquire_gate.py` runs
+//! the original gate with CanAcquireTarget, which [`tests`] compares through
+//! the production gate.
 
 use super::ObjectAiCtx;
 use crate::map::entities::EntityCategory;
@@ -219,19 +221,17 @@ pub(super) fn passive_acquire_step(
 ///    `Aggressive=yes` and `Suicide=no`, passes on Move without
 ///    CanAcquireTarget (`0x0070929A..0x007092EC`);
 /// 2. otherwise [`can_acquire_target`] must pass;
-/// 3. `OpportunityFire=` (`+0x6AF`) passes (`0x007093D5`);
-/// 4. any mission but Guard fails;
-/// 5. on Guard, the weapon in slot `SprayAttack ? 0 : 1` (vt+0x3E4,
+/// 3. on Move, an object parked on its NavCom's cell ([`parked_on_move`])
+///    passes (`0x00709301..0x007093D3`);
+/// 4. `OpportunityFire=` (`+0x6AF`) passes (`0x007093D5`);
+/// 5. any mission but Guard fails;
+/// 6. on Guard, the weapon in slot `SprayAttack ? 0 : 1` (vt+0x3E4,
 ///    `0x0070DD70`) refuses when it has `AreaFire=` (`+0x150`) and
 ///    SelectWeapon picks that slot for the current target
 ///    (`0x007093F8..0x00709449`).
 ///
-/// RESIDUAL: the two Move arms between 2 and 3 (`0x00709301..0x007093D3`),
-/// for a `BalloonHover=` Foot or a Unit whose type has `+0xE13`, pass when
-/// the NavCom is the object's own cell and the `+0x514` object's `+0x14` is not
-/// positive. `+0x514` is unidentified. Trigger: those types on Move (retail:
-/// two `BalloonHover=` aircraft). Effect: they do not scan while parked on
-/// their own cell.
+/// Native execution: `tools/spatial_oracle/passive_acquire_gate.py` runs the
+/// original gate and CanAcquireTarget with supplied queries ([`tests`]).
 fn passive_acquire_gate(sim: &Simulation, id: u64, rules: &RuleSet, mission: MissionType) -> bool {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
@@ -257,6 +257,11 @@ fn passive_acquire_gate(sim: &Simulation, id: u64, rules: &RuleSet, mission: Mis
     let Some(obj) = rules.object(sim.interner.resolve(entity.type_ref())) else {
         return false;
     };
+    if mission == MissionType::Move
+        && let Some(passes) = parked_on_move(entity, obj, is_foot)
+    {
+        return passes;
+    }
     if obj.opportunity_fire {
         return true;
     }
@@ -269,6 +274,43 @@ fn passive_acquire_gate(sim: &Simulation, id: u64, rules: &RuleSet, mission: Mis
         .and_then(|subject| subject.weapon_at(slot).map(|weapon| weapon.area_fire))
         .unwrap_or(false);
     !(area_fire && select_weapon(sim, rules, id, target) == slot)
+}
+
+/// The gate's Move arms (`0x00709301..0x007093D3`), for an object whose
+/// NavCom (`+0x5A4`) is its own cell (vt+0x1BC) and that holds no
+/// waypoint-planning token with nodes (`+0x514`, `0x00636DC0`): a
+/// `BalloonHover=` Foot (`+0xD6A`, `0x00709317`) or a Unit whose type is
+/// `IsSimpleDeployer=` (`+0xE13`, `0x00709394`) passes. That is a Rocketeer,
+/// Kirov or Siege Chopper parked where a Move order left it: native
+/// `FootClass::Mission_Move @ 0x004D4200` keeps Move while the NavCom is set.
+/// A `BalloonHover=` object that is no Foot fails the gate outright
+/// (`0x00709333`). Answers the gate's verdict, or `None` to go on.
+///
+/// RESIDUAL: VERA has no waypoint-planning mode (the token's setter
+/// `0x00705D10` is called only from the planning code), so every object
+/// passes as with no token. Trigger: a player planning a looped waypoint path
+/// for these types (`+0x14`, its node count, positive). Effect: native keeps
+/// such a parked object from scanning. Frequency: waypoint mode only.
+fn parked_on_move(
+    entity: &crate::sim::game_entity::GameEntity,
+    obj: &crate::rules::object_type::ObjectType,
+    is_foot: bool,
+) -> Option<bool> {
+    let on_own_cell = entity.navigation.nav_com
+        == Some(crate::sim::components::NavTargetRef::cell(
+            entity.position.rx,
+            entity.position.ry,
+        ));
+    if obj.balloon_hover {
+        if !is_foot {
+            return Some(false);
+        }
+        if on_own_cell {
+            return Some(true);
+        }
+    }
+    (entity.category == EntityCategory::Unit && obj.is_simple_deployer && on_own_cell)
+        .then_some(true)
 }
 
 /// `TechnoClass::CanAcquireTarget @ 0x007091D0`: false when
@@ -826,5 +868,153 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    /// Parity with `tools/spatial_oracle/passive_acquire_gate.json`: the
+    /// original gate and CanAcquireTarget, on each row VERA represents,
+    /// through the production gate with a type carrying the row's flags. Not
+    /// compared, because VERA holds no such state or computes the answer
+    /// itself: a planning token, a Foot class without the Foot flag, the
+    /// Temporal, slave, CaptureManager, team and garrison arms, and a supplied
+    /// AreaFire weapon selection.
+    #[test]
+    fn passive_acquire_gate_matches_the_native_gate() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::components::NavTargetRef;
+        use crate::sim::game_entity::GameEntity;
+        use crate::sim::house_state::HouseState;
+
+        let corpus: Value = serde_json::from_str(include_str!(
+            "../../../../tools/spatial_oracle/passive_acquire_gate.json"
+        ))
+        .expect("corpus parses");
+        let native_only = |input: &Value| {
+            let name = input["name"].as_str().unwrap();
+            !input["token"].is_null()
+                || input["foot"] == false
+                || input["team"].is_object()
+                || [
+                    "warping",
+                    "slave",
+                    "capture_full",
+                    "capture_not_full",
+                    "empty_garrison",
+                    "garrisoned",
+                    "guard_no_weapon",
+                ]
+                .contains(&name)
+                || name.starts_with("guard_area1")
+        };
+        let flag = |input: &Value, key: &str, default: bool| match &input[key] {
+            Value::Bool(value) => *value,
+            Value::Number(value) => value.as_i64() != Some(0),
+            _ => default,
+        };
+        let class = |input: &Value| input["class"].as_str().unwrap_or("infantry").to_string();
+        let type_name = |input: &Value| {
+            let bits: String = [
+                ("balloon_hover", true),
+                ("simple_deployer", false),
+                ("opportunity_fire", false),
+                ("can_passive_acquire", true),
+                ("engineer", false),
+                ("armed", true),
+            ]
+            .iter()
+            .map(|(key, default)| if flag(input, key, *default) { '1' } else { '0' })
+            .collect();
+            format!("{}{bits}", class(input).to_uppercase())
+        };
+        let rows: Vec<&Value> = corpus
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| !native_only(&row["input"]))
+            .collect();
+        let mut lists: std::collections::BTreeMap<&str, Vec<String>> = Default::default();
+        let mut sections = String::new();
+        for row in &rows {
+            let input = &row["input"];
+            let name = type_name(input);
+            let list = match class(input).as_str() {
+                "unit" => "VehicleTypes",
+                "aircraft" => "AircraftTypes",
+                "building" => "BuildingTypes",
+                _ => "InfantryTypes",
+            };
+            if lists.values().any(|names| names.contains(&name)) {
+                continue;
+            }
+            let yes = |value: bool| if value { "yes" } else { "no" };
+            sections += &format!(
+                "[{name}]\nStrength=100\nBalloonHover={}\nIsSimpleDeployer={}\n\
+                 OpportunityFire={}\nCanPassiveAquire={}\nEngineer={}\n{}",
+                yes(flag(input, "balloon_hover", true)),
+                yes(flag(input, "simple_deployer", false)),
+                yes(flag(input, "opportunity_fire", false)),
+                yes(flag(input, "can_passive_acquire", true)),
+                yes(flag(input, "engineer", false)),
+                if flag(input, "armed", true) {
+                    "Primary=GUN\n"
+                } else {
+                    ""
+                },
+            );
+            lists.entry(list).or_default().push(name);
+        }
+        let mut ini = String::from(
+            "[Warheads]\n0=WH\n[GUN]\nDamage=10\nROF=10\nRange=5\nWarhead=WH\n\
+             [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        );
+        for (list, names) in &lists {
+            ini += &format!("[{list}]\n");
+            for (index, name) in names.iter().enumerate() {
+                ini += &format!("{index}={name}\n");
+            }
+        }
+        ini += &sections;
+        let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).expect("gate rules");
+
+        let mut compared = Vec::new();
+        for row in &rows {
+            let input = &row["input"];
+            let name = input["name"].as_str().unwrap();
+            let mut sim = Simulation::new();
+            let owner = sim.interner.intern("Americans");
+            let human = input["human"].as_bool().unwrap_or(true);
+            sim.houses
+                .insert(owner, HouseState::new(owner, 0, None, human, 0, 10));
+            let mut entity = GameEntity::test_default(1, "X", "Americans", 10, 10);
+            entity.owner = owner;
+            entity.type_ref = sim.interner.intern(&type_name(input));
+            entity.category = match class(input).as_str() {
+                "unit" => EntityCategory::Unit,
+                "aircraft" => EntityCategory::Aircraft,
+                "building" => EntityCategory::Structure,
+                _ => EntityCategory::Infantry,
+            };
+            entity.navigation.nav_com = match &input["nav_com"] {
+                Value::Null if input.get("nav_com").is_some() => None,
+                Value::String(other) if other == "other" => Some(NavTargetRef::cell(11, 10)),
+                _ => Some(NavTargetRef::cell(10, 10)),
+            };
+            sim.substrate.entities.insert(entity);
+            let mission = match input["mission"].as_str().unwrap_or("move") {
+                "attack" => MissionType::Attack,
+                "sleep" => MissionType::Sleep,
+                "hunt" => MissionType::Hunt,
+                "area_guard" => MissionType::AreaGuard,
+                "guard" => MissionType::Guard,
+                "none" => MissionType::None,
+                _ => MissionType::Move,
+            };
+            assert_eq!(
+                passive_acquire_gate(&sim, 1, &rules, mission),
+                row["output"]["passes"].as_bool().unwrap(),
+                "{name}"
+            );
+            compared.push(name);
+        }
+        assert_eq!(compared.len(), 30, "{compared:?}");
     }
 }

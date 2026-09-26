@@ -32,8 +32,11 @@ fn pose(sim: &super::Simulation, id: u64) -> Pose {
 
 /// Retail Dustbowl with a Rocketeer on open level ground at (x, y), from which
 /// it can fly eight cells east, with sixteen cells of open ground east of it.
-/// Each side keeps a power plant out of the fight, so neither house is
-/// defeated under the Battle mode's ShortGame.
+/// The Americans ally with the map's own `Player` house, whose start forces
+/// stand near the hold: a parked Rocketeer engages whatever enemy comes near,
+/// so the only enemies are the Russians each test places. Each side keeps a
+/// power plant out of the fight, so neither house is defeated under the Battle
+/// mode's ShortGame.
 fn retail_dustbowl_rocketeer() -> (crate::headless_scenario::HeadlessScenario, u64, u16, u16) {
     use crate::sim::house_state::HouseState;
 
@@ -103,6 +106,12 @@ fn retail_dustbowl_rocketeer() -> (crate::headless_scenario::HeadlessScenario, u
             Some((rocketeer, x, y))
         })
         .expect("open level ground for the flight");
+    for (house, ally) in [("AMERICANS", "PLAYER"), ("PLAYER", "AMERICANS")] {
+        sim.house_alliances
+            .entry(house.to_string())
+            .or_default()
+            .insert(ally.to_string());
+    }
     sim.resolve_type_handles(&resources.rules);
     (scenario, rocketeer, x, y)
 }
@@ -278,6 +287,110 @@ fn retail_dustbowl_rocketeer_flies_hovers_and_fires_in_its_airborne_poses() {
     );
     let after = pose(&scenario.runtime.simulation, rocketeer);
     assert_eq!(after.doing, DO_HOVER, "back to its hover: {after:?}");
+}
+
+/// A Rocketeer parked over Dustbowl after a Move order engages the enemies
+/// that come within its range. It stays on Move, as native's
+/// `FootClass::Mission_Move @ 0x004D4200` keeps a NavCom that is its own cell,
+/// and native's passive acquire gate passes a `BalloonHover=` Foot parked on
+/// its NavCom's cell (`TechnoClass::PassiveAcquireGate @ 0x00709290`,
+/// `0x00709301..0x00709360`), so its passive scan picks a target and it
+/// shoots. Before this chain, VERA's gate refused every Move but a team's,
+/// and a parked Rocketeer never fired.
+#[test]
+#[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
+fn retail_dustbowl_parked_rocketeer_engages_nearby_enemies() {
+    use crate::sim::command::{Command, CommandEnvelope};
+
+    let (mut scenario, rocketeer, x, y) = retail_dustbowl_rocketeer();
+    let sim = &mut scenario.runtime.simulation;
+    let americans = sim.interner.intern("Americans");
+    let park = CommandEnvelope::new(
+        americans,
+        sim.session.tick + 1,
+        Command::Move {
+            entity_id: rocketeer,
+            target_rx: x + 8,
+            target_ry: y,
+            queue: false,
+            group_id: None,
+        },
+    );
+    let mut orders = vec![park];
+    for _ in 0..240 {
+        retail_frame(&mut scenario, std::mem::take(&mut orders));
+    }
+    let crate::sim::runtime::SimRuntime {
+        simulation: sim,
+        resources,
+    } = &mut scenario.runtime;
+    let parked = sim.substrate.entities.get(rocketeer).expect("rocketeer");
+    let move_mission = parked.mission.current();
+    assert_eq!(
+        parked.navigation.nav_com,
+        Some(crate::sim::components::NavTargetRef::cell(
+            parked.position.rx,
+            parked.position.ry
+        )),
+        "parked on its NavCom's cell"
+    );
+    assert!(parked.attack_target.is_none());
+    // A conscript three cells beyond the hold, the only enemy within its
+    // 20mm's range.
+    let conscript = sim
+        .spawn_object(
+            "E2",
+            "Russians",
+            x + 11,
+            y,
+            192,
+            &resources.rules,
+            &resources.height_map,
+        )
+        .expect("conscript");
+    sim.resolve_type_handles(&resources.rules);
+    let mut shots = Vec::new();
+    let mut last_rearm = sim
+        .substrate
+        .entities
+        .get(rocketeer)
+        .map(|entity| entity.rearm_timer);
+    for _ in 0..300 {
+        retail_frame(&mut scenario, Vec::new());
+        let sim = &scenario.runtime.simulation;
+        let entity = sim.substrate.entities.get(rocketeer).expect("rocketeer");
+        assert_eq!(entity.mission.current(), move_mission, "it stays on Move");
+        let rearm = Some(entity.rearm_timer);
+        if rearm != last_rearm {
+            last_rearm = rearm;
+            shots.push((
+                entity.attack_target.as_ref().map(|attack| attack.target),
+                pose(sim, rocketeer),
+            ));
+        }
+        if sim.substrate.entities.get(conscript).is_none() {
+            break;
+        }
+    }
+    assert!(shots.len() >= 2, "the parked Rocketeer fires: {shots:?}");
+    for (target, pose) in &shots {
+        assert!(
+            target.is_none() || *target == Some(crate::sim::combat::TargetKind::Entity(conscript)),
+            "it shoots the conscript: {shots:?}"
+        );
+        assert!(
+            matches!(pose.doing, DO_FIRE_FLY | DO_HOVER),
+            "from its hover: {shots:?}"
+        );
+    }
+    let sim = &scenario.runtime.simulation;
+    assert!(
+        sim.substrate
+            .entities
+            .get(conscript)
+            .is_none_or(|entity| entity.health.current < 125),
+        "the conscript is hit"
+    );
 }
 
 /// A grounded Rocketeer idling on Guard fidgets as native does: its idle turn
