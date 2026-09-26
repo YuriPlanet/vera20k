@@ -72,11 +72,6 @@ const SKIPPED: &[&str] = &[
     // and 0x006B0E7B.
     "mu1_no_deploy_cell",
     "hr_nav_no_cell",
-    // The same miss for the refinery's relocation test: the scene finds
-    // (6, 7) by (0, 0) and (20, 14) beside the field. A miss is D = (0,0),
-    // read at 0x006B00F0.
-    "r5_no_field_no_cell",
-    "r5_no_deploy_cell",
 ];
 
 /// The slave type and refinery the oracle builds: SLAV (Strength 125, the
@@ -728,6 +723,12 @@ fn manager_machine_matches_the_original_slave_refinery_relocation() {
     let corpus = corpus();
     for (row, name) in rows(&corpus, "relocation") {
         let mut s = row_scene(&row["input"]);
+        // A supplied Find_Nearby_Passable_Cell miss: the scene's open ground
+        // would offer a cell, so the search is denied the zone map it needs
+        // and FindDeployCell answers the same (0,0) (read at 0x006B00F0).
+        if row["input"]["passable"] == serde_json::json!([null]) {
+            s.scene.sim.zone_grid = None;
+        }
         s.scene
             .sim
             .slave_manager_step(s.master, &s.scene.rules, Some(registry()));
@@ -880,7 +881,7 @@ fn deploy_cell_search_matches_the_recorded_native_arguments() {
         // The row's Slave Miner stands at (15, 15); the refinery's own cell
         // (`vt+0x1B8`) is its north-west one. YAREFN is 2x2 either way.
         let owner = if group == "relocation" {
-            (12, 12)
+            (YAREFN_NW.0 as i16, YAREFN_NW.1 as i16)
         } else {
             (15, 15)
         };
@@ -955,5 +956,5 @@ fn replay_covers_every_row() {
     .map(|group| corpus[*group].as_array().unwrap().len())
     .sum();
     assert_eq!(total, 104);
-    assert_eq!(SKIPPED.len(), 6);
+    assert_eq!(SKIPPED.len(), 4);
 }
