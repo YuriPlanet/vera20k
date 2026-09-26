@@ -92,7 +92,10 @@ pub fn infantry_facing_slot(facing: u8) -> u16 {
 pub struct Animation {
     /// Currently playing sequence.
     pub sequence: SequenceKind,
-    /// Current frame within the sequence (0 to frame_count - 1).
+    /// Current frame within the sequence (0 to frame_count - 1). For an
+    /// infantryman whose Doing owns its sequence, the native stage (`+0xF8`),
+    /// which does not wrap at the count: the draw takes it modulo the count
+    /// and the sequencer reads its end (`sim::movement::infantry_action`).
     pub frame_index: u16,
     /// Reached native frames accumulated since the last image advance.
     pub elapsed_frames: u16,

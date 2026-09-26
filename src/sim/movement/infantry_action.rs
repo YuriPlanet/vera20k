@@ -303,6 +303,10 @@ impl Simulation {
     /// and never wraps; the draw shows it modulo the frame count
     /// (`0x00518E18`, `resolve_shp_frame`) and the sequencer reads its end.
     /// A rate of 0 never steps.
+    ///
+    /// RESIDUAL: the stage is 16 bits where native's is 32, so a Hover held
+    /// for 65,536 steps (about 2.4 hours at rate 2) wraps to 0: one skipped
+    /// pose in its loop, nothing else (its default arm is refused anyway).
     pub(crate) fn infantry_stage_tick(&mut self, id: u64, rules: &RuleSet) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
