@@ -221,8 +221,9 @@ pub(super) fn passive_acquire_step(
 ///    `Aggressive=yes` and `Suicide=no`, passes on Move without
 ///    CanAcquireTarget (`0x0070929A..0x007092EC`);
 /// 2. otherwise [`can_acquire_target`] must pass;
-/// 3. on Move, an object parked on its NavCom's cell ([`parked_on_move`])
-///    passes (`0x00709301..0x007093D3`);
+/// 3. on Move, an object parked on its NavCom's cell passes, and a
+///    `BalloonHover=` object that is no Foot fails ([`parked_on_move`],
+///    `0x00709301..0x007093D3`);
 /// 4. `OpportunityFire=` (`+0x6AF`) passes (`0x007093D5`);
 /// 5. any mission but Guard fails;
 /// 6. on Guard, the weapon in slot `SprayAttack ? 0 : 1` (vt+0x3E4,
@@ -277,20 +278,30 @@ fn passive_acquire_gate(sim: &Simulation, id: u64, rules: &RuleSet, mission: Mis
 }
 
 /// The gate's Move arms (`0x00709301..0x007093D3`), for an object whose
-/// NavCom (`+0x5A4`) is its own cell (vt+0x1BC) and that holds no
-/// waypoint-planning token with nodes (`+0x514`, `0x00636DC0`): a
-/// `BalloonHover=` Foot (`+0xD6A`, `0x00709317`) or a Unit whose type is
-/// `IsSimpleDeployer=` (`+0xE13`, `0x00709394`) passes. That is a Rocketeer,
-/// Kirov or Siege Chopper parked where a Move order left it: native
-/// `FootClass::Mission_Move @ 0x004D4200` keeps Move while the NavCom is set.
-/// A `BalloonHover=` object that is no Foot fails the gate outright
-/// (`0x00709333`). Answers the gate's verdict, or `None` to go on.
+/// NavCom (`+0x5A4`) is its own cell and that holds no waypoint-planning token
+/// with nodes (`+0x514`, `0x00636DC0`): a `BalloonHover=` Foot (`+0xD6A`,
+/// `0x00709317`) or a Unit whose type is `IsSimpleDeployer=` (`+0xE13`,
+/// `0x00709394`) passes. That is a Rocketeer, Lunar infantryman, Kirov or
+/// Siege Chopper parked where a Move order left it: native
+/// `FootClass::Mission_Move @ 0x004D4200` keeps Move while the NavCom is set
+/// (read from the body, not executed). A `BalloonHover=` object that is no
+/// Foot fails the gate outright (`0x00709333`). The own cell is vt+0x1BC,
+/// `ObjectClass::GetCell @ 0x005F6960` for every Foot class: the cell holding
+/// the Location, which `position.rx`/`ry` name. Answers the gate's verdict, or
+/// `None` to go on.
 ///
 /// RESIDUAL: VERA has no waypoint-planning mode (the token's setter
 /// `0x00705D10` is called only from the planning code), so every object
-/// passes as with no token. Trigger: a player planning a looped waypoint path
-/// for these types (`+0x14`, its node count, positive). Effect: native keeps
+/// passes as with a token of no nodes. Trigger: a player planning any
+/// waypoint path for these types (its count positive). Effect: native keeps
 /// such a parked object from scanning. Frequency: waypoint mode only.
+///
+/// RESIDUAL (scatter frame): when a parked Jumpjet yields its cell's air slot,
+/// native's `Set_Destination` writes the new NavCom inside that frame's
+/// Process; VERA's adapter writes it in the next frame's locomotor step, after
+/// that frame's passive block, whose gate still sees the old cell. Trigger:
+/// two Jumpjets contending for one cell's air slot while a scan is due.
+/// Effect: one early scan (its Scenario draw and timer). Frequency: rare.
 fn parked_on_move(
     entity: &crate::sim::game_entity::GameEntity,
     obj: &crate::rules::object_type::ObjectType,
@@ -871,12 +882,12 @@ mod tests {
     }
 
     /// Parity with `tools/spatial_oracle/passive_acquire_gate.json`: the
-    /// original gate and CanAcquireTarget, on each row VERA represents,
-    /// through the production gate with a type carrying the row's flags. Not
-    /// compared, because VERA holds no such state or computes the answer
-    /// itself: a planning token, a Foot class without the Foot flag, the
-    /// Temporal, slave, CaptureManager, team and garrison arms, and a supplied
-    /// AreaFire weapon selection.
+    /// original gate and CanAcquireTarget, through the production gate with a
+    /// type carrying the row's flags. A token of no nodes compares as VERA's
+    /// absent token. Not compared: a token with nodes and a Foot class without
+    /// the Foot flag, which VERA cannot hold; and the Temporal, slave,
+    /// CaptureManager, team, garrison and AreaFire-selection rows, whose
+    /// inputs this fixture does not build (those arms predate the Move arms).
     #[test]
     fn passive_acquire_gate_matches_the_native_gate() {
         use crate::rules::ini_parser::IniFile;
@@ -890,7 +901,7 @@ mod tests {
         .expect("corpus parses");
         let native_only = |input: &Value| {
             let name = input["name"].as_str().unwrap();
-            !input["token"].is_null()
+            input["token"].as_i64().is_some_and(|nodes| nodes > 0)
                 || input["foot"] == false
                 || input["team"].is_object()
                 || [
@@ -1015,6 +1026,6 @@ mod tests {
             );
             compared.push(name);
         }
-        assert_eq!(compared.len(), 30, "{compared:?}");
+        assert_eq!(compared.len(), 32, "{compared:?}");
     }
 }

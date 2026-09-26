@@ -32,9 +32,10 @@ fn pose(sim: &super::Simulation, id: u64) -> Pose {
 
 /// Retail Dustbowl with a Rocketeer on open level ground at (x, y), from which
 /// it can fly eight cells east, with sixteen cells of open ground east of it.
-/// The Americans ally with the map's own `Player` house, whose start forces
-/// stand near the hold: a parked Rocketeer engages whatever enemy comes near,
-/// so the only enemies are the Russians each test places. Each side keeps a
+/// The map's own `Player` house, whose start forces (an MCV, Rhinos and GIs)
+/// stand within the 20mm's range of the hold, allies with both sides: a parked
+/// Rocketeer engages whatever enemy comes near, and it would otherwise shoot
+/// them, so the only enemies are the ones each test places. Each side keeps a
 /// power plant out of the fight, so neither house is defeated under the Battle
 /// mode's ShortGame.
 fn retail_dustbowl_rocketeer() -> (crate::headless_scenario::HeadlessScenario, u64, u16, u16) {
@@ -106,7 +107,12 @@ fn retail_dustbowl_rocketeer() -> (crate::headless_scenario::HeadlessScenario, u
             Some((rocketeer, x, y))
         })
         .expect("open level ground for the flight");
-    for (house, ally) in [("AMERICANS", "PLAYER"), ("PLAYER", "AMERICANS")] {
+    for (house, ally) in [
+        ("AMERICANS", "PLAYER"),
+        ("PLAYER", "AMERICANS"),
+        ("RUSSIANS", "PLAYER"),
+        ("PLAYER", "RUSSIANS"),
+    ] {
         sim.house_alliances
             .entry(house.to_string())
             .or_default()
@@ -327,6 +333,11 @@ fn retail_dustbowl_parked_rocketeer_engages_nearby_enemies() {
     let parked = sim.substrate.entities.get(rocketeer).expect("rocketeer");
     let move_mission = parked.mission.current();
     assert_eq!(
+        move_mission.known(),
+        Some(crate::sim::mission::MissionType::Move),
+        "parked on Move"
+    );
+    assert_eq!(
         parked.navigation.nav_com,
         Some(crate::sim::components::NavTargetRef::cell(
             parked.position.rx,
@@ -391,6 +402,91 @@ fn retail_dustbowl_parked_rocketeer_engages_nearby_enemies() {
             .is_none_or(|entity| entity.health.current < 125),
         "the conscript is hit"
     );
+}
+
+/// Through the production frame: a Rocketeer ordered to a cell four cells
+/// east parks there on Move with its NavCom on its own cell (native
+/// `FootClass::Mission_Move @ 0x004D4200` keeps Move while the NavCom is set),
+/// and when an enemy stands three cells beyond, its passive scan acquires it
+/// through the gate's Move arm (`0x00709301..0x00709360`) and it fires, still
+/// parked and on Move. Before, the gate refused every Move but a team's.
+#[test]
+fn a_parked_rocketeer_scans_and_fires_on_move() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::mission::MissionType;
+    use std::collections::BTreeMap;
+    let row = serde_json::json!({"doing": DO_HOVER, "fraction": 0.0, "armed": true,
+        "owner": {"phase": 2, "moving": false}});
+    let (mut sim, rules, shooter) = rocketeer_crash_fixture(&row);
+    let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
+    let americans = sim.interner.intern("Americans");
+    let order = CommandEnvelope::new(
+        americans,
+        sim.session.tick + 1,
+        Command::Move {
+            entity_id: 1,
+            target_rx: 56,
+            target_ry: 52,
+            queue: false,
+            group_id: None,
+        },
+    );
+    let mut orders = vec![order];
+    let mut parked = false;
+    for _ in 0..300 {
+        sim.advance_tick(
+            &std::mem::take(&mut orders),
+            Some(&rules),
+            &BTreeMap::new(),
+            Some(&grid),
+            None,
+            67,
+        );
+        let entity = sim.substrate.entities.get(1).unwrap();
+        let runtime = entity
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .jumpjet_runtime()
+            .unwrap();
+        if entity.position.rx == 56
+            && runtime.phase == 2
+            && entity.navigation.nav_com == Some(crate::sim::components::NavTargetRef::cell(56, 52))
+        {
+            parked = true;
+            break;
+        }
+    }
+    assert!(parked, "the Rocketeer parks on its NavCom's cell");
+    let entity = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(entity.mission.current().known(), Some(MissionType::Move));
+    assert!(entity.attack_target.is_none());
+    // The shooter steps three cells east of the hold.
+    sim.remove_entity_occupancy(shooter);
+    {
+        let enemy = sim.substrate.entities.get_mut(shooter).unwrap();
+        enemy.position.rx = 59;
+        enemy.position.ry = 52;
+    }
+    sim.add_entity_occupancy(shooter);
+    let rearm = sim.substrate.entities.get(1).unwrap().rearm_timer;
+    let mut acquired = false;
+    let mut fired = false;
+    for _ in 0..120 {
+        sim.advance_tick(&[], Some(&rules), &BTreeMap::new(), Some(&grid), None, 67);
+        let Some(entity) = sim.substrate.entities.get(1) else {
+            break;
+        };
+        assert_eq!(entity.mission.current().known(), Some(MissionType::Move));
+        acquired |= entity.attack_target.as_ref().map(|attack| attack.target)
+            == Some(crate::sim::combat::TargetKind::Entity(shooter));
+        fired |= entity.rearm_timer != rearm;
+        if fired {
+            break;
+        }
+    }
+    assert!(acquired, "the parked Rocketeer acquires the enemy");
+    assert!(fired, "and fires at it");
 }
 
 /// A grounded Rocketeer idling on Guard fidgets as native does: its idle turn
@@ -640,20 +736,26 @@ fn retail_dustbowl_shot_down_rocketeer_falls_and_leaves_no_body() {
 /// A Rocketeer (the retail `[JUMPJET]` Jumpjet block and
 /// `[RocketeerSequence]`) and an area warhead to shoot it down with.
 fn rocketeer_crash_rules() -> crate::rules::ruleset::RuleSet {
+    rocketeer_rules_armed(false)
+}
+
+/// The crash corpus's rules; `armed` gives the Rocketeer the shooter's gun.
+fn rocketeer_rules_armed(armed: bool) -> crate::rules::ruleset::RuleSet {
     use crate::rules::ini_parser::IniFile;
-    let mut rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+    let mut rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(&format!(
         "[General]\nConditionRed=0.25\n\
          [InfantryTypes]\n0=JUMPJET\n\
          [VehicleTypes]\n0=SHOOTER\n\
          [JUMPJET]\nStrength=125\nArmor=flak\nImage=ROCK\nJumpJet=yes\nCrashable=yes\n\
-         BalloonHover=yes\nLocomotor={92612C46-F71F-11d1-AC9F-006008055BB5}\n\
+         BalloonHover=yes\nLocomotor={{92612C46-F71F-11d1-AC9F-006008055BB5}}\n\
          SpeedType=Hover\nMovementZone=Fly\nJumpjetSpeed=30\nJumpjetClimb=20\n\
          JumpjetCrash=25\nJumpjetHeight=500\nJumpjetWobbles=.01\nJumpjetDeviation=1\n\
-         JumpjetNoWobbles=yes\nCrashingSound=RocketeerDie\n\
+         JumpjetNoWobbles=yes\nCrashingSound=RocketeerDie\n{}\
          [SHOOTER]\nStrength=100\nPrimary=CrashGun\n\
          [CrashGun]\nDamage=150\nRange=6\nWarhead=CrashWH\n\
          [CrashWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-    ))
+        if armed { "Primary=CrashGun\n" } else { "" }
+    )))
     .unwrap();
     let art = IniFile::from_str(
         "[ROCK]\nSequence=RocketeerSequence\nFireUp=2\n\
@@ -684,7 +786,7 @@ fn rocketeer_crash_fixture(
     use crate::map::entities::EntityCategory;
     use crate::sim::house_state::HouseState;
     use crate::util::fixed_math::SimFixed;
-    let rules = rocketeer_crash_rules();
+    let rules = rocketeer_rules_armed(input["armed"].as_bool().unwrap_or(false));
     let mut sim = super::Simulation::with_seed(0);
     sim.scenario_rng = crate::sim::rng::SimRng::new(31);
     install_common_raw_terrain(&mut sim, 70, 70, 0, None);
