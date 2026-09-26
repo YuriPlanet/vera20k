@@ -2,11 +2,12 @@
 //! deployed refinery, and their harvest cycle.
 //!
 //! Evidence: `tools/spatial_oracle/slave_manager.{py,json,meta.json}` runs the
-//! per-slave machine, the manager machine for a building owner and for a
-//! Slave Miner, DeploySlaves (through the original Unlimbo and Scatter), the
-//! slave's Mission_Harvest and its deposit, the Slave Miner's recall rules
-//! and its Guard/AreaGuard kick; `world/slave_manager_oracle_tests.rs`
-//! replays them through this owner.
+//! per-slave machine, the manager machine for a building owner (with the
+//! refinery's relocation test) and for a Slave Miner, DeploySlaves (through
+//! the original Unlimbo and Scatter), the slave's Mission_Harvest and its
+//! deposit, the Slave Miner's recall rules, its Guard/AreaGuard kick and the
+//! placement hand-off; `world/slave_manager_oracle_tests.rs` replays them
+//! through this owner.
 //!
 //! - `TechnoClass::Init_Managers` (`0x006F4020..0x006F4077`) builds the manager
 //!   for an `Enslaves=` type (constructor `0x006AF1A0`): `SlavesNumber` slaves,
@@ -34,7 +35,10 @@
 //!   takes the ones outside, which reset to Guard and cheer, and the ones
 //!   inside die with it.
 //! - Deploying a Slave Miner hands its manager to the refinery (SetOwner
-//!   `0x006AF580`, with the hand-off `0x006B0D10`); undeploying hands it back.
+//!   `0x006AF580`, with the hand-off `0x006B0D10`); undeploying hands it back
+//!   at the conversion (`BuildingClass::Sell @ 0x0044A047`,
+//!   `tick_building_down`). A refinery placed from production takes the same
+//!   hand-off (`0x006B0D60`) once its Unlimbo succeeds.
 //! - A Slave Miner hunts for a field: it sets out as it leaves its war
 //!   factory (`UnitClass::PerCellProcess @ 0x0073A9CA`, ahead of the rally
 //!   point), and idle on Guard, Sticky or Area Guard it sets out again once
@@ -48,31 +52,41 @@
 //!   slaves and hunts again. A player's Harvest order onto a field runs
 //!   HandleReturnedSlaves (`0x006B0DB0`) from the Harvest mission; any other
 //!   order but Attack, and Stop, take it off the hunt (`0x006B0C80`).
+//! - A refinery with no ore within `SlaveMinerShortScan` of its centre (the
+//!   Building's Scan_For_Tiberium, `0x0070F8F0`) moves when a cell beside
+//!   the nearest field within `SlaveMinerLongScan` lies
+//!   `SlaveMinerScanCorrection` cells closer to it than the refinery does
+//!   (state 5, `0x006B0062..0x006B01F5`); with no field in range it moves
+//!   too. It archives its own cell and packs up (Selling's UndeploysInto arm,
+//!   VERA's `undeploy_building`); the Slave Miner it becomes is sent to that
+//!   cell and its manager, in state 6, recalls its idle slaves and hunts.
 //!
 //! ## Residuals
-//! - The refinery's relocation is chain 6b: state 5's check
-//!   (`0x006B0062..0x006B01F5`) when no ore lies within `SlaveMinerShortScan`
-//!   of a refinery and a field is `SlaveMinerScanCorrection` closer
-//!   elsewhere, where retail queues Selling to undeploy the refinery into a
-//!   Slave Miner (`BuildingClass::Sell`'s SetOwner `0x0044A047`) that hunts
-//!   from state 6, and HandleReturnedSlaves' building arm (an archived
-//!   field). VERA keeps deploying slaves where the refinery stands, and a
-//!   player's undeploy is VERA's direct conversion (`sim::slave_miner`).
-//!   Trigger: the ore around a Yuri refinery runs out. Effect: the refinery
-//!   stays put and its slaves walk farther. Frequency: every Yuri game past
-//!   the early field. Downstream: the Selling/undeploy chain is not entered.
+//! - The pack-up runs on VERA's undeploy owner: `building_down`'s fixed 30
+//!   frames stand for the Selling mission's visits and the build-up played
+//!   in reverse (`BuildingClass::Sell` stages 0..2, `Begin_Mode(0)` at the
+//!   `BuildupTime=` rate, `0x0045F2E7`), and the Selling mission is not
+//!   published, so the refinery's turret keeps firing while it packs up.
+//!   Trigger: every relocation and undeploy. Effect: the pack-up's length and
+//!   the turret. Frequency: every relocation. Downstream: the construction
+//!   timing (build-up and build-down) owner, a separate mechanism.
+//! - A player moves a refinery natively by clicking a cell with it selected
+//!   (`BuildingClass` cell click `0x004436F0`: SetRallyPoint's ArchiveTarget
+//!   event 0x1E, then SELL 0x16 -> `Sell_Back(-1) @ 0x00447110`); Selling
+//!   then runs HandleReturnedSlaves' building arm for an archived field
+//!   (`0x0044AA3D..0x0044AA9F`: FindDeployCell beside it becomes the
+//!   archive) and the Slave Miner drives there. VERA's app has no such click
+//!   (it undeploys on a self-click, which retail never offers); the building
+//!   arm is unreachable without it. Trigger: a player's move order for a
+//!   refinery (or Construction Yard). Effect: no move order. Frequency:
+//!   occasional. Downstream: the building's rally point is VERA's
+//!   `rally_target`, not the ArchiveTarget it is natively.
 //! - The factory-exit hunt start runs at production: VERA hands a produced
 //!   unit its rally point there rather than at the factory exit
 //!   (`production_queue.rs`), so the Slave Miner's hunt begins a few frames
 //!   before native's, whose exit drive precedes it. Trigger: every Slave
 //!   Miner built. Effect: the first scan comes a few frames early.
 //!   Frequency: every build. Downstream: none beyond timing.
-//! - A refinery placed from production is handed its manager's state by
-//!   `0x006B0D60` (the hand-off's body: state 0 -> 4, slaves reset; callers
-//!   `HouseClass::Place_Production 0x004FB252`,
-//!   `BuildingClass::ExitObject_Main 0x004452FA`); VERA leaves it in state 0.
-//!   Both wait out the build-up with every slave inside, so nothing a player
-//!   sees differs; the manager state (hashed) does. Chain 6b.
 //! - Two recall sites have no VERA anchor: FootClass::Mission_Hunt's reset
 //!   when it picks a destination (`0x004D553D..0x004D5547`; VERA's Hunt port
 //!   has no destination step) and FootClass::Mission_AreaGuard's hunt start
@@ -759,8 +773,19 @@ impl Simulation {
                     self.set_manager_state(master, ManagerState::Ready, now);
                     return;
                 }
-                // Module residual: the relocation check when no ore lies
-                // within SlaveMinerShortScan.
+                // 0x006B0062..0x006B009A: no ore within SlaveMinerShortScan
+                // of the refinery puts its relocation to the test.
+                let short =
+                    crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_short_scan);
+                if crate::sim::miner::ore_scan::scan_for_tiberium(
+                    self, rules, registry, master, short,
+                )
+                .is_none()
+                    && self.refinery_should_relocate(master, rules, registry)
+                {
+                    self.relocate_refinery(master, rules);
+                    return;
+                }
                 self.deploy_slaves(master, rules, registry);
             }
             ManagerState::PackingUp => {
@@ -784,6 +809,72 @@ impl Simulation {
     fn slave_master_deploys(&mut self, master: u64, rules: &RuleSet) -> bool {
         self.set_manager_state(master, ManagerState::Deployed, i32::MAX);
         self.deploy_mcv(master, rules, &Default::default())
+    }
+
+    /// State 5's relocation test (`0x006B00B2..0x006B01BF`), once no ore
+    /// lies within `SlaveMinerShortScan`: the nearest field `S` within
+    /// `SlaveMinerLongScan` (the Building's Scan_For_Tiberium; a miss is
+    /// `(0,0)`, which the test uses as it is), a deploy cell `D` beside it
+    /// (FindDeployCell, also run on a miss; its own miss is `(0,0)` too), and
+    /// the refinery moves when `D` is `SlaveMinerScanCorrection` cells closer
+    /// to `S` than the refinery's own cell (`vt+0x1B8`, the north-west
+    /// one): `(ScanCorrection >> 8) + |D - S| < |O - S|`, each distance
+    /// Sqrt_Approx's truncated root read back as a signed short
+    /// ([`cell_distance`]). With no field within the long scan and no cell
+    /// by `(0,0)`, both of `S` and `D` are `(0,0)`, so a refinery farther
+    /// than the correction from the map's corner moves.
+    fn refinery_should_relocate(
+        &mut self,
+        master: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> bool {
+        let long = crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_long_scan);
+        let field =
+            crate::sim::miner::ore_scan::scan_for_tiberium(self, rules, registry, master, long)
+                .unwrap_or((0, 0));
+        let spot = self
+            .find_deploy_cell(master, field, rules)
+            .unwrap_or((0, 0));
+        let Some(owner) = self.substrate.entities.get(master) else {
+            return false;
+        };
+        let own = owner_cell(owner);
+        let (fx, fy) = (field.0 as i16, field.1 as i16);
+        // 0x00588C60: the CellStruct difference, 16-bit.
+        let to_spot = cell_distance(
+            (spot.0 as i16).wrapping_sub(fx),
+            (spot.1 as i16).wrapping_sub(fy),
+        );
+        let to_own = cell_distance(own.0.wrapping_sub(fx), own.1.wrapping_sub(fy));
+        let correction =
+            crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_scan_correction);
+        correction.wrapping_add(to_spot) < to_own
+    }
+
+    /// The relocation (`0x006B01C1..0x006B01F5`): the refinery archives its
+    /// own cell (`vt+0x1BC`, the CellClass at its Location) and queues
+    /// Selling, whose UndeploysInto arm (`BuildingClass::Sell @
+    /// 0x00449C30`) packs it up into the Slave Miner that its manager, now in
+    /// state 6, sends hunting. VERA's undeploy owner is
+    /// [`Simulation::undeploy_building`]; the conversion at its end hands
+    /// the manager over and sends the Slave Miner to the archived cell
+    /// (`tick_building_down`). The byte `+0x4F8` written first silences the
+    /// undeploy voice Selling plays (`0x0044A9DF`: `0x00459C20` ->
+    /// `0x00708E00`), which VERA does not play (`VoiceDeploy=` is unparsed),
+    /// so it has no counterpart.
+    fn relocate_refinery(&mut self, master: u64, rules: &RuleSet) {
+        let Some(owner) = self.substrate.entities.get_mut(master) else {
+            return;
+        };
+        let (x, y) = owner_cell(owner);
+        owner.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(
+            x as u16, y as u16,
+        )));
+        if !self.undeploy_building(master, rules) {
+            log::debug!("slave refinery {master} could not start its undeploy");
+        }
+        self.set_manager_state(master, ManagerState::PackingUp, i32::MAX);
     }
 
     /// The Slave Miner's class setter (`vt+0x480(cell, 1)`, the Unit setter
@@ -1595,13 +1686,29 @@ impl Simulation {
         }
     }
 
+    /// The hand-off (`0x006B0D10`, and `0x006B0D60`, the same body): an idle
+    /// manager (state 0) moves to 4 (frame MAX) and resets every slave that
+    /// is not lost to Guard, last first. `UnitClass::Deploy` runs it before
+    /// SetOwner (`0x00739956`); a refinery placed from production runs it
+    /// once its Unlimbo succeeds (`BuildingClass::ExitObject @ 0x004452FA`,
+    /// `HouseClass::Place_Production @ 0x004FB252`), so it waits out its
+    /// build-up in state 4 as a deployed one does.
+    pub(crate) fn slave_manager_hand_off(&mut self, master: u64, rules: &RuleSet) {
+        if self
+            .slave_manager(master)
+            .is_some_and(|manager| manager.state == ManagerState::Ready)
+        {
+            self.set_manager_state(master, ManagerState::Deployed, i32::MAX);
+            self.reset_live_slaves(master, rules);
+        }
+    }
+
     /// SetOwner (`0x006AF580`): the manager moves from `from` to `to`. A
     /// manager `to` already holds (the one its constructor built) frees its
     /// slaves with no killer and no house, which UnInits them in limbo, and
     /// is deleted; every node's slave then names `to` as its SlaveOwner.
-    /// `UnitClass::Deploy` first runs the hand-off `0x006B0D10`: an idle
-    /// manager (state 0) moves to 4 and resets every slave that is not lost
-    /// to Guard.
+    /// `UnitClass::Deploy` first runs the hand-off
+    /// ([`Self::slave_manager_hand_off`]).
     pub(crate) fn transfer_slave_manager(
         &mut self,
         from: u64,
@@ -1610,13 +1717,8 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
-        if deploying
-            && self
-                .slave_manager(from)
-                .is_some_and(|manager| manager.state == ManagerState::Ready)
-        {
-            self.set_manager_state(from, ManagerState::Deployed, i32::MAX);
-            self.reset_live_slaves(from, rules);
+        if deploying {
+            self.slave_manager_hand_off(from, rules);
         }
         let Some(manager) = self
             .substrate

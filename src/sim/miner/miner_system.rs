@@ -22,7 +22,6 @@ use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement;
 use crate::sim::movement::locomotor::MovementLayer;
-use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::zone_map::{ZONE_INVALID, ZoneGrid};
 use crate::sim::world::Simulation;
@@ -786,31 +785,6 @@ pub(super) fn process_miner(
 }
 
 // -- State handlers --
-
-/// True if the cell has no static blocker (terrain object, building
-/// footprint set in PathGrid) and no non-self vehicle/structure occupant
-/// (OccupancyGrid). Infantry are not blockers. VERA-internal: only the Slave
-/// Miner's slave scan (`slave_miner::build_slave_scan_filter`) uses it; the
-/// War and Chrono Miners use native `Is_Cell_Harvestable` (`ore_scan`).
-pub(crate) fn is_cell_path_clear_for_scan(
-    occupancy: &OccupancyGrid,
-    path_grid: Option<&PathGrid>,
-    cell: (u16, u16),
-    self_id: u64,
-) -> bool {
-    if let Some(grid) = path_grid
-        && !grid.is_walkable(cell.0, cell.1)
-    {
-        return false;
-    }
-    if let Some(occ) = occupancy.get(cell.0, cell.1) {
-        let any_non_self_blocker = occ.blockers(MovementLayer::Ground).any(|id| id != self_id);
-        if any_non_self_blocker {
-            return false;
-        }
-    }
-    true
-}
 
 /// `UnitClass::Mission_Harvest @ 0x0073E5E0` state 0 (LOOKING),
 /// `0x0073E6F1..0x0073E92C`. Native evidence:

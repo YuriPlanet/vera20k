@@ -344,6 +344,9 @@ pub fn place_ready_building_with_overlays(
     ) else {
         return false;
     };
+    // `0x004452FA`/`0x004FB252`: a placed building's slave manager (a Slave
+    // Miner refinery's) takes the hand-off once its Unlimbo succeeds.
+    sim.slave_manager_hand_off(new_sid, rules);
     // Log screen position for debugging placement alignment.
     if let Some(ge) = sim.substrate.entities.get(new_sid) {
         let (fw, fh) = foundation_dimensions(&foundation_str);

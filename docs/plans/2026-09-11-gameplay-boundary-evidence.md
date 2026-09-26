@@ -66,7 +66,7 @@ source/field/return/save/visual comparison was run for this catalogue.
 
 ## E2 Slave economy
 
-[Slave harvesting](../../src/sim/slave_miner.rs) owns master/worker state and
+[Slave harvesting](../../src/sim/slave_manager.rs) owns master/worker state and
 `SearchOre → MoveToOre → Harvest → ReturnToMaster → Deposit`. It uses shared
 `extract_bale`/resource access and purifier/income helpers, but `handle_slave_deposit`
 credits whole storage slots through the master relationship. Its nearby native
@@ -325,7 +325,7 @@ inferences, not new native-parity findings or measured productivity gains.
 - **Standard miners and resource supply:** re-read
   [Harvest dispatch](../../src/sim/miner/harvest_mission.rs),
   [miner state machine](../../src/sim/miner/miner_system.rs) and
-  [slave harvesting](../../src/sim/slave_miner.rs). War/Chrono decisions live in
+  [slave harvesting](../../src/sim/slave_manager.rs). War/Chrono decisions live in
   the common owner, including distinct far-return paths; slave hosts are excluded
   from that dispatcher. E1 traces resource production/consumption; E2 distinguishes
   the worker lifecycle. This supports common miner work and conditional shared

@@ -341,7 +341,9 @@ pub enum SimSoundEvent {
         rx: u16,
         ry: u16,
     },
-    /// DeploySound on infantry stance entry or successful unit-to-building conversion.
+    /// DeploySound on infantry stance entry, successful unit-to-building
+    /// conversion, or a building's undeploy start (Selling's UndeploysInto
+    /// arm plays the building type's own `DeploySound=`).
     EntityDeployed {
         deploy_sound_id: InternedId,
         rx: u16,
@@ -5550,6 +5552,18 @@ impl Simulation {
     /// Advance building-down (undeploy) animations. When done, despawn the
     /// building and spawn the mobile unit (e.g., ConYard → MCV).
     /// Returns true if any entities were spawned (triggers atlas refresh).
+    ///
+    /// The conversion follows `BuildingClass::Sell`'s UndeploysInto arm:
+    /// after the unit's Unlimbo (`0x0044A002`) and health
+    /// (`0x0044A010..0x0044A039`), a building's slave manager moves to it
+    /// (SetOwner `0x006AF580` at `0x0044A047`, which frees the unit's own
+    /// fresh slaves), the unit takes the building's veterancy, and a building
+    /// with an ArchiveTarget (`+0x218`, read at `0x00449E84`) sends the unit
+    /// there through its class setter `vt+0x480(archive, 1)` and
+    /// `Queue_Mission(Move, 0)` (`0x0044A091..0x0044A0AE`). The building's
+    /// Group (`+0x214`, copied at `0x0044A04C`) has no sim counterpart: VERA's
+    /// control groups live in the app, which does not carry the building's
+    /// membership over to the unit.
     fn tick_building_down(
         &mut self,
         rules: Option<&RuleSet>,
@@ -5588,6 +5602,13 @@ impl Simulation {
             let Some((unit_type_id, owner_id, rx, ry, z, was_selected)) = spawn_data else {
                 continue;
             };
+            let (archive, veterancy) = self
+                .substrate
+                .entities
+                .get(sid)
+                .map_or((None, None), |building| {
+                    (building.archive_target(), Some(building.veterancy_raw))
+                });
             // Building449E66/70 captures current health/type ratio at actual
             // conversion, not when the reverse animation was requested.
             let converted_health = if let Some(rules) = rules {
@@ -5633,6 +5654,30 @@ impl Simulation {
                         .expect("conversion with rules captured health")
                         .apply(ge);
                     ge.selected = was_selected;
+                }
+                self.transfer_slave_manager(sid, new_sid, false, rules, overlay_registry);
+                // 0x0044A058..0x0044A05E: the building's VeterancyClass
+                // (`+0x150`); the rank cache (`+0x13C`) stays the unit's own.
+                if let (Some(raw), Some(unit)) =
+                    (veterancy, self.substrate.entities.get_mut(new_sid))
+                {
+                    unit.veterancy_raw = raw;
+                    unit.veterancy = crate::sim::combat::veterancy::rank_u16(raw);
+                }
+                // A building's archive is a cell: the Slave Miner refinery's
+                // relocation is its only VERA writer (`slave_manager`).
+                if let Some(crate::sim::combat::TargetKind::Cell(x, y)) = archive {
+                    if !self.set_unit_cell_destination(new_sid, (x, y), rules) {
+                        log::debug!("undeployed unit {new_sid} refused its archive ({x}, {y})");
+                    }
+                    if let Some(unit) = self.substrate.entities.get_mut(new_sid) {
+                        crate::sim::mission::authority::queue_entity_mission_deferred(
+                            unit,
+                            crate::sim::mission::MissionId::from_known(
+                                crate::sim::mission::MissionType::Move,
+                            ),
+                        );
+                    }
                 }
             }
         }

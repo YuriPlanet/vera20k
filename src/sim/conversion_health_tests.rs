@@ -146,6 +146,36 @@ fn deploy(sim: &mut Simulation, rules: &RuleSet, source: u64, into: &str) -> u64
         .stable_id()
 }
 
+/// The building's undeploy (`undeploy_building`) run to its conversion
+/// (`tick_building_down`), answering the unit it became. A just-deployed
+/// building is taken as built up, as the undeploy requires.
+fn undeploy(sim: &mut Simulation, rules: &RuleSet, building: u64, into: &str) -> u64 {
+    sim.substrate
+        .entities
+        .get_mut(building)
+        .unwrap()
+        .building_up = None;
+    assert!(sim.undeploy_building(building, rules));
+    let down = sim
+        .substrate
+        .entities
+        .get_mut(building)
+        .unwrap()
+        .building_down
+        .as_mut()
+        .unwrap();
+    down.elapsed_ticks = down.total_ticks - 1;
+    sim.advance_tick(&[], Some(rules), &BTreeMap::new(), None, None, 22);
+    sim.substrate
+        .entities
+        .values()
+        .find(|entity| {
+            entity.lifecycle.object_alive && sim.interner.resolve(entity.type_ref()) == into
+        })
+        .unwrap()
+        .stable_id()
+}
+
 #[test]
 fn slave_conversions_reset_master_health_but_preserve_retained_slave_state() {
     let rules = rules();
@@ -170,7 +200,7 @@ fn slave_conversions_reset_master_health_but_preserve_retained_slave_state() {
     assert_health(&sim, building, 250);
     assert_eq!(pool(&sim, building), slaves);
     damage(&mut sim, building, 500);
-    let unit = crate::sim::slave_miner::undeploy_slave_miner(&mut sim, building, &rules).unwrap();
+    let unit = undeploy(&mut sim, &rules, building, "SMIN");
     assert_health(&sim, unit, 50);
     assert_eq!(pool(&sim, unit), slaves);
     for slave in slaves {
@@ -234,7 +264,7 @@ fn all_four_conversion_callers_preserve_results_above_u16() {
     damage(&mut sim, source, 75_000);
     let building = deploy(&mut sim, &rules, source, "YAREFN");
     assert_health(&sim, building, 750_000);
-    let unit = crate::sim::slave_miner::undeploy_slave_miner(&mut sim, building, &rules).unwrap();
+    let unit = undeploy(&mut sim, &rules, building, "SMIN");
     assert_health(&sim, unit, 75_000);
 }
 

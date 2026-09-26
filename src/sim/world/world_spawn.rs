@@ -1693,6 +1693,11 @@ impl Simulation {
     /// Reads `UndeploysInto` from rules.ini to determine the spawned unit type.
     /// Starts a reverse build-up animation (`BuildingDown`); the actual unit
     /// spawn happens when the animation completes (see `tick_building_down`).
+    ///
+    /// The start is `BuildingClass::Sell`'s first UndeploysInto visit, which
+    /// plays the building type's `DeploySound=` (`+0x56C`) at its Location
+    /// (`0x0044A9E5..0x0044AA38`, after the voice `vt+0x36C` VERA does not
+    /// play).
     pub(crate) fn undeploy_building(&mut self, stable_id: u64, rules: &RuleSet) -> bool {
         // Read undeploy data before mutating.
         let undeploy_data = self.substrate.entities.get(stable_id).and_then(|entity| {
@@ -1716,6 +1721,21 @@ impl Simulation {
         let Some((owner_id, rx, ry, z, unit_type, was_selected)) = undeploy_data else {
             return false;
         };
+        let sound = self.substrate.entities.get(stable_id).and_then(|entity| {
+            let sound = self
+                .object_type(entity.type_ref(), rules)?
+                .deploy_sound
+                .clone()?;
+            Some((sound, entity.position.rx, entity.position.ry))
+        });
+        if let Some((sound, sound_rx, sound_ry)) = sound {
+            let deploy_sound_id = self.interner.intern(&sound);
+            self.sound_events.push(SimSoundEvent::EntityDeployed {
+                deploy_sound_id,
+                rx: sound_rx,
+                ry: sound_ry,
+            });
+        }
 
         // Start the reverse build-up animation instead of instant despawn.
         let unit_type_id = self.interner.intern(&unit_type);
