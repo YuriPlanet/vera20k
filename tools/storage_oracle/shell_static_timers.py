@@ -6,7 +6,8 @@ table (``[AC1B04]`` count, ``[AC1B18]`` hash, ``[AC1B0C]`` bits, ``[AC1B00]``
 buckets; record+0 HWND, +0x204 next, +0x70 dialog id), reads the child's id with
 GetDlgCtrlID and walks compare chains. This fixture runs the complete original
 bodies for heading ``0x694``, status line ``0x695`` and monitor ``0x71C`` of the
-main-menu family and Options/Skirmish/saved-game neighbours, for Skirmish
+main-menu family and Options/Skirmish/saved-game neighbours (Choose Map
+``0x6B`` and its random-map dialog ``0x105`` included), for Skirmish
 ``0x102``'s game type ``0x6EC`` and map name ``0x5A8``, and for the score
 dialog ``0x108``'s table statics (Game, Time, the five headers and the eight
 rows' name, Kills, Losses, Built and Score cells, template order):
@@ -46,7 +47,7 @@ GETTERS = {
     "range": 0x601D20,
     "kind4_startup_ms": 0x603240,
 }
-DIALOGS = (0xE2, 0x100, 0x101, 0x129, 0xD5, 0x102, 0xB7)
+DIALOGS = (0xE2, 0x100, 0x101, 0x129, 0xD5, 0x102, 0xB7, 0x6B, 0x105)
 CONTROLS = (0x694, 0x695, 0x71C)
 SKIRMISH_DIALOG = 0x102
 # RT_DIALOG 0x102's game type and map name statics.
@@ -148,7 +149,7 @@ def generate():
 if __name__ == "__main__":
     finish_vectors(generate, Path(__file__).with_suffix(".json"),
                    provenance=lambda: provenance(
-        scope="Complete original kind-1 classifier/interval/step/range getters and the kind-4 startup timer for 0x694/0x695/0x71C in seven shell dialogs and the score dialog 0x108, plus 0x102's 0x6EC/0x5A8 and 0x108's 47 table statics",
+        scope="Complete original kind-1 classifier/interval/step/range getters and the kind-4 startup timer for 0x694/0x695/0x71C in nine shell dialogs and the score dialog 0x108, plus 0x102's 0x6EC/0x5A8 and 0x108's 47 table statics",
         assumptions=[
             "Pre-match shell: the network-session predicate 69BBE0 returns false",
             "The parent dialog's record is found by the original lookup loop in a supplied one-bucket table; record fields other than HWND, next and dialog id stay zero",

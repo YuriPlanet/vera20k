@@ -33,6 +33,12 @@ enum Phase {
     Chooser,
     /// Cancel pressed on `0x6B`: it slides out and `0x102` slides in again.
     ChooserReturn,
+    /// Create Random Map pressed: `0x6B` slides out and `0x105` runs.
+    RandomMap,
+    /// Cancel pressed on `0x105`: it slides out and `0x6B` slides in again.
+    RandomMapCancel,
+    /// The hidden chooser's eject box after `0x105`'s Use Map was answered.
+    RandomMapEject,
     /// Start Game pressed: `0x102` slides out and the scenario loads.
     Starting,
     /// The game's Leave was confirmed: the abort exit runs and the shell
@@ -81,7 +87,53 @@ pub(super) enum ChooserTarget {
     /// Use Map on the list's first map while AI rows would not fit it: the
     /// eject box over the empty backdrop.
     Eject,
+    /// Create Random Map, then the random-map dialog `0x105`.
+    RandomMap(RandomMapTarget),
 }
+
+/// What a random-map dialog checkpoint captures. The route hovers Create
+/// Random Map before pressing it, as the retail helper's click does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum RandomMapTarget {
+    /// `0x105` settled after its entry slide.
+    Steady,
+    /// `0x105`'s entry slide held at a tick.
+    Entry(u32),
+    /// `0x105` settled with the pointer resting here.
+    Hover((i32, i32)),
+    /// Cancel: `0x105` slides out and `0x6B`'s entry slide is held at a tick.
+    CancelEntry(u32),
+    /// Cancel: `0x6B` settled again.
+    CancelSteady,
+    /// Use Map: the map generates, `0x105` slides out, the chooser's Use Map
+    /// selects it and `0x102` settles with the random map.
+    UseMap,
+    /// Generate Map, then Save Map opens the seed browser over `0x105`; its
+    /// Back uncovers `0x105`, which must not slide in again.
+    SeedBrowserReturn,
+    /// Terrain Type's list open, `0x105` settled with the pointer below the
+    /// list on Map Size's face. The list holds the mouse, so the status line
+    /// keeps Terrain Type's help.
+    ListOpen,
+    /// AI row 2 takes Easy on `0x102` and Players 2 on `0x105`, then Generate
+    /// Map and Use Map: `0x105` slides out and the hidden chooser's Use Map
+    /// asks to eject AI players while no dialog shows or slides. Cancel slides
+    /// the chooser in and it settles; OK closes it without a slide and `0x102`
+    /// settles with the random map.
+    Eject(crate::ui::skirmish_shell::EjectPromptButton),
+    /// The same route's eject box, presented over no dialog.
+    EjectBox,
+}
+
+/// Create Random Map on `0x6B` and Cancel on `0x105` at 800x600.
+const CREATE_RANDOM_MAP_POINT: (i32, i32) = (720, 262);
+const RANDOM_MAP_CANCEL_POINT: (i32, i32) = (720, 556);
+const RANDOM_MAP_USE_MAP_POINT: (i32, i32) = (720, 220);
+const RANDOM_MAP_GENERATE_POINT: (i32, i32) = (432, 430);
+/// Terrain Type's arrow, and Map Size's face below its open list, at 800x600
+/// (the retail helper's `ej-list-open.png` click and `ej-list-off.png` point).
+const RANDOM_MAP_TERRAIN_ARROW_POINT: (i32, i32) = (484, 79);
+const RANDOM_MAP_MAP_SIZE_FACE_POINT: (i32, i32) = (350, 196);
 
 #[derive(Default)]
 pub(super) struct SkirmishCapture {
@@ -104,6 +156,23 @@ pub(super) struct SkirmishCapture {
     /// mouse move.
     hover: Option<(i32, i32)>,
     hovered: bool,
+    /// The random-map routes rest the pointer on Create Random Map until the
+    /// chooser's help has typed in before pressing it: the retail helper's
+    /// click rests 100 ms before its press and 90 ms more before its release,
+    /// and `rmg-cancel.png` shows that help whole.
+    create_random_map_hovered: bool,
+    /// The random-map Use Map or seed-browser route has pressed Generate Map.
+    generate_pressed: bool,
+    /// The seed-browser route has pressed Save Map.
+    save_pressed: bool,
+    /// The eject route has set AI row 2, then Players 2, and has seen its
+    /// box with no dialog behind it.
+    second_ai_added: bool,
+    players_set: bool,
+    eject_seen: bool,
+    /// The dialog the eject box's answer shows got the production mouse move
+    /// at the resting pointer once its slide had run.
+    answer_rested: bool,
     loading: Option<LoadingTarget>,
     in_game_frames: u32,
     deploy_sent: bool,
@@ -176,15 +245,33 @@ fn guard(
             || state.frontend.quit_cascade.is_some()
             || state.match_state.match_presentation.show_save_load_panel
             || (shell.choose_map_modal.is_some() && chooser.is_none())
-            || (chooser != Some(ChooserTarget::Eject)
-                && shell
-                    .choose_map_modal
-                    .as_ref()
-                    .is_some_and(|modal| modal.eject_prompt.is_some()))
+            || (shell.random_map_setup_modal.is_some()
+                && !matches!(chooser, Some(ChooserTarget::RandomMap(_))))
+            || (!matches!(
+                chooser,
+                Some(
+                    ChooserTarget::Eject
+                        | ChooserTarget::RandomMap(
+                            RandomMapTarget::Eject(_) | RandomMapTarget::EjectBox
+                        )
+                )
+            ) && shell
+                .choose_map_modal
+                .as_ref()
+                .is_some_and(|modal| modal.eject_prompt.is_some()))
             || shell.validation_modal.is_some()
-            || shell.random_map_setup_modal.is_some()
-            || shell.saved_seed_browser.is_some()
-            || state.frontend.random_map_generation.is_some()
+            || (shell.saved_seed_browser.is_some()
+                && chooser != Some(ChooserTarget::RandomMap(RandomMapTarget::SeedBrowserReturn)))
+            || (state.frontend.random_map_generation.is_some()
+                && !matches!(
+                    chooser,
+                    Some(ChooserTarget::RandomMap(
+                        RandomMapTarget::UseMap
+                            | RandomMapTarget::SeedBrowserReturn
+                            | RandomMapTarget::Eject(_)
+                            | RandomMapTarget::EjectBox
+                    ))
+                ))
             || shell.open_combo_dropdown.is_some()
             || shell.trackbar_drag.is_some()
             || shell.dropdown_scroll_drag.is_some()
@@ -289,11 +376,32 @@ impl SkirmishCapture {
         }
     }
 
-    fn guard(&self, state: &AppState) -> Result<()> {
-        let rest = self
-            .hover
+    pub(super) fn random_map(target: RandomMapTarget) -> Self {
+        Self::chooser(ChooserTarget::RandomMap(target))
+    }
+
+    /// Where the pointer rests: on the hovered control once the route has
+    /// moved it there, else at the capture's rest point.
+    fn rest_point(&self) -> (i32, i32) {
+        let hover = match self.chooser {
+            Some(ChooserTarget::RandomMap(RandomMapTarget::Hover(point))) => Some(point),
+            Some(ChooserTarget::RandomMap(RandomMapTarget::ListOpen)) => {
+                Some(RANDOM_MAP_MAP_SIZE_FACE_POINT)
+            }
+            _ => self.hover,
+        };
+        hover
             .filter(|_| self.hovered)
-            .unwrap_or((EXPECTED_CURSOR_X as i32, EXPECTED_CURSOR_Y as i32));
+            .unwrap_or((EXPECTED_CURSOR_X as i32, EXPECTED_CURSOR_Y as i32))
+    }
+
+    fn set_pointer(state: &mut AppState, point: (i32, i32)) {
+        state.match_state.input.cursor_x = point.0 as f32;
+        state.match_state.input.cursor_y = point.1 as f32;
+    }
+
+    fn guard(&self, state: &AppState) -> Result<()> {
+        let rest = self.rest_point();
         guard(
             state,
             self.chooser,
@@ -484,8 +592,300 @@ impl SkirmishCapture {
             && state.frontend.shell_first_paint_slide.is_none()
             && state.frontend.shell_exit.is_none()
             && state.frontend.shell_slide_active_shell == Some(ShellSlideKind::ChooseMap)
-            && state.frontend.shell_page_title.is_terminal()
-            && state.frontend.shell_status_line.is_terminal()
+            && state
+                .frontend
+                .skirmish_shell_state
+                .choose_map_modal
+                .as_ref()
+                .is_some_and(|modal| modal.statics.is_terminal())
+    }
+
+    /// `0x105` shows with no slide and its heading and status line revealed.
+    fn random_map_settled(state: &AppState) -> bool {
+        state.frontend.shell_first_paint_slide.is_none()
+            && state.frontend.shell_exit.is_none()
+            && state.frontend.shell_slide_active_shell == Some(ShellSlideKind::RandomMap)
+            && state
+                .frontend
+                .skirmish_shell_state
+                .random_map_setup_modal
+                .as_ref()
+                .is_some_and(|setup| setup.statics.is_terminal())
+    }
+
+    /// Generate Map, Save Map once the map exists, then the browser's Back
+    /// (`0x686`); from then on `0x105` shows without an entry slide.
+    fn seed_browser_step(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let shell = &state.frontend.skirmish_shell_state;
+        let browsing = shell.saved_seed_browser.is_some();
+        if self.pointer_rested {
+            ensure!(!browsing, "the seed browser stayed open after Back");
+            ensure!(
+                state.frontend.shell_first_paint_slide.is_none(),
+                "closing the seed browser replayed 0x105's entry slide"
+            );
+            return Ok(());
+        }
+        let centre =
+            |rect: crate::ui::skirmish_shell::RectPx| (rect.x + rect.w / 2, rect.y + rect.h / 2);
+        // The covered `0x105` paints nothing, so its statics wait.
+        if browsing {
+            let back = crate::ui::skirmish_shell::compute_saved_seed_layout(
+                crate::ui::skirmish_shell::SavedSeedMode::Save,
+                state.render_width(),
+                state.render_height(),
+            )
+            .back;
+            Self::set_pointer(state, centre(back));
+            App::handle_saved_seed_browser_mouse_down(state);
+            App::handle_saved_seed_browser_mouse_up(state);
+            Self::set_pointer(state, self.rest_point());
+            self.pointer_rested = true;
+            self.route
+                .push(json!({"dialog": 0x2b4, "frame": frame, "action": "Back"}));
+            return Ok(());
+        }
+        if !Self::random_map_settled(state) {
+            return Ok(());
+        }
+        let generated = shell
+            .random_map_setup_modal
+            .as_ref()
+            .is_some_and(|setup| setup.generated && !setup.generating);
+        let press = if !self.generate_pressed {
+            self.generate_pressed = true;
+            Some((RANDOM_MAP_GENERATE_POINT, "GenerateMap"))
+        } else if generated && !self.save_pressed {
+            self.save_pressed = true;
+            let save = crate::ui::skirmish_shell::compute_random_map_setup_layout(
+                state.render_width(),
+                state.render_height(),
+            )
+            .save;
+            Some((centre(save), "SaveMap"))
+        } else {
+            None
+        };
+        if let Some((point, action)) = press {
+            Self::set_pointer(state, point);
+            App::handle_skirmish_shell_mouse_move(state);
+            App::handle_random_map_setup_mouse_down(state);
+            App::handle_random_map_setup_mouse_up(state);
+            Self::set_pointer(state, self.rest_point());
+            self.route
+                .push(json!({"dialog": 0x105, "frame": frame, "action": action}));
+            if action == "SaveMap" {
+                ensure!(
+                    state
+                        .frontend
+                        .skirmish_shell_state
+                        .saved_seed_browser
+                        .is_some(),
+                    "Save Map did not open the seed browser"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Hold `kind`'s entry slide once it reaches `target`.
+    /// Generate Map, then Use Map once the map exists (Use Map starts
+    /// disabled, as retail's `rmg-steady.png`). With `min_players` the
+    /// route first presses the Players track's left end, as the retail
+    /// helper does until the value reaches its minimum, 2 (`ej-players.png`).
+    fn use_map_step(&mut self, state: &mut AppState, frame: u32, min_players: bool) {
+        let generated = state
+            .frontend
+            .skirmish_shell_state
+            .random_map_setup_modal
+            .as_ref()
+            .is_some_and(|setup| setup.generated && !setup.generating);
+        let press = if min_players && !self.players_set {
+            self.players_set = true;
+            let track = crate::ui::skirmish_shell::compute_random_map_setup_layout(
+                state.render_width(),
+                state.render_height(),
+            )
+            .control_rects[5];
+            Some(((track.x + 3, track.y + track.h / 2), "Players 2"))
+        } else if !self.generate_pressed {
+            self.generate_pressed = true;
+            Some((RANDOM_MAP_GENERATE_POINT, "GenerateMap"))
+        } else if generated && !self.pointer_rested {
+            self.pointer_rested = true;
+            Some((RANDOM_MAP_USE_MAP_POINT, "UseMap"))
+        } else {
+            None
+        };
+        if let Some((point, action)) = press {
+            Self::set_pointer(state, point);
+            App::handle_skirmish_shell_mouse_move(state);
+            App::handle_random_map_setup_mouse_down(state);
+            App::handle_random_map_setup_mouse_up(state);
+            Self::set_pointer(state, self.rest_point());
+            self.route
+                .push(json!({"dialog": 0x105, "frame": frame, "action": action}));
+        }
+    }
+
+    /// AI row 2 takes Easy through its type combo's production presses: the
+    /// arrow opens the list and its second row picks Easy (retail
+    /// `ej-ai-open.png`, `ej-ai-easy.png`).
+    fn add_second_ai(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::ui::skirmish_shell::{SkirmishAiRowType, SkirmishComboId, SkirmishComboItem};
+        let id = SkirmishComboId::AiType(1);
+        let layout =
+            crate::ui::skirmish_shell::compute_layout(state.render_width(), state.render_height());
+        let face = crate::ui::skirmish_shell::combo_rect(&layout, id)
+            .context("AI row 2 has no type combo")?;
+        Self::set_pointer(
+            state,
+            (
+                face.x + face.w - crate::ui::skirmish_shell::COMBO_ARROW_RESERVE_W / 2,
+                face.y + crate::ui::skirmish_shell::COMBO_FACE_H / 2,
+            ),
+        );
+        App::handle_skirmish_shell_mouse_down(state);
+        let shell = &state.frontend.skirmish_shell_state;
+        let maps = state.frontend.scenario_catalog.shell_maps();
+        let list = crate::ui::skirmish_shell::combo_dropdown_content_rect(shell, &layout, maps, id)
+            .filter(|_| shell.open_combo_dropdown.is_some())
+            .context("AI row 2's type list did not open")?;
+        let row = crate::ui::skirmish_shell::combo_items(shell, maps, id)
+            .iter()
+            .position(|item| *item == SkirmishComboItem::AiType(SkirmishAiRowType::Easy))
+            .context("the AI type list has no Easy row")? as i32;
+        let row_h = crate::ui::skirmish_shell::COMBO_DROPDOWN_ROW_H;
+        Self::set_pointer(
+            state,
+            (list.x + list.w / 2, list.y + row * row_h + row_h / 2),
+        );
+        App::handle_skirmish_shell_mouse_down(state);
+        crate::ui::skirmish_shell::handle_option_mouse_up(&mut state.frontend.skirmish_shell_state);
+        Self::set_pointer(state, self.rest_point());
+        ensure!(
+            state
+                .frontend
+                .skirmish_shell_state
+                .opponents
+                .get(1)
+                .is_some_and(|row| row.row_type == SkirmishAiRowType::Easy),
+            "AI row 2 did not take Easy"
+        );
+        self.second_ai_added = true;
+        self.selected_scene = Some(selected_scene(state)?);
+        self.route
+            .push(json!({"dialog": 0x102, "frame": frame, "action": "AI row 2 Easy"}));
+        Ok(())
+    }
+
+    /// Players 2, Generate Map and Use Map; once `0x105` has slid out, the
+    /// hidden chooser's eject box asks while no dialog shows or slides, and
+    /// the route answers it a presented frame later (`None` leaves it up).
+    fn eject_step(
+        &mut self,
+        state: &mut AppState,
+        answer: Option<crate::ui::skirmish_shell::EjectPromptButton>,
+        frame: u32,
+    ) -> Result<()> {
+        let shell = &state.frontend.skirmish_shell_state;
+        // Until Use Map is pressed (`pointer_rested`) and `0x105` has gone.
+        if !self.pointer_rested || shell.random_map_setup_modal.is_some() {
+            if Self::random_map_settled(state) {
+                self.use_map_step(state, frame, true);
+                if let Some(setup) = state
+                    .frontend
+                    .skirmish_shell_state
+                    .random_map_setup_modal
+                    .as_ref()
+                {
+                    ensure!(setup.options.num_players == 2, "Players did not reach 2");
+                }
+            }
+            return Ok(());
+        }
+        ensure!(
+            shell
+                .choose_map_modal
+                .as_ref()
+                .is_some_and(|modal| modal.eject_prompt.is_some()),
+            "Use Map on the two-player random map did not ask to eject AI players"
+        );
+        ensure!(
+            shell.top_dialog().is_none()
+                && state.frontend.shell_first_paint_slide.is_none()
+                && state.frontend.shell_exit.is_none(),
+            "a dialog shows or slides behind the eject box"
+        );
+        if !self.eject_seen {
+            self.eject_seen = true;
+            self.route.push(json!({"dialog": 0x6b, "frame": frame,
+                "action": "eject box over no dialog"}));
+            return Ok(());
+        }
+        let Some(answer) = answer else {
+            return Ok(());
+        };
+        let layout = crate::ui::shell::modal::quit_confirm_layout(
+            state.render_width() as i32,
+            state.render_height() as i32,
+        );
+        let button = match answer {
+            crate::ui::skirmish_shell::EjectPromptButton::Ok => layout.ok,
+            crate::ui::skirmish_shell::EjectPromptButton::Cancel => layout.cancel,
+        };
+        Self::set_pointer(state, (button.x + button.w / 2, button.y + button.h / 2));
+        App::handle_choose_map_eject_mouse_down(state);
+        App::handle_choose_map_eject_mouse_up(state);
+        Self::set_pointer(state, self.rest_point());
+        let shell = &state.frontend.skirmish_shell_state;
+        match answer {
+            crate::ui::skirmish_shell::EjectPromptButton::Ok => ensure!(
+                shell.choose_map_modal.is_none() && state.frontend.shell_exit.is_none(),
+                "OK on the eject box slid the hidden chooser out"
+            ),
+            crate::ui::skirmish_shell::EjectPromptButton::Cancel => ensure!(
+                shell.top_dialog()
+                    == Some(crate::ui::skirmish_shell::SkirmishShellDialog::ChooseMap),
+                "Cancel on the eject box did not show the chooser"
+            ),
+        }
+        self.route.push(json!({"dialog": 0x6b, "frame": frame,
+            "action": format!("eject box {answer:?}")}));
+        self.phase = Phase::RandomMapEject;
+        Ok(())
+    }
+
+    fn hold_entry(
+        &mut self,
+        state: &mut AppState,
+        kind: ShellSlideKind,
+        target: u32,
+        dialog: u16,
+        frame: u32,
+    ) -> Result<()> {
+        match entry_wave_tick(state, kind) {
+            Some(tick) => {
+                self.entry_seen = true;
+                ensure!(
+                    tick <= target,
+                    "{dialog:#x} entry slide passed tick {target}"
+                );
+                if tick == target && !self.entry_held {
+                    if let Some(wave) = state.frontend.shell_first_paint_slide.as_mut() {
+                        wave.hold_for_capture();
+                    }
+                    self.entry_held = true;
+                    self.route.push(json!({"dialog": dialog, "frame": frame,
+                        "action": "hold entry slide", "tick": tick}));
+                }
+            }
+            None => ensure!(
+                !self.entry_seen || state.frontend.shell_slide_active_shell != Some(kind),
+                "{dialog:#x} entry slide ended before capture"
+            ),
+        }
+        Ok(())
     }
 
     /// Called only after an ordinary production frame has been presented. Route
@@ -609,6 +1009,16 @@ impl SkirmishCapture {
                     self.route.push(json!({"dialog": 0x102, "frame": frame,
                         "action": "StartGame", "hover": [START_GAME_POINT.0, START_GAME_POINT.1]}));
                     self.phase = Phase::Starting;
+                } else if self.selected_scene.is_some()
+                    && matches!(
+                        self.chooser,
+                        Some(ChooserTarget::RandomMap(
+                            RandomMapTarget::Eject(_) | RandomMapTarget::EjectBox
+                        ))
+                    )
+                    && !self.second_ai_added
+                {
+                    self.add_second_ai(state, frame)?;
                 } else if self.selected_scene.is_some() && self.chooser.is_some() {
                     App::leave_shell_dialog(
                         state,
@@ -668,6 +1078,27 @@ impl SkirmishCapture {
                         self.press_use_map_on_first_map(state, frame)?;
                         self.pointer_rested = true;
                     }
+                    Some(ChooserTarget::RandomMap(_))
+                        if Self::chooser_settled(state) && !self.create_random_map_hovered =>
+                    {
+                        Self::set_pointer(state, CREATE_RANDOM_MAP_POINT);
+                        App::handle_skirmish_shell_mouse_move(state);
+                        Self::set_pointer(state, self.rest_point());
+                        self.create_random_map_hovered = true;
+                    }
+                    Some(ChooserTarget::RandomMap(_)) if Self::chooser_settled(state) => {
+                        // Through the chooser's production press and release.
+                        Self::click_chooser(state, CREATE_RANDOM_MAP_POINT);
+                        Self::set_pointer(state, self.rest_point());
+                        ensure!(
+                            state.frontend.shell_exit.is_some(),
+                            "Create Random Map did not start 0x6B's teardown slide"
+                        );
+                        self.route.push(json!({"dialog": 0x6b, "frame": frame,
+                            "action": "CreateRandomMap", "hover": [
+                                CREATE_RANDOM_MAP_POINT.0, CREATE_RANDOM_MAP_POINT.1]}));
+                        self.phase = Phase::RandomMap;
+                    }
                     Some(ChooserTarget::Return) if Self::chooser_settled(state) => {
                         App::leave_shell_dialog(
                             state,
@@ -682,6 +1113,149 @@ impl SkirmishCapture {
                         self.phase = Phase::ChooserReturn;
                     }
                     _ => {}
+                }
+            }
+            (Phase::RandomMap, PresentedShell::Other | PresentedShell::Skirmish) => {
+                let Some(ChooserTarget::RandomMap(target)) = self.chooser else {
+                    bail!("the random-map phase runs only for random-map targets");
+                };
+                match target {
+                    RandomMapTarget::Entry(target) => {
+                        self.hold_entry(state, ShellSlideKind::RandomMap, target, 0x105, frame)?;
+                    }
+                    RandomMapTarget::Hover(point)
+                        if Self::random_map_settled(state) && !self.hovered =>
+                    {
+                        Self::set_pointer(state, point);
+                        App::handle_skirmish_shell_mouse_move(state);
+                        self.hovered = true;
+                        self.route.push(json!({"dialog": 0x105, "frame": frame,
+                            "action": "pointer rests", "point": [point.0, point.1]}));
+                    }
+                    RandomMapTarget::ListOpen
+                        if Self::random_map_settled(state) && !self.hovered =>
+                    {
+                        // Open the list through the dialog's production
+                        // handlers, then rest the pointer below it.
+                        Self::set_pointer(state, RANDOM_MAP_TERRAIN_ARROW_POINT);
+                        App::handle_skirmish_shell_mouse_move(state);
+                        App::handle_random_map_setup_mouse_down(state);
+                        App::handle_random_map_setup_mouse_up(state);
+                        ensure!(
+                            state
+                                .frontend
+                                .skirmish_shell_state
+                                .random_map_setup_modal
+                                .as_ref()
+                                .is_some_and(|setup| setup.open_combo.is_some()),
+                            "Terrain Type's list did not open"
+                        );
+                        Self::set_pointer(state, RANDOM_MAP_MAP_SIZE_FACE_POINT);
+                        App::handle_skirmish_shell_mouse_move(state);
+                        self.hovered = true;
+                        self.route.push(json!({"dialog": 0x105, "frame": frame,
+                            "action": "open Terrain Type, pointer rests", "point": [
+                                RANDOM_MAP_MAP_SIZE_FACE_POINT.0,
+                                RANDOM_MAP_MAP_SIZE_FACE_POINT.1]}));
+                    }
+                    RandomMapTarget::CancelEntry(_) | RandomMapTarget::CancelSteady
+                        if Self::random_map_settled(state) =>
+                    {
+                        // Cancel through the dialog's production handlers.
+                        Self::set_pointer(state, RANDOM_MAP_CANCEL_POINT);
+                        App::handle_skirmish_shell_mouse_move(state);
+                        App::handle_random_map_setup_mouse_down(state);
+                        App::handle_random_map_setup_mouse_up(state);
+                        Self::set_pointer(state, self.rest_point());
+                        ensure!(
+                            state.frontend.shell_exit.is_some(),
+                            "Cancel did not start 0x105's teardown slide"
+                        );
+                        self.route
+                            .push(json!({"dialog": 0x105, "frame": frame, "action": "Cancel"}));
+                        self.phase = Phase::RandomMapCancel;
+                    }
+                    RandomMapTarget::UseMap if Self::random_map_settled(state) => {
+                        self.use_map_step(state, frame, false);
+                    }
+                    RandomMapTarget::SeedBrowserReturn => self.seed_browser_step(state, frame)?,
+                    RandomMapTarget::Eject(answer) => {
+                        self.eject_step(state, Some(answer), frame)?
+                    }
+                    RandomMapTarget::EjectBox => self.eject_step(state, None, frame)?,
+                    _ => {}
+                }
+            }
+            (Phase::RandomMapCancel, PresentedShell::Other | PresentedShell::Skirmish) => {
+                match self.chooser {
+                    Some(ChooserTarget::RandomMap(RandomMapTarget::CancelEntry(target)))
+                        if state.frontend.shell_exit.is_none() =>
+                    {
+                        self.hold_entry(state, ShellSlideKind::ChooseMap, target, 0x6b, frame)?;
+                    }
+                    // The retail helper's pointer goes back to rest after its
+                    // click; the queued move reaches the chooser once its
+                    // slide has run (`rmg-cancel-b.png`).
+                    Some(ChooserTarget::RandomMap(RandomMapTarget::CancelSteady))
+                        if !self.pointer_rested
+                            && state.frontend.shell_exit.is_none()
+                            && state.frontend.shell_first_paint_slide.is_none()
+                            && state.frontend.shell_slide_active_shell
+                                == Some(ShellSlideKind::ChooseMap) =>
+                    {
+                        App::handle_skirmish_shell_mouse_move(state);
+                        self.pointer_rested = true;
+                        self.route.push(json!({"dialog": 0x6b, "frame": frame,
+                            "action": "pointer rests", "point": [
+                                state.match_state.input.cursor_x,
+                                state.match_state.input.cursor_y]}));
+                    }
+                    _ => {}
+                }
+            }
+            (Phase::RandomMapEject, PresentedShell::Other | PresentedShell::Skirmish) => {
+                let Some(ChooserTarget::RandomMap(RandomMapTarget::Eject(answer))) = self.chooser
+                else {
+                    bail!("the eject phase runs only for eject targets");
+                };
+                ensure!(
+                    crate::app::frontend::shell_transition::shell_exit_wave(
+                        state,
+                        ShellSlideKind::ChooseMap
+                    )
+                    .is_none(),
+                    "the chooser slid out after the eject box"
+                );
+                // Cancel shows the chooser, whose first paint slides it in
+                // (`0x005E6B47`); OK shows `0x102` again.
+                let kind = match answer {
+                    crate::ui::skirmish_shell::EjectPromptButton::Cancel => {
+                        ShellSlideKind::ChooseMap
+                    }
+                    crate::ui::skirmish_shell::EjectPromptButton::Ok => ShellSlideKind::Skirmish,
+                };
+                if entry_wave_tick(state, kind).is_some() {
+                    self.entry_seen = true;
+                }
+                // The retail helper's pointer goes back to rest after its
+                // click; the queued move reaches the dialog once its slide has
+                // run.
+                if self.entry_seen
+                    && !self.answer_rested
+                    && state.frontend.shell_first_paint_slide.is_none()
+                    && state.frontend.shell_slide_active_shell == Some(kind)
+                {
+                    App::handle_skirmish_shell_mouse_move(state);
+                    self.answer_rested = true;
+                    let dialog = if kind == ShellSlideKind::ChooseMap {
+                        0x6b
+                    } else {
+                        0x102
+                    };
+                    self.route.push(json!({"dialog": dialog, "frame": frame,
+                        "action": "pointer rests", "point": [
+                            state.match_state.input.cursor_x,
+                            state.match_state.input.cursor_y]}));
                 }
             }
             (Phase::Starting, _)
@@ -802,6 +1376,78 @@ impl SkirmishCapture {
                     && self.entry_held
                     && entry_wave_tick(state, ShellSlideKind::ChooseMap) == Some(target));
             }
+            Some(ChooserTarget::RandomMap(target)) => {
+                return Ok(match target {
+                    RandomMapTarget::Steady => {
+                        self.phase == Phase::RandomMap && Self::random_map_settled(state)
+                    }
+                    RandomMapTarget::Entry(tick) => {
+                        self.phase == Phase::RandomMap
+                            && self.entry_held
+                            && entry_wave_tick(state, ShellSlideKind::RandomMap) == Some(tick)
+                    }
+                    RandomMapTarget::Hover(_) | RandomMapTarget::ListOpen => {
+                        self.phase == Phase::RandomMap
+                            && self.hovered
+                            && Self::random_map_settled(state)
+                    }
+                    RandomMapTarget::CancelEntry(tick) => {
+                        self.phase == Phase::RandomMapCancel
+                            && self.entry_held
+                            && entry_wave_tick(state, ShellSlideKind::ChooseMap) == Some(tick)
+                    }
+                    RandomMapTarget::UseMap => {
+                        self.pointer_rested
+                            && state.frontend.random_map_generation.is_none()
+                            && state
+                                .frontend
+                                .skirmish_shell_state
+                                .choose_map_modal
+                                .is_none()
+                            && self.last_presented == Some(PresentedShell::Skirmish)
+                            && self.settled(state)?
+                    }
+                    RandomMapTarget::SeedBrowserReturn => {
+                        self.phase == Phase::RandomMap
+                            && self.pointer_rested
+                            && state
+                                .frontend
+                                .skirmish_shell_state
+                                .saved_seed_browser
+                                .is_none()
+                            && Self::random_map_settled(state)
+                    }
+                    RandomMapTarget::CancelSteady => {
+                        self.phase == Phase::RandomMapCancel
+                            && self.pointer_rested
+                            && state
+                                .frontend
+                                .skirmish_shell_state
+                                .random_map_setup_modal
+                                .is_none()
+                            && Self::chooser_settled(state)
+                    }
+                    RandomMapTarget::Eject(
+                        crate::ui::skirmish_shell::EjectPromptButton::Cancel,
+                    ) => {
+                        self.phase == Phase::RandomMapEject
+                            && self.answer_rested
+                            && Self::chooser_settled(state)
+                    }
+                    RandomMapTarget::EjectBox => self.phase == Phase::RandomMap && self.eject_seen,
+                    RandomMapTarget::Eject(crate::ui::skirmish_shell::EjectPromptButton::Ok) => {
+                        self.phase == Phase::RandomMapEject
+                            && self.answer_rested
+                            && state
+                                .frontend
+                                .skirmish_shell_state
+                                .choose_map_modal
+                                .is_none()
+                            && self.last_presented == Some(PresentedShell::Skirmish)
+                            && self.settled(state)?
+                    }
+                });
+            }
             Some(ChooserTarget::Return) => {
                 return Ok(self.phase == Phase::ChooserReturn
                     && state
@@ -892,9 +1538,30 @@ impl SkirmishCapture {
             "cursor": {"x": request.cursor_x, "y": request.cursor_y, "policy": "software-composited"},
             "route": self.route,
             "dialog_resource_id": match (self.chooser, self.loading) {
-                (Some(ChooserTarget::Steady | ChooserTarget::Entry(_) | ChooserTarget::Eject), _) => {
-                    Some(0x6b)
-                }
+                (
+                    Some(
+                        ChooserTarget::Steady
+                        | ChooserTarget::Entry(_)
+                        | ChooserTarget::Eject
+                        | ChooserTarget::RandomMap(
+                            RandomMapTarget::CancelEntry(_)
+                            | RandomMapTarget::CancelSteady
+                            | RandomMapTarget::Eject(
+                                crate::ui::skirmish_shell::EjectPromptButton::Cancel,
+                            )
+                            | RandomMapTarget::EjectBox,
+                        ),
+                    ),
+                    _,
+                ) => Some(0x6b),
+                (
+                    Some(ChooserTarget::RandomMap(
+                        RandomMapTarget::UseMap
+                        | RandomMapTarget::Eject(crate::ui::skirmish_shell::EjectPromptButton::Ok),
+                    )),
+                    _,
+                ) => Some(0x102),
+                (Some(ChooserTarget::RandomMap(_)), _) => Some(0x105),
                 (_, Some(_)) => None,
                 _ => Some(0x102),
             },

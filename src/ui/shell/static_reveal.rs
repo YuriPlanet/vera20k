@@ -362,6 +362,11 @@ impl PresentedKind1Static {
     /// Reveal window for this recomposition, `None` while the child is hidden.
     pub(crate) fn paint(&mut self, now: Instant) -> Option<Kind1RevealWindow> {
         self.reveal.poll_timer(now);
+        self.paint_undelivered()
+    }
+
+    /// [`Self::paint`] with no timer delivered.
+    fn paint_undelivered(&mut self) -> Option<Kind1RevealWindow> {
         match self.reveal.paint_window() {
             Kind1PaintWindow::Hidden => {
                 self.pending = None;
@@ -388,6 +393,111 @@ impl PresentedKind1Static {
     /// The reveal ran to completion and its final paint is on screen.
     pub(crate) fn is_terminal(&self) -> bool {
         self.pending.is_none() && self.reveal.is_terminal_persistent()
+    }
+
+    /// [`Self::paint`] with the static's text. While a slide runs no timer
+    /// reaches the static (`0x006071E0` sleeps without dispatching):
+    /// `timers` is false and only an invalidation paints a new count.
+    pub(crate) fn paint_text(&mut self, now: Instant, timers: bool) -> Option<StaticPaint<'_>> {
+        let window = if timers {
+            self.paint(now)?
+        } else {
+            self.paint_undelivered()?
+        };
+        Some(StaticPaint {
+            text: &self.text,
+            window,
+        })
+    }
+}
+
+/// One shown static in a recomposition: its text and reveal window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct StaticPaint<'a> {
+    pub text: &'a str,
+    pub window: Kind1RevealWindow,
+}
+
+/// A [`DialogStatics`] recomposition; `None` where nothing paints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DialogStaticsPaint<'a> {
+    pub heading: Option<StaticPaint<'a>>,
+    pub status_line: Option<StaticPaint<'a>>,
+}
+
+/// Heading `0x694` and status line `0x695` of a family dialog that another
+/// dialog hides or covers without destroying (`0x6B` under `0x105`, `0x105`
+/// under the seed browser), so they outlive the other dialog's run: text,
+/// started flag and count stay. A hidden dialog shown again keeps its last
+/// status-line paint through its entry slide (retail `rmg-cancel.png`), and
+/// its SHOW completion repaints what already started
+/// ([`PresentedKind1Static::show`]).
+#[derive(Debug, Clone)]
+pub(crate) struct DialogStatics {
+    heading: PresentedKind1Static,
+    /// Holds the last hover help.
+    status_line: PresentedKind1Static,
+}
+
+impl Default for DialogStatics {
+    fn default() -> Self {
+        Self {
+            heading: PresentedKind1Static::new(HEADING_KIND1),
+            status_line: PresentedKind1Static::new(STATUS_LINE_KIND1),
+        }
+    }
+}
+
+impl DialogStatics {
+    /// The SHOW completion with the heading the dialog holds.
+    pub(crate) fn show(&mut self, heading: &str, now: Instant) {
+        self.heading.set_text(heading, now);
+        self.heading.show(now);
+        self.status_line.show(now);
+    }
+
+    /// A hover message to the status line (`0x4B2`): a changed help restarts
+    /// a started reveal, and every message repaints the line
+    /// (`0x00615EF7`). Returns whether the help changed.
+    pub(crate) fn hover(&mut self, help: &str, now: Instant) -> bool {
+        let changed = self.status_line.text() != help;
+        self.status_line.set_text(help, now);
+        self.status_line.repaint();
+        changed
+    }
+
+    /// Another dialog stops covering this one without a slide (the seed
+    /// browser over `0x105` closes): both statics repaint at their counts.
+    pub(crate) fn uncovered(&mut self) {
+        self.heading.repaint();
+        self.status_line.repaint();
+    }
+
+    /// Both statics for this recomposition; the frame loop commits them
+    /// after present. While a slide runs the engine blits the top panel over
+    /// the heading, and the status line, outside the blits and validate-only
+    /// (`0x00606800` through `0x00601360`), gets no timer and keeps its last
+    /// paint ([`PresentedKind1Static::paint_text`]).
+    pub(crate) fn paint(&mut self, now: Instant, sliding: bool) -> DialogStaticsPaint<'_> {
+        let heading = if sliding {
+            None
+        } else {
+            self.heading.paint_text(now, true)
+        };
+        DialogStaticsPaint {
+            heading,
+            status_line: self.status_line.paint_text(now, !sliding),
+        }
+    }
+
+    pub(crate) fn commit_presented(&mut self) {
+        self.heading.commit_presented();
+        self.status_line.commit_presented();
+    }
+
+    /// Both reveals ran to completion and their last paints are on screen.
+    pub(crate) fn is_terminal(&self) -> bool {
+        self.heading.is_terminal() && self.status_line.is_terminal()
     }
 }
 
@@ -451,7 +561,7 @@ pub(crate) mod tests {
     fn heading_and_status_line_parameters_match_the_native_getters() {
         // Heading 0x694 and status line 0x695: kind 1 (0x00602490), interval
         // 0x00600CA0, step 0x006015E0, range 0x00601D20, executed natively.
-        for dialog in [0xE2, 0x100, 0x101, 0x129, 0xD5, 0x102, 0xB7] {
+        for dialog in [0xE2, 0x100, 0x101, 0x129, 0xD5, 0x102, 0xB7, 0x6B, 0x105] {
             assert_eq!(native_params(dialog, 0x694), HEADING_KIND1, "{dialog:#x}");
             assert_eq!(
                 native_params(dialog, 0x695),
@@ -650,5 +760,78 @@ pub(crate) mod tests {
             })
         );
         assert!(!reveal.poll_timer(start + Duration::from_secs(10)));
+    }
+
+    /// Paint and present both statics once: (heading, status line) counts.
+    fn present_dialog(statics: &mut DialogStatics, now: Instant) -> (Option<u32>, Option<u32>) {
+        present_dialog_sliding(statics, now, false)
+    }
+
+    fn present_dialog_sliding(
+        statics: &mut DialogStatics,
+        now: Instant,
+        sliding: bool,
+    ) -> (Option<u32>, Option<u32>) {
+        let shown = statics.paint(now, sliding);
+        let counts = (
+            shown.heading.map(|shown| shown.window.count),
+            shown.status_line.map(|shown| shown.window.count),
+        );
+        statics.commit_presented();
+        counts
+    }
+
+    #[test]
+    fn dialog_statics_start_once_and_repaint_when_the_dialog_shows_again() {
+        let t0 = Instant::now();
+        let mut statics = DialogStatics::default();
+        // Help written before the SHOW completion is only stored.
+        assert!(statics.hover("Help", t0));
+        assert_eq!(present_dialog(&mut statics, t0), (None, None));
+        statics.show("Choose Map", t0);
+        assert_eq!(present_dialog(&mut statics, t0), (Some(1), Some(1)));
+        let mut now = t0;
+        while !statics.is_terminal() {
+            now += Duration::from_millis(15);
+            present_dialog(&mut statics, now);
+        }
+        // "Choose Map" (10 units): the last timer paint drew 18 of 19;
+        // "Help": 19 of 21 (step 3).
+        assert_eq!(present_dialog(&mut statics, now), (Some(18), Some(19)));
+        // Shown again after another dialog hid it: the entry slide keeps the
+        // status line's last paint, and the SHOW completion repaints both at
+        // their counts, which after the last timer paint is the target.
+        assert_eq!(
+            present_dialog_sliding(&mut statics, now, true),
+            (None, Some(19))
+        );
+        statics.show("Choose Map", now);
+        assert_eq!(present_dialog(&mut statics, now), (Some(19), Some(22)));
+        assert!(statics.is_terminal());
+        // Uncovered without a slide: the same repaint at once.
+        statics.uncovered();
+        assert_eq!(present_dialog(&mut statics, now), (Some(19), Some(22)));
+    }
+
+    #[test]
+    fn no_timer_reaches_the_status_line_while_a_slide_runs() {
+        let t0 = Instant::now();
+        let mut statics = DialogStatics::default();
+        statics.show("Choose Map", t0);
+        statics.hover("Create a random battlefield.", t0);
+        assert_eq!(present_dialog(&mut statics, t0), (Some(1), Some(1)));
+        // A slide paints no heading, and the status line keeps its last paint
+        // however many timer deadlines pass.
+        let mut now = t0;
+        for _ in 0..30 {
+            now += Duration::from_millis(15);
+            assert_eq!(
+                present_dialog_sliding(&mut statics, now, true),
+                (None, Some(1))
+            );
+        }
+        // After the slide both reveals go on from their counts.
+        now += Duration::from_millis(15);
+        assert_eq!(present_dialog(&mut statics, now), (Some(2), Some(4)));
     }
 }
