@@ -20,6 +20,11 @@
 //!   cell is the one VERA's search finds on the scene, whose own evidence is
 //!   `find_nearby_cell`'s). A converting deploy moves the manager to the
 //!   refinery, which the comparison follows.
+//! - `relocation` rows: state 5 with no ore within `SlaveMinerShortScan` (the
+//!   refinery's relocation test, the Building's Scan_For_Tiberium run
+//!   natively). The queued Selling a relocation records is VERA's started
+//!   undeploy (`building_down`); its archive is compared.
+//! - `building_helper` rows: the placement hand-off (`0x006B0D60`).
 //!
 //! The Scenario RNG is seeded as the oracle seeds it. The oracle hands the
 //! regrown slave out of a supplied `CreateObject`, so the Rust constructor's
@@ -78,7 +83,7 @@ fn slave_rules(input: &Value) -> String {
          [SLAV]\nStrength=125\nStorage={}\nHarvestRate={}\nSpeed=4\nSlaved=yes\n\
          MovementZone=Infantry\nLocomotor={{4A582744-9839-11D1-B709-00A024DDAFD1}}\n\
          [YAREFN]\nFoundation=2x2\nStrength=2000\nEnslaves=SLAV\nSlavesNumber=0\n\
-         SlaveRegenRate={}\nSlaveReloadRate={}\nDeployFacing=0\n\
+         SlaveRegenRate={}\nSlaveReloadRate={}\nDeployFacing=0\nUndeploysInto=SMIN\n\
          [SMIN]\nStrength=2000\nSpeed=3\nROT=5\nEnslaves=SLAV\nSlavesNumber=0\nDeploysInto=YAREFN\n\
          ResourceGatherer=yes\nResourceDestination=yes\nMovementZone=Crusher\n\
          Locomotor={{4A582741-9839-11D1-B709-00A024DDAFD1}}\n\
@@ -178,9 +183,7 @@ pub(super) fn row_scene(input: &Value) -> SlaveScene {
     }
     let mut scene = row_scene_with(&input, |text| {
         *text = text.replacen("2=GAOREP\n", "2=GAOREP\n3=YAREFN\n", 1);
-        if unit_owner {
-            *text = text.replacen("1=MTNK\n", "1=MTNK\n2=SMIN\n", 1);
-        }
+        *text = text.replacen("1=MTNK\n", "1=MTNK\n2=SMIN\n", 1);
         text.push_str(&slave_rules(&input));
     });
     // The oracle's Rules+0x1780.. (ReadRange leptons), KickFrameDelay and
@@ -222,6 +225,13 @@ pub(super) fn row_scene(input: &Value) -> SlaveScene {
         )
         .expect("slave refinery");
     let master = if unit_owner {
+        // The oracle's Slave Miner holds the manager; its fixture refinery
+        // holds none (`+0x2D8` = 0), so it takes no manager turns.
+        sim.substrate
+            .entities
+            .get_mut(refinery)
+            .unwrap()
+            .slave_manager = None;
         // Facing north, YAREFN's DeployFacing, so UnitClass::Deploy converts.
         let smin = sim
             .spawn_object_with_overlay_registry(
@@ -507,6 +517,30 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
             "{context}: owner deploy pending"
         );
     }
+    // The refinery: the Selling a relocation queues (`+0xB4`) is VERA's
+    // started undeploy (`building_down`), and its ArchiveTarget. The
+    // relocation's `+0x4F8` (the undeploy voice's silencer) has no VERA
+    // counterpart (`slave_manager::relocate_refinery`).
+    if !native["building"].is_null() && holder == s.refinery {
+        let refinery = sim.substrate.entities.get(s.refinery).unwrap();
+        let expected = &native["building"];
+        let queued = match expected["queued"].as_i64().unwrap() {
+            -1 => false,
+            19 => true,
+            other => panic!("{context}: refinery queued mission {other}"),
+        };
+        assert_eq!(
+            refinery.building_down.is_some(),
+            queued,
+            "{context}: refinery Selling (undeploy)"
+        );
+        let archive = match refinery.archive_target() {
+            Some(TargetKind::Cell(x, y)) => serde_json::json!([x, y]),
+            None => Value::Null,
+            Some(other) => panic!("{context}: refinery archive {other:?}"),
+        };
+        assert_eq!(archive, expected["archive"], "{context}: refinery archive");
+    }
     let mut compared: Vec<(u64, u64)> = s.slaves.iter().map(|(i, id)| (*i, *id)).collect();
     // A slave the call created stands for the oracle's supplied spare.
     for node in manager.nodes() {
@@ -682,6 +716,38 @@ fn manager_machine_matches_the_original_building_owner_states() {
     }
 }
 
+/// State 5 with no ore within `SlaveMinerShortScan`: the relocation test
+/// and, when it passes, the archive, the undeploy (Selling) and state 6.
+#[test]
+fn manager_machine_matches_the_original_slave_refinery_relocation() {
+    let corpus = corpus();
+    for (row, name) in rows(&corpus, "relocation") {
+        let mut s = row_scene(&row["input"]);
+        // A supplied Find_Nearby_Passable_Cell miss: the scene's open ground
+        // would offer a cell, so the search is denied the zone map it needs
+        // and FindDeployCell answers the same (0,0) (read at 0x006B00F0).
+        if row["input"]["passable"] == serde_json::json!([null]) {
+            s.scene.sim.zone_grid = None;
+        }
+        s.scene
+            .sim
+            .slave_manager_step(s.master, &s.scene.rules, Some(registry()));
+        compare_state(&s, row, &name);
+    }
+}
+
+/// The hand-off a refinery placed from production takes (`0x006B0D60`).
+#[test]
+fn placed_hand_off_matches_the_original() {
+    let corpus = corpus();
+    for (row, name) in rows(&corpus, "building_helper") {
+        let mut s = row_scene(&row["input"]);
+        assert_eq!(row["input"]["helper"], "placed_hand_off", "{name}");
+        s.scene.sim.slave_manager_hand_off(s.master, &s.scene.rules);
+        compare_state(&s, row, &name);
+    }
+}
+
 #[test]
 fn deploy_slaves_matches_the_original_unlimbo_and_scatter() {
     let corpus = corpus();
@@ -811,7 +877,14 @@ fn slave_miner_kick_matches_the_original_guard_and_area_guard() {
 fn deploy_cell_search_matches_the_recorded_native_arguments() {
     let corpus = corpus();
     let mut compared = 0;
-    for group in ["unit_manager", "unit_helper"] {
+    for group in ["unit_manager", "unit_helper", "relocation"] {
+        // The row's Slave Miner stands at (15, 15); the refinery's own cell
+        // (`vt+0x1B8`) is its north-west one. YAREFN is 2x2 either way.
+        let owner = if group == "relocation" {
+            (YAREFN_NW.0 as i16, YAREFN_NW.1 as i16)
+        } else {
+            (15, 15)
+        };
         for row in corpus[group].as_array().unwrap() {
             let name = row["input"]["name"].as_str().unwrap();
             let events = row["events"].as_array().unwrap();
@@ -826,8 +899,7 @@ fn deploy_cell_search_matches_the_recorded_native_arguments() {
                 query[1][0].as_u64().unwrap() as u16,
                 query[1][1].as_u64().unwrap() as u16,
             );
-            // The row's Slave Miner stands at (15, 15); YAREFN is 2x2.
-            let search = DeployCellSearch::new((15, 15), seed, (2, 2));
+            let search = DeployCellSearch::new(owner, seed, (2, 2));
             assert_eq!(
                 *query,
                 serde_json::json!([
@@ -862,7 +934,7 @@ fn deploy_cell_search_matches_the_recorded_native_arguments() {
             compared += 1;
         }
     }
-    assert_eq!(compared, 5, "every recorded search");
+    assert_eq!(compared, 11, "every recorded search");
 }
 
 #[test]
@@ -877,10 +949,12 @@ fn replay_covers_every_row() {
         "unit_manager",
         "unit_helper",
         "unit_mission",
+        "relocation",
+        "building_helper",
     ]
     .iter()
     .map(|group| corpus[*group].as_array().unwrap().len())
     .sum();
-    assert_eq!(total, 95);
+    assert_eq!(total, 104);
     assert_eq!(SKIPPED.len(), 4);
 }

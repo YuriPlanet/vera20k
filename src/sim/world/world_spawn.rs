@@ -21,6 +21,7 @@ use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::base_plan::pack_base_plan_cell;
 use crate::sim::base_plan_generation::{preflight_recalc, recalc_base_plan};
+use crate::sim::combat::TargetKind;
 use crate::sim::components::{BuildingDown, BuildingUp, Health};
 use crate::sim::game_entity::{
     GameEntity, GeneratedTechnoInit, StructureUpgradeLink, TechnoConstructorInit,
@@ -1693,6 +1694,11 @@ impl Simulation {
     /// Reads `UndeploysInto` from rules.ini to determine the spawned unit type.
     /// Starts a reverse build-up animation (`BuildingDown`); the actual unit
     /// spawn happens when the animation completes (see `tick_building_down`).
+    ///
+    /// The start is `BuildingClass::Sell`'s first UndeploysInto visit, which
+    /// plays the building type's `DeploySound=` (`+0x56C`) at its Location
+    /// (`0x0044A9E5..0x0044AA38`, after the voice `vt+0x36C` VERA does not
+    /// play).
     pub(crate) fn undeploy_building(&mut self, stable_id: u64, rules: &RuleSet) -> bool {
         // Read undeploy data before mutating.
         let undeploy_data = self.substrate.entities.get(stable_id).and_then(|entity| {
@@ -1716,6 +1722,21 @@ impl Simulation {
         let Some((owner_id, rx, ry, z, unit_type, was_selected)) = undeploy_data else {
             return false;
         };
+        let sound = self.substrate.entities.get(stable_id).and_then(|entity| {
+            let sound = self
+                .object_type(entity.type_ref(), rules)?
+                .deploy_sound
+                .clone()?;
+            Some((sound, entity.position.rx, entity.position.ry))
+        });
+        if let Some((sound, sound_rx, sound_ry)) = sound {
+            let deploy_sound_id = self.interner.intern(&sound);
+            self.sound_events.push(SimSoundEvent::EntityDeployed {
+                deploy_sound_id,
+                rx: sound_rx,
+                ry: sound_ry,
+            });
+        }
 
         // Start the reverse build-up animation instead of instant despawn.
         let unit_type_id = self.interner.intern(&unit_type);
@@ -1732,6 +1753,149 @@ impl Simulation {
             });
         }
         true
+    }
+
+    /// `BuildingClass::Sell`'s UndeploysInto conversion (stage 2), once the
+    /// build-down (`building_down`) has run. The unit is constructed with its
+    /// managers' children, the building's live attackers are listed
+    /// (`0x00449F23..0x00449FDC`, Techno array order) and the building leaves
+    /// the map (vt+0xD4, whose Detach_All clears their targets) for the
+    /// unit's Unlimbo (`0x0044A002`). After its health
+    /// (`0x0044A010..0x0044A039`) a building's slave manager moves to it
+    /// (SetOwner `0x006AF580` at `0x0044A047`, which frees the unit's own
+    /// fresh slaves), the unit takes the building's veterancy
+    /// (`0x0044A058..0x0044A05E`), a building with an ArchiveTarget
+    /// (`+0x218`, read at `0x00449E84`) sends the unit there through its
+    /// class setter `vt+0x480(archive, 1)` and `Queue_Mission(Move, 0)`
+    /// (`0x0044A091..0x0044A0AE`), and the listed attackers target the unit
+    /// (`0x0044A146..0x0044A167`). The building's UnInit comes last. Not
+    /// carried over: its Group (`+0x214`, `0x0044A04C`; VERA's control groups
+    /// live in the app), AttachedTag (`+0x34`, `0x0044A0B4`) and looping sound
+    /// handles (`+0x4DC..+0x4F4`); a refused Unlimbo does not refund the
+    /// building's value (`0x0044A16B`).
+    pub(crate) fn finish_undeploy(
+        &mut self,
+        sid: u64,
+        rules: Option<&RuleSet>,
+        overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    ) {
+        let Some((unit_type_id, owner_id, rx, ry, z, was_selected)) =
+            self.substrate.entities.get(sid).and_then(|entity| {
+                entity.building_down.as_ref().map(|down| {
+                    (
+                        down.spawn_type,
+                        down.spawn_owner,
+                        down.spawn_rx,
+                        down.spawn_ry,
+                        down.spawn_z,
+                        down.was_selected,
+                    )
+                })
+            })
+        else {
+            return;
+        };
+        let Some(rules) = rules else {
+            self.uninit(sid);
+            return;
+        };
+        // Building449E66/70 captures current health/type ratio at actual
+        // conversion, not when the reverse animation was requested. A missing
+        // live type cannot supply a conversion ratio.
+        let Some((converted_health, archive, veterancy)) =
+            self.substrate.entities.get(sid).and_then(|building| {
+                let health = crate::sim::conversion_health::ConversionHealth::capture(
+                    building,
+                    self.object_type(building.type_ref(), rules)?,
+                    rules.object(self.interner.resolve(unit_type_id))?,
+                    crate::sim::conversion_health::ConversionKind::Building,
+                );
+                Some((health, building.archive_target(), building.veterancy_raw))
+            })
+        else {
+            return;
+        };
+        let unit_type = self.interner.resolve(unit_type_id).to_string();
+        let owner = self.interner.resolve(owner_id).to_string();
+        let Some(unit) = self
+            .construct_runtime_techno(
+                &unit_type,
+                &owner,
+                rx,
+                ry,
+                0,
+                z,
+                rules,
+                TechnoConstructorInit::FreshScenario,
+            )
+            .expect("fresh Techno constructor initialization cannot fail")
+        else {
+            self.uninit_with_rules(sid, rules);
+            return;
+        };
+        let (new_sid, position) = self.store_with_constructor_managers(unit, Some(rules));
+        let targeters: Vec<u64> = self
+            .substrate
+            .entities
+            .iter_sorted()
+            .filter(|(id, entity)| {
+                *id != sid
+                    && *id != new_sid
+                    && entity.lifecycle.object_alive
+                    && entity
+                        .attack_target
+                        .as_ref()
+                        .is_some_and(|target| target.target == TargetKind::Entity(sid))
+            })
+            .map(|(id, _)| id)
+            .collect();
+        let _ = self.techno_limbo_with_rules(sid, rules);
+        let (new_sid, outcome) =
+            self.unlimbo_constructed_parent(new_sid, position, Some(rules), overlay_registry);
+        if !matches!(outcome, RevealOutcome::Revealed { .. }) {
+            self.discard_constructed_limbo(new_sid);
+            self.uninit_with_rules(sid, rules);
+            return;
+        }
+        self.initialize_cloak_after_unlimbo(new_sid, rules);
+        self.add_unit_sensor_after_unlimbo(new_sid, rules);
+        if let Some(unit) = self.substrate.entities.get_mut(new_sid) {
+            converted_health.apply(unit);
+            unit.selected = was_selected;
+            // The VeterancyClass (`+0x150`); the rank cache (`+0x13C`) stays
+            // the unit's own.
+            unit.veterancy_raw = veterancy;
+            unit.veterancy = crate::sim::combat::veterancy::rank_u16(veterancy);
+        }
+        self.transfer_slave_manager(sid, new_sid, false, rules, overlay_registry);
+        // A building's archive is a cell: the Slave Miner refinery's
+        // relocation is its only VERA writer (`slave_manager`).
+        if let Some(TargetKind::Cell(x, y)) = archive {
+            if !self.set_unit_cell_destination(new_sid, (x, y), rules) {
+                log::debug!("undeployed unit {new_sid} refused its archive ({x}, {y})");
+            }
+            if let Some(unit) = self.substrate.entities.get_mut(new_sid) {
+                crate::sim::mission::authority::queue_entity_mission_deferred(
+                    unit,
+                    crate::sim::mission::MissionId::from_known(
+                        crate::sim::mission::MissionType::Move,
+                    ),
+                );
+            }
+        }
+        let target = Some(TargetKind::Entity(new_sid));
+        let commits = crate::sim::mission::concrete_effects::assign_target_commits(
+            &self.substrate.entities,
+            target,
+        );
+        for targeter in targeters {
+            if let Some(entity) = self.substrate.entities.get_mut(targeter) {
+                crate::sim::mission::concrete_effects::represented_assign_target_admitted(
+                    entity, target, commits,
+                );
+            }
+        }
+        self.uninit_with_rules(sid, rules);
     }
 
     pub(crate) fn should_show_undeploy_building_command(

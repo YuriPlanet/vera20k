@@ -1,10 +1,14 @@
 //! The Foot tiberium search Mission_Harvest runs for a harvester:
 //! `FootClass::Search_For_Tiberium_And_Move @ 0x004DCFE0`,
-//! `FootClass::Scan_For_Tiberium @ 0x004DD0A0` (Unit vtable `+0x338`) and
-//! `FootClass::Is_Cell_Harvestable @ 0x004DCE80`.
+//! `FootClass::Scan_For_Tiberium @ 0x004DD0A0` (Unit and Infantry vtable
+//! `+0x338`) and `FootClass::Is_Cell_Harvestable @ 0x004DCE80`; and the
+//! Building's `TechnoClass::Scan_For_Tiberium @ 0x0070F8F0`, which a Slave
+//! Miner refinery runs for its relocation.
 //!
 //! Evidence: `tools/spatial_oracle/harvest_field.json` `scan` and `search`
-//! rows, replayed by `world/harvest_field_oracle_tests.rs`.
+//! rows, replayed by `world/harvest_field_oracle_tests.rs`; the Building
+//! body runs natively in `tools/spatial_oracle/slave_manager.json`'s state-5
+//! rows (`world/slave_manager_oracle_tests.rs`).
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on sim/world, sim/movement, sim/pathfinding,
@@ -107,14 +111,31 @@ pub(crate) fn search_for_tiberium_and_move(
     false
 }
 
-/// `FootClass::Scan_For_Tiberium @ 0x004DD0A0`: the mover's own cell when
-/// it is Tiberium land; else rings `r = 1..range` (the bound itself is not
-/// scanned), each walking `i = -r..=r` over `(x+i, y-r)`, `(x+i, y+r)`,
-/// `(x-r, y+i)`, `(x+r, y+i)` (corners twice). A harvestable cell whose
-/// value beats the best so far (strictly, so ties keep the earlier cell)
-/// becomes the best, and the first ring with a hit ends the scan. `None` is
-/// the `(0,0)` no-cell answer (`0x008B3D88`).
+/// `Scan_For_Tiberium(range)`, the `vt+0x338` virtual: FootClass's body for
+/// a Unit or Infantry ([`foot_scan_for_tiberium`]), TechnoClass's for a
+/// Building ([`techno_scan_for_tiberium`]). Its third argument (0 for
+/// `SlaveMinerShortScan`, 1 for `SlaveMinerLongScan` at `0x006B006B` and
+/// `0x006B00BB`) is read by neither body. `None` is the `(0,0)` no-cell
+/// answer.
 pub(crate) fn scan_for_tiberium(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    id: u64,
+    range: i32,
+) -> Option<(u16, u16)> {
+    let entity = sim.substrate.entities.get(id)?;
+    if entity.category == crate::map::entities::EntityCategory::Structure {
+        return techno_scan_for_tiberium(sim, rules, overlay_registry, id, range);
+    }
+    foot_scan_for_tiberium(sim, rules, overlay_registry, id, range)
+}
+
+/// `FootClass::Scan_For_Tiberium @ 0x004DD0A0`: the mover's own cell when
+/// it is Tiberium land; else the rings ([`best_in_rings`]) over the cells
+/// Is_Cell_Harvestable admits. `None` is the `(0,0)` no-cell answer
+/// (`0x008B3D88`).
+fn foot_scan_for_tiberium(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
@@ -127,6 +148,54 @@ pub(crate) fn scan_for_tiberium(
         return Some(own);
     }
     let reach = harvest_reach(sim, rules, id)?;
+    best_in_rings(sim, own, range, |sim, candidate| {
+        let cell = is_cell_harvestable(sim, rules, overlay_registry, id, reach, candidate)?;
+        Some((cell, tiberium_value(sim, rules, overlay_registry, cell)))
+    })
+}
+
+/// `TechnoClass::Scan_For_Tiberium @ 0x0070F8F0`, a Building's: the same
+/// rings around its GetCoords cell (the foundation centre,
+/// `BuildingClass::GetCoords @ 0x00447AC0`), where a candidate needs only
+/// LandType 5 (`0x00487DF0`, `0x0070F9C3`): no playfield, zone or occupancy
+/// test. `None` is the `(0,0)` no-cell answer (`0x00B0EA50`).
+fn techno_scan_for_tiberium(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    id: u64,
+    range: i32,
+) -> Option<(u16, u16)> {
+    let (x, y, _, _) = crate::sim::combat::resolve_target_coords(
+        &crate::sim::combat::TargetKind::Entity(id),
+        &sim.substrate.entities,
+        Some(rules),
+        &sim.interner,
+    )?;
+    let own = (x, y);
+    if cell_is_tiberium_land(sim, overlay_registry, own) {
+        return Some(own);
+    }
+    best_in_rings(sim, own, range, |sim, (cx, cy)| {
+        let cell = (u16::try_from(cx).ok()?, u16::try_from(cy).ok()?);
+        cell_is_tiberium_land(sim, overlay_registry, cell)
+            .then(|| (cell, tiberium_value(sim, rules, overlay_registry, cell)))
+    })
+}
+
+/// The ring walk both Scan_For_Tiberium bodies share: rings `r = 1..range`
+/// around `own` (the bound itself is not scanned), each walking `i = -r..=r`
+/// over `(x+i, y-r)`, `(x+i, y+r)`, `(x-r, y+i)`, `(x+r, y+i)` (corners
+/// twice). A candidate the body admits (`value_at` answers its cell and
+/// Tiberium value, `0x00485020`) whose value beats the best so far
+/// (strictly, so ties keep the earlier cell) becomes the best, and the first
+/// ring with a hit ends the scan.
+fn best_in_rings(
+    sim: &mut Simulation,
+    own: (u16, u16),
+    range: i32,
+    mut value_at: impl FnMut(&mut Simulation, (i32, i32)) -> Option<((u16, u16), i32)>,
+) -> Option<(u16, u16)> {
     let (x, y) = (i32::from(own.0), i32::from(own.1));
     let mut best_value = -1;
     let mut best = None;
@@ -138,12 +207,9 @@ pub(crate) fn scan_for_tiberium(
                 (x - r, y + i),
                 (x + r, y + i),
             ] {
-                let Some(cell) =
-                    is_cell_harvestable(sim, rules, overlay_registry, id, reach, candidate)
-                else {
+                let Some((cell, value)) = value_at(sim, candidate) else {
                     continue;
                 };
-                let value = tiberium_value(sim, rules, overlay_registry, cell);
                 if value > best_value {
                     best_value = value;
                     best = Some(cell);

@@ -127,7 +127,6 @@ pub mod parity_digest;
 pub mod passenger;
 pub(crate) mod slave_deposit;
 pub(crate) mod slave_manager;
-pub mod slave_miner;
 pub mod spawn_manager;
 mod spawn_manager_tests;
 pub mod transport_unload;
