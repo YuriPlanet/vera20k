@@ -914,3 +914,38 @@ fn a_refinery_whose_ore_runs_out_packs_up_and_moves_to_the_next_field() {
         );
     }
 }
+
+/// Retail `rulesmd.ini` and `artmd.ini` through the production reader
+/// (skipped without them): what the relocation reads. `SlaveMinerShortScan`,
+/// `SlaveMinerLongScan` and `SlaveMinerScanCorrection` (ReadRange leptons,
+/// retail 8, 48 and 3 cells); YAREFN packs up into SMIN, plays
+/// `SlaveMinerUndeploy` as it starts, and is 2x2 (no FindDeployCell step).
+#[test]
+fn retail_rules_feed_the_slave_refinery_relocation() {
+    use crate::rules::art_data::ArtRegistry;
+    use crate::rules::ruleset::RuleSet;
+    let Some((rules_ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art()
+    else {
+        return;
+    };
+    let mut rules = RuleSet::from_ini(&rules_ini).expect("retail rules");
+    rules.merge_art_data(&ArtRegistry::from_ini(&art_ini));
+    let general = &rules.general;
+    assert_eq!(
+        (
+            general.slave_miner_short_scan,
+            general.slave_miner_long_scan,
+            general.slave_miner_scan_correction
+        ),
+        (8 * 256, 48 * 256, 3 * 256)
+    );
+    let refinery = rules.object("YAREFN").expect("YAREFN");
+    assert_eq!(refinery.undeploys_into.as_deref(), Some("SMIN"));
+    assert_eq!(refinery.deploy_sound.as_deref(), Some("SlaveMinerUndeploy"));
+    assert_eq!(
+        crate::rules::foundation::foundation_dimensions(&refinery.foundation),
+        (2, 2)
+    );
+    let miner = rules.object("SMIN").expect("SMIN");
+    assert_eq!(miner.deploys_into.as_deref(), Some("YAREFN"));
+}
