@@ -361,10 +361,12 @@ fn tick_animations_impl(
             continue;
         }
         let type_ref = entity.type_ref();
-        // Its Doing's sequence, which its actions restart
-        // (`sim::movement::infantry_action`); the cascade below leaves it.
-        let doing_owns_sequence =
-            crate::sim::movement::infantry_action::doing_owns_sequence(entity);
+        // Its Doing's sequence, which its actions restart and whose stage
+        // steps in its own turn (`sim::movement::infantry_action`); this
+        // frame-end clock leaves it.
+        if !entity.dying && crate::sim::movement::infantry_action::doing_owns_sequence(entity) {
+            continue;
+        }
         let Some(anim) = entity.animation.as_mut() else {
             // Dying entity with no animation → ready for despawn.
             if entity.dying {
@@ -379,8 +381,7 @@ fn tick_animations_impl(
                 dying_finished.push(id);
                 continue;
             }
-            let Some(seq_set) =
-                sequence_set_for_type(sequences, rules, interner.resolve(type_ref))
+            let Some(seq_set) = sequence_set_for_type(sequences, rules, interner.resolve(type_ref))
             else {
                 dying_finished.push(id);
                 continue;
@@ -415,7 +416,6 @@ fn tick_animations_impl(
         // The visual reflects the sim phase; DeployedFire is the auto-transition
         // when a Deployed unit gains an attack target (visual-only, matches stock YR).
         match entity.deploy_state {
-            _ if doing_owns_sequence => {}
             Some(crate::sim::deploy::DeployPhase::Deploying { .. }) => {
                 anim.switch_to(SequenceKind::Deploy);
             }

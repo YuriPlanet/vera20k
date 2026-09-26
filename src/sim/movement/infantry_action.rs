@@ -1,34 +1,35 @@
 //! `InfantryClass` actions, the DoType at Infantry `+0x6C4` (VERA's Doing,
-//! `MissionLeafState::as_infantry`): `Do_Action @ 0x0051D6F0`, the
-//! locomotion action tail of `0x00520F40`, `DoType_Sequencer @ 0x00520AE0` at
-//! a sequence's end, and the idle actions `Assign_Target @ 0x0051B1F0` and the
-//! firing AI's fire-frame refusal request.
+//! `MissionLeafState::as_infantry`): `Do_Action @ 0x0051D6F0`, the stage tick
+//! of `TechnoClass::AI_Update` (`0x006FABC4`), `DoType_Sequencer @
+//! 0x00520AE0`, the locomotion action tail of `0x00520F40`, the idle actions of
+//! `Assign_Target @ 0x0051B1F0` and of the firing AI's fire-frame refusal, and
+//! a shot-down Jumpjet infantryman's fall: `InfantryClass::AI`'s Health reset
+//! (`0x0051BC57`), the crash latch's AirDeathStart (`0x0054B02C`) and the
+//! impact notice's AirDeathFinish (`0x00522AF7`).
 //!
 //! Every native Infantry draws the sequence of its Doing. VERA keeps the Doing
 //! whole only for an infantryman flown by the Jumpjet locomotor (the Rocketeer
-//! and the Cosmonaut, [`doing_owns_sequence`]): its Doing comes from these
+//! and the Cosmonaut, [`doing_owns_sequence`]). Its Doing comes from these
 //! bodies and the firing arm, and every accepted action restarts its displayed
-//! sequence, as Do_Action restarts the stage (`+0xF8`) and its timer. Every
-//! other infantryman keeps the animation cascade (`sim::animation`), with its
-//! Doing written only by the receivers that request one (the failed path, the
-//! slave's dig, the Cheer's end).
+//! sequence, as Do_Action restarts the stage (`+0xF8`) and its timer. As
+//! natively, the stage steps in its own Techno AI (`world::techno_ai`), and the
+//! sequencer and locomotion actions follow its `Process` (`world::object_turn`).
+//! Every other infantryman keeps the animation cascade (`sim::animation`),
+//! clocked at frame end, with its Doing written only by the receivers that
+//! request one (the failed path, the slave's dig, the Cheer's end).
 //!
-//! RESIDUAL (stage clock): VERA advances every living animation, and reports
-//! the sequencer's ends, at frame end (`sim::animation`, `world::mod`), after
-//! every object's turn; natively an infantryman's stage steps in its own
-//! `TechnoClass::AI_Update` and its sequencer and locomotion actions follow its
-//! `Process`. VERA's locomotion actions run in the object's turn, before the
-//! frame's combat pass. Trigger: an action ending, or a shot discharged while
-//! the locomotor `Is_Moving_Now`. Effect: a sequence ends at the frame end
-//! before the frame native ends it in, and a FireFly discharged in flight
-//! yields to Fly or Hover one frame later than native; an object acting
-//! earlier in the next frame sees the other Doing. Frequency: every action
-//! end. Risk: the Doing a kill in that frame reads (the crash's Stop_Moving
-//! count).
+//! RESIDUAL (in-flight FireFly): VERA fires in the combat pass that follows
+//! every object's turn, while native fires in the object's own AI before its
+//! sequencer and locomotion actions (`0x0051BF59`). Trigger: a shot discharged
+//! while the locomotor `Is_Moving_Now`. Effect: the FireFly yields to Fly or
+//! Hover one frame later than native. Frequency: a Rocketeer shooting on the
+//! move. Risk: a kill in that frame reads FireFly, whose kill stops the
+//! locomotor 11 times where Hover's stops it 10 (one more Scenario draw).
 //!
 //! Native execution: `tools/spatial_oracle/jumpjet_infantry_actions.py` runs
-//! the four bodies on a Rocketeer flown by the real Jumpjet locomotor
-//! ([`tests`]).
+//! the four action bodies on a Rocketeer flown by the real Jumpjet locomotor
+//! ([`tests`]); `tools/spatial_oracle/jumpjet_infantry_crash.py` runs its kill
+//! and fall (`world::jumpjet_infantry_tests`).
 
 use crate::map::entities::EntityCategory;
 use crate::rules::infantry_sequence::{action_kind, action_record};
@@ -54,7 +55,17 @@ pub(crate) const DO_DEPLOYED: i32 = 0x1C;
 pub(crate) const DO_DEPLOYED_IDLE: i32 = 0x1E;
 pub(crate) const DO_CHEER: i32 = 0x20;
 pub(crate) const DO_PARADROP: i32 = 0x21;
+pub(crate) const DO_AIR_DEATH_START: i32 = 0x22;
+pub(crate) const DO_AIR_DEATH_FALLING: i32 = 0x23;
+pub(crate) const DO_AIR_DEATH_FINISH: i32 = 0x24;
 pub(crate) const DO_PANIC: i32 = 0x25;
+
+/// `InfantryClass::IsInDeathSequence @ 0x00522CB0`: Die1..5, WetDie1/2 and the
+/// three AirDeath actions. Assign_Target refuses such an infantryman as a
+/// target (`0x006FCF2D`), and its AI keeps Health 0 in them (`0x0051BC5E`).
+pub(crate) fn in_death_sequence(doing: i32) -> bool {
+    matches!(doing, 0x0B..=0x0F | 0x14 | 0x15 | 0x22..=0x24)
+}
 
 /// Whether this infantryman's displayed sequence is its Doing's, which VERA
 /// keeps for an Infantry flown by the Jumpjet locomotor: every accepted action
@@ -247,6 +258,17 @@ impl Simulation {
         if owns_sequence && let Some(kind) = action_kind(requested) {
             actor.animation = Some(Animation::new(kind));
         }
+        // `0x0051DA96..0x0051DAA1`: an accepted action at Health exactly 0
+        // re-enters Stop_Driver, whose own Do_Action finds the action it
+        // just wrote. The Can_Enter_Cell it runs reads no overlay here.
+        if actor.health.current == 0
+            && let Err(cause) = self.infantry_stop_driver(id, rules, None)
+        {
+            log::debug!("infantry {id} Do_Action Stop_Driver: {cause}");
+        }
+        let Some(actor) = self.substrate.entities.get_mut(id) else {
+            return Ok(true);
+        };
         if let Some(infantry) = actor.infantry.as_mut() {
             match requested {
                 DO_DOWN => infantry.is_prone = true,
@@ -257,22 +279,184 @@ impl Simulation {
         Ok(true)
     }
 
-    /// What `InfantryClass::AI` does with an infantryman's action after its
-    /// `Process`, for one whose Doing owns its sequence: the sequencer, which
-    /// with no action (-1) takes its default arm every frame (`0x00520AEF`;
-    /// an action's end reaches it through the animation clock instead,
-    /// [`Self::infantry_action_completed`]), then the locomotion actions.
-    pub(crate) fn infantry_action_turn(&mut self, id: u64, rules: &RuleSet) {
+    /// `InfantryClass::AI`'s Health reset (`0x0051BC57..0x0051BC96`), before
+    /// `FootClass::AI`: an infantryman at Health 0 or below whose action is
+    /// not a death sequence ([`in_death_sequence`]) is set to Health 1. Only
+    /// a crashing Jumpjet infantryman reaches its own AI at Health 0: every
+    /// other death removes it or turns it to a dying sequence first.
+    pub(crate) fn infantry_health_reset(&mut self, id: u64) {
+        let Some(actor) = self.substrate.entities.get_mut(id) else {
+            return;
+        };
+        let Some(doing) = actor.mission_leaf.as_infantry().map(|leaf| leaf.doing()) else {
+            return;
+        };
+        if actor.health.current <= 0 && !in_death_sequence(doing) {
+            actor.health.current = 1;
+        }
+    }
+
+    /// The stage tick of `TechnoClass::AI_Update` (`0x006FABC4..0x006FAC2A`),
+    /// before `Process`, for an infantryman whose Doing owns its sequence: the
+    /// stage (`+0xF8`, the animation's frame) steps by one each time its timer
+    /// has run the action's rate since the last step or the action's start,
+    /// and never wraps; the draw shows it modulo the frame count
+    /// (`0x00518E18`, `resolve_shp_frame`) and the sequencer reads its end.
+    /// A rate of 0 never steps.
+    pub(crate) fn infantry_stage_tick(&mut self, id: u64, rules: &RuleSet) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
         };
-        if !doing_owns_sequence(actor) || actor.dying || !actor.is_ai_alive() {
+        if !doing_owns_sequence(actor) {
             return;
         }
-        if actor.mission_leaf.as_infantry().map(|leaf| leaf.doing()) == Some(-1) {
-            self.infantry_default_action(id, -1, rules);
+        let Some(animation) = actor.animation.as_ref() else {
+            return;
+        };
+        let Some(def) = rules
+            .animation_sequence(self.interner.resolve(actor.type_ref()))
+            .and_then(|set| set.get(&animation.sequence))
+        else {
+            return;
+        };
+        let rate = if def.normalized {
+            self.session
+                .game_options
+                .normalized_anim_delay(def.frame_delay)
+        } else {
+            def.frame_delay
+        };
+        if rate == 0 {
+            return;
+        }
+        let Some(animation) = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .and_then(|actor| actor.animation.as_mut())
+        else {
+            return;
+        };
+        animation.elapsed_frames = animation.elapsed_frames.saturating_add(1);
+        if animation.elapsed_frames >= rate {
+            animation.elapsed_frames = 0;
+            animation.frame_index = animation.frame_index.wrapping_add(1);
+        }
+    }
+
+    /// What `InfantryClass::AI` does with an infantryman's action after its
+    /// `Process`, for one whose Doing owns its sequence: the sequencer
+    /// (`0x0051BF6A`), then the locomotion actions (`0x0051BF7B`). Answers
+    /// true when the sequencer UnInit the infantryman, whose turn then ends.
+    pub(crate) fn infantry_action_turn(&mut self, id: u64, rules: &RuleSet) -> bool {
+        let Some(actor) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if !doing_owns_sequence(actor) || actor.dying || !actor.is_ai_alive() {
+            return false;
+        }
+        if self.infantry_sequencer(id, rules) {
+            return true;
         }
         self.infantry_movement_actions(id, rules);
+        false
+    }
+
+    /// `InfantryClass::DoType_Sequencer @ 0x00520AE0` for an infantryman
+    /// whose Doing owns its sequence. With no action (-1) it takes the
+    /// default arm every frame (`0x00520AEF`); otherwise once the stage
+    /// reaches the action's frame count (`0x00520B09`), it dispatches through
+    /// the byte table at `0x00520F1C`:
+    /// - the default arm ([`Self::infantry_default_action`]), refused while
+    ///   the action it asks for is the one playing, so a held Hover's stage
+    ///   keeps growing and its draw wraps;
+    /// - AirDeathStart forces AirDeathFalling (`0x00520BB9`);
+    /// - WetDie and AirDeathFinish UnInit the infantryman (`0x00520CB8`);
+    ///   AirDeathFinish leaves no body (`DeadBodies=` is Die1..5's, `0x00520BC6`).
+    ///
+    /// Die1..5, Deploy, Undeploy, Paradrop and Shovel have arms of their own
+    /// that no Jumpjet-flown infantryman reaches: the dying ones leave through
+    /// `world::infantry_terminal`. Answers true when it UnInit the
+    /// infantryman.
+    fn infantry_sequencer(&mut self, id: u64, rules: &RuleSet) -> bool {
+        let Some(actor) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let Some(doing) = actor.mission_leaf.as_infantry().map(|leaf| leaf.doing()) else {
+            return false;
+        };
+        if doing != -1 {
+            let stage = actor.animation.as_ref().map_or(0, |a| a.frame_index);
+            let sequences = rules.animation_sequence(self.interner.resolve(actor.type_ref()));
+            let count = match sequences.and_then(|set| set.infantry_action(doing)) {
+                Some(record) => record.frames_per_facing,
+                None => action_kind(doing)
+                    .and_then(|kind| sequences.and_then(|set| set.get(&kind)))
+                    .map_or(0, |def| i32::from(def.frame_count)),
+            };
+            if i32::from(stage) < count {
+                return false;
+            }
+        }
+        match doing {
+            DO_AIR_DEATH_START => {
+                if let Err(cause) = self.infantry_do_action(id, DO_AIR_DEATH_FALLING, true, rules) {
+                    log::debug!("infantry {id} AirDeathFalling: {cause}");
+                }
+                false
+            }
+            0x14 | 0x15 | DO_AIR_DEATH_FINISH => {
+                // UnInit (vtable `+0xF8`); the Foot destructor lets its sounds
+                // play out.
+                self.sound_events
+                    .push(crate::sim::world::SimSoundEvent::ObjectSoundReleased { owner: id });
+                self.release_move_sound(id);
+                self.uninit_with_rules(id, rules);
+                true
+            }
+            action if takes_default_arm(action) => {
+                self.infantry_default_action(id, action, rules);
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// The Infantry `INoticeSink` answer to the Jumpjet crash impact
+    /// (`0x00522A60` -> `0x00522AF7..0x00522BA1`, notice `0x117C`), for a
+    /// `Crashable=` type: SetHeight (vtable `+0x1CC`) to the bridge deck on a
+    /// high-bridge cell (`[0x00A8F234]`, 416) and to 0 elsewhere, then a
+    /// forced AirDeathFinish (`0x00522B9B`). The infantryman stays: its
+    /// sequencer UnInits it when AirDeathFinish has played.
+    pub(crate) fn infantry_crash_impact(&mut self, id: u64, rules: &RuleSet) {
+        let Some(actor) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let crashable = self
+            .object_type(actor.type_ref(), rules)
+            .is_some_and(|object| object.crashable);
+        if !crashable {
+            return;
+        }
+        let coord = crate::sim::movement::ground_pose::position_world_coord(&actor.position);
+        let high_bridge = self.resolved_terrain.as_ref().is_some_and(|terrain| {
+            let cell = terrain.native_cell_identity((
+                (coord.x.div_euclid(256)) as i16,
+                (coord.y.div_euclid(256)) as i16,
+            ));
+            terrain.native_cell_flags(cell) & 0x100 != 0
+        });
+        self.set_object_height(
+            id,
+            if high_bridge {
+                crate::sim::movement::jumpjet_flight::BRIDGE_DECK_LEPTONS
+            } else {
+                0
+            },
+        );
+        if let Err(cause) = self.infantry_do_action(id, DO_AIR_DEATH_FINISH, true, rules) {
+            log::debug!("infantry {id} AirDeathFinish: {cause}");
+        }
     }
 
     /// The locomotion action tail of `0x00520F40` (`0x00521144..0x0052130F`),
@@ -416,23 +600,16 @@ impl Simulation {
         }
     }
 
-    /// `InfantryClass::DoType_Sequencer @ 0x00520AE0` for an Infantry whose
-    /// Doing `action` has played its sequence to the end: VERA's animation
-    /// clock (`sim::animation`) stands for the stage (`+0xF8`, `+0x100..`)
-    /// that Do_Action arms, and reports the end.
+    /// `InfantryClass::DoType_Sequencer @ 0x00520AE0` for a walker whose
+    /// Doing `action` has played its sequence to the end: VERA's frame-end
+    /// animation clock (`sim::animation`) stands for the stage (`+0xF8`,
+    /// `+0x100..`) that Do_Action arms, and reports the end. Only the Cheer
+    /// (32) takes its default arm here. The other actions a walker installs
+    /// either hold (Ready, Prone, Deployed), end in their own owners (the death
+    /// sequences), or stay a residual (Shovel, `sim::slave_manager`).
     ///
-    /// An infantryman whose Doing owns its sequence takes the native arm for
-    /// its action; the default arm is followed by the locomotion action tail,
-    /// as `InfantryClass::AI` runs them back to back (`0x0051BF6A`,
-    /// `0x0051BF7B`). A looping sequence (Hover, Fly, Walk) wraps instead of
-    /// ending: its default arm either repeats the action, which Do_Action
-    /// refuses, or restarts it through Walk and the tail, which the wrap
-    /// matches.
-    ///
-    /// Every other infantryman keeps the default arm for the Cheer (32) alone.
-    /// The other actions it installs either hold (Ready, Prone, Deployed), end
-    /// in their own owners (the death sequences), or stay a residual (Shovel,
-    /// `sim::slave_manager`).
+    /// An infantryman whose Doing owns its sequence reaches the sequencer in
+    /// its own turn instead ([`Self::infantry_action_turn`]).
     pub(crate) fn infantry_action_completed(&mut self, id: u64, action: i32, rules: &RuleSet) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
@@ -440,14 +617,7 @@ impl Simulation {
         if actor.mission_leaf.as_infantry().map(|leaf| leaf.doing()) != Some(action) {
             return;
         }
-        if doing_owns_sequence(actor) {
-            if takes_default_arm(action) {
-                self.infantry_default_action(id, action, rules);
-                self.infantry_movement_actions(id, rules);
-            }
-            return;
-        }
-        if action == DO_CHEER {
+        if !doing_owns_sequence(actor) && action == DO_CHEER {
             self.infantry_default_action(id, action, rules);
         }
     }

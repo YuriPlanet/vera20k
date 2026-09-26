@@ -181,21 +181,28 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
 
 /// Whether `TechnoClass::Assign_Target @ 0x006FCDB0` commits the requested
 /// target (`0x006FCE4B..0x006FCF36`). A cell or NULL passes. An object commits
-/// only while it is alive (`+0x90`) with nonzero Health (`+0x6C`); otherwise the
-/// setter writes NULL, so a Restore or a retaliation that names a dying object
-/// leaves its receiver without a target. Two further NULL arms have no VERA
-/// producer: a Foot with `+0x3CD` set (sinking or crashing: `UnitClass::
-/// ReceiveDamage 0x00737E51`, the Jumpjet crash `0x0054CEB7`, the squid grapple
-/// `0x00629C69`, the Teleport water check `0x0071896B`/`0x00718AC2`), and an
-/// Infantry in a death DoType (`0x00522CB0`), which VERA only enters at Health 0.
+/// only while it is alive (`+0x90`) with nonzero Health (`+0x6C`), and an
+/// Infantry only outside a death action (`IsInDeathSequence @ 0x00522CB0`,
+/// `0x006FCF2D`), which keeps a shot-down Rocketeer falling at Health 1 off
+/// every target list; otherwise the setter writes NULL, so a Restore or a
+/// retaliation that names a dying object leaves its receiver without a
+/// target. One further NULL arm has no VERA producer: a Foot with `+0x3CD` set
+/// (sinking or crashing: `UnitClass::ReceiveDamage 0x00737E51`, the Jumpjet
+/// crash `0x0054CEB7`, the squid grapple `0x00629C69`, the Teleport water check
+/// `0x0071896B`/`0x00718AC2`).
 pub(crate) fn assign_target_commits(
     entities: &crate::sim::entity_store::EntityStore,
     requested: Option<TargetKind>,
 ) -> bool {
     match requested {
-        Some(TargetKind::Entity(id)) => entities
-            .get(id)
-            .is_some_and(|target| target.lifecycle.object_alive && target.health.current != 0),
+        Some(TargetKind::Entity(id)) => entities.get(id).is_some_and(|target| {
+            target.lifecycle.object_alive
+                && target.health.current != 0
+                && !(target.category == crate::map::entities::EntityCategory::Infantry
+                    && target.mission_leaf.as_infantry().is_some_and(|leaf| {
+                        crate::sim::movement::infantry_action::in_death_sequence(leaf.doing())
+                    }))
+        }),
         Some(TargetKind::Cell(..)) | None => true,
     }
 }

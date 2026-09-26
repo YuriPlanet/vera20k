@@ -534,6 +534,11 @@ fn techno_ai_shell(
             return;
         }
     }
+    // `InfantryClass::AI`'s Health reset (`0x0051BC57`) precedes
+    // `FootClass::AI`, and with it the Techno body below.
+    if category == EntityCategory::Infantry {
+        sim.infantry_health_reset(id);
+    }
     // Techno6F9F6E..9F precedes promotion, missions and acquisition for every
     // Techno category. object_ai_visit_one excludes the entry-active Tube leaf
     // before this common owner. Actual health and this retained estimate differ.
@@ -561,6 +566,11 @@ fn techno_ai_shell(
                 && !techno_common_steps(sim, id, rules, ctx.overlay_registry)
             {
                 return;
+            }
+            // `TechnoClass::AI_Update`'s stage tick (`0x006FABC4`), before
+            // the object's `Process`.
+            if let Some(rules) = rules {
+                sim.infantry_stage_tick(id, rules);
             }
             clear_passive_target_off_mission(sim, id, rules);
             mission_common_step(sim, id, rules);

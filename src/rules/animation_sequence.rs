@@ -110,6 +110,15 @@ pub enum SequenceKind {
     /// A slave digging ore (Shovel= in INI, native action 38): the Doing its
     /// `InfantryClass::Mission_Harvest @ 0x00522E70` requests while it cuts.
     Shovel,
+    /// A shot-down Jumpjet infantryman starting to fall (AirDeathStart= in INI,
+    /// native action 34): the crash latch requests it (`0x0054B02C`).
+    AirDeathStart,
+    /// Its fall once AirDeathStart has played out (AirDeathFalling= in INI,
+    /// native action 35, `0x00520BB9`).
+    AirDeathFalling,
+    /// Its landing (AirDeathFinish= in INI, native action 36): the impact
+    /// notice forces it (`0x00522B9B`), and its end UnInits the infantryman.
+    AirDeathFinish,
 }
 
 /// How a sequence behaves when it reaches its last frame.

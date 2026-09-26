@@ -2980,21 +2980,44 @@ impl Simulation {
     /// walk's own Restores; the scans, orders and legacy retaliation filter
     /// Health 0 themselves), so no listener can hold it again. The Foot
     /// prelude's contact-0 OVER_OUT is covered by the OVER_OUT to every contact.
+    ///
+    /// An Infantry flown by the Jumpjet locomotor stops it three times, and
+    /// its Infantry placement draws on the Scenario RNG each time the moving
+    /// byte is set: `InfantryClass::Set_Destination(NULL)` (`0x0051AA40`)
+    /// reaches Foot's null setter (`0x0051B1D2`, [`Self::jumpjet_null_destination`]),
+    /// Stop_Driver (`0x0051DAF0`) runs its Do_Action (which at Health 0
+    /// re-enters Stop_Driver once more when it accepts) and the locomotor's
+    /// Stop_Moving, and `TechnoClass::Stun`'s second null setter repeats the
+    /// first. Native execution: `tools/spatial_oracle/jumpjet_infantry_crash`.
     pub(crate) fn techno_death_stun(&mut self, stable_id: u64, context: UninitContext<'_>) {
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return;
         };
+        let jumpjet_infantry = crate::sim::movement::infantry_action::doing_owns_sequence(entity);
         if matches!(
             entity.category,
             EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
         ) {
             crate::sim::movement::stop_navigation_at_committed_head(entity);
-            self.jumpjet_stun_stop(stable_id, context.rules);
+            if let (true, Some(rules)) = (jumpjet_infantry, context.rules) {
+                self.jumpjet_null_destination(stable_id, Some(rules), None);
+                if let Err(cause) = self.infantry_stop_driver(stable_id, rules, None) {
+                    log::debug!("infantry {stable_id} Stun Stop_Driver: {cause}");
+                }
+            } else {
+                self.jumpjet_stun_stop(stable_id, context.rules);
+            }
         }
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return;
         };
         crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+        if jumpjet_infantry {
+            self.jumpjet_null_destination(stable_id, context.rules, None);
+        }
+        let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
+            return;
+        };
         crate::sim::mission::concrete_effects::represented_assign_destination_mode_one(
             entity, None,
         );

@@ -1,0 +1,6576 @@
+[
+  {
+    "input": {
+      "doing": 23,
+      "fraction": 0.0,
+      "kind": "kill",
+      "max_frames": 80,
+      "owner": {
+        "moving": true,
+        "phase": 2
+      }
+    },
+    "name": "hovering_hover",
+    "output": {
+      "before": {
+        "coord": [
+          2688,
+          2688,
+          500
+        ],
+        "crash_latch": false,
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "doing": 23,
+        "health": 125,
+        "moving": true,
+        "phase": 2,
+        "scenario_rng": [
+          0,
+          103
+        ],
+        "stage": 0
+      },
+      "frames": [
+        {
+          "coord": [
+            2688,
+            2688,
+            475
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            430
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            385
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            340
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            295
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            250
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            205
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            160
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            115
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            70
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            25
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [
+            [
+              "set_height",
+              0
+            ]
+          ],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [
+            "uninit"
+          ],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 6
+        }
+      ],
+      "kills": [
+        [
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                3,
+                106
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "death_arm_stun"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2624,
+                2752,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                4,
+                107
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "infantry_stop_driver"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                7,
+                110
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "infantry_stun"
+          },
+          {
+            "accepted": true,
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": true,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                10,
+                113
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "crash"
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "input": {
+      "doing": 24,
+      "fraction": 0.0,
+      "kind": "kill",
+      "max_frames": 80,
+      "owner": {
+        "moving": true,
+        "phase": 2
+      }
+    },
+    "name": "hovering_fly",
+    "output": {
+      "before": {
+        "coord": [
+          2688,
+          2688,
+          500
+        ],
+        "crash_latch": false,
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "doing": 24,
+        "health": 125,
+        "moving": true,
+        "phase": 2,
+        "scenario_rng": [
+          0,
+          103
+        ],
+        "stage": 0
+      },
+      "frames": [
+        {
+          "coord": [
+            2688,
+            2688,
+            475
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            430
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            385
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            340
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            295
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            250
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            205
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            160
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            115
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            70
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            25
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [
+            [
+              "set_height",
+              0
+            ]
+          ],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [
+            "uninit"
+          ],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 6
+        }
+      ],
+      "kills": [
+        [
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2624,
+                2752,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                4,
+                107
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                24
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "death_arm_stun"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2752,
+                2752,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                5,
+                108
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "infantry_stop_driver"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                8,
+                111
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "infantry_stun"
+          },
+          {
+            "accepted": true,
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": true,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                11,
+                114
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "crash"
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "input": {
+      "doing": 26,
+      "fraction": 0.0,
+      "kind": "kill",
+      "max_frames": 80,
+      "owner": {
+        "moving": true,
+        "phase": 2
+      }
+    },
+    "name": "hovering_fire_fly",
+    "output": {
+      "before": {
+        "coord": [
+          2688,
+          2688,
+          500
+        ],
+        "crash_latch": false,
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "doing": 26,
+        "health": 125,
+        "moving": true,
+        "phase": 2,
+        "scenario_rng": [
+          0,
+          103
+        ],
+        "stage": 0
+      },
+      "frames": [
+        {
+          "coord": [
+            2688,
+            2688,
+            475
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            430
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            385
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            340
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            295
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            250
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            205
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            160
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            115
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            70
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            25
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [
+            [
+              "set_height",
+              0
+            ]
+          ],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [
+            "uninit"
+          ],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 6
+        }
+      ],
+      "kills": [
+        [
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2624,
+                2752,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                4,
+                107
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                26
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "death_arm_stun"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2752,
+                2752,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                5,
+                108
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "infantry_stop_driver"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                8,
+                111
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "infantry_stun"
+          },
+          {
+            "accepted": true,
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": true,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                11,
+                114
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "crash"
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "input": {
+      "doing": -1,
+      "fraction": 0.0,
+      "kind": "kill",
+      "max_frames": 80,
+      "owner": {
+        "moving": true,
+        "phase": 2
+      }
+    },
+    "name": "hovering_no_action",
+    "output": {
+      "before": {
+        "coord": [
+          2688,
+          2688,
+          500
+        ],
+        "crash_latch": false,
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "doing": -1,
+        "health": 125,
+        "moving": true,
+        "phase": 2,
+        "scenario_rng": [
+          0,
+          103
+        ],
+        "stage": 0
+      },
+      "frames": [
+        {
+          "coord": [
+            2688,
+            2688,
+            475
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            430
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            385
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            340
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            295
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            250
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            205
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            160
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            115
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            70
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            25
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [
+            [
+              "set_height",
+              0
+            ]
+          ],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [
+            "uninit"
+          ],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 6
+        }
+      ],
+      "kills": [
+        [
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2624,
+                2752,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                4,
+                107
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                -1
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "death_arm_stun"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2752,
+                2752,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                5,
+                108
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "infantry_stop_driver"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                8,
+                111
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "infantry_stun"
+          },
+          {
+            "accepted": true,
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": true,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                11,
+                114
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "crash"
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "input": {
+      "doing": 32,
+      "fraction": 0.0,
+      "kind": "kill",
+      "max_frames": 80,
+      "owner": {
+        "moving": true,
+        "phase": 2
+      }
+    },
+    "name": "hovering_cheer",
+    "output": {
+      "before": {
+        "coord": [
+          2688,
+          2688,
+          500
+        ],
+        "crash_latch": false,
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "doing": 32,
+        "health": 125,
+        "moving": true,
+        "phase": 2,
+        "scenario_rng": [
+          0,
+          103
+        ],
+        "stage": 0
+      },
+      "frames": [
+        {
+          "coord": [
+            2688,
+            2688,
+            475
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 32,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            430
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 32,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            385
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 32,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            340
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 32,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            295
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 32,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            250
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 32,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            205
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 32,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            160
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 32,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            115
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 32,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            70
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 32,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            25
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 32,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [
+            [
+              "set_height",
+              0
+            ]
+          ],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [
+            "uninit"
+          ],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 6
+        }
+      ],
+      "kills": [
+        [
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 32,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                3,
+                106
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                32
+              ],
+              [
+                "stop_moving",
+                32
+              ],
+              [
+                "stop_moving",
+                32
+              ]
+            ],
+            "step": "death_arm_stun"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2624,
+                2752,
+                0
+              ],
+              "doing": 32,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                4,
+                107
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                32
+              ]
+            ],
+            "step": "infantry_stop_driver"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 32,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                7,
+                110
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                32
+              ],
+              [
+                "stop_moving",
+                32
+              ],
+              [
+                "stop_moving",
+                32
+              ]
+            ],
+            "step": "infantry_stun"
+          },
+          {
+            "accepted": true,
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": true,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 32,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                10,
+                113
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                32
+              ],
+              [
+                "stop_moving",
+                32
+              ],
+              [
+                "stop_moving",
+                32
+              ]
+            ],
+            "step": "crash"
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "input": {
+      "doing": 24,
+      "fraction": 1.0,
+      "kind": "kill",
+      "max_frames": 80,
+      "owner": {
+        "moving": true,
+        "phase": 3
+      }
+    },
+    "name": "cruising_fly",
+    "output": {
+      "before": {
+        "coord": [
+          2688,
+          2688,
+          500
+        ],
+        "crash_latch": false,
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "doing": 24,
+        "health": 125,
+        "moving": true,
+        "phase": 3,
+        "scenario_rng": [
+          0,
+          103
+        ],
+        "stage": 0
+      },
+      "frames": [
+        {
+          "coord": [
+            2688,
+            2688,
+            475
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            430
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            385
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            340
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            295
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            250
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            205
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            160
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            115
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            70
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            25
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [
+            [
+              "set_height",
+              0
+            ]
+          ],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [
+            "uninit"
+          ],
+          "health": 1,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            11,
+            114
+          ],
+          "stage": 6
+        }
+      ],
+      "kills": [
+        [
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2624,
+                2752,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 3,
+              "scenario_rng": [
+                4,
+                107
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                24
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "death_arm_stun"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2752,
+                2752,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 3,
+              "scenario_rng": [
+                5,
+                108
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "infantry_stop_driver"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 3,
+              "scenario_rng": [
+                8,
+                111
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "infantry_stun"
+          },
+          {
+            "accepted": true,
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": true,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 3,
+              "scenario_rng": [
+                11,
+                114
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "crash"
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "input": {
+      "doing": 23,
+      "fraction": 0.0,
+      "kind": "kill",
+      "max_frames": 80,
+      "owner": {
+        "moving": true,
+        "phase": 2
+      },
+      "second_kill_frame": 4
+    },
+    "name": "second_kill_in_the_fall",
+    "output": {
+      "before": {
+        "coord": [
+          2688,
+          2688,
+          500
+        ],
+        "crash_latch": false,
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "doing": 23,
+        "health": 125,
+        "moving": true,
+        "phase": 2,
+        "scenario_rng": [
+          0,
+          103
+        ],
+        "stage": 0
+      },
+      "frames": [
+        {
+          "coord": [
+            2688,
+            2688,
+            475
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            430
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            385
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            340
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 1,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            10,
+            113
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            295
+          ],
+          "crash_latch": true,
+          "destination": [
+            2624,
+            2752,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            20,
+            123
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            250
+          ],
+          "crash_latch": true,
+          "destination": [
+            2624,
+            2752,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            20,
+            123
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            205
+          ],
+          "crash_latch": true,
+          "destination": [
+            2624,
+            2752,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            20,
+            123
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            160
+          ],
+          "crash_latch": true,
+          "destination": [
+            2624,
+            2752,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            20,
+            123
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            115
+          ],
+          "crash_latch": true,
+          "destination": [
+            2624,
+            2752,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            20,
+            123
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            70
+          ],
+          "crash_latch": true,
+          "destination": [
+            2624,
+            2752,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            20,
+            123
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            25
+          ],
+          "crash_latch": true,
+          "destination": [
+            2624,
+            2752,
+            0
+          ],
+          "doing": 34,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 5,
+          "scenario_rng": [
+            20,
+            123
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [
+            [
+              "set_height",
+              0
+            ],
+            [
+              "stop_moving",
+              36
+            ]
+          ],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 0
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 1
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 2
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 3
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 4
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 5
+        },
+        {
+          "coord": [
+            2688,
+            2688,
+            0
+          ],
+          "crash_latch": true,
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "doing": 36,
+          "events": [
+            "uninit"
+          ],
+          "health": 0,
+          "moving": true,
+          "phase": 6,
+          "scenario_rng": [
+            21,
+            124
+          ],
+          "stage": 6
+        }
+      ],
+      "kills": [
+        [
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                3,
+                106
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "death_arm_stun"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2624,
+                2752,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                4,
+                107
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "infantry_stop_driver"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": false,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                7,
+                110
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "infantry_stun"
+          },
+          {
+            "accepted": true,
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                500
+              ],
+              "crash_latch": true,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 23,
+              "health": 0,
+              "moving": true,
+              "phase": 2,
+              "scenario_rng": [
+                10,
+                113
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ],
+              [
+                "stop_moving",
+                23
+              ]
+            ],
+            "step": "crash"
+          }
+        ],
+        [
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                340
+              ],
+              "crash_latch": true,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 34,
+              "health": 0,
+              "moving": true,
+              "phase": 5,
+              "scenario_rng": [
+                13,
+                116
+              ],
+              "stage": 1
+            },
+            "events": [
+              [
+                "stop_moving",
+                34
+              ],
+              [
+                "stop_moving",
+                34
+              ],
+              [
+                "stop_moving",
+                34
+              ]
+            ],
+            "step": "death_arm_stun"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                340
+              ],
+              "crash_latch": true,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 34,
+              "health": 0,
+              "moving": true,
+              "phase": 5,
+              "scenario_rng": [
+                14,
+                117
+              ],
+              "stage": 1
+            },
+            "events": [
+              [
+                "stop_moving",
+                34
+              ]
+            ],
+            "step": "infantry_stop_driver"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                340
+              ],
+              "crash_latch": true,
+              "destination": [
+                2752,
+                2624,
+                0
+              ],
+              "doing": 34,
+              "health": 0,
+              "moving": true,
+              "phase": 5,
+              "scenario_rng": [
+                17,
+                120
+              ],
+              "stage": 1
+            },
+            "events": [
+              [
+                "stop_moving",
+                34
+              ],
+              [
+                "stop_moving",
+                34
+              ],
+              [
+                "stop_moving",
+                34
+              ]
+            ],
+            "step": "infantry_stun"
+          },
+          {
+            "accepted": true,
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                340
+              ],
+              "crash_latch": true,
+              "destination": [
+                2624,
+                2752,
+                0
+              ],
+              "doing": 34,
+              "health": 0,
+              "moving": true,
+              "phase": 5,
+              "scenario_rng": [
+                20,
+                123
+              ],
+              "stage": 1
+            },
+            "events": [
+              [
+                "stop_moving",
+                34
+              ],
+              [
+                "stop_moving",
+                34
+              ],
+              [
+                "stop_moving",
+                34
+              ]
+            ],
+            "step": "crash"
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "input": {
+      "doing": 0,
+      "fraction": 0.0,
+      "height": 0,
+      "kind": "kill",
+      "max_frames": 0,
+      "owner": {
+        "moving": false,
+        "phase": 0
+      }
+    },
+    "name": "grounded",
+    "output": {
+      "before": {
+        "coord": [
+          2688,
+          2688,
+          0
+        ],
+        "crash_latch": false,
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "doing": 0,
+        "health": 125,
+        "moving": false,
+        "phase": 0,
+        "scenario_rng": [
+          0,
+          103
+        ],
+        "stage": 0
+      },
+      "frames": [],
+      "kills": [
+        [
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                0
+              ],
+              "crash_latch": false,
+              "destination": [
+                0,
+                0,
+                0
+              ],
+              "doing": 0,
+              "health": 0,
+              "moving": false,
+              "phase": 0,
+              "scenario_rng": [
+                0,
+                103
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                0
+              ],
+              [
+                "stop_moving",
+                0
+              ],
+              [
+                "stop_moving",
+                0
+              ]
+            ],
+            "step": "death_arm_stun"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                0
+              ],
+              "crash_latch": false,
+              "destination": [
+                0,
+                0,
+                0
+              ],
+              "doing": 0,
+              "health": 0,
+              "moving": false,
+              "phase": 0,
+              "scenario_rng": [
+                0,
+                103
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                0
+              ]
+            ],
+            "step": "infantry_stop_driver"
+          },
+          {
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                0
+              ],
+              "crash_latch": false,
+              "destination": [
+                0,
+                0,
+                0
+              ],
+              "doing": 0,
+              "health": 0,
+              "moving": false,
+              "phase": 0,
+              "scenario_rng": [
+                0,
+                103
+              ],
+              "stage": 0
+            },
+            "events": [
+              [
+                "stop_moving",
+                0
+              ],
+              [
+                "stop_moving",
+                0
+              ],
+              [
+                "stop_moving",
+                0
+              ]
+            ],
+            "step": "infantry_stun"
+          },
+          {
+            "accepted": false,
+            "after": {
+              "coord": [
+                2688,
+                2688,
+                0
+              ],
+              "crash_latch": false,
+              "destination": [
+                0,
+                0,
+                0
+              ],
+              "doing": 0,
+              "health": 0,
+              "moving": false,
+              "phase": 0,
+              "scenario_rng": [
+                0,
+                103
+              ],
+              "stage": 0
+            },
+            "events": [],
+            "step": "crash"
+          }
+        ]
+      ]
+    }
+  }
+]
