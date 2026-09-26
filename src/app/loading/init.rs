@@ -2772,7 +2772,7 @@ pub(crate) fn load_map_from_initial(
         );
         r.art_registry = a.clone();
         r.bind_effect_assets(&asset_manager, theater_ext, &map_data.header.theater);
-        r.bind_building_buildup_assets(&asset_manager, &map_data.header.theater);
+        r.bind_building_buildup_assets(asset_manager, &map_data.header.theater);
         r.bind_terrain_spawner_assets(
             &rules_ini,
             &asset_manager,

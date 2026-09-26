@@ -793,6 +793,63 @@ fn place_ready_building_spawns_and_consumes_ready_item() {
     );
 }
 
+/// A building the player places in frame P (the command tail) first builds
+/// up in P+1 and completes at P + 1 + (count - 1) * rate from its type's
+/// Buildup control (`sim::building_construction`); the tactical capture
+/// ledger pins this route.
+#[test]
+fn a_placed_building_completes_its_buildup_after_the_command_frame() {
+    let mut sim = Simulation::new();
+    let mut rules = stock_power_contract_rules();
+    rules.set_buildup_control_for_test("GAPOWR", [0, 26, 2]);
+    let height_map: BTreeMap<(u16, u16), u8> = BTreeMap::new();
+    let grid = PathGrid::new(64, 64);
+    spawn_structure(&mut sim, 1, "Americans", "GACNST", 10, 10);
+    let americans = sim.interner.intern("Americans");
+    let gapowr = sim.interner.intern("GAPOWR");
+    sim.advance_tick(&[], Some(&rules), &height_map, Some(&grid), None, 67);
+
+    ready_building(&mut sim, &rules, "Americans", "GAPOWR");
+    let place = CommandEnvelope::new(
+        americans,
+        sim.session.tick + 1,
+        Command::PlaceReadyBuilding {
+            owner: americans,
+            type_id: gapowr,
+            rx: 12,
+            ry: 10,
+        },
+    );
+    let placed_frame = sim.session.binary_frame;
+    let tick = sim.advance_tick(&[place], Some(&rules), &height_map, Some(&grid), None, 67);
+    assert_eq!(tick.executed_commands, 1);
+    let placed = sim
+        .substrate
+        .entities
+        .values()
+        .find(|entity| entity.type_ref == gapowr)
+        .map(|entity| entity.stable_id)
+        .expect("the command places GAPOWR");
+
+    let mut completed = None;
+    for _ in 0..80 {
+        let frame = sim.session.binary_frame;
+        sim.advance_tick(&[], Some(&rules), &height_map, Some(&grid), None, 67);
+        if sim
+            .substrate
+            .entities
+            .get(placed)
+            .unwrap()
+            .building_up
+            .is_none()
+        {
+            completed = Some(frame);
+            break;
+        }
+    }
+    assert_eq!(completed, Some(placed_frame + 1 + 25 * 2));
+}
+
 #[test]
 fn stock_gapowr_placement_restores_power_and_radar_during_buildup() {
     let mut sim = Simulation::new();
