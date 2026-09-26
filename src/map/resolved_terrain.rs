@@ -1129,10 +1129,11 @@ pub(crate) struct DestroyableCliffMutation {
 /// Active YR owns one object at `0x00ABDC50`. `MapClass::Get_CellClass` at
 /// `0x005657A0` and `0x00565730` overwrite only its packed coordinate words at
 /// `+0x24`; the independently writable level/slope bytes at `+0x11B/+0x11C`
-/// survive those misses. Coordinate/level/slope and overlay identity/state
-/// each occupy an atomic word; the full flag word has its own authority. Their
-/// shared allocation keeps one live identity safe to carry through app loading
-/// workers without copying native's global mutable object architecture.
+/// survive those misses. Coordinate/level/slope, overlay identity/state and
+/// smudge identity/data each occupy an atomic word; the full flag word has its
+/// own authority. Their shared allocation keeps one live identity safe to carry
+/// through app loading workers without copying native's global mutable object
+/// architecture.
 #[derive(Debug, Clone)]
 pub struct SharedCellDummy {
     state: Arc<SharedCellDummyState>,
@@ -1147,6 +1148,10 @@ struct SharedCellDummyState {
     native_anchor: AtomicU64,
     /// Low dword is signed Cell+0x44 identity; bits 32..39 are Cell+0x11E.
     overlay: AtomicU64,
+    /// Low dword is signed Cell+0x48 SmudgeTypeIndex; bits 32..39 are
+    /// Cell+0x11F SmudgeData, as `SmudgeTypeClass::Place @ 0x006B6080`
+    /// (`SmudgeGrid::write_footprint`) leaves them.
+    smudge: AtomicU64,
     /// CellClass+0x116, written even when ReadTubesINI resolves a dummy cell.
     tube_index: AtomicI16,
     /// Retained wrapping CellClass+122; ctor47BD34 initializes zero.
@@ -1251,6 +1256,8 @@ impl<'a> NativeCellQuery<'a> {
 }
 
 const SHARED_DUMMY_DEFAULT_OVERLAY: u64 = u32::MAX as u64;
+/// Constructor `0x0047BC24` (+0x48 = -1) and `0x0047BD22` (+0x11F = 0).
+const SHARED_DUMMY_DEFAULT_SMUDGE: u64 = u32::MAX as u64;
 
 impl Default for SharedCellDummy {
     fn default() -> Self {
@@ -1266,6 +1273,7 @@ impl SharedCellDummy {
                 raw_flags: AtomicU32::new(0),
                 native_anchor: AtomicU64::new(0),
                 overlay: AtomicU64::new(SHARED_DUMMY_DEFAULT_OVERLAY),
+                smudge: AtomicU64::new(SHARED_DUMMY_DEFAULT_SMUDGE),
                 tube_index: AtomicI16::new(-1),
                 neighbor_count: AtomicU8::new(0),
             }),
@@ -1282,6 +1290,7 @@ impl SharedCellDummy {
                 raw_flags: AtomicU32::new(self.state.raw_flags.load(Ordering::Relaxed)),
                 native_anchor: AtomicU64::new(self.state.native_anchor.load(Ordering::Relaxed)),
                 overlay: AtomicU64::new(self.state.overlay.load(Ordering::Relaxed)),
+                smudge: AtomicU64::new(self.state.smudge.load(Ordering::Relaxed)),
                 tube_index: AtomicI16::new(self.state.tube_index.load(Ordering::Relaxed)),
                 neighbor_count: AtomicU8::new(self.neighbor_count()),
             }),
@@ -1296,8 +1305,10 @@ impl SharedCellDummy {
     /// coordinate `+0x24`, level `+0x11B`, slope `+0x11C`, and modeled
     /// `+0x140 & 0x1180` bridge bits return to zero, while overlay identity
     /// returns to signed `-1` and OverlayData to zero. Raw Tube index+0x116
-    /// returns to-1 at47BC48 (PHASE3_TUBE_HIERARCHY_20260910.md). Other constructor-owned
-    /// fields are not represented by this handle yet.
+    /// returns to-1 at47BC48 (PHASE3_TUBE_HIERARCHY_20260910.md). SmudgeTypeIndex
+    /// +0x48 returns to `-1` (`0x0047BC24`) and SmudgeData +0x11F to zero
+    /// (`0x0047BD22`). Other constructor-owned fields are not represented by
+    /// this handle yet.
     pub(crate) fn reconstruct_for_map_resize(&self) {
         self.state.cell.store(0, Ordering::Relaxed);
         // Constructor47BBF0: AND FF800000 at47BCE1; preserve upper residue.
@@ -1310,6 +1321,9 @@ impl SharedCellDummy {
         self.state
             .overlay
             .store(SHARED_DUMMY_DEFAULT_OVERLAY, Ordering::Relaxed);
+        self.state
+            .smudge
+            .store(SHARED_DUMMY_DEFAULT_SMUDGE, Ordering::Relaxed);
     }
 
     pub fn snapshot(&self) -> SharedCellDummySnapshot {
@@ -1352,6 +1366,10 @@ impl SharedCellDummy {
         );
         self.state.overlay.store(
             prepared.state.overlay.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
+        self.state.smudge.store(
+            prepared.state.smudge.load(Ordering::Relaxed),
             Ordering::Relaxed,
         );
         self.state
@@ -1436,6 +1454,21 @@ impl SharedCellDummy {
     pub(crate) fn write_overlay_identity_state(&self, identity: i32, state: u8) {
         self.state.overlay.store(
             u64::from(identity as u32) | (u64::from(state) << 32),
+            Ordering::Relaxed,
+        );
+    }
+
+    /// The fallback CellClass's signed SmudgeTypeIndex (+0x48) and SmudgeData
+    /// (+0x11F), as smudge CanPlace reads them.
+    pub(crate) fn smudge_identity_data(&self) -> (i32, u8) {
+        let packed = self.state.smudge.load(Ordering::Relaxed);
+        (packed as u32 as i32, (packed >> 32) as u8)
+    }
+
+    /// `SmudgeTypeClass::Place @ 0x006B6080` on the fallback cell.
+    pub(crate) fn write_smudge_identity_data(&self, identity: i32, data: u8) {
+        self.state.smudge.store(
+            u64::from(identity as u32) | (u64::from(data) << 32),
             Ordering::Relaxed,
         );
     }
@@ -1795,6 +1828,11 @@ pub struct ResolvedTerrainGrid {
     /// Active theater tile registry length. Positive out-of-range ids present
     /// as ClearTile while their stored semantic id remains untouched.
     tile_registry_len: Option<usize>,
+    /// Smudge CanPlace's Morphable read of the shared dummy's constructor
+    /// tile 0xFFFF, derived once from the active theater registry: every
+    /// index below 0 or at least the count reads theater tile 0. False
+    /// without a theater.
+    dummy_accepts_smudge: bool,
     /// First flat tile id of the active theater's concrete high-bridge set.
     bridge_set_start: Option<u16>,
     /// Immutable signed ReadTheater545150 identities for high-rim selection.
@@ -1969,6 +2007,7 @@ impl ResolvedTerrainGrid {
             clear_tile_id: 0,
             projectile_water_set_base: -1,
             tile_registry_len: None,
+            dummy_accepts_smudge: false,
             bridge_set_start: None,
             high_bridge_rim_tiles: None,
             wood_bridge_set_start: None,
@@ -2155,6 +2194,21 @@ impl ResolvedTerrainGrid {
             NativeCellIdentity::Real(index) => self.cells[index].final_tile_index,
             NativeCellIdentity::Dummy => 0xFFFF,
         }
+    }
+
+    /// Smudge CanPlace's Morphable read (`0x006B601A..0x006B603A`) on one
+    /// resolved cell: a real cell's current-tile query; the shared dummy keeps
+    /// the constructor's 0xFFFF tile, which reads theater tile 0.
+    pub(crate) fn native_cell_accepts_smudge(&self, cell: NativeCellIdentity) -> bool {
+        match cell {
+            NativeCellIdentity::Real(index) => self.cells[index].accepts_smudge,
+            NativeCellIdentity::Dummy => self.dummy_accepts_smudge,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_set_dummy_accepts_smudge(&mut self, accepts: bool) {
+        self.dummy_accepts_smudge = accepts;
     }
 
     /// Cell47B3A0 samples the receiver's own signed level and slope; unlike
@@ -4052,6 +4106,8 @@ impl ResolvedTerrainGrid {
                     .and_then(|td| td.rmg_tiles.water_set)
                     .map_or(-1, i32::from),
                 tile_registry_len: theater_data.map(|td| td.lookup.len()),
+                dummy_accepts_smudge: theater_data
+                    .is_some_and(|td| current_tile_permissions(&td.lookup, 0xFFFF).0),
                 high_bridge_rim_tiles: theater_data
                     .map(super::bridge_rim_tiles::HighBridgeRimTiles::from_theater),
                 bridge_set_start: theater_data.and_then(|td| {
@@ -4838,6 +4894,8 @@ impl ResolvedTerrainGrid {
                 .and_then(|td| td.rmg_tiles.water_set)
                 .map_or(-1, i32::from),
             tile_registry_len: theater_data.map(|td| td.lookup.len()),
+            dummy_accepts_smudge: theater_data
+                .is_some_and(|td| current_tile_permissions(&td.lookup, 0xFFFF).0),
             high_bridge_rim_tiles: theater_data
                 .map(super::bridge_rim_tiles::HighBridgeRimTiles::from_theater),
             bridge_set_start: theater_data.and_then(|td| {
@@ -5194,7 +5252,7 @@ fn restore_load_base_land(cell: &mut ResolvedTerrainCell) {
 /// CanPlaceTiberium4839C0..4839E9 admits that index at its final tile gate.
 /// Other placement gates are outside this projection. Original-block witnesses:
 /// tools/spatial_oracle/terrain_tile_permissions.
-fn current_tile_permissions(lookup: &TilesetLookup, tile: i32) -> (bool, bool) {
+pub(crate) fn current_tile_permissions(lookup: &TilesetLookup, tile: i32) -> (bool, bool) {
     if tile < 0 || tile as usize >= lookup.len() {
         (lookup.is_morphable(0), true)
     } else {

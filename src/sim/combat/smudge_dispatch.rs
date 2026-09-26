@@ -204,9 +204,15 @@ fn rng_below_half_normalized(rng: &mut SimRng) -> bool {
     rng.next_range_u32_inclusive(0, SMUDGE_5050_RANGED_HIGH) < SMUDGE_SCORCH_ACCEPT_BELOW
 }
 
-/// Building destruction center smudge — fires once per >=2x2 building.
-/// Each dimension greater than two consumes one discarded ranged draw before
-/// the scorch/crater roll; a 2x2 foundation consumes only the roll.
+/// `BuildingClass::DestructionEffects` step 7 (`0x0044177E..0x004418EC`):
+/// the centre mark of a building at least 2x2 (Width `0x0045EC90`, Height
+/// `0x0045ECA0`). Each dimension greater than two consumes one discarded
+/// `RandomRanged(0, dimension - 2)` (`0x004417D3`, `0x00441805`) before the
+/// `RandomRanged(0, 99)` roll (`0x00441819`); below 50 the Burn placer, else
+/// the Crater placer, with force and size 0x64 at the Location cell's centre.
+/// Native execution: `tools/spatial_oracle/smudge_can_place.py`
+/// (`centre_mark`, all 22 foundations) and, on retail Dustbowl through the
+/// production receiver, `building_death_anims.py`.
 #[allow(clippy::too_many_arguments)]
 pub fn try_dispatch_building_destruction_smudges(
     rx: u16,
@@ -890,93 +896,60 @@ mod dispatch_tests {
     mod building_dispatch_tests {
         use super::*;
 
+        /// `BuildingClass::DestructionEffects` step 7 executed over MapClass's
+        /// cell table (`tools/spatial_oracle/smudge_can_place.py`,
+        /// `centre_mark`: `0x0044177E..0x004418EC` for all 22 foundation
+        /// indices at four Locations and two seeds): the >= 2x2 gate, the
+        /// discarded RandomRanged per dimension over two (the oracle requires
+        /// the rows to pin each range, `centre_mark_discard_pins`), the roll,
+        /// the placer's CanPlace sweep and pick, Place's footprint, the shared
+        /// dummy and the Scenario RNG afterwards.
         #[test]
-        fn destruction_skipped_for_1x1_foundation() {
-            let smudge_reg = make_smudge_registry();
-            let mut grid = SmudgeGrid::new(8, 8);
+        fn centre_mark_matches_the_original_for_every_foundation() {
+            use crate::sim::smudge_grid::oracle_fixture::{self, corpus, int};
+            let registry = oracle_fixture::registry();
             let art = ArtRegistry::empty();
-            let mut terrain = flat_terrain(8, 8);
-            let mut overlay = OverlayGrid::new(8, 8);
-            let occupancy = OccupancyGrid::new();
-            let mut rng = SimRng::new(1);
-            let mut growth = OreGrowthState::new(8, 8);
-            let mut radar_dirty = Vec::new();
-            let mut radar_generation = 0;
-            let mut tactical_dirty = Vec::new();
-            let mut tiberium = tiberium_ctx(
-                &mut overlay,
-                &mut growth,
-                &mut radar_dirty,
-                &mut radar_generation,
-                &mut tactical_dirty,
-            );
-            try_dispatch_building_destruction_smudges(
-                4,
-                4,
-                0,
-                1,
-                1, // 1x1 foundation
-                &art,
-                &smudge_reg,
-                &mut grid,
-                &occupancy,
-                &mut terrain,
-                &mut tiberium,
-                &mut rng,
-            );
-            assert_eq!(grid.iter_occupied().count(), 0);
-        }
-
-        fn run_center_smudge(foundation_w: u8, foundation_h: u8) -> SimRng {
-            let smudge_reg = make_smudge_registry();
-            let mut grid = SmudgeGrid::new(8, 8);
-            let art = ArtRegistry::empty();
-            let mut terrain = flat_terrain(8, 8);
-            let mut overlay = OverlayGrid::new(8, 8);
-            let occupancy = OccupancyGrid::new();
-            let mut growth = OreGrowthState::new(8, 8);
-            let mut radar_dirty = Vec::new();
-            let mut radar_generation = 0;
-            let mut tactical_dirty = Vec::new();
-            let mut tiberium = tiberium_ctx(
-                &mut overlay,
-                &mut growth,
-                &mut radar_dirty,
-                &mut radar_generation,
-                &mut tactical_dirty,
-            );
-            let mut rng = SimRng::new(42);
-            try_dispatch_building_destruction_smudges(
-                4,
-                4,
-                0,
-                foundation_w,
-                foundation_h,
-                &art,
-                &smudge_reg,
-                &mut grid,
-                &occupancy,
-                &mut terrain,
-                &mut tiberium,
-                &mut rng,
-            );
-            assert_eq!(grid.iter_occupied().count(), 1);
-            rng
-        }
-
-        #[test]
-        fn gsi_04_11_center_smudge_2x2_roll_only_3x3_discards_both_dimensions() {
-            let actual_2x2 = run_center_smudge(2, 2);
-            let mut expected_2x2 = SimRng::new(42);
-            expected_2x2.next_range_u32(100);
-            assert_eq!(actual_2x2.logical_state(), expected_2x2.logical_state());
-
-            let actual_3x3 = run_center_smudge(3, 3);
-            let mut expected_3x3 = SimRng::new(42);
-            expected_3x3.next_range_u32(2);
-            expected_3x3.next_range_u32(2);
-            expected_3x3.next_range_u32(100);
-            assert_eq!(actual_3x3.logical_state(), expected_3x3.logical_state());
+            let rows = corpus()["centre_mark"].as_array().unwrap();
+            assert_eq!(rows.len(), 176);
+            for row in rows {
+                let input = &row["input"];
+                let mut map = oracle_fixture::map(input["map"].as_str().unwrap());
+                let before = map.smudges.clone();
+                let location = input["location"].as_array().unwrap();
+                let size = row["foundation_size"].as_array().unwrap();
+                let mut growth = OreGrowthState::new(oracle_fixture::SIDE, oracle_fixture::SIDE);
+                let mut radar_dirty = Vec::new();
+                let mut radar_generation = 0;
+                let mut tactical_dirty = Vec::new();
+                let mut tiberium = tiberium_ctx(
+                    &mut map.overlay,
+                    &mut growth,
+                    &mut radar_dirty,
+                    &mut radar_generation,
+                    &mut tactical_dirty,
+                );
+                let mut rng = oracle_fixture::seeded_rng(row);
+                try_dispatch_building_destruction_smudges(
+                    (int(&location[0]) / 256) as u16,
+                    (int(&location[1]) / 256) as u16,
+                    int(&location[2]) as i32,
+                    int(&size[0]) as u8,
+                    int(&size[1]) as u8,
+                    &art,
+                    &registry,
+                    &mut map.smudges,
+                    &map.occupancy,
+                    &mut map.terrain,
+                    &mut tiberium,
+                    &mut rng,
+                );
+                oracle_fixture::assert_marks(&before, &map.smudges, &map.terrain, row);
+                assert_eq!(
+                    rng.native_state_hex(),
+                    row["rng_after"].as_str().unwrap(),
+                    "{input}"
+                );
+            }
         }
 
         #[test]

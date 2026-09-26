@@ -18,7 +18,8 @@ ForceBigCraters (+0x36E).
 
 Supplied: the anim vt+0x48/+0x6C/+0x1C8 as stubs; MapClass::GetCell 0x005657A0
 returning a fixed cell; the frame-size read 0x0069E7E0; SmudgeTypeClass
-CanPlace 0x006B5F80 answering the case's admit mask; the SmudgeType table
+CanPlace 0x006B5F80 answering the case's admit mask (`smudge_can_place` executes
+CanPlace itself over MapClass's cell table); the SmudgeType table
 (0x00A8EC1C/0x00A8EC28: Burn +0x2A1, Crater +0x2A0, Width +0x298,
 Height +0x29C); operator new 0x007C8E17 (a bump allocator) and delete
 0x007C8B3D; the SmudgeClass constructor 0x006B4A50 and the particle
