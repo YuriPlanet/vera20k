@@ -36,11 +36,13 @@
 //!   0x21 has no tags to reach), the `PackupSound=` handle (`+0x6A0`, stopped
 //!   at a conversion `0x0044A1C8`) and stage 2's looping sound update
 //!   (`0x00750D40`).
-//! - Dormant in retail data: Sell_Back's and CanSell's FirestormWall arms
-//!   (no YR type sets `FirestormWall=`), stage 0's upgrade sale (`+0x702`;
-//!   no type sets `PowersUpBuilding=`), its Artillary/TickTank arm, the
-//!   LaserFencePost recalc (`0x004533A0`) and the sale's CloakGenerator arm
-//!   (`Type+0x16C7`, `0x0044A292`).
+//! - Dormant in retail data: stage 0's upgrade sale (`+0x702`; no type sets
+//!   `PowersUpBuilding=`), its Artillary/TickTank arm, the LaserFencePost
+//!   recalc (`0x004533A0`), the sale's CloakGenerator arm (`Type+0x16C7`,
+//!   `0x0044A292`) and `BuildingClass::SetTarget`'s computer sale of a
+//!   `TickTank=`/`Artillary=` building (`Type+0x16C4`/`+0x16CA`, which
+//!   queues and commences Selling itself at `0x00443C42`; no retail
+//!   building sets either key).
 //! - Stage 0's Slave Miner arm (`0x0044AA3D..0x0044AA9F`: HandleReturnedSlaves
 //!   for an archived ore cell) needs the retail undeploy click's cell, which
 //!   VERA's undeploy order does not carry.
