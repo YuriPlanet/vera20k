@@ -517,15 +517,16 @@ impl TacticalCaptureProfile {
         // Current Rust production timing: factory enqueue is observed at N+1,
         // first progress at N+2, then 53 intervals at the resolved rate. A
         // placed building completes one tick after its place command plus its
-        // type's build-up (`sim::building_construction`), so the sides differ.
+        // type's build-up on the human placement route
+        // (`sim::building_construction`), so the sides differ.
         // Radar availability can begin during buildup, but its rendered Online
         // transition uses wall time. Only deterministic construction milestones
         // belong in this fixed ledger; the script records bounded readiness.
         let ledger = &self.budgets.expected_ledger;
         let expected = if self.is_soviet() {
-            [34, 619, 671, 2634, 2686, 3642, 3673]
+            [34, 619, 672, 2635, 2688, 3644, 3676]
         } else {
-            [30, 615, 661, 2624, 2674, 3630, 3678]
+            [30, 615, 662, 2625, 2676, 3632, 3681]
         };
         ensure!(
             [

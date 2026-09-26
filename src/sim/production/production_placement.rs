@@ -372,13 +372,22 @@ pub fn place_ready_building_with_overlays(
             ry + fh - 1,
         );
     }
-    // The placed building builds up: its Unlimbo's Begin_Mode(0)
-    // (TechnoClass::Unlimbo vt+0x484, 0x0044D6A0) and ExitObject's commence of
-    // the Construction mission (0x00445329..0x0044533F).
+    // The placed building builds up (`sim::building_construction`): a human
+    // player's through the PLACE event (HouseClass::Place_Production), a
+    // computer house's through its factory's ExitObject, which places nothing
+    // for a house IsControlledByHuman (0x00444F1F).
     let control = rules.buildup_control(type_id);
     let now = sim.session.binary_frame as i32;
+    let human = sim
+        .houses
+        .get(&owner_id)
+        .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero));
     if let Some(ge) = sim.substrate.entities.get_mut(new_sid) {
-        ge.building_up = Some(BuildingUp::placed(control, now));
+        ge.building_up = Some(if human {
+            BuildingUp::placed_by_player(control, now)
+        } else {
+            BuildingUp::placed_by_computer(control, now)
+        });
     }
     // Refresh superweapon grants — newly placed building may provide a SW.
     if sim.session.game_options.super_weapons {

@@ -5567,7 +5567,7 @@ impl Simulation {
         let now = self.session.binary_frame as i32;
         let options = &self.session.game_options;
         let keys = self.substrate.entities.keys_sorted();
-        let mut stage_zero: Vec<u64> = Vec::new();
+        let mut visits: Vec<(u64, PackUpFrame)> = Vec::new();
         let mut finished: Vec<u64> = Vec::new();
         for &sid in &keys {
             if let Some(entity) = self.substrate.entities.get_mut(sid) {
@@ -5576,19 +5576,28 @@ impl Simulation {
                 }
                 // An UndeploysInto sale with no ArchiveTarget completes at
                 // stage 0x17 (UpdateAnimation `0x00451186..0x004511DF`).
-                let archive_less = entity.archive_target().is_none();
-                if let Some(ref mut bd) = entity.building_down {
-                    match bd.frame(now, archive_less, options) {
-                        PackUpFrame::StageZero => stage_zero.push(sid),
-                        PackUpFrame::Convert => finished.push(sid),
-                        PackUpFrame::PackingUp => {}
-                    }
+                let has_archive = entity.archive_target().is_some();
+                let Some(ref mut bd) = entity.building_down else {
+                    continue;
+                };
+                let archive_less = !has_archive && !bd.player_order;
+                let visit = bd.frame(now, archive_less, options);
+                if visit != PackUpFrame::NoVisit {
+                    // Every Sell visit stops the repair (0x00449C41).
+                    entity.repairing = false;
+                }
+                match visit {
+                    PackUpFrame::StageZero | PackUpFrame::StageOne => visits.push((sid, visit)),
+                    PackUpFrame::Convert => finished.push(sid),
+                    PackUpFrame::NoVisit | PackUpFrame::Waiting => {}
                 }
             }
         }
-        if let Some(rules) = rules {
-            for sid in stage_zero {
-                self.undeploy_stage_zero(sid, rules);
+        for (sid, visit) in visits {
+            match visit {
+                PackUpFrame::StageZero => self.undeploy_stage_zero(sid, rules),
+                // 0x0044A2F5: OVER_OUT to every contact.
+                _ => crate::sim::radio::broadcast_break(self, sid, rules),
             }
         }
         let any_finished = !finished.is_empty();

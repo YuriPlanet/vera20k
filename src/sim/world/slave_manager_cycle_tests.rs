@@ -770,7 +770,10 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
     let refinery = sim.substrate.entities.get_mut(yarefn).unwrap();
     refinery.building_up = None;
     crate::sim::combat::veterancy::set_elite(refinery);
-    assert!(sim.undeploy_building(yarefn, &rules), "undeploy to SMIN");
+    assert!(
+        sim.undeploy_building(yarefn, &rules, true),
+        "undeploy to SMIN"
+    );
     let down = sim
         .substrate
         .entities
@@ -997,7 +1000,7 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
         let _ = expected.next_u32();
     }
 
-    assert!(sim.undeploy_building(refinery, &rules));
+    assert!(sim.undeploy_building(refinery, &rules, true));
     let down = sim
         .substrate
         .entities

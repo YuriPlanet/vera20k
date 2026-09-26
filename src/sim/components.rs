@@ -185,27 +185,40 @@ pub struct BuildupStage {
 /// Where a building's Construction mission (`0x12`) stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ConstructionMission {
-    /// Queued behind no current mission: a deployed building's, which its
-    /// first Update commences (`0x0043FF91`) on the ready byte Deploy set.
+    /// Queued behind no current mission (a human player's placement, a
+    /// deploy): the ready byte commences it (`0x0043FE27` once BState is not
+    /// 0, or `0x0043FF91`).
     Queued,
-    /// Current since `since` (a placement's commence, or a deployed
-    /// building's first Update), before its first visit
-    /// (`Mission_Construction` status 0).
-    Commenced { since: i32 },
+    /// Current with its mission timer due: the next dispatch is its first
+    /// visit (`Mission_Construction` status 0).
+    Due,
     /// Visited (status 1): each visit completes on the ready byte.
     Watching,
 }
 
 /// A building building up after its placement or deploy
-/// (`sim::building_construction`): its construction animation, its
-/// Construction mission, and `+0x6DD`, the byte set when the animation lands
-/// on its last frame. The render draws `anim.stage` from the Buildup SHP.
+/// (`sim::building_construction`): its construction animation, its BState,
+/// its Construction mission, and `+0x6DD`, the byte set when the animation
+/// lands on its last frame. The render draws `anim.stage` from the Buildup
+/// SHP while BState is 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BuildingUp {
+    /// The construction animation (BState 0); each `Begin_Mode(0)` restarts
+    /// it from the control.
     pub anim: BuildupStage,
+    /// BState (`+0x534`) is 1, the idle control (`{0, 1, 0}`, the
+    /// BuildingType constructor's for every retail type), instead of 0.
+    pub idle: bool,
+    /// `Begin_Mode(1)` is queued (`+0x538`), applied at the end of the next
+    /// Update (`0x0043FFB4`): a human player's placement, whose factory
+    /// sends the building OVER_OUT (`0x004FB4A6` -> `0x0043CD01`).
+    pub idle_queued: bool,
     pub mission: ConstructionMission,
     /// `+0x6DD`, the animation-complete (ready-to-commence) byte.
     pub done: bool,
+    /// The first frame with an Update: the frame after a placement (placed
+    /// after that frame's Logic pass), a deployed building's creation frame.
+    pub first_frame: i32,
 }
 
 /// A building packing up into its `UndeploysInto=` unit through the Selling
@@ -225,6 +238,10 @@ pub struct BuildingDown {
     pub commenced_frame: i32,
     /// `+0x6DD`, the animation-complete byte.
     pub done: bool,
+    /// Started by the player's undeploy order, VERA's stand-in for the retail
+    /// cell click (`0x004436F0`), which always sets an ArchiveTarget before
+    /// the sale: such a pack-up never takes the archive-less stage-0x17 exit.
+    pub player_order: bool,
     /// Unit type to spawn when animation completes (e.g., "AMCV").
     pub spawn_type: InternedId,
     /// Owner of the unit to spawn.

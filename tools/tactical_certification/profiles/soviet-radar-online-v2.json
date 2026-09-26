@@ -163,11 +163,11 @@
     "expected_ledger": {
       "yard_active": 34,
       "power_ready": 619,
-      "power_active": 671,
-      "refinery_ready": 2634,
-      "refinery_active": 2686,
-      "radar_ready": 3642,
-      "radar_active": 3673
+      "power_active": 672,
+      "refinery_ready": 2635,
+      "refinery_active": 2688,
+      "radar_ready": 3644,
+      "radar_active": 3676
     }
   },
   "pixel_inputs": {

@@ -59,29 +59,18 @@ pub fn buildup_control(
         })
         .and_then(|product| X87Chop53::div(product, X87Chop53::load_i32(count)))
         .and_then(X87Chop53::ftol_i64)
-        // `_ftol` of an unrepresentable value leaves the integer indefinite.
-        .map_or(i32::MIN, |rate| rate as i32);
+        // `_ftol` returns the low dword of its `FISTP qword` (`0x007C5F1B..
+        // 0x007C5F20`): an unrepresentable value's integer indefinite
+        // (`0x8000_0000_0000_0000`) leaves 0.
+        .map_or(0, |rate| rate as i32);
     [0, count, rate]
 }
 
-/// The two names the Buildup lookup tries (`0x005F96B0`, then `0x005F9710` on
-/// the same buffer): the theater letter substituted into a name whose first
-/// two letters are `G/N/C/Y` and `A/T` (case-insensitive), else the name
-/// itself; then that name with `G` as its second letter.
-pub fn buildup_shp_candidates(buildup: &str, theater_letter: Option<char>) -> [String; 2] {
-    let mut name: Vec<char> = buildup.to_ascii_uppercase().chars().collect();
-    if let (Some(letter), [first, second, ..]) = (theater_letter, name.as_slice())
-        && matches!(first, 'G' | 'N' | 'C' | 'Y')
-        && matches!(second, 'A' | 'T')
-    {
-        name[1] = letter;
-    }
-    let first: String = name.iter().collect();
-    if name.len() >= 2 {
-        name[1] = 'G';
-    }
-    let second: String = name.iter().collect();
-    [format!("{first}.SHP"), format!("{second}.SHP")]
+/// The two files the Buildup load tries (`0x0045F24A..`): `Buildup=` plus
+/// `.SHP` through the theater lookup (`art_data::theater_shp_names`).
+pub(crate) fn buildup_shp_names(buildup: &str, theater_name: &str) -> [String; 2] {
+    crate::rules::art_data::theater_shp_names(&buildup.to_ascii_uppercase(), theater_name)
+        .map(|name| format!("{name}.SHP"))
 }
 
 /// The construction control of every building type whose Buildup SHP the
@@ -98,7 +87,6 @@ impl BuildupAssetCatalog {
     pub fn bind(rules: &RuleSet, asset_manager: &AssetManager, theater_name: &str) -> Self {
         let mut catalog = Self::default();
         let buildup_time = NativeF64Bits::from_bits(rules.general.buildup_time.to_bits());
-        let theater_letter = crate::rules::art_data::theater_letter(theater_name);
         for object in rules
             .all_objects()
             .filter(|object| object.category == ObjectCategory::Building)
@@ -112,7 +100,7 @@ impl BuildupAssetCatalog {
             let Some(buildup) = art.buildup.as_deref() else {
                 continue;
             };
-            let Some(data) = buildup_shp_candidates(buildup, theater_letter)
+            let Some(data) = buildup_shp_names(buildup, theater_name)
                 .iter()
                 .find_map(|candidate| asset_manager.get_ref(candidate))
             else {
@@ -188,21 +176,21 @@ mod tests {
     #[test]
     fn buildup_names_take_the_theater_letter_then_the_generic_one() {
         assert_eq!(
-            buildup_shp_candidates("YAREFNMK", Some('T')),
+            buildup_shp_names("YAREFNMK", "TEMPERATE"),
             ["YTREFNMK.SHP".to_string(), "YGREFNMK.SHP".to_string()]
         );
         assert_eq!(
-            buildup_shp_candidates("gacnstmk", Some('A')),
+            buildup_shp_names("gacnstmk", "SNOW"),
             ["GACNSTMK.SHP".to_string(), "GGCNSTMK.SHP".to_string()]
         );
         // Not a G/N/C/Y + A/T name: tried as it is, then with G.
         assert_eq!(
-            buildup_shp_candidates("NXPOWRMK", Some('T')),
+            buildup_shp_names("NXPOWRMK", "TEMPERATE"),
             ["NXPOWRMK.SHP".to_string(), "NGPOWRMK.SHP".to_string()]
         );
-        // No theater: no substitution.
+        // An unknown theater: no substitution.
         assert_eq!(
-            buildup_shp_candidates("GTCNSTMK", None),
+            buildup_shp_names("GTCNSTMK", "NONE"),
             ["GTCNSTMK.SHP".to_string(), "GGCNSTMK.SHP".to_string()]
         );
     }

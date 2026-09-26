@@ -868,7 +868,7 @@ impl Simulation {
         owner.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(
             x as u16, y as u16,
         )));
-        if !self.undeploy_building(master, rules) {
+        if !self.undeploy_building(master, rules, false) {
             log::debug!("slave refinery {master} could not start its undeploy");
         }
         self.set_manager_state(master, ManagerState::PackingUp, i32::MAX);

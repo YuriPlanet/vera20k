@@ -1698,7 +1698,12 @@ impl Simulation {
     /// (`BuildingDown`, `sim::building_construction`); the unit spawns when
     /// the construction animation, played again, lands on its last frame
     /// ([`Self::finish_undeploy`]).
-    pub(crate) fn undeploy_building(&mut self, stable_id: u64, rules: &RuleSet) -> bool {
+    pub(crate) fn undeploy_building(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+        player_order: bool,
+    ) -> bool {
         // Read undeploy data before mutating.
         let undeploy_data = self.substrate.entities.get(stable_id).and_then(|entity| {
             if !self.can_undeploy_building_runtime(stable_id, rules) {
@@ -1731,11 +1736,18 @@ impl Simulation {
             });
         let unit_type_id = self.interner.intern(&unit_type);
         if let Some(ge) = self.substrate.entities.get_mut(stable_id) {
+            // A player's order runs at the frame's tail: native's next Sell
+            // visit stops the repair before that frame's repair step, which
+            // VERA runs ahead of the visit (`tick_repairs`).
+            if player_order {
+                ge.repairing = false;
+            }
             ge.building_down = Some(BuildingDown {
                 anim: crate::sim::components::BuildupStage::begin(control, now),
                 sell_stage: 0,
                 commenced_frame: now,
                 done: false,
+                player_order,
                 spawn_type: unit_type_id,
                 spawn_owner: owner_id,
                 spawn_rx: rx,
@@ -1748,11 +1760,13 @@ impl Simulation {
     }
 
     /// Selling's stage-0 visit for an undeploy (`0x0044A8DF`): the undeploy
-    /// voice (`vt+0x36C`, unplayed: VERA parses no `VoiceDeploy=`), then the
+    /// voice (`vt+0x36C`, unplayed: VERA parses no `VoiceDeploy=`), the
     /// building type's `DeploySound=` (`+0x56C`) at its Location
-    /// (`0x0044A9E5..0x0044AA38`).
-    pub(crate) fn undeploy_stage_zero(&mut self, stable_id: u64, rules: &RuleSet) {
-        let sound = self.substrate.entities.get(stable_id).and_then(|entity| {
+    /// (`0x0044A9E5..0x0044AA38`), RUN_AWAY to every contact (`0x0044AB68`)
+    /// and its damage-fire anims released (`+0x5C8`, `0x0044AB87..0x0044ABAA`).
+    pub(crate) fn undeploy_stage_zero(&mut self, stable_id: u64, rules: Option<&RuleSet>) {
+        let sound = rules.and_then(|rules| {
+            let entity = self.substrate.entities.get(stable_id)?;
             let sound = self
                 .object_type(entity.type_ref(), rules)?
                 .deploy_sound
@@ -1767,6 +1781,13 @@ impl Simulation {
                 ry,
             });
         }
+        crate::sim::radio::broadcast(
+            self,
+            stable_id,
+            crate::sim::radio::RadioMessage::RunAway,
+            rules,
+        );
+        self.clear_building_damage_fire_slots(stable_id, rules);
     }
 
     /// `BuildingClass::Sell`'s UndeploysInto conversion (stage 2), once the

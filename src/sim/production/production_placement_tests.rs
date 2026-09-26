@@ -793,19 +793,20 @@ fn place_ready_building_spawns_and_consumes_ready_item() {
     );
 }
 
-/// A building the player places in frame P (the command tail) first builds
-/// up in P+1 and completes at P + 1 + (count - 1) * rate from its type's
-/// Buildup control (`sim::building_construction`); the tactical capture
-/// ledger pins this route.
-#[test]
-fn a_placed_building_completes_its_buildup_after_the_command_frame() {
+/// The frame a GAPOWR (`[0, 26, 2]`) placed by the owner's command in the
+/// returned placement frame completes its build-up, through advance_tick.
+fn placed_gapowr_completion(human: bool) -> (u32, Option<u32>) {
     let mut sim = Simulation::new();
     let mut rules = stock_power_contract_rules();
     rules.set_buildup_control_for_test("GAPOWR", [0, 26, 2]);
     let height_map: BTreeMap<(u16, u16), u8> = BTreeMap::new();
     let grid = PathGrid::new(64, 64);
-    spawn_structure(&mut sim, 1, "Americans", "GACNST", 10, 10);
     let americans = sim.interner.intern("Americans");
+    sim.houses.insert(
+        americans,
+        crate::sim::house_state::HouseState::new(americans, 0, None, human, 10_000, 10),
+    );
+    spawn_structure(&mut sim, 1, "Americans", "GACNST", 10, 10);
     let gapowr = sim.interner.intern("GAPOWR");
     sim.advance_tick(&[], Some(&rules), &height_map, Some(&grid), None, 67);
 
@@ -847,7 +848,21 @@ fn a_placed_building_completes_its_buildup_after_the_command_frame() {
             break;
         }
     }
-    assert_eq!(completed, Some(placed_frame + 1 + 25 * 2));
+    (placed_frame, completed)
+}
+
+/// A building placed in frame P (the command tail) completes its build-up at
+/// P + 2 + (count - 1) * rate for a human player (the PLACE route: an idle
+/// frame, then the mission) and P + 1 + (count - 1) * rate for a computer
+/// house (ExitObject commences at once), from its type's Buildup control
+/// (`sim::building_construction`); the tactical capture ledger pins the
+/// human route.
+#[test]
+fn a_placed_building_completes_its_buildup_after_the_command_frame() {
+    let (placed, completed) = placed_gapowr_completion(true);
+    assert_eq!(completed, Some(placed + 2 + 25 * 2));
+    let (placed, completed) = placed_gapowr_completion(false);
+    assert_eq!(completed, Some(placed + 1 + 25 * 2));
 }
 
 #[test]

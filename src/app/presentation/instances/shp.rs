@@ -188,10 +188,13 @@ pub(crate) fn build_shp_instances(
         }
         let draw_state = draw_decision.state;
         // Determine if this building is in its make/build-up or build-down animation.
-        let is_building_up: bool =
-            entity.category == EntityCategory::Structure && entity.building_up.is_some();
-        // A pack-up draws its idle body until Sell's stage 1 starts the
-        // construction animation again (BState 0, `Begin_Mode(0)`).
+        // Only BState 0 draws the construction animation: a human player's
+        // placement shows its idle body for one frame before its mission
+        // starts, and a pack-up until Sell's stage 1 starts the animation
+        // again (`Begin_Mode(0)`).
+        let is_building_up: bool = entity.category == EntityCategory::Structure
+            && entity.building_up.is_some()
+            && entity.in_construction_bstate();
         let is_building_down: bool = entity.category == EntityCategory::Structure
             && entity.building_down.is_some()
             && entity.in_construction_bstate();

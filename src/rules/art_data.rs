@@ -1937,16 +1937,14 @@ pub fn anim_shp_candidates(
     let mut candidates: Vec<String> = Vec::with_capacity(6);
 
     if !uses_theater {
-        let first: String = if uses_new_theater && takes_theater_letter(&upper_image) {
-            apply_theater_letter(&upper_image, theater_name)
+        let [substituted, generic] = theater_shp_names(&upper_image, theater_name);
+        let first: String = if uses_new_theater {
+            substituted
         } else {
             upper_image.clone()
         };
         push_candidate(&mut candidates, format!("{}.SHP", first));
-        push_candidate(
-            &mut candidates,
-            format!("{}.SHP", apply_generic_letter(&upper_image)),
-        );
+        push_candidate(&mut candidates, format!("{}.SHP", generic));
         if uses_new_theater {
             push_candidate(
                 &mut candidates,
@@ -2260,14 +2258,16 @@ fn apply_theater_letter(name: &str, theater_name: &str) -> String {
     chars.into_iter().collect()
 }
 
-/// The active theater's letter (`THEATER_LETTERS`), `None` for an unknown
-/// theater.
-pub(crate) fn theater_letter(theater_name: &str) -> Option<char> {
-    let upper_theater = theater_name.to_ascii_uppercase();
-    THEATER_LETTERS
-        .iter()
-        .find(|(theater, _)| *theater == upper_theater)
-        .map(|(_, letter)| *letter)
+/// The two names gamemd's theater lookup tries for an SHP (uppercase, without
+/// extension): `FUN_005F96B0` puts the theater's letter second in a
+/// `[GNCY][AT]` name, then `FUN_005F9710` puts `G` second on the same buffer.
+pub(crate) fn theater_shp_names(upper_name: &str, theater_name: &str) -> [String; 2] {
+    let first = if takes_theater_letter(upper_name) {
+        apply_theater_letter(upper_name, theater_name)
+    } else {
+        upper_name.to_string()
+    };
+    [first, apply_generic_letter(upper_name)]
 }
 
 /// Replace the 2nd character of a filename with the generic letter `G`.

@@ -1920,6 +1920,7 @@ ConditionYellow=50%
                 sell_stage: 0,
                 commenced_frame: 0,
                 done: false,
+                player_order: false,
                 spawn_type,
                 spawn_owner: owner,
                 spawn_rx: 10,
