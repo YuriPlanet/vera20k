@@ -1,0 +1,6936 @@
+{
+  "mission": [
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "calls": [
+            [
+              "radio",
+              11
+            ],
+            [
+              "play_sound",
+              0
+            ]
+          ],
+          "delay": 1,
+          "done": 0,
+          "frame": 1,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 1,
+          "timer": [
+            201,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 2,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 1,
+          "timer": [
+            201,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 3,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 1,
+          "status": 1,
+          "timer": [
+            203,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 4,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 1,
+          "status": 1,
+          "timer": [
+            203,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [
+            [
+              "radio",
+              12
+            ],
+            [
+              "radio",
+              3
+            ],
+            [
+              "grand_opening",
+              0
+            ],
+            [
+              "sound_release"
+            ]
+          ],
+          "delay": 1,
+          "done": 1,
+          "frame": 5,
+          "mission": 18,
+          "queued": 5,
+          "rate": 2,
+          "stage": 2,
+          "status": 1,
+          "timer": [
+            205,
+            2
+          ]
+        }
+      ],
+      "input": {
+        "control": [
+          0,
+          3,
+          2
+        ],
+        "frames": 12,
+        "name": "m_3x2"
+      }
+    },
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "calls": [
+            [
+              "radio",
+              11
+            ],
+            [
+              "play_sound",
+              0
+            ]
+          ],
+          "delay": 1,
+          "done": 0,
+          "frame": 1,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 0,
+          "status": 1,
+          "timer": [
+            201,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 2,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 1,
+          "status": 1,
+          "timer": [
+            202,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 3,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 2,
+          "status": 1,
+          "timer": [
+            203,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [
+            [
+              "radio",
+              12
+            ],
+            [
+              "radio",
+              3
+            ],
+            [
+              "grand_opening",
+              0
+            ],
+            [
+              "sound_release"
+            ]
+          ],
+          "delay": 1,
+          "done": 1,
+          "frame": 4,
+          "mission": 18,
+          "queued": 5,
+          "rate": 1,
+          "stage": 3,
+          "status": 1,
+          "timer": [
+            204,
+            1
+          ]
+        }
+      ],
+      "input": {
+        "control": [
+          0,
+          4,
+          1
+        ],
+        "frames": 10,
+        "name": "m_4x1"
+      }
+    },
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "calls": [
+            [
+              "radio",
+              11
+            ],
+            [
+              "play_sound",
+              0
+            ]
+          ],
+          "delay": 1,
+          "done": 1,
+          "frame": 1,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 0,
+          "status": 1,
+          "timer": [
+            201,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [
+            [
+              "radio",
+              12
+            ],
+            [
+              "radio",
+              3
+            ],
+            [
+              "grand_opening",
+              0
+            ],
+            [
+              "sound_release"
+            ]
+          ],
+          "delay": 1,
+          "done": 1,
+          "frame": 2,
+          "mission": 18,
+          "queued": 5,
+          "rate": 1,
+          "stage": 1,
+          "status": 1,
+          "timer": [
+            202,
+            1
+          ]
+        }
+      ],
+      "input": {
+        "control": [
+          0,
+          2,
+          1
+        ],
+        "frames": 10,
+        "name": "m_2x1"
+      }
+    },
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "calls": [
+            [
+              "radio",
+              11
+            ],
+            [
+              "play_sound",
+              0
+            ]
+          ],
+          "delay": 1,
+          "done": 0,
+          "frame": 1,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 1,
+          "timer": [
+            201,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 2,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 1,
+          "timer": [
+            201,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 3,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 1,
+          "status": 1,
+          "timer": [
+            203,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 4,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 1,
+          "status": 1,
+          "timer": [
+            203,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 5,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 2,
+          "status": 1,
+          "timer": [
+            205,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 6,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 2,
+          "status": 1,
+          "timer": [
+            205,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 7,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 3,
+          "status": 1,
+          "timer": [
+            207,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 8,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 3,
+          "status": 1,
+          "timer": [
+            207,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 9,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 4,
+          "status": 1,
+          "timer": [
+            209,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 10,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 4,
+          "status": 1,
+          "timer": [
+            209,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 11,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 5,
+          "status": 1,
+          "timer": [
+            211,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 12,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 5,
+          "status": 1,
+          "timer": [
+            211,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 13,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 6,
+          "status": 1,
+          "timer": [
+            213,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 14,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 6,
+          "status": 1,
+          "timer": [
+            213,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 15,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 7,
+          "status": 1,
+          "timer": [
+            215,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 16,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 7,
+          "status": 1,
+          "timer": [
+            215,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 17,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 8,
+          "status": 1,
+          "timer": [
+            217,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 18,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 8,
+          "status": 1,
+          "timer": [
+            217,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 19,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 9,
+          "status": 1,
+          "timer": [
+            219,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 20,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 9,
+          "status": 1,
+          "timer": [
+            219,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 21,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 10,
+          "status": 1,
+          "timer": [
+            221,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 22,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 10,
+          "status": 1,
+          "timer": [
+            221,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 23,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 11,
+          "status": 1,
+          "timer": [
+            223,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 24,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 11,
+          "status": 1,
+          "timer": [
+            223,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 25,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 12,
+          "status": 1,
+          "timer": [
+            225,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 26,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 12,
+          "status": 1,
+          "timer": [
+            225,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 27,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 13,
+          "status": 1,
+          "timer": [
+            227,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 28,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 13,
+          "status": 1,
+          "timer": [
+            227,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 29,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 14,
+          "status": 1,
+          "timer": [
+            229,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 30,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 14,
+          "status": 1,
+          "timer": [
+            229,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 31,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 15,
+          "status": 1,
+          "timer": [
+            231,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 32,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 15,
+          "status": 1,
+          "timer": [
+            231,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 33,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 16,
+          "status": 1,
+          "timer": [
+            233,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 34,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 16,
+          "status": 1,
+          "timer": [
+            233,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 35,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 17,
+          "status": 1,
+          "timer": [
+            235,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 36,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 17,
+          "status": 1,
+          "timer": [
+            235,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 37,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 18,
+          "status": 1,
+          "timer": [
+            237,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 38,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 18,
+          "status": 1,
+          "timer": [
+            237,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 39,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 19,
+          "status": 1,
+          "timer": [
+            239,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 40,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 19,
+          "status": 1,
+          "timer": [
+            239,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 41,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 20,
+          "status": 1,
+          "timer": [
+            241,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 42,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 20,
+          "status": 1,
+          "timer": [
+            241,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 43,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 21,
+          "status": 1,
+          "timer": [
+            243,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 44,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 21,
+          "status": 1,
+          "timer": [
+            243,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 45,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 22,
+          "status": 1,
+          "timer": [
+            245,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 46,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 22,
+          "status": 1,
+          "timer": [
+            245,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 47,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 23,
+          "status": 1,
+          "timer": [
+            247,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [],
+          "delay": 1,
+          "done": 0,
+          "frame": 48,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 23,
+          "status": 1,
+          "timer": [
+            247,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [
+            [
+              "radio",
+              12
+            ],
+            [
+              "radio",
+              3
+            ],
+            [
+              "grand_opening",
+              0
+            ],
+            [
+              "sound_release"
+            ]
+          ],
+          "delay": 1,
+          "done": 1,
+          "frame": 49,
+          "mission": 18,
+          "queued": 5,
+          "rate": 2,
+          "stage": 24,
+          "status": 1,
+          "timer": [
+            249,
+            2
+          ]
+        }
+      ],
+      "input": {
+        "control": [
+          0,
+          25,
+          2
+        ],
+        "frames": 60,
+        "name": "m_25x2"
+      }
+    },
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "calls": [
+            [
+              "radio",
+              11
+            ],
+            [
+              "play_sound",
+              0
+            ]
+          ],
+          "delay": 1,
+          "done": 1,
+          "frame": 1,
+          "mission": 18,
+          "queued": -1,
+          "rate": 0,
+          "stage": 0,
+          "status": 1,
+          "timer": [
+            201,
+            0
+          ]
+        },
+        {
+          "bstate": 0,
+          "calls": [
+            [
+              "radio",
+              12
+            ],
+            [
+              "radio",
+              3
+            ],
+            [
+              "grand_opening",
+              0
+            ],
+            [
+              "sound_release"
+            ]
+          ],
+          "delay": 1,
+          "done": 1,
+          "frame": 2,
+          "mission": 18,
+          "queued": 5,
+          "rate": 0,
+          "stage": 0,
+          "status": 1,
+          "timer": [
+            201,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "control": [
+          0,
+          1,
+          0
+        ],
+        "frames": 6,
+        "name": "m_no_buildup"
+      }
+    }
+  ],
+  "rate": [
+    {
+      "buildup_time": "retail",
+      "control": [
+        0,
+        1,
+        0
+      ],
+      "frames": null
+    },
+    {
+      "buildup_time": "retail",
+      "control": [
+        0,
+        0,
+        1
+      ],
+      "frames": 0
+    },
+    {
+      "buildup_time": "retail",
+      "control": [
+        0,
+        1,
+        53
+      ],
+      "frames": 2
+    },
+    {
+      "buildup_time": "retail",
+      "control": [
+        0,
+        2,
+        26
+      ],
+      "frames": 4
+    },
+    {
+      "buildup_time": "retail",
+      "control": [
+        0,
+        17,
+        3
+      ],
+      "frames": 34
+    },
+    {
+      "buildup_time": "retail",
+      "control": [
+        0,
+        18,
+        2
+      ],
+      "frames": 36
+    },
+    {
+      "buildup_time": "retail",
+      "control": [
+        0,
+        25,
+        2
+      ],
+      "frames": 50
+    },
+    {
+      "buildup_time": "retail",
+      "control": [
+        0,
+        26,
+        2
+      ],
+      "frames": 52
+    },
+    {
+      "buildup_time": "retail",
+      "control": [
+        0,
+        27,
+        1
+      ],
+      "frames": 54
+    },
+    {
+      "buildup_time": "retail",
+      "control": [
+        0,
+        29,
+        1
+      ],
+      "frames": 58
+    },
+    {
+      "buildup_time": "retail",
+      "control": [
+        0,
+        54,
+        0
+      ],
+      "frames": 108
+    },
+    {
+      "buildup_time": "default",
+      "control": [
+        0,
+        1,
+        0
+      ],
+      "frames": null
+    },
+    {
+      "buildup_time": "default",
+      "control": [
+        0,
+        0,
+        1
+      ],
+      "frames": 0
+    },
+    {
+      "buildup_time": "default",
+      "control": [
+        0,
+        1,
+        45
+      ],
+      "frames": 2
+    },
+    {
+      "buildup_time": "default",
+      "control": [
+        0,
+        2,
+        22
+      ],
+      "frames": 4
+    },
+    {
+      "buildup_time": "default",
+      "control": [
+        0,
+        17,
+        2
+      ],
+      "frames": 34
+    },
+    {
+      "buildup_time": "default",
+      "control": [
+        0,
+        18,
+        2
+      ],
+      "frames": 36
+    },
+    {
+      "buildup_time": "default",
+      "control": [
+        0,
+        25,
+        1
+      ],
+      "frames": 50
+    },
+    {
+      "buildup_time": "default",
+      "control": [
+        0,
+        26,
+        1
+      ],
+      "frames": 52
+    },
+    {
+      "buildup_time": "default",
+      "control": [
+        0,
+        27,
+        1
+      ],
+      "frames": 54
+    },
+    {
+      "buildup_time": "default",
+      "control": [
+        0,
+        29,
+        1
+      ],
+      "frames": 58
+    },
+    {
+      "buildup_time": "default",
+      "control": [
+        0,
+        54,
+        0
+      ],
+      "frames": 108
+    },
+    {
+      "buildup_time": "retail",
+      "control": [
+        0,
+        10,
+        5
+      ],
+      "frames": 50,
+      "gate": true,
+      "stages": 9
+    },
+    {
+      "buildup_time": "retail",
+      "control": [
+        0,
+        1,
+        53
+      ],
+      "frames": 50,
+      "gate": true,
+      "stages": 0
+    }
+  ],
+  "source": "unicorn/gamemd.exe",
+  "stepping": [
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 0,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 1,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 2,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            202,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 3,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            202,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 4,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 2,
+          "status": 0,
+          "timer": [
+            204,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 5,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 2,
+          "status": 0,
+          "timer": [
+            204,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 6,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            206,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 7,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            206,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 8,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            206,
+            3
+          ]
+        }
+      ],
+      "input": {
+        "control": [
+          0,
+          3,
+          2
+        ],
+        "frames": 8,
+        "name": "s_3x2"
+      }
+    },
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 0,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 1,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            201,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 2,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 2,
+          "status": 0,
+          "timer": [
+            202,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 3,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 3,
+          "status": 0,
+          "timer": [
+            203,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 4,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            204,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 5,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            204,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 6,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            206,
+            2
+          ]
+        }
+      ],
+      "input": {
+        "control": [
+          0,
+          4,
+          1
+        ],
+        "frames": 6,
+        "name": "s_4x1"
+      }
+    },
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 0,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 1,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 2,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 3,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            203,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 4,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            203,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 5,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            203,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 6,
+          "mission": 18,
+          "queued": -1,
+          "rate": 5,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            206,
+            5
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 7,
+          "mission": 18,
+          "queued": -1,
+          "rate": 5,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            206,
+            5
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 8,
+          "mission": 18,
+          "queued": -1,
+          "rate": 5,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            206,
+            5
+          ]
+        }
+      ],
+      "input": {
+        "control": [
+          0,
+          2,
+          3
+        ],
+        "frames": 8,
+        "name": "s_2x3"
+      }
+    },
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 0,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 1,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 2,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 3,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            203,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 4,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            203,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 5,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            203,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 6,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 2,
+          "status": 0,
+          "timer": [
+            206,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 7,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 2,
+          "status": 0,
+          "timer": [
+            206,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 8,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 2,
+          "status": 0,
+          "timer": [
+            206,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 9,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 3,
+          "status": 0,
+          "timer": [
+            209,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 10,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 3,
+          "status": 0,
+          "timer": [
+            209,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 11,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 3,
+          "status": 0,
+          "timer": [
+            209,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 12,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 4,
+          "status": 0,
+          "timer": [
+            212,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 13,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 4,
+          "status": 0,
+          "timer": [
+            212,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 14,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 4,
+          "status": 0,
+          "timer": [
+            212,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 15,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 5,
+          "status": 0,
+          "timer": [
+            215,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 16,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 5,
+          "status": 0,
+          "timer": [
+            215,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 17,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 5,
+          "status": 0,
+          "timer": [
+            215,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 18,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 6,
+          "status": 0,
+          "timer": [
+            218,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 19,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 6,
+          "status": 0,
+          "timer": [
+            218,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 20,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 6,
+          "status": 0,
+          "timer": [
+            218,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 21,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 7,
+          "status": 0,
+          "timer": [
+            221,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 22,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 7,
+          "status": 0,
+          "timer": [
+            221,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 23,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 7,
+          "status": 0,
+          "timer": [
+            221,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 24,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 8,
+          "status": 0,
+          "timer": [
+            224,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 25,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 8,
+          "status": 0,
+          "timer": [
+            224,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 26,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 8,
+          "status": 0,
+          "timer": [
+            224,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 27,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 9,
+          "status": 0,
+          "timer": [
+            227,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 28,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 9,
+          "status": 0,
+          "timer": [
+            227,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 29,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 9,
+          "status": 0,
+          "timer": [
+            227,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 30,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 10,
+          "status": 0,
+          "timer": [
+            230,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 31,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 10,
+          "status": 0,
+          "timer": [
+            230,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 32,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 10,
+          "status": 0,
+          "timer": [
+            230,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 33,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 11,
+          "status": 0,
+          "timer": [
+            233,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 34,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 11,
+          "status": 0,
+          "timer": [
+            233,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 35,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 11,
+          "status": 0,
+          "timer": [
+            233,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 36,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 12,
+          "status": 0,
+          "timer": [
+            236,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 37,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 12,
+          "status": 0,
+          "timer": [
+            236,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 38,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 12,
+          "status": 0,
+          "timer": [
+            236,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 39,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 13,
+          "status": 0,
+          "timer": [
+            239,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 40,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 13,
+          "status": 0,
+          "timer": [
+            239,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 41,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 13,
+          "status": 0,
+          "timer": [
+            239,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 42,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 14,
+          "status": 0,
+          "timer": [
+            242,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 43,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 14,
+          "status": 0,
+          "timer": [
+            242,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 44,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 14,
+          "status": 0,
+          "timer": [
+            242,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 45,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 15,
+          "status": 0,
+          "timer": [
+            245,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 46,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 15,
+          "status": 0,
+          "timer": [
+            245,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 47,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 15,
+          "status": 0,
+          "timer": [
+            245,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 48,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 16,
+          "status": 0,
+          "timer": [
+            248,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 49,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 16,
+          "status": 0,
+          "timer": [
+            248,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 50,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 16,
+          "status": 0,
+          "timer": [
+            248,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 51,
+          "mission": 18,
+          "queued": -1,
+          "rate": 5,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            251,
+            5
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 52,
+          "mission": 18,
+          "queued": -1,
+          "rate": 5,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            251,
+            5
+          ]
+        }
+      ],
+      "input": {
+        "control": [
+          0,
+          17,
+          3
+        ],
+        "frames": 52,
+        "name": "s_17x3"
+      }
+    },
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 0,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 1,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 2,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            202,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 3,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            202,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 4,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 2,
+          "status": 0,
+          "timer": [
+            204,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 5,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 2,
+          "status": 0,
+          "timer": [
+            204,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 6,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 3,
+          "status": 0,
+          "timer": [
+            206,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 7,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 3,
+          "status": 0,
+          "timer": [
+            206,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 8,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 4,
+          "status": 0,
+          "timer": [
+            208,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 9,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 4,
+          "status": 0,
+          "timer": [
+            208,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 10,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 5,
+          "status": 0,
+          "timer": [
+            210,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 11,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 5,
+          "status": 0,
+          "timer": [
+            210,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 12,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 6,
+          "status": 0,
+          "timer": [
+            212,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 13,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 6,
+          "status": 0,
+          "timer": [
+            212,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 14,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 7,
+          "status": 0,
+          "timer": [
+            214,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 15,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 7,
+          "status": 0,
+          "timer": [
+            214,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 16,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 8,
+          "status": 0,
+          "timer": [
+            216,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 17,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 8,
+          "status": 0,
+          "timer": [
+            216,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 18,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 9,
+          "status": 0,
+          "timer": [
+            218,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 19,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 9,
+          "status": 0,
+          "timer": [
+            218,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 20,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 10,
+          "status": 0,
+          "timer": [
+            220,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 21,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 10,
+          "status": 0,
+          "timer": [
+            220,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 22,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 11,
+          "status": 0,
+          "timer": [
+            222,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 23,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 11,
+          "status": 0,
+          "timer": [
+            222,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 24,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 12,
+          "status": 0,
+          "timer": [
+            224,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 25,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 12,
+          "status": 0,
+          "timer": [
+            224,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 26,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 13,
+          "status": 0,
+          "timer": [
+            226,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 27,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 13,
+          "status": 0,
+          "timer": [
+            226,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 28,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 14,
+          "status": 0,
+          "timer": [
+            228,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 29,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 14,
+          "status": 0,
+          "timer": [
+            228,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 30,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 15,
+          "status": 0,
+          "timer": [
+            230,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 31,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 15,
+          "status": 0,
+          "timer": [
+            230,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 32,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 16,
+          "status": 0,
+          "timer": [
+            232,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 33,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 16,
+          "status": 0,
+          "timer": [
+            232,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 34,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 17,
+          "status": 0,
+          "timer": [
+            234,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 35,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 17,
+          "status": 0,
+          "timer": [
+            234,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 36,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 18,
+          "status": 0,
+          "timer": [
+            236,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 37,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 18,
+          "status": 0,
+          "timer": [
+            236,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 38,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 19,
+          "status": 0,
+          "timer": [
+            238,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 39,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 19,
+          "status": 0,
+          "timer": [
+            238,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 40,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 20,
+          "status": 0,
+          "timer": [
+            240,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 41,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 20,
+          "status": 0,
+          "timer": [
+            240,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 42,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 21,
+          "status": 0,
+          "timer": [
+            242,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 43,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 21,
+          "status": 0,
+          "timer": [
+            242,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 44,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 22,
+          "status": 0,
+          "timer": [
+            244,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 45,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 22,
+          "status": 0,
+          "timer": [
+            244,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 46,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 23,
+          "status": 0,
+          "timer": [
+            246,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 47,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 23,
+          "status": 0,
+          "timer": [
+            246,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 48,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 24,
+          "status": 0,
+          "timer": [
+            248,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 49,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 24,
+          "status": 0,
+          "timer": [
+            248,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 50,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            250,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 51,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            250,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 52,
+          "mission": 18,
+          "queued": -1,
+          "rate": 3,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            250,
+            3
+          ]
+        }
+      ],
+      "input": {
+        "control": [
+          0,
+          25,
+          2
+        ],
+        "frames": 52,
+        "name": "s_25x2"
+      }
+    },
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 0,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 1,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            201,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 2,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 2,
+          "status": 0,
+          "timer": [
+            202,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 3,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 3,
+          "status": 0,
+          "timer": [
+            203,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 4,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 4,
+          "status": 0,
+          "timer": [
+            204,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 5,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 5,
+          "status": 0,
+          "timer": [
+            205,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 6,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 6,
+          "status": 0,
+          "timer": [
+            206,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 7,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 7,
+          "status": 0,
+          "timer": [
+            207,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 8,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 8,
+          "status": 0,
+          "timer": [
+            208,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 9,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 9,
+          "status": 0,
+          "timer": [
+            209,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 10,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 10,
+          "status": 0,
+          "timer": [
+            210,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 11,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 11,
+          "status": 0,
+          "timer": [
+            211,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 12,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 12,
+          "status": 0,
+          "timer": [
+            212,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 13,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 13,
+          "status": 0,
+          "timer": [
+            213,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 14,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 14,
+          "status": 0,
+          "timer": [
+            214,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 15,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 15,
+          "status": 0,
+          "timer": [
+            215,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 16,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 16,
+          "status": 0,
+          "timer": [
+            216,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 17,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 17,
+          "status": 0,
+          "timer": [
+            217,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 18,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 18,
+          "status": 0,
+          "timer": [
+            218,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 19,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 19,
+          "status": 0,
+          "timer": [
+            219,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 20,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 20,
+          "status": 0,
+          "timer": [
+            220,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 21,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 21,
+          "status": 0,
+          "timer": [
+            221,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 22,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 22,
+          "status": 0,
+          "timer": [
+            222,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 23,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 23,
+          "status": 0,
+          "timer": [
+            223,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 24,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 24,
+          "status": 0,
+          "timer": [
+            224,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 25,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 25,
+          "status": 0,
+          "timer": [
+            225,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 26,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 26,
+          "status": 0,
+          "timer": [
+            226,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 27,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 27,
+          "status": 0,
+          "timer": [
+            227,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 28,
+          "mission": 18,
+          "queued": -1,
+          "rate": 1,
+          "stage": 28,
+          "status": 0,
+          "timer": [
+            228,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 29,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            229,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 30,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            229,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 31,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            231,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 32,
+          "mission": 18,
+          "queued": -1,
+          "rate": 2,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            231,
+            2
+          ]
+        }
+      ],
+      "input": {
+        "control": [
+          0,
+          29,
+          1
+        ],
+        "frames": 32,
+        "name": "s_29x1"
+      }
+    },
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 0,
+          "mission": 18,
+          "queued": -1,
+          "rate": 0,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 1,
+          "mission": 18,
+          "queued": -1,
+          "rate": 0,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 2,
+          "mission": 18,
+          "queued": -1,
+          "rate": 0,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            0
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 3,
+          "mission": 18,
+          "queued": -1,
+          "rate": 0,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "control": [
+          0,
+          1,
+          0
+        ],
+        "frames": 3,
+        "name": "s_no_buildup"
+      }
+    },
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 0,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 1,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 2,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 3,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 4,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 5,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 6,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 7,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 8,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 9,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 10,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 11,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 12,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 13,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 14,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 15,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 16,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 17,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 18,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 19,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 20,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 21,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 22,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 23,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 24,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 25,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 26,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 27,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 28,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 29,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 30,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 31,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 32,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 33,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 34,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 35,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 36,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 37,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 38,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 39,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 40,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 41,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 42,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 43,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 44,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 45,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 46,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 47,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 48,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 49,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 50,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 51,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 52,
+          "mission": 18,
+          "queued": -1,
+          "rate": 53,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            53
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 53,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 54,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 55,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 56,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 57,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 58,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 59,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 60,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 61,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 62,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 63,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 64,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 65,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 66,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 67,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 68,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 69,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 70,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 71,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 72,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 73,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 74,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 75,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 76,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 77,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 78,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 79,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 80,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 81,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 82,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 83,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 84,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 85,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 86,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 87,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 88,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 89,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 90,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 91,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 92,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 93,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 94,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 95,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 96,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 97,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 98,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 99,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 100,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 101,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 102,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 103,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 104,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 105,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 106,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 107,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 108,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 109,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 110,
+          "mission": 18,
+          "queued": -1,
+          "rate": 424,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            253,
+            424
+          ]
+        }
+      ],
+      "input": {
+        "control": [
+          0,
+          1,
+          53
+        ],
+        "frames": 110,
+        "name": "s_one_frame"
+      }
+    },
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 0,
+          "mission": 5,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 1,
+          "mission": 5,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 2,
+          "mission": 5,
+          "queued": -1,
+          "rate": 2,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            202,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 3,
+          "mission": 5,
+          "queued": -1,
+          "rate": 2,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            202,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 4,
+          "mission": 5,
+          "queued": -1,
+          "rate": 2,
+          "stage": 2,
+          "status": 0,
+          "timer": [
+            204,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 5,
+          "mission": 5,
+          "queued": -1,
+          "rate": 2,
+          "stage": 2,
+          "status": 0,
+          "timer": [
+            204,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 6,
+          "mission": 5,
+          "queued": -1,
+          "rate": 3,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            206,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 7,
+          "mission": 5,
+          "queued": -1,
+          "rate": 3,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            206,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 8,
+          "mission": 5,
+          "queued": -1,
+          "rate": 3,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            206,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 9,
+          "mission": 5,
+          "queued": -1,
+          "rate": 3,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            209,
+            3
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 10,
+          "mission": 5,
+          "queued": -1,
+          "rate": 3,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            209,
+            3
+          ]
+        }
+      ],
+      "input": {
+        "control": [
+          0,
+          3,
+          2
+        ],
+        "frames": 10,
+        "mission": "guard",
+        "name": "s_guard_wraps"
+      }
+    },
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 0,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 1,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            201,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 2,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 2,
+          "status": 0,
+          "timer": [
+            202,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 3,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 3,
+          "status": 0,
+          "timer": [
+            203,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 4,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 4,
+          "status": 0,
+          "timer": [
+            204,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 5,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 5,
+          "status": 0,
+          "timer": [
+            205,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 6,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 6,
+          "status": 0,
+          "timer": [
+            206,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 7,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 7,
+          "status": 0,
+          "timer": [
+            207,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 8,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 8,
+          "status": 0,
+          "timer": [
+            208,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 9,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 9,
+          "status": 0,
+          "timer": [
+            209,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 10,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 10,
+          "status": 0,
+          "timer": [
+            210,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 11,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 11,
+          "status": 0,
+          "timer": [
+            211,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 12,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 12,
+          "status": 0,
+          "timer": [
+            212,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 13,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 13,
+          "status": 0,
+          "timer": [
+            213,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 14,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 14,
+          "status": 0,
+          "timer": [
+            214,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 15,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 15,
+          "status": 0,
+          "timer": [
+            215,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 16,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 16,
+          "status": 0,
+          "timer": [
+            216,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 17,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 17,
+          "status": 0,
+          "timer": [
+            217,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 18,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 18,
+          "status": 0,
+          "timer": [
+            218,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 19,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 19,
+          "status": 0,
+          "timer": [
+            219,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 20,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 20,
+          "status": 0,
+          "timer": [
+            220,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 21,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 21,
+          "status": 0,
+          "timer": [
+            221,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 22,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 22,
+          "status": 0,
+          "timer": [
+            222,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 23,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 23,
+          "status": 0,
+          "timer": [
+            223,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 24,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 24,
+          "status": 0,
+          "timer": [
+            224,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 25,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 25,
+          "status": 0,
+          "timer": [
+            225,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 26,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 26,
+          "status": 0,
+          "timer": [
+            226,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 27,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 27,
+          "status": 0,
+          "timer": [
+            227,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 28,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 28,
+          "status": 0,
+          "timer": [
+            228,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 29,
+          "mission": 19,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            229,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 30,
+          "mission": 19,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            229,
+            2
+          ]
+        }
+      ],
+      "input": {
+        "control": [
+          0,
+          29,
+          1
+        ],
+        "frames": 30,
+        "mission": "selling",
+        "name": "s_selling"
+      }
+    },
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 0,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 1,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            201,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 2,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 2,
+          "status": 0,
+          "timer": [
+            202,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 3,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 3,
+          "status": 0,
+          "timer": [
+            203,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 4,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 4,
+          "status": 0,
+          "timer": [
+            204,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 5,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 5,
+          "status": 0,
+          "timer": [
+            205,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 6,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 6,
+          "status": 0,
+          "timer": [
+            206,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 7,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 7,
+          "status": 0,
+          "timer": [
+            207,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 8,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 8,
+          "status": 0,
+          "timer": [
+            208,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 9,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 9,
+          "status": 0,
+          "timer": [
+            209,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 10,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 10,
+          "status": 0,
+          "timer": [
+            210,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 11,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 11,
+          "status": 0,
+          "timer": [
+            211,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 12,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 12,
+          "status": 0,
+          "timer": [
+            212,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 13,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 13,
+          "status": 0,
+          "timer": [
+            213,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 14,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 14,
+          "status": 0,
+          "timer": [
+            214,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 15,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 15,
+          "status": 0,
+          "timer": [
+            215,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 16,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 16,
+          "status": 0,
+          "timer": [
+            216,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 17,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 17,
+          "status": 0,
+          "timer": [
+            217,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 18,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 18,
+          "status": 0,
+          "timer": [
+            218,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 19,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 19,
+          "status": 0,
+          "timer": [
+            219,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 20,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 20,
+          "status": 0,
+          "timer": [
+            220,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 21,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 21,
+          "status": 0,
+          "timer": [
+            221,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 22,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 22,
+          "status": 0,
+          "timer": [
+            222,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 23,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 23,
+          "status": 0,
+          "timer": [
+            223,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 24,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 24,
+          "status": 0,
+          "timer": [
+            224,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 25,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 25,
+          "status": 0,
+          "timer": [
+            225,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 26,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 26,
+          "status": 0,
+          "timer": [
+            226,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 27,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 27,
+          "status": 0,
+          "timer": [
+            227,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 28,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 28,
+          "status": 0,
+          "timer": [
+            228,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 29,
+          "mission": 19,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            229,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 30,
+          "mission": 19,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            229,
+            2
+          ]
+        }
+      ],
+      "input": {
+        "control": [
+          0,
+          29,
+          1
+        ],
+        "frames": 30,
+        "mission": "selling",
+        "name": "s_selling_undeploy_no_archive",
+        "undeploys": true
+      }
+    },
+    {
+      "frames": [
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 0,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            200,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 1,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 1,
+          "status": 0,
+          "timer": [
+            201,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 2,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 2,
+          "status": 0,
+          "timer": [
+            202,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 3,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 3,
+          "status": 0,
+          "timer": [
+            203,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 4,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 4,
+          "status": 0,
+          "timer": [
+            204,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 5,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 5,
+          "status": 0,
+          "timer": [
+            205,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 6,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 6,
+          "status": 0,
+          "timer": [
+            206,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 7,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 7,
+          "status": 0,
+          "timer": [
+            207,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 8,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 8,
+          "status": 0,
+          "timer": [
+            208,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 9,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 9,
+          "status": 0,
+          "timer": [
+            209,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 10,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 10,
+          "status": 0,
+          "timer": [
+            210,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 11,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 11,
+          "status": 0,
+          "timer": [
+            211,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 12,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 12,
+          "status": 0,
+          "timer": [
+            212,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 13,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 13,
+          "status": 0,
+          "timer": [
+            213,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 14,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 14,
+          "status": 0,
+          "timer": [
+            214,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 15,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 15,
+          "status": 0,
+          "timer": [
+            215,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 16,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 16,
+          "status": 0,
+          "timer": [
+            216,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 17,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 17,
+          "status": 0,
+          "timer": [
+            217,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 18,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 18,
+          "status": 0,
+          "timer": [
+            218,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 19,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 19,
+          "status": 0,
+          "timer": [
+            219,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 20,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 20,
+          "status": 0,
+          "timer": [
+            220,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 21,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 21,
+          "status": 0,
+          "timer": [
+            221,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 22,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 22,
+          "status": 0,
+          "timer": [
+            222,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 23,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 23,
+          "status": 0,
+          "timer": [
+            223,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 24,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 24,
+          "status": 0,
+          "timer": [
+            224,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 25,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 25,
+          "status": 0,
+          "timer": [
+            225,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 26,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 26,
+          "status": 0,
+          "timer": [
+            226,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 0,
+          "frame": 27,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 27,
+          "status": 0,
+          "timer": [
+            227,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 28,
+          "mission": 19,
+          "queued": -1,
+          "rate": 1,
+          "stage": 28,
+          "status": 0,
+          "timer": [
+            228,
+            1
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 29,
+          "mission": 19,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            229,
+            2
+          ]
+        },
+        {
+          "bstate": 0,
+          "done": 1,
+          "frame": 30,
+          "mission": 19,
+          "queued": -1,
+          "rate": 2,
+          "stage": 0,
+          "status": 0,
+          "timer": [
+            229,
+            2
+          ]
+        }
+      ],
+      "input": {
+        "archive": true,
+        "control": [
+          0,
+          29,
+          1
+        ],
+        "frames": 30,
+        "mission": "selling",
+        "name": "s_selling_undeploy_archive",
+        "undeploys": true
+      }
+    }
+  ]
+}

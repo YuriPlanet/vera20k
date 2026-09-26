@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "BuildingType Buildup rate slice 0x45F2AA..0x45F310, BuildingClass::Begin_Mode 0x447780, BuildingClass::UpdateAnimation 0x4509D0 per frame and BuildingClass::Mission_Construction 0x449A50 per visit",
+  "assumptions": [
+    "rate rows: building_body_rules fixture (supplied SHP header word +6, supplied Rules +0x1518 double), FPCW 0x0E7F",
+    "stepping/mission rows: the slave_manager fixture refinery (Building vtables, 2x2) with a supplied construction control at Type+0xF04, the TechnoClass constructor stage state (stage 0, step 1, rate 0, timer at the current frame), BState -1, the row mission (+0xAC), UndeploysInto (Type+0x408) and ArchiveTarget (+0x218)"
+  ],
+  "substitutions": [
+    "UpdateAnimation presentation callees 0x451F60, 0x452170, 0x456FB0, 0x705D70 answered; Grand_Opening 0x445F80, the radio broadcast 0x65ACB0, VocClass::PlayAt 0x7509E0, the loop update 0x750D40 and SoundEvent::Release 0x406060 observed and answered"
+  ],
+  "entry_points": {
+    "buildup_slice": "0x0045F2AA",
+    "begin_mode": "0x00447780",
+    "update_animation": "0x004509D0",
+    "mission_construction": "0x00449A50"
+  },
+  "payload_sha256": "655547b4954715c1b221b5081bf6a2deac5028679b4e74b06bcc859faca39ecd"
+}
