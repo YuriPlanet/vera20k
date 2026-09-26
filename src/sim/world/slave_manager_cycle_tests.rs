@@ -166,10 +166,9 @@ fn a_refinery_building_up_keeps_its_slaves_inside() {
         .entities
         .get_mut(s.master)
         .unwrap()
-        .building_up = Some(crate::sim::components::BuildingUp {
-        elapsed_ticks: 0,
-        total_ticks: 30,
-    });
+        .building_up = Some(crate::sim::components::BuildingUp::completing_in_ticks(
+        30, 0,
+    ));
     let mut frames = 0;
     while s
         .scene
@@ -780,7 +779,7 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
         .building_down
         .as_mut()
         .unwrap();
-    down.elapsed_ticks = down.total_ticks - 1;
+    down.finish_for_test();
     assert!(sim.tick_building_down(Some(&rules), None), "converted");
     constructed(&sim, &mut expected);
     let back = 13;
@@ -1007,7 +1006,7 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
         .building_down
         .as_mut()
         .unwrap();
-    down.elapsed_ticks = down.total_ticks - 1;
+    down.finish_for_test();
     assert!(sim.tick_building_down(Some(&rules), None));
     let miner = sim
         .substrate

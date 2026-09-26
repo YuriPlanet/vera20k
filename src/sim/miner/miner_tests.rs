@@ -1904,10 +1904,7 @@ fn purifier_under_construction_pays_no_bonus_until_complete() {
         .entities
         .get_mut(4)
         .expect("purifier 4")
-        .building_up = Some(BuildingUp {
-        elapsed_ticks: 0,
-        total_ticks: 1000,
-    });
+        .building_up = Some(BuildingUp::completing_in_ticks(1000, 0));
     assert_eq!(
         super::miner_system::count_purifiers_for_owner(&sim, &rules, "Americans"),
         1,

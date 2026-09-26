@@ -1286,11 +1286,9 @@ fn a_building_mid_construction_cannot_be_captured() {
     let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 14, 10);
     let now = sim.session.binary_frame;
     let _ = sim.mission_assign_exact(plant, MissionId::from_known(MissionType::Guard), now);
-    sim.substrate.entities.get_mut(plant).unwrap().building_up =
-        Some(crate::sim::components::BuildingUp {
-            elapsed_ticks: 3,
-            total_ticks: 30,
-        });
+    sim.substrate.entities.get_mut(plant).unwrap().building_up = Some(
+        crate::sim::components::BuildingUp::completing_in_ticks(27, 0),
+    );
     assert!(!sim.can_capture(yuri, plant, &rules));
     sim.substrate.entities.get_mut(plant).unwrap().building_up = None;
     assert!(sim.can_capture(yuri, plant, &rules));

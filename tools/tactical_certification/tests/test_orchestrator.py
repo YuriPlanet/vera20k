@@ -687,7 +687,7 @@ class OrchestratorTests(unittest.TestCase):
                 else: bad["production_render"]["instance_counts"]["viewport_rect"] = 0 if mutation == "zero_edges" else 5
                 with self.subTest(side=side, mutation=mutation), self.assertRaises(ValidationError):
                     _require_render({"render": bad}, profile)
-        for online in (3630, 3694, 3900, 7700):
+        for online in (3674, 3694, 3900, 7700):
             ledger = _observed_ledger(self.profile, capture_complete=online + 17)
             ledger.update(radar_online_tick=online, second_readiness_tick=online + 1, capture_requested_tick=online + 17)
             _require_observed_ledger(ledger, "ledger", self.profile, completed=True)

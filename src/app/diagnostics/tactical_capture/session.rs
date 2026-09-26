@@ -518,6 +518,16 @@ impl TacticalCaptureSession {
             result_delay,
             "radar",
         )?;
+        // The place command runs one frame after the ready observation; the
+        // building then builds up for its type's Buildup control.
+        let construction_ticks = |type_id: &str| -> Result<u64> {
+            let frames = crate::sim::components::BuildingUp::placement_frames_to_complete(
+                rules.buildup_control(type_id),
+                &sim.session.game_options,
+            )
+            .with_context(|| format!("{type_id} build-up never completes"))?;
+            Ok(result_delay + u64::try_from(frames)?)
+        };
         let stage = |index: usize| StageBudget {
             max_ticks: u64::from(profile.budgets.stages[index].tick_cap),
             max_wall_ms: u64::from(profile.budgets.stages[index].wall_seconds) * 1000,
@@ -535,6 +545,7 @@ impl TacticalCaptureSession {
                 expected_rate_frames: power_rate,
                 expected_ready_tick: ledger.power_ready,
                 expected_active_tick: ledger.power_active,
+                construction_ticks: construction_ticks(&profile.capture.build_targets.power)?,
             },
             refinery: ProductionTargetContract {
                 role: StructureRole::Refinery,
@@ -542,6 +553,7 @@ impl TacticalCaptureSession {
                 expected_rate_frames: refinery_rate,
                 expected_ready_tick: ledger.refinery_ready,
                 expected_active_tick: ledger.refinery_active,
+                construction_ticks: construction_ticks(&profile.capture.build_targets.refinery)?,
             },
             radar: ProductionTargetContract {
                 role: StructureRole::Radar,
@@ -549,6 +561,7 @@ impl TacticalCaptureSession {
                 expected_rate_frames: radar_rate,
                 expected_ready_tick: ledger.radar_ready,
                 expected_active_tick: ledger.radar_active,
+                construction_ticks: construction_ticks(&profile.capture.build_targets.radar)?,
             },
             refinery_harvester_type_id: profile
                 .capture

@@ -119,7 +119,7 @@ fn building_conversion_reads_health_when_animation_finishes() {
         .building_down
         .as_mut()
         .unwrap()
-        .elapsed_ticks = 29;
+        .finish_for_test();
     sim.advance_tick(&[], Some(&rules), &BTreeMap::new(), None, None, 22);
     assert!(sim.substrate.entities.get(source).is_none());
     let destination = sim
@@ -164,7 +164,7 @@ fn undeploy(sim: &mut Simulation, rules: &RuleSet, building: u64, into: &str) ->
         .building_down
         .as_mut()
         .unwrap();
-    down.elapsed_ticks = down.total_ticks - 1;
+    down.finish_for_test();
     sim.advance_tick(&[], Some(rules), &BTreeMap::new(), None, None, 22);
     sim.substrate
         .entities
@@ -246,7 +246,7 @@ fn all_four_conversion_callers_preserve_results_above_u16() {
         .building_down
         .as_mut()
         .unwrap()
-        .elapsed_ticks = 29;
+        .finish_for_test();
     sim.advance_tick(&[], Some(&rules), &BTreeMap::new(), None, None, 22);
     let mcv = sim
         .substrate

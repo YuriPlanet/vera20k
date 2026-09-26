@@ -1536,6 +1536,7 @@
           ]
         }
       ],
+      "game_speed": 0,
       "input": {
         "control": [
           0,
@@ -1647,6 +1648,7 @@
           ]
         }
       ],
+      "game_speed": 0,
       "input": {
         "control": [
           0,
@@ -1786,6 +1788,7 @@
           ]
         }
       ],
+      "game_speed": 0,
       "input": {
         "control": [
           0,
@@ -2541,6 +2544,7 @@
           ]
         }
       ],
+      "game_speed": 0,
       "input": {
         "control": [
           0,
@@ -3296,6 +3300,7 @@
           ]
         }
       ],
+      "game_speed": 0,
       "input": {
         "control": [
           0,
@@ -3771,6 +3776,7 @@
           ]
         }
       ],
+      "game_speed": 0,
       "input": {
         "control": [
           0,
@@ -3840,6 +3846,7 @@
           ]
         }
       ],
+      "game_speed": 0,
       "input": {
         "control": [
           0,
@@ -5407,6 +5414,7 @@
           ]
         }
       ],
+      "game_speed": 0,
       "input": {
         "control": [
           0,
@@ -5574,6 +5582,7 @@
           ]
         }
       ],
+      "game_speed": 0,
       "input": {
         "control": [
           0,
@@ -6022,6 +6031,7 @@
           ]
         }
       ],
+      "game_speed": 0,
       "input": {
         "control": [
           0,
@@ -6470,6 +6480,7 @@
           ]
         }
       ],
+      "game_speed": 0,
       "input": {
         "control": [
           0,
@@ -6919,6 +6930,7 @@
           ]
         }
       ],
+      "game_speed": 0,
       "input": {
         "archive": true,
         "control": [

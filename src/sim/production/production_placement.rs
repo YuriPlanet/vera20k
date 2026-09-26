@@ -372,12 +372,13 @@ pub fn place_ready_building_with_overlays(
             ry + fh - 1,
         );
     }
-    // Tag newly placed buildings with build-up animation (~1 second at 30Hz).
+    // The placed building builds up: its Unlimbo's Begin_Mode(0)
+    // (TechnoClass::Unlimbo vt+0x484, 0x0044D6A0) and ExitObject's commence of
+    // the Construction mission (0x00445329..0x0044533F).
+    let control = rules.buildup_control(type_id);
+    let now = sim.session.binary_frame as i32;
     if let Some(ge) = sim.substrate.entities.get_mut(new_sid) {
-        ge.building_up = Some(BuildingUp {
-            elapsed_ticks: 0,
-            total_ticks: 30,
-        });
+        ge.building_up = Some(BuildingUp::placed(control, now));
     }
     // Refresh superweapon grants — newly placed building may provide a SW.
     if sim.session.game_options.super_weapons {

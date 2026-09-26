@@ -129,15 +129,14 @@ fn ready_and_place(
 }
 
 fn set_ticks_until_completion(sim: &mut Simulation, stable_id: u64, ticks: u16) {
-    assert!(ticks > 0);
+    let now = sim.session.binary_frame as i32;
     let building_up = sim
         .substrate
         .entities
         .get_mut(stable_id)
         .and_then(|entity| entity.building_up.as_mut())
         .expect("placed building should have BuildingUp");
-    assert!(ticks <= building_up.total_ticks);
-    building_up.elapsed_ticks = building_up.total_ticks - ticks;
+    *building_up = BuildingUp::completing_in_ticks(i32::from(ticks), now);
 }
 
 #[test]
@@ -1408,10 +1407,7 @@ fn non_refinery_completion_has_no_free_unit_or_credit_side_effect() {
         .entities
         .get_mut(construction_yard_id)
         .expect("construction yard should exist")
-        .building_up = Some(BuildingUp {
-        elapsed_ticks: 0,
-        total_ticks: 1,
-    });
+        .building_up = Some(BuildingUp::completing_in_ticks(1, 0));
     let credits_before = credits_for_owner(&sim, "Americans");
 
     let completion = sim.advance_tick(&[], Some(&rules), &height_map, Some(&grid), None, 67);

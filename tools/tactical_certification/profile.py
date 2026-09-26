@@ -171,16 +171,29 @@ _STAGE_NAMES = (
     "radar_online",
     "readiness_and_warm_frames",
 )
-_STAGE_TICKS = (48, 640, 48, 2048, 48, 1024, 48, 4096, 18)
+_STAGE_TICKS = (48, 640, 64, 2048, 64, 1024, 64, 4096, 18)
 _STAGE_WALL = (15, 90, 15, 270, 15, 140, 15, 20, 10)
-_LEDGER = {
-    "yard_active": 32,
-    "power_ready": 617,
-    "power_active": 648,
-    "refinery_ready": 2611,
-    "refinery_active": 2642,
-    "radar_ready": 3598,
-    "radar_active": 3629,
+# A placed building completes one tick after its place command plus its
+# type's build-up, so the Soviet and Yuri ledgers differ.
+_LEDGERS = {
+    "soviet": {
+        "yard_active": 34,
+        "power_ready": 619,
+        "power_active": 671,
+        "refinery_ready": 2634,
+        "refinery_active": 2686,
+        "radar_ready": 3642,
+        "radar_active": 3673,
+    },
+    "yuri": {
+        "yard_active": 30,
+        "power_ready": 615,
+        "power_active": 661,
+        "refinery_ready": 2624,
+        "refinery_active": 2674,
+        "radar_ready": 3630,
+        "radar_active": 3678,
+    },
 }
 _OPTIONS: Mapping[str, Any] = {
     "starting_credits": 10000,
@@ -460,10 +473,11 @@ def validate_profile_document(document: Mapping[str, Any]) -> None:
         ABSOLUTE_TIMEOUT_MAX_SECONDS,
         "budgets.absolute_timeout_max_seconds",
     )
+    expected_ledger = _LEDGERS["soviet" if soviet else "yuri"]
     ledger = _exact_object(
-        budgets["expected_ledger"], tuple(_LEDGER), "budgets.expected_ledger"
+        budgets["expected_ledger"], tuple(expected_ledger), "budgets.expected_ledger"
     )
-    for key, expected in _LEDGER.items():
+    for key, expected in expected_ledger.items():
         _fixed(ledger[key], expected, f"budgets.expected_ledger.{key}")
 
     pixel_inputs = _exact_object(

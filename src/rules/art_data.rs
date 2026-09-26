@@ -64,6 +64,10 @@ pub struct ArtEntry {
     /// Signed start/count/rate triples for AnimIdle, AnimActive, AnimAux1,
     /// AnimAux2. Native4615CA..4617B8 partially assigns each scanf triple.
     pub building_body_ranges: [[i32; 3]; 4],
+    /// `Buildup=` (BuildingType `+0xE5C`, a 16-byte ReadString, empty by
+    /// default): the build-up SHP's name without its extension
+    /// (`rules::buildup_asset_catalog`).
+    pub buildup: Option<String>,
     /// Building foundation footprint (e.g., "4x4", "2x2").
     pub foundation: Option<String>,
     /// Overlay type produced by this BuildingType's art (`ToOverlay=`).
@@ -1265,6 +1269,8 @@ impl ArtRegistry {
                     building_gate_stages: section.get_i32("GateStages").unwrap_or(9),
                     building_body_ranges: ["AnimIdle", "AnimActive", "AnimAux1", "AnimAux2"]
                         .map(|key| read_building_body_range(section, key)),
+                    buildup: Some(section.read_string("Buildup", "", 16))
+                        .filter(|name| !name.is_empty()),
                     foundation,
                     to_overlay,
                     bib_shape,
@@ -2252,6 +2258,16 @@ fn apply_theater_letter(name: &str, theater_name: &str) -> String {
     let mut chars: Vec<char> = name.chars().collect();
     chars[1] = letter;
     chars.into_iter().collect()
+}
+
+/// The active theater's letter (`THEATER_LETTERS`), `None` for an unknown
+/// theater.
+pub(crate) fn theater_letter(theater_name: &str) -> Option<char> {
+    let upper_theater = theater_name.to_ascii_uppercase();
+    THEATER_LETTERS
+        .iter()
+        .find(|(theater, _)| *theater == upper_theater)
+        .map(|(_, letter)| *letter)
 }
 
 /// Replace the 2nd character of a filename with the generic letter `G`.

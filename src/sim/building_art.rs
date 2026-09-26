@@ -448,10 +448,13 @@ pub(crate) fn receiver_body_frame(
     let art = rules
         .art_registry
         .resolve_metadata_entry(&object.id, &object.image);
-    let construction = entity.building_up.is_some() || entity.building_down.is_some();
     body_frame(
         BodyFrameInput {
-            state: if construction { 0 } else { 1 },
+            state: if entity.in_construction_bstate() {
+                0
+            } else {
+                1
+            },
             base_frame: 0,
             laser_frame: object.laser_fence.then_some(0),
             firestorm_frame: object.firestorm_wall.then_some(0),

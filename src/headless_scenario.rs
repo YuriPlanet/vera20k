@@ -285,6 +285,7 @@ pub(crate) fn load_with_launch(
     );
     rules.art_registry = art.clone();
     rules.bind_effect_assets(&assets, theater.extension, &map.header.theater);
+    rules.bind_building_buildup_assets(&assets, &map.header.theater);
     rules.bind_terrain_spawner_assets(&rules_ini, &assets, theater.extension, &map.header.theater);
     rules.bind_animation_sequences(&infantry_sequences);
     let overlay_shp_ids = crate::app::loading::init::resolved_overlay_shp_ids(

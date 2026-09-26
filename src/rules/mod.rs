@@ -100,6 +100,7 @@
 pub mod animation_sequence;
 pub mod art_data;
 pub mod bridge_warheads;
+pub mod buildup_asset_catalog;
 pub mod color_add;
 pub mod color_scheme;
 pub mod combat_damage;

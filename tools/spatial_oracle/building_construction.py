@@ -4,8 +4,8 @@ and the Construction mission.
 - `rate` rows: the BuildingType load slice 0x45F2AA..0x45F310 (count =
   Buildup SHP frames / 2, or GateStages + 1 for a gate; rate =
   ftol(BuildupTime * 900 / count), 1 when count <= 0) through
-  building_body_rules' fixture, with retail BuildupTime (.06) and the RulesClass
-  constructor's .05 over the retail Buildup frame counts.
+  building_body_rules' fixture, with retail BuildupTime (.06, read as a float)
+  and the RulesClass constructor's .05 over the retail Buildup frame counts.
 - `stepping` rows: BuildingClass::Begin_Mode(0) (0x447780) then
   BuildingClass::UpdateAnimation (0x4509D0) once per frame with the frame
   counter advanced, on the slave_manager fixture's refinery (a 2x2 building on
@@ -41,7 +41,9 @@ RADIO_BROADCAST = 0x65ACB0
 PRESENTATION = {0x451F60: 8, 0x452170: 4, 0x456FB0: 4, 0x705D70: 0}
 FRAME = 0xA8ED84
 MISSION = {'construction': 0x12, 'selling': 0x13, 'guard': 5}
-BUILDUP_TIME = {'retail': '3faeb851eb851eb8', 'default': '3fa999999999999a'}
+# Retail `BuildupTime=.06` as CCINIClass::ReadDouble (0x5283D0) stores it (`%f`
+# into a float, widened), and the RulesClass constructor's .05.
+BUILDUP_TIME = {'retail': '3faeb851e0000000', 'default': '3fa999999999999a'}
 
 
 def rate_rows():
@@ -124,13 +126,16 @@ def stepping(case):
     """Begin_Mode(0) at frame 0, then UpdateAnimation at frames 1.. until the
     row's frame count."""
     u, read32, building, frame, _calls = building_fixture(case)
+    # GameOptionsClass's stored speed (0xA8EB60), which SpeedNormalize
+    # (0x5FB2E0) reads when a wrap re-derives the rate.
+    game_speed = read32(0xA8EB60)
     invoke(u, BEGIN_MODE, building, 0)
     frames = [dict(frame=0, **snapshot(u, building))]
     for k in range(1, case['frames'] + 1):
         u.mem_write(FRAME, dwords(frame + k))
         invoke(u, UPDATE_ANIMATION, building)
         frames.append(dict(frame=k, **snapshot(u, building)))
-    return dict(input=case, frames=frames)
+    return dict(input=case, game_speed=game_speed, frames=frames)
 
 
 def mission(case):

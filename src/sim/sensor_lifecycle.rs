@@ -586,10 +586,8 @@ mod tests {
                 .sensor_deposit
                 .is_none()
         );
-        sim.substrate.entities.get_mut(id).unwrap().building_up = Some(BuildingUp {
-            elapsed_ticks: 0,
-            total_ticks: 1,
-        });
+        sim.substrate.entities.get_mut(id).unwrap().building_up =
+            Some(BuildingUp::completing_in_ticks(1, 0));
         sim.advance_tick(
             &[],
             Some(&rules),
@@ -636,10 +634,8 @@ mod tests {
             .spawn_object_at_height("NAPSIS", "Soviet", 40, 40, 0, 0, &rules)
             .unwrap();
         let soviet = sim.substrate.entities.get(id).unwrap().owner;
-        sim.substrate.entities.get_mut(id).unwrap().building_up = Some(BuildingUp {
-            elapsed_ticks: 0,
-            total_ticks: 1,
-        });
+        sim.substrate.entities.get_mut(id).unwrap().building_up =
+            Some(BuildingUp::completing_in_ticks(1, 0));
         sim.advance_tick(
             &[],
             Some(&rules),
@@ -715,10 +711,8 @@ mod tests {
             .spawn_object_at_height("NAPSIS", "Soviet", 40, 40, 0, 0, &rules)
             .unwrap();
         let soviet = sim.substrate.entities.get(id).unwrap().owner;
-        sim.substrate.entities.get_mut(id).unwrap().building_up = Some(BuildingUp {
-            elapsed_ticks: 0,
-            total_ticks: 1,
-        });
+        sim.substrate.entities.get_mut(id).unwrap().building_up =
+            Some(BuildingUp::completing_in_ticks(1, 0));
         sim.advance_tick(
             &[],
             Some(&rules),

@@ -5523,9 +5523,11 @@ impl Simulation {
             .push(SimSoundEvent::SuperWeaponDetected { owner, sw_type });
     }
 
-    /// Advance build-up animations and return completed building stable IDs.
+    /// Advance every build-up one frame (`sim::building_construction`) and
+    /// return the buildings whose Construction mission completed.
     fn tick_building_up(&mut self) -> Vec<u64> {
-        // Collect keys first to allow &mut iteration via get_mut().
+        let now = self.session.binary_frame as i32;
+        let options = &self.session.game_options;
         let keys = self.substrate.entities.keys_sorted();
         let mut finished: Vec<u64> = Vec::new();
         for &sid in &keys {
@@ -5535,11 +5537,11 @@ impl Simulation {
                 if entity.ai_frozen() {
                     continue;
                 }
-                if let Some(ref mut bu) = entity.building_up {
-                    bu.elapsed_ticks = bu.elapsed_ticks.saturating_add(1);
-                    if bu.elapsed_ticks >= bu.total_ticks {
-                        finished.push(sid);
-                    }
+                if let Some(ref mut bu) = entity.building_up
+                    && bu.frame(now, options)
+                        == crate::sim::building_construction::ConstructionFrame::Complete
+                {
+                    finished.push(sid);
                 }
             }
         }
@@ -5551,28 +5553,42 @@ impl Simulation {
         finished
     }
 
-    /// Advance building-down (undeploy) animations. When done, the building
-    /// converts into its mobile unit (e.g., ConYard → MCV,
-    /// [`Simulation::finish_undeploy`]). Returns true if any entities were
-    /// spawned (triggers atlas refresh).
+    /// Advance every pack-up one frame (`sim::building_construction`): Sell's
+    /// stage-0 visit plays the building's DeploySound, and a stage-2 visit
+    /// that finds the animation complete converts it into its mobile unit
+    /// (e.g., ConYard → MCV, [`Simulation::finish_undeploy`]). Returns true if
+    /// any entities were spawned (triggers atlas refresh).
     fn tick_building_down(
         &mut self,
         rules: Option<&RuleSet>,
         overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     ) -> bool {
+        use crate::sim::building_construction::PackUpFrame;
+        let now = self.session.binary_frame as i32;
+        let options = &self.session.game_options;
         let keys = self.substrate.entities.keys_sorted();
+        let mut stage_zero: Vec<u64> = Vec::new();
         let mut finished: Vec<u64> = Vec::new();
         for &sid in &keys {
             if let Some(entity) = self.substrate.entities.get_mut(sid) {
                 if entity.ai_frozen() {
                     continue;
                 }
+                // An UndeploysInto sale with no ArchiveTarget completes at
+                // stage 0x17 (UpdateAnimation `0x00451186..0x004511DF`).
+                let archive_less = entity.archive_target().is_none();
                 if let Some(ref mut bd) = entity.building_down {
-                    bd.elapsed_ticks = bd.elapsed_ticks.saturating_add(1);
-                    if bd.elapsed_ticks >= bd.total_ticks {
-                        finished.push(sid);
+                    match bd.frame(now, archive_less, options) {
+                        PackUpFrame::StageZero => stage_zero.push(sid),
+                        PackUpFrame::Convert => finished.push(sid),
+                        PackUpFrame::PackingUp => {}
                     }
                 }
+            }
+        }
+        if let Some(rules) = rules {
+            for sid in stage_zero {
+                self.undeploy_stage_zero(sid, rules);
             }
         }
         let any_finished = !finished.is_empty();
