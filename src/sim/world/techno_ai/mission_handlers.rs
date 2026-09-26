@@ -84,7 +84,14 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
                 crate::sim::passenger::PassengerRole::Boarding { .. }
             )
             && crate::sim::miner::native_dock_miner(sim, id);
-        if entity.miner.is_some()
+        // A Slave Miner's Miner component is VERA's order marker, not a
+        // harvester: it dispatches as the plain Unit it is natively (its
+        // Harvest prologue runs in `miner::dispatch_harvest_for_object`).
+        let harvester_miner = entity
+            .miner
+            .as_ref()
+            .is_some_and(|miner| miner.kind != crate::sim::miner::MinerKind::Slave);
+        if harvester_miner
             && !miner_enter_depot
             && !refinery_dock_miner
             && !matches!(mission, Some(MissionType::Guard) | Some(MissionType::Move))
@@ -97,7 +104,7 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
         MissionHandlerInput {
             category,
             mission,
-            harvester_miner: entity.miner.is_some(),
+            harvester_miner,
             depot_dock_state,
             refinery_dock_miner,
             timer_due: entity.mission.dispatch_timer().due(now),
@@ -495,7 +502,9 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
         (EntityCategory::Unit, Some(MissionType::Unload)) if input.refinery_dock_miner => {
             MissionHandlerEvaluation::cadence(crate::sim::miner::mission_unload(sim, rules, id))
         }
-        (EntityCategory::Unit, Some(MissionType::Guard)) => {
+        // Guard and Sticky share the UnitClass slot (`MissionClass::AI`'s
+        // table `0x005B34E8` sends both to `+0x21C` = `0x00740810`).
+        (EntityCategory::Unit, Some(mission @ (MissionType::Guard | MissionType::Sticky))) => {
             // **VERA-internal, gamemd equivalent UNCHECKED — this mapping is
             // wrong and the arm is dead.** The "three byte latches, then
             // `Assign_Mission(5, 0)`, then `return 1`" shape lives at
@@ -512,7 +521,14 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
             // either arm. Player effect: none. Frequency: zero. Downstream
             // risk: the wrong native mapping would be carried straight into any
             // future deploy work; the shape belongs on the Move arm.
-            if harvester_guard_override_requeues_harvest(sim, id, rules) {
+            //
+            // The override opens with the Slave Miner's kick
+            // (`0x00740815..0x0074084F`, `sim::slave_manager`).
+            if let Some(delay) =
+                sim.slave_master_mission_kick(id, mission, rules, ctx.overlay_registry)
+            {
+                MissionHandlerEvaluation::cadence(delay)
+            } else if harvester_guard_override_requeues_harvest(sim, id, rules) {
                 // `Queue_Mission(10, 0); return 1` at `0x0074092C` /
                 // `0x00740960` — no RNG draw, the Foot body is not reached.
                 MissionHandlerEvaluation::queue(1, MissionType::Harvest)
@@ -521,13 +537,7 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
             } else if input.unit_deploy_reverse_active {
                 MissionHandlerEvaluation::queue(1, MissionType::Unload)
             } else {
-                evaluate_foot_guard_cadence(
-                    sim,
-                    rules,
-                    id,
-                    MissionType::Guard,
-                    input.bunker_delegate,
-                )
+                evaluate_foot_guard_cadence(sim, rules, id, mission, input.bunker_delegate)
             }
         }
         (EntityCategory::Infantry, Some(MissionType::Guard)) => {
@@ -542,12 +552,13 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
             }
         }
         // Sticky dispatches through the SAME slot as Guard — one handler, two
-        // selectors — so it runs the Guard body. The cadence still comes from
-        // the object's own mission slot (the timer lookup indexes on the
-        // committed mission id, not on the handler's identity), and `[Sticky]
-        // Rate=.016` is 14 frames against Guard's 26. Stock skirmish maps park
-        // neutral civilian traffic on this.
-        (EntityCategory::Unit | EntityCategory::Infantry, Some(MissionType::Sticky)) => {
+        // selectors — so it runs the Guard body (a Unit's is the override
+        // above). The cadence still comes from the object's own mission slot
+        // (the timer lookup indexes on the committed mission id, not on the
+        // handler's identity), and `[Sticky] Rate=.016` is 14 frames against
+        // Guard's 26. Stock skirmish maps park neutral civilian traffic on
+        // this.
+        (EntityCategory::Infantry, Some(MissionType::Sticky)) => {
             evaluate_foot_guard_cadence(sim, rules, id, MissionType::Sticky, input.bunker_delegate)
         }
         // Area Guard is NOT a Guard alias — it has its own slot and its own
@@ -561,13 +572,24 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
         // deploy-shim arm above; only the arms it excludes remain recorded
         // there.
         //
-        // RESIDUAL (GSI-07.16) — `UnitClass::Mission_AreaGuard @ 0x00744100` is
-        // the slave-miner recall and returns `RandomRanged(0, 2)` where the Foot
-        // body returns `RandomRanged(1, 5)` — an RNG fork, not just a different
-        // delay. Frequency: a Slave Miner on Area Guard; its recall belongs to
-        // the manager's field hunt (`sim::slave_manager` residual, chain 6).
-        // The Foot body's own slave-recall arm is absent for the same reason.
-        (EntityCategory::Unit | EntityCategory::Infantry, Some(MissionType::AreaGuard)) => {
+        // `UnitClass::Mission_AreaGuard @ 0x00744100` is the Slave Miner's
+        // kick (`sim::slave_manager`), whose Rate epilogue draws
+        // `RandomRanged(0, 2)`; anything else runs the Foot body. The Foot
+        // body's own hunt start (`0x004D6D69..0x004D6D73`, on its guard-area
+        // return path) is absent with that path (see
+        // `evaluate_foot_area_guard`).
+        (EntityCategory::Unit, Some(MissionType::AreaGuard)) => {
+            match sim.slave_master_mission_kick(
+                id,
+                MissionType::AreaGuard,
+                rules,
+                ctx.overlay_registry,
+            ) {
+                Some(delay) => MissionHandlerEvaluation::cadence(delay),
+                None => evaluate_foot_area_guard(sim, id, rules, ctx),
+            }
+        }
+        (EntityCategory::Infantry, Some(MissionType::AreaGuard)) => {
             evaluate_foot_area_guard(sim, id, rules, ctx)
         }
         (EntityCategory::Unit | EntityCategory::Infantry, Some(MissionType::Hunt)) => {

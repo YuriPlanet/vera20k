@@ -207,6 +207,46 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
     }
 }
 
+/// A Slave Miner leaving its war factory starts its hunt
+/// (`UnitClass::PerCellProcess @ 0x0073A9CA..0x0073A9D9`, before the rally
+/// arm) instead of driving to the house's rally point, which a tank from the
+/// same factory takes.
+#[test]
+fn a_produced_slave_miner_hunts_instead_of_taking_the_rally_point() {
+    for (unit_type, hunts) in [("SMIN", true), ("MTNK", false)] {
+        let (mut sim, rules, owner) = world(0xfac7_0020);
+        sim.houses.get_mut(&owner).unwrap().rally_point = Some((30, 30));
+        assert!(enqueue_by_type(&mut sim, &rules, "Americans", unit_type));
+        let produced = held_id(&sim, owner, ProductionCategory::Vehicle);
+        assert!(
+            sim.production
+                .factory_shadow
+                .test_arm_ready(owner, ProductionCategory::Vehicle)
+        );
+        let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
+        assert!(tick_production(
+            &mut sim,
+            &rules,
+            &BTreeMap::new(),
+            Some(&grid)
+        ));
+        let entity = sim.substrate.entities.get(produced).unwrap();
+        assert!(!entity.lifecycle.in_limbo, "{unit_type} delivered");
+        assert_eq!(
+            entity.movement_target.is_some(),
+            !hunts,
+            "{unit_type}: the rally move"
+        );
+        if hunts {
+            assert_eq!(
+                entity.slave_manager.as_ref().unwrap().state(),
+                crate::sim::slave_manager::ManagerState::Scanning,
+                "the hunt starts at the factory exit"
+            );
+        }
+    }
+}
+
 #[test]
 fn ready_manager_cancel_refunds_disposes_and_constructs_one_successor() {
     let (mut sim, rules, owner) = world(0xfac7_0011);

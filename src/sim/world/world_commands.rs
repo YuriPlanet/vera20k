@@ -973,6 +973,11 @@ impl Simulation {
                 // A tethered miner never gets here (see the top of this arm).
                 crate::sim::miner::miner_dock::break_for_retask(self, *entity_id, rules);
                 self.commit_stop_miner_guard(*entity_id);
+                // `0x004C769C..0x004C76AC`: Stop takes a Slave Miner off its
+                // hunt (`sim::slave_manager`).
+                if let Some(rules) = rules {
+                    self.reset_slave_manager(*entity_id, rules);
+                }
                 true
             }
             Command::Attack {
@@ -1233,23 +1238,6 @@ impl Simulation {
                 let Some(rules) = rules else { return false };
                 if !self.entity_owned_by_id(command_owner, *entity_id) {
                     return false;
-                }
-                if self
-                    .substrate
-                    .entities
-                    .get(*entity_id)
-                    .is_some_and(|entity| {
-                        self.object_type(entity.type_ref(), rules)
-                            .is_some_and(|obj| obj.enslaves.is_some() && obj.deploys_into.is_some())
-                    })
-                {
-                    return crate::sim::slave_miner::deploy_slave_miner_with_overlay_context(
-                        self,
-                        *entity_id,
-                        rules,
-                        overlay_registry,
-                    )
-                    .is_some();
                 }
                 crate::sim::mcv_deploy::issue_order(self, *entity_id, rules)
             }
@@ -1960,6 +1948,13 @@ impl Simulation {
                         now,
                         &crate::sim::mission::authority::EntityReadyInputProvider,
                     );
+                }
+                // `0x004C73E1..0x004C73EA`, before the archive clear and the
+                // setter: the order takes a Slave Miner off its hunt; the
+                // Harvest it queued then sends it to the clicked field
+                // (HandleReturnedSlaves, `sim::slave_manager`).
+                if let Some(rules) = rules {
+                    self.reset_slave_manager(*entity_id, rules);
                 }
                 if let Some(e) = self.substrate.entities.get_mut(*entity_id) {
                     e.set_archive_target(None);
@@ -2820,15 +2815,12 @@ impl Simulation {
     ///   `DockTeardown` subsets whose own doc calls them "the exact subset that
     ///   site cancels today" — preserved legacy, not derived. The subsets happen
     ///   to be close for Move and Attack; the divergence is structural.
-    /// * **Spawn-manager abandon is modelled nowhere.** 0x004C73E1-0x004C73EA
-    ///   calls 0x006B0C80 on `[actor+0x2D8]` whenever the queued mission is not
-    ///   Attack, which drops the spawner's target and re-tasks its spawns.
-    ///   Trigger: ordering an Aircraft Carrier or any `Spawns=` unit to move out
-    ///   of a fight. Player effect: retail's planes break off, VERA's keep
-    ///   attacking. Frequency: several times per naval match. Downstream risk:
-    ///   none — `spawn_manager.rs` exists, it just has no order-boundary hook.
-    ///   Note when wiring it: the abandon is NOT Foot-gated, so it must fire for
-    ///   non-Foot spawners too.
+    /// * **The manager abandon** at 0x004C73E1-0x004C73EA calls 0x006B0C80 on
+    ///   `[actor+0x2D8]`, the SlaveManagerClass (not a spawn manager), whenever
+    ///   the queued mission is not Attack; it is not Foot-gated. The funnel
+    ///   below, the Guard and HarvestCell arms and Stop's own copy
+    ///   (0x004C769C-0x004C76AC) run it (`Simulation::reset_slave_manager`);
+    ///   the other orders outside the funnel do not yet.
     /// * **`TeamClass__Remove_Member` has no VERA equivalent.** Zero frequency
     ///   today (no AI teams); wrong the moment AI teams exist.
     pub(crate) fn order_actor_admits(&self, stable_id: u64) -> bool {
@@ -2975,6 +2967,11 @@ impl Simulation {
         }
         if let Some(e) = self.substrate.entities.get_mut(entity_id) {
             e.movement_target = None;
+        }
+        // `0x004C73E1..0x004C73EA`: the Area Guard order takes a Slave Miner
+        // off its hunt (`sim::slave_manager`).
+        if let Some(rules) = rules {
+            self.reset_slave_manager(entity_id, rules);
         }
         match target_id.filter(|&tid| self.substrate.entities.contains(tid)) {
             Some(tid) => {

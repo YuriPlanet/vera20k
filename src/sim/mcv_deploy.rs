@@ -16,14 +16,14 @@ pub(crate) fn is_mcv(sim: &Simulation, entity: &GameEntity, rules: &RuleSet) -> 
         && sim
             .object_type(entity.type_ref(), rules)
             .is_some_and(|obj| {
-                // The passenger/refinery branches precede DeploysInto in 0x73D630;
-                // slave miners already have a separate production owner.
+                // The passenger/refinery branches precede DeploysInto in
+                // 0x73D630. A Slave Miner deploys through the same body; its
+                // manager moves with it (`deploy_mcv`, 0x00739956).
                 obj.deploys_into
                     .as_deref()
                     .is_some_and(|name| rules.object(name).is_some())
                     && obj.passengers == 0
                     && !obj.harvester
-                    && obj.enslaves.is_none()
             })
 }
 

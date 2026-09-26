@@ -555,7 +555,12 @@ fn candidate_passes(
             native_cells: q.native_cells,
             rect,
             speed_type: q.passability.speed_type,
-            required_zone_id: q.passability.required_zone_id,
+            // FNPC's entry turns a zone argument of 0xFFFF into -1, which
+            // disables the comparison (`0x0056DC43..0x0056DC60`).
+            required_zone_id: q
+                .passability
+                .required_zone_id
+                .filter(|&zone| zone != 0xFFFF),
             movement_zone: q.passability.movement_zone,
             required_height_or_level: None, // the search always passes -1 (L21)
             bridge_aware_zone: q.passability.bridge_aware_zone,
