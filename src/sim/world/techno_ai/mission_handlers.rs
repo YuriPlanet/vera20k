@@ -502,7 +502,9 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
         (EntityCategory::Unit, Some(MissionType::Unload)) if input.refinery_dock_miner => {
             MissionHandlerEvaluation::cadence(crate::sim::miner::mission_unload(sim, rules, id))
         }
-        (EntityCategory::Unit, Some(MissionType::Guard)) => {
+        // Guard and Sticky share the UnitClass slot (`MissionClass::AI`'s
+        // table `0x005B34E8` sends both to `+0x21C` = `0x00740810`).
+        (EntityCategory::Unit, Some(mission @ (MissionType::Guard | MissionType::Sticky))) => {
             // **VERA-internal, gamemd equivalent UNCHECKED — this mapping is
             // wrong and the arm is dead.** The "three byte latches, then
             // `Assign_Mission(5, 0)`, then `return 1`" shape lives at
@@ -523,7 +525,7 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
             // The override opens with the Slave Miner's kick
             // (`0x00740815..0x0074084F`, `sim::slave_manager`).
             if let Some(delay) =
-                sim.slave_master_mission_kick(id, MissionType::Guard, rules, ctx.overlay_registry)
+                sim.slave_master_mission_kick(id, mission, rules, ctx.overlay_registry)
             {
                 MissionHandlerEvaluation::cadence(delay)
             } else if harvester_guard_override_requeues_harvest(sim, id, rules) {
@@ -535,13 +537,7 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
             } else if input.unit_deploy_reverse_active {
                 MissionHandlerEvaluation::queue(1, MissionType::Unload)
             } else {
-                evaluate_foot_guard_cadence(
-                    sim,
-                    rules,
-                    id,
-                    MissionType::Guard,
-                    input.bunker_delegate,
-                )
+                evaluate_foot_guard_cadence(sim, rules, id, mission, input.bunker_delegate)
             }
         }
         (EntityCategory::Infantry, Some(MissionType::Guard)) => {
@@ -556,12 +552,13 @@ pub(super) fn dispatch_supported_foot_mission_cadence(
             }
         }
         // Sticky dispatches through the SAME slot as Guard — one handler, two
-        // selectors — so it runs the Guard body. The cadence still comes from
-        // the object's own mission slot (the timer lookup indexes on the
-        // committed mission id, not on the handler's identity), and `[Sticky]
-        // Rate=.016` is 14 frames against Guard's 26. Stock skirmish maps park
-        // neutral civilian traffic on this.
-        (EntityCategory::Unit | EntityCategory::Infantry, Some(MissionType::Sticky)) => {
+        // selectors — so it runs the Guard body (a Unit's is the override
+        // above). The cadence still comes from the object's own mission slot
+        // (the timer lookup indexes on the committed mission id, not on the
+        // handler's identity), and `[Sticky] Rate=.016` is 14 frames against
+        // Guard's 26. Stock skirmish maps park neutral civilian traffic on
+        // this.
+        (EntityCategory::Infantry, Some(MissionType::Sticky)) => {
             evaluate_foot_guard_cadence(sim, rules, id, MissionType::Sticky, input.bunker_delegate)
         }
         // Area Guard is NOT a Guard alias — it has its own slot and its own

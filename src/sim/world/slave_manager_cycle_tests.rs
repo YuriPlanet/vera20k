@@ -11,6 +11,7 @@ use super::slave_manager_oracle_tests::{SlaveScene, row_scene};
 use crate::sim::animation::SequenceKind;
 use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
 use crate::sim::command::{Command, CommandEnvelope};
+use crate::sim::components::NavTargetRef;
 use crate::sim::mission::MissionType;
 use crate::sim::ore_growth::OreGrowthConfig;
 use crate::sim::slave_manager::{ManagerState, SlaveState};
@@ -304,9 +305,9 @@ fn deployed_refinery(s: &SlaveScene) -> Option<u64> {
 
 /// A human's Slave Miner ordered onto a field (the Harvest action on ore,
 /// `UnitClass::What_Action` for a ResourceGatherer/ResourceDestination type)
-/// runs HandleReturnedSlaves from its Harvest mission: it drives to a cell
-/// beside the clicked field and deploys there, where no kick would send a
-/// human's idle Slave Miner.
+/// runs HandleReturnedSlaves from its Harvest mission within a dispatch or
+/// two of the order, long before any kick: it drives to a cell beside the
+/// clicked field instead of onto the ore, and deploys there.
 #[test]
 fn a_harvest_order_sends_the_slave_miner_to_deploy_beside_the_field() {
     let mut s = row_scene(&serde_json::json!({
@@ -329,6 +330,29 @@ fn a_harvest_order_sends_the_slave_miner_to_deploy_beside_the_field() {
             target_ry: 20,
         },
     ));
+    let mut hunting_after = None;
+    for n in 0..60 {
+        frame(&mut s);
+        if manager_state_of(&s, s.master) == ManagerState::Travelling {
+            hunting_after = Some(n);
+            break;
+        }
+    }
+    let hunting_after = hunting_after.expect("the Harvest prologue sends it to a deploy cell");
+    assert!(hunting_after < 60, "no kick involved: {hunting_after}");
+    let nav = s
+        .scene
+        .sim
+        .substrate
+        .entities
+        .get(s.master)
+        .unwrap()
+        .navigation
+        .nav_com;
+    assert!(
+        nav.is_some() && nav != Some(NavTargetRef::cell(24, 20)),
+        "driving to a deploy cell, not onto the clicked ore: {nav:?}"
+    );
     let mut refinery = None;
     for _ in 0..1500 {
         frame(&mut s);

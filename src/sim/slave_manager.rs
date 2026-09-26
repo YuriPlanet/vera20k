@@ -35,8 +35,10 @@
 //!   inside die with it.
 //! - Deploying a Slave Miner hands its manager to the refinery (SetOwner
 //!   `0x006AF580`, with the hand-off `0x006B0D10`); undeploying hands it back.
-//! - A Slave Miner hunts for a field: idle on Guard or Area Guard it sets out
-//!   once `SlaveMinerKickFrameDelay` has passed since its mission began and
+//! - A Slave Miner hunts for a field: it sets out as it leaves its war
+//!   factory (`UnitClass::PerCellProcess @ 0x0073A9CA`, ahead of the rally
+//!   point), and idle on Guard, Sticky or Area Guard it sets out again once
+//!   `SlaveMinerKickFrameDelay` has passed since its mission began and
 //!   ShouldRecallSlaves (`0x006B1020`) answers yes (a computer house always; a
 //!   human's on ore, or with ore within `SlaveMinerShortScan` after the
 //!   delay). State 1 finds the nearest field within `SlaveMinerLongScan` and
@@ -59,6 +61,18 @@
 //!   Trigger: the ore around a Yuri refinery runs out. Effect: the refinery
 //!   stays put and its slaves walk farther. Frequency: every Yuri game past
 //!   the early field. Downstream: the Selling/undeploy chain is not entered.
+//! - The factory-exit hunt start runs at production: VERA hands a produced
+//!   unit its rally point there rather than at the factory exit
+//!   (`production_queue.rs`), so the Slave Miner's hunt begins a few frames
+//!   before native's, whose exit drive precedes it. Trigger: every Slave
+//!   Miner built. Effect: the first scan comes a few frames early.
+//!   Frequency: every build. Downstream: none beyond timing.
+//! - A refinery placed from production is handed its manager's state by
+//!   `0x006B0D60` (the hand-off's body: state 0 -> 4, slaves reset; callers
+//!   `HouseClass::Place_Production 0x004FB252`,
+//!   `BuildingClass::ExitObject_Main 0x004452FA`); VERA leaves it in state 0.
+//!   Both wait out the build-up with every slave inside, so nothing a player
+//!   sees differs; the manager state (hashed) does. Chain 6b.
 //! - Two recall sites have no VERA anchor: FootClass::Mission_Hunt's reset
 //!   when it picks a destination (`0x004D553D..0x004D5547`; VERA's Hunt port
 //!   has no destination step) and FootClass::Mission_AreaGuard's hunt start
@@ -313,6 +327,52 @@ pub(crate) fn deploy_center(
         cell.0.wrapping_add((i32::from(width) - 1) as i16),
         cell.1.wrapping_add((i32::from(height) / 2) as i16),
     ))
+}
+
+/// FindDeployCell's MapClass::Find_Nearby_Passable_Cell request, as pushed
+/// at `0x006B03CF..0x006B0417`: Track over MovementZone Normal, not
+/// bridge-aware, the foundation as the rectangle, any overlay refused, no
+/// height or obstacle gate, bridge cells refused, the field cell as the
+/// nearest-to reference, no quadrant skip, occupancy checked; the required
+/// zone is MapClass::GetZoneID of the owner's cell for MovementZone Normal
+/// without the bridge lookup (`0x006B0400`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DeployCellSearch {
+    pub(crate) seed: (i32, i32),
+    pub(crate) zone_cell: (i16, i16),
+    pub(crate) zone_movement_zone: crate::rules::locomotor_type::MovementZone,
+    pub(crate) zone_check_bridge: bool,
+    pub(crate) speed_type: crate::rules::locomotor_type::SpeedType,
+    pub(crate) movement_zone: crate::rules::locomotor_type::MovementZone,
+    pub(crate) bridge_aware: bool,
+    pub(crate) footprint: (i32, i32),
+    pub(crate) reject_any_overlay: bool,
+    pub(crate) check_height: bool,
+    pub(crate) allow_bridge_cells: bool,
+    pub(crate) target: (i32, i32),
+    pub(crate) check_occupancy: bool,
+}
+
+impl DeployCellSearch {
+    pub(crate) fn new(owner_cell: (i16, i16), seed: (u16, u16), foundation: (u16, u16)) -> Self {
+        use crate::rules::locomotor_type::{MovementZone, SpeedType};
+        let seed = (i32::from(seed.0), i32::from(seed.1));
+        Self {
+            seed,
+            zone_cell: owner_cell,
+            zone_movement_zone: MovementZone::Normal,
+            zone_check_bridge: false,
+            speed_type: SpeedType::Track,
+            movement_zone: MovementZone::Normal,
+            bridge_aware: false,
+            footprint: (i32::from(foundation.0), i32::from(foundation.1)),
+            reject_any_overlay: true,
+            check_height: false,
+            allow_bridge_cells: false,
+            target: seed,
+            check_occupancy: true,
+        }
+    }
 }
 
 /// `0x006B1A70`: `ftol(Sqrt_Approx(dx*dx + dy*dy))` over a cell difference,
@@ -803,6 +863,31 @@ impl Simulation {
         false
     }
 
+    /// `UnitClass::PerCellProcess @ 0x0073A98C..0x0073A9D9`: a unit leaving
+    /// its war factory (radio 8 answered 0x17) without a destination of its
+    /// own, neither a Harvester= nor a Weeder= type, that holds a slave
+    /// manager starts the hunt (`0x006B0CC0`) where another unit takes the
+    /// rally point or its computer house's base defence (`0x0073A9DE..`).
+    /// VERA hands a produced unit its rally point at production rather than
+    /// at the factory exit, so production asks this there. Answers whether
+    /// the rally move is skipped.
+    pub(crate) fn slave_master_leaves_factory(&mut self, id: u64, rules: &RuleSet) -> bool {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if entity.slave_manager.is_none() {
+            return false;
+        }
+        if self
+            .object_type(entity.type_ref(), rules)
+            .is_none_or(|object| object.harvester || object.weeder)
+        {
+            return false;
+        }
+        self.begin_slave_hunt(id, rules);
+        true
+    }
+
     /// `0x006B0CC0`: an idle manager (state 0) starts its owner's hunt for a
     /// field (state 1, frame MAX) and resets its live slaves.
     pub(crate) fn begin_slave_hunt(&mut self, master: u64, rules: &RuleSet) {
@@ -881,42 +966,37 @@ impl Simulation {
     }
 
     /// `SlaveManagerClass::FindDeployCell @ 0x006B0300`: a cell near `seed`
-    /// the owner can deploy on. The foundation is a building owner's own,
-    /// else the unit's `DeploysInto=` type's, else 1x1; the search is
-    /// MapClass::Find_Nearby_Passable_Cell (`0x006B0417`) for Track over
-    /// MovementZone Normal in the owner cell's zone (MapClass::GetZoneID
-    /// with MovementZone Normal and no bridge), refusing any cell of the
-    /// footprint with an overlay or an occupant and any bridge cell, nearest
-    /// to `seed`. A foundation wider (taller) than 2 moves the answer one
-    /// cell east (south) (`0x006B0449..0x006B0479`).
+    /// the owner can deploy on ([`DeployCellSearch`]). The foundation is a
+    /// building owner's own, else the unit's `DeploysInto=` type's, else 1x1.
+    /// A foundation wider (taller) than 2 moves the answer one cell east
+    /// (south) (`0x006B0449..0x006B0479`).
     fn find_deploy_cell(
         &self,
         master: u64,
         seed: (u16, u16),
         rules: &RuleSet,
     ) -> Option<(u16, u16)> {
-        use crate::rules::locomotor_type::{MovementZone, SpeedType};
         use crate::sim::find_nearby_cell::{
             NearbyAnchorGate, NearbyFootprint, NearbyQuery, NearbySearchOptions, PassabilityArgs,
             find_nearby_passable_cell_with_options, map_owned_radius_cap,
         };
         let owner = self.substrate.entities.get(master)?;
         let object = self.object_type(owner.type_ref(), rules)?;
-        let (width, height) = if owner.category == EntityCategory::Structure {
+        let foundation = if owner.category == EntityCategory::Structure {
             crate::rules::foundation::foundation_dimensions(&object.foundation)
         } else if let Some(into) = object.deploys_into.as_deref().and_then(|n| rules.object(n)) {
             crate::rules::foundation::foundation_dimensions(&into.foundation)
         } else {
             (1, 1)
         };
+        let search = DeployCellSearch::new(owner_cell(owner), seed, foundation);
         let terrain = self.resolved_terrain.as_ref()?;
-        let origin = owner_cell(owner);
         let zone = self.zone_grid.as_ref().and_then(|zones| {
             zones.get_path_zone_id_native(
                 terrain,
-                (origin.0 as u16, origin.1 as u16),
-                MovementZone::Normal,
-                false,
+                (search.zone_cell.0 as u16, search.zone_cell.1 as u16),
+                search.zone_movement_zone,
+                search.zone_check_bridge,
             )
         })?;
         let size = self
@@ -925,27 +1005,26 @@ impl Simulation {
             .map(|(bounds, height)| (bounds.base, height))
             .or_else(|| self.bridge_state.as_ref()?.native_zone_source_size())?;
         let grid = self.path_grid_snapshot();
-        let seed = (i32::from(seed.0), i32::from(seed.1));
         let found = find_nearby_passable_cell_with_options(
-            seed,
+            search.seed,
             &NearbyQuery {
                 native_cells: None,
                 raw_occupation: Some(&self.substrate.raw_cell_occupation),
                 passability: PassabilityArgs {
-                    speed_type: SpeedType::Track,
-                    // Native DWORD -1 disables the comparison; WORD 0xFFFF
-                    // does not.
+                    speed_type: search.speed_type,
+                    // A DWORD -1 disables the comparison; FNPC turns a raw
+                    // 0xFFFF into -1 as well (`find_nearby_cell`).
                     required_zone_id: u16::try_from(zone).ok(),
-                    movement_zone: MovementZone::Normal,
-                    bridge_aware_zone: false,
+                    movement_zone: search.movement_zone,
+                    bridge_aware_zone: search.bridge_aware,
                 },
-                footprint: NearbyFootprint::new(i32::from(width), i32::from(height)),
+                footprint: NearbyFootprint::new(search.footprint.0, search.footprint.1),
                 anchor_gate: NearbyAnchorGate::NativeHeightAware,
-                allow_bridge_cells: false,
-                check_height: false,
-                check_occupancy: true,
+                allow_bridge_cells: search.allow_bridge_cells,
+                check_height: search.check_height,
+                check_occupancy: search.check_occupancy,
                 radius_cap: map_owned_radius_cap(size.0, size.1),
-                target_cell: Some(seed),
+                target_cell: Some(search.target),
                 path_grid: grid.as_deref(),
                 resolved_terrain: Some(terrain),
                 overlay_grid: self.overlay_grid.as_ref(),
@@ -955,13 +1034,13 @@ impl Simulation {
                 playfield_bounds: self.playfield_bounds,
             },
             NearbySearchOptions {
-                reject_any_overlay: true,
+                reject_any_overlay: search.reject_any_overlay,
             },
             self.session.binary_frame,
         )?;
         Some((
-            found.0 + u16::from(width > 2),
-            found.1 + u16::from(height > 2),
+            found.0 + u16::from(foundation.0 > 2),
+            found.1 + u16::from(foundation.1 > 2),
         ))
     }
 

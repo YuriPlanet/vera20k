@@ -44,7 +44,7 @@ use crate::sim::miner::{CargoBale, ResourceType};
 use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::rng::SimRng;
-use crate::sim::slave_manager::{ManagerState, SlaveLink, SlaveNode, SlaveState};
+use crate::sim::slave_manager::{DeployCellSearch, ManagerState, SlaveLink, SlaveNode, SlaveState};
 use crate::sim::timer::CdTimer;
 use crate::sim::world::{
     PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, UninitContext,
@@ -800,6 +800,69 @@ fn slave_miner_kick_matches_the_original_guard_and_area_guard() {
         }
         compare_state(&s, row, &name);
     }
+}
+
+/// FindDeployCell's Find_Nearby_Passable_Cell and GetZoneID arguments as the
+/// oracle recorded them at the calls (`0x006B0417`, `0x006B0400`), against
+/// the request VERA builds. The zone value itself is the oracle's answer;
+/// the obstacle gate and quadrant skip, which VERA's search does not carry,
+/// are pushed as 0.
+#[test]
+fn deploy_cell_search_matches_the_recorded_native_arguments() {
+    let corpus = corpus();
+    let mut compared = 0;
+    for group in ["unit_manager", "unit_helper"] {
+        for row in corpus[group].as_array().unwrap() {
+            let name = row["input"]["name"].as_str().unwrap();
+            let events = row["events"].as_array().unwrap();
+            let Some(query) = events.iter().find(|event| event[0] == "deploy_cell_query") else {
+                continue;
+            };
+            let zone = events
+                .iter()
+                .find(|event| event[0] == "zone")
+                .unwrap_or_else(|| panic!("{name}: GetZoneID precedes the search"));
+            let seed = (
+                query[1][0].as_u64().unwrap() as u16,
+                query[1][1].as_u64().unwrap() as u16,
+            );
+            // The row's Slave Miner stands at (15, 15); YAREFN is 2x2.
+            let search = DeployCellSearch::new((15, 15), seed, (2, 2));
+            assert_eq!(
+                *query,
+                serde_json::json!([
+                    "deploy_cell_query",
+                    [search.seed.0, search.seed.1],
+                    search.speed_type as i64,
+                    query[3],
+                    search.movement_zone as i64,
+                    i64::from(search.bridge_aware),
+                    search.footprint.0,
+                    search.footprint.1,
+                    i64::from(search.reject_any_overlay),
+                    i64::from(search.check_height),
+                    0,
+                    i64::from(search.allow_bridge_cells),
+                    [search.target.0, search.target.1],
+                    0,
+                    i64::from(search.check_occupancy),
+                ]),
+                "{name}: Find_Nearby_Passable_Cell arguments"
+            );
+            assert_eq!(
+                *zone,
+                serde_json::json!([
+                    "zone",
+                    [search.zone_cell.0, search.zone_cell.1],
+                    search.zone_movement_zone as i64,
+                    i64::from(search.zone_check_bridge),
+                ]),
+                "{name}: GetZoneID arguments"
+            );
+            compared += 1;
+        }
+    }
+    assert_eq!(compared, 5, "every recorded search");
 }
 
 #[test]

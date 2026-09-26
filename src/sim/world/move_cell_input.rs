@@ -259,7 +259,8 @@ fn resolve_foot_cell_click(
                 Some(cells),
             )
             .ok_or("input FNPC source lacks native zone topology")?;
-        //Native DWORD-1 disables the comparison; raw WORDFFFF does not.
+        //Native DWORD-1 disables the comparison; so does a raw WORDFFFF,
+        //which FNPC's entry turns into -1 (0x56DC43..0x56DC60).
         u16::try_from(zone).ok()
     };
     Ok(find_nearby_passable_cell(

@@ -26,11 +26,13 @@
 //! fixed 105-frame wait with no RNG draw. The Mission_Deploy state-4 dock
 //! exit installs the same Rate epilogue at its own site.
 //!
-//! Structural residuals (native returns with no Rust dispatch equivalent):
+//! The slave-host preamble (`0x0073E5E9`): a Slave Miner on Harvest runs
+//! HandleReturnedSlaves (`sim::slave_manager`) and the shared Rate epilogue
+//! instead of the harvester states.
+//!
+//! Structural residual (a native return with no Rust dispatch equivalent):
 //! the 450-frame non-harvester hold — dispatch is gated on Miner-component
-//! presence, so a non-harvester never reaches the handler; and the
-//! slave-host preamble (`0x0073E5E9`, HandleReturnedSlaves) — a Slave Miner
-//! never reaches this handler; its slaves are `sim::slave_manager`'s.
+//! presence, so a non-harvester never reaches the handler.
 //!
 //! Guard hand-offs (`UnitClass::Mission_Harvest @ 0x0073E5E0`): the preamble
 //! queues Guard when the house owns no instance of any `Dock=` type, and
