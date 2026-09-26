@@ -33,7 +33,9 @@ carries the names used here.
   `RandomMapsAllowed` `0x005D6350`) slides `0x6B` out and hides it, then
   runs the random-map dialog `0x005E8590`. On success the new map is
   selected and Use Map runs (`0x005E6B2F`), eject check included; if Use Map
-  declines, the chooser slides back in (`0x005E6B47`).
+  declines, the chooser slides back in (`0x005E6B47`). Hidden, not destroyed,
+  `0x6B` keeps its heading and status line across the random-map dialog
+  (`2026-09-26-random-map-evidence.md`).
 
 ## Game types
 
@@ -126,9 +128,6 @@ with the same RA2MD.INI, compared in RGB565 units with
 - The empty backdrop presented before `0x6B` exists and at its slide-in end
   (`0x005E68A7`, `0x005E6E2A`) is not drawn; whether either shows a frame is
   unknown.
-- The random-map dialog `0x105` is slide-capable (`0x0060C540`,
-  `0x0060C5F7`); VERA20k swaps it in and out without slides (random-map
-  chain).
 - Use Map validates the Cooperative assignment after `0x6B`'s slide-out;
   native validates before `0x007757E0`. Unreachable while Skirmish lists no
   Cooperative mode.
@@ -138,7 +137,6 @@ with the same RA2MD.INI, compared in RGB565 units with
   pixel higher.
 - Use Map with no game-type row: native crashes; VERA20k keeps the current
   mode (reachable only with a network-saved mode).
-- The random-map dialog `0x105`'s heading keeps its own rect (not compared).
 - Keyboard `0xA3`, Sound and the saved-seed browser lists keep raw-DLU
   rectangles (no retail still to compare the family-child pixel).
 - MPModesMD.ini values: native treats any 5th field but `false` as true

@@ -41,7 +41,6 @@ const MAIN_MENU_BUTTON_POLICY: ButtonPolicy = ButtonPolicy {
     art_fit: ArtFit::Native,
     hover_flash: false,
     art_sink_y: 0.0,
-    disabled_dim: false,
 };
 
 pub(crate) enum MainMenuShellRenderResult {

@@ -2434,3 +2434,72 @@ fn player_name_programmatic_seed_is_not_subject_to_edit_limit() {
     assert_eq!(edit.text, "Commander");
     assert_eq!(edit.caret, "Commander".chars().count());
 }
+
+/// The help table lookup `0x006040B0` executed for `dialog`'s `control`
+/// (`tools/storage_oracle/shell_help_keys.py`).
+fn native_help_key(dialog: u64, control: u64) -> Option<String> {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/storage_oracle/shell_help_keys.json"
+    ))
+    .unwrap();
+    let case = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["dialog_id"] == dialog && case["control_id"] == control)
+        .unwrap_or_else(|| panic!("no help case for {dialog:#x}/{control:#x}"));
+    case["help"].as_str().map(str::to_owned)
+}
+
+#[test]
+fn random_map_setup_help_keys_match_the_native_table() {
+    use crate::ui::skirmish_shell::RandomMapSetupControl as C;
+    for (control, id) in [
+        (C::MapType0x405, 0x405),
+        (C::Time0x3ea, 0x3EA),
+        (C::Theater0x407, 0x407),
+        (C::Size0x406, 0x406),
+        (C::Resources0x408, 0x408),
+        (C::Players0x3eb, 0x3EB),
+        (C::Randomize0x621, 0x621),
+        (C::Generate0x620, 0x620),
+        (C::Ok0x6c5, 0x6C5),
+        (C::Load0x6c2, 0x6C2),
+        (C::Save0x6c3, 0x6C3),
+        (C::Delete0x6c4, 0x6C4),
+        (C::Cancel0x5c0, 0x5C0),
+    ] {
+        assert_eq!(
+            Some(status_help_key_for_random_map_setup(control).to_owned()),
+            native_help_key(0x105, id),
+            "{id:#x}"
+        );
+    }
+}
+
+#[test]
+fn choose_map_help_keys_match_the_native_table() {
+    for (target, id) in [
+        (ChooseMapHoverTarget::ModeList0x6eb, 0x6EB),
+        (ChooseMapHoverTarget::MapList0x553, 0x553),
+        (ChooseMapHoverTarget::Preview0x468, 0x468),
+        (
+            ChooseMapHoverTarget::Button(ChooseMapModalButton::UseMap0x6c5),
+            0x6C5,
+        ),
+        (
+            ChooseMapHoverTarget::Button(ChooseMapModalButton::CreateRandomMap0x583),
+            0x583,
+        ),
+        (
+            ChooseMapHoverTarget::Button(ChooseMapModalButton::Cancel0x5c0),
+            0x5C0,
+        ),
+    ] {
+        assert_eq!(
+            status_help_key_for_choose_map_hover(target).map(str::to_owned),
+            native_help_key(0x6B, id),
+            "{id:#x}"
+        );
+    }
+}

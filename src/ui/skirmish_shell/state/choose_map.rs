@@ -13,6 +13,7 @@ use crate::map::skirmish_scenarios::{
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 use crate::ui::shell::list::{ListScrollInteraction, ShellListGeometry};
+use crate::ui::shell::static_reveal::DialogStatics;
 
 use super::super::layout::{ChooseMapModalButton, ChooseMapModalLayout, RectPx};
 
@@ -90,12 +91,17 @@ pub struct ChooseMapModalState {
     pub mode_scroll: ListScrollInteraction,
     pub map_scroll: ListScrollInteraction,
     pub pressed_button: Option<ChooseMapModalButton>,
-    /// The status line's help text. A child sets it from its own mouse
-    /// moves; `0x6B` has no dialog hit test that clears it, so it keeps the
-    /// last text over the background (`0x00611CBA..0x00611E8B`).
-    pub status_help: String,
+    /// Heading `0x694` and status line `0x695`, alive while `0x105` hides
+    /// the chooser. A child writes the status help from its own mouse moves;
+    /// `0x6B` has no dialog hit test that clears it, so it keeps the last
+    /// text over the background (`0x00611CBA..0x00611E8B`).
+    pub(crate) statics: DialogStatics,
     /// Use Map's eject box while it shows.
     pub eject_prompt: Option<EjectPrompt>,
+    /// Create Random Map hides the chooser (`0x005E6A0B`) until the
+    /// random-map run returns. It then shows again (`0x005E6B51`) unless its
+    /// Use Map closes it; it stays hidden while that Use Map's eject box asks.
+    hidden: bool,
     /// The list window and time/point of the last press on list rows, for
     /// Windows' double-click test.
     last_list: Option<ChooseMapList>,
@@ -148,8 +154,9 @@ impl ChooseMapModalState {
             mode_scroll: ListScrollInteraction::default(),
             map_scroll: ListScrollInteraction::default(),
             pressed_button: None,
-            status_help: String::new(),
+            statics: DialogStatics::default(),
             eject_prompt: None,
+            hidden: false,
             last_list: None,
             last_press: None,
         };
@@ -407,6 +414,32 @@ impl ChooseMapModalState {
 
     pub const fn cancel_selection(&self) -> ChooseMapSelection {
         self.saved_selection
+    }
+
+    /// Create Random Map: the chooser has slid out and hides (`0x005E6A0B`).
+    pub fn hide(&mut self) {
+        self.hidden = true;
+    }
+
+    /// `ShowWindow` (`0x005E6B51`): a hidden chooser shows again, and its
+    /// first paint slides it in.
+    pub fn show(&mut self) {
+        self.hidden = false;
+    }
+
+    pub const fn is_hidden(&self) -> bool {
+        self.hidden
+    }
+
+    /// Cancel on Use Map's eject box: Use Map returns false and the chooser
+    /// stays (`0x005E733B..0x005E7348`). A chooser the random-map run hid
+    /// shows again (`0x005E6B47`). False when no box was up.
+    pub fn decline_eject(&mut self) -> bool {
+        if self.eject_prompt.take().is_none() {
+            return false;
+        }
+        self.show();
+        true
     }
 
     pub fn create_random_map(

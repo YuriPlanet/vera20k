@@ -68,6 +68,8 @@ impl App {
             .as_mut()
         {
             modal.saved_seed_buttons_enabled = available;
+            // `0x105` is uncovered, not shown again: its statics repaint.
+            modal.statics.uncovered();
         }
     }
 

@@ -228,6 +228,15 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         map_button: false,
         top_panel: false,
     },
+    // The random-map dialog: Use Map, Load, Save and Delete Map, Cancel, and
+    // the top panel (`0x0062290E`).
+    SlideDialogSpec {
+        dialog_id: 0x0105,
+        top_buttons: 4,
+        bottom_button: true,
+        map_button: false,
+        top_panel: true,
+    },
 ];
 
 /// Whether a dialog plays the first-paint controls-reveal slide: every
@@ -811,7 +820,7 @@ mod tests {
         ))
         .unwrap();
         let cases = fixture["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 66);
+        assert_eq!(cases.len(), 72);
         for case in cases {
             let dialog = case["dialog"].as_str().unwrap();
             let dialog_id = u16::from_str_radix(dialog.trim_start_matches("0x"), 16).unwrap();

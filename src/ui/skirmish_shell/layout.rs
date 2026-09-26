@@ -71,8 +71,6 @@ const SETUP_USE_MAP_Y: i32 = 122;
 const SETUP_LOAD_Y: i32 = 149;
 const SETUP_SAVE_Y: i32 = 176;
 const SETUP_DELETE_Y: i32 = 203;
-/// Bottom status line, the one control whose x matches choose-map exactly.
-const SETUP_BLANK_RECT: (i32, i32, i32, i32) = (2, 355, 303, 12);
 /// Hidden until the generate block runs.
 const SETUP_PROGRESS_TEXT_RECT: (i32, i32, i32, i32) = (74, 219, 150, 11);
 const SETUP_PROGRESS_BAR_RECT: (i32, i32, i32, i32) = (229, 217, 100, 21);
@@ -190,6 +188,8 @@ pub struct SkirmishShellLayout {
 
 /// Heading `0x694` of Choose Map `0x6B`.
 pub const CHOOSE_MAP_TITLE_KEY: &str = "GUI:ChooseMap";
+/// The random-map dialog `0x105`'s heading (its template text).
+pub const RANDOM_MAP_TITLE_KEY: &str = "GUI:GenerateMap";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChooseMapModalButton {
@@ -252,7 +252,8 @@ pub struct RandomMapSetupLayout {
     pub save: RectPx,
     pub delete: RectPx,
     pub cancel: RectPx,
-    pub blank: RectPx,
+    /// Status line `0x695` (the family static, template 303x12 DLU).
+    pub status_help: RectPx,
     pub progress_text: RectPx,
     pub progress_bar: RectPx,
 }
@@ -717,7 +718,6 @@ pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMa
     let (title_x, title_y, title_w, title_h) = SETUP_TITLE_RECT;
     let (preview_x, preview_y, preview_w, preview_h) = SETUP_PREVIEW_RECT;
     let (seed_x, seed_y, seed_w, seed_h) = SETUP_SEED_RECT;
-    let (blank_x, blank_y, blank_w, blank_h) = SETUP_BLANK_RECT;
     let (ptext_x, ptext_y, ptext_w, ptext_h) = SETUP_PROGRESS_TEXT_RECT;
     let (pbar_x, pbar_y, pbar_w, pbar_h) = SETUP_PROGRESS_BAR_RECT;
 
@@ -756,7 +756,11 @@ pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMa
         save: right_button(SETUP_SAVE_Y),
         delete: right_button(SETUP_DELETE_Y),
         cancel: back_rect(screen_w, panel),
-        blank: dlu_rect(blank_x, blank_y, blank_w, blank_h),
+        status_help: crate::ui::shell::layout::status_line_rect(
+            RectPx::new(2, 355, 303, 12),
+            screen_w,
+            screen_h,
+        ),
         progress_text: dlu_rect(ptext_x, ptext_y, ptext_w, ptext_h),
         progress_bar: dlu_rect(pbar_x, pbar_y, pbar_w, pbar_h),
     }
@@ -1164,7 +1168,6 @@ mod tests {
         assert_eq!(setup.randomize, dlu_rect(74, 257, 83, 15));
         assert_eq!(setup.generate, dlu_rect(246, 257, 83, 15));
         assert_eq!(setup.seed_field, dlu_rect(279, 287, 50, 12));
-        assert_eq!(setup.blank, dlu_rect(2, 355, 303, 12));
         assert_eq!(setup.progress_text, dlu_rect(74, 219, 150, 11));
         assert_eq!(setup.progress_bar, dlu_rect(229, 217, 100, 21));
     }
@@ -1302,6 +1305,7 @@ mod tests {
         for (w, h) in [(800, 600), (1024, 768)] {
             let setup = compute_random_map_setup_layout(w as u32, h as u32);
             assert_eq!(setup.title, executed(0x105, 0x694, w, h));
+            assert_eq!(setup.status_help, executed(0x105, 0x695, w, h));
         }
     }
 
@@ -1530,7 +1534,7 @@ mod tests {
             ("save", layout.save),
             ("delete", layout.delete),
             ("cancel", layout.cancel),
-            ("blank", layout.blank),
+            ("status_help", layout.status_help),
             ("progress_text", layout.progress_text),
             ("progress_bar", layout.progress_bar),
         ];

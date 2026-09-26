@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::skirmish_shell::SkirmishShellDialog;
 
 /// Where Skirmish Back leads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -620,9 +621,6 @@ impl App {
         {
             return false;
         }
-        if Self::handle_choose_map_eject_mouse_down(state) {
-            return true;
-        }
         let layout = Self::skirmish_choose_map_layout(state);
         let x = state.match_state.input.cursor_x.round() as i32;
         let y = state.match_state.input.cursor_y.round() as i32;
@@ -702,9 +700,6 @@ impl App {
     }
 
     pub(super) fn handle_choose_map_modal_mouse_up(state: &mut AppState) -> bool {
-        if Self::handle_choose_map_eject_mouse_up(state) {
-            return true;
-        }
         let layout = Self::skirmish_choose_map_layout(state);
         let x = state.match_state.input.cursor_x.round() as i32;
         let y = state.match_state.input.cursor_y.round() as i32;
@@ -806,7 +801,7 @@ impl App {
 
     /// A press while the eject box shows: its owner-draw buttons play the
     /// press sound (`0x00612B70`).
-    fn handle_choose_map_eject_mouse_down(state: &mut AppState) -> bool {
+    pub(super) fn handle_choose_map_eject_mouse_down(state: &mut AppState) -> bool {
         let x = state.match_state.input.cursor_x.round() as i32;
         let y = state.match_state.input.cursor_y.round() as i32;
         let button = Self::choose_map_eject_button_at(state, x, y);
@@ -827,9 +822,9 @@ impl App {
         true
     }
 
-    /// A release while the eject box shows: OK goes on to Use Map's slide-out,
+    /// A release while the eject box shows: OK goes on to Use Map's close,
     /// Cancel keeps the chooser.
-    fn handle_choose_map_eject_mouse_up(state: &mut AppState) -> bool {
+    pub(super) fn handle_choose_map_eject_mouse_up(state: &mut AppState) -> bool {
         let x = state.match_state.input.cursor_x.round() as i32;
         let y = state.match_state.input.cursor_y.round() as i32;
         let released = Self::choose_map_eject_button_at(state, x, y);
@@ -845,12 +840,16 @@ impl App {
             return true;
         }
         let selection = prompt.selection;
-        modal.eject_prompt = None;
         if pressed == Some(crate::ui::skirmish_shell::EjectPromptButton::Ok) {
+            // A chooser the random-map run hid closes without a slide
+            // (`0x00608070` returns while it is invisible).
+            modal.eject_prompt = None;
             Self::leave_shell_dialog(
                 state,
                 crate::app::frontend::shell_transition::ShellExitThen::ChooseMapUse(selection),
             );
+        } else {
+            modal.decline_eject();
         }
         state.platform.window.request_redraw();
         true
@@ -866,37 +865,46 @@ impl App {
         else {
             return false;
         };
-        if modal.eject_prompt.take().is_none() {
+        if !modal.decline_eject() {
             return false;
         }
         state.platform.window.request_redraw();
         true
     }
 
-    /// `0x6B`'s slide-out has run for Use Map: commit the selection, close
-    /// the chooser; `0x102` shows again and replays its entry slide.
+    /// Use Map, after `0x6B`'s slide-out (none while the random-map run
+    /// hides it): commit the selection, close the chooser; `0x102` shows
+    /// again and replays its entry slide. A selection that cannot commit
+    /// keeps the chooser, which shows again if it was hidden.
     pub(super) fn commit_choose_map_use(
         state: &mut AppState,
         selection: crate::ui::skirmish_shell::ChooseMapSelection,
     ) {
         if Self::commit_choose_map_selection(state, selection) {
             Self::close_choose_map_modal(state);
-        }
-    }
-
-    /// `0x6B`'s slide-out has run for Create Random Map: the chooser stays
-    /// hidden behind the random-map dialog `0x105`, which reopens it on
-    /// Cancel (the chooser then slides in again).
-    pub(super) fn commit_choose_map_random_map(state: &mut AppState) {
-        let Some(previous) = state
+        } else if let Some(modal) = state
             .frontend
             .skirmish_shell_state
             .choose_map_modal
-            .as_ref()
-            .map(|modal| modal.cancel_selection())
+            .as_mut()
+        {
+            modal.show();
+        }
+    }
+
+    /// `0x6B`'s slide-out has run for Create Random Map: the chooser hides
+    /// (`0x005E6A0B`) while the random-map dialog `0x105` runs.
+    pub(super) fn commit_choose_map_random_map(state: &mut AppState) {
+        let Some(modal) = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_mut()
         else {
             return;
         };
+        modal.hide();
+        let previous = modal.cancel_selection();
         let options = state
             .frontend
             .offline_skirmish_runtime
@@ -927,7 +935,7 @@ impl App {
         );
     }
 
-    fn localized_status_help_text(state: &AppState, key: &str) -> String {
+    pub(super) fn localized_status_help_text(state: &AppState, key: &str) -> String {
         state
             .process_assets.csf
             .as_ref()
@@ -1002,16 +1010,14 @@ impl App {
         else {
             return;
         };
-        // A child's hover message repaints the status line (`0x00615EF7`).
-        state.frontend.shell_status_line.repaint();
+        // A child's hover message writes and repaints the status line.
         if let Some(modal) = state
             .frontend
             .skirmish_shell_state
             .choose_map_modal
             .as_mut()
-            && modal.status_help != text
+            && modal.statics.hover(&text, std::time::Instant::now())
         {
-            modal.status_help = text;
             state.platform.window.request_redraw();
         }
     }
@@ -1123,21 +1129,27 @@ impl App {
     }
 
     pub(super) fn handle_skirmish_shell_mouse_down(state: &mut AppState) {
-        if Self::route_validation_modal_mouse_down(state) {
+        // A message box runs over the dialogs; else the dialog on top.
+        if Self::route_validation_modal_mouse_down(state)
+            || Self::handle_choose_map_eject_mouse_down(state)
+        {
             return;
         }
-        // The browser sits over the setup dialog, which sits over the
-        // chooser, so input is offered in that order.
-        if state.frontend.skirmish_shell_state.saved_seed_browser.is_some() {
-            Self::handle_saved_seed_browser_mouse_down(state);
-            return;
-        }
-        if state.frontend.skirmish_shell_state.random_map_setup_modal.is_some() {
-            Self::handle_random_map_setup_mouse_down(state);
-            return;
-        }
-        if Self::handle_choose_map_modal_mouse_down(state) {
-            return;
+        match state.frontend.skirmish_shell_state.top_dialog() {
+            Some(SkirmishShellDialog::Skirmish) => {}
+            Some(SkirmishShellDialog::SeedBrowser) => {
+                Self::handle_saved_seed_browser_mouse_down(state);
+                return;
+            }
+            Some(SkirmishShellDialog::RandomMap) => {
+                Self::handle_random_map_setup_mouse_down(state);
+                return;
+            }
+            Some(SkirmishShellDialog::ChooseMap) => {
+                Self::handle_choose_map_modal_mouse_down(state);
+                return;
+            }
+            None => return,
         }
         let layout = Self::skirmish_shell_layout(state);
         let x = state.match_state.input.cursor_x.round() as i32;
@@ -1187,22 +1199,26 @@ impl App {
         state: &mut AppState,
         event_loop: &ActiveEventLoop,
     ) {
-        if Self::route_validation_modal_mouse_up(state) {
+        if Self::route_validation_modal_mouse_up(state)
+            || Self::handle_choose_map_eject_mouse_up(state)
+        {
             return;
         }
-        // The browser sits over the setup dialog, which sits over the
-        // chooser, so input is offered in that order.
-        if state.frontend.skirmish_shell_state.saved_seed_browser.is_some() {
-            Self::handle_saved_seed_browser_mouse_up(state);
-            return;
-        }
-        if state.frontend.skirmish_shell_state.random_map_setup_modal.is_some() {
-            Self::handle_random_map_setup_mouse_up(state);
-            return;
-        }
-        if state.frontend.skirmish_shell_state.choose_map_modal.is_some() {
-            Self::handle_choose_map_modal_mouse_up(state);
-            return;
+        match state.frontend.skirmish_shell_state.top_dialog() {
+            Some(SkirmishShellDialog::Skirmish) => {}
+            Some(SkirmishShellDialog::SeedBrowser) => {
+                Self::handle_saved_seed_browser_mouse_up(state);
+                return;
+            }
+            Some(SkirmishShellDialog::RandomMap) => {
+                Self::handle_random_map_setup_mouse_up(state);
+                return;
+            }
+            Some(SkirmishShellDialog::ChooseMap) => {
+                Self::handle_choose_map_modal_mouse_up(state);
+                return;
+            }
+            None => return,
         }
         let layout = Self::skirmish_shell_layout(state);
         let x = state.match_state.input.cursor_x.round() as i32;
@@ -1232,29 +1248,33 @@ impl App {
     }
 
     pub(super) fn handle_skirmish_shell_mouse_move(state: &mut AppState) {
-        if state.frontend.skirmish_shell_state.saved_seed_browser.is_some() {
-            Self::update_saved_seed_browser_scroll(state, true);
-            return;
-        }
-        if state.frontend.skirmish_shell_state.random_map_setup_modal.is_some() {
-            Self::handle_random_map_setup_mouse_move(state);
-            return;
-        }
-        if state.frontend.skirmish_shell_state.choose_map_modal.is_some() {
-            let layout = Self::skirmish_choose_map_layout(state);
-            let x = state.match_state.input.cursor_x.round() as i32;
-            let y = state.match_state.input.cursor_y.round() as i32;
-            if let Some(modal) = state
-                .frontend
-                .skirmish_shell_state
-                .choose_map_modal
-                .as_mut()
-            {
-                modal.mouse_move(&layout, x, y);
+        match state.frontend.skirmish_shell_state.top_dialog() {
+            Some(SkirmishShellDialog::Skirmish) => {}
+            Some(SkirmishShellDialog::SeedBrowser) => {
+                Self::update_saved_seed_browser_scroll(state, true);
+                return;
             }
-            Self::update_choose_map_modal_status_help(state, &layout, x, y);
-            state.platform.window.request_redraw();
-            return;
+            Some(SkirmishShellDialog::RandomMap) => {
+                Self::handle_random_map_setup_mouse_move(state);
+                return;
+            }
+            Some(SkirmishShellDialog::ChooseMap) => {
+                let layout = Self::skirmish_choose_map_layout(state);
+                let x = state.match_state.input.cursor_x.round() as i32;
+                let y = state.match_state.input.cursor_y.round() as i32;
+                if let Some(modal) = state
+                    .frontend
+                    .skirmish_shell_state
+                    .choose_map_modal
+                    .as_mut()
+                {
+                    modal.mouse_move(&layout, x, y);
+                }
+                Self::update_choose_map_modal_status_help(state, &layout, x, y);
+                state.platform.window.request_redraw();
+                return;
+            }
+            None => return,
         }
         if state.frontend.skirmish_shell_state.validation_modal.is_some() {
             if crate::ui::skirmish_shell::clear_status_help_text(&mut state.frontend.skirmish_shell_state) {
