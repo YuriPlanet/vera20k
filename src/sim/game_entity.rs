@@ -626,16 +626,6 @@ pub struct GameEntity {
     /// logic reuses this exact slot for the Suicide gate and death fallback.
     #[serde(default)]
     pub current_weapon_index: u8,
-    /// Actual weapon identity returned by the most recent live selection.
-    /// Class overrides can make this differ from the type's static slot.
-    ///
-    /// No simulation reader remains: the death weapon reads
-    /// `GetCurrentWeapon` (`combat_weapon::current_weapon`) like native. It is
-    /// kept only because every historical hash projection folds its per-fire
-    /// value, which no earlier schema can reconstruct; retiring it re-pins
-    /// those ratchet probes and is left to a dedicated change.
-    #[serde(default)]
-    pub current_weapon_ref: Option<InternedId>,
     /// RadioClass-style live contacts for this entity, stored as stable IDs.
     /// Used by runtime building-entry/pathing exceptions such as contacted
     /// war factory exits and refinery dock entry. Kept per mover; a building
@@ -1504,7 +1494,6 @@ impl GameEntity {
             attack_target: None,
             pending_building_fire: None,
             current_weapon_index: 0,
-            current_weapon_ref: None,
             radio_contacts: Contacts::default(),
             dock_entered_with: None,
             rally_target: None,
