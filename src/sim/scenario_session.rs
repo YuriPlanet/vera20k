@@ -524,6 +524,7 @@ mod tests {
                 recruitable_a: true,
                 recruitable_b: true,
                 structure_upgrades: [None, None, None],
+                structure_ai_sellable: false,
             };
             sim.spawn_from_map(&[entity], None, &BTreeMap::new());
             sim

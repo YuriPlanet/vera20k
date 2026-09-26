@@ -7826,8 +7826,11 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
     let scenario_houses =
         crate::map::houses::parse_house_roster(&scenario_ini, &rules.color_schemes, Some(&rules));
     let mut ai_house = HouseState::new(ai_owner, 0, None, false, 0, 51);
+    // HouseClass::Read_Scenario_INI stores `IQ=` as both the authored IQ
+    // (+0x1D0) and CurrentIQ (+0x24C).
     ai_house.current_iq =
         scenario_houses.houses[0].scenario_current_iq(rules.general.max_iq_levels);
+    ai_house.authored_iq = ai_house.current_iq;
     sim.houses.insert(ai_owner, ai_house);
     let heights = BTreeMap::new();
     let hostile_target = sim
@@ -7964,7 +7967,9 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
         "an IQ-gated-out building draws no low-credit sale RNG"
     );
 
-    sim.houses.get_mut(&ai_owner).unwrap().current_iq = 2;
+    let house = sim.houses.get_mut(&ai_owner).unwrap();
+    house.current_iq = 2;
+    house.authored_iq = 2;
     let mut expected_rng = sim.scenario_rng.clone();
     assert!(
         expected_rng.next_range_u32_inclusive(0, 0x32) < 51,

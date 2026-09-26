@@ -3664,58 +3664,6 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
     assert_eq!(clicks(&sim), 1);
 }
 
-/// The computer's low-credit sale (`UpdateRepairAndPower 0x00450630`) draws
-/// its roll for a red, attacked construction yard and then keeps it
-/// (`Factory=BuildingType`, `Type+0xEB8 == 7`, `0x004507DE`), while it sells
-/// any other building (`Sell_Back(1)`, `0x0045080D`).
-#[test]
-fn the_computers_low_credit_sale_rolls_for_a_yard_but_keeps_it() {
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(
-        "[General]\nFixtureOnly=1\n\
-         [AI]\nCreditReserve=100\n\
-         [IQ]\nMaxIQLevels=5\nRepairSell=2\nSellBack=2\n\
-         [AudioVisual]\nConditionYellow=50%\nConditionRed=25%\n\
-         [InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
-         [BuildingTypes]\n0=GAPOWR\n1=GACNST\n\
-         [GAPOWR]\nStrength=1000\nCost=800\n\
-         [GACNST]\nStrength=1000\nCost=3000\nFactory=BuildingType\n",
-    ))
-    .expect("low-credit sale rules");
-    for type_id in ["GAPOWR", "GACNST"] {
-        rules.set_buildup_control_for_test(type_id, [0, 25, 2]);
-    }
-    let sale = |type_id: &str| {
-        let mut sim = Simulation::new();
-        let owner = sim.interner.intern("AI");
-        let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 51);
-        house.current_iq = 2;
-        sim.houses.insert(owner, house);
-        let id = 1;
-        spawn_structure(&mut sim, id, "AI", type_id, 5, 5);
-        let building = sim.substrate.entities.get_mut(id).unwrap();
-        building.health = Health { current: 200 };
-        building.was_attacked_by_enemy = true;
-        let mut expected = sim.scenario_rng.clone();
-        let _ = expected.next_range_u32_inclusive(0, 0x32);
-        super::tick_repairs(&mut sim, &rules);
-        assert_eq!(
-            sim.scenario_rng.logical_state(),
-            expected.logical_state(),
-            "{type_id}: one roll"
-        );
-        sim.substrate
-            .entities
-            .get(id)
-            .unwrap()
-            .mission
-            .effective()
-            .known()
-            == Some(MissionType::Selling)
-    };
-    assert!(sale("GAPOWR"), "a red, attacked power plant is sold");
-    assert!(!sale("GACNST"), "a construction yard is kept");
-}
-
 #[test]
 fn sell_player_built_garrisoned_building_demolishes_and_ejects_alive() {
     use crate::sim::passenger::{PassengerCargo, PassengerRole};

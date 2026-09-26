@@ -481,6 +481,11 @@ impl Simulation {
                     bridge_deck: bridge_spawn,
                 },
             );
+            // The line's AI Sellable, written after the constructor
+            // (`BuildingClass::ReadFromINI` `0x0044FB5B`).
+            if map_ent.category == EntityCategory::Structure {
+                ge.ai_sellable = map_ent.structure_ai_sellable;
+            }
             let (stable_id, outcome) =
                 self.unlimbo_authored_techno(ge, map_ent.health, rules, overlay_registry);
             if !matches!(outcome, RevealOutcome::Revealed { .. }) {

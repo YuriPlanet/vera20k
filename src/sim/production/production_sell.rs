@@ -19,8 +19,8 @@
 //!
 //! Evidence: `tools/spatial_oracle/building_sale.json` (Sell_Back and the
 //! visits' timing in `route` rows, stage 1 in `crew` rows, the refund in
-//! `refund` rows), replayed by `sim::building_construction`'s and
-//! `building_sale_oracle_tests`'s tests.
+//! `refund` rows, the computer's low-credit sale in `ai_sale` rows), replayed
+//! by `sim::building_construction`'s and `building_sale_oracle_tests`'s tests.
 //!
 //! RESIDUALS:
 //! - `RegisterDestruction(null)` at the sale (`vt+0xE0`, `0x0044A1F9`, after
@@ -1098,22 +1098,29 @@ const REPAIR_COST_PERCENT: u32 = 25;
 /// HP healed per sim tick (at 15 Hz this is ~60 HP/sec).
 const REPAIR_HP_PER_TICK: i32 = 4;
 
-/// Run the `WasAttackedByEnemy` consumer from
-/// `BuildingClass::UpdateRepairAndPower @ 0x00450630` in stable building order.
+/// The computer's low-credit sale in `BuildingClass::UpdateRepairAndPower @
+/// 0x00450630`, for every building in stable order. Before its roll
+/// (`0x00450645..0x004507B2`): the owner's CurrentIQ (`+0x24C`) reaches
+/// `[IQ] RepairSell=`; the building is on neither Construction nor Selling
+/// (Get_Mission) and can be repaired ([`can_repair_building`]); the owner's
+/// available money is below `[AI] CreditReserve=`; a campaign building
+/// carries its AI sale byte (`+0x6DC`, `0x00450781`); an enemy has hit it
+/// (`+0x3D1`); and the owner's authored IQ (`+0x1D0`, unsigned) reaches
+/// `[IQ] SellBack=`. A skirmish house's authored IQ is zero, so under the
+/// retail `SellBack=2` no skirmish building gets this far and none draws.
+/// Then `RandomRanged(0, 0x32)` on the Scenario stream (`0x004507C4`) must
+/// fall below the owner's TechLevel (unsigned), and a tagged building
+/// (`+0x34`, `0x004507D7`; VERA has no per-object tags), a construction yard
+/// (`Factory=BuildingType`, `Type+0xEB8 == 7`, `0x004507DE`) and one at or
+/// above ConditionRed (`0x004507ED`) stay. The rest take [`sell_back`]'s
+/// computer order (`0x0045080D`).
 ///
-/// CurrentIQ is persisted per house because named scenario houses can carry a
-/// lower `IQ=` than generated skirmish computer houses. After the roll, a
-/// tagged building (`+0x34`, `0x004507D7`; VERA has no per-object tags) and a
-/// construction yard (`Factory=BuildingType`, `Type+0xEB8 == 7`,
-/// `0x004507DE`) stay; the sale is [`sell_back`]'s computer order.
-///
-/// RESIDUAL (UpdateRepairAndPower's port, the next chain): native draws the
-/// roll (`0x004507B4`) before the health test (`0x004507ED`), VERA only for a
-/// building below ConditionRed; the campaign gate (`+0x6DC` when GameMode is
-/// 0, `0x00450781`) and `vt+0x94` (`0x0045067F`) are not read. Trigger: a
-/// computer house below its credit reserve with an attacked building.
-/// Effect: the Scenario stream's draw count. Frequency: broke computer
-/// houses under attack.
+/// RESIDUAL (UpdateRepairAndPower's port, the next chain): native rolls inside
+/// each building's Update (`0x004401B6`), in LogicVector order among the
+/// frame's other objects' draws; VERA rolls for every building after the
+/// object pass, in stable order. Trigger: a computer house below its credit
+/// reserve with a damaged building an enemy hit. Effect: the Scenario
+/// stream's order within the frame. Frequency: every frame while it lasts.
 fn tick_ai_low_credit_sell_decisions(sim: &mut Simulation, rules: &RuleSet) {
     let building_ids: Vec<u64> = sim
         .substrate
@@ -1124,62 +1131,72 @@ fn tick_ai_low_credit_sell_decisions(sim: &mut Simulation, rules: &RuleSet) {
         .collect();
 
     for stable_id in building_ids {
-        let Some((owner, eligible_building, yard)) =
-            sim.substrate.entities.get(stable_id).and_then(|entity| {
-                let mission = entity.mission.current().known();
-                let object = sim.object_type(entity.type_ref(), rules)?;
-                let strength = object.strength;
-                // 4507F7..450805 tests x87 C0: less and unordered both sell.
-                let below_red = matches!(
-                    entity
-                        .health
-                        .compare_ratio(strength, rules.general.condition_red),
-                    crate::util::native_x87::MaskedX87Ordering::Less
-                        | crate::util::native_x87::MaskedX87Ordering::Unordered
-                );
-                Some((
-                    entity.owner(),
-                    entity.is_active()
-                        && !entity.lifecycle.in_limbo
-                        // UpdateRepairAndPower's only caller (`0x004401B6`)
-                        // lies past the frozen jump.
-                        && !entity.ai_frozen()
-                        && entity.was_attacked_by_enemy
-                        && !matches!(
-                            mission,
-                            Some(MissionType::Selling | MissionType::Construction)
-                        )
-                        && below_red,
-                    object.factory == Some(crate::rules::object_type::FactoryType::BuildingType),
-                ))
-            })
-        else {
+        let Some(entity) = sim.substrate.entities.get(stable_id) else {
             continue;
         };
-        if !eligible_building {
+        // UpdateRepairAndPower's only caller (`0x004401B6`) lies past the
+        // frozen jump.
+        if !entity.is_active() || entity.lifecycle.in_limbo || entity.ai_frozen() {
             continue;
         }
-
-        let Some(house) = sim.houses.get(&owner) else {
+        let Some(house) = sim.houses.get(&entity.owner()) else {
             continue;
         };
-        let house_iq = house.current_iq;
-        if house_iq < rules.general.iq_repair_sell
-            || house.economy.credits >= rules.general.credit_reserve
-            || house_iq < rules.general.iq_sell_back
-        {
+        let admitted = house.current_iq >= rules.general.iq_repair_sell
+            && !matches!(
+                entity.mission.effective().known(),
+                Some(MissionType::Construction | MissionType::Selling)
+            )
+            && can_repair_building(sim, rules, stable_id)
+            && crate::sim::credit_income::available_money(sim, entity.owner())
+                < rules.general.credit_reserve
+            && (sim.session.game_mode_nonzero || entity.ai_sellable)
+            && entity.was_attacked_by_enemy
+            && house.authored_iq as u32 >= rules.general.iq_sell_back as u32;
+        if !admitted {
             continue;
         }
-        // Native draws inclusive RandomRanged(0, 0x32), then performs an
-        // unsigned comparison against HouseClass TechLevel.
+        let tech_level = house.tech_level;
+        let Some(object) = sim.object_type(entity.type_ref(), rules) else {
+            continue;
+        };
+        let yard = object.factory == Some(crate::rules::object_type::FactoryType::BuildingType);
+        // 4507F7..450805 tests x87 C0: less and unordered both sell.
+        let below_red = matches!(
+            entity
+                .health
+                .compare_ratio(object.strength, rules.general.condition_red),
+            crate::util::native_x87::MaskedX87Ordering::Less
+                | crate::util::native_x87::MaskedX87Ordering::Unordered
+        );
         let roll = sim.scenario_rng.next_range_u32_inclusive(0, 0x32);
-        if roll >= house.tech_level as u32 || yard {
+        if roll >= tech_level as u32 || yard || !below_red {
             continue;
         }
-
-        // `Sell_Back(1)` (`0x0045080D`).
         let _ = sell_back(sim, rules, stable_id, SellOrder::Computer);
     }
+}
+
+/// `BuildingClass::Can_Repair @ 0x00452630` (vt+0x94): a building with
+/// Health (`+0x6C`), of a `ClickRepairable=` type (`+0x157A`) that is not a
+/// 1x1 `UndeploysInto=` type (`BuildingTypeClass 0x00465D40`), whose
+/// `Repairable=` type (TechnoType `+0xCCC`) has it below Strength
+/// (`0x00701140`).
+pub(crate) fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return false;
+    };
+    let Some(object) = sim.object_type(entity.type_ref(), rules) else {
+        return false;
+    };
+    let one_cell_undeploy =
+        undeploys(rules, object) && foundation_dimensions(&object.foundation) == (1, 1);
+    entity.category == EntityCategory::Structure
+        && entity.health.current != 0
+        && object.click_repairable
+        && !one_cell_undeploy
+        && object.repairable
+        && entity.health.current != object.strength
 }
 
 /// Tick all repairing buildings: heal HP and deduct credits.

@@ -1773,6 +1773,11 @@ impl Simulation {
             entity.armor_multiplier.bits().hash(hasher);
             entity.berserk.hash(hasher);
             entity.was_attacked_by_enemy.hash(hasher);
+            if schema.includes(HashFeature::AiSellable)
+                && entity.category == crate::map::entities::EntityCategory::Structure
+            {
+                entity.ai_sellable.hash(hasher);
+            }
             if schema.includes(HashFeature::BaseDefenseResponse) {
                 b"base-defense-response-v1".hash(hasher);
                 entity.base_defense_response.hash(hasher);

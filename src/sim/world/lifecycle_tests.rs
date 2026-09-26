@@ -878,6 +878,7 @@ fn zero_speed_foot_drive_ship_payloads_survive_all_world_spawn_paths() {
         recruitable_a: true,
         recruitable_b: true,
         structure_upgrades: [None, None, None],
+        structure_ai_sellable: false,
     };
     assert_eq!(
         sim.spawn_from_map(&[placement], Some(&rules), &BTreeMap::new()),

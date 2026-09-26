@@ -414,6 +414,14 @@ pub struct HouseState {
     /// houses are stamped from `[IQ] MaxIQLevels`; generated human and special
     /// houses retain the native constructor value zero.
     pub current_iq: i32,
+    /// HouseClass `+0x1D0`: the map section's `IQ=`, which only
+    /// `HouseClass::Read_Scenario_INI` writes (`0x00500DBA`, with CurrentIQ).
+    /// `ScenarioClass::Full_Init` reads the map's houses only in a campaign
+    /// (`0x006877B9`), so every skirmish house keeps the constructor's zero
+    /// (`0x004F56BD`). Its one gameplay reader is the computer's low-credit
+    /// sale (`[IQ] SellBack`, `0x004507A4`); the House CRC does not fold it.
+    #[serde(default)]
+    pub authored_iq: i32,
     /// Native `AngerStruct` scores keyed by the other house's stable identity.
     ///
     /// gamemd stores an O(N^2) vector in global HouseClass creation order. The
@@ -650,6 +658,7 @@ impl HouseState {
             base_reservation: BaseReservationState::default(),
             tech_level,
             current_iq: 0,
+            authored_iq: 0,
             grudge_scores: BTreeMap::new(),
             enemy_house: None,
             waypoint_edge: 0,

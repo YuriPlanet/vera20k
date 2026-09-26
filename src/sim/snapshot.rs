@@ -616,7 +616,8 @@ use crate::sim::world::Simulation;
 // (`TechnoClass+0x138`) stays.
 // 212 -> 213: a sale's pack-up keeps Sell's stage in the Selling mission
 // (`+0xBC`) and marks the player's undeploy order instead of carrying the
-// undeploy's unit type, owner, cell and selection.
+// undeploy's unit type, owner, cell and selection; a building keeps its AI
+// sale byte (`+0x6DC`) and a house its authored IQ (`+0x1D0`).
 const SNAPSHOT_VERSION: u32 = 213;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";

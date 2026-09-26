@@ -38,6 +38,18 @@ that does not undeploy.
   neighbouring Scatter cell), Select (vt+0x14C) and the infantry deletes.
 - `refund` rows: the sale's credit, TechnoClass vt+0x2BC (0x70ADA0 ->
   TechnoTypeClass::GetRefund 0x711F60), over cost, owner and game mode.
+- `ai_sale` rows: the computer's low-credit sale, BuildingClass::
+  UpdateRepairAndPower (0x450630) natively on the same refinery from its entry
+  to the repair tick (0x450813) or the computer's auto-repair start
+  (0x4506B2): CurrentIQ (House+0x24C) against [IQ] RepairSell, Get_Mission
+  (vt+0x184) on Construction or Selling, Can_Repair (vt+0x94 = 0x452630, with
+  the 1x1 UndeploysInto test 0x465D40 and TechnoClass 0x701140), the owner's
+  Available_Money (House+0x24 vt+0x18 = 0x4F6990) against [AI] CreditReserve,
+  the campaign's AI sale byte (+0x6DC), WasAttackedByEnemy (+0x3D1), the
+  authored IQ (House+0x1D0, unsigned) against SellBack, RandomRanged(0, 50)
+  on the Scenario RNG against TechLevel (House+0x1D4, unsigned), the
+  AttachedTag (+0x34), Factory=BuildingType and Health_Ratio (0x5F5C60)
+  against ConditionRed. Sell_Back (0x447110) is observed and answered.
 
 Usage: python -m tools.spatial_oracle.building_sale [--check|--write]
 """
@@ -94,7 +106,16 @@ RULES_CREW = {'E1': 0xF78, 'E2': 0xF7C, 'INIT': 0xF80, 'CTECH': 0xF6C, 'ENGINEER
 # Retail [General] Allied/Soviet/ThirdSurvivorDivisor.
 DIVISORS = (500, 250, 750)
 SELL_SOUND, GENERIC_CLICK = 41, 42
-MISSION = {'move': 2, 'guard': 5, 'hunt': 15, 'selling': 19, 'none': -1}
+MISSION = {'move': 2, 'guard': 5, 'hunt': 15, 'construction': 18, 'selling': 19, 'none': -1}
+# BuildingClass::UpdateRepairAndPower, its two exits from the admission (the
+# computer's auto-repair start and the repair tick), RandomRanged and the
+# sale roll's return, and the House money interface vtable.
+UPDATE_REPAIR_AND_POWER = 0x450630
+AI_SALE_ENDS = {0x4506B2: 'auto_repair_start', 0x450813: 'repair_tick'}
+RANDOM_RANGED, SALE_ROLL_RETURN = 0x65C7E0, 0x4507C9
+HOUSE_MONEY_VTABLE = 0x7EA834
+# Any non-null AttachedTag (+0x34): the admission only tests it.
+AI_SALE_TAG = 0x7FFF0000
 
 
 def crew_type_address(name):
@@ -572,11 +593,129 @@ def refund_cases():
     return rows
 
 
+# --- ai_sale -------------------------------------------------------------
+
+
+def ai_sale(case):
+    """BuildingClass::UpdateRepairAndPower (module doc) from its entry to the
+    repair tick or the auto-repair start: the Scenario draws, Sell_Back's
+    controls and where it stopped."""
+    u, call, read32, events = sm.make_fixture(dict(
+        name=case['name'], manager_state=0, nodes=[], ore=[], seed=case.get('seed', 1), human=False,
+        game_mode=case['game_mode']))
+    building, kind = sm.YAREFN, sm.YTYPE
+    u.mem_write(building + 0x6C, dwords(case['health']))
+    u.mem_write(building + 0xAC, dwords(MISSION[case['mission']]))
+    u.mem_write(building + 0xB4, dwords(MISSION[case.get('queued', 'none')]))
+    u.mem_write(building + 0x3D1, bytes([case['attacked']]))
+    u.mem_write(building + 0x6DC, bytes([case['ai_sellable']]))
+    u.mem_write(building + 0x34, dwords(AI_SALE_TAG if case['tag'] else 0))
+    u.mem_write(building + 0x6E8, b'\x00')
+    # Strength, ClickRepairable=, Repairable=, UndeploysInto= (a unit type
+    # pointer), the Foundation index (0 is 1x1) and Factory=.
+    u.mem_write(kind + 0xA0, dwords(case['strength']))
+    u.mem_write(kind + 0x157A, bytes([case['click_repairable']]))
+    u.mem_write(kind + 0xCCC, bytes([case['repairable']]))
+    u.mem_write(kind + 0x408, dwords(sm.STYPE if case['undeploys'] else 0))
+    u.mem_write(kind + 0xEF0, dwords(case['foundation']))
+    u.mem_write(kind + 0xEB8, dwords(7 if case['yard'] else -1))
+    # The owner: its money interface (the HouseClass constructor's vtable,
+    # whose +0x18 is Available_Money 0x4F6990), Balance, the authored IQ,
+    # TechLevel, CurrentIQ and the auto-repair byte.
+    u.mem_write(HOUSE + 0x24, dwords(HOUSE_MONEY_VTABLE))
+    u.mem_write(HOUSE + 0x30C, dwords(case['balance']))
+    u.mem_write(HOUSE + 0x1D0, dwords(case['authored_iq'], case['tech_level']))
+    u.mem_write(HOUSE + 0x24C, dwords(case['current_iq']))
+    u.mem_write(HOUSE + 0x245, b'\x00')
+    # [IQ] RepairSell/SellBack, [AI] CreditReserve and [AudioVisual]
+    # ConditionRed (retail .25).
+    u.mem_write(RULES + 0x1444, dwords(case['repair_sell']))
+    u.mem_write(RULES + 0x145C, dwords(case['sell_back']))
+    u.mem_write(RULES + 0x1758, dwords(case['credit_reserve']))
+    u.mem_write(RULES + 0x1708, struct.pack('<d', 0.25))
+    draws, sell_back = [], []
+
+    def hook(_u, address, _size, _data):
+        sp = u.reg_read(UC_X86_REG_ESP)
+        if address == RANDOM_RANGED:
+            draws.append([read32(sp + 4), read32(sp + 8)])
+        elif address == SALE_ROLL_RETURN:
+            draws[-1].append(u.reg_read(UC_X86_REG_EAX))
+        elif address == SELL_BACK:
+            sell_back.append(struct.unpack('<i', dwords(read32(sp + 4)))[0])
+            ret(u, read32, 4, 1)
+
+    u.hook_add(UC_HOOK_CODE, hook)
+    before = [read32(SCENARIO + 0x21C), read32(SCENARIO + 0x220)]
+    u.mem_write(bc.SP, dwords(RET_MAGIC))
+    u.reg_write(UC_X86_REG_ECX, building)
+    u.reg_write(UC_X86_REG_ESP, bc.SP)
+    run_checked(u, UPDATE_REPAIR_AND_POWER, tuple(AI_SALE_ENDS), count=2_000_000)
+    return dict(input=case, draws=draws, sell_back=sell_back, end=AI_SALE_ENDS[u.reg_read(UC_X86_REG_EIP)],
+                random_indices=dict(before=before, after=[read32(SCENARIO + 0x21C), read32(SCENARIO + 0x220)]))
+
+
+AI_SALE_BASE = dict(game_mode=1, current_iq=2, authored_iq=2, repair_sell=1, sell_back=2, credit_reserve=100,
+                    balance=0, tech_level=51, strength=1000, health=200, mission='guard', attacked=True,
+                    ai_sellable=False, click_repairable=True, repairable=True, undeploys=False, foundation=3,
+                    yard=False, tag=False)
+
+
+def ai_sale_cases():
+    base = AI_SALE_BASE
+    return [
+        # A broke computer house's building below ConditionRed, hit by an enemy.
+        dict(base, name='s_sold'),
+        dict(base, name='s_sold_seed_7', seed=7),
+        # CurrentIQ (+0x24C) below RepairSell (0x450653).
+        dict(base, name='s_repair_sell_iq', current_iq=0),
+        # Get_Mission (vt+0x184: current, else queued) on Construction or Selling.
+        dict(base, name='s_constructing', mission='construction'),
+        dict(base, name='s_selling', mission='selling'),
+        dict(base, name='s_selling_queued', mission='none', queued='selling'),
+        # Can_Repair (vt+0x94): full Strength, ClickRepairable=, Repairable=,
+        # a 1x1 UndeploysInto= type (a 2x2 one repairs).
+        dict(base, name='s_full_strength', health=1000),
+        dict(base, name='s_no_click_repair', click_repairable=False),
+        dict(base, name='s_unrepairable', repairable=False),
+        dict(base, name='s_one_cell_undeploy', undeploys=True, foundation=0),
+        dict(base, name='s_two_cell_undeploy', undeploys=True, foundation=3),
+        # Money at CreditReserve takes the auto-repair start instead (0x4506B2).
+        dict(base, name='s_money_at_reserve', balance=100),
+        dict(base, name='s_money_below_reserve', balance=99),
+        # A campaign building needs its AI sale byte (+0x6DC, 0x450781).
+        dict(base, name='s_campaign_no_byte', game_mode=0),
+        dict(base, name='s_campaign_byte', game_mode=0, ai_sellable=True),
+        dict(base, name='s_not_attacked', attacked=False),
+        # The authored IQ (+0x1D0, unsigned) against SellBack: a skirmish
+        # house's zero, and -1 reading as 0xFFFFFFFF.
+        dict(base, name='s_skirmish_authored_iq', authored_iq=0, current_iq=5),
+        dict(base, name='s_negative_authored_iq', authored_iq=-1),
+        # The roll comes before the tag, the yard and the health checks.
+        dict(base, name='s_tech_level_zero', tech_level=0),
+        dict(base, name='s_tagged', tag=True),
+        dict(base, name='s_yard', yard=True),
+        dict(base, name='s_at_red', health=250),
+        dict(base, name='s_below_red', health=249),
+        dict(base, name='s_above_red', health=600),
+    ]
+
+
+def ai_sale_rows():
+    rows = [ai_sale(case) for case in ai_sale_cases()]
+    # TechLevel at and just above the first row's roll (unsigned `JAE`).
+    roll = rows[0]['draws'][0][2]
+    rows += [ai_sale(dict(AI_SALE_BASE, name=name, tech_level=level))
+             for name, level in (('s_tech_level_at_roll', roll), ('s_tech_level_above_roll', roll + 1))]
+    return rows
+
+
 def generate():
     return {'source': 'unicorn/gamemd.exe',
             'route': [route(case) for case in route_cases()],
             'crew': [crew(case) for case in crew_cases()],
-            'refund': [refund(case) for case in refund_cases()]}
+            'refund': [refund(case) for case in refund_cases()],
+            'ai_sale': ai_sale_rows()}
 
 
 def main(argv=None):
@@ -589,9 +728,11 @@ def main(argv=None):
                   'Crew_Type 0x44EB10, TechnoClass::GetCrew 0x707D20, the InfantryClass constructor draw, '
                   'the occupy-list cell pick, PlaceInfantryInCell 0x481180, InfantryClass::Unlimbo 0x51DFF0, '
                   'Scatter 0x51D0D0 with its setter and first Walk Process, and the absorbed passengers; '
-                  'the sale refund 0x70ADA0',
+                  'the sale refund 0x70ADA0; the computer\'s low-credit sale in BuildingClass::'
+                  'UpdateRepairAndPower 0x450630 up to the repair tick 0x450813 or the auto-repair start 0x4506B2',
             entry_points={'sell_back': SELL_BACK, 'sell': SELL, 'survivor_count': bc.SURVIVOR_COUNT,
-                          'refund': REFUND, 'occupy_init': OCCUPY_INIT},
+                          'refund': REFUND, 'occupy_init': OCCUPY_INIT,
+                          'update_repair_and_power': UPDATE_REPAIR_AND_POWER},
             assumptions=['route rows: building_construction\'s route fixture (the slave_manager refinery, '
                          'Building vtables) with UndeploysInto clear; Rules SellSound/GenericClick and the '
                          'type\'s PackupSound supplied as sound indices',
@@ -604,7 +745,11 @@ def main(argv=None):
                          'occupy-list cells listed (+0xE4) and marked 0x80 as AddContent 0x47E8A0 -> vt+0xF0 '
                          '0x453D60 leaves them; prepared Walks hold the owner\'s COM reference (+0x14 = 1); the '
                          'step offsets 0x89F6D8 (0x49F3A0) and the Infantry startup initialisers 0x517840..'
-                         '0x5179B0 (level height 0xA8F240, bridge threshold 0xA8F234 = 416) run natively'],
+                         '0x5179B0 (level height 0xA8F240, bridge threshold 0xA8F234 = 416) run natively',
+                         'ai_sale rows: the slave_manager fixture refinery owned by a computer House (Balance '
+                         'House+0x30C, empty ore storage, IncomeMult 1.0) whose money interface House+0x24 holds the '
+                         'constructor\'s vtable 0x7EA834; ConditionRed .25; the Scenario RNG seeded through the '
+                         'original seeder'],
             substitutions=['route rows: the broadcast 0x65ACE0, the survivor count 0x451330 (0) and the occupy '
                            'list 0x5F5B90 (empty) answered; IsHumanPlayer 0x50B6F0 answered from `player`; '
                            'VocClass::PlayAtPos 0x750920 and PlayAt 0x7509E0 observed and answered',
@@ -622,7 +767,9 @@ def main(argv=None):
                            'the first Walk Process 0x75AEC0 (Infantry Can_Enter_Cell, FindSubCellDest 0x75C240, '
                            'the raw leaves 0x5217C0/0x521850) native, and Scatter\'s Find_Nearby_Passable_Cell '
                            '0x56DC20 (called at 0x51D41D) runs natively past the refinery_dock observer\'s answer; '
-                           'the harvest_field and refinery_dock observers otherwise']),
+                           'the harvest_field and refinery_dock observers otherwise',
+                           'ai_sale rows: Sell_Back 0x447110 observed and answered; everything else to the stop '
+                           'native']),
         argv=argv)
 
 

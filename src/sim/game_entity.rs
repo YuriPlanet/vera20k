@@ -648,6 +648,13 @@ pub struct GameEntity {
     /// pointer and is consumed by the building AI low-credit sell decision.
     #[serde(default)]
     pub was_attacked_by_enemy: bool,
+    /// A building's AI sale byte (`BuildingClass+0x6DC`), which the
+    /// computer's low-credit sale requires in a campaign (`0x00450781`). The
+    /// constructor sets it (`0x0043B93D`) and Init_Managers clears it for a
+    /// type without a Buildup (`0x00442CBC`); the map's `[Structures]` reader
+    /// then writes its AI Sellable field (`0x0044FB5B`).
+    #[serde(default)]
+    pub ai_sellable: bool,
     /// Independent turret/barrel facing — only on entities with Turret=yes in rules.ini.
     /// Timer-based 16-bit interpolator mirroring gamemd's BarrelFacing primitive.
     pub barrel_facing: Option<crate::sim::movement::FacingClass>,
@@ -1512,6 +1519,7 @@ impl GameEntity {
             dock_entered_with: None,
             rally_target: None,
             was_attacked_by_enemy: false,
+            ai_sellable: false,
             barrel_facing: None,
             turret_rotation_latch: false,
             last_fire_frame: NATIVE_LAST_FIRE_FRAME_INIT,

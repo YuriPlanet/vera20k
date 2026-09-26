@@ -1,10 +1,11 @@
-//! Replay of `tools/spatial_oracle/building_sale.json`'s `crew` and `refund`
-//! rows against the sale's Rust owners: Sell's stage 1
+//! Replay of `tools/spatial_oracle/building_sale.json`'s `crew`, `refund` and
+//! `ai_sale` rows against the sale's Rust owners: Sell's stage 1
 //! (`production::sell_stage_one`: the survivor count, the absorbed
 //! passengers, the garrison and the crew in `sim::crew_survival`, then the
-//! sounds) and the sale's credit (`production::building_type_refund`, `full`
-//! clear). The `route` rows are replayed by `sim::building_construction`
-//! against the visit model, and here through the frame.
+//! sounds), the sale's credit (`production::building_type_refund`, `full`
+//! clear) and the computer's low-credit sale (`production::tick_repairs`).
+//! The `route` rows are replayed by `sim::building_construction` against the
+//! visit model, and here through the frame.
 //!
 //! The crew rows run on the slave_manager scene (`slave_manager_oracle_tests`:
 //! the harvest_field world with a 2x2 YAREFN at NW (12, 12)) with the row's
@@ -33,7 +34,10 @@ use super::slave_manager_oracle_tests::{SlaveScene, row_scene_edited};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::NavTargetRef;
+use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
+use crate::sim::mission::state::MissionTestFixture;
+use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
 use crate::sim::passenger::{PassengerCargo, PassengerRole};
 use crate::sim::production;
 use crate::sim::rng::SimRng;
@@ -494,4 +498,130 @@ fn sales_through_the_frame_visit_on_the_original_frames() {
         compared += 1;
     }
     assert_eq!(compared, 8);
+}
+
+/// `ai_sale` rows VERA cannot express: an AttachedTag (`+0x34`; VERA has no
+/// per-object tags).
+const AI_SALE_SKIPPED: &[&str] = &["s_tagged"];
+
+/// The computer's low-credit sale (`production::tick_repairs`, whose sale arm
+/// runs before its repair tick) against the `ai_sale` rows, for one building
+/// of a computer house: the Scenario RNG cursors before and after (the row's
+/// draws) and whether the building took Sell_Back's computer order. A row
+/// that stopped at the computer's auto-repair start (`0x004506B2`) takes no
+/// sale in either; that arm is the repair chain's.
+#[test]
+fn the_computers_low_credit_sale_matches_the_original_admission() {
+    let mission = |name: &Value| match name.as_str().unwrap_or("none") {
+        "guard" => MissionId::from_known(MissionType::Guard),
+        "construction" => MissionId::from_known(MissionType::Construction),
+        "selling" => MissionId::from_known(MissionType::Selling),
+        "none" => MissionId::NONE,
+        other => panic!("mission {other}"),
+    };
+    let mut compared = 0;
+    for row in corpus()["ai_sale"].as_array().unwrap() {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        if AI_SALE_SKIPPED.contains(&name) {
+            continue;
+        }
+        let int = |key: &str| input[key].as_i64().unwrap() as i32;
+        let flag = |key: &str| if input[key] == true { "yes" } else { "no" };
+        let mut text = format!(
+            "[General]\nFixtureOnly=1\n[AI]\nCreditReserve={}\n\
+             [IQ]\nRepairSell={}\nSellBack={}\n[AudioVisual]\nConditionRed=25%\n\
+             [InfantryTypes]\n[VehicleTypes]\n0=AMCV\n[AircraftTypes]\n\
+             [BuildingTypes]\n0=YAREFN\n[AMCV]\nStrength=1000\n\
+             [YAREFN]\nStrength={}\nClickRepairable={}\nRepairable={}\nFoundation={}\n",
+            int("credit_reserve"),
+            int("repair_sell"),
+            int("sell_back"),
+            int("strength"),
+            flag("click_repairable"),
+            flag("repairable"),
+            if int("foundation") == 0 { "1x1" } else { "2x2" },
+        );
+        if input["undeploys"] == true {
+            text.push_str("UndeploysInto=AMCV\n");
+        }
+        if input["yard"] == true {
+            text.push_str("Factory=BuildingType\n");
+        }
+        let mut rules = RuleSet::from_ini(&IniFile::from_str(&text)).unwrap();
+        rules.set_buildup_control_for_test("YAREFN", [0, 25, 2]);
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.session.game_mode_nonzero = int("game_mode") != 0;
+        let owner = sim.interner.intern("AI");
+        let mut house = HouseState::new(owner, 0, None, false, int("balance"), int("tech_level"));
+        house.current_iq = int("current_iq");
+        house.authored_iq = int("authored_iq");
+        sim.houses.insert(owner, house);
+        let kind = sim.interner.intern("YAREFN");
+        let mut building = GameEntity::new_at_frame_zero_for_test(
+            1,
+            12,
+            12,
+            0,
+            0,
+            owner,
+            crate::sim::components::Health {
+                current: int("health"),
+            },
+            kind,
+            crate::map::entities::EntityCategory::Structure,
+            0,
+            5,
+            false,
+        );
+        building.lifecycle.in_limbo = false;
+        building.in_playfield = true;
+        building.was_attacked_by_enemy = input["attacked"] == true;
+        building.ai_sellable = input["ai_sellable"] == true;
+        building.mission.apply_test_fixture(MissionTestFixture {
+            current: mission(&input["mission"]),
+            suspended: MissionId::NONE,
+            queued: mission(&input["queued"]),
+            movement_bypass_latch: 0,
+            handler_state: 0,
+            mission_start_frame: 0,
+            ai_counter: 0,
+            dispatch_timer: MissionDispatchTimer::at_frame(0),
+        });
+        let selling_before = building.mission.effective().known() == Some(MissionType::Selling);
+        sim.substrate.entities.insert(building);
+        sim.add_entity_occupancy(1);
+        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
+        let cursors = |sim: &crate::sim::world::Simulation| {
+            let view = sim.scenario_rng.logical_view();
+            json!([view.index_a, view.index_b])
+        };
+        assert_eq!(
+            cursors(&sim),
+            row["random_indices"]["before"],
+            "{name}: seeded"
+        );
+        production::tick_repairs(&mut sim, &rules);
+        assert_eq!(
+            cursors(&sim),
+            row["random_indices"]["after"],
+            "{name}: draws"
+        );
+        let selling = sim
+            .substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .mission
+            .effective()
+            .known()
+            == Some(MissionType::Selling);
+        assert_eq!(
+            selling && !selling_before,
+            row["sell_back"] == json!([1]),
+            "{name}: Sell_Back(1)"
+        );
+        compared += 1;
+    }
+    assert_eq!(compared, 25);
 }

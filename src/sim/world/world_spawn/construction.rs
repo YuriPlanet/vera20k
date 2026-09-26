@@ -159,6 +159,10 @@ impl Simulation {
         if category == EntityCategory::Structure && obj.bunker {
             ge.bunker_runtime = Some(crate::sim::docking::bunker_install::BunkerRuntime::idle());
         }
+        // BuildingClass::Init_Managers, from the constructor (`0x0043BB29`):
+        // no Buildup SHP clears the AI sale byte (`0x00442CBC`).
+        ge.ai_sellable = category == EntityCategory::Structure
+            && rules.is_some_and(|rules| rules.has_buildup(&obj.id));
         ge.zfudge_bridge = obj.zfudge_bridge;
         ge.too_big_to_fit_under_bridge = obj.too_big_to_fit_under_bridge;
         if should_construct_locomotor(category, obj) {

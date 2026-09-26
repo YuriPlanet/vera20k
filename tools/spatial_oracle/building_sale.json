@@ -1,4 +1,1070 @@
 {
+  "ai_sale": [
+    {
+      "draws": [
+        [
+          0,
+          50,
+          21
+        ]
+      ],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_sold",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          1,
+          104
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": [
+        1
+      ]
+    },
+    {
+      "draws": [
+        [
+          0,
+          50,
+          46
+        ]
+      ],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_sold_seed_7",
+        "repair_sell": 1,
+        "repairable": true,
+        "seed": 7,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          1,
+          104
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": [
+        1
+      ]
+    },
+    {
+      "draws": [],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 0,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_repair_sell_iq",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          0,
+          103
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "construction",
+        "name": "s_constructing",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          0,
+          103
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "selling",
+        "name": "s_selling",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          0,
+          103
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "none",
+        "name": "s_selling_queued",
+        "queued": "selling",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          0,
+          103
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 1000,
+        "mission": "guard",
+        "name": "s_full_strength",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          0,
+          103
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": false,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_no_click_repair",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          0,
+          103
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_unrepairable",
+        "repair_sell": 1,
+        "repairable": false,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          0,
+          103
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 0,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_one_cell_undeploy",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": true,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          0,
+          103
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [
+        [
+          0,
+          50,
+          21
+        ]
+      ],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_two_cell_undeploy",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": true,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          1,
+          104
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": [
+        1
+      ]
+    },
+    {
+      "draws": [],
+      "end": "auto_repair_start",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 100,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_money_at_reserve",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          0,
+          103
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [
+        [
+          0,
+          50,
+          21
+        ]
+      ],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 99,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_money_below_reserve",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          1,
+          104
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": [
+        1
+      ]
+    },
+    {
+      "draws": [],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 0,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_campaign_no_byte",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          0,
+          103
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [
+        [
+          0,
+          50,
+          21
+        ]
+      ],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": true,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 0,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_campaign_byte",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          1,
+          104
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": [
+        1
+      ]
+    },
+    {
+      "draws": [],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": false,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_not_attacked",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          0,
+          103
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 0,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 5,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_skirmish_authored_iq",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          0,
+          103
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [
+        [
+          0,
+          50,
+          21
+        ]
+      ],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": -1,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_negative_authored_iq",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          1,
+          104
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": [
+        1
+      ]
+    },
+    {
+      "draws": [
+        [
+          0,
+          50,
+          21
+        ]
+      ],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_tech_level_zero",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 0,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          1,
+          104
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [
+        [
+          0,
+          50,
+          21
+        ]
+      ],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_tagged",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": true,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          1,
+          104
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [
+        [
+          0,
+          50,
+          21
+        ]
+      ],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_yard",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": true
+      },
+      "random_indices": {
+        "after": [
+          1,
+          104
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [
+        [
+          0,
+          50,
+          21
+        ]
+      ],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 250,
+        "mission": "guard",
+        "name": "s_at_red",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          1,
+          104
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [
+        [
+          0,
+          50,
+          21
+        ]
+      ],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 249,
+        "mission": "guard",
+        "name": "s_below_red",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          1,
+          104
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": [
+        1
+      ]
+    },
+    {
+      "draws": [
+        [
+          0,
+          50,
+          21
+        ]
+      ],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 600,
+        "mission": "guard",
+        "name": "s_above_red",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 51,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          1,
+          104
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [
+        [
+          0,
+          50,
+          21
+        ]
+      ],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_tech_level_at_roll",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 21,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          1,
+          104
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": []
+    },
+    {
+      "draws": [
+        [
+          0,
+          50,
+          21
+        ]
+      ],
+      "end": "repair_tick",
+      "input": {
+        "ai_sellable": false,
+        "attacked": true,
+        "authored_iq": 2,
+        "balance": 0,
+        "click_repairable": true,
+        "credit_reserve": 100,
+        "current_iq": 2,
+        "foundation": 3,
+        "game_mode": 1,
+        "health": 200,
+        "mission": "guard",
+        "name": "s_tech_level_above_roll",
+        "repair_sell": 1,
+        "repairable": true,
+        "sell_back": 2,
+        "strength": 1000,
+        "tag": false,
+        "tech_level": 22,
+        "undeploys": false,
+        "yard": false
+      },
+      "random_indices": {
+        "after": [
+          1,
+          104
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "sell_back": [
+        1
+      ]
+    }
+  ],
   "crew": [
     {
       "building": {
