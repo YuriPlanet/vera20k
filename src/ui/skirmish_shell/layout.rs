@@ -3,7 +3,7 @@
 use crate::ui::shell::descriptor::{AnchorRule, LOW_HEADING_ANCHOR, MAP_TEXT_ANCHOR};
 pub use crate::ui::shell::geom::{RectPx, RightPanelRects};
 use crate::ui::shell::geom::{
-    center_offset, dlu_rect, right_panel_rects, snap_button_biased_truncate,
+    center_offset, child_window, dlu_rect, right_panel_rects, snap_button_biased_truncate,
 };
 
 pub const SHELL_BASE_W: i32 = 800;
@@ -16,9 +16,6 @@ pub const SKIRMISH_CHECKBOX_COUNT: usize = 5;
 pub const CHECKBOX_ICON_W: i32 = 18;
 pub const CHECKBOX_ICON_H: i32 = 18;
 pub const CHECKBOX_TEXT_LEFT_OFFSET: i32 = 26;
-pub const TRACKBAR_PLAQUE_W: i32 = 50;
-pub const TRACKBAR_ACTIVE_WIDTH_SUBTRACT: i32 = 13;
-pub const TRACKBAR_THUMB_W: i32 = 12;
 pub const SKIRMISH_ROW_COUNT: usize = 8;
 pub const SKIRMISH_AI_ROW_COUNT: usize = 7;
 pub const COMBO_FACE_H: i32 = 24;
@@ -370,40 +367,6 @@ pub const fn player_name_edit_text_rect(rect: RectPx) -> RectPx {
     )
 }
 
-pub const fn trackbar_plaque_rect(rect: RectPx) -> RectPx {
-    RectPx::new(
-        rect.x + rect.w - TRACKBAR_PLAQUE_W + 1,
-        rect.y - 1,
-        TRACKBAR_PLAQUE_W,
-        rect.h,
-    )
-}
-
-pub const fn trackbar_value_text_rect(rect: RectPx) -> RectPx {
-    RectPx::new(rect.x + rect.w - 49, rect.y, 49, rect.h)
-}
-
-pub const fn trackbar_active_width(rect: RectPx) -> i32 {
-    rect.w - TRACKBAR_PLAQUE_W - TRACKBAR_ACTIVE_WIDTH_SUBTRACT
-}
-
-pub fn trackbar_pixel_offset(value: i32, min: i32, max: i32, step: i32, rect: RectPx) -> i32 {
-    let active_width = trackbar_active_width(rect).max(0);
-    let span = max.saturating_sub(min);
-    if active_width == 0 || span == 0 {
-        return 0;
-    }
-
-    let step = step.max(1);
-    let clamped = value.clamp(min, max);
-    let quantized = min + ((clamped - min) / step) * step;
-    ((quantized - min) * active_width) / span
-}
-
-pub const fn trackbar_thumb_rect(rect: RectPx, pixel_offset: i32) -> RectPx {
-    RectPx::new(rect.x + 1 + pixel_offset, rect.y, TRACKBAR_THUMB_W, rect.h)
-}
-
 pub const fn combo_face_rect(rect: RectPx) -> RectPx {
     RectPx::new(rect.x, rect.y, rect.w, COMBO_FACE_H)
 }
@@ -495,7 +458,8 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
     let mut player_name = dlu_rect(38, 36, 100, 14);
     player_name.x += 1;
     player_name.w += 1;
-    let mut unit_count_trackbar = dlu_rect(269, 210, 85, 13);
+    // The fix-up pass `0x0060B950` lifts Unit Count one pixel.
+    let mut unit_count_trackbar = child_window(269, 210, 85, 13);
     unit_count_trackbar.y -= 1;
 
     let color_combos = [
@@ -593,8 +557,8 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
         color_combos,
         flags,
         trackbars: SkirmishTrackbarRects {
-            game_speed: dlu_rect(269, 176, 85, 13),
-            credits: dlu_rect(269, 193, 85, 13),
+            game_speed: child_window(269, 176, 85, 13),
+            credits: child_window(269, 193, 85, 13),
             unit_count: unit_count_trackbar,
         },
         trackbar_labels: SkirmishTrackbarLabelRects {
@@ -697,8 +661,11 @@ pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMa
             SETUP_LABEL_H[row],
         )
     });
+    // The players trackbar takes its runtime window; the combos keep the
+    // resource conversion, which their face paint expects.
     let control_rects = std::array::from_fn(|row| {
-        dlu_rect(
+        let window = if row == 5 { child_window } else { dlu_rect };
+        window(
             SETUP_CONTROL_X,
             SETUP_ROW_Y[row],
             SETUP_CONTROL_W,
@@ -1018,8 +985,7 @@ mod tests {
         choose_map_modal_button_at, combo_arrow_rect, combo_face_rect, combo_swatch_rect,
         combo_text_rect, compute_choose_map_modal_layout, compute_fixed_800_layout, compute_layout,
         compute_random_map_setup_layout, dlu_rect, player_name_edit_client_rect,
-        player_name_edit_text_rect, random_map_setup_control_at, trackbar_active_width,
-        trackbar_pixel_offset, trackbar_plaque_rect, trackbar_thumb_rect, trackbar_value_text_rect,
+        player_name_edit_text_rect, random_map_setup_control_at,
     };
 
     struct ExpectedRect {
@@ -1162,8 +1128,8 @@ mod tests {
         assert_eq!(setup.control_rects[2], dlu_rect(179, 90, 150, 103));
         assert_eq!(
             setup.control_rects[5],
-            dlu_rect(179, 163, 150, 13),
-            "players is a trackbar, not a combo"
+            RectPx::new(269, 265, 226, 22),
+            "players is a trackbar, in its runtime window"
         );
         assert_eq!(setup.randomize, dlu_rect(74, 257, 83, 15));
         assert_eq!(setup.generate, dlu_rect(246, 257, 83, 15));
@@ -1242,23 +1208,19 @@ mod tests {
     }
 
     #[test]
-    fn trackbar_rects_match_800x600_final_geometry() {
-        let layout = compute_layout(800, 600);
-        assert_eq!(layout.trackbars.game_speed, RectPx::new(404, 286, 128, 21));
-        assert_eq!(layout.trackbars.credits, RectPx::new(404, 314, 128, 21));
-        assert_eq!(layout.trackbars.unit_count, RectPx::new(404, 340, 128, 21));
-        assert_eq!(
-            trackbar_plaque_rect(layout.trackbars.game_speed),
-            RectPx::new(483, 285, 50, 21)
-        );
-        assert_eq!(
-            trackbar_plaque_rect(layout.trackbars.credits),
-            RectPx::new(483, 313, 50, 21)
-        );
-        assert_eq!(
-            trackbar_plaque_rect(layout.trackbars.unit_count),
-            RectPx::new(483, 339, 50, 21)
-        );
+    fn trackbar_windows_match_the_executed_relayout() {
+        // One pixel wider and taller than the resource conversion, like every
+        // family child in the retail stills; the frames and the plaque sit
+        // around this window.
+        use crate::ui::shell::layout::tests::executed_child_window as executed;
+        for (w, h) in [(640, 480), (800, 600), (1024, 768)] {
+            let layout = compute_layout(w as u32, h as u32);
+            assert_eq!(layout.trackbars.game_speed, executed(0x102, 0x529, w, h));
+            assert_eq!(layout.trackbars.credits, executed(0x102, 0x511, w, h));
+            assert_eq!(layout.trackbars.unit_count, executed(0x102, 0x50C, w, h));
+            let setup = compute_random_map_setup_layout(w as u32, h as u32);
+            assert_eq!(setup.control_rects[5], executed(0x105, 0x3EB, w, h));
+        }
     }
 
     #[test]
@@ -1316,11 +1278,11 @@ mod tests {
         assert_eq!(layout_1024.trackbars, layout_800.trackbars);
         assert_eq!(
             layout_800.trackbars.unit_count,
-            RectPx::new(404, 340, 128, 21)
+            RectPx::new(404, 340, 129, 22)
         );
         assert_eq!(
             layout_1024.trackbars.unit_count,
-            RectPx::new(404, 340, 128, 21)
+            RectPx::new(404, 340, 129, 22)
         );
     }
 
@@ -1379,33 +1341,6 @@ mod tests {
 
         assert_eq!(checkbox_icon_rect(rect), RectPx::new(71, 286, 18, 18));
         assert_eq!(checkbox_text_rect(rect).x, rect.x + 26);
-    }
-
-    #[test]
-    fn trackbar_geometry_helpers_follow_owner_draw_constants() {
-        let rect = RectPx::new(404, 286, 128, 21);
-
-        assert_eq!(trackbar_active_width(rect), 65);
-        assert_eq!(
-            trackbar_plaque_rect(RectPx::new(0, 0, 128, 21)),
-            RectPx::new(79, -1, 50, 21)
-        );
-        assert_eq!(trackbar_plaque_rect(rect), RectPx::new(483, 285, 50, 21));
-        assert_eq!(
-            trackbar_value_text_rect(rect),
-            RectPx::new(483, 286, 49, 21)
-        );
-        assert_eq!(trackbar_thumb_rect(rect, 0), RectPx::new(405, 286, 12, 21));
-        assert_eq!(trackbar_thumb_rect(rect, 65), RectPx::new(470, 286, 12, 21));
-    }
-
-    #[test]
-    fn trackbar_pixel_offset_uses_integer_endpoints() {
-        let rect = RectPx::new(404, 286, 128, 21);
-
-        assert_eq!(trackbar_pixel_offset(0, 0, 6, 1, rect), 0);
-        assert_eq!(trackbar_pixel_offset(6, 0, 6, 1, rect), 65);
-        assert_eq!(trackbar_pixel_offset(10000, 5000, 10000, 100, rect), 65);
     }
 
     #[test]

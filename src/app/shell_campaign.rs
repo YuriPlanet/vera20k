@@ -119,20 +119,30 @@ impl App {
         let layout = Self::campaign_layout(state);
         let feed = Self::campaign_feed(state, &layout);
         let (x, y) = Self::campaign_cursor(state);
-        state.frontend.shell_controller.on_pointer_move(x, y, &feed);
+        // A slider holding the mouse since a press on it keeps the status
+        // line and Back's paint: the dialog's hit test (`0x00622CCB`) sees
+        // nothing until the release.
+        let slider_held = state
+            .frontend
+            .campaign
+            .as_ref()
+            .is_some_and(|campaign| campaign.slider_held());
+        if !slider_held {
+            state.frontend.shell_controller.on_pointer_move(x, y, &feed);
+        }
         let now = Instant::now();
-        // A captured thumb or a pressed Back owns the mouse: the dialog sees
-        // no hit test (`0x0052ED60`) until the release.
+        // A slider or a pressed Back holding the mouse: the dialog sees no
+        // hit test (`0x0052ED60`) until the release.
         let back_pressed = state.frontend.shell_controller.pressed().is_some();
         let mut slider_moved = false;
         if let Some(campaign) = state.frontend.campaign.as_mut() {
-            if !campaign.slider_captured() && !back_pressed {
+            if !slider_held && !back_pressed {
                 campaign.pointer_moved(layout.emblem_at(x, y), now);
             }
             slider_moved = campaign.slider_drag(x - layout.slider.x, layout.slider.w);
         }
         if slider_moved {
-            // 0x0061E6AF: mouse-driven position changes click.
+            // 0x0061E6DD: mouse-driven position changes click.
             Self::play_generic_click_sound(state);
         }
         // Every hover message repaints the status line (0x00615EF7).
@@ -183,9 +193,12 @@ impl App {
             return;
         };
         let emblem_capture = campaign.pressed().is_some();
-        let slider_capture = campaign.slider_captured();
+        let slider_held = campaign.slider_held();
         campaign.slider_release();
-        if slider_capture {
+        if slider_held {
+            // The release frees the mouse; the pointer's next hit test finds
+            // what lies under it.
+            Self::handle_campaign_mouse_move(state);
             return;
         }
         // The release reaches the dialog proc (`0x0052F1CF`) when an emblem
@@ -225,7 +238,7 @@ impl App {
         let Some(campaign) = state.frontend.campaign.as_mut() else {
             return;
         };
-        let difficulty = i32::from(campaign.difficulty());
+        let difficulty = campaign.difficulty();
         let voice = campaign.take_selection_voice();
         state.persistence.options_profile.difficulty = difficulty;
         if let Some(voice) = voice {

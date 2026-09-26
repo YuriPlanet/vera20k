@@ -23,7 +23,8 @@ use crate::ui::shell::in_game_options_state::{
     speed_from_slider_pos, speed_slider_pos, trackbar_pos_from_mouse_x,
 };
 use crate::ui::shell::layout::{LaidOutControl, layout_pass_in_game_options};
-use crate::ui::skirmish_shell::{RectPx, trackbar_mouse_allowed_y};
+use crate::ui::shell::trackbar::admits_press_y;
+use crate::ui::skirmish_shell::RectPx;
 
 /// Which visible `0xBBB` control (if any) is under the cursor. For a trackbar the
 /// quantized slider position (0..6) the cursor x maps to is carried alongside.
@@ -51,7 +52,7 @@ pub(crate) fn in_game_options_hit(laid: &[LaidOutControl], cursor: (i32, i32)) -
             ControlKind::Button => return OptionsHit::Button(c.id),
             ControlKind::Trackbar => {
                 // 61E505..61E512: only y > client bottom - 18 is admitted.
-                if !trackbar_mouse_allowed_y(l.rect, cy) {
+                if !admits_press_y(cy - l.rect.y, l.rect.h) {
                     continue;
                 }
                 let pos = trackbar_pos_from_mouse_x(

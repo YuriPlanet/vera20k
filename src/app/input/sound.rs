@@ -214,7 +214,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         Some(SoundControl::Button(_)) => App::play_skirmish_shell_generic_click_sound(state),
         Some(SoundControl::Slider(id)) => {
             let rect = layout.sliders[id as usize];
-            if !crate::ui::skirmish_shell::trackbar_mouse_allowed_y(rect, y) {
+            if !crate::ui::shell::trackbar::admits_press_y(y - rect.y, rect.h) {
                 return;
             }
             let left = rect.x + dialog.thumb_left(id, rect);

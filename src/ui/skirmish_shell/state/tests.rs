@@ -15,11 +15,11 @@ use crate::skirmish_launch::{
     SkirmishLaunchOptions,
 };
 use crate::skirmish_modes::stock_skirmish_modes;
-use crate::ui::skirmish_shell::layout::{TRACKBAR_THUMB_W, compute_choose_map_modal_layout};
+use crate::ui::shell::trackbar::{THUMB_W, TrackbarHold, TrackbarRange};
+use crate::ui::skirmish_shell::layout::compute_choose_map_modal_layout;
 use crate::ui::skirmish_shell::{
     COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, COMBO_DROPDOWN_SCROLLBAR_W,
-    COMBO_FACE_H, RectPx, checkbox_text_rect, compute_layout, trackbar_pixel_offset,
-    trackbar_thumb_rect,
+    COMBO_FACE_H, RectPx, checkbox_text_rect, compute_layout,
 };
 
 fn test_map_entry(name: &str) -> MapMenuEntry {
@@ -248,44 +248,88 @@ fn owner_draw_button_hit_test_returns_control_identity() {
     );
 }
 
-#[test]
-fn trackbar_mouse_y_gate_rejects_top_four_pixels() {
-    let rect = RectPx::new(404, 286, 128, 21);
+/// The first window row a press lands on (`y > bottom - 18`, `0x0061E505`).
+fn first_admitted_row(rect: RectPx) -> i32 {
+    rect.y + rect.h - 17
+}
 
-    assert!(!trackbar_mouse_allowed_y(rect, rect.y));
-    assert!(!trackbar_mouse_allowed_y(rect, rect.y + 3));
-    assert!(trackbar_mouse_allowed_y(rect, rect.y + 4));
-    assert!(!trackbar_mouse_allowed_y(rect, rect.y + rect.h));
+/// A Skirmish state with the slider ranges retail Rules gives through the
+/// production reader, or `None` without the retail INIs.
+fn retail_ranges_shell() -> Option<SkirmishShellState> {
+    let rules = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini")?;
+    let mut shell = SkirmishShellState::default();
+    shell.trackbar_bounds = SkirmishTrackbarBounds::from_multiplayer_dialog_settings(&rules);
+    Some(shell)
+}
+
+/// The screen x of the Credits thumb's left edge.
+fn credits_thumb_x(shell: &SkirmishShellState, rect: RectPx) -> i32 {
+    let range = shell
+        .trackbar_bounds
+        .range(SkirmishTrackbarId::Credits0x511);
+    rect.x + range.thumb_left(shell.starting_credits, rect.w)
+}
+
+/// The original instructions' Credits samples for the runtime window
+/// (`tools/storage_oracle/launcher_trackbar.py`): `(x, position)` pairs.
+fn native_credits_pointers() -> Vec<(i32, i32)> {
+    let golden: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/storage_oracle/launcher_trackbar.json"
+    ))
+    .unwrap();
+    let geometry = golden["geometries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["width"] == 129 && g["maximum"] == 5000)
+        .expect("runtime Credits fixture");
+    geometry["pointers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            (
+                p["x"].as_i64().unwrap() as i32,
+                p["position"].as_i64().unwrap() as i32,
+            )
+        })
+        .collect()
 }
 
 #[test]
-fn trackbar_thumb_hit_uses_exclusive_twelve_pixel_interval() {
-    let rect = RectPx::new(404, 286, 128, 21);
-    let thumb_x = rect.x + 1 + 10;
-    let y = rect.y + 4;
-
-    assert!(trackbar_thumb_hit(rect, 10, thumb_x, y));
-    assert!(trackbar_thumb_hit(rect, 10, thumb_x + 11, y));
-    assert!(!trackbar_thumb_hit(rect, 10, thumb_x + 12, y));
-}
-
-#[test]
-fn trackbar_mouse_x_clamps_below_and_above_range() {
-    let rect = RectPx::new(404, 286, 128, 21);
-
-    assert_eq!(trackbar_mouse_value(rect, rect.x - 100, 0, 6, 1), 0);
-    assert_eq!(trackbar_mouse_value(rect, rect.x + 1000, 0, 6, 1), 6);
-}
-
-#[test]
-fn trackbar_mouse_value_snaps_credits_and_unit_count() {
-    let rect = RectPx::new(404, 314, 128, 21);
-
-    assert_eq!(
-        trackbar_mouse_value(rect, rect.x + 39, 5000, 10000, 100),
-        7400
-    );
-    assert_eq!(trackbar_mouse_value(rect, rect.x + 39, 0, 10, 1), 5);
+fn credits_presses_and_drags_follow_the_native_pointer_partition() {
+    let Some(retail) = retail_ranges_shell() else {
+        return;
+    };
+    // The native samples ran with retail Rules' Credits range.
+    let range = retail
+        .trackbar_bounds
+        .range(SkirmishTrackbarId::Credits0x511);
+    assert_eq!(range, TrackbarRange::new(5000, 10000, 100));
+    let layout = compute_layout(800, 600);
+    let rect = layout.trackbars.credits;
+    let y = first_admitted_row(rect);
+    let thumb = credits_thumb_x(&retail, rect) - rect.x;
+    let samples = native_credits_pointers();
+    for &(x, position) in &samples {
+        let mut shell = retail.clone();
+        let before = shell.starting_credits;
+        handle_option_mouse_down(&mut shell, &layout, &[], rect.x + x, y);
+        if !(0..rect.w).contains(&x) {
+            assert_eq!(shell.starting_credits, before, "x={x} is off the window");
+        } else if (thumb..thumb + THUMB_W).contains(&x) {
+            assert_eq!(shell.starting_credits, before, "x={x} grabs the thumb");
+        } else {
+            assert_eq!(shell.starting_credits, range.min + position, "x={x}");
+        }
+    }
+    // A grabbed thumb follows the pointer anywhere along the row.
+    let mut shell = retail;
+    handle_option_mouse_down(&mut shell, &layout, &[], rect.x + thumb, y);
+    for &(x, position) in &samples {
+        handle_option_mouse_move(&mut shell, &layout, &[], rect.x + x, y);
+        assert_eq!(shell.starting_credits, range.min + position, "drag x={x}");
+    }
 }
 
 #[test]
@@ -835,43 +879,87 @@ fn checkbox_icon_click_toggles_but_label_click_does_not() {
 }
 
 #[test]
-fn trackbar_top_edge_does_not_change_value() {
+fn a_press_above_the_admitted_strip_only_holds_the_mouse() {
     let layout = compute_layout(800, 600);
-    let mut shell = SkirmishShellState::default();
     let rect = layout.trackbars.credits;
-
-    handle_option_mouse_down(&mut shell, &layout, &[], rect.x, rect.y);
-    assert_eq!(
-        shell.starting_credits,
-        SkirmishLaunchOptions::default().starting_credits
-    );
-    assert!(shell.pending_trackbar_hscrolls().is_empty());
-    assert!(shell.drain_pending_ui_sounds().is_empty());
+    for y in [rect.y, first_admitted_row(rect) - 1] {
+        let mut shell = SkirmishShellState::default();
+        handle_option_mouse_down(&mut shell, &layout, &[], rect.x + 39, y);
+        handle_option_mouse_move(&mut shell, &layout, &[], rect.x, first_admitted_row(rect));
+        assert_eq!(shell.starting_credits, CREDITS_MAX, "y={y}");
+        assert_eq!(
+            shell.trackbar_hold,
+            Some(TrackbarHold {
+                id: SkirmishTrackbarId::Credits0x511,
+                dragging: false,
+            })
+        );
+        assert!(shell.drain_pending_ui_sounds().is_empty());
+    }
 }
 
 #[test]
 fn trackbar_outside_thumb_click_remaps_value_and_keeps_capture() {
     let layout = compute_layout(800, 600);
-    let mut shell = SkirmishShellState::default();
+    let Some(mut shell) = retail_ranges_shell() else {
+        return;
+    };
     let rect = layout.trackbars.credits;
 
-    handle_option_mouse_down(&mut shell, &layout, &[], rect.x + 39, rect.y + 4);
+    handle_option_mouse_down(
+        &mut shell,
+        &layout,
+        &[],
+        rect.x + 39,
+        first_admitted_row(rect),
+    );
     assert_eq!(shell.starting_credits, 7400);
     assert_eq!(
-        shell.trackbar_drag,
-        Some(TrackbarDragState {
+        shell.trackbar_hold,
+        Some(TrackbarHold {
             id: SkirmishTrackbarId::Credits0x511,
-            dragging_thumb: false,
+            dragging: false,
         })
-    );
-    assert_eq!(
-        shell.drain_pending_trackbar_hscrolls(),
-        vec![(0x511, 7400, 0x1ce8_0005)]
     );
     assert_eq!(
         shell.drain_pending_ui_sounds(),
         vec![SkirmishShellUiSound::GenericClick]
     );
+}
+
+#[test]
+fn a_zero_money_increment_slides_credits_in_ones() {
+    // Every message turns a zero step into 1 (`0x0061DB94..0x0061DBAD`).
+    let ini = IniFile::from_str("[MultiplayerDialogSettings]\nMoneyIncrement=0\n");
+    let mut shell = SkirmishShellState::default();
+    shell.trackbar_bounds = SkirmishTrackbarBounds::from_multiplayer_dialog_settings(&ini);
+    let layout = compute_layout(800, 600);
+    let rect = layout.trackbars.credits;
+    handle_option_mouse_down(
+        &mut shell,
+        &layout,
+        &[],
+        rect.x + 39,
+        first_admitted_row(rect),
+    );
+    let range = shell
+        .trackbar_bounds
+        .range(SkirmishTrackbarId::Credits0x511);
+    assert_eq!(range.step, 1);
+    assert_eq!(shell.starting_credits, range.value_at(39, rect.w));
+    assert_eq!(shell.credits(), shell.starting_credits);
+}
+
+#[test]
+fn the_game_starts_with_the_credits_the_slider_reads_back() {
+    // `TBM_GETPOS` (`0x0061E4AD`) rounds down to MoneyIncrement; the thumb
+    // keeps the saved value.
+    let Some(mut shell) = retail_ranges_shell() else {
+        return;
+    };
+    shell.starting_credits = 7549;
+    assert_eq!(shell.credits(), 7500);
+    assert_eq!(launch_settings(&shell).starting_credits, 7500);
 }
 
 #[test]
@@ -879,83 +967,65 @@ fn trackbar_thumb_hit_starts_drag() {
     let layout = compute_layout(800, 600);
     let mut shell = SkirmishShellState::default();
     let rect = layout.trackbars.credits;
-    let pixel_offset = trackbar_pixel_offset(
-        shell.starting_credits,
-        CREDITS_MIN,
-        CREDITS_MAX,
-        CREDITS_STEP,
-        rect,
-    );
-    let thumb = trackbar_thumb_rect(rect, pixel_offset);
+    let thumb_x = credits_thumb_x(&shell, rect);
+    let y = first_admitted_row(rect);
 
-    handle_option_mouse_down(&mut shell, &layout, &[], thumb.x, thumb.y + 4);
+    handle_option_mouse_down(&mut shell, &layout, &[], thumb_x, y);
     assert_eq!(
-        shell.trackbar_drag,
-        Some(TrackbarDragState {
+        shell.trackbar_hold,
+        Some(TrackbarHold {
             id: SkirmishTrackbarId::Credits0x511,
-            dragging_thumb: true,
+            dragging: true,
         })
     );
-    assert!(shell.pending_trackbar_hscrolls().is_empty());
     assert!(shell.drain_pending_ui_sounds().is_empty());
 }
 
 #[test]
 fn trackbar_mouse_move_updates_while_capture_active() {
     let layout = compute_layout(800, 600);
-    let mut shell = SkirmishShellState::default();
+    let Some(mut shell) = retail_ranges_shell() else {
+        return;
+    };
     let rect = layout.trackbars.credits;
-    let pixel_offset = trackbar_pixel_offset(
-        shell.starting_credits,
-        CREDITS_MIN,
-        CREDITS_MAX,
-        CREDITS_STEP,
-        rect,
-    );
-    let thumb = trackbar_thumb_rect(rect, pixel_offset);
+    let thumb_x = credits_thumb_x(&shell, rect);
+    let y = first_admitted_row(rect);
 
-    handle_option_mouse_down(&mut shell, &layout, &[], thumb.x, thumb.y + 4);
-    handle_option_mouse_move(&mut shell, &layout, &[], rect.x - 100, rect.y + 4);
-    assert_eq!(shell.starting_credits, CREDITS_MIN);
-    assert_eq!(
-        shell.drain_pending_trackbar_hscrolls(),
-        vec![(0x511, CREDITS_MIN, 0x1388_0005)]
-    );
+    handle_option_mouse_down(&mut shell, &layout, &[], thumb_x, y);
+    handle_option_mouse_move(&mut shell, &layout, &[], rect.x - 100, y);
+    assert_eq!(shell.starting_credits, 5000);
     assert_eq!(
         shell.drain_pending_ui_sounds(),
         vec![SkirmishShellUiSound::GenericClick]
     );
 
     handle_option_mouse_up(&mut shell);
-    handle_option_mouse_move(&mut shell, &layout, &[], rect.x + 1000, rect.y + 4);
-    assert_eq!(shell.starting_credits, CREDITS_MIN);
-    assert_eq!(shell.trackbar_drag, None);
-    assert!(shell.pending_trackbar_hscrolls().is_empty());
+    handle_option_mouse_move(&mut shell, &layout, &[], rect.x + 1000, y);
+    assert_eq!(shell.starting_credits, 5000);
+    assert_eq!(shell.trackbar_hold, None);
     assert!(shell.drain_pending_ui_sounds().is_empty());
 }
 
 #[test]
 fn trackbar_rail_click_jumps_once_and_does_not_track_cursor() {
     let layout = compute_layout(800, 600);
-    let mut shell = SkirmishShellState::default();
+    let Some(mut shell) = retail_ranges_shell() else {
+        return;
+    };
     let rect = layout.trackbars.credits;
 
-    handle_option_mouse_down(&mut shell, &layout, &[], 443, 318);
-    // A rail click installs a drag-anchor but is NOT a thumb grab, so the
+    handle_option_mouse_down(&mut shell, &layout, &[], 443, 319);
+    // A rail click captures the pointer but is NOT a thumb grab, so the
     // following move must not retrack the value to the cursor.
-    handle_option_mouse_move(&mut shell, &layout, &[], 470, 318);
+    handle_option_mouse_move(&mut shell, &layout, &[], 470, 319);
 
     assert_eq!(shell.starting_credits, 7400);
     assert_eq!(
-        shell.trackbar_drag,
-        Some(TrackbarDragState {
+        shell.trackbar_hold,
+        Some(TrackbarHold {
             id: SkirmishTrackbarId::Credits0x511,
-            dragging_thumb: false,
+            dragging: false,
         })
-    );
-    assert_eq!(
-        shell.drain_pending_trackbar_hscrolls(),
-        vec![(0x511, 7400, 0x1ce8_0005)]
     );
     assert_eq!(
         shell.drain_pending_ui_sounds(),
@@ -963,10 +1033,9 @@ fn trackbar_rail_click_jumps_once_and_does_not_track_cursor() {
     );
 
     handle_option_mouse_up(&mut shell);
-    handle_option_mouse_move(&mut shell, &layout, &[], rect.x - 100, rect.y + 4);
+    handle_option_mouse_move(&mut shell, &layout, &[], rect.x - 100, 319);
     assert_eq!(shell.starting_credits, 7400);
-    assert_eq!(shell.trackbar_drag, None);
-    assert!(shell.pending_trackbar_hscrolls().is_empty());
+    assert_eq!(shell.trackbar_hold, None);
     assert!(shell.drain_pending_ui_sounds().is_empty());
 }
 
@@ -975,24 +1044,17 @@ fn trackbar_repeated_drag_same_value_is_silent() {
     let layout = compute_layout(800, 600);
     let mut shell = SkirmishShellState::default();
     let rect = layout.trackbars.credits;
-    let pixel_offset = trackbar_pixel_offset(
-        shell.starting_credits,
-        CREDITS_MIN,
-        CREDITS_MAX,
-        CREDITS_STEP,
-        rect,
-    );
-    let thumb = trackbar_thumb_rect(rect, pixel_offset);
+    let thumb_x = credits_thumb_x(&shell, rect);
+    let y = first_admitted_row(rect);
 
-    let max_value_x = thumb.x + TRACKBAR_THUMB_W / 2;
-    handle_option_mouse_down(&mut shell, &layout, &[], max_value_x, thumb.y + 4);
-    handle_option_mouse_move(&mut shell, &layout, &[], max_value_x, thumb.y + 4);
+    let max_value_x = thumb_x + THUMB_W / 2;
+    handle_option_mouse_down(&mut shell, &layout, &[], max_value_x, y);
+    handle_option_mouse_move(&mut shell, &layout, &[], max_value_x, y);
 
     assert_eq!(
         shell.starting_credits,
         SkirmishLaunchOptions::default().starting_credits
     );
-    assert!(shell.pending_trackbar_hscrolls().is_empty());
     assert!(shell.drain_pending_ui_sounds().is_empty());
 }
 

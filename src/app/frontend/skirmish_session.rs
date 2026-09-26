@@ -27,6 +27,7 @@ use crate::skirmish_persistence::{
 use crate::ui::main_menu::SkirmishCountry;
 use crate::ui::skirmish_shell::{
     PlayerNameEditState, SkirmishAiRowType, SkirmishShellState, SkirmishTrackbarId,
+    game_speed_from_visual_position, game_speed_visual_position,
 };
 
 const RA2MD_INI: &str = "RA2MD.INI";
@@ -193,18 +194,17 @@ impl OfflineSkirmishRuntime {
             .filter(|index| *index < maps.len())
             .unwrap_or(0);
 
-        let (speed_min, speed_max, _) = state
-            .trackbar_bounds
-            .range(SkirmishTrackbarId::GameSpeed0x529);
-        let (credits_min, credits_max, _) = state
-            .trackbar_bounds
-            .range(SkirmishTrackbarId::Credits0x511);
-        let (units_min, units_max, _) = state
-            .trackbar_bounds
-            .range(SkirmishTrackbarId::UnitCount0x50c);
-        state.game_speed = clamp_between(self.snapshot.game_speed, speed_min, speed_max);
-        state.starting_credits = clamp_between(self.snapshot.credits, credits_min, credits_max);
-        state.unit_count = clamp_between(self.snapshot.unit_count, units_min, units_max);
+        // `SkirmishDialog__OnSetup497` hands each saved value to its fresh
+        // slider through `TBM_SETRANGE` and `TBM_SETPOS`.
+        let bounds = state.trackbar_bounds;
+        let speed = bounds.range(SkirmishTrackbarId::GameSpeed0x529);
+        let credits = bounds.range(SkirmishTrackbarId::Credits0x511);
+        let units = bounds.range(SkirmishTrackbarId::UnitCount0x50c);
+        state.game_speed = game_speed_from_visual_position(
+            speed.set_up(game_speed_visual_position(self.snapshot.game_speed)),
+        );
+        state.starting_credits = credits.set_up(self.snapshot.credits);
+        state.unit_count = units.set_up(self.snapshot.unit_count);
         state.short_game = self.snapshot.short_game;
         state.super_weapons = self.snapshot.super_weapons_allowed;
         state.build_off_ally = self.snapshot.build_off_ally;
@@ -610,7 +610,7 @@ fn pack_snapshot_slots(snapshot: &mut SkirmishPersistedSnapshot, state: &Skirmis
 
 fn pack_snapshot_options(snapshot: &mut SkirmishPersistedSnapshot, state: &SkirmishShellState) {
     snapshot.game_speed = state.game_speed;
-    snapshot.credits = state.starting_credits;
+    snapshot.credits = state.credits();
     snapshot.unit_count = state.unit_count;
     snapshot.short_game = state.short_game;
     snapshot.super_weapons_allowed = state.super_weapons;
@@ -640,7 +640,7 @@ pub(crate) fn skirmish_global_defaults(state: &SkirmishShellState) -> SkirmishGl
         game_mode: state.selected_mode_id,
         scenario_index: i32::try_from(state.selected_map_idx).unwrap_or(0),
         game_speed: state.game_speed,
-        credits: state.starting_credits,
+        credits: state.credits(),
         unit_count: state.unit_count,
         short_game: state.short_game,
         super_weapons_allowed: state.super_weapons,
@@ -783,10 +783,6 @@ fn is_cooperative_mode(session: &SkirmishLaunchSession) -> bool {
         .mode
         .override_file
         .eq_ignore_ascii_case("MPCoopMD.ini")
-}
-
-fn clamp_between(value: i32, left: i32, right: i32) -> i32 {
-    value.clamp(left.min(right), left.max(right))
 }
 
 fn ai_row_type_from_persisted(value: i32) -> SkirmishAiRowType {
@@ -1125,6 +1121,48 @@ Credits=12345\r\n";
             pre_fill_house_roster:
                 crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
             options: SkirmishLaunchOptions::default(),
+        }
+    }
+
+    #[test]
+    fn saved_slider_values_reach_the_sliders_through_the_native_setup() {
+        // `SkirmishDialog__OnSetup497` sets each fresh slider's range, then
+        // its saved value; `TBM_SETPOS` ignores a value outside the range
+        // (executed in `tools/storage_oracle/launcher_trackbar.py`).
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let bounds =
+            crate::ui::skirmish_shell::SkirmishTrackbarBounds::from_multiplayer_dialog_settings(
+                &rules,
+            );
+        for ((credits, units, speed), expected) in [
+            ((7549, 4, 2), (7549, 7500, 4, 2)),
+            ((20000, 15, 9), (10000, 10000, 0, 6)),
+            ((4999, -1, -1), (10000, 10000, 0, 6)),
+        ] {
+            let mut snapshot = SkirmishPersistedSnapshot::from_global_defaults(defaults());
+            snapshot.credits = credits;
+            snapshot.unit_count = units;
+            snapshot.game_speed = speed;
+            let mut runtime = runtime(snapshot, 7);
+            let mut shell = SkirmishShellState::default();
+            shell.trackbar_bounds = bounds;
+            runtime.hydrate_shell(&mut shell, &[map()], &[mode()]);
+            assert_eq!(
+                (
+                    shell.starting_credits,
+                    shell.credits(),
+                    shell.unit_count,
+                    shell.game_speed
+                ),
+                expected,
+                "saved {credits} {units} {speed}"
+            );
+            // The game starts with, and the settings keep, what the slider
+            // reads back (`0x006AD742..0x006AD79E`).
+            runtime.pack_shell_snapshot(&shell, &[map()], &[mode()]);
+            assert_eq!(runtime.snapshot().credits, expected.1);
         }
     }
 

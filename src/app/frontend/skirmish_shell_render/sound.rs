@@ -57,7 +57,8 @@ pub(crate) fn render_sound_shell(
             &chrome,
             ControlPaint::Trackbar {
                 rect,
-                thumb_px: dialog.thumb_left(id, rect) - 1,
+                thumb_left: dialog.thumb_left(id, rect),
+                plaque: true,
             },
         );
     }
@@ -143,7 +144,7 @@ pub(crate) fn render_sound_shell(
         );
         text(
             &dialog.positions[index].to_string(),
-            crate::ui::skirmish_shell::trackbar_value_text_rect(layout.sliders[index]),
+            crate::ui::shell::trackbar::value_text_rect(layout.sliders[index]),
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
         );
     }

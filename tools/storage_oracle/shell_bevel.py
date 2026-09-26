@@ -1,6 +1,6 @@
 """Executed draw lists of the shell bevel `0x006208F0` for trackbar frames.
 
-`OwnerDraw_Trackbar_0061D950` frames a trackbar with two calls to
+`ShellTrackbar__WndProc` (`0x0061D950`) frames a trackbar with two calls to
 `0x006208F0` (`0x0061E204`, `0x0061E269`): the rail box, then a value box past
 it whose inset is 1 + (value plaque on). This fixture runs the original bevel
 with a recording surface (Draw_Line `+0x30`, Put_Pixel `+0x24`) in RGB565 and

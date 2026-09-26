@@ -14,6 +14,7 @@ use crate::skirmish_modes::mode_by_id;
 use crate::ui::main_menu::SkirmishCountry;
 use crate::ui::shell::modal::BodyOkLayout;
 use crate::ui::shell::static_reveal::StaticPaint;
+use crate::ui::shell::trackbar::value_text_rect;
 use crate::ui::skirmish_shell::{
     COMBO_DROPDOWN_ROW_H, COMBO_FACE_H, COMBO_TEXT_LEFT_INSET, ChooseMapModalButton,
     ChooseMapModalLayout, OwnerDrawButton, RandomMapSetupControl, RandomMapSetupLayout, RectPx,
@@ -22,8 +23,7 @@ use crate::ui::skirmish_shell::{
     SkirmishShellState, SkirmishTrackbarId, checkbox_text_rect, combo_dropdown_content_rect,
     combo_dropdown_rect, combo_dropdown_visible_row_count, combo_enabled, combo_items,
     combo_text_rect, player_name_edit_text_rect, player_row_visible,
-    random_map_setup_dropdown_rect, setup_combo_items, trackbar_value_text_rect,
-    trackbar_visual_value,
+    random_map_setup_dropdown_rect, setup_combo_items, trackbar_visual_value,
 };
 
 use super::controls::trackbar_rect_for_id;
@@ -109,7 +109,7 @@ pub(super) fn country_choice_label(
 pub(super) fn trackbar_display_value(shell: &SkirmishShellState, id: SkirmishTrackbarId) -> String {
     match id {
         SkirmishTrackbarId::GameSpeed0x529 => trackbar_visual_value(shell, id).to_string(),
-        SkirmishTrackbarId::Credits0x511 => shell.starting_credits.to_string(),
+        SkirmishTrackbarId::Credits0x511 => shell.credits().to_string(),
         SkirmishTrackbarId::UnitCount0x50c => shell.unit_count.to_string(),
     }
 }
@@ -623,7 +623,7 @@ pub(super) fn build_shell_text_draws(
             &mut shell_draws,
             state,
             &value,
-            rect_to_text_rect(trackbar_value_text_rect(trackbar_rect_for_id(layout, id))),
+            rect_to_text_rect(value_text_rect(trackbar_rect_for_id(layout, id))),
             trackbar_value_text_color(),
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
             SHELL_CONTROL_TEXT_DEPTH,
@@ -950,7 +950,7 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     }
 
     // The players trackbar carries its value in the plaque at its right end.
-    let value_rect = trackbar_value_text_rect(layout.control_rects[PLAYERS_ROW]);
+    let value_rect = value_text_rect(layout.control_rects[PLAYERS_ROW]);
     if !text_covered_by_overlay(value_rect, &open_list) {
         push_text_draw(
             out,
@@ -1204,9 +1204,14 @@ mod tests {
     fn every_random_map_list_covers_the_texts_under_it_whole() {
         for (width, height) in [(640, 480), (800, 600), (1024, 768)] {
             let layout = crate::ui::skirmish_shell::compute_random_map_setup_layout(width, height);
+            // The Players window has the runtime growth (226 wide) the
+            // combos do not have yet (225), so its value text runs one
+            // column past the lists.
+            let mut players_value = value_text_rect(layout.control_rects[PLAYERS_ROW]);
+            players_value.w -= 1;
             let texts: Vec<RectPx> = (0..PLAYERS_ROW)
                 .map(|row| combo_text_rect(layout.control_rects[row]))
-                .chain([trackbar_value_text_rect(layout.control_rects[PLAYERS_ROW])])
+                .chain([players_value])
                 .collect();
             for combo in SETUP_COMBO_ROWS {
                 let list = random_map_setup_dropdown_rect(

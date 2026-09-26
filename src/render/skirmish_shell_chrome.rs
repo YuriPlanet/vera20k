@@ -21,10 +21,20 @@ const OWNER_DRAW_FLAG_TRANSPARENT_RGB: [u8; 3] = [255, 0, 255];
 /// packed `0x00BBGGRR`.
 const PRIMITIVE_BEVEL_COLOR_A_RGB: [u8; 3] = [0xA7, 0xBE, 0xC5];
 const PRIMITIVE_BEVEL_COLOR_B_RGB: [u8; 3] = [0x68, 0x7A, 0x80];
-const TRACKBAR_CONTROL_W: u32 = 128;
-const TRACKBAR_CONTROL_H: u32 = 21;
-const TRACKBAR_VALUE_PLAQUE_W: i32 = 50;
 const TRACKBAR_FRAME_BORDER: i32 = 2;
+/// The trackbar windows the shell paints, `(width, height, plaque reserve)`,
+/// each with its own frame entry. Retail paints the main-menu shell's sliders
+/// one pixel wider and taller than the template conversion
+/// (`ui::shell::geom::child_window`): Skirmish `0x102` and the Options audio
+/// sliders 129x22, Generate Map's Players 226x22, the Options plain sliders
+/// 181x22. The in-game B8 and BBB sliders keep their 263x21 and 192x21.
+pub const TRACKBAR_FRAMES: [(i32, i32, i32); 5] = [
+    (129, 22, 50),
+    (226, 22, 50),
+    (263, 21, 50),
+    (181, 22, 0),
+    (192, 21, 0),
+];
 const SKIRMISH_FLAG_PCX_NAMES: [&str; 12] = [
     "usai.pcx", "japi.pcx", "frai.pcx", "geri.pcx", "gbri.pcx", "djbi.pcx", "arbi.pcx", "lati.pcx",
     "rusi.pcx", "yrii.pcx", "obsi.pcx", "rani.pcx",
@@ -97,17 +107,9 @@ pub struct SkirmishShellChromeAtlas {
     pub scrollbar_thumb_top: Option<SkirmishShellChromeEntry>,
     pub scrollbar_thumb_mid: Option<SkirmishShellChromeEntry>,
     pub scrollbar_thumb_bottom: Option<SkirmishShellChromeEntry>,
-    /// Both adjacent border-2 primitive frames drawn around a `128x21`
-    /// owner-draw trackbar, including the two-pixel outside expansion.
-    pub trackbar_rail: Option<SkirmishShellChromeEntry>,
-    /// Active B8 numeric263x21 rail, original6B6300 retains the50px plaque.
-    pub trackbar_numeric_263: Option<SkirmishShellChromeEntry>,
-    /// RMG105 Players numeric225x21 rail.
-    pub trackbar_numeric_225: Option<SkirmishShellChromeEntry>,
-    /// Launcher D5 plain 180x21 trackbar (4AC disables the value plaque).
-    pub trackbar_plain_180: Option<SkirmishShellChromeEntry>,
-    /// Active BBB plain 192x21 rail, 4E1FE0 disables its plaque.
-    pub trackbar_plain_192: Option<SkirmishShellChromeEntry>,
+    /// Both border-2 frames of each [`TRACKBAR_FRAMES`] window, including the
+    /// two-pixel outside expansion.
+    pub trackbar_frames: [Option<SkirmishShellChromeEntry>; TRACKBAR_FRAMES.len()],
     /// Keyboard A3 category face, original resource138 DLU.
     pub combo_face_207: Option<SkirmishShellChromeEntry>,
     pub combo_face_180: Option<SkirmishShellChromeEntry>,
@@ -131,14 +133,8 @@ pub struct SkirmishShellChromeAtlas {
 pub struct ControlChrome {
     pub checkbox_unchecked_cue_i: Option<SkirmishShellChromeEntry>,
     pub checkbox_checked_cce_i: Option<SkirmishShellChromeEntry>,
-    pub trackbar_rail: Option<SkirmishShellChromeEntry>,
-    /// Active B8 numeric263x21 rail, original6B6300 retains the50px plaque.
-    pub trackbar_numeric_263: Option<SkirmishShellChromeEntry>,
-    /// RMG105 Players numeric225x21 rail.
-    pub trackbar_numeric_225: Option<SkirmishShellChromeEntry>,
-    pub trackbar_plain_180: Option<SkirmishShellChromeEntry>,
-    /// Active BBB plain 192x21 rail, 4E1FE0 disables its plaque.
-    pub trackbar_plain_192: Option<SkirmishShellChromeEntry>,
+    /// The frames of the [`TRACKBAR_FRAMES`] windows, in that order.
+    pub trackbar_frames: [Option<SkirmishShellChromeEntry>; TRACKBAR_FRAMES.len()],
     /// Keyboard A3 category face, original resource138 DLU.
     pub combo_face_207: Option<SkirmishShellChromeEntry>,
     pub combo_face_180: Option<SkirmishShellChromeEntry>,
@@ -171,11 +167,7 @@ impl SkirmishShellChromeAtlas {
         ControlChrome {
             checkbox_unchecked_cue_i: self.checkbox_unchecked_cue_i,
             checkbox_checked_cce_i: self.checkbox_checked_cce_i,
-            trackbar_rail: self.trackbar_rail,
-            trackbar_numeric_263: self.trackbar_numeric_263,
-            trackbar_numeric_225: self.trackbar_numeric_225,
-            trackbar_plain_180: self.trackbar_plain_180,
-            trackbar_plain_192: self.trackbar_plain_192,
+            trackbar_frames: self.trackbar_frames,
             combo_face_207: self.combo_face_207,
             combo_face_180: self.combo_face_180,
             trackbar_plaque_left_trofl: self.trackbar_plaque_left_trofl,
@@ -199,6 +191,26 @@ impl SkirmishShellChromeAtlas {
             scrollbar_thumb_mid: self.scrollbar_thumb_mid,
             scrollbar_thumb_bottom: self.scrollbar_thumb_bottom,
         }
+    }
+}
+
+/// The [`TRACKBAR_FRAMES`] slot of a `width` x `height` trackbar window, with
+/// or without the value plaque.
+pub fn trackbar_frame_slot(plaque: bool, width: i32, height: i32) -> Option<usize> {
+    TRACKBAR_FRAMES
+        .iter()
+        .position(|&(w, h, reserve)| (w, h, reserve > 0) == (width, height, plaque))
+}
+
+impl ControlChrome {
+    /// The frame entry of a `width` x `height` trackbar window.
+    pub fn trackbar_frame(
+        &self,
+        plaque: bool,
+        width: i32,
+        height: i32,
+    ) -> Option<SkirmishShellChromeEntry> {
+        self.trackbar_frames[trackbar_frame_slot(plaque, width, height)?]
     }
 }
 
@@ -467,31 +479,14 @@ pub fn build_skirmish_shell_chrome_atlas(
         push_optional(&mut rendered, render_pcx_entry(assets, name), name);
     }
 
-    rendered.push(render_trackbar_frame_entry("skirmish_trackbar_rail"));
-    rendered.push(render_trackbar_frame_geometry(
-        "rmg_trackbar_numeric_225",
-        225,
-        21,
-        50,
-    ));
-    rendered.push(render_trackbar_frame_geometry(
-        "sound_trackbar_numeric_263",
-        263,
-        21,
-        50,
-    ));
-    rendered.push(render_trackbar_frame_geometry(
-        "launcher_trackbar_plain_180",
-        180,
-        21,
-        0,
-    ));
-    rendered.push(render_trackbar_frame_geometry(
-        "in_game_trackbar_plain_192",
-        192,
-        21,
-        0,
-    ));
+    for (width, height, reserve) in TRACKBAR_FRAMES {
+        rendered.push(render_trackbar_frame_geometry(
+            &trackbar_frame_label(width, height, reserve),
+            width as u32,
+            height as u32,
+            reserve,
+        ));
+    }
     for (label, width) in [
         ("skirmish_combo_face_150", 150),
         ("launcher_combo_face_180", 180),
@@ -598,11 +593,11 @@ pub fn build_skirmish_shell_chrome_atlas(
         scrollbar_thumb_top: by_label.get("sbgript.pcx").copied(),
         scrollbar_thumb_mid: by_label.get("sbgripm.pcx").copied(),
         scrollbar_thumb_bottom: by_label.get("sbgripb.pcx").copied(),
-        trackbar_rail: by_label.get("skirmish_trackbar_rail").copied(),
-        trackbar_numeric_263: by_label.get("sound_trackbar_numeric_263").copied(),
-        trackbar_numeric_225: by_label.get("rmg_trackbar_numeric_225").copied(),
-        trackbar_plain_180: by_label.get("launcher_trackbar_plain_180").copied(),
-        trackbar_plain_192: by_label.get("in_game_trackbar_plain_192").copied(),
+        trackbar_frames: TRACKBAR_FRAMES.map(|(width, height, reserve)| {
+            by_label
+                .get(trackbar_frame_label(width, height, reserve).as_str())
+                .copied()
+        }),
         combo_face_207: by_label.get("keyboard_combo_face_207").copied(),
         combo_face_180: by_label.get("launcher_combo_face_180").copied(),
         combo_face_150: by_label.get("skirmish_combo_face_150").copied(),
@@ -829,13 +824,8 @@ fn render_primitive_bevel_entry(
     }
 }
 
-fn render_trackbar_frame_entry(label: &str) -> RenderedShellEntry {
-    render_trackbar_frame_geometry(
-        label,
-        TRACKBAR_CONTROL_W,
-        TRACKBAR_CONTROL_H,
-        TRACKBAR_VALUE_PLAQUE_W,
-    )
+fn trackbar_frame_label(width: i32, height: i32, reserve: i32) -> String {
+    format!("trackbar_frame_{width}x{height}_{reserve}")
 }
 
 /// Original 61E1B9..61E269: draw the rail frame at the current control size,
@@ -862,7 +852,7 @@ fn render_trackbar_frame_geometry(
     let value_frame_x = left_frame_w + inset;
     let value_frame_w = reserve - inset;
 
-    // `OwnerDraw_Trackbar_0061D950` supplies control-relative boxes and
+    // `ShellTrackbar__WndProc` (`0x0061D950`) supplies control-relative boxes and
     // FUN_006208F0 expands each by two pixels. Shift both inputs by the canvas
     // border so the complete outside rings fit in this transparent entry.
     draw_primitive_bevel(
@@ -1114,7 +1104,7 @@ mod tests {
         PRIMITIVE_BEVEL_COLOR_B_RGB, RenderedShellEntry, ShellAssetRole, TRACKBAR_FRAME_BORDER,
         average_rgb, classify_shell_asset, draw_axis_line_inclusive_clipped, load_named_palette,
         load_parent_background_palette, render_primitive_bevel_entry, render_shp_entry,
-        render_trackbar_frame_entry, rgba_color, trackbar_frame_rgba,
+        render_trackbar_frame_geometry, rgba_color, trackbar_frame_rgba,
     };
 
     fn pixel(entry: &RenderedShellEntry, x: u32, y: u32) -> [u8; 4] {
@@ -1365,7 +1355,7 @@ mod tests {
 
     #[test]
     fn trackbar_frame_entry_contains_both_native_primitive_boxes() {
-        let entry = render_trackbar_frame_entry("trackbar");
+        let entry = render_trackbar_frame_geometry("trackbar", 128, 21, 50);
         let color_a = rgba_color(PRIMITIVE_BEVEL_COLOR_A_RGB);
         let color_b = rgba_color(PRIMITIVE_BEVEL_COLOR_B_RGB);
         let mixed = rgba_color(average_rgb(

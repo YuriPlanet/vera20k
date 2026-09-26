@@ -42,7 +42,7 @@ fn push_slider(
     art: &CampaignShellArt,
     layout: &CampaignLayout,
     background_origin: (i32, i32),
-    position: u8,
+    position: i32,
 ) {
     let slider = layout.slider;
     if let Some(dark) = art.background_dark {

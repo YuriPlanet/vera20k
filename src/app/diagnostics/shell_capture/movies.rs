@@ -43,10 +43,12 @@ pub(super) enum MoviesTarget {
     /// recreated `0x101` must already show its entry slide at tick 0.
     ListBackFirstFrame,
     /// Single Player -> New Campaign: dialog `0x94` settled, optionally after a
-    /// press on the difficulty slider at `press`, or held at `entry_tick` of
-    /// its entry slide.
+    /// press on the difficulty slider at `press` (still held, with the pointer
+    /// moved to `hold_over`, when that is set), or held at `entry_tick` of its
+    /// entry slide.
     Campaign0x94 {
         press: Option<(i32, i32)>,
+        hold_over: Option<(i32, i32)>,
         entry_tick: Option<u32>,
     },
     /// Single Player -> Load Saved Game: dialog `0xB7` settled, or held at
@@ -431,12 +433,28 @@ impl MoviesCapture {
             (Phase::Campaign, PresentedShell::Campaign) => {
                 if Self::slide_settled(state, ShellSlideKind::Campaign) {
                     if let MoviesTarget::Campaign0x94 {
-                        press: Some(point), ..
+                        press: Some(point),
+                        hold_over,
+                        ..
                     } = self.target
                     {
-                        // The native helper clicks, then recenters the pointer.
                         state.match_state.input.cursor_x = point.0 as f32;
                         state.match_state.input.cursor_y = point.1 as f32;
+                        if let Some(over) = hold_over {
+                            // The pointer reaches the slider, presses, and keeps
+                            // the button down on its way to `over`.
+                            App::handle_campaign_mouse_move(state);
+                            App::handle_campaign_mouse_down(state);
+                            state.match_state.input.cursor_x = over.0 as f32;
+                            state.match_state.input.cursor_y = over.1 as f32;
+                            App::handle_campaign_mouse_move(state);
+                            self.route.push(json!({"dialog": 0x94, "frame": frame,
+                                "action": "hold slider", "point": [point.0, point.1],
+                                "over": [over.0, over.1]}));
+                            self.phase = Phase::Settling(SETTLE_FRAMES);
+                            return Ok(());
+                        }
+                        // The native helper clicks, then recenters the pointer.
                         App::handle_campaign_mouse_down(state);
                         App::handle_campaign_mouse_up(state);
                         self.route.push(json!({"dialog": 0x94, "frame": frame,

@@ -48,20 +48,13 @@ fn build_controls(
     let mut out = Vec::new();
     let chrome = atlas.control_chrome();
     for (id, rect) in layout.trackbars {
-        let thumb_px = dialog.shell_trackbar_thumb_left(id, rect.w) - 1;
-        let plain = matches!(
-            id,
-            LauncherTrackbarId::Detail
-                | LauncherTrackbarId::Difficulty
-                | LauncherTrackbarId::Scroll
-        );
         paint_control(
             &mut out,
             &chrome,
-            if plain {
-                ControlPaint::PlainTrackbar { rect, thumb_px }
-            } else {
-                ControlPaint::Trackbar { rect, thumb_px }
+            ControlPaint::Trackbar {
+                rect,
+                thumb_left: dialog.shell_trackbar_thumb_left(id, rect.w),
+                plaque: id.plaque_reserve() > 0,
             },
         );
     }
@@ -161,7 +154,7 @@ fn build_text(
             out.push(text_draw(
                 font,
                 &dialog.trackbar_position(id).to_string(),
-                crate::ui::skirmish_shell::trackbar_value_text_rect(rect),
+                crate::ui::shell::trackbar::value_text_rect(rect),
                 ShellAlign::H_CENTER | ShellAlign::V_CENTER,
                 if dialog.launcher_audio_available() {
                     SHELL_LABEL_TEXT_RGB

@@ -9,6 +9,7 @@ use crate::map::rmg::preview::PreviewImage;
 use crate::map::rmg::randomize::{RandomRanged, derive_from_map_type, randomize};
 use crate::map::rmg::settings::RmgSettings;
 use crate::ui::shell::static_reveal::DialogStatics;
+use crate::ui::shell::trackbar::{TrackbarHold, TrackbarPress, TrackbarRange};
 
 use super::super::layout::RandomMapSetupControl;
 use super::choose_map::ChooseMapSelection;
@@ -154,6 +155,10 @@ pub enum AcceptOutcome {
     NeedsGenerate,
 }
 
+/// The Players slider's range, 2..8 in steps of 1 (`TBM_SETRANGE` at
+/// `0x0059722C`; no `0x4AB`).
+pub const PLAYERS_RANGE: TrackbarRange = TrackbarRange::new(2, 8, 1);
+
 /// The Create Random Map dialog.
 #[derive(Debug, Clone)]
 pub struct RandomMapSetupModalState {
@@ -167,10 +172,8 @@ pub struct RandomMapSetupModalState {
     /// generate action turns it on unconditionally, as the original does.
     pub saved_seed_buttons_enabled: bool,
     pub open_combo: Option<SetupCombo>,
-    /// Set while the players thumb is grabbed. A press on the rail jumps the
-    /// value once but does not begin tracking, matching the shell's other
-    /// sliders.
-    pub dragging_players_thumb: bool,
+    /// The Players slider holding the mouse since a press on it.
+    pub players_hold: Option<TrackbarHold>,
     pub pressed_control: Option<RandomMapSetupControl>,
     /// The rasterised preview of the last generated map, shown in the preview
     /// box. `None` until a generate has produced one; any option edit clears it,
@@ -209,7 +212,7 @@ impl RandomMapSetupModalState {
             generating: false,
             saved_seed_buttons_enabled: saved_seeds_available,
             open_combo: None,
-            dragging_players_thumb: false,
+            players_hold: None,
             pressed_control: None,
             generated_preview: None,
             preview_generation: 0,
@@ -265,6 +268,36 @@ impl RandomMapSetupModalState {
     pub fn set_num_players(&mut self, value: i32) {
         self.options.num_players = value;
         self.on_option_changed();
+    }
+
+    /// A press on the Players slider at window-relative `(x, y)` of its
+    /// `width` x `height` window. Returns whether the value changed; the
+    /// slider then clicks (GenericClick, `0x0061E6DD`), since `0x105` never
+    /// turns its cue off (`0x4AE`).
+    pub fn press_players(&mut self, x: i32, y: i32, width: i32, height: i32) -> bool {
+        let press = PLAYERS_RANGE.press(self.options.num_players, x, y, width, height);
+        self.players_hold = press.hold(());
+        match press {
+            TrackbarPress::Jump(value) => self.change_num_players(value),
+            _ => false,
+        }
+    }
+
+    /// A move while the Players slider holds the mouse: a held thumb follows
+    /// window-relative `x`. Returns whether the value changed.
+    pub fn drag_players(&mut self, x: i32, width: i32) -> bool {
+        self.players_hold.is_some_and(|hold| hold.dragging)
+            && self.change_num_players(PLAYERS_RANGE.value_at(x, width))
+    }
+
+    /// The slider notifies (`WM_HSCROLL`, case `0x00596B04`) only when its
+    /// position changes (`0x0061E609`).
+    fn change_num_players(&mut self, value: i32) -> bool {
+        let changed = self.options.num_players != value;
+        if changed {
+            self.set_num_players(value);
+        }
+        changed
     }
 
     /// The option field a combo reflects. Size reads the width axis, which is
@@ -344,7 +377,7 @@ impl RandomMapSetupModalState {
     pub fn begin_generate(&mut self) {
         self.generating = true;
         self.open_combo = None;
-        self.dragging_players_thumb = false;
+        self.players_hold = None;
     }
 
     /// Release a failed worker without presenting an old/partial map as a

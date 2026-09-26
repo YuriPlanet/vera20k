@@ -7,12 +7,8 @@ const RANDMAP_SED_FILE: &str = "RandMap.Sed";
 /// becomes the sentinel row's displayed name.
 pub(super) const RANDOM_MAP_DESCRIPTION_KEY: &str = "TXT_RANDOM_MAP_DESCRIPTION";
 pub(super) const RANDOM_MAP_DESCRIPTION_FALLBACK: &str = "Random Map";
-/// The players slider is the last of the setup dialog's six option rows, and the
-/// dialog gives it a range of 2..8 with a step of one.
+/// The players slider is the last of the setup dialog's six option rows.
 const SETUP_PLAYERS_ROW: usize = 5;
-const SETUP_PLAYERS_MIN: i32 = 2;
-const SETUP_PLAYERS_MAX: i32 = 8;
-const SETUP_PLAYERS_STEP: i32 = 1;
 /// Matches the rules default the map-load path falls back to; the preview only
 /// needs it because terrain resolution takes it, not because cliffs affect the
 /// image.
@@ -1015,8 +1011,11 @@ impl App {
             // The players slider is not a button: it acts on press, not on
             // release, so it never arms a pressed control.
             if control == crate::ui::skirmish_shell::RandomMapSetupControl::Players0x3eb {
-                if modal.is_enabled(control) {
-                    Self::press_setup_players_trackbar(modal, &layout, x, y);
+                let rect = layout.control_rects[SETUP_PLAYERS_ROW];
+                if modal.is_enabled(control)
+                    && modal.press_players(x - rect.x, y - rect.y, rect.w, rect.h)
+                {
+                    Self::play_skirmish_shell_generic_click_sound(state);
                 }
                 return true;
             }
@@ -1031,39 +1030,6 @@ impl App {
         layout.dialog.contains(x, y)
     }
 
-    /// Press behaviour for the players slider, mirroring the shell's other
-    /// trackbars: grabbing the thumb starts a tracking drag, while a press on
-    /// the rail jumps the value once and tracks nothing.
-    fn press_setup_players_trackbar(
-        modal: &mut crate::ui::skirmish_shell::RandomMapSetupModalState,
-        layout: &crate::ui::skirmish_shell::RandomMapSetupLayout,
-        x: i32,
-        y: i32,
-    ) {
-        let rect = layout.control_rects[SETUP_PLAYERS_ROW];
-        if !crate::ui::skirmish_shell::trackbar_mouse_allowed_y(rect, y) {
-            return;
-        }
-        let pixel_offset = crate::ui::skirmish_shell::trackbar_pixel_offset(
-            modal.options.num_players,
-            SETUP_PLAYERS_MIN,
-            SETUP_PLAYERS_MAX,
-            SETUP_PLAYERS_STEP,
-            rect,
-        );
-        if crate::ui::skirmish_shell::trackbar_thumb_hit(rect, pixel_offset, x, y) {
-            modal.dragging_players_thumb = true;
-        } else if rect.contains(x, y) {
-            modal.set_num_players(crate::ui::skirmish_shell::trackbar_mouse_value(
-                rect,
-                x,
-                SETUP_PLAYERS_MIN,
-                SETUP_PLAYERS_MAX,
-                SETUP_PLAYERS_STEP,
-            ));
-        }
-    }
-
     pub(super) fn handle_random_map_setup_mouse_move(state: &mut AppState) {
         let layout = Self::skirmish_random_map_setup_layout(state);
         let x = state.match_state.input.cursor_x.round() as i32;
@@ -1073,14 +1039,15 @@ impl App {
         // one, and repaints the status line. An open list holds the mouse
         // capture instead (`ComboDropWin` `0x0060E0F1`); its own move handler
         // (`0x0060E262`) asks the dialog for the row's help (`0x4E9`), which
-        // `0x105` never answers, so the status line keeps its text.
-        let list_open = state
+        // `0x105` never answers, so the status line keeps its text. So does a
+        // Players slider holding the mouse since a press on it.
+        let mouse_held = state
             .frontend
             .skirmish_shell_state
             .random_map_setup_modal
             .as_ref()
-            .is_some_and(|modal| modal.open_combo.is_some());
-        if !list_open {
+            .is_some_and(|modal| modal.open_combo.is_some() || modal.players_hold.is_some());
+        if !mouse_held {
             let help = crate::ui::skirmish_shell::random_map_setup_control_at(&layout, x, y)
                 .map(|control| {
                     Self::localized_status_help_text(
@@ -1107,23 +1074,33 @@ impl App {
         else {
             return;
         };
-        if !modal.dragging_players_thumb {
+        if modal.players_hold.is_none() {
             return;
         }
         let rect = layout.control_rects[SETUP_PLAYERS_ROW];
-        modal.set_num_players(crate::ui::skirmish_shell::trackbar_mouse_value(
-            rect,
-            x,
-            SETUP_PLAYERS_MIN,
-            SETUP_PLAYERS_MAX,
-            SETUP_PLAYERS_STEP,
-        ));
+        if modal.drag_players(x - rect.x, rect.w) {
+            Self::play_skirmish_shell_generic_click_sound(state);
+        }
         state.platform.window.request_redraw();
     }
 
     pub(super) fn handle_random_map_setup_mouse_up(state: &mut AppState) -> bool {
         use crate::ui::skirmish_shell::RandomMapSetupControl as Control;
 
+        let Some(modal) = state
+            .frontend
+            .skirmish_shell_state
+            .random_map_setup_modal
+            .as_mut()
+        else {
+            return false;
+        };
+        // The release goes to a slider holding the mouse; freeing it lets the
+        // dialog's hit test run again.
+        if modal.players_hold.take().is_some() {
+            Self::handle_random_map_setup_mouse_move(state);
+            return true;
+        }
         let layout = Self::skirmish_random_map_setup_layout(state);
         let x = state.match_state.input.cursor_x.round() as i32;
         let y = state.match_state.input.cursor_y.round() as i32;
@@ -1148,10 +1125,6 @@ impl App {
         else {
             return false;
         };
-        if modal.dragging_players_thumb {
-            modal.dragging_players_thumb = false;
-            return true;
-        }
         // Releasing over an open list commits that entry. The press was never
         // armed for list clicks, so this has to run before the pressed check.
         if let Some(combo) = modal.open_combo {

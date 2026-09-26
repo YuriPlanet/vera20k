@@ -523,6 +523,17 @@ impl ApplicationHandler for App {
                     if let Some(dialog) = state.frontend.options_dialog.as_mut() {
                         dialog.shell_cancel_pointer_gesture();
                     }
+                    // A shell slider holding the mouse loses it with the
+                    // focus. Native keeps its hold bytes until the next move
+                    // without the button releases them (`0x0061E3AF`).
+                    let skirmish = &mut state.frontend.skirmish_shell_state;
+                    skirmish.trackbar_hold = None;
+                    if let Some(setup) = skirmish.random_map_setup_modal.as_mut() {
+                        setup.players_hold = None;
+                    }
+                    if let Some(campaign) = state.frontend.campaign.as_mut() {
+                        campaign.slider_release();
+                    }
                 }
                 Self::set_window_active(state, active);
             }

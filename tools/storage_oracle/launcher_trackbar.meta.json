@@ -7,16 +7,18 @@
     1,
     33621247
   ],
-  "scope": "18 supplied geometries; 110 valid positions compared across initialization/405/406; 3225 drag pointer samples, including 2919 in-client samples compared with the admitted rail-click block",
+  "scope": "25 supplied geometries (18 arithmetic, 7 runtime shell windows); 203 positions compared across initialization/405 (and 406 with minimum zero); 4500 drag pointer samples, including 4075 in-client samples compared with the admitted rail-click block; 77 owner-setup vectors over 8 ranges (406 from position 0, 405, the step check, 400)",
   "assumptions": [
     "Client RECT left/top zero; widths 128 and 180, plaque reserve 0 or 50; these cross combinations are arithmetic fixtures, not observed layouts",
     "Additional BBB fixture is width192/reserve0/maximum6, from 128x13 DLU and the active 4E1FE0 configuration; height21 does not enter these arithmetic blocks",
     "B8 adds width263/reserve50/maximum10 from175x13 DLU;6B6382..647F disables cue but retains the default numeric plaque",
-    "Range minimum zero, maximum 1/2/6/10, step one, every valid position; no invalid setter or zero-range claims",
+    "Runtime fixtures use the windows retail paints, one pixel wider than the resource conversion: Skirmish 0x102 width129/reserve50 with ranges 6, 5000 (minimum 5000, step 100 from retail Rules) and 10; 0x105 players width226/reserve50/range6/minimum2; D5 plain width181/reserve0 with ranges 1/2/6 (the D5 audio range10 shares the 129 fixture)",
+    "Range minimum zero and step one except the runtime Credits and players fixtures; every valid position except Credits, which samples every step and positions beside a few steps; 406 is compared only with minimum zero, because 406 clamps the old position against the new minimum; no invalid setter or zero-range claims",
     "Client x is every integer from -8 through width+8; negative/overshoot samples model capture drag, not admitted rail clicks",
     "The admitted rail-click block is compared for x in [0,width); y/old-thumb admission, HWND state lookup, Windows pointer retrieval and notifications are outside the fixture",
     "Registers and stack are reset before each block sequence; native span arithmetic supplies EAX and stack+0x10; original signed integer division executes",
-    "Thumb bounds are read after native stored-offset projection; pixel appearance, repaint timing and whole-dialog equivalence are not established"
+    "Thumb bounds are read after native stored-offset projection; pixel appearance, repaint timing and whole-dialog equivalence are not established",
+    "Setup vectors start from position 0 (the common control's default) and run 406, 405 and 400 as separate messages at width129/reserve50; the record's range, minimum and position carry between them as the tail writes them back; no zero-range or 16-bit-overflowing ranges"
   ],
   "substitutions": [],
   "entry_points": {
@@ -33,7 +35,11 @@
     "rail_click": "0x0061E545",
     "rail_click_end": "0x0061E598",
     "thumb_bounds": "0x0061DBB9",
-    "thumb_bounds_end": "0x0061DBD6"
+    "thumb_bounds_end": "0x0061DBD6",
+    "step_check": "0x0061DB94",
+    "step_check_end": "0x0061DBB1",
+    "get_position": "0x0061E4AD",
+    "get_position_end": "0x0061E4C4"
   },
-  "payload_sha256": "8825c946f2cf1f91271fa8e0b53abd6ab7a5afbac3768ed9930528686404e3ec"
+  "payload_sha256": "bcf1245016bee0eb909367289f7ff75cf679c9fb7cf029338d32a0a01d33b044"
 }

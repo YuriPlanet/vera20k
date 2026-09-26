@@ -42,15 +42,14 @@ pub use player_name::{
     set_status_help_text, update_player_name_scroll_for_caret,
 };
 pub use random_map_setup::{
-    AcceptOutcome, RandomMapSetupModalState, SETUP_COMBO_ROWS, SetupCombo, SetupComboItem,
-    setup_combo_items,
+    AcceptOutcome, PLAYERS_RANGE, RandomMapSetupModalState, SETUP_COMBO_ROWS, SetupCombo,
+    SetupComboItem, setup_combo_items,
 };
 pub use saved_seed_browser::{SAVED_SEED_DESCRIPTION_MAX_UNITS, SavedSeedBrowserState, SavedSeedBrowserRow, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose};
 pub use trackbars::{
-    SkirmishTrackbarBounds, SkirmishTrackbarHScrollNotification, TrackbarDragState,
-    game_speed_from_visual_position, game_speed_visual_position, handle_option_mouse_down,
-    handle_option_mouse_move, handle_option_mouse_up, handle_option_mouse_wheel,
-    trackbar_mouse_allowed_y, trackbar_mouse_value, trackbar_thumb_hit, trackbar_visual_value,
+    SkirmishTrackbarBounds, game_speed_from_visual_position, game_speed_visual_position,
+    handle_option_mouse_down, handle_option_mouse_move, handle_option_mouse_up,
+    handle_option_mouse_wheel, trackbar_visual_value,
 };
 
 use crate::skirmish_launch::{AiDifficulty, HOUSE_COLOR_COUNT};
@@ -58,7 +57,7 @@ use crate::ui::main_menu::{SkirmishCountry, StartPosition};
 
 use self::player_name::inactive_ai_team_default;
 #[cfg(test)]
-use self::trackbars::{CREDITS_MAX, CREDITS_MIN, CREDITS_STEP};
+use self::trackbars::CREDITS_MAX;
 use super::layout::{ChooseMapModalButton, ColorComboId, SkirmishCheckboxId, SkirmishTrackbarId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

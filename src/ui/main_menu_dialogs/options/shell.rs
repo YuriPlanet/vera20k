@@ -11,7 +11,7 @@ use super::{
     thumb_left,
 };
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{RectPx, center_offset, dlu_rect};
+use crate::ui::shell::geom::{RectPx, center_offset, child_window, dlu_rect};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageSpec};
 use crate::ui::skirmish_shell::{
     COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, COMBO_DROPDOWN_SCROLLBAR_W,
@@ -85,6 +85,9 @@ impl LauncherOptionsLayout {
         let offset_y = center_offset(height, 600);
         let px = |rect: RectPx| rect.translate(offset_x, offset_y);
         let dlu = |x, y, w, h| px(dlu_rect(x, y, w, h));
+        // The sliders run one pixel wider and taller than the template
+        // (retail stills: 181x22 and 129x22).
+        let slider = |x, y, w, h| px(child_window(x, y, w, h));
         // The right-panel children follow the panel, not the dialog centring.
         let page = menu_page::compute_layout(&OPTIONS_PAGE, width as u32, height as u32);
         let button = |id| page.button_rect(id).expect("0xD5 page button");
@@ -94,12 +97,12 @@ impl LauncherOptionsLayout {
             status_help: page.status_help,
             resolution: px(RectPx::new(351, 86, 180, COMBO_FACE_H)),
             trackbars: [
-                (LauncherTrackbarId::Detail, dlu(89, 53, 120, 13)),
-                (LauncherTrackbarId::Difficulty, dlu(92, 128, 120, 13)),
-                (LauncherTrackbarId::Scroll, dlu(238, 203, 120, 13)),
-                (LauncherTrackbarId::Score, dlu(82, 289, 85, 13)),
-                (LauncherTrackbarId::Sound, dlu(179, 289, 85, 13)),
-                (LauncherTrackbarId::Voice, dlu(277, 289, 85, 13)),
+                (LauncherTrackbarId::Detail, slider(89, 53, 120, 13)),
+                (LauncherTrackbarId::Difficulty, slider(92, 128, 120, 13)),
+                (LauncherTrackbarId::Scroll, slider(238, 203, 120, 13)),
+                (LauncherTrackbarId::Score, slider(82, 289, 85, 13)),
+                (LauncherTrackbarId::Sound, slider(179, 289, 85, 13)),
+                (LauncherTrackbarId::Voice, slider(277, 289, 85, 13)),
             ],
             checkboxes: [
                 (LauncherCheckboxId::Tooltips, dlu(93, 188, 130, 10)),
@@ -245,10 +248,10 @@ impl OptionsDialogState {
 
     pub(crate) fn shell_trackbar_thumb_left(&self, id: LauncherTrackbarId, width: i32) -> i32 {
         thumb_left(
-            self.trackbar_position(id),
+            i32::from(self.trackbar_position(id)),
             width,
             id.plaque_reserve(),
-            id.maximum(),
+            i32::from(id.maximum()),
         )
     }
 
@@ -479,8 +482,9 @@ impl OptionsDialogState {
         {
             self.shell_interaction.status_help = self.shell_status_help_key(x, y, width, height);
         }
-        if let Some(id) = self.capture {
-            self.trackbar_mouse_move(id, frame(layout.trackbar_rect(id), x, y));
+        if let Some(hold) = self.capture {
+            let rect = layout.trackbar_rect(hold.id);
+            self.trackbar_mouse_move(hold.id, frame(rect, x, y));
             self.shell_interaction.hovered_button = None;
             return;
         }
@@ -514,8 +518,8 @@ impl OptionsDialogState {
 
     pub(crate) fn shell_mouse_up(&mut self, x: i32, y: i32, width: i32, height: i32) {
         self.shell_interaction.popup_scroll_grab = None;
-        if let Some(id) = self.capture {
-            self.trackbar_mouse_up(id);
+        if let Some(hold) = self.capture {
+            self.trackbar_mouse_up(hold.id);
         }
         self.shell_mouse_move(x, y, width, height);
         if let Some(id) = self.shell_interaction.pressed_button.take() {
@@ -532,6 +536,7 @@ mod tests {
     use crate::ui::main_menu_dialogs::options::{
         LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels, LauncherOptionsValues,
     };
+    use crate::ui::shell::trackbar::TrackbarHold;
 
     fn state() -> OptionsDialogState {
         OptionsDialogState::new(
@@ -599,7 +604,13 @@ mod tests {
         let rect = layout.trackbar_rect(LauncherTrackbarId::Score);
         let thumb = state.shell_trackbar_thumb_left(LauncherTrackbarId::Score, rect.w);
         state.shell_mouse_down(rect.x + thumb + 5, rect.y + 10, 800, 600);
-        assert_eq!(state.capture, Some(LauncherTrackbarId::Score));
+        assert_eq!(
+            state.capture,
+            Some(TrackbarHold {
+                id: LauncherTrackbarId::Score,
+                dragging: true,
+            })
+        );
         state.shell_mouse_move(799, 550, 800, 600);
         state.shell_mouse_up(799, 550, 800, 600);
         assert_eq!(state.trackbar_position(LauncherTrackbarId::Score), 10);
@@ -615,7 +626,13 @@ mod tests {
         // Fixture starts at4: original128px/50px plaque projection puts the
         // thumb at client27 (screen150), so155 is inside its12px capture box.
         state.shell_mouse_down(155, 475, 800, 600);
-        assert_eq!(state.capture, Some(LauncherTrackbarId::Score));
+        assert_eq!(
+            state.capture,
+            Some(TrackbarHold {
+                id: LauncherTrackbarId::Score,
+                dragging: true,
+            })
+        );
         state.shell_cancel_pointer_gesture();
         let before = state.pack();
         state.shell_mouse_move(799, 550, 800, 600);
@@ -625,29 +642,50 @@ mod tests {
     }
 
     #[test]
-    fn rail_jump_and_checkbox_text_do_not_acquire_capture() {
+    fn every_slider_press_holds_the_mouse_until_release() {
         let mut state = state();
+        let layout = LauncherOptionsLayout::new(800, 600);
+        let held = Some(TrackbarHold {
+            id: LauncherTrackbarId::Difficulty,
+            dragging: false,
+        });
+        // Above the admitted strip the press only takes the capture.
         state.shell_mouse_down(140, 210, 800, 600);
         assert_eq!(
             state.trackbar_position(LauncherTrackbarId::Difficulty),
             1,
             "native lower strip rejects y=2"
         );
+        assert_eq!(state.capture, held);
+        state.shell_mouse_up(140, 210, 800, 600);
+        // Beside the thumb it jumps once and holds without dragging.
         state.shell_mouse_down(140, 218, 800, 600);
         assert_eq!(state.trackbar_position(LauncherTrackbarId::Difficulty), 0);
-        assert_eq!(state.capture, None);
+        assert_eq!(state.capture, held);
+        assert_eq!(
+            state.drain_output().events,
+            [LauncherOptionsEvent::Cue(LauncherCue::GenericClick)]
+        );
         state.shell_mouse_move(317, 218, 800, 600);
         assert_eq!(state.trackbar_position(LauncherTrackbarId::Difficulty), 0);
+        let back = layout.buttons[2].1;
+        state.shell_mouse_move(back.x + 5, back.y + 5, 800, 600);
+        assert_eq!(
+            state.shell_status_help(),
+            Some("STT:MainOptSliderDifficulty")
+        );
+        state.shell_mouse_up(back.x + 5, back.y + 5, 800, 600);
+        assert_eq!(state.capture, None);
+        assert_eq!(state.shell_status_help(), Some("STT:MainOptButtonBack"));
+        assert_eq!(state.drain_output().result, None);
+        // The checkbox text takes no press.
         state.shell_mouse_down(170, 310, 800, 600);
         assert!(state.shell_checkbox_checked(LauncherCheckboxId::Tooltips));
         state.shell_mouse_down(150, 310, 800, 600);
         assert!(!state.shell_checkbox_checked(LauncherCheckboxId::Tooltips));
         assert_eq!(
             state.drain_output().events,
-            [
-                LauncherOptionsEvent::Cue(LauncherCue::GenericClick),
-                LauncherOptionsEvent::Cue(LauncherCue::Checkbox)
-            ]
+            [LauncherOptionsEvent::Cue(LauncherCue::Checkbox)]
         );
     }
 
