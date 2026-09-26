@@ -165,36 +165,83 @@ pub struct Veterancy(pub u16);
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Repairing;
 
-/// Building construction animation state — plays the "make" SHP sequence.
-///
-/// When a building is first placed (from sidebar production or MCV deploy),
-/// it starts with this component. Each sim tick advances `elapsed_ticks`.
-/// When `elapsed_ticks >= total_ticks`, the component is removed and the
-/// building switches to its normal idle appearance.
-///
-/// The render side maps progress (elapsed/total) to make SHP frame indices.
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-pub struct BuildingUp {
-    /// Sim ticks elapsed since placement.
-    pub elapsed_ticks: u16,
-    /// Total sim ticks for the build-up animation.
-    pub total_ticks: u16,
+/// A building's construction animation (BState 0), set by
+/// `BuildingClass::Begin_Mode(0)` (`0x00447780`) from the type's control and
+/// stepped once per frame by `BuildingClass::UpdateAnimation` (`0x004509D0`);
+/// the stepping lives in `sim::building_construction`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BuildupStage {
+    /// The type's construction control (`Type+0xF04`): first frame, frame
+    /// count, rate (`RuleSet::buildup_control`).
+    pub control: [i32; 3],
+    /// The stage (`+0xF8`): the Buildup frame drawn.
+    pub stage: i32,
+    /// The stage rate (`+0x10C`); a wrap re-derives it from the control.
+    pub rate: i32,
+    /// The stage timer (`+0x100..+0x108`), counting down one `rate`.
+    pub timer: crate::sim::timer::CdTimer,
 }
 
-/// Reverse build-up animation: building is undeploying back into a mobile unit.
-///
-/// Plays the make SHP animation in reverse (last frame → first frame).
-/// When `elapsed_ticks >= total_ticks`, the building is despawned and the
-/// mobile unit is spawned (e.g., ConYard → MCV).
-///
-/// The render side maps progress (elapsed/total) to make SHP frame indices
-/// counting backwards from the last frame.
+/// Where a building's Construction mission (`0x12`) stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ConstructionMission {
+    /// Queued behind no current mission (a human player's placement, a
+    /// deploy): the ready byte commences it (`0x0043FE27` once BState is not
+    /// 0, or `0x0043FF91`).
+    Queued,
+    /// Current with its mission timer due: the next dispatch is its first
+    /// visit (`Mission_Construction` status 0).
+    Due,
+    /// Visited (status 1): each visit completes on the ready byte.
+    Watching,
+}
+
+/// A building building up after its placement or deploy
+/// (`sim::building_construction`): its construction animation, its BState,
+/// its Construction mission, and `+0x6DD`, the byte set when the animation
+/// lands on its last frame. The render draws `anim.stage` from the Buildup
+/// SHP while BState is 0.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BuildingUp {
+    /// The construction animation (BState 0); each `Begin_Mode(0)` restarts
+    /// it from the control.
+    pub anim: BuildupStage,
+    /// BState (`+0x534`) is 1, the idle control (`{0, 1, 0}`, the
+    /// BuildingType constructor's for every retail type), instead of 0.
+    pub idle: bool,
+    /// `Begin_Mode(1)` is queued (`+0x538`), applied at the end of the next
+    /// Update (`0x0043FFB4`): a human player's placement, whose factory
+    /// sends the building OVER_OUT (`0x004FB4A6` -> `0x0043CD01`).
+    pub idle_queued: bool,
+    pub mission: ConstructionMission,
+    /// `+0x6DD`, the animation-complete (ready-to-commence) byte.
+    pub done: bool,
+    /// The first frame with an Update: the frame after a placement (placed
+    /// after that frame's Logic pass), a deployed building's creation frame.
+    pub first_frame: i32,
+}
+
+/// A building packing up into its `UndeploysInto=` unit through the Selling
+/// mission's UndeploysInto arm (`BuildingClass::Sell @ 0x00449C30`,
+/// `sim::building_construction`): stage 0 and 1 visits, then the
+/// construction animation played again (drawn in reverse) until `+0x6DD`,
+/// when the building converts (`Simulation::finish_undeploy`).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BuildingDown {
-    /// Sim ticks elapsed since undeploy was initiated.
-    pub elapsed_ticks: u16,
-    /// Total sim ticks for the undeploy animation.
-    pub total_ticks: u16,
+    /// The construction animation from stage 1's `Begin_Mode(0)`; before
+    /// that the building shows its idle frames.
+    pub anim: BuildupStage,
+    /// `BuildingClass::Sell`'s stage (`+0xBC`): 0, 1, or 2 (waiting).
+    pub sell_stage: u8,
+    /// The frame the Selling mission commenced; its visits start the frame
+    /// after.
+    pub commenced_frame: i32,
+    /// `+0x6DD`, the animation-complete byte.
+    pub done: bool,
+    /// Started by the player's undeploy order, VERA's stand-in for the retail
+    /// cell click (`0x004436F0`), which always sets an ArchiveTarget before
+    /// the sale: such a pack-up never takes the archive-less stage-0x17 exit.
+    pub player_order: bool,
     /// Unit type to spawn when animation completes (e.g., "AMCV").
     pub spawn_type: InternedId,
     /// Owner of the unit to spawn.

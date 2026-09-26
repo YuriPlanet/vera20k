@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "BuildingType Buildup rate slice 0x45F2AA..0x45F310, BuildingClass::Begin_Mode 0x447780, BuildingClass::UpdateAnimation 0x4509D0 per frame, BuildingClass::Mission_Construction 0x449A50 per visit, and placement, deploy and UndeploysInto sale routes through BuildingClass::Update's construction pieces",
+  "assumptions": [
+    "rate rows: building_body_rules fixture (supplied SHP header word +6, supplied Rules +0x1518 double), FPCW 0x0E7F",
+    "stepping/mission rows: the slave_manager fixture refinery (Building vtables, 2x2) with a supplied construction control at Type+0xF04, the TechnoClass constructor stage state (stage 0, step 1, rate 0, timer at the current frame), BState -1, the row mission (+0xAC), UndeploysInto (Type+0x408) and ArchiveTarget (+0x218)"
+  ],
+  "substitutions": [
+    "UpdateAnimation presentation callees 0x451F60, 0x452170, 0x456FB0, 0x705D70 answered; Grand_Opening 0x445F80, the radio broadcast 0x65ACB0, VocClass::PlayAt 0x7509E0, the loop update 0x750D40 and SoundEvent::Release 0x406060 observed and answered",
+    "route rows: TechnoClass::Receive_Radio 0x6F4AB0, the undeploy voice 0x459C20, the broadcast 0x65ACE0, IsHumanPlayer 0x50B6F0 (no), the survivor count 0x451330 (0) and the sale's occupy list 0x5F5B90 (empty) answered; the rest of TechnoClass::AI is not run; the sale stops at 0x449CA7"
+  ],
+  "entry_points": {
+    "buildup_slice": "0x0045F2AA",
+    "begin_mode": "0x00447780",
+    "update_animation": "0x004509D0",
+    "mission_construction": "0x00449A50",
+    "enter_construction": "0x0044D6A0",
+    "receive_radio": "0x0043C2D0",
+    "commence": "0x005B3570",
+    "queue_mission": "0x005B35E0",
+    "sell_back": "0x00447110",
+    "mission_ai": "0x005B3060",
+    "update_ready_commence_unless_building": "0x0043FE27",
+    "update_ready_commence": "0x0043FF91",
+    "update_queued_bstate": "0x0043FFB4"
+  },
+  "payload_sha256": "9482328d33d1200cb611a03d9f673a368de278ae87e46a1fb4901971644ba9cd"
+}

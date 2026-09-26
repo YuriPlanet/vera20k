@@ -834,6 +834,13 @@ pub struct GeneralRules {
     /// like TiberiumShortScan (`0x006702AC..0x006702C5`); the constructor
     /// writes `0x2000` (`0x00667642`). Retail `48` is 12288.
     pub tiberium_long_scan: i32,
+    /// `Rules+0x1518`, `[General] BuildupTime=` in minutes: how long a
+    /// building's build-up (and pack-up) animation runs, spread over its
+    /// Buildup SHP's frames (`rules::buildup_asset_catalog`).
+    /// `RulesClass::ReadGeneral` reads it through `CCINIClass::ReadDouble
+    /// 0x005283D0` at `0x00670CB5`; the constructor writes `.05`
+    /// (`0x3FA999999999999A`, `0x006673B3..0x006673BD`). Retail `.06`.
+    pub buildup_time: f64,
     /// `Rules+0x1780`, `[General] SlaveMinerShortScan=` in leptons: a deployed
     /// slave refinery with ore this close keeps working where it stands.
     /// `RulesClass::ReadGeneral` reads it through `CCINIClass::ReadRange
@@ -1415,6 +1422,7 @@ impl Default for GeneralRules {
             barrel_particle: None,
             tiberium_short_scan: 0x600,
             tiberium_long_scan: 0x2000,
+            buildup_time: f64::from_bits(0x3FA9_9999_9999_999A),
             slave_miner_short_scan: 0x500,
             slave_miner_slave_scan: 0x1000,
             drain_money_frame_delay: 30,
@@ -2405,6 +2413,7 @@ impl GeneralRules {
                 .filter(|s| !s.is_empty()),
             tiberium_short_scan: general.read_range("TiberiumShortScan", 0x600),
             tiberium_long_scan: general.read_range("TiberiumLongScan", 0x2000),
+            buildup_time: general.read_double("BuildupTime", f64::from_bits(0x3FA9_9999_9999_999A)),
             slave_miner_short_scan: general.read_range("SlaveMinerShortScan", 0x500),
             slave_miner_slave_scan: general.read_range("SlaveMinerSlaveScan", 0x1000),
             drain_money_frame_delay: general.get_i32("DrainMoneyFrameDelay").unwrap_or(30),
@@ -2937,6 +2946,9 @@ pub struct RuleSet {
     /// GPU-independent SHP frame counts used by particle timing. Bound once
     /// from the active assets and ART data.
     effect_assets: crate::rules::effect_asset_catalog::EffectAssetCatalog,
+    /// Every building type's construction control from its Buildup SHP,
+    /// bound once from the active assets (`bind_building_buildup_assets`).
+    buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog,
     /// Raw terrain SHP counts used by authoritative TIBTRE animation timing.
     /// Presentation keeps its separate body-frame projection.
     terrain_spawner_assets: crate::rules::terrain_asset_catalog::TerrainSpawnerAssetCatalog,
@@ -3728,6 +3740,7 @@ impl RuleSet {
                 .filter(|name| !name.is_empty())
                 .collect(),
             effect_assets: crate::rules::effect_asset_catalog::EffectAssetCatalog::default(),
+            buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog::default(),
             terrain_spawner_assets:
                 crate::rules::terrain_asset_catalog::TerrainSpawnerAssetCatalog::default(),
             animation_sequences: BTreeMap::new(),
@@ -3915,10 +3928,11 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        b"rules-simulation-config-v5".hash(&mut hasher);
+        b"rules-simulation-config-v6".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
         self.animation_sequences.hash(&mut hasher);
         self.effect_assets.hash(&mut hasher);
+        self.buildup_assets.hash(&mut hasher);
         self.terrain_spawner_assets.hash(&mut hasher);
         b"art-smudge-config-v2".hash(&mut hasher);
         let smudge_anim_inputs = self
@@ -4440,6 +4454,34 @@ impl RuleSet {
                 theater_ext,
                 theater_name,
             );
+    }
+
+    /// Resolve every building type's Buildup SHP from the active theater's
+    /// assets into its construction control, without a renderer atlas.
+    pub fn bind_building_buildup_assets(
+        &mut self,
+        asset_manager: &crate::assets::asset_manager::AssetManager,
+        theater_name: &str,
+    ) {
+        self.buildup_assets = crate::rules::buildup_asset_catalog::BuildupAssetCatalog::bind(
+            self,
+            asset_manager,
+            theater_name,
+        );
+    }
+
+    /// A building type's construction control (`Type+0xF04`: first frame,
+    /// frame count, rate); the constructor's `{0, 1, 0}` when its Buildup SHP
+    /// is unbound.
+    pub fn buildup_control(&self, type_id: &str) -> [i32; 3] {
+        self.buildup_assets.control(type_id)
+    }
+
+    /// Install one building type's construction control (fixtures without
+    /// assets).
+    #[cfg(test)]
+    pub(crate) fn set_buildup_control_for_test(&mut self, type_id: &str, control: [i32; 3]) {
+        self.buildup_assets.insert_for_test(type_id, control);
     }
 
     /// Consumer-visible SHP frame count for a particle image. Lookup is

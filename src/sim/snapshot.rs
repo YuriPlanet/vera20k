@@ -607,7 +607,11 @@ use crate::sim::world::Simulation;
 // bindings and the slave harvester cursor.
 // 209 -> 210: a locomotor no longer keeps the retired copy of the Jumpjet type
 // block (speed, accel, current speed, deviation, crash speed, turn rate).
-const SNAPSHOT_VERSION: u32 = 210;
+// 210 -> 211: a building's build-up and pack-up keep the construction
+// animation's StageClass (stage, rate, timer, the type's control), the
+// Construction mission's progress or Sell's stage, and the `+0x6DD` byte
+// instead of fixed elapsed/total tick counts.
+const SNAPSHOT_VERSION: u32 = 211;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3564,7 +3568,9 @@ mod tests {
         // 207 -> 208: the crash latch and edge; the Fly fall counter.
         // 208 -> 209: the slave manager and the slave's links and Storage.
         // 209 -> 210: the retired Jumpjet type-block copy.
-        assert_eq!(super::SNAPSHOT_VERSION, 210);
+        // 210 -> 211: the construction animation's StageClass on build-ups
+        // and pack-ups.
+        assert_eq!(super::SNAPSHOT_VERSION, 211);
     }
 
     #[test]

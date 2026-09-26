@@ -7620,7 +7620,9 @@ fn test_fog_revealed_persists_after_unit_moves_away() {
 #[test]
 fn test_undeploy_conyard_spawns_mcv() {
     let mut sim = Simulation::new();
-    let rules = combat_test_rules();
+    let mut rules = combat_test_rules();
+    // Retail GACNSTMK: 58 frames with shadows.
+    rules.set_buildup_control_for_test("GACNST", [0, 29, 1]);
     let heights = empty_heights();
     insert_house_with_counts(&mut sim, "Americans", 0, 0);
 
@@ -7650,13 +7652,15 @@ fn test_undeploy_conyard_spawns_mcv() {
         e.selected = true;
     }
 
-    // Undeploy the ConYard — starts a 30-tick reverse build-up animation.
+    // Undeploy the ConYard: Sell's stage 0 and stage 1 visits, then the
+    // build-up played in reverse from stage 1's Begin_Mode(0).
     let undeploy_cmd = cmd_envelope(
         &sim,
         "Americans",
         sim.session.tick + 1,
         Command::UndeployBuilding { entity_id: yard_id },
     );
+    let undeploy_frame = sim.session.binary_frame;
     let _ = sim.advance_tick(&[undeploy_cmd], Some(&rules), &heights, None, None, 33);
 
     // ConYard should still exist but have building_down set.
@@ -7674,16 +7678,19 @@ fn test_undeploy_conyard_spawns_mcv() {
         "ConYard should have building_down component"
     );
 
-    // Advance through the 30-tick undeploy animation.
-    for _tick in 3..33 {
+    // The player's order stands for the retail cell click, so the pack-up
+    // runs to the last frame (no archive-less stage-0x17 exit): the stage-2
+    // visit two frames plus 28 steps after the command frame converts it.
+    let mut converted = None;
+    for _ in 0..40 {
+        let frame = sim.session.binary_frame;
         let _ = sim.advance_tick(&[], Some(&rules), &heights, None, None, 33);
+        if sim.substrate.entities.get(yard_id).is_none() {
+            converted = Some(frame);
+            break;
+        }
     }
-
-    // ConYard should be gone after animation completes.
-    assert!(
-        sim.substrate.entities.get(yard_id).is_none(),
-        "ConYard should be removed after undeploy animation"
-    );
+    assert_eq!(converted, Some(undeploy_frame + 2 + 28));
 
     // The MCV returns to the cell it deployed from — one step south-east of the
     // footprint's north-west cell, mirroring the one step north-west that deploy

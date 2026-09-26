@@ -747,6 +747,10 @@ pub(crate) fn build_entity_atlases(
 mod retail_placement_oracle_tests;
 
 #[cfg(test)]
+#[path = "init_helpers_retail_buildup_tests.rs"]
+mod retail_buildup_tests;
+
+#[cfg(test)]
 mod tests {
     /// Building animations are tolerant roots, and only those the rules
     /// register as AnimTypes: art sections no rules list names (retail

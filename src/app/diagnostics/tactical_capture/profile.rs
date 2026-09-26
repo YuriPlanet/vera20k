@@ -66,7 +66,7 @@ const STAGE_NAMES: [&str; 9] = [
     "radar_online",
     "readiness_and_warm_frames",
 ];
-const STAGE_TICK_CAPS: [u32; 9] = [48, 640, 48, 2048, 48, 1024, 48, 4096, 18];
+const STAGE_TICK_CAPS: [u32; 9] = [48, 640, 64, 2048, 64, 1024, 64, 4096, 18];
 const STAGE_WALL_CAPS: [u32; 9] = [15, 90, 15, 270, 15, 140, 15, 20, 10];
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -515,19 +515,29 @@ impl TacticalCaptureProfile {
             "overall tactical budgets differ"
         );
         // Current Rust production timing: factory enqueue is observed at N+1,
-        // first progress at N+2, then 53 intervals at the resolved rate.
+        // first progress at N+2, then 53 intervals at the resolved rate. A
+        // placed building completes one tick after its place command plus its
+        // type's build-up on the human placement route
+        // (`sim::building_construction`), so the sides differ.
         // Radar availability can begin during buildup, but its rendered Online
         // transition uses wall time. Only deterministic construction milestones
         // belong in this fixed ledger; the script records bounded readiness.
         let ledger = &self.budgets.expected_ledger;
+        let expected = if self.is_soviet() {
+            [34, 619, 672, 2635, 2688, 3644, 3676]
+        } else {
+            [30, 615, 662, 2625, 2676, 3632, 3681]
+        };
         ensure!(
-            ledger.yard_active == 32
-                && ledger.power_ready == 617
-                && ledger.power_active == 648
-                && ledger.refinery_ready == 2611
-                && ledger.refinery_active == 2642
-                && ledger.radar_ready == 3598
-                && ledger.radar_active == 3629,
+            [
+                ledger.yard_active,
+                ledger.power_ready,
+                ledger.power_active,
+                ledger.refinery_ready,
+                ledger.refinery_active,
+                ledger.radar_ready,
+                ledger.radar_active,
+            ] == expected,
             "expected current-production ledger differs"
         );
         Ok(())

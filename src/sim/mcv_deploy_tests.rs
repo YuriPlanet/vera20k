@@ -103,6 +103,38 @@ fn one_command_turns_and_converts_all_stock_mcv_types() {
         }
     }
 }
+/// The yard an MCV deploys into in frame D builds up from its type's Buildup
+/// control and completes at D + 1 + (count - 1) * rate: Deploy's ready byte
+/// commences the queued Construction mission in D and its first visit is D+1
+/// (`sim::building_construction`); the tactical capture ledger pins this
+/// route.
+#[test]
+fn a_deployed_yard_completes_its_buildup_after_the_conversion_frame() {
+    let (mut sim, mut rules, id) = fixture("SMCV", 0, 5, 4);
+    rules.set_buildup_control_for_test("YARD", [0, 31, 1]);
+    tick(&mut sim, &rules, Some(Command::DeployMcv { entity_id: id }));
+    let mut converted = None;
+    let mut completed = None;
+    for _ in 0..200 {
+        let frame = sim.session.binary_frame;
+        tick(&mut sim, &rules, None);
+        let yard = sim
+            .substrate
+            .entities
+            .values()
+            .find(|e| !e.dying && e.category == EntityCategory::Structure);
+        if let Some(yard) = yard {
+            converted.get_or_insert(frame);
+            if yard.building_up.is_none() {
+                completed = Some(frame);
+                break;
+            }
+        }
+    }
+    let converted = converted.expect("the MCV converts");
+    assert_eq!(completed, Some(converted + 1 + 30));
+}
+
 #[test]
 fn duplicate_orders_do_not_restart_the_turn_and_zero_rot_still_completes() {
     for rot in [0, 1, 5, 10] {

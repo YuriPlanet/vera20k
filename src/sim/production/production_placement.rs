@@ -372,11 +372,21 @@ pub fn place_ready_building_with_overlays(
             ry + fh - 1,
         );
     }
-    // Tag newly placed buildings with build-up animation (~1 second at 30Hz).
+    // The placed building builds up (`sim::building_construction`): a human
+    // player's through the PLACE event (HouseClass::Place_Production), a
+    // computer house's through its factory's ExitObject, which places nothing
+    // for a house IsControlledByHuman (0x00444F1F).
+    let control = rules.buildup_control(type_id);
+    let now = sim.session.binary_frame as i32;
+    let human = sim
+        .houses
+        .get(&owner_id)
+        .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero));
     if let Some(ge) = sim.substrate.entities.get_mut(new_sid) {
-        ge.building_up = Some(BuildingUp {
-            elapsed_ticks: 0,
-            total_ticks: 30,
+        ge.building_up = Some(if human {
+            BuildingUp::placed_by_player(control, now)
+        } else {
+            BuildingUp::placed_by_computer(control, now)
         });
     }
     // Refresh superweapon grants — newly placed building may provide a SW.

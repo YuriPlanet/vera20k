@@ -1889,10 +1889,9 @@ ConditionYellow=50%
                 .entities
                 .get_mut(bldg)
                 .expect("building exists");
-            building.building_up = Some(crate::sim::components::BuildingUp {
-                elapsed_ticks: 0,
-                total_ticks: 30,
-            });
+            building.building_up = Some(crate::sim::components::BuildingUp::completing_in_ticks(
+                30, 0,
+            ));
 
             assert!(
                 !can_enter_garrison_fixture(&sim, &rules, pax, bldg),
@@ -1917,8 +1916,11 @@ ConditionYellow=50%
                 .get_mut(bldg)
                 .expect("building exists");
             building.building_down = Some(crate::sim::components::BuildingDown {
-                elapsed_ticks: 0,
-                total_ticks: 30,
+                anim: crate::sim::components::BuildupStage::begin([0, 30, 1], 0),
+                sell_stage: 0,
+                commenced_frame: 0,
+                done: false,
+                player_order: false,
                 spawn_type,
                 spawn_owner: owner,
                 spawn_rx: 10,

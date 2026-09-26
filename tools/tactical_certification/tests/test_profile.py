@@ -50,7 +50,7 @@ class ProfileTests(unittest.TestCase):
             self.assertEqual(len(launch["options"]), 18)
             self.assertEqual(
                 [stage["tick_cap"] for stage in profile.budgets["stages"]],
-                [48, 640, 48, 2048, 48, 1024, 48, 4096, 18],
+                [48, 640, 64, 2048, 64, 1024, 64, 4096, 18],
             )
             self.assertEqual(profile.budgets["child_timeout_seconds"], 720)
             self.assertEqual(

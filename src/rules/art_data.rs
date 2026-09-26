@@ -64,6 +64,10 @@ pub struct ArtEntry {
     /// Signed start/count/rate triples for AnimIdle, AnimActive, AnimAux1,
     /// AnimAux2. Native4615CA..4617B8 partially assigns each scanf triple.
     pub building_body_ranges: [[i32; 3]; 4],
+    /// `Buildup=` (BuildingType `+0xE5C`, a 16-byte ReadString, empty by
+    /// default): the build-up SHP's name without its extension
+    /// (`rules::buildup_asset_catalog`).
+    pub buildup: Option<String>,
     /// Building foundation footprint (e.g., "4x4", "2x2").
     pub foundation: Option<String>,
     /// Overlay type produced by this BuildingType's art (`ToOverlay=`).
@@ -1265,6 +1269,8 @@ impl ArtRegistry {
                     building_gate_stages: section.get_i32("GateStages").unwrap_or(9),
                     building_body_ranges: ["AnimIdle", "AnimActive", "AnimAux1", "AnimAux2"]
                         .map(|key| read_building_body_range(section, key)),
+                    buildup: Some(section.read_string("Buildup", "", 16))
+                        .filter(|name| !name.is_empty()),
                     foundation,
                     to_overlay,
                     bib_shape,
@@ -1931,16 +1937,14 @@ pub fn anim_shp_candidates(
     let mut candidates: Vec<String> = Vec::with_capacity(6);
 
     if !uses_theater {
-        let first: String = if uses_new_theater && takes_theater_letter(&upper_image) {
-            apply_theater_letter(&upper_image, theater_name)
+        let [substituted, generic] = theater_shp_names(&upper_image, theater_name);
+        let first: String = if uses_new_theater {
+            substituted
         } else {
             upper_image.clone()
         };
         push_candidate(&mut candidates, format!("{}.SHP", first));
-        push_candidate(
-            &mut candidates,
-            format!("{}.SHP", apply_generic_letter(&upper_image)),
-        );
+        push_candidate(&mut candidates, format!("{}.SHP", generic));
         if uses_new_theater {
             push_candidate(
                 &mut candidates,
@@ -2252,6 +2256,18 @@ fn apply_theater_letter(name: &str, theater_name: &str) -> String {
     let mut chars: Vec<char> = name.chars().collect();
     chars[1] = letter;
     chars.into_iter().collect()
+}
+
+/// The two names gamemd's theater lookup tries for an SHP (uppercase, without
+/// extension): `FUN_005F96B0` puts the theater's letter second in a
+/// `[GNCY][AT]` name, then `FUN_005F9710` puts `G` second on the same buffer.
+pub(crate) fn theater_shp_names(upper_name: &str, theater_name: &str) -> [String; 2] {
+    let first = if takes_theater_letter(upper_name) {
+        apply_theater_letter(upper_name, theater_name)
+    } else {
+        upper_name.to_string()
+    };
+    [first, apply_generic_letter(upper_name)]
 }
 
 /// Replace the 2nd character of a filename with the generic letter `G`.
