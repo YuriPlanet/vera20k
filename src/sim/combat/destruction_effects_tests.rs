@@ -562,18 +562,21 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
 
 /// Retail Dustbowl runtime against native execution: a power plant killed
 /// through the production receiver, with retail rules and art bound, throws
-/// its `DebrisAnims=` chunks, rolls for its centre mark and plays one
-/// `Explosion=` anim per foundation cell as the original does from the same
-/// Scenario state (`tools/spatial_oracle/building_death_anims.py`: the
-/// ReceiveDamage debris block, then DestructionEffects steps 7 and 8; the
-/// stream is reseeded at the kill so the scenario's earlier draws cannot move
-/// the comparison). The plant's origin cell carries ore, which CanPlace's
-/// overlay check (`0x006B6002`) rejects for every candidate, so the rows
-/// supply an admit-none answer and the plant leaves no mark; a mark on clean
-/// ground is compared only through the placer's pick (`anim_middle`). An
-/// art-less `gtpowexp` pick constructs nothing (a residual). An MCV then plays one of its own `Explosion=` anims and throws
-/// `MetallicDebris=` chunks, all with `0x600`/0. Ignored: needs the retail
-/// install (`RA2_DIR` or `config.toml`).
+/// its `DebrisAnims=` chunks, rolls for and places its centre mark and plays
+/// one `Explosion=` anim per foundation cell as the original does from the
+/// same Scenario state (`tools/spatial_oracle/building_death_anims.py`: the
+/// ReceiveDamage debris block, then DestructionEffects steps 7 and 8 with
+/// CanPlace over the map's own cells and Place's writes; the stream is
+/// reseeded at the kill so the scenario's earlier draws cannot move the
+/// comparison). At the fixture's plant the origin cells carry ore, which
+/// CanPlace's overlay check (`0x006B6002`) rejects for every candidate, so
+/// no mark lands; on the clean ground at (73, 116) the placer picks among the
+/// 1x1, 2x1 and 1x2 types (no 2x2 fits: (74, 117) is not Morphable) and the
+/// mark's type, cells and SmudgeData are compared. An art-less `gtpowexp`
+/// pick constructs nothing (a residual). At the fixture's plant an MCV then
+/// plays one of its own `Explosion=` anims and throws `MetallicDebris=`
+/// chunks, all with `0x600`/0. Ignored: needs the retail install (`RA2_DIR`
+/// or `config.toml`).
 #[test]
 #[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
 fn retail_dustbowl_death_anims_use_the_types_lists() {
@@ -592,7 +595,15 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
     ))
     .unwrap();
     let rows = golden["rows"].as_array().unwrap();
-    assert_eq!(rows.len(), 10);
+    assert_eq!(rows.len(), 20);
+    let map_spec = &golden["map"];
+    let tile_lookup = crate::sim::smudge_grid::oracle_fixture::tile_lookup(map_spec);
+    let smudge_names: Vec<&str> = golden["smudge_types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|def| def["name"].as_str().unwrap())
+        .collect();
     let ints = |value: &serde_json::Value| -> Vec<i64> {
         value
             .as_array()
@@ -617,42 +628,74 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
         if !sim.session.house_order.contains(&owner) {
             sim.session.house_order.push(owner);
         }
-        let (plant, mcv) = (40..100_u16)
-            .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
-            .find_map(|(x, y)| {
-                let grid = sim.path_grid()?;
-                let terrain = sim.resolved_terrain.as_ref()?;
-                let level = terrain.cell(x.checked_sub(3)?, y)?.level;
-                let (x0, y0) = (x.checked_sub(4)?, y.checked_sub(1)?);
-                let open = (x0..=x + 1).all(|cx| {
-                    (y0..=y + 2).all(|cy| {
-                        terrain.cell(cx, cy).is_some_and(|cell| cell.level == level)
-                            && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)
-                    })
-                });
-                if !open {
-                    return None;
-                }
-                let mcv =
-                    sim.spawn_object("AMCV", "Americans", x, y, 0, rules, &resources.height_map)?;
-                let plant = sim.spawn_object(
+        let location_input = ints(&input["location"]);
+        let (cell_x, cell_y) = (
+            (location_input[0] / 256) as u16,
+            (location_input[1] / 256) as u16,
+        );
+        let map_cell = |x: u16, y: u16| {
+            map_spec["cells"].as_array().unwrap().iter().find(|cell| {
+                cell["x"].as_u64() == Some(u64::from(x)) && cell["y"].as_u64() == Some(u64::from(y))
+            })
+        };
+        let ore = map_cell(cell_x, cell_y).unwrap()["overlay"].is_i64();
+        let (plant, mcv) = if !ore {
+            let plant = sim
+                .spawn_object(
                     "GAPOWR",
                     "Americans",
-                    x - 3,
-                    y,
+                    cell_x,
+                    cell_y,
                     0,
                     rules,
                     &resources.height_map,
-                )?;
-                Some((plant, mcv))
-            })
-            .expect("an MCV cell with room for a power plant");
+                )
+                .expect("a power plant on the clean cells");
+            (plant, None)
+        } else {
+            let (plant, mcv) = (40..100_u16)
+                .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
+                .find_map(|(x, y)| {
+                    let grid = sim.path_grid()?;
+                    let terrain = sim.resolved_terrain.as_ref()?;
+                    let level = terrain.cell(x.checked_sub(3)?, y)?.level;
+                    let (x0, y0) = (x.checked_sub(4)?, y.checked_sub(1)?);
+                    let open = (x0..=x + 1).all(|cx| {
+                        (y0..=y + 2).all(|cy| {
+                            terrain.cell(cx, cy).is_some_and(|cell| cell.level == level)
+                                && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)
+                        })
+                    });
+                    if !open {
+                        return None;
+                    }
+                    let mcv = sim.spawn_object(
+                        "AMCV",
+                        "Americans",
+                        x,
+                        y,
+                        0,
+                        rules,
+                        &resources.height_map,
+                    )?;
+                    let plant = sim.spawn_object(
+                        "GAPOWR",
+                        "Americans",
+                        x - 3,
+                        y,
+                        0,
+                        rules,
+                        &resources.height_map,
+                    )?;
+                    Some((plant, mcv))
+                })
+                .expect("an MCV cell with room for a power plant");
+            (plant, Some(mcv))
+        };
         sim.resolve_type_handles(rules);
 
         // The native row's inputs are this plant's: its retail lists, its
-        // Location, and an overlay (ore) on its origin cell, where every
-        // smudge candidate's footprint starts: CanPlace `0x006B5F80` admits
-        // none (OverlayTypeIndex must be -1), the rows' supplied answer.
+        // Location, and the cells its CanPlace reads.
         let gapowr = rules.object("GAPOWR").unwrap();
         let names = |value: &serde_json::Value| -> Vec<String> {
             value
@@ -711,10 +754,36 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
                 .collect::<Vec<_>>(),
             ints(&input["location"])
         );
-        let smudges = sim.smudge_grid.as_ref().unwrap();
-        assert!((rx..rx + 2).all(|x| (ry..ry + 2).all(|y| smudges.cell(x, y).type_id.is_none())));
+        assert_eq!(
+            sim.map_size_diamond()
+                .map(|(w, h)| vec![i64::from(w), i64::from(h)]),
+            Some(ints(&map_spec["size"]))
+        );
+        let terrain = sim.resolved_terrain.as_ref().unwrap();
         let overlay = sim.overlay_grid.as_ref().unwrap();
-        assert!(overlay.cell(rx, ry).overlay_id.is_some());
+        let smudges = sim.smudge_grid.as_ref().unwrap();
+        for (x, y) in (ry..ry + 2).flat_map(|y| (rx..rx + 2).map(move |x| (x, y))) {
+            let spec = map_cell(x, y).expect("the native table holds every footprint cell");
+            let field = |key: &str| spec[key].as_i64();
+            let cell = terrain.cell(x, y).unwrap();
+            assert_eq!(Some(i64::from(cell.final_tile_index)), field("tile"));
+            assert_eq!(i64::from(cell.slope_type), field("slope").unwrap_or(0));
+            assert_eq!(
+                cell.accepts_smudge,
+                crate::map::resolved_terrain::current_tile_permissions(
+                    &tile_lookup,
+                    cell.final_tile_index
+                )
+                .0
+            );
+            let slot = overlay.cell(x, y);
+            assert_eq!(slot.overlay_id.map(i64::from), field("overlay"));
+            if slot.overlay_id.is_some() {
+                assert_eq!(Some(i64::from(slot.overlay_data)), field("overlay_data"));
+            }
+            assert!(smudges.cell(x, y).type_id.is_none() && field("smudge").is_none());
+        }
+        let marks_before = smudges.clone();
         sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
@@ -795,20 +864,37 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
             );
         }
 
-        // The mark goes on the Location cell, the plant's origin.
+        // The mark's footprint from the Location cell, the plant's origin:
+        // Place's (cell, type, SmudgeData) writes in its y-outer order.
         let events = row["events"].as_array().unwrap();
-        let mark = events
+        let native_marks: Vec<_> = row["marked"]
+            .as_array()
+            .unwrap()
             .iter()
-            .find(|event| event["call"] == "smudge")
-            .map(|event| event["type"].as_str().unwrap());
-        let placed = sim.smudge_grid.as_ref().unwrap().cell(rx, ry).type_id;
-        assert_eq!(
-            placed
-                .and_then(|id| rules.smudge_types.get(id))
-                .map(|def| def.name.as_str()),
-            mark,
-            "seed {seed:#x}"
-        );
+            .map(|mark| {
+                assert_eq!(mark["dummy"], false);
+                let cell = ints(&mark["cell"]);
+                (
+                    (cell[1] as u16, cell[0] as u16),
+                    smudge_names[mark["type"].as_u64().unwrap() as usize].to_string(),
+                    mark["data"].as_u64().unwrap() as u8,
+                )
+            })
+            .collect();
+        let mut marks: Vec<_> = sim
+            .smudge_grid
+            .as_ref()
+            .unwrap()
+            .iter_occupied()
+            .filter(|&(x, y, cell)| marks_before.cell(x, y) != cell)
+            .map(|(x, y, cell)| {
+                let def = rules.smudge_types.get(cell.type_id.unwrap()).unwrap();
+                ((y, x), def.name.clone(), cell.frame_offset)
+            })
+            .collect();
+        marks.sort();
+        assert_eq!(marks, native_marks, "seed {seed:#x}");
+        assert_eq!(native_marks.is_empty(), ore);
 
         let native_explosions: Vec<_> = events
             .iter()
@@ -834,6 +920,9 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
         );
         assert!(explosions.iter().all(|anim| anim.4 == 0));
 
+        let Some(mcv) = mcv else {
+            continue;
+        };
         let (mcv_debris, mcv_explosions): (Vec<_>, Vec<_>) = kill(sim, mcv)
             .into_iter()
             .partition(|anim| anim.5.is_some());

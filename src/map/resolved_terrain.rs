@@ -5194,7 +5194,7 @@ fn restore_load_base_land(cell: &mut ResolvedTerrainCell) {
 /// CanPlaceTiberium4839C0..4839E9 admits that index at its final tile gate.
 /// Other placement gates are outside this projection. Original-block witnesses:
 /// tools/spatial_oracle/terrain_tile_permissions.
-fn current_tile_permissions(lookup: &TilesetLookup, tile: i32) -> (bool, bool) {
+pub(crate) fn current_tile_permissions(lookup: &TilesetLookup, tile: i32) -> (bool, bool) {
     if tile < 0 || tile as usize >= lookup.len() {
         (lookup.is_morphable(0), true)
     } else {
