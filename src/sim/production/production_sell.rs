@@ -4,9 +4,9 @@
 //! A sale starts at `BuildingClass::Sell_Back @ 0x00447110` ([`sell_back`];
 //! a Slave Miner refinery's relocation queues the mission itself,
 //! [`begin_selling`]): the building takes the Selling mission, and each
-//! later frame `Simulation::tick_building_down` visits
-//! `BuildingClass::Sell @ 0x00449C30` ([`BuildingDown`],
-//! `sim::building_construction`):
+//! later frame the building's LogicVector visit
+//! (`Simulation::visit_building_down`) runs `BuildingClass::Sell @
+//! 0x00449C30` ([`BuildingDown`], `sim::building_construction`):
 //! - stage 0 ([`sell_stage_zero`]): an undeploy's `DeploySound=`, the bunker
 //!   release, RUN_AWAY to every contact and the damage fires put out;
 //! - stage 1 ([`sell_stage_one`]): OVER_OUT to every contact, then (unless a
@@ -43,6 +43,12 @@
 //!   `TickTank=`/`Artillary=` building (`Type+0x16C4`/`+0x16CA`, which
 //!   queues and commences Selling itself at `0x00443C42`; no retail
 //!   building sets either key).
+//! - Stage 2's ore payout (`0x0044A232..0x0044A285`: the building's
+//!   StorageClass `+0x33C`, through `HouseClass::GiveTiberium 0x004F9610`)
+//!   pays nothing in retail play: the storage adders (`0x006C9690`,
+//!   `0x006C9740`) fill a harvester's, a slave's, the house's and a `Full=`
+//!   team member's storage (`0x0065DE7B`), and no retail TaskForce holds a
+//!   building (reading level: the adders' callers).
 //! - Stage 0's Slave Miner arm (`0x0044AA3D..0x0044AA9F`: HandleReturnedSlaves
 //!   for an archived ore cell) needs the retail undeploy click's cell, which
 //!   VERA's undeploy order does not carry.
@@ -209,9 +215,9 @@ pub fn sell_back(sim: &mut Simulation, rules: &RuleSet, id: u64, order: SellOrde
 /// building leaves its mission for Selling, whose visits start the next
 /// frame ([`BuildingDown`]). `undeploy_order` marks the player's undeploy
 /// order. A building already Selling keeps its sale (Queue_Mission refuses
-/// while Selling). The first visit stops any repair before that frame's
-/// repair step, which VERA runs ahead of the visit (`tick_repairs`), so the
-/// sale stops it here.
+/// while Selling). A repair runs on until the first visit stops it
+/// (`ToggleRepair(0)`, `0x00449C41`): the computer's order at `0x0045080D`
+/// falls through to that frame's repair step (`0x00450813`).
 pub(crate) fn begin_selling(sim: &mut Simulation, rules: &RuleSet, id: u64, undeploy_order: bool) {
     let now = sim.session.binary_frame;
     let selling = MissionId::from_known(MissionType::Selling);
@@ -237,7 +243,6 @@ pub(crate) fn begin_selling(sim: &mut Simulation, rules: &RuleSet, id: u64, unde
     if entity.mission.current() != selling || entity.building_down.is_some() {
         return;
     }
-    entity.repairing = false;
     entity.building_up = None;
     entity.building_down = Some(BuildingDown::commenced(control, now as i32, undeploy_order));
 }
@@ -926,20 +931,20 @@ pub(crate) fn eject_destruction_garrison(
     eject_destruction_garrison_with_context(sim, rules, event, UninitContext::default())
 }
 
-/// A sale run to its end at once, for fixtures without frames: the Selling
-/// mission ([`begin_selling`], which a type with no Buildup control takes as
-/// the Slave Miner relocation does), the next frame's operational visit
+/// A player's sale ([`sell_back`]) run to its end at once, for fixtures
+/// without frames: the next frame's operational visit
 /// (`Simulation::visit_building_operational`: a Psychic Tower frees its
-/// captives), then the stage-0, stage-1 and completing visits. Returns
-/// whether the sale completed.
+/// captives), then the stage-0, stage-1 and completing visits. As in play,
+/// only a type with a Buildup control sells. Returns whether the sale
+/// completed.
 #[cfg(test)]
 pub(crate) fn sell_building_now_for_test(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
-    begin_selling(sim, rules, id, false);
-    if sim
-        .substrate
-        .entities
-        .get(id)
-        .is_none_or(|building| building.building_down.is_none())
+    if !sell_back(sim, rules, id, SellOrder::Player)
+        || sim
+            .substrate
+            .entities
+            .get(id)
+            .is_none_or(|building| building.building_down.is_none())
     {
         return false;
     }
@@ -1097,8 +1102,18 @@ const REPAIR_HP_PER_TICK: i32 = 4;
 /// `BuildingClass::UpdateRepairAndPower @ 0x00450630` in stable building order.
 ///
 /// CurrentIQ is persisted per house because named scenario houses can carry a
-/// lower `IQ=` than generated skirmish computer houses. The sale is
-/// [`sell_back`]'s computer order.
+/// lower `IQ=` than generated skirmish computer houses. After the roll, a
+/// tagged building (`+0x34`, `0x004507D7`; VERA has no per-object tags) and a
+/// construction yard (`Factory=BuildingType`, `Type+0xEB8 == 7`,
+/// `0x004507DE`) stay; the sale is [`sell_back`]'s computer order.
+///
+/// RESIDUAL (UpdateRepairAndPower's port, the next chain): native draws the
+/// roll (`0x004507B4`) before the health test (`0x004507ED`), VERA only for a
+/// building below ConditionRed; the campaign gate (`+0x6DC` when GameMode is
+/// 0, `0x00450781`) and `vt+0x94` (`0x0045067F`) are not read. Trigger: a
+/// computer house below its credit reserve with an attacked building.
+/// Effect: the Scenario stream's draw count. Frequency: broke computer
+/// houses under attack.
 fn tick_ai_low_credit_sell_decisions(sim: &mut Simulation, rules: &RuleSet) {
     let building_ids: Vec<u64> = sim
         .substrate
@@ -1109,10 +1124,11 @@ fn tick_ai_low_credit_sell_decisions(sim: &mut Simulation, rules: &RuleSet) {
         .collect();
 
     for stable_id in building_ids {
-        let Some((owner, eligible_building)) =
+        let Some((owner, eligible_building, yard)) =
             sim.substrate.entities.get(stable_id).and_then(|entity| {
                 let mission = entity.mission.current().known();
-                let strength = sim.object_type(entity.type_ref(), rules)?.strength;
+                let object = sim.object_type(entity.type_ref(), rules)?;
+                let strength = object.strength;
                 // 4507F7..450805 tests x87 C0: less and unordered both sell.
                 let below_red = matches!(
                     entity
@@ -1134,6 +1150,7 @@ fn tick_ai_low_credit_sell_decisions(sim: &mut Simulation, rules: &RuleSet) {
                             Some(MissionType::Selling | MissionType::Construction)
                         )
                         && below_red,
+                    object.factory == Some(crate::rules::object_type::FactoryType::BuildingType),
                 ))
             })
         else {
@@ -1156,7 +1173,7 @@ fn tick_ai_low_credit_sell_decisions(sim: &mut Simulation, rules: &RuleSet) {
         // Native draws inclusive RandomRanged(0, 0x32), then performs an
         // unsigned comparison against HouseClass TechLevel.
         let roll = sim.scenario_rng.next_range_u32_inclusive(0, 0x32);
-        if roll >= house.tech_level as u32 {
+        if roll >= house.tech_level as u32 || yard {
             continue;
         }
 
@@ -1246,13 +1263,25 @@ mod tests {
     }
 
     fn garrison_edge_rules_with_strength(strength: i32) -> RuleSet {
+        garrison_rules("CAGAS01", strength)
+    }
+
+    /// The Soviet Battle Bunker: retail's one `CanBeOccupied=` type with a
+    /// Buildup (`NABNKRMK`), so the one garrison a player sells.
+    fn battle_bunker_rules_with_strength(strength: i32) -> RuleSet {
+        let mut rules = garrison_rules("NABNKR", strength);
+        rules.set_buildup_control_for_test("NABNKR", [0, 25, 2]);
+        rules
+    }
+
+    fn garrison_rules(type_id: &str, strength: i32) -> RuleSet {
         let ini = IniFile::from_str(&format!(
             "[InfantryTypes]\n\
              0=E1\n\
              [VehicleTypes]\n\
              [AircraftTypes]\n\
              [BuildingTypes]\n\
-             0=CAGAS01\n\
+             0={type_id}\n\
              [E1]\n\
              Name=GI\n\
              Cost=200\n\
@@ -1264,8 +1293,7 @@ mod tests {
              Owner=Americans,Neutral\n\
              Occupier=yes\n\
              Size=1\n\
-             [CAGAS01]\n\
-             Name=GasStation\n\
+             [{type_id}]\n\
              Cost=400\n\
              Strength={strength}\n\
              Armor=wood\n\
@@ -1412,9 +1440,9 @@ mod tests {
             (70_000, 100_000),
             (i32::MAX, i32::MIN),
         ] {
-            let rules = garrison_edge_rules_with_strength(strength);
+            let rules = battle_bunker_rules_with_strength(strength);
             let mut sim = Simulation::new();
-            insert_captured_player_owned_garrison(&mut sim, 10, 11);
+            insert_garrisoned_battle_bunker(&mut sim, 10, 11);
             sim.substrate.entities.get_mut(10).unwrap().health.current = actual;
             let before = credits_for_owner(&sim, "Americans");
             assert!(sell_building_now_for_test(&mut sim, &rules, 10));
@@ -1477,20 +1505,33 @@ mod tests {
         building_id: u64,
         passenger_id: u64,
     ) {
+        insert_player_owned_garrison(sim, "CAGAS01", Some("Neutral"), building_id, passenger_id);
+    }
+
+    fn insert_garrisoned_battle_bunker(sim: &mut Simulation, building_id: u64, passenger_id: u64) {
+        insert_player_owned_garrison(sim, "NABNKR", None, building_id, passenger_id);
+    }
+
+    fn insert_player_owned_garrison(
+        sim: &mut Simulation,
+        type_id: &str,
+        original_owner: Option<&str>,
+        building_id: u64,
+        passenger_id: u64,
+    ) {
         let americans = sim.interner.intern("Americans");
-        let neutral = sim.interner.intern("Neutral");
         // The refund (`0x0070ADA0`) reads the owner house.
         sim.houses.insert(
             americans,
             crate::sim::house_state::HouseState::new(americans, 0, None, true, 0, 10),
         );
 
-        let mut building = GameEntity::test_default(building_id, "CAGAS01", "Americans", 10, 10);
+        let mut building = GameEntity::test_default(building_id, type_id, "Americans", 10, 10);
         building.category = EntityCategory::Structure;
         building.foundation = "2x2".to_string();
         building.owner = americans;
-        building.type_ref = sim.interner.intern("CAGAS01");
-        building.garrison_original_owner = Some(neutral);
+        building.type_ref = sim.interner.intern(type_id);
+        building.garrison_original_owner = original_owner.map(|house| sim.interner.intern(house));
         building.passenger_role = PassengerRole::Transport {
             cargo: crate::sim::passenger::PassengerCargo::new(5, 1),
         };
@@ -1576,12 +1617,12 @@ mod tests {
     }
 
     #[test]
-    fn captured_civilian_garrison_player_sell_removes_building_and_refunds() {
-        let rules = garrison_edge_rules();
+    fn a_garrisoned_battle_bunker_sale_ejects_refunds_and_removes_it() {
+        let rules = battle_bunker_rules_with_strength(400);
         let mut sim = Simulation::new();
         let building_id = 10;
         let passenger_id = 11;
-        insert_captured_player_owned_garrison(&mut sim, building_id, passenger_id);
+        insert_garrisoned_battle_bunker(&mut sim, building_id, passenger_id);
 
         let before = credits_for_owner(&sim, "Americans");
 
@@ -1921,7 +1962,11 @@ mod tests {
              [GAPOWR]\nStrength=100\nArmor=wood\nCost=800\n\n\
              [GACNST]\nStrength=1000\nArmor=wood\nCost=3000\nConstructionYard=yes\nUndeploysInto=AMCV\n",
         );
-        RuleSet::from_ini(&ini).expect("sell eva rules should parse")
+        let mut rules = RuleSet::from_ini(&ini).expect("sell eva rules should parse");
+        for type_id in ["GAPOWR", "GACNST"] {
+            rules.set_buildup_control_for_test(type_id, [0, 25, 2]);
+        }
+        rules
     }
 
     fn insert_structure(sim: &mut Simulation, id: u64, type_id: &str, owner: &str) {

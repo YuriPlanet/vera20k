@@ -8126,10 +8126,11 @@ fn animated_death_uninit_waits_for_ordinary_tail_drain() {
     assert!(sim.substrate.pending_delete.is_empty());
 }
 
-/// A late-region death (here: a sold power plant, UnInit'd by the Selling
-/// mission's completing visit) remains resolvable until the ordinary tail
-/// drain. Earlier systems must gate on lifecycle authority rather than
-/// counting the dead-limbo object merely because it is still stored.
+/// A death in the object pass (here: a sold power plant, UnInit'd by the
+/// Selling mission's completing visit in its LogicVector slot) remains
+/// resolvable until the ordinary tail drain. Later systems of the frame must
+/// gate on lifecycle authority rather than counting the dead-limbo object
+/// merely because it is still stored.
 #[test]
 fn sale_death_is_ignored_before_ordinary_tail_drain() {
     use crate::sim::components::Health;
@@ -8193,8 +8194,9 @@ fn sale_death_is_ignored_before_ordinary_tail_drain() {
         "the sale packs the plant up"
     );
 
-    // The completing visit (2 + 24 * 2 frames on) UnInits it in the late
-    // region; the tail drains it the same tick.
+    // The completing visit (2 + 24 * 2 frames on) UnInits it in the object
+    // pass; the power phase runs while it is still stored, and the tail
+    // drains it the same tick.
     let mut frames = 0;
     while sim.substrate.entities.get(1).is_some() && frames < 60 {
         sim.advance_tick(&[], Some(&rules), &height_map, Some(&grid), None, 100);
@@ -8211,16 +8213,8 @@ fn sale_death_is_ignored_before_ordinary_tail_drain() {
     );
     assert_eq!(
         sim.power_states.get(&owner_id).map(|s| s.total_output),
-        Some(200),
-        "power ran before the Selling mission sold the plant in the late region",
-    );
-
-    // The next object/system frame observes the tail-committed deletion.
-    sim.advance_tick(&[], Some(&rules), &height_map, Some(&grid), None, 100);
-    assert_eq!(
-        sim.power_states.get(&owner_id).map(|s| s.total_output),
         Some(100),
-        "the surviving plant is the only contributor on the following frame",
+        "power skips the dead-limbo plant the tail has not yet drained",
     );
 }
 

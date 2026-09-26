@@ -3,7 +3,8 @@
 //! (`production::sell_stage_one`: the survivor count, the absorbed
 //! passengers, the garrison and the crew in `sim::crew_survival`, then the
 //! sounds) and the sale's credit (`production::building_type_refund`, `full`
-//! clear). The `route` rows are replayed by `sim::building_construction`.
+//! clear). The `route` rows are replayed by `sim::building_construction`
+//! against the visit model, and here through the frame.
 //!
 //! The crew rows run on the slave_manager scene (`slave_manager_oracle_tests`:
 //! the harvest_field world with a 2x2 YAREFN at NW (12, 12)) with the row's
@@ -27,6 +28,7 @@
 //! (TechnoClass::Unlimbo's Guard, `0x006F6E2A`, is the Unlimbo owner's); the
 //! rows in `SKIPPED`.
 
+use super::refinery_dock_oracle_tests::scene;
 use super::slave_manager_oracle_tests::{SlaveScene, row_scene_edited};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
@@ -37,6 +39,7 @@ use crate::sim::production;
 use crate::sim::rng::SimRng;
 use crate::sim::world::SimSoundEvent;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 
 /// Rows whose inputs a live sale cannot reach or VERA cannot express.
 const SKIPPED: &[&str] = &[
@@ -397,4 +400,98 @@ fn sale_refund_matches_the_original() {
         compared += 1;
     }
     assert_eq!(compared, 34);
+}
+
+/// The `route` rows through the frame (`advance_tick`), on the refinery dock
+/// scene's second refinery (a Guard miner, no contacts): the order, made
+/// between frames, stands for the next frame's event (the row's frame 0);
+/// from the frame after, the building's LogicVector visit
+/// (`Simulation::visit_building_down`) runs Sell: its stage and `+0x6DD`
+/// after each frame, and the frame whose stage-2 visit finds `+0x6DD`
+/// announces the sale (`StructureSold`; the scene's type costs nothing, so
+/// the refund is the `refund` rows') and removes the building; a repeated
+/// order is made before its frame. The
+/// tethered row and Sell_Back's refusal are replayed against the visit model
+/// and `production::sell_back`'s tests only.
+#[test]
+fn sales_through_the_frame_visit_on_the_original_frames() {
+    let heights = BTreeMap::new();
+    let overlay = crate::sim::tiberium::test_support::overlay_registry();
+    let mut compared = 0;
+    for row in corpus()["route"].as_array().unwrap() {
+        let input = &row["input"];
+        if input["buildup"] == false || input["tether_until"].is_number() {
+            continue;
+        }
+        let name = input["name"].as_str().unwrap();
+        let control: Vec<i32> = input["control"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_i64().unwrap() as i32)
+            .collect();
+        let mut s = scene(&json!({ "mission": "guard" }));
+        let building = s.other;
+        s.rules
+            .set_buildup_control_for_test("GAREFN", [control[0], control[1], control[2]]);
+        let sold = |s: &super::refinery_dock_oracle_tests::Scene| {
+            s.sim
+                .sound_events
+                .iter()
+                .filter(|event| matches!(event, SimSoundEvent::StructureSold { .. }))
+                .count()
+        };
+        assert!(production::sell_back(
+            &mut s.sim,
+            &s.rules,
+            building,
+            production::SellOrder::Player
+        ));
+        let mut completed = false;
+        for frame in std::iter::once(&row["order"]).chain(row["frames"].as_array().unwrap()) {
+            let now = frame["frame"].as_i64().unwrap_or(0);
+            let context = format!("{name} frame {now}");
+            if input["sell_again_at"].as_i64() == Some(now) {
+                assert!(production::sell_back(
+                    &mut s.sim,
+                    &s.rules,
+                    building,
+                    production::SellOrder::Player
+                ));
+            }
+            let grid = s.sim.path_grid_snapshot();
+            s.sim.advance_tick(
+                &[],
+                Some(&s.rules),
+                &heights,
+                grid.as_deref(),
+                Some(overlay),
+                67,
+            );
+            if frame["converts"] == true {
+                assert!(
+                    s.sim.substrate.entities.get(building).is_none(),
+                    "{context}: sold"
+                );
+                assert_eq!(sold(&s), 1, "{context}: announced");
+                completed = true;
+                break;
+            }
+            let entity = s.sim.substrate.entities.get(building).expect(&context);
+            assert_eq!(
+                i64::from(entity.mission.handler_state()),
+                frame["status"].as_i64().unwrap(),
+                "{context}: Sell stage"
+            );
+            assert_eq!(
+                entity.building_down.map_or(0, |down| u64::from(down.done)),
+                frame["done"].as_u64().unwrap_or(0),
+                "{context}: +0x6DD"
+            );
+            assert_eq!(sold(&s), 0, "{context}: not yet sold");
+        }
+        assert!(completed, "{name}: the row completes");
+        compared += 1;
+    }
+    assert_eq!(compared, 8);
 }

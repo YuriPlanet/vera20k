@@ -615,6 +615,18 @@ fn techno_ai_shell(
             // (`0x0043FE43`/`0x0043FFA3`); with no latch writers live the
             // promotion evaluates to not-ready (recorded residual).
             mission_common_step(sim, id, rules);
+            // The Selling mission's handler, BuildingClass::Sell, from the
+            // mission dispatch in TechnoClass::Update (`0x0043FE56`). A sold
+            // or converted building has left the map.
+            sim.visit_building_down(id, rules, ctx.overlay_registry);
+            if sim
+                .substrate
+                .entities
+                .get(id)
+                .is_none_or(|entity| entity.dying)
+            {
+                return;
+            }
             passive_acquire_step(sim, id, rules, ctx);
             if !bomb_fuse_slot(sim, id, rules, ctx.overlay_registry) {
                 return;

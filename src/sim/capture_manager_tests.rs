@@ -1247,7 +1247,8 @@ fn a_controlled_mcv_cannot_deploy_and_a_controlled_yard_cannot_repack() {
 /// still saves and loads.
 #[test]
 fn selling_a_psychic_tower_frees_its_captives() {
-    let rules = rules();
+    let mut rules = rules();
+    rules.set_buildup_control_for_test("YAPSYT", [0, 25, 2]);
     let mut sim = sim(29);
     let tower = spawn(&mut sim, &rules, "YAPSYT", "YuriCountry", 20, 20);
     // A frame's operational visit, which the off edge compares against.

@@ -1295,7 +1295,8 @@ mod map_wall_owner_candidate_tests {
 
     #[test]
     fn gsi_04_20_building_lamp_tracks_capture_power_and_sale_lifecycle() {
-        let rules = lighting_rules();
+        let mut rules = lighting_rules();
+        rules.set_buildup_control_for_test("LAMP", [0, 25, 2]);
         let mut sim = Simulation::with_seed(0x4201);
         let _original_owner = seed_live_lamp(&mut sim, &rules);
         let captured_owner = sim.interner.intern("Captured");
@@ -1328,7 +1329,9 @@ mod map_wall_owner_candidate_tests {
         assert_eq!(captured_online.point_lights.len(), 1);
         assert_eq!(before_capture.fingerprint, captured_online.fingerprint);
 
-        assert!(crate::sim::production::sell_building_now_for_test(&mut sim, &rules, 41));
+        assert!(crate::sim::production::sell_building_now_for_test(
+            &mut sim, &rules, 41
+        ));
         let sold = derive_lighting_view(&config, Some(&sim), Some(&rules), 2);
         assert!(sold.point_lights.is_empty());
         assert_ne!(captured_online.fingerprint, sold.fingerprint);

@@ -50,10 +50,16 @@
 //!   (`0x0073984E`), so its first Update, in the creation frame D, commences
 //!   the mission: complete at D+1+(count-1)*rate.
 //!
-//! VERA runs these frames in the late region (`tick_building_up` /
-//! `tick_building_down`), after the object pass, where native runs them inside
-//! each building's own Update: the completion's effects land later in the
-//! same frame.
+//! A pack-up's frames run in the building's own LogicVector visit
+//! (`Simulation::visit_building_down`, at the mission dispatch), as native
+//! does. RESIDUAL: VERA runs a build-up's frames in the late region
+//! (`tick_building_up`), after the object pass, where native runs them inside
+//! each building's own Update. Trigger: every completed build-up. Effect: the
+//! completion's effects land later in the same frame, among them the
+//! Scenario draw of a refinery's free unit's constructor
+//! (`production::spawn_completed_refinery_free_units`), which follows the
+//! frame's other objects' draws instead of preceding the later ones.
+//! Frequency: every refinery placement. Risk: the Scenario stream's order.
 //!
 //! Evidence: `tools/spatial_oracle/building_construction.json` `stepping`,
 //! `mission` and `route` rows and `tools/spatial_oracle/building_sale.json`
@@ -610,7 +616,11 @@ mod tests {
                 completed = true;
                 break;
             }
-            assert_eq!(i64::from(status), int(frame, "status"), "{context}: Sell stage");
+            assert_eq!(
+                i64::from(status),
+                int(frame, "status"),
+                "{context}: Sell stage"
+            );
             let construction = status >= 2;
             assert_eq!(
                 i64::from(!construction),

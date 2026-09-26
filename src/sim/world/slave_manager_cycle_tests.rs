@@ -668,7 +668,7 @@ fn a_dead_slave_is_regrown_after_the_regen_rate_and_goes_out_again() {
 
 /// Deploying a Slave Miner (`UnitClass::Deploy`, `deploy_mcv`) and undeploying
 /// its refinery (`undeploy_building` to its conversion in
-/// `tick_building_down`) each hand the manager over (SetOwner `0x006AF580`):
+/// `visit_building_down`) each hand the manager over (SetOwner `0x006AF580`):
 /// the slaves keep their nodes and follow it, and the manager the new
 /// object's constructor built frees its own fresh slaves (UnInit in limbo).
 /// Each constructor draws its TechnoClass word and one per slave it builds.
@@ -774,16 +774,17 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
     let refinery = sim.substrate.entities.get_mut(yarefn).unwrap();
     refinery.building_up = None;
     crate::sim::combat::veterancy::set_elite(refinery);
-    assert!(
-        sim.undeploy_building(yarefn, &rules),
-        "undeploy to SMIN"
-    );
+    assert!(sim.undeploy_building(yarefn, &rules), "undeploy to SMIN");
     sim.substrate
         .entities
         .get_mut(yarefn)
         .unwrap()
         .finish_pack_up_for_test();
-    assert!(sim.tick_building_down(Some(&rules), None).0, "converted");
+    sim.visit_building_down(yarefn, Some(&rules), None);
+    assert!(
+        std::mem::take(&mut sim.mission_spawned_entities),
+        "converted"
+    );
     constructed(&sim, &mut expected);
     let back = 13;
     assert_eq!(
@@ -1008,7 +1009,11 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
         .get_mut(refinery)
         .unwrap()
         .finish_pack_up_for_test();
-    assert!(sim.tick_building_down(Some(&rules), None).0);
+    sim.visit_building_down(refinery, Some(&rules), None);
+    assert!(
+        std::mem::take(&mut sim.mission_spawned_entities),
+        "converted"
+    );
     let miner = sim
         .substrate
         .entities

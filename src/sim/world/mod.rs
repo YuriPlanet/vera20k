@@ -5554,78 +5554,79 @@ impl Simulation {
         finished
     }
 
-    /// Advance every sale one frame, in key order (`sim::building_construction`
-    /// steps the pack-up, `production::production_sell` runs Sell's stages):
-    /// every visit stops the repair (`ToggleRepair(0)`, `0x00449C41`) and
-    /// re-arms the mission for the next frame (Sell returns 1). A building at
-    /// Health 0 runs no mission handler (`MissionClass::AI 0x005B30A7`), a
-    /// warped one no AI (`GameEntity::ai_frozen`). Returns whether an object
-    /// entered the map and whether a building left it.
-    fn tick_building_down(
+    /// The Selling mission's visit in the building's own LogicVector slot
+    /// (`BuildingClass::Update`: UpdateAnimation `0x0043FE22`, then Sell
+    /// through the mission dispatch in `TechnoClass::Update` `0x0043FE56`), so
+    /// stage 1's Scenario draws and the completion keep native order among the
+    /// frame's objects. `sim::building_construction` steps the pack-up and
+    /// `production::production_sell` runs Sell's stages. Every visit stops the
+    /// repair (`ToggleRepair(0)`, `0x00449C41`) and re-arms the mission for
+    /// the next frame (Sell returns 1). A building at Health 0 runs no mission
+    /// handler (`MissionClass::AI 0x005B30A7`), a warped one no AI
+    /// (`GameEntity::ai_frozen`). An object that enters the map (the crew, an
+    /// undeploy's unit) marks the frame's spawn refresh; the object turn
+    /// reports a building that left it.
+    pub(crate) fn visit_building_down(
         &mut self,
+        sid: u64,
         rules: Option<&RuleSet>,
         overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-    ) -> (bool, bool) {
+    ) {
         use crate::sim::building_construction::PackUpFrame;
         let now = self.session.binary_frame as i32;
-        let mut spawned = false;
-        let mut sold = false;
-        for sid in self.substrate.entities.keys_sorted() {
-            let visit = {
-                let Some(entity) = self.substrate.entities.get(sid) else {
-                    continue;
-                };
-                // The visit is the Selling mission's handler; Assign_Mission
-                // (which Selling does not refuse) can end it early.
-                if entity.building_down.is_none()
-                    || entity.mission.current().known()
-                        != Some(crate::sim::mission::MissionType::Selling)
-                    || entity.ai_frozen()
-                    || !entity.is_ai_alive()
-                    || entity.lifecycle.in_limbo
-                {
-                    continue;
-                }
-                let archive_less_sale = production::archive_less_sale(
-                    rules,
-                    self.interner.resolve(entity.type_ref()),
-                    entity,
-                );
-                let options = &self.session.game_options;
-                let Some(entity) = self.substrate.entities.get_mut(sid) else {
-                    continue;
-                };
-                let mut status = entity.mission.handler_state();
-                let Some(down) = entity.building_down.as_mut() else {
-                    continue;
-                };
-                let visit = down.frame(&mut status, now, archive_less_sale, options);
-                if visit != PackUpFrame::NoVisit {
-                    entity.mission.set_handler_state(status);
-                    entity.mission.write_dispatch_epilogue(now, 1);
-                    entity.repairing = false;
-                }
-                visit
+        let visit = {
+            let Some(entity) = self.substrate.entities.get(sid) else {
+                return;
             };
-            match visit {
-                PackUpFrame::StageZero => production::sell_stage_zero(self, rules, sid),
-                PackUpFrame::StageOne => {
-                    spawned |= production::sell_stage_one(self, rules, overlay_registry, sid);
-                }
-                PackUpFrame::Complete => {
-                    let converted = production::sell_complete(self, rules, overlay_registry, sid);
-                    spawned |= converted;
-                    sold |= !converted;
-                }
-                PackUpFrame::NoVisit | PackUpFrame::Waiting => {}
+            // The visit is the Selling mission's handler; Assign_Mission
+            // (which Selling does not refuse) can end it early.
+            if entity.building_down.is_none()
+                || entity.mission.current().known()
+                    != Some(crate::sim::mission::MissionType::Selling)
+                || entity.ai_frozen()
+                || !entity.is_ai_alive()
+                || entity.lifecycle.in_limbo
+            {
+                return;
             }
+            let archive_less_sale = production::archive_less_sale(
+                rules,
+                self.interner.resolve(entity.type_ref()),
+                entity,
+            );
+            let options = &self.session.game_options;
+            let Some(entity) = self.substrate.entities.get_mut(sid) else {
+                return;
+            };
+            let mut status = entity.mission.handler_state();
+            let Some(down) = entity.building_down.as_mut() else {
+                return;
+            };
+            let visit = down.frame(&mut status, now, archive_less_sale, options);
+            if visit != PackUpFrame::NoVisit {
+                entity.mission.set_handler_state(status);
+                entity.mission.write_dispatch_epilogue(now, 1);
+                entity.repairing = false;
+            }
+            visit
+        };
+        let spawned = match visit {
+            PackUpFrame::StageZero => {
+                production::sell_stage_zero(self, rules, sid);
+                false
+            }
+            PackUpFrame::StageOne => production::sell_stage_one(self, rules, overlay_registry, sid),
+            PackUpFrame::Complete => production::sell_complete(self, rules, overlay_registry, sid),
+            PackUpFrame::NoVisit | PackUpFrame::Waiting => false,
+        };
+        if spawned {
+            self.mission_spawned_entities = true;
         }
-        (spawned, sold)
     }
 
     /// Spine region (LATE): AI commands, defeat detection, building animations,
     /// radar aging, and the late frame/tick commit. Accumulates
-    /// `spawned_entities` (AI placements + undeploy spawns). Returns false when
+    /// `spawned_entities` (AI and command placements). Returns false when
     /// the terminating call skips frame commit and pending-delete processing.
     fn run_late_region(
         &mut self,
@@ -5638,7 +5639,6 @@ impl Simulation {
         execute_tick: u64,
         executed_commands: &mut usize,
         spawned_entities: &mut bool,
-        destroyed_structure: &mut bool,
         placed_building_owners: &mut Vec<InternedId>,
     ) -> bool {
         #[cfg(test)]
@@ -5730,12 +5730,6 @@ impl Simulation {
                 overlay_registry,
             );
         }
-        // Advance the sales: an undeploy's unit enters the map, a sold
-        // building leaves it.
-        let (spawned, sold) = self.tick_building_down(rules, overlay_registry);
-        *spawned_entities |= spawned;
-        *destroyed_structure |= sold;
-
         // EventClass dispatch is a Main_Tick tail rung: the complete live
         // Logic walk observes frame N's pre-command state, so an accepted
         // command first changes that object's AI behavior on frame N+1.
@@ -6506,7 +6500,6 @@ impl Simulation {
             execute_tick,
             &mut executed_commands,
             &mut spawned_entities,
-            &mut destroyed_structure,
             &mut placed_building_owners,
         );
         spawned_entities |= std::mem::take(&mut self.mission_spawned_entities);

@@ -1976,7 +1976,6 @@ fn construction_yard_type_for_mcv(type_id: &str, rules: &RuleSet) -> Option<Stri
     Some(target.to_string())
 }
 
-/// Resolve the undeploy target for a building via rules.ini `UndeploysInto=`.
 /// Where the unit reappears when a building undeploys, given the building's
 /// north-west footprint cell.
 ///

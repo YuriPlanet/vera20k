@@ -169,12 +169,15 @@ fn gsi_04_18_spy_sat_candidate_is_independent_of_low_or_offline_power() {
 
 #[test]
 fn gsi_04_18_sale_waits_for_the_next_house_rung_before_reshrouding() {
-    let (mut sim, rules, owner) = fixture();
+    let (mut sim, mut rules, owner) = fixture();
+    rules.set_buildup_control_for_test("GASPYSAT", [0, 25, 2]);
     insert_structure(&mut sim, 1, owner, "GASPYSAT", 6);
     sim.reconcile_active_vision_structures(&rules);
     assert!(sim.fog.is_cell_revealed(owner, 23, 23));
 
-    assert!(crate::sim::production::sell_building_now_for_test(&mut sim, &rules, 1));
+    assert!(crate::sim::production::sell_building_now_for_test(
+        &mut sim, &rules, 1
+    ));
     assert!(sim.houses[&owner].spy_sat_active);
     assert!(sim.houses[&owner].map_is_clear);
     assert!(

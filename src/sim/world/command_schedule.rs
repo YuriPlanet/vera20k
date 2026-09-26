@@ -549,7 +549,7 @@ impl Simulation {
     /// `(executed_commands, spawned_entities,
     /// successful_non_wall_placement_owners)`. A sale or undeploy order only
     /// starts the Selling mission: the building leaves the map at its last
-    /// visit (`tick_building_down`).
+    /// visit (`Simulation::visit_building_down`).
     pub(super) fn apply_due_commands(
         &mut self,
         commands: &[CommandEnvelope],
