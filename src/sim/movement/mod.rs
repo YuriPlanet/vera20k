@@ -150,9 +150,11 @@ pub use movement_commands::{
     stop_navigation_at_committed_head,
 };
 pub(crate) use movement_commands::{
-    can_accept_destination, issue_move_command_with_destination, issue_move_command_with_layered,
-    prepare_walk_cell_destination, retain_committed_movement,
+    can_accept_destination, issue_move_command_with_destination, prepare_walk_cell_destination,
+    retain_committed_movement,
 };
+#[cfg(test)]
+pub(crate) use movement_commands::issue_move_command_with_layered;
 #[cfg(test)]
 pub(crate) use movement_path::{
     path_search_used_zone_grid_marker, reset_path_search_used_zone_grid_marker,

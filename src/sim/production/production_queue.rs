@@ -545,37 +545,19 @@ fn tick_production_impl(
                         .get(stable_id)
                         .and_then(|e| e.locomotor.as_ref())
                         .map(|l| l.speed_type);
-                    let cost_grid = speed_type.and_then(|st| sim.terrain_costs.get(&st));
-                    let blocker_neighbor_counts =
-                        crate::sim::movement::bump_crush::build_blocker_neighbor_counts_with_overlays(
-                            &sim.substrate.entities,
-                            grid.width(),
-                            grid.height(),
-                            sim.resolved_terrain.as_ref(),
-                            sim.overlay_grid.as_ref(),
-                            overlay_registry,
-                            &sim.interner,
-                            Some(rules),
-                        );
-                    let _ = crate::sim::movement::issue_move_command_with_layered(
-                        &mut sim.substrate.entities,
+                    let _ = sim.issue_ground_move(
                         grid,
-                        stable_id,
-                        (tx, ty),
-                        speed,
-                        false,
-                        cost_grid,
-                        None,
-                        sim.resolved_terrain.as_ref(),
-                        sim.zone_grid.as_ref(),
-                        None,
-                        Some(&blocker_neighbor_counts),
-                        sim.playfield_bounds,
-                        Some(&mut sim.substrate.cell_occupation),
-                        crate::sim::movement::DestinationTiming::from_rules(
-                            sim.session.binary_frame,
-                            rules.into(),
-                        ),
+                        crate::sim::world::GroundMove {
+                            entity_id: stable_id,
+                            target: (tx, ty),
+                            speed,
+                            queue: false,
+                            speed_type,
+                            owner_blocks: false,
+                            object_destination: None,
+                        },
+                        overlay_registry,
+                        Some(rules),
                     );
                     if naval_rally.is_some()
                         && let Some(entity) = sim.substrate.entities.get_mut(stable_id)

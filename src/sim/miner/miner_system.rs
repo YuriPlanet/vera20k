@@ -20,11 +20,10 @@ use crate::sim::miner::miner_dock::{self, ContactAdmission};
 use crate::sim::miner::{CargoBale, Miner, MinerConfig, MinerKind, MinerState, ResourceType};
 use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
-use crate::sim::movement;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::zone_map::{ZONE_INVALID, ZoneGrid};
-use crate::sim::world::Simulation;
+use crate::sim::world::{GroundMove, Simulation};
 use crate::util::fixed_math::SimFixed;
 
 use crate::sim::debug_event_log::DebugEventKind;
@@ -1934,33 +1933,19 @@ pub(crate) fn issue_stock_miner_drive_move_with_overlay_registry(
         return false;
     };
 
-    let terrain_costs = sim.terrain_costs.get(&info.speed_type);
-    let blocker_neighbor_counts = movement::bump_crush::build_blocker_neighbor_counts_with_overlays(
-        &sim.substrate.entities,
-        grid.width(),
-        grid.height(),
-        sim.resolved_terrain.as_ref(),
-        sim.overlay_grid.as_ref(),
-        overlay_registry,
-        &sim.interner,
-        Some(rules),
-    );
-    let issued = movement::issue_move_command_with_layered(
-        &mut sim.substrate.entities,
+    let issued = sim.issue_ground_move(
         grid,
-        entity_id,
-        target,
-        info.speed,
-        false,
-        terrain_costs,
-        None,
-        sim.resolved_terrain.as_ref(),
-        sim.zone_grid.as_ref(),
-        None,
-        Some(&blocker_neighbor_counts),
-        sim.playfield_bounds,
-        Some(&mut sim.substrate.cell_occupation),
-        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, rules.into()),
+        GroundMove {
+            entity_id,
+            target,
+            speed: info.speed,
+            queue: false,
+            speed_type: Some(info.speed_type),
+            owner_blocks: false,
+            object_destination: None,
+        },
+        overlay_registry,
+        Some(rules),
     );
     if !issued {
         return false;
@@ -2015,36 +2000,19 @@ pub(crate) fn issue_move_if_idle(
             ))
     });
     if !already {
-        let blocker_neighbor_counts =
-            movement::bump_crush::build_blocker_neighbor_counts_with_overlays(
-                &sim.substrate.entities,
-                grid.width(),
-                grid.height(),
-                sim.resolved_terrain.as_ref(),
-                sim.overlay_grid.as_ref(),
-                overlay_registry,
-                &sim.interner,
-                rules,
-            );
-        let _ = movement::issue_move_command_with_layered(
-            &mut sim.substrate.entities,
+        let _ = sim.issue_ground_move(
             grid,
-            entity_id,
-            target,
-            speed,
-            false,
-            None,
-            None,
-            sim.resolved_terrain.as_ref(),
-            sim.zone_grid.as_ref(),
-            None,
-            Some(&blocker_neighbor_counts),
-            sim.playfield_bounds,
-            Some(&mut sim.substrate.cell_occupation),
-            crate::sim::movement::DestinationTiming::from_rules(
-                sim.session.binary_frame,
-                rules.into(),
-            ),
+            GroundMove {
+                entity_id,
+                target,
+                speed,
+                queue: false,
+                speed_type: None,
+                owner_blocks: false,
+                object_destination: None,
+            },
+            overlay_registry,
+            rules,
         );
     }
 }
