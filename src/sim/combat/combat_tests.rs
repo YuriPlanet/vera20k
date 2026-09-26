@@ -4334,11 +4334,11 @@ fn death_weapon_aoe(
     rules: &RuleSet,
     obj: &crate::rules::object_type::ObjectType,
     veterancy: u16,
-    current_weapon_index: u8,
+    current_weapon_number: i32,
     current_weapon: Option<&str>,
     interner: &mut StringInterner,
 ) -> Option<(i32, InternedId, InternedId)> {
-    super::death_arm_explodes(rules, obj, veterancy, current_weapon_index)
+    super::death_arm_explodes(rules, obj, veterancy, current_weapon_number)
         .then(|| super::fire_death_weapon_payload(rules, obj, current_weapon, interner))
         .flatten()
 }

@@ -6,6 +6,7 @@
 use super::*;
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
+use crate::sim::combat::combat_weapon::WeaponOverride;
 use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags, TargetKind};
 use crate::sim::house_state::HouseState;
 use crate::sim::passenger::{PassengerCargo, PassengerRole};
@@ -34,6 +35,7 @@ RefundPercent=50%
 1=IFV
 2=APC
 3=BOOMV
+4=GUNV
 [AircraftTypes]
 [BuildingTypes]
 0=GAPOWR
@@ -44,6 +46,7 @@ RefundPercent=50%
 5=REDLAMP
 [Warheads]
 0=KILLWH
+1=BLASTWH
 [E1]
 Strength=125
 Speed=4
@@ -82,6 +85,27 @@ Strength=200
 Cost=900
 Passengers=2
 Explodes=yes
+[GUNV]
+Strength=200
+Cost=600
+Passengers=1
+Gunner=yes
+TurretCount=8
+WeaponCount=8
+Weapon1=GUNGUN
+Weapon3=GUNGUN
+Weapon8=SUICIDEBLAST
+DeathWeapon=SUICIDEBLAST
+[GUNGUN]
+Damage=10
+Warhead=KILLWH
+[SUICIDEBLAST]
+Damage=50
+Warhead=BLASTWH
+Suicide=yes
+[BLASTWH]
+CellSpread=2
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 [GAPOWR]
 Strength=750
 Cost=800
@@ -936,6 +960,67 @@ fn an_exploding_transport_kills_its_passengers_first() {
     }
 }
 
+/// The death arm's Suicide test reads `GetWeapon(+0x138)`, which a Gunner
+/// transport takes from its passenger's IFVMode (SetGunnerWeapon
+/// `0x0070DC70`): the stock IFV carrying a Crazy Ivan (IFVMode=7, CRNuke
+/// `Suicide=yes`) kills its passenger and fires its death weapon; carrying a
+/// GI (IFVMode=2) it lets the GI out and fires nothing.
+#[test]
+fn a_gunner_transport_on_its_suicide_weapon_explodes() {
+    let rules = rules();
+    for (ifv_mode, explodes) in [(7, true), (2, false)] {
+        let mut sim = sim_on_arena(3, &rules);
+        let ifv = spawn(&mut sim, &rules, "GUNV", "Americans", 10, 10);
+        let bystander = spawn(&mut sim, &rules, "APC", "Americans", 11, 10);
+        let attacker = spawn(&mut sim, &rules, "APC", "Russians", 14, 10);
+        let passenger = load_passengers(&mut sim, &rules, ifv, "Americans", 1)[0];
+        sim.substrate.entities.get_mut(ifv).unwrap().weapon_override =
+            Some(WeaponOverride::IfvSlot(ifv_mode));
+        kill_by(&mut sim, &rules, ifv, attacker, ORDINARY);
+        let russians = sim.interner.intern("Russians");
+        let passenger = sim.substrate.entities.get(passenger).unwrap();
+        let bystander_hit = sim
+            .substrate
+            .entities
+            .get(bystander)
+            .unwrap()
+            .health
+            .current
+            < 200;
+        if explodes {
+            assert!(!passenger.lifecycle.object_alive);
+            assert_eq!(passenger.killed_by, Some(russians));
+        } else {
+            assert!(passenger.lifecycle.object_alive && !passenger.lifecycle.in_limbo);
+            assert_eq!(passenger.killed_by, None);
+        }
+        assert_eq!(bystander_hit, explodes, "IFVMode {ifv_mode}");
+    }
+}
+
+/// Retail `rulesmd.ini`: the stock IFV's death arm holds for exactly the
+/// passengers whose IFVMode slot is a `Suicide=` weapon.
+#[test]
+fn retail_ifv_death_arm_follows_its_passengers_slot() {
+    let Some((rules_ini, _)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let rules = RuleSet::from_ini(&rules_ini).unwrap();
+    let fv = rules.object("FV").unwrap();
+    let mut exploding: Vec<&str> = rules
+        .infantry_ids
+        .iter()
+        .filter(|id| {
+            let ifv_mode = i32::try_from(rules.object(id).unwrap().ifv_mode).unwrap();
+            crate::sim::combat::death_arm_explodes(&rules, fv, 0, ifv_mode)
+        })
+        .map(String::as_str)
+        .collect();
+    exploding.sort_unstable();
+    assert_eq!(exploding, ["CIVAN", "IVAN", "TERROR"]);
+    assert!(!crate::sim::combat::death_arm_explodes(&rules, fv, 0, 0));
+}
+
 /// A transport the local player had selected (`0x00737C98..0x00737CB6`)
 /// selects each escapee (`0x00738174`) and its crewman (`0x00738352`).
 #[test]
@@ -963,6 +1048,26 @@ fn a_selected_vehicle_selects_its_escapees_and_crewman() {
         }
     }
     assert!(crewmen > 0);
+}
+
+/// A selected transport the local player does not own hands no selection on
+/// (`HouseClass::IsHumanPlayer @ 0x0050B6F0`, skirmish arm: the owner is the
+/// local player).
+#[test]
+fn a_selected_foreign_vehicle_selects_nothing() {
+    let rules = rules();
+    let mut sim = sim_on_arena(1, &rules);
+    let player = sim.interner.intern("AlliedHuman");
+    sim.session.current_house = Some(player);
+    let apc = spawn(&mut sim, &rules, "APC", "Americans", 10, 10);
+    let passengers = load_passengers(&mut sim, &rules, apc, "Americans", 2);
+    sim.substrate.entities.get_mut(apc).unwrap().selected = true;
+    kill(&mut sim, &rules, apc, ORDINARY);
+    for id in passengers {
+        let passenger = sim.substrate.entities.get(id).unwrap();
+        assert!(passenger.lifecycle.object_alive && !passenger.lifecycle.in_limbo);
+        assert!(!passenger.selected);
+    }
 }
 
 /// Retail `rulesmd.ini` and `artmd.ini` (the local `ini/`): the stock crew
@@ -1204,11 +1309,16 @@ fn retail_dustbowl_crews_scatter_off_their_wrecks() {
     );
 }
 
-/// Retail Dustbowl runtime: GIs board a Battle Fortress (`OpenTopped=`), an
-/// IFV (`Gunner=`) and a Flak Track through the production boarding, the
-/// transports die through the production receiver, and every GI steps out
-/// onto its transport's cell, Scatters and walks off the wreck. Ignored:
-/// needs the retail install (`RA2_DIR` or `config.toml`).
+/// Retail Dustbowl runtime: GIs board a full Battle Fortress (`OpenTopped=`,
+/// five), an IFV (`Gunner=`) and a Flak Track through the production
+/// boarding, the transports die through the production receiver, and every GI
+/// steps out onto its transport's cell, Scatters and walks off the wreck. The
+/// Battle Fortress's fourth and fifth GIs are admitted because the earlier
+/// ones already move: Scatter's Set_Destination reaches the Walk's MoveTo
+/// (`0x004D965D`), which sets its IsMoving byte (`0x0075AD5A`), and
+/// Can_Enter_Cell counts only stationary allied infantry
+/// (`0x0051C6E7..0x0051C70B`). Ignored: needs the retail install (`RA2_DIR`
+/// or `config.toml`).
 #[test]
 #[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
 fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
@@ -1241,7 +1351,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
     // walkable ground around it for its GIs (the row south) and their
     // Scatter, four or more cells from the others.
     let mut loads: Vec<(&str, u64, (u16, u16), Vec<u64>)> = Vec::new();
-    for (kind, count) in [("BFRT", 3_u16), ("FV", 1), ("HTK", 3)] {
+    for (kind, count) in [("BFRT", 5_u16), ("FV", 1), ("HTK", 3)] {
         let mut placed = None;
         for (x, y) in (40..100_u16).flat_map(|y| (40..100_u16).map(move |x| (x, y))) {
             let spaced = loads
@@ -1274,8 +1384,8 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
                     .spawn_object(
                         "E1",
                         "Americans",
-                        tx - 1 + i,
-                        ty + 1,
+                        tx - 1 + i % 3,
+                        if i < 3 { ty + 1 } else { ty - 1 },
                         0,
                         rules,
                         &resources.height_map,

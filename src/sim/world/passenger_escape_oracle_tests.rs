@@ -18,9 +18,10 @@
 //! mission, the NavCom its Scatter installed, the target an open-topped
 //! transport of another house makes it drop, and its selection.
 //!
+//! A killed passenger's kill credit is compared with RecordKill's source.
 //! Not compared: the current mission (the oracle answers FootClass::Unlimbo,
-//! so its Enter_Idle_Mode never runs), the kill credit's effects (RecordKill
-//! is answered), and Team Add_Member (no VERA owner). Residual rows
+//! so its Enter_Idle_Mode never runs), RecordKill's other effects (it is
+//! answered), and Team Add_Member (no VERA owner). Residual rows
 //! (`crew_survival` residuals):
 //! - the ramp rows that Unlimbo at the exact coordinate compare the floor
 //!   under the XY: native keeps the cell centre's Z, VERA's reveal grounds
@@ -418,6 +419,15 @@ fn compare(row: &Value) {
             "{context}: UnInit"
         );
         if killed {
+            // RecordKill's source (`0x00702D40`, answered): the attacker's
+            // house takes the credit, or nobody without an attacker.
+            let record = of("record_kill").expect("a killed passenger records its kill");
+            let credited = (record[2] == "attacker").then(|| sim.interner.intern("Foreign"));
+            assert_eq!(
+                sim.substrate.entities.get(id).unwrap().killed_by,
+                credited,
+                "{context}: kill credit"
+            );
             continue;
         }
         let entity = sim.substrate.entities.get(id).unwrap();

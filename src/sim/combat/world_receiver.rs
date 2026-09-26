@@ -1040,7 +1040,6 @@ pub(crate) fn handle_death(
                 e.owner(),
                 e.category,
                 e.veterancy,
-                e.current_weapon_index,
             )
         });
 
@@ -1056,7 +1055,6 @@ pub(crate) fn handle_death(
             owner,
             category,
             veterancy,
-            current_weapon_index,
         )) = dead_info
         {
             // `0x00702050..0x00702065`: the death arm first frees a master's
@@ -1130,7 +1128,11 @@ pub(crate) fn handle_death(
                 // inlined, credited to the killing hit's source) before its
                 // death weapon. A unit that does not explode lets them escape
                 // after this arm (`finish_concrete_death`).
-                let explodes = death_arm_explodes(rules, obj, veterancy, current_weapon_index);
+                let current_weapon_number =
+                    world.substrate.entities.get(dead_id).map_or(0, |entity| {
+                        super::combat_weapon::attacker_facts(entity, obj).current_weapon_number
+                    });
+                let explodes = death_arm_explodes(rules, obj, veterancy, current_weapon_number);
                 if explodes && callbacks_enabled(world) {
                     let attacker = killing_attacker(world, damage_events, dead_id);
                     world.kill_passengers(dead_id, attacker, rules);

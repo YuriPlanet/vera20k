@@ -1831,18 +1831,19 @@ fn death_weapon_half_strength(strength: i32) -> Option<i32> {
 /// Explodes (`+0xD15`), the veteran or elite `EXPLODES` ability (IsVeteran
 /// `0x0074FF90` with `+0x2A6`; IsElite `0x00750010` with `+0x2A6` or
 /// `+0x2B8`), or the weapon at `CurrentWeaponNumber` (`GetWeapon(+0x138)`,
-/// vtable `+0x3F8`) is `Suicide=` (`+0x144`). When it holds, KillPassengers
+/// vtable `+0x3F8`) is `Suicide=` (`+0x144`). `+0x138` is a Gunner
+/// transport's passenger IFVMode (SetGunnerWeapon `0x0070DC70`), else 0: it
+/// is not the last-fired slot. When it holds, KillPassengers
 /// (`0x00702603..0x00702667`) and then Fire_Death_Weapon (`0x00702669`) run;
 /// otherwise neither does.
 pub(crate) fn death_arm_explodes(
     rules: &RuleSet,
     obj: &ObjectType,
     veterancy: u16,
-    current_weapon_index: u8,
+    current_weapon_number: i32,
 ) -> bool {
-    let numbered_weapon =
-        combat_weapon::weapon_for_slot_index(obj, veterancy, i32::from(current_weapon_index))
-            .and_then(|(weapon_id, _)| rules.weapon(weapon_id));
+    let numbered_weapon = combat_weapon::weapon_for_index(obj, veterancy, current_weapon_number)
+        .and_then(|(weapon_id, _)| rules.weapon(weapon_id));
     obj.explodes
         || (veterancy >= 100 && obj.veteran_explodes)
         || (veterancy >= 200 && obj.elite_explodes)

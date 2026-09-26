@@ -65,6 +65,42 @@
 //!     grounds it under its XY. Effect: a few leptons of height until it
 //!     moves. Frequency: a transport dying off-centre on a slope.
 //!
+//!   - The `[0x00A8E7AC]` bracket (`0x00738030..0x007381A1`, and
+//!     SpawnSurvivors' `0x00442EDE..0x00443288`) stays raised through
+//!     Scatter's immediate Walk Process. Of the flag's 292 references,
+//!     triaged by function, that Process reaches two reads, both in
+//!     `InfantryClass::Can_Enter_Cell`: a cell
+//!     outside the usable map area (`0x0051C144`, else code 7) and a
+//!     non-allied occupant, which the bracket counts as allied
+//!     (`0x0051C58D`, else 5, 6 or, for an unarmed mover, 7). VERA's Process
+//!     runs both unbracketed. The flag's gated auto-fire re-arm
+//!     (`0x0070F79E`) is out of reach: only the Deploy end of
+//!     `DoType_Sequencer` (`0x00520B57`) and the Teleport timer
+//!     (`0x00719C29`) call it. Trigger: a Scatter destination (an adjacent
+//!     cell) holding an enemy object, or off the usable area. Effect: that
+//!     escapee's first path. Frequency: uncommon. Risk: its route and walk
+//!     draws. Reading only: the oracle answers the Walk Process.
+//!   - The selection hand-over reads `HouseClass::IsHumanPlayer
+//!     @ 0x0050B6F0` as "owned by the local player". That is its skirmish
+//!     arm. In a campaign it admits any house with IsHuman (`+0x1EC`) or
+//!     PlayerControl (`+0x1ED`). Trigger: a selected unit of a
+//!     player-controlled allied campaign house dying. Effect: its escapees
+//!     and crewman stay unselected. Frequency: rare.
+//!   - VERA's Select sets the flag only. `TechnoClass::Select @ 0x006FBFA0`
+//!     also runs ObjectClass::Select's gates (`0x005F4520`), the object's
+//!     tag event 0x21 and the selection list add (`0x00637840`). For the
+//!     local player's objects it also plays the select response (vtable
+//!     `+0x360`, behind `[0x00822CF2]`). Trigger: every selected escapee
+//!     and crewman. Effect: no select voice, and no tag event (VERA has no
+//!     object tags). Frequency: whenever the player's selected transport or
+//!     vehicle dies. Risk: presentation only.
+//!   - A foreign open-topped escapee's Assign_Target(NULL) runs
+//!     `InfantryClass::Assign_Target`'s head (`0x0051B203..0x0051B24F`).
+//!     The head clears the fire latch `+0x68D`, then forces Deployed,
+//!     Prone or Ready by its Doing. VERA clears the target only. Trigger:
+//!     an open-topped transport dying with a passenger of another house.
+//!     Frequency: rare. Risk: that escapee's Doing.
+//!
 //!   Each escapee spends Scatter's RandomRanged(0,4) and then its immediate
 //!   Walk Process's draws (the head's RandomRanged(0,3) from the centre
 //!   spot); the priority placement and the kill paths draw nothing.
