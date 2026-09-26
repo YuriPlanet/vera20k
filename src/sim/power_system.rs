@@ -904,10 +904,9 @@ BuildSpeed=0.02
         let rules = test_rules();
         let mut store = EntityStore::new();
         let mut plant = make_building(1, "GAPOWR", "Allies", 600);
-        plant.building_up = Some(crate::sim::components::BuildingUp {
-            elapsed_ticks: 0,
-            total_ticks: 30,
-        });
+        plant.building_up = Some(crate::sim::components::BuildingUp::completing_in_ticks(
+            30, 0,
+        ));
         store.insert(plant);
 
         let mut state = PowerState::default();
@@ -944,10 +943,9 @@ BuildSpeed=0.02
         );
         let mut store = EntityStore::new();
         let mut radar = make_building(1, "AMRADR", "Allies", 600);
-        radar.building_up = Some(crate::sim::components::BuildingUp {
-            elapsed_ticks: 1,
-            total_ticks: 30,
-        });
+        radar.building_up = Some(crate::sim::components::BuildingUp::completing_in_ticks(
+            29, 0,
+        ));
         store.insert(radar);
         store.insert(make_building(2, "GAPOWR", "Allies", 600));
 
@@ -1201,10 +1199,9 @@ BuildSpeed=0.02
         let rules = yapowr_rules();
         let mut store = EntityStore::new();
         let mut e = make_yapowr(1, "Yuri", 750, 5);
-        e.building_up = Some(crate::sim::components::BuildingUp {
-            elapsed_ticks: 0,
-            total_ticks: 30,
-        });
+        e.building_up = Some(crate::sim::components::BuildingUp::completing_in_ticks(
+            30, 0,
+        ));
         store.insert(e);
 
         let yuri = intern::test_intern("Yuri");

@@ -188,39 +188,41 @@ pub(crate) fn build_shp_instances(
         }
         let draw_state = draw_decision.state;
         // Determine if this building is in its make/build-up or build-down animation.
-        let is_building_up: bool =
-            entity.category == EntityCategory::Structure && entity.building_up.is_some();
-        let is_building_down: bool =
-            entity.category == EntityCategory::Structure && entity.building_down.is_some();
+        // Only BState 0 draws the construction animation: a human player's
+        // placement shows its idle body for one frame before its mission
+        // starts, and a pack-up until Sell's stage 1 starts the animation
+        // again (`Begin_Mode(0)`).
+        let is_building_up: bool = entity.category == EntityCategory::Structure
+            && entity.building_up.is_some()
+            && entity.in_construction_bstate();
+        let is_building_down: bool = entity.category == EntityCategory::Structure
+            && entity.building_down.is_some()
+            && entity.in_construction_bstate();
+        // The construction animation's stage is the Buildup frame drawn,
+        // reversed while selling (`BuildingClass::GetCurrentFrame`'s BState 0
+        // arm, `sim::building_art::body_frame`).
+        let make_frame = |anim: &crate::sim::components::BuildupStage, selling: bool| {
+            let make_key: String = format!("{}_MAKE", type_str);
+            let total_make_frames: u16 =
+                atlas.make_frame_counts.get(&make_key).copied().unwrap_or(0);
+            if total_make_frames == 0 {
+                return (0, None);
+            }
+            let stage = if selling {
+                let end = anim.control[0].wrapping_add(anim.control[1]);
+                end.wrapping_sub(anim.stage).wrapping_sub(1)
+            } else {
+                anim.stage
+            };
+            let frame = stage.clamp(0, i32::from(total_make_frames) - 1) as u16;
+            (frame, Some(make_key))
+        };
         let (shp_frame, make_type_id): (u16, Option<String>) = if is_building_up {
             let bu: &BuildingUp = entity.building_up.as_ref().expect("checked above");
-            let make_key: String = format!("{}_MAKE", type_str);
-            let total_make_frames: u16 =
-                atlas.make_frame_counts.get(&make_key).copied().unwrap_or(0);
-            if total_make_frames > 0 {
-                // Map elapsed ticks to make frame index (forward: 0 → last).
-                let progress: f32 = bu.elapsed_ticks as f32 / bu.total_ticks.max(1) as f32;
-                let frame: u16 =
-                    ((progress * total_make_frames as f32) as u16).min(total_make_frames - 1);
-                (frame, Some(make_key))
-            } else {
-                (0, None)
-            }
+            make_frame(&bu.anim, false)
         } else if is_building_down {
             let bd = entity.building_down.as_ref().expect("checked above");
-            let make_key: String = format!("{}_MAKE", type_str);
-            let total_make_frames: u16 =
-                atlas.make_frame_counts.get(&make_key).copied().unwrap_or(0);
-            if total_make_frames > 0 {
-                // Map elapsed ticks to make frame index in reverse (last → 0).
-                let progress: f32 = bd.elapsed_ticks as f32 / bd.total_ticks.max(1) as f32;
-                let reverse_frame: u16 = total_make_frames.saturating_sub(1).saturating_sub(
-                    ((progress * total_make_frames as f32) as u16).min(total_make_frames - 1),
-                );
-                (reverse_frame, Some(make_key))
-            } else {
-                (0, None)
-            }
+            make_frame(&bd.anim, true)
         } else {
             match entity.category {
                 EntityCategory::Structure => {

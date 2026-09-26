@@ -173,6 +173,7 @@ mod tests {
             building_anim_power: [Default::default(); 21],
             building_gate_stages: 9,
             building_body_ranges: [[0, 1, 0]; 4],
+            buildup: None,
             foundation: None,
             to_overlay: None,
             bib_shape: None,

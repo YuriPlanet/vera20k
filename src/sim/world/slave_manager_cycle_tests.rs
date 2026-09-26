@@ -166,10 +166,9 @@ fn a_refinery_building_up_keeps_its_slaves_inside() {
         .entities
         .get_mut(s.master)
         .unwrap()
-        .building_up = Some(crate::sim::components::BuildingUp {
-        elapsed_ticks: 0,
-        total_ticks: 30,
-    });
+        .building_up = Some(crate::sim::components::BuildingUp::completing_in_ticks(
+        30, 0,
+    ));
     let mut frames = 0;
     while s
         .scene
@@ -771,7 +770,10 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
     let refinery = sim.substrate.entities.get_mut(yarefn).unwrap();
     refinery.building_up = None;
     crate::sim::combat::veterancy::set_elite(refinery);
-    assert!(sim.undeploy_building(yarefn, &rules), "undeploy to SMIN");
+    assert!(
+        sim.undeploy_building(yarefn, &rules, true),
+        "undeploy to SMIN"
+    );
     let down = sim
         .substrate
         .entities
@@ -780,7 +782,7 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
         .building_down
         .as_mut()
         .unwrap();
-    down.elapsed_ticks = down.total_ticks - 1;
+    down.finish_for_test();
     assert!(sim.tick_building_down(Some(&rules), None), "converted");
     constructed(&sim, &mut expected);
     let back = 13;
@@ -998,7 +1000,7 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
         let _ = expected.next_u32();
     }
 
-    assert!(sim.undeploy_building(refinery, &rules));
+    assert!(sim.undeploy_building(refinery, &rules, true));
     let down = sim
         .substrate
         .entities
@@ -1007,7 +1009,7 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
         .building_down
         .as_mut()
         .unwrap();
-    down.elapsed_ticks = down.total_ticks - 1;
+    down.finish_for_test();
     assert!(sim.tick_building_down(Some(&rules), None));
     let miner = sim
         .substrate

@@ -1862,6 +1862,21 @@ impl GameEntity {
                 Some(MissionType::Selling | MissionType::Construction)
             )
     }
+
+    /// A building's BState (`+0x534`) is 0, BSTATE_CONSTRUCTION: through its
+    /// build-up (Unlimbo's `Begin_Mode(0)` until the Construction mission
+    /// completes; Grand_Opening's queued `Begin_Mode(1)` applies at the end
+    /// of that Update, `0x0043FFB4`) except the idle frame a human player's
+    /// placement shows before its mission starts, and through a pack-up from
+    /// Selling's stage-1 `Begin_Mode(0)` to the conversion. A pack-up's stage
+    /// 0 and 1 visits run in the idle BState 1.
+    pub(crate) fn in_construction_bstate(&self) -> bool {
+        self.building_up.as_ref().is_some_and(|up| !up.idle)
+            || self
+                .building_down
+                .as_ref()
+                .is_some_and(|down| down.sell_stage >= 2)
+    }
 }
 
 #[cfg(test)]

@@ -22,8 +22,9 @@
 //!   Scatter away from the building). A refinery deployed from a Slave Miner
 //!   (state 4) waits for its BState (`+0x534`), 0 while it builds up. VERA
 //!   keeps a building's build-up and build-down in `building_up` and
-//!   `building_down` without publishing the Construction mission or a
-//!   BState, so both gates read them.
+//!   `building_down` (`sim::building_construction`) without publishing the
+//!   Construction or Selling mission or a BState, so both gates read them
+//!   (`GameEntity::constructing_or_selling`, `in_construction_bstate`).
 //! - A slave looks for ore within `SlaveMinerSlaveScan` (the Foot
 //!   Scan_For_Tiberium), walks there, digs one level per `HarvestRate` frames
 //!   (`InfantryClass::Mission_Harvest @ 0x00522E70`), carries its full load to
@@ -62,14 +63,12 @@
 //!   cell and its manager, in state 6, recalls its idle slaves and hunts.
 //!
 //! ## Residuals
-//! - The pack-up runs on VERA's undeploy owner: `building_down`'s fixed 30
-//!   frames stand for the Selling mission's visits and the build-up played
-//!   in reverse (`BuildingClass::Sell` stages 0..2, `Begin_Mode(0)` at the
-//!   `BuildupTime=` rate, `0x0045F2E7`), and the Selling mission is not
-//!   published, so the refinery's turret keeps firing while it packs up.
-//!   Trigger: every relocation and undeploy. Effect: the pack-up's length and
-//!   the turret. Frequency: every relocation. Downstream: the construction
-//!   timing (build-up and build-down) owner, a separate mechanism.
+//! - The pack-up runs on VERA's undeploy owner (`building_down`, Sell's
+//!   stages 0..2 and the build-up played in reverse at the type's
+//!   `BuildupTime=` rate), but the Selling mission is not published, so the
+//!   refinery's turret keeps firing while it packs up. Trigger: every
+//!   relocation and undeploy. Effect: the turret. Frequency: every
+//!   relocation. Downstream: the mission owner, a separate mechanism.
 //! - A player moves a refinery natively by clicking a cell with it selected
 //!   (`BuildingClass` cell click `0x004436F0`: SetRallyPoint's ArchiveTarget
 //!   event 0x1E, then SELL 0x16 -> `Sell_Back(-1) @ 0x00447110`); Selling
@@ -697,9 +696,7 @@ impl Simulation {
         let deploy_pending = owner.mcv_deploy_pending;
         let guarding = owner.mission.current().known() == Some(MissionType::Guard);
         let constructing_or_selling = owner.constructing_or_selling();
-        // BState (`+0x534`) is 0, BSTATE_CONSTRUCTION, while the building
-        // plays its build-up or build-down.
-        let built = owner.building_up.is_none() && owner.building_down.is_none();
+        let built = !owner.in_construction_bstate();
         let Some(state) = self.slave_manager(master).map(SlaveManager::state) else {
             return;
         };
@@ -871,7 +868,7 @@ impl Simulation {
         owner.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(
             x as u16, y as u16,
         )));
-        if !self.undeploy_building(master, rules) {
+        if !self.undeploy_building(master, rules, false) {
             log::debug!("slave refinery {master} could not start its undeploy");
         }
         self.set_manager_state(master, ManagerState::PackingUp, i32::MAX);

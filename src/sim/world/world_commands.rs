@@ -1246,13 +1246,15 @@ impl Simulation {
             // 0x16 -> `Sell_Back(-1) @ 0x00447110` queuing Selling), and its
             // What_Action never answers ACTION_SELF for an UndeploysInto
             // building (`0x00447210`); VERA's app offers the undeploy on a
-            // self-click and starts it here, with no archive.
+            // self-click and starts it here with no destination cell: the
+            // pack-up times as an archive-bearing one, but the unit is not
+            // sent anywhere after the conversion.
             Command::UndeployBuilding { entity_id } => {
                 let Some(rules) = rules else { return false };
                 if !self.entity_owned_by_id(command_owner, *entity_id) {
                     return false;
                 }
-                self.undeploy_building(*entity_id, rules)
+                self.undeploy_building(*entity_id, rules, true)
             }
             // RESIDUAL: native asks `CanDeploySlashUnload @ 0x00700D50`
             // (vt+0x314) first, and its infantry arm refuses a deployed

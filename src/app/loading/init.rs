@@ -1228,10 +1228,7 @@ mod map_wall_owner_candidate_tests {
         lamp.lifecycle.object_alive = true;
         lamp.lifecycle.in_limbo = false;
         lamp.lifecycle.cell_marked = false;
-        lamp.building_up = Some(BuildingUp {
-            elapsed_ticks: 1,
-            total_ticks: 10,
-        });
+        lamp.building_up = Some(BuildingUp::completing_in_ticks(9, 0));
         sim.entities_mut().insert(lamp);
         sim.add_entity_occupancy(41);
         sim.allocate_building_light(41, rules);
@@ -1977,6 +1974,7 @@ impl MapLoadInitial {
         );
         rules.art_registry = art.clone();
         rules.bind_effect_assets(asset_manager, theater_ext, &map_data.header.theater);
+        rules.bind_building_buildup_assets(asset_manager, &map_data.header.theater);
         rules.bind_terrain_spawner_assets(
             &rules_ini,
             asset_manager,
@@ -2774,6 +2772,7 @@ pub(crate) fn load_map_from_initial(
         );
         r.art_registry = a.clone();
         r.bind_effect_assets(&asset_manager, theater_ext, &map_data.header.theater);
+        r.bind_building_buildup_assets(asset_manager, &map_data.header.theater);
         r.bind_terrain_spawner_assets(
             &rules_ini,
             &asset_manager,

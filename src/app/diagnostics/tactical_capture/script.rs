@@ -9,7 +9,6 @@ use crate::app::types::SIM_TICK_MS;
 use super::placement::PlacementChoice;
 
 const PRODUCTION_PROGRESS_INTERVALS: u64 = 53;
-const PLACEMENT_TO_CONSTRUCTION_COMPLETE_TICKS: u64 = 31;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum StructureRole {
@@ -32,6 +31,9 @@ pub(crate) struct ProductionTargetContract {
     pub expected_rate_frames: u16,
     pub expected_ready_tick: u64,
     pub expected_active_tick: u64,
+    /// Ticks from the ready observation to construction complete: the place
+    /// command's one-tick delay plus the type's build-up.
+    pub construction_ticks: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -83,13 +85,15 @@ pub(crate) enum TacticalScriptConfigError {
     DuplicateTargets,
     #[error("production target rates must be nonzero")]
     EmptyProductionRate,
+    #[error("production target construction durations must be nonzero")]
+    EmptyConstruction,
     #[error("all tactical stage budgets must be nonzero")]
     EmptyBudget,
     #[error("tactical expected-ledger arithmetic overflowed")]
     LedgerOverflow,
     #[error("{role:?} schedule-to-ready ledger does not match 2 + 53 * rate")]
     ProductionReadyLedger { role: StructureRole },
-    #[error("{role:?} ready-to-active ledger is not exactly 31 ticks")]
+    #[error("{role:?} ready-to-active ledger differs from its construction duration")]
     ConstructionLedger { role: StructureRole },
     #[error("expected capture exceeds the overall tick cap")]
     OverallTickCap,
@@ -137,6 +141,15 @@ impl TacticalScriptConfig {
         {
             return Err(TacticalScriptConfigError::EmptyProductionRate);
         }
+        if [
+            self.power.construction_ticks,
+            self.refinery.construction_ticks,
+            self.radar.construction_ticks,
+        ]
+        .contains(&0)
+        {
+            return Err(TacticalScriptConfigError::EmptyConstruction);
+        }
         let budgets = [
             self.budgets.deploy_yard,
             self.budgets.power_production,
@@ -172,7 +185,7 @@ impl TacticalScriptConfig {
             }
             let expected_active_tick = target
                 .expected_ready_tick
-                .checked_add(PLACEMENT_TO_CONSTRUCTION_COMPLETE_TICKS)
+                .checked_add(target.construction_ticks)
                 .ok_or(TacticalScriptConfigError::LedgerOverflow)?;
             if target.expected_active_tick != expected_active_tick {
                 return Err(TacticalScriptConfigError::ConstructionLedger { role: target.role });
@@ -1869,6 +1882,7 @@ mod script_tests {
                 expected_rate_frames: 11,
                 expected_ready_tick: 617,
                 expected_active_tick: 648,
+                construction_ticks: 31,
             },
             refinery: ProductionTargetContract {
                 role: StructureRole::Refinery,
@@ -1876,6 +1890,7 @@ mod script_tests {
                 expected_rate_frames: 37,
                 expected_ready_tick: 2611,
                 expected_active_tick: 2642,
+                construction_ticks: 31,
             },
             radar: ProductionTargetContract {
                 role: StructureRole::Radar,
@@ -1883,6 +1898,7 @@ mod script_tests {
                 expected_rate_frames: 18,
                 expected_ready_tick: 3598,
                 expected_active_tick: 3629,
+                construction_ticks: 31,
             },
             refinery_harvester_type_id: Some("HARV".to_string()),
             placement_radius: 16,

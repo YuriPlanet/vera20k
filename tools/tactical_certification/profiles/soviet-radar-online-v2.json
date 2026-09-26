@@ -122,7 +122,7 @@
       },
       {
         "name": "power_active",
-        "tick_cap": 48,
+        "tick_cap": 64,
         "wall_seconds": 15
       },
       {
@@ -132,7 +132,7 @@
       },
       {
         "name": "refinery_active",
-        "tick_cap": 48,
+        "tick_cap": 64,
         "wall_seconds": 15
       },
       {
@@ -142,7 +142,7 @@
       },
       {
         "name": "radar_active",
-        "tick_cap": 48,
+        "tick_cap": 64,
         "wall_seconds": 15
       },
       {
@@ -161,13 +161,13 @@
     "child_timeout_seconds": 720,
     "absolute_timeout_max_seconds": 900,
     "expected_ledger": {
-      "yard_active": 32,
-      "power_ready": 617,
-      "power_active": 648,
-      "refinery_ready": 2611,
-      "refinery_active": 2642,
-      "radar_ready": 3598,
-      "radar_active": 3629
+      "yard_active": 34,
+      "power_ready": 619,
+      "power_active": 672,
+      "refinery_ready": 2635,
+      "refinery_active": 2688,
+      "radar_ready": 3644,
+      "radar_active": 3676
     }
   },
   "pixel_inputs": {

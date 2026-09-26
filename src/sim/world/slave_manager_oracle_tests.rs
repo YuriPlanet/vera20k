@@ -264,11 +264,9 @@ pub(super) fn row_scene(input: &Value) -> SlaveScene {
     // (`GameEntity::constructing_or_selling`, `slave_manager_step`).
     let owner_mission = input["owner_mission"].as_str().unwrap_or("guard");
     if owner_mission == "construction" || input["bstate"].as_i64() == Some(0) {
-        sim.substrate.entities.get_mut(master).unwrap().building_up =
-            Some(crate::sim::components::BuildingUp {
-                elapsed_ticks: 0,
-                total_ticks: 30,
-            });
+        sim.substrate.entities.get_mut(master).unwrap().building_up = Some(
+            crate::sim::components::BuildingUp::completing_in_ticks(30, 0),
+        );
     }
     let owner_mission = match owner_mission {
         "construction" => MissionType::Guard,
