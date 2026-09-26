@@ -1,5 +1,6 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::util::fixed_math::SimFixed;
 use serde_json::Value;
 
 #[test]
@@ -104,8 +105,16 @@ fn rocketeer(input: &Value) -> (Simulation, RuleSet, u64) {
 }
 
 /// A native row's written stage and timer: an accepted action restarts the
-/// sequence of the Doing it wrote, at the rate its stage timer runs.
-fn assert_stage(sim: &Simulation, rules: &RuleSet, id: u64, output: &Value, name: &str) {
+/// sequence of the Doing it wrote, at the rate its stage timer runs; a row
+/// that leaves the timer as it was leaves the animation as it was.
+fn assert_stage(
+    sim: &Simulation,
+    rules: &RuleSet,
+    id: u64,
+    before: &crate::sim::animation::Animation,
+    output: &Value,
+    name: &str,
+) {
     let entity = sim.substrate.entities.get(id).unwrap();
     let doing = entity.mission_leaf.as_infantry().unwrap().doing();
     let timer: Vec<i64> = output["timer"]
@@ -115,6 +124,12 @@ fn assert_stage(sim: &Simulation, rules: &RuleSet, id: u64, output: &Value, name
         .map(|value| value.as_i64().unwrap())
         .collect();
     if timer == [17, 91, 92] {
+        let after = entity.animation.as_ref().expect("animation");
+        assert_eq!(
+            (after.sequence, after.frame_index, after.elapsed_frames),
+            (before.sequence, before.frame_index, before.elapsed_frames),
+            "{name}: untouched stage"
+        );
         return;
     }
     let kind = action_kind(doing).unwrap_or_else(|| panic!("{name}: Doing {doing} has a sequence"));
@@ -168,6 +183,12 @@ fn jumpjet_infantry_actions_match_the_native_bodies() {
         let kind = input["kind"].as_str().unwrap();
         let native_doing = output["doing"].as_i64().unwrap() as i32;
         let (mut sim, rules, id) = rocketeer(input);
+        let before = sim
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| entity.animation.clone())
+            .expect("animation");
         match kind {
             "do_action" => {
                 let request = input["request"].as_i64().unwrap() as i32;
@@ -219,7 +240,7 @@ fn jumpjet_infantry_actions_match_the_native_bodies() {
             }
         }
         assert_eq!(doing(&sim, id), native_doing, "{name}");
-        assert_stage(&sim, &rules, id, output, &name);
+        assert_stage(&sim, &rules, id, &before, output, &name);
         compared += 1;
     }
     assert_eq!((compared, truncated), (413, 30));
@@ -228,6 +249,7 @@ fn jumpjet_infantry_actions_match_the_native_bodies() {
 /// `FootClass::SetSpeedFraction @ 0x004D3710`'s clamp and the truncation to
 /// `SimFixed`: a Jumpjet at speed 30 braking by 3 reaches 3/30 and 24/30,
 /// which the truncating native division leaves just below 0.1 and 0.8.
+/// +infinity is not below 1.0 (`0x004D371C`), so it stores 1.0.
 #[test]
 fn a_native_speed_fraction_is_clamped_and_truncated() {
     let mut speed = crate::sim::components::FootSpeedState::default();
@@ -241,6 +263,8 @@ fn a_native_speed_fraction_is_clamped_and_truncated() {
     assert_eq!(set((-0.0f64).to_bits()), 0);
     assert_eq!(set((-0.25f64).to_bits()), 0);
     assert_eq!(set(f64::NAN.to_bits()), 0);
+    assert_eq!(set(f64::INFINITY.to_bits()), 1 << 16);
+    assert_eq!(set(f64::NEG_INFINITY.to_bits()), 0);
     assert_eq!(set(f64::MIN_POSITIVE.to_bits()), 0);
     assert_eq!(set(0.5f64.to_bits()), 1 << 15);
     // 3/30 and 24/30 divided with truncation: one ulp below 0.1 and 0.8.
@@ -253,17 +277,35 @@ fn a_native_speed_fraction_is_clamped_and_truncated() {
     let mut entity =
         crate::sim::game_entity::GameEntity::test_default(1, "JUMPJET", "Americans", 0, 0);
     entity.foot_speed.set_speed_fraction_native_bits(tenth);
-    assert!(!speed_fraction_above_tenth(&entity));
+    assert!(!entity.foot_speed.above_tenth());
     entity
         .foot_speed
         .set_speed_fraction_native_bits(eight_tenths);
-    assert!(!speed_fraction_above_eight_tenths(&entity));
+    assert!(!entity.foot_speed.above_eight_tenths());
     entity
         .foot_speed
         .set_speed_fraction_native_bits((4.0f64 / 30.0).to_bits());
-    assert!(speed_fraction_above_tenth(&entity));
+    assert!(entity.foot_speed.above_tenth());
     entity
         .foot_speed
         .set_speed_fraction_native_bits((26.0f64 / 30.0).to_bits());
-    assert!(speed_fraction_above_eight_tenths(&entity));
+    assert!(entity.foot_speed.above_eight_tenths());
+}
+
+/// `takes_default_arm` against the native dispatch: the arm
+/// `DoType_Sequencer` takes for each Doing, read from the tables at
+/// `0x00520F1C` and `0x00520EFC` in the corpus.
+#[test]
+fn the_default_arm_follows_the_native_sequencer_tables() {
+    let corpus: Value = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/jumpjet_infantry_actions.json"
+    ))
+    .expect("corpus parses");
+    let arms = corpus["sequencer_arms"].as_array().expect("arms");
+    assert_eq!(arms.len(), 43);
+    for arm in arms {
+        let doing = arm[0].as_i64().unwrap() as i32;
+        let native_default = arm[1].as_str().unwrap() == "00520CE6";
+        assert_eq!(takes_default_arm(doing), native_default, "Doing {doing}");
+    }
 }

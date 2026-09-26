@@ -125,8 +125,11 @@ impl Simulation {
         let object = self
             .object_type(actor.type_ref(), rules)
             .ok_or("failed-path receiver requires the Infantry type")?;
-        let type_id = object.id.clone();
-        let movement_zone = object.movement_zone;
+        let facts = super::infantry_action::DoActionType {
+            type_id: object.id.clone(),
+            movement_zone: object.movement_zone,
+            crawls: object.crawls,
+        };
         let doing = actor
             .mission_leaf
             .as_infantry()
@@ -142,16 +145,7 @@ impl Simulation {
         //`((facing >> 12) + 1) >> 1 & 7`; the stored 8-bit facing is its high byte.
         let direction = (((i32::from(actor.facing) >> 4) + 1) >> 1) & 7;
         let requested = failed_path_requested_action(doing, prone);
-        self.apply_infantry_do_action(
-            id,
-            doing,
-            requested,
-            false,
-            &type_id,
-            movement_zone,
-            on_bridge,
-            rules,
-        )?;
+        self.apply_infantry_do_action(id, requested, false, &facts, rules)?;
 
         let terrain = self
             .resolved_terrain

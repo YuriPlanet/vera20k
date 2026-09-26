@@ -101,7 +101,7 @@ class Actions(States):
             u.mem_write(SEQUENCES + index * 36, struct.pack('<9i', *record))
         u.mem_write(TYPE + 0xE3C, dwords(SEQUENCES))
         u.mem_write(TYPE + 0xD94, bytes([int(row.get('jumpjet', True))]))
-        u.mem_write(TYPE + 0x5B4, dwords(5))
+        u.mem_write(TYPE + 0x5B4, dwords(9))
         # Original Do_Action and IsHighFlying; recorded Stop_Driver and UnInit.
         for slot, fn in [(0x558, DO_ACTION), (0x54, 0x4DE620), (0x500, STOP_DRIVER),
                          (0xF8, UNINIT)]:
@@ -244,6 +244,21 @@ def firing_rows():
             for current in (-1, 0x17, 0x18, 0x1A) for jumpjet in (True, False)]
 
 
+def sequencer_arms(uc):
+    """The arm `DoType_Sequencer` 0x00520AE0 dispatches each Doing to at its
+    end (0x00520B13..0x00520B27): Doing - 0xB through the byte table at
+    0x00520F1C into the arm table at 0x00520EFC; -1 and anything outside
+    0..0x1B take the default arm 0x00520CE6."""
+    index = bytes(uc.mem_read(0x520F1C, 0x1C))
+    arms = struct.unpack('<8I', uc.mem_read(0x520EFC, 32))
+    out = []
+    for doing in range(-1, 42):
+        offset = doing - 0xB
+        arm = arms[index[offset]] if 0 <= offset <= 0x1B else 0x520CE6
+        out.append([doing, f'{arm:08X}'])
+    return out
+
+
 def generate():
     records = rocketeer_records()
     out = []
@@ -259,7 +274,8 @@ def generate():
         else:
             output = fixture.firing_arm()
         out.append(dict(input=row, output=output))
-    return dict(records=records, rows=out)
+    arms = sequencer_arms(Actions(dict(kind='table'), records).uc)
+    return dict(records=records, sequencer_arms=arms, rows=out)
 
 
 if __name__ == '__main__':
@@ -276,7 +292,7 @@ if __name__ == '__main__':
                       'sequencer': SEQUENCER, 'speed_normalize': 0x5FB2E0,
                       'read_sequence_data': 0x523D00},
         assumptions=['Everything jumpjet_states.States assumes, with owner RTTI 15 and the retail '
-                     '[JUMPJET] Jumpjet block; type JumpJet +0xD94 per row, MovementZone +0x5B4 5 '
+                     '[JUMPJET] Jumpjet block; type JumpJet +0xD94 per row, MovementZone +0x5B4 9 '
                      '(Fly); level height 104 at 0x00AC13C8; stored game speed 1 at 0x00A8EB60 '
                      'unless the row says otherwise; owner +0x74 set, Health 125 unless the '
                      'row says 0, stage timer (17, 91, 92) with increment 1, the owner at the height '

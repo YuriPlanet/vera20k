@@ -267,12 +267,7 @@ impl FireSubject<'_> {
             },
             secondary_facing: current(firer.barrel_facing.or(firer.body_facing), firer.facing),
             navcom: firer.navigation.nav_com.is_some(),
-            // 0.1 lies between SimFixed raw 6553 and 6554; integer division
-            // selects the largest admissible representable fraction. Original
-            // boundary witnesses: tools/spatial_oracle/infantry_fire_speed.json.
-            moving_faster_than_tenth: firer.foot_speed.applied_fraction
-                > crate::util::fixed_math::SimFixed::ONE
-                    / crate::util::fixed_math::SimFixed::from_num(10),
+            moving_faster_than_tenth: firer.foot_speed.above_tenth(),
             deploying: unit_deploying(firer),
             tethered: firer.dock_entered_with.is_some(),
             radio_link: match radio_link {

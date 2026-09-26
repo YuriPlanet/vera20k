@@ -3189,7 +3189,7 @@ impl Simulation {
 
             let target_cleared = self.listener_targets(listener_id, detach_id);
             if target_cleared {
-                self.assign_target_represented(listener_id, None)
+                self.assign_target_represented(listener_id, None, rules)
                     .expect("detach sweep listener remains present for the target clear");
             }
 
@@ -3366,7 +3366,7 @@ impl Simulation {
         }
 
         if clears_current_target {
-            self.assign_target_represented(listener_id, None)
+            self.assign_target_represented(listener_id, None, rules)
                 .expect("expiry listener remains present");
             if mission_is_suspended {
                 self.mission_restore_after_target_expiry(listener_id, rules)

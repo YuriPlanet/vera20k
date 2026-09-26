@@ -1075,6 +1075,26 @@ mod tests {
                 (expected["body_facing"].as_u64().expect("body facing") >> 8) as u32,
                 "{name}: body facing, frame {index}"
             );
+            // `SetSpeedFraction` reaches Foot `+0x578`: the frame's last native
+            // fraction, clamped to [0, 1] and truncated to `SimFixed`.
+            if let Some(bits) = expected["speed_fractions"]
+                .as_array()
+                .and_then(|fractions| fractions.last())
+            {
+                let value = f64::from_bits(bits.as_u64().expect("fraction bits"));
+                let truncated = if value.is_nan() || value <= 0.0 {
+                    0
+                } else if value >= 1.0 {
+                    1 << 16
+                } else {
+                    (value * 65536.0).floor() as i32
+                };
+                assert_eq!(
+                    entity.foot_speed.applied_fraction.to_bits(),
+                    truncated,
+                    "{name}: speed fraction, frame {index}"
+                );
+            }
             let last = index + 1 == frames.len();
             assert_eq!(stats.arrivals, u32::from(last), "{name}: frame {index}");
         }

@@ -31,11 +31,13 @@ fn pose(sim: &super::Simulation, id: u64) -> Pose {
 }
 
 /// A Rocketeer on Dustbowl flies to a cell eight cells away and holds there,
-/// then is ordered to attack a conscript three cells off. At cruise speed it
-/// takes Fly, in the hold Hover and at each shot FireFly, whose sequence it
-/// shows. Every shot leaves it at a speed fraction of a tenth or less (the
-/// Infantry fire error's I4). Before this chain, VERA showed its standing
-/// Ready frame in the air, and it fired at full speed.
+/// then is ordered to attack a conscript eight cells beyond, which it closes
+/// on. At cruise speed it takes Fly, in the hold Hover and at each shot
+/// FireFly, whose sequence it shows; no airborne frame shows the standing or
+/// walking pose. It reaches range still at speed and holds its fire until it
+/// is at a tenth of full speed or less (the Infantry fire error's I4). Before
+/// this chain, VERA showed its standing Ready frame in the air, and it fired
+/// at full speed.
 #[test]
 #[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
 fn retail_dustbowl_rocketeer_flies_hovers_and_fires_in_its_airborne_poses() {
@@ -164,8 +166,8 @@ fn retail_dustbowl_rocketeer_flies_hovers_and_fires_in_its_airborne_poses() {
         );
     }
 
-    // Ordered to attack a conscript standing three cells from its hold, it
-    // shoots from the hover.
+    // Ordered to attack a conscript eight cells beyond its hold, three past
+    // its 20mm's range, it closes in, slows and shoots from the hover.
     let crate::sim::runtime::SimRuntime {
         simulation: sim,
         resources,
@@ -174,7 +176,7 @@ fn retail_dustbowl_rocketeer_flies_hovers_and_fires_in_its_airborne_poses() {
         .spawn_object(
             "E2",
             "Russians",
-            x + 11,
+            x + 16,
             y,
             192,
             &resources.rules,
@@ -191,16 +193,17 @@ fn retail_dustbowl_rocketeer_flies_hovers_and_fires_in_its_airborne_poses() {
         },
     );
     let mut orders = vec![attack];
-    let rearm_start = |sim: &super::Simulation| {
+    let rearm = |sim: &super::Simulation| {
         sim.substrate
             .entities
             .get(rocketeer)
             .map(|entity| entity.rearm_timer)
     };
-    let mut last_rearm = rearm_start(&scenario.runtime.simulation);
+    let mut last_rearm = rearm(&scenario.runtime.simulation);
     let mut shots = Vec::new();
     let mut fight = Vec::new();
-    for _ in 0..300 {
+    let mut held_by_speed = 0;
+    for _ in 0..400 {
         scenario
             .runtime
             .advance_frame(
@@ -215,30 +218,55 @@ fn retail_dustbowl_rocketeer_flies_hovers_and_fires_in_its_airborne_poses() {
         if now.doing == DO_FIRE_FLY {
             assert_eq!(now.sequence, Some(SequenceKind::FireFly), "{now:?}");
         }
-        // A discharge restarts the Rocketeer's rearm timer.
-        let rearm = rearm_start(sim);
-        if rearm != last_rearm {
-            shots.push(now);
-            last_rearm = rearm;
+        if now.altitude > 0 {
+            assert!(
+                !matches!(now.sequence, Some(SequenceKind::Stand | SequenceKind::Walk)),
+                "airborne pose {now:?}"
+            );
         }
-        if !sim.substrate.entities.contains(conscript) {
+        let Some(target) = sim.substrate.entities.get(conscript) else {
             break;
+        };
+        // Within the 20mm's five cells while still faster than a tenth: the
+        // Infantry fire error's I4 holds the shot.
+        let shooter = sim.substrate.entities.get(rocketeer).expect("rocketeer");
+        let in_range = shooter.position.rx.abs_diff(target.position.rx) <= 4
+            && shooter.position.ry.abs_diff(target.position.ry) <= 1;
+        if in_range && now.fraction > 6553 && shooter.attack_target.is_some() {
+            held_by_speed += 1;
+        }
+        // A discharge restarts the Rocketeer's rearm timer.
+        let rearmed = rearm(sim);
+        if rearmed != last_rearm {
+            shots.push((now, target.health.current));
+            last_rearm = rearmed;
         }
     }
     assert!(
         shots.len() >= 2,
         "the Rocketeer shot the conscript: {fight:?}"
     );
-    for shot in &shots {
-        // Fired in FireFly, at its FireUp frame, and (I4 `0x0051C9B8`) at
-        // no more than a tenth of full speed.
-        assert_eq!(shot.doing, DO_FIRE_FLY, "{shot:?}");
-        assert_eq!(shot.sequence, Some(SequenceKind::FireFly), "{shot:?}");
-        assert!(shot.fraction <= 6553, "{shot:?}");
-    }
-    let after = pose(&scenario.runtime.simulation, rocketeer);
     assert!(
-        matches!(after.doing, DO_HOVER | DO_FIRE_FLY),
-        "back to its hover: {after:?}"
+        held_by_speed > 0,
+        "it reached range still at speed: {fight:?}"
     );
+    for (shot, target_health) in &shots {
+        // Fired (I4 `0x0051C9B8`) at no more than a tenth of full speed, in
+        // FireFly; the killing shot's target expires the same frame, and its
+        // Assign_Target(NULL) (`0x007079A1`) turns the FireFly to Hover.
+        assert!(shot.fraction <= 6553, "{shot:?}");
+        let (doing, sequence) = if *target_health > 0 {
+            (DO_FIRE_FLY, SequenceKind::FireFly)
+        } else {
+            (DO_HOVER, SequenceKind::Hover)
+        };
+        assert_eq!(shot.doing, doing, "{shot:?}");
+        assert_eq!(shot.sequence, Some(sequence), "{shot:?}");
+    }
+    assert!(
+        shots.iter().any(|(_, health)| *health <= 0),
+        "the Rocketeer killed the conscript: {shots:?}"
+    );
+    let after = pose(&scenario.runtime.simulation, rocketeer);
+    assert_eq!(after.doing, DO_HOVER, "back to its hover: {after:?}");
 }
