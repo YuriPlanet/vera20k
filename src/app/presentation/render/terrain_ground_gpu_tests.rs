@@ -42,7 +42,7 @@ fn retained_ground_history_controls_overlapping_atlas_pixels() {
         let id = step["actor"].as_u64().map(|index| index + 1);
         match step["op"].as_str().unwrap() {
             "submit" => {
-                display.submit(id.unwrap(), Some(DisplayLayer::GROUND), |id| {
+                display.submit(id.unwrap(), Some(DisplayLayer::GROUND), &|id| {
                     keys[id as usize - 1]
                 });
             }
@@ -51,7 +51,7 @@ fn retained_ground_history_controls_overlapping_atlas_pixels() {
                     (step["xyz"][0].as_i64().unwrap() + step["xyz"][1].as_i64().unwrap()) as i32
             }
             "sort" => {
-                display.sort_ground_pass(|id| keys[id as usize - 1]);
+                display.sort_ground_pass(&|id| keys[id as usize - 1]);
                 let expected: Vec<_> = observed["layers"][2]
                     .as_array()
                     .unwrap()

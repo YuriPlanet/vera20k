@@ -59,6 +59,7 @@ use crate::sim::components::AnimClassSpawnDescriptor;
 use crate::sim::intern::InternedId;
 use crate::sim::occupancy::{RawCellOccupationGrid, infantry_raw_occupation_mask};
 use crate::sim::timer::CdTimer;
+use crate::sim::touch_log::{TouchLog, Touched};
 use crate::sim::world::{LifecycleOutput, SimSoundEvent, Simulation};
 use crate::util::fixed_math::SimFixed;
 use crate::util::lepton::{BRIDGE_HEIGHT_DELTA_LEPTONS, ground_height_leptons};
@@ -426,14 +427,18 @@ impl std::hash::Hash for AnimObject {
     }
 }
 
+/// The owner centre an attached anim's stored coordinate is relative to.
+fn anim_owner_centre(
+    owner: &crate::sim::game_entity::GameEntity,
+) -> crate::sim::components::DriveCoord {
+    crate::sim::movement::ground_pose::object_center_coord_with_foundation(owner, &owner.foundation)
+}
+
 fn anim_owner_world_coords(
     owner: &crate::sim::game_entity::GameEntity,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> AnimWorldCoord {
-    let centre = crate::sim::movement::ground_pose::object_center_coord_with_foundation(
-        owner,
-        &owner.foundation,
-    );
+    let centre = anim_owner_centre(owner);
     AnimWorldCoord {
         x: centre.x,
         y: centre.y,
@@ -441,15 +446,33 @@ fn anim_owner_world_coords(
     }
 }
 
+/// Anim GetYSort (422BC0 -> Object5F6BD0 -> GetCoords422BE0, plus the
+/// retained instance+104): the absolute X + Y plus the adjust. An attached
+/// anim stores an owner-relative coordinate, so its key is
+/// [`anim_own_sort_term`] plus [`anim_owner_sort_term`] (wrapping, so the
+/// terms add in any order).
 pub(crate) fn anim_display_sort_key(
     anim: &AnimObject,
     entities: &crate::sim::entity_store::EntityStore,
 ) -> i32 {
-    let coord = anim_world_coords(anim, entities, None);
-    coord
+    let owner = anim.owner_entity.and_then(|id| entities.get(id));
+    anim_own_sort_term(anim).wrapping_add(owner.map_or(0, anim_owner_sort_term))
+}
+
+/// The anim's own part of its GetYSort: the stored coordinate's X + Y plus
+/// the retained adjust. Type changes do not recopy the adjust.
+pub(crate) fn anim_own_sort_term(anim: &AnimObject) -> i32 {
+    anim.world_coord
         .x
-        .wrapping_add(coord.y)
+        .wrapping_add(anim.world_coord.y)
         .wrapping_add(anim.display.y_sort_adjust())
+}
+
+/// What an attached anim's GetYSort adds for its owner: the X + Y of the
+/// owner's centre ([`anim_owner_world_coords`], whose Z the key never reads).
+pub(crate) fn anim_owner_sort_term(owner: &crate::sim::game_entity::GameEntity) -> i32 {
+    let centre = anim_owner_centre(owner);
+    centre.x.wrapping_add(centre.y)
 }
 
 pub(crate) fn anim_world_coords(
@@ -468,44 +491,119 @@ pub(crate) fn anim_world_coords(
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AnimStore(BTreeMap<AnimId, AnimObject>);
+/// Animation objects by id. Every `&mut AnimObject` goes through the store,
+/// which notes it in a touch log for the kept Ground display sort keys.
+pub struct AnimStore {
+    anims: BTreeMap<AnimId, AnimObject>,
+    /// Which anims may have changed since [`Self::take_touched`]. Transient:
+    /// never saved, compared or hashed.
+    touched: TouchLog,
+}
 
 impl AnimStore {
     pub fn get(&self, id: AnimId) -> Option<&AnimObject> {
-        self.0.get(&id)
+        self.anims.get(&id)
     }
 
     pub(crate) fn get_mut(&mut self, id: AnimId) -> Option<&mut AnimObject> {
-        self.0.get_mut(&id)
+        let stored = self.anims.len();
+        let anim = self.anims.get_mut(&id)?;
+        self.touched.note(id, stored);
+        Some(anim)
     }
 
     pub(crate) fn insert(&mut self, object: AnimObject) -> Option<AnimObject> {
-        self.0.insert(object.stable_id, object)
+        self.touched.note(object.stable_id, self.anims.len());
+        self.anims.insert(object.stable_id, object)
     }
 
     pub(crate) fn remove(&mut self, id: AnimId) -> Option<AnimObject> {
-        self.0.remove(&id)
+        let removed = self.anims.remove(&id);
+        if removed.is_some() {
+            self.touched.note(id, self.anims.len());
+        }
+        removed
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&AnimId, &AnimObject)> {
-        self.0.iter()
+        self.anims.iter()
     }
 
     pub(crate) fn values_mut(&mut self) -> impl Iterator<Item = &mut AnimObject> {
-        self.0.values_mut()
+        self.touched.note_all();
+        self.anims.values_mut()
     }
 
     pub fn contains_key(&self, id: AnimId) -> bool {
-        self.0.contains_key(&id)
+        self.anims.contains_key(&id)
     }
 
     pub(crate) fn len(&self) -> usize {
-        self.0.len()
+        self.anims.len()
     }
 
     pub(crate) fn key_at(&self, index: usize) -> Option<AnimId> {
-        self.0.keys().nth(index).copied()
+        self.anims.keys().nth(index).copied()
+    }
+
+    /// Take the touch log, leaving it empty. One reader: the kept Ground
+    /// display sort keys.
+    pub(crate) fn take_touched(&mut self) -> Touched {
+        self.touched.take()
+    }
+}
+
+impl Default for AnimStore {
+    fn default() -> Self {
+        Self {
+            anims: BTreeMap::new(),
+            touched: TouchLog::everything(),
+        }
+    }
+}
+
+impl Clone for AnimStore {
+    /// A clone starts with an everything-touched log: whatever was derived
+    /// from the original says nothing certain about the copy's future.
+    fn clone(&self) -> Self {
+        Self {
+            anims: self.anims.clone(),
+            touched: TouchLog::everything(),
+        }
+    }
+}
+
+impl PartialEq for AnimStore {
+    fn eq(&self, other: &Self) -> bool {
+        self.anims == other.anims
+    }
+}
+
+impl Eq for AnimStore {}
+
+impl std::fmt::Debug for AnimStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("AnimStore").field(&self.anims).finish()
+    }
+}
+
+/// The saved form is the former newtype `AnimStore(map)`; the log is not saved.
+impl Serialize for AnimStore {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_newtype_struct("AnimStore", &self.anims)
+    }
+}
+
+impl<'de> Deserialize<'de> for AnimStore {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(rename = "AnimStore")]
+        struct Saved(BTreeMap<AnimId, AnimObject>);
+        let Saved(anims) = Saved::deserialize(deserializer)?;
+        Ok(Self {
+            anims,
+            touched: TouchLog::everything(),
+        })
     }
 }
 
@@ -3293,6 +3391,45 @@ mod tests {
         let before = sim.state_hash();
         sim.anim_mut_by_id(id).unwrap().terrain_attached = false;
         assert_ne!(sim.state_hash(), before);
+    }
+
+    /// The store saves as the former derived newtype `AnimStore(map)` (the
+    /// touch log is never saved), and every mutable hand-out is noted for the
+    /// kept Ground sort keys.
+    #[test]
+    fn anim_store_saves_as_before_and_notes_every_hand_out() {
+        #[derive(Serialize)]
+        #[serde(rename = "AnimStore")]
+        struct Former<'a>(&'a BTreeMap<AnimId, AnimObject>);
+        let rules = runtime_rules("[DRAW]\nRate=900\nEnd=1\n", &[("DRAW", 1)]);
+        let mut sim = Simulation::new();
+        let descriptor = runtime_descriptor(sim.interner.intern("DRAW"), 0);
+        let id = sim.spawn_anim_object(&rules, descriptor).unwrap();
+        let store = &mut sim.substrate.anims;
+        let former = Former(&store.anims);
+        assert_eq!(
+            bincode::serialize(&*store).unwrap(),
+            bincode::serialize(&former).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_string(&*store).unwrap(),
+            serde_json::to_string(&former).unwrap()
+        );
+        let bytes = bincode::serialize(&*store).unwrap();
+        let restored: AnimStore = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(bincode::serialize(&restored).unwrap(), bytes);
+
+        // Nothing has been derived from a fresh store yet.
+        assert_eq!(store.take_touched(), Touched::All);
+        assert!(store.get(id).is_some());
+        assert_eq!(store.take_touched(), Touched::Ids(Vec::new()));
+        store.get_mut(id).unwrap().z_adjust += 1;
+        let removed = store.remove(id).unwrap();
+        store.insert(removed);
+        assert_eq!(store.take_touched(), Touched::Ids(vec![id]));
+        assert_eq!(store.clone().take_touched(), Touched::All);
+        let _ = store.values_mut().count();
+        assert_eq!(store.take_touched(), Touched::All);
     }
 
     #[test]

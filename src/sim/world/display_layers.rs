@@ -4,11 +4,15 @@
 //! Crate effects read Ground directly, so rebuilding or fully sorting these
 //! lists in presentation changes simulation state. Only the ordered vectors
 //! are serialized/hashed; the ID-to-layer index is derived and never iterated
-//! to decide gameplay. Native comparisons: crate_ground_membership.json.
+//! to decide gameplay. The Ground members' kept sort keys (`ground_keys`) are
+//! derived too. Native comparisons: crate_ground_membership.json.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+
+use super::ground_keys::{GroundKeys, GroundSortKeys, ReadContext};
+use crate::sim::touch_log::Touched;
 
 /// Native layer index; -1 (no display) is represented by `None`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,6 +34,8 @@ pub(crate) struct DisplayLayers {
     layers: [Vec<u64>; 5],
     /// Rebuilt from the vectors on deserialize; updated only by submit/remove.
     registered: HashMap<u64, DisplayLayer>,
+    /// What the Ground members' key reads kept, in lockstep with Ground.
+    ground_keys: GroundKeys,
 }
 
 impl DisplayLayers {
@@ -53,7 +59,7 @@ impl DisplayLayers {
         &mut self,
         id: u64,
         layer: Option<DisplayLayer>,
-        mut y_sort: impl FnMut(u64) -> i32,
+        keys: &impl GroundSortKeys,
     ) -> bool {
         if id == 0 {
             return false;
@@ -66,16 +72,24 @@ impl DisplayLayers {
         if members.try_reserve(1).is_err() || self.registered.try_reserve(1).is_err() {
             return false;
         }
-        let insert = if layer == DisplayLayer::GROUND {
+        let index = if layer == DisplayLayer::GROUND {
             // Compare5F6220 reads new, then existing. GetYSort is pure, so
             // the new object's key is read once for the whole scan.
-            let new_key = y_sort(id);
-            members.iter().position(|&old| y_sort(old) > new_key)
+            let (new_key, kept) = keys.read(id);
+            let index = (0..members.len())
+                .find(|&index| self.ground_keys.key(index, members[index], keys) > new_key)
+                .unwrap_or(members.len());
+            self.ground_keys.insert(index, id, new_key, kept);
+            index
         } else {
-            None
+            members.len()
         };
-        members.insert(insert.unwrap_or(members.len()), id);
+        members.insert(index, id);
         self.registered.insert(id, layer);
+        debug_assert_eq!(
+            self.ground_keys.len(),
+            self.members(DisplayLayer::GROUND).len()
+        );
         true
     }
 
@@ -86,37 +100,62 @@ impl DisplayLayers {
         let Some(layer) = self.registered.remove(&id) else {
             return false;
         };
-        let members = &mut self.layers[usize::from(layer.0)];
-        if let Some(index) = members.iter().position(|&member| member == id) {
-            members.remove(index);
+        let cached = usize::from(layer.0);
+        let ground = usize::from(DisplayLayer::GROUND.0);
+        if let Some(index) = self.layers[cached].iter().position(|&member| member == id) {
+            self.layers[cached].remove(index);
+            if cached == ground {
+                self.ground_keys.remove(index, id);
+            }
         } else {
-            for members in &mut self.layers {
+            for (layer, members) in self.layers.iter_mut().enumerate() {
                 if let Some(index) = members.iter().position(|&member| member == id) {
                     members.remove(index);
+                    if layer == ground {
+                        self.ground_keys.remove(index, id);
+                    }
                 }
             }
         }
         true
     }
 
+    /// Forget the kept Ground key reads whose inputs may have changed (see
+    /// `GroundKeys::forget_changed`).
+    pub(crate) fn forget_changed_ground_keys(
+        &mut self,
+        context: ReadContext,
+        touched: impl IntoIterator<Item = Touched>,
+    ) {
+        self.ground_keys.forget_changed(context, touched);
+    }
+
     /// Layer551A30, called at MainTick55DBC8 before Logic55DC9E: one
     /// left-to-right adjacent pass, not a stable full sort.
-    pub(crate) fn sort_ground_pass(&mut self, mut y_sort: impl FnMut(u64) -> i32) {
+    pub(crate) fn sort_ground_pass(&mut self, keys: &impl GroundSortKeys) {
         let members = &mut self.layers[usize::from(DisplayLayer::GROUND.0)];
         let Some(&first) = members.first() else {
             return;
         };
         // GetYSort is pure: after a swap the carried member stays on the left
         // of the next comparison, so its key is reused rather than reread.
-        let mut left_key = y_sort(first);
+        let mut left_key = self.ground_keys.key(0, first, keys);
         for right in 1..members.len() {
-            let right_key = y_sort(members[right]);
+            let right_key = self.ground_keys.key(right, members[right], keys);
             if right_key < left_key {
                 members.swap(right - 1, right);
+                self.ground_keys.swap(right - 1, right);
             } else {
                 left_key = right_key;
             }
         }
+    }
+
+    /// Whether the kept Ground keys move in lockstep with the Ground members.
+    #[cfg(test)]
+    pub(crate) fn ground_keys_aligned(&self) -> bool {
+        self.ground_keys
+            .aligned_with(&self.layers[usize::from(DisplayLayer::GROUND.0)])
     }
 
     pub(crate) fn fold_hash(&self, hasher: &mut impl Hasher) {
@@ -161,7 +200,12 @@ impl<'de> Deserialize<'de> for DisplayLayers {
                 }
             }
         }
-        Ok(Self { layers, registered })
+        let ground_keys = GroundKeys::unknown(&layers[usize::from(DisplayLayer::GROUND.0)]);
+        Ok(Self {
+            layers,
+            registered,
+            ground_keys,
+        })
     }
 }
 
@@ -204,12 +248,12 @@ mod tests {
                 };
                 match step["op"].as_str().unwrap() {
                     "submit" => {
-                        display.submit(id, Some(DisplayLayer::GROUND), key);
+                        display.submit(id, Some(DisplayLayer::GROUND), &key);
                     }
                     "remove" => {
                         display.remove(id);
                     }
-                    "sort" => display.sort_ground_pass(key),
+                    "sort" => display.sort_ground_pass(&key),
                     "coordinates" => {
                         coords[id as usize - 1] =
                             std::array::from_fn(|i| step["xyz"][i].as_i64().unwrap() as i32);
@@ -241,6 +285,7 @@ mod tests {
                     observed["registered"],
                     "{name}: {step}"
                 );
+                assert!(display.ground_keys_aligned(), "{name}: {step}");
             }
         }
     }
@@ -254,7 +299,7 @@ mod tests {
             (4, DisplayLayer::AIR),
             (2, DisplayLayer::TOP),
         ] {
-            assert!(display.submit(id, Some(layer), |_| 0));
+            assert!(display.submit(id, Some(layer), &|_| 0));
         }
         let bytes = bincode::serialize(&display).unwrap();
         let mut restored: DisplayLayers = bincode::deserialize(&bytes).unwrap();
@@ -263,10 +308,10 @@ mod tests {
             [3, 1, 4, 2]
         );
         assert!(restored.remove(3));
-        assert!(restored.submit(2, Some(DisplayLayer::GROUND), |_| 0));
+        assert!(restored.submit(2, Some(DisplayLayer::GROUND), &|_| 0));
         assert_eq!(restored.members(DisplayLayer::GROUND), [1, 2]);
         assert!(restored.members(DisplayLayer::TOP).is_empty());
-        assert!(!restored.submit(1, None, |_| panic!("no layer has no sort getter")));
+        assert!(!restored.submit(1, None, &|_| panic!("no layer has no sort getter")));
         assert_eq!(restored.members(DisplayLayer::GROUND), [2]);
         for malformed in [
             "[[],[],[1,1],[],[]]",

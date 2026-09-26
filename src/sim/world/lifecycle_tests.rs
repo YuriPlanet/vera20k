@@ -7859,7 +7859,7 @@ fn display_lifecycle_is_independent_of_logic_and_survives_production_save() {
     restored
         .substrate
         .display
-        .submit(999, Some(DisplayLayer::TOP), |_| 0);
+        .submit(999, Some(DisplayLayer::TOP), &|_| 0);
     assert!(matches!(
         restored.restore_after_snapshot_load(),
         Err(SnapshotRestoreError::MissingDisplayIdentity { object_id: 999 })
@@ -8066,7 +8066,7 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
     // queries and leaves this history alone while the Process answer is stable.
     sim.substrate
         .display
-        .submit(id, Some(DisplayLayer::TOP), |_| 0);
+        .submit(id, Some(DisplayLayer::TOP), &|_| 0);
     sim.tick_air_movement_with_cell_lists_one(id, None);
     assert_eq!(sim.substrate.display.layer_of(id), Some(DisplayLayer::TOP));
 

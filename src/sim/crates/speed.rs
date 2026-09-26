@@ -218,7 +218,7 @@ mod tests {
                 sim.substrate.display.submit(
                     id,
                     Some(crate::sim::world::display_layers::DisplayLayer::GROUND),
-                    |_| 0,
+                    &|_| 0,
                 );
             }
             let center = DriveCoord {

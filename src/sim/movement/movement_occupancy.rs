@@ -535,18 +535,6 @@ fn building_entry_skip_cells(
     skipped
 }
 
-/// Whether debug builds compare the movement pass's derived inputs with a
-/// fresh whole-world build: the live per-turn reads (marker peers, building
-/// entry skips) and the cached blocker plane. Never in release. On in debug
-/// unless `VERA20K_SKIP_LIVE_READ_CHECK` is set, which the scale benchmark uses
-/// to time the pass without the O(entities) rebuilds the checks cost every
-/// turn. It only removes assertions, so it cannot change a result.
-pub(super) fn live_read_check_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    cfg!(debug_assertions)
-        && *ENABLED.get_or_init(|| std::env::var_os("VERA20K_SKIP_LIVE_READ_CHECK").is_none())
-}
-
 /// Every cell's skips at once: O(entities). Tests, and the debug-build check
 /// of the live reads.
 #[cfg(any(test, debug_assertions))]

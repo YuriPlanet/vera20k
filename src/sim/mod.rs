@@ -57,6 +57,7 @@ pub(crate) mod score;
 pub mod sensor_lifecycle;
 pub mod temporal;
 pub mod timer; // signed frame-anchored countdown primitive
+pub(crate) mod touch_log; // which stored objects were handed out mutably, per reader
 pub mod type_handle_table; // InternedId -> TypeHandle, one-hop entity->type resolution
 
 // --- Pure read-only deterministic engine-data services (gamemd-exact lookup tables) ---
