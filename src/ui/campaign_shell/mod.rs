@@ -19,7 +19,9 @@ use std::time::{Duration, Instant};
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, center_offset, dlu_rect};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
-use crate::ui::shell::trackbar::{TrackbarPress, trackbar_position_from_x, trackbar_press};
+use crate::ui::shell::trackbar::{
+    TrackbarHold, TrackbarPress, trackbar_position_from_x, trackbar_press,
+};
 
 pub const CAMPAIGN_DIALOG: DialogId = DialogId(0x0094);
 /// Allied emblem static (FSALG.SHP, kind 4).
@@ -31,7 +33,7 @@ pub const DIFFICULTY_SLIDER: u16 = 0x050F;
 pub const BACK_BUTTON: u16 = 0x0686;
 
 /// Slider positions `0..=2` (`TBM_SETRANGE 0x20000`, `0x0052F105`).
-pub const DIFFICULTY_MAX: u8 = 2;
+pub const DIFFICULTY_MAX: i32 = 2;
 /// Difficulty names by slider position (table `0x00822774`).
 pub const DIFFICULTY_LABEL_KEYS: [&str; 3] = ["TXT_EASY", "TXT_NORMAL", "TXT_HARD"];
 /// Delay before a hovered emblem's voice plays (`0x0052ED9C`).
@@ -260,9 +262,10 @@ pub struct CampaignShellState {
     pending_voice: Option<(CampaignSide, Instant)>,
     emblems: [EmblemAnimation; 2],
     /// Slider position `0..=DIFFICULTY_MAX`.
-    difficulty: u8,
-    /// Thumb captured by a press on it (`TrackBar_ProcessMouse` `0x0061D950`).
-    slider_captured: bool,
+    difficulty: i32,
+    /// The slider holding the mouse since a press on it
+    /// (`ShellTrackbar__WndProc` `0x0061D950`).
+    slider_hold: Option<TrackbarHold>,
 }
 
 impl CampaignShellState {
@@ -276,41 +279,41 @@ impl CampaignShellState {
             pressed: None,
             pending_voice: None,
             emblems: [EmblemAnimation::default(); 2],
-            difficulty: options_difficulty.clamp(0, i32::from(DIFFICULTY_MAX)) as u8,
-            slider_captured: false,
+            difficulty: options_difficulty.clamp(0, DIFFICULTY_MAX),
+            slider_hold: None,
         }
     }
 
     /// Slider position `0..=DIFFICULTY_MAX` (`TBM_GETPOS`).
-    pub fn difficulty(&self) -> u8 {
+    pub fn difficulty(&self) -> i32 {
         self.difficulty
     }
 
     /// The difficulty name the value static `0x670` shows.
     pub fn difficulty_label_key(&self) -> &'static str {
-        DIFFICULTY_LABEL_KEYS[usize::from(self.difficulty)]
+        DIFFICULTY_LABEL_KEYS[self.difficulty as usize]
     }
 
-    pub fn slider_captured(&self) -> bool {
-        self.slider_captured
+    /// Whether the slider holds the mouse: every press on it does, until
+    /// the release.
+    pub fn slider_held(&self) -> bool {
+        self.slider_hold.is_some()
     }
 
     /// A left press at slider-local `(x, y)` in a `width` x `height` trackbar.
     /// Returns whether the position changed (`WM_HSCROLL` and GenericClick).
     pub fn slider_press(&mut self, x: i32, y: i32, width: i32, height: i32) -> bool {
-        match trackbar_press(self.difficulty, x, y, width, height, 0, DIFFICULTY_MAX) {
-            TrackbarPress::Ignored => false,
-            TrackbarPress::Capture => {
-                self.slider_captured = true;
-                false
-            }
+        let press = trackbar_press(self.difficulty, x, y, width, height, 0, DIFFICULTY_MAX);
+        self.slider_hold = press.hold(());
+        match press {
             TrackbarPress::Jump(position) => self.set_difficulty(position),
+            _ => false,
         }
     }
 
     /// Mouse movement with the button held: a captured thumb follows it.
     pub fn slider_drag(&mut self, x: i32, width: i32) -> bool {
-        if !self.slider_captured {
+        if !self.slider_hold.is_some_and(|hold| hold.dragging) {
             return false;
         }
         self.set_difficulty(trackbar_position_from_x(x, width, 0, DIFFICULTY_MAX))
@@ -318,7 +321,7 @@ impl CampaignShellState {
 
     /// Release, or movement without the button: the capture ends.
     pub fn slider_release(&mut self) {
-        self.slider_captured = false;
+        self.slider_hold = None;
     }
 
     pub fn hovered(&self) -> Option<CampaignSide> {
@@ -448,8 +451,8 @@ impl CampaignShellState {
     /// A position change sends `WM_HSCROLL` (`0x0061E672..0x0061E6AF`), whose
     /// handler (`0x0052EC59`) names the new position. Returns whether it
     /// changed.
-    fn set_difficulty(&mut self, position: u8) -> bool {
-        let position = position.min(DIFFICULTY_MAX);
+    fn set_difficulty(&mut self, position: i32) -> bool {
+        let position = position.clamp(0, DIFFICULTY_MAX);
         let changed = position != self.difficulty;
         self.difficulty = position;
         changed
@@ -513,7 +516,7 @@ mod tests {
     }
 
     #[test]
-    fn slider_presses_jump_beside_the_thumb_and_capture_on_it() {
+    fn slider_presses_hold_the_mouse_and_only_the_thumb_drags() {
         // 272x22 at 800x600: thumbs at x 1, 130 and 260 (executed 178/307/437
         // on screen), positions 0 below x 94, 1 below 180, else 2.
         let mut state = CampaignShellState::open(1);
@@ -521,14 +524,18 @@ mod tests {
             !state.slider_press(40, 3, 272, 22),
             "above the admitted strip"
         );
+        assert!(state.slider_held());
+        state.slider_release();
         assert!(state.slider_press(40, 10, 272, 22));
         assert_eq!(state.difficulty(), 0);
-        assert!(!state.slider_captured());
+        assert!(state.slider_held());
+        assert!(!state.slider_drag(200, 272), "a rail press does not drag");
+        state.slider_release();
+        assert!(!state.slider_held());
         assert!(
             !state.slider_press(5, 10, 272, 22),
             "on the thumb at position 0"
         );
-        assert!(state.slider_captured());
         assert!(state.slider_drag(200, 272));
         assert_eq!(state.difficulty_label_key(), "TXT_HARD");
         state.slider_release();

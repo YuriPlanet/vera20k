@@ -273,7 +273,7 @@ fn guard(
                     ))
                 ))
             || shell.open_combo_dropdown.is_some()
-            || shell.trackbar_drag.is_some()
+            || shell.trackbar_hold.is_some()
             || shell.dropdown_scroll_drag.is_some()
             || shell.dropdown_scroll_press.is_some()
             || shell.pressed_owner_draw_button.is_some()

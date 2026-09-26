@@ -5,7 +5,7 @@
 //! 0..6 with 0 = fastest (the dialog slider position is `6 - value`); DetailLevel
 //! is 0..2 direct. Defaults match gamemd OptionsClass::SetDefaults.
 
-use crate::ui::shell::trackbar::trackbar_position_from_x;
+use crate::ui::shell::trackbar::{thumb_left, trackbar_position_from_x};
 use crate::ui::skirmish_shell::RectPx;
 
 /// GameSpeed/ScrollRate internal range (0 = fastest .. 6 = slowest).
@@ -84,7 +84,8 @@ pub fn speed_from_slider_pos(pos: u32) -> u32 {
 /// at 4E207F..2089 / 4E2128..2132, disabling the default 50px plaque.
 /// Native 61DA52..61DA79 and 61E486..61E4A8 project using range, not range+1.
 pub fn plain_trackbar_thumb_left(position: u32, rect: RectPx) -> i32 {
-    1 + position.min(OPTIONS_SPEED_MAX) as i32 * (rect.w - 13).max(1) / OPTIONS_SPEED_MAX as i32
+    let range = OPTIONS_SPEED_MAX as i32;
+    thumb_left(position.min(OPTIONS_SPEED_MAX) as i32, rect.w, 0, range)
 }
 
 /// Quantized position for BBB's plain rail. Native 61DC00..61DC58 uses
@@ -92,12 +93,7 @@ pub fn plain_trackbar_thumb_left(position: u32, rect: RectPx) -> i32 {
 /// The shared implementation has original-instruction goldens in
 /// tools/storage_oracle/launcher_trackbar.py; BBB supplies reserve=0 and range=6.
 pub fn trackbar_pos_from_mouse_x(mouse_x: i32, min: i32, max: i32, rect: RectPx) -> i32 {
-    min + i32::from(trackbar_position_from_x(
-        mouse_x - rect.x,
-        rect.w,
-        0,
-        (max - min).clamp(0, u8::MAX as i32) as u8,
-    ))
+    min + trackbar_position_from_x(mouse_x - rect.x, rect.w, 0, (max - min).max(0))
 }
 
 #[cfg(test)]

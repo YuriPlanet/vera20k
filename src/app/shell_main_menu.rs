@@ -458,7 +458,7 @@ impl App {
         state.frontend.skirmish_shell_state.open_combo_dropdown = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_press = None;
-        state.frontend.skirmish_shell_state.trackbar_drag = None;
+        state.frontend.skirmish_shell_state.trackbar_hold = None;
         state
             .frontend
             .skirmish_shell_state

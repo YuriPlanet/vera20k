@@ -41,6 +41,10 @@ const CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME: &str = "movie-list-0x129-bac
 const CHECKPOINT_CAMPAIGN_0X94_STEADY: &str = "campaign-0x94-steady";
 const CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT: &str = "campaign-0x94-slider-left";
 const CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT: &str = "campaign-0x94-slider-right";
+/// The difficulty slider pressed at its left end and held with the pointer
+/// over Back: the slider keeps the mouse, so the status line keeps its help
+/// and Back stays unlit.
+const CHECKPOINT_CAMPAIGN_0X94_SLIDER_HELD: &str = "campaign-0x94-slider-held";
 const CHECKPOINT_CAMPAIGN_0X94_ENTRY_PREFIX: &str = "campaign-0x94-entry-tick-";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-steady";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
@@ -71,6 +75,8 @@ const SKIRMISH_0X102_HOVER_CHECKPOINTS: [(&str, (i32, i32)); 2] = [
 /// Slider press points of the retail comparison stills.
 const CAMPAIGN_SLIDER_LEFT_POINT: (i32, i32) = (190, 275);
 const CAMPAIGN_SLIDER_RIGHT_POINT: (i32, i32) = (440, 275);
+/// Back's centre at 800x600.
+const CAMPAIGN_BACK_POINT: (i32, i32) = (722, 556);
 const CHECKPOINT_CREDITS_ROLL_FRAME_PREFIX: &str = "credits-roll-frame-";
 const CHECKPOINT_SNEAK_PEEK_FRAME_PREFIX: &str = "sneak-peek-frame-";
 const CHECKPOINT_MAIN_MENU_0XE2_SLIDE_OUT_PREFIX: &str = "main-menu-0xe2-slide-out-tick-";
@@ -161,6 +167,8 @@ pub enum ShellCaptureCheckpoint {
     /// The same after a press on the difficulty slider's left or right end.
     Campaign0x94SliderLeft,
     Campaign0x94SliderRight,
+    /// A press on the slider held with the pointer over Back.
+    Campaign0x94SliderHeld,
     /// Its entry slide held at one tick (`campaign-0x94-entry-tick-<N>`).
     Campaign0x94Entry(u32),
     /// Single Player -> Load Saved Game: `0xB7` settled. Needs a readable
@@ -406,6 +414,7 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_0X94_STEADY => Ok(Self::Campaign0x94Steady),
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT => Ok(Self::Campaign0x94SliderLeft),
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT => Ok(Self::Campaign0x94SliderRight),
+            CHECKPOINT_CAMPAIGN_0X94_SLIDER_HELD => Ok(Self::Campaign0x94SliderHeld),
             CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY => Ok(Self::LoadSavedGame0xB7Steady),
             CHECKPOINT_OPTIONS_0XD5_STEADY => Ok(Self::Options0xD5Steady),
             CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE => Ok(Self::MainMenu0xE2NetworkBounce),
@@ -452,6 +461,7 @@ impl ShellCaptureCheckpoint {
             Self::Campaign0x94Steady => CHECKPOINT_CAMPAIGN_0X94_STEADY,
             Self::Campaign0x94SliderLeft => CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT,
             Self::Campaign0x94SliderRight => CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT,
+            Self::Campaign0x94SliderHeld => CHECKPOINT_CAMPAIGN_0X94_SLIDER_HELD,
             Self::Campaign0x94Entry(_) => "campaign-0x94-entry",
             Self::LoadSavedGame0xB7Steady => CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY,
             Self::LoadSavedGame0xB7Entry(_) => "load-saved-game-0xb7-entry",
@@ -514,18 +524,27 @@ impl ShellCaptureCheckpoint {
             Self::MovieList0x129BackFirstFrame => movies::MoviesTarget::ListBackFirstFrame,
             Self::Campaign0x94Steady => movies::MoviesTarget::Campaign0x94 {
                 press: None,
+                hold_over: None,
                 entry_tick: None,
             },
             Self::Campaign0x94SliderLeft => movies::MoviesTarget::Campaign0x94 {
                 press: Some(CAMPAIGN_SLIDER_LEFT_POINT),
+                hold_over: None,
                 entry_tick: None,
             },
             Self::Campaign0x94SliderRight => movies::MoviesTarget::Campaign0x94 {
                 press: Some(CAMPAIGN_SLIDER_RIGHT_POINT),
+                hold_over: None,
+                entry_tick: None,
+            },
+            Self::Campaign0x94SliderHeld => movies::MoviesTarget::Campaign0x94 {
+                press: Some(CAMPAIGN_SLIDER_LEFT_POINT),
+                hold_over: Some(CAMPAIGN_BACK_POINT),
                 entry_tick: None,
             },
             Self::Campaign0x94Entry(tick) => movies::MoviesTarget::Campaign0x94 {
                 press: None,
+                hold_over: None,
                 entry_tick: Some(tick),
             },
             Self::LoadSavedGame0xB7Steady => {

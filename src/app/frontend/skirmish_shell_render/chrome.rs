@@ -197,6 +197,50 @@ pub(super) fn push_entry_top_clipped_native(
     );
 }
 
+/// `0x006BA3E0`: an opaque copy of `entry` into `rect` that starts the
+/// source at the centred offset `max(0, (source - rect) / 2)` on each axis
+/// and wraps past its end, so a smaller source tiles and a larger one shows
+/// its middle.
+pub(super) fn push_entry_wrapped_centered(
+    out: &mut Vec<SpriteInstance>,
+    entry: SkirmishShellChromeEntry,
+    rect: RectPx,
+    depth: f32,
+) {
+    let src_w = entry.pixel_size[0].round() as i32;
+    let src_h = entry.pixel_size[1].round() as i32;
+    if src_w <= 0 || src_h <= 0 {
+        return;
+    }
+    let offset_x = ((src_w - rect.w) / 2).max(0);
+    let offset_y = ((src_h - rect.h) / 2).max(0);
+    let mut dy = 0;
+    while dy < rect.h {
+        let sy = (offset_y + dy) % src_h;
+        let h = (src_h - sy).min(rect.h - dy);
+        let mut dx = 0;
+        while dx < rect.w {
+            let sx = (offset_x + dx) % src_w;
+            let w = (src_w - sx).min(rect.w - dx);
+            let mut piece = entry;
+            piece.uv_origin[0] += entry.uv_size[0] * sx as f32 / src_w as f32;
+            piece.uv_origin[1] += entry.uv_size[1] * sy as f32 / src_h as f32;
+            piece.uv_size[0] *= w as f32 / src_w as f32;
+            piece.uv_size[1] *= h as f32 / src_h as f32;
+            push_entry_sized(
+                out,
+                piece,
+                (rect.x + dx) as f32,
+                (rect.y + dy) as f32,
+                [w as f32, h as f32],
+                depth,
+            );
+            dx += w;
+        }
+        dy += h;
+    }
+}
+
 pub(super) fn push_entry_native(
     out: &mut Vec<SpriteInstance>,
     entry: SkirmishShellChromeEntry,

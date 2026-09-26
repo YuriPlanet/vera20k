@@ -74,7 +74,7 @@ impl App {
         state.frontend.skirmish_shell_state.open_combo_dropdown = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_press = None;
-        state.frontend.skirmish_shell_state.trackbar_drag = None;
+        state.frontend.skirmish_shell_state.trackbar_hold = None;
         state.frontend.skirmish_shell_state.pressed_owner_draw_button = None;
         crate::ui::skirmish_shell::blur_player_name_edit(&mut state.frontend.skirmish_shell_state);
         state.frontend.skirmish_shell_last_painted_pressed_button = None;
@@ -275,7 +275,7 @@ impl App {
         state.frontend.skirmish_shell_state.open_combo_dropdown = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_press = None;
-        state.frontend.skirmish_shell_state.trackbar_drag = None;
+        state.frontend.skirmish_shell_state.trackbar_hold = None;
         state.frontend.skirmish_shell_state.pressed_owner_draw_button = None;
         crate::ui::skirmish_shell::blur_player_name_edit(&mut state.frontend.skirmish_shell_state);
         state.frontend.skirmish_shell_last_painted_pressed_button = None;
@@ -516,7 +516,7 @@ impl App {
         state.frontend.skirmish_shell_state.open_combo_dropdown = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_press = None;
-        state.frontend.skirmish_shell_state.trackbar_drag = None;
+        state.frontend.skirmish_shell_state.trackbar_hold = None;
         state.frontend.skirmish_shell_last_painted_pressed_button = None;
         crate::ui::skirmish_shell::blur_player_name_edit(&mut state.frontend.skirmish_shell_state);
     }
@@ -524,7 +524,7 @@ impl App {
     pub(super) fn open_choose_map_modal(state: &mut AppState) {
         state.frontend.skirmish_shell_state.open_combo_dropdown = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
-        state.frontend.skirmish_shell_state.trackbar_drag = None;
+        state.frontend.skirmish_shell_state.trackbar_hold = None;
         state.frontend.skirmish_shell_state.pressed_owner_draw_button = None;
         crate::ui::skirmish_shell::clear_status_help_text(&mut state.frontend.skirmish_shell_state);
         let current_record_index = Self::current_choose_map_record_index(state);
@@ -949,6 +949,11 @@ impl App {
         x: i32,
         y: i32,
     ) {
+        // A trackbar holding the mouse keeps the dialog's hit test
+        // (`WM_NCHITTEST`, `0x00622CCB`) from running until the release.
+        if state.frontend.skirmish_shell_state.trackbar_hold.is_some() {
+            return;
+        }
         let text = crate::ui::skirmish_shell::hovered_shell_control(
             layout,
             &state.frontend.skirmish_shell_state,
@@ -1236,8 +1241,15 @@ impl App {
             }
         }
 
+        // A release after a trackbar press goes to the trackbar, which holds
+        // the mouse; freeing it lets the dialog's hit test run again.
+        let trackbar_held = state.frontend.skirmish_shell_state.trackbar_hold.is_some();
         crate::ui::skirmish_shell::handle_option_mouse_up(&mut state.frontend.skirmish_shell_state);
         Self::drain_skirmish_shell_ui_sounds(state);
+        if trackbar_held {
+            Self::update_skirmish_shell_status_help(state, &layout, x, y);
+            return;
+        }
 
         if released_button.is_some() {
             return;
@@ -1322,11 +1334,9 @@ impl App {
     }
 
     fn drain_skirmish_shell_ui_sounds(state: &mut AppState) {
-        let _trackbar_parent_notifications =
-            state.frontend.skirmish_shell_state.drain_pending_trackbar_hscrolls();
-        for sound in
-            crate::ui::skirmish_shell::drain_pending_ui_sounds(&mut state.frontend.skirmish_shell_state)
-        {
+        for sound in crate::ui::skirmish_shell::drain_pending_ui_sounds(
+            &mut state.frontend.skirmish_shell_state,
+        ) {
             Self::play_skirmish_shell_ui_sound(state, sound);
         }
     }

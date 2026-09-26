@@ -8,11 +8,10 @@ use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShe
 use crate::ui::shell::geom::LOWER_STRIP_H;
 use crate::ui::shell::modal::BodyOkLayout;
 use crate::ui::skirmish_shell::{
-    COMBO_DROPDOWN_ROW_H, COMBO_FACE_H, ChooseMapModalButton, ChooseMapModalLayout,
+    COMBO_DROPDOWN_ROW_H, COMBO_FACE_H, ChooseMapModalButton, ChooseMapModalLayout, PLAYERS_RANGE,
     RandomMapSetupControl, RandomMapSetupLayout, RandomMapSetupModalState, RectPx,
     SETUP_COMBO_ROWS, SavedSeedBrowserState, SavedSeedControl, SavedSeedLayout,
     SkirmishShellLayout, SkirmishShellState, random_map_setup_dropdown_rect, setup_combo_items,
-    trackbar_pixel_offset,
 };
 
 use super::chrome::{
@@ -38,9 +37,6 @@ const SETUP_COMBO_CONTROLS: [RandomMapSetupControl; 5] = [
     RandomMapSetupControl::Resources0x408,
 ];
 const PLAYERS_ROW: usize = 5;
-/// Player-count trackbar bounds, matching the option normalizer's clamp.
-const PLAYERS_MIN: i32 = 2;
-const PLAYERS_MAX: i32 = 8;
 
 const VALIDATION_MODAL_SPRITE_DEPTHS: shell_paint::ModalDepths = shell_paint::ModalDepths {
     background: SHELL_DROPDOWN_DEPTH - 0.00014,
@@ -333,13 +329,8 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         &chrome,
         ControlPaint::Trackbar {
             rect: players,
-            thumb_px: trackbar_pixel_offset(
-                modal.options.num_players,
-                PLAYERS_MIN,
-                PLAYERS_MAX,
-                1,
-                players,
-            ),
+            thumb_left: PLAYERS_RANGE.thumb_left(modal.options.num_players, players.w),
+            plaque: true,
         },
     );
 

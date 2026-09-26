@@ -5,15 +5,15 @@ use crate::sim::game_options::GameOptions;
 use crate::skirmish_launch::{SKIRMISH_PLAYER_SLOT_COUNT, SkirmishLaunchOptions};
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 use crate::ui::main_menu::{SkirmishCountry, SkirmishSettings, StartPosition};
+use crate::ui::shell::trackbar::TrackbarHold;
 
 use super::super::SkirmishStatics;
 use super::super::layout::{SkirmishShellLayout, SkirmishTrackbarId};
-use super::trackbars::{SkirmishTrackbarBounds, trackbar_control_id, trackbar_hscroll_wparam};
+use super::trackbars::SkirmishTrackbarBounds;
 use super::{
     ChooseMapModalState, DropdownScrollDragState, DropdownScrollbarPressState, OpenComboDropdown,
     OwnerDrawButton, RandomMapSetupModalState, SkirmishShellOpponent, SkirmishShellUiSound,
-    SkirmishTrackbarHScrollNotification, SkirmishValidationModalState, TrackbarDragState,
-    default_opponents,
+    SkirmishValidationModalState, default_opponents,
 };
 
 pub const PLAYER_NAME_DEFAULT: &str = "Player";
@@ -264,7 +264,8 @@ pub struct SkirmishShellState {
     pub selected_mode_allies_allowed: bool,
     pub selected_mode_must_ally: bool,
     pub pressed_owner_draw_button: Option<OwnerDrawButton>,
-    pub trackbar_drag: Option<TrackbarDragState>,
+    /// The trackbar holding the mouse since a press on its window.
+    pub trackbar_hold: Option<TrackbarHold<SkirmishTrackbarId>>,
     pub dropdown_scroll_drag: Option<DropdownScrollDragState>,
     pub dropdown_scroll_press: Option<DropdownScrollbarPressState>,
     pub open_combo_dropdown: Option<OpenComboDropdown>,
@@ -276,7 +277,6 @@ pub struct SkirmishShellState {
     /// the setup dialog on screen while that dialog keeps its working options.
     pub saved_seed_browser: Option<super::SavedSeedBrowserState>,
     pub validation_modal: Option<SkirmishValidationModalState>,
-    pub pending_trackbar_hscrolls: Vec<SkirmishTrackbarHScrollNotification>,
     pub pending_ui_sounds: Vec<SkirmishShellUiSound>,
     /// The kind-1 statics; the status line holds the hover help.
     pub(crate) statics: SkirmishStatics,
@@ -346,7 +346,7 @@ impl Default for SkirmishShellState {
             selected_mode_allies_allowed: true,
             selected_mode_must_ally: false,
             pressed_owner_draw_button: None,
-            trackbar_drag: None,
+            trackbar_hold: None,
             dropdown_scroll_drag: None,
             dropdown_scroll_press: None,
             open_combo_dropdown: None,
@@ -354,7 +354,6 @@ impl Default for SkirmishShellState {
             random_map_setup_modal: None,
             saved_seed_browser: None,
             validation_modal: None,
-            pending_trackbar_hscrolls: Vec::new(),
             pending_ui_sounds: Vec::new(),
             statics: SkirmishStatics::default(),
         }
@@ -362,9 +361,6 @@ impl Default for SkirmishShellState {
 }
 
 impl SkirmishShellState {
-    pub const TRACKBAR_WM_HSCROLL_MESSAGE: u32 = 0x114;
-    pub const TRACKBAR_HSCROLL_CHANGED_LOW_WORD: u16 = 5;
-
     /// Seed the lobby from per-match options parsed from
     /// `[MultiplayerDialogSettings]`. The values the setup dialog exposes as
     /// widgets are copied into the live fields so each control opens on the
@@ -385,22 +381,6 @@ impl SkirmishShellState {
 
     pub(super) fn push_ui_sound(&mut self, sound: SkirmishShellUiSound) {
         self.pending_ui_sounds.push(sound);
-    }
-
-    pub(super) fn push_trackbar_hscroll(&mut self, id: SkirmishTrackbarId, visual_value: i32) {
-        self.pending_trackbar_hscrolls.push((
-            trackbar_control_id(id),
-            visual_value,
-            trackbar_hscroll_wparam(visual_value),
-        ));
-    }
-
-    pub fn pending_trackbar_hscrolls(&self) -> &[SkirmishTrackbarHScrollNotification] {
-        &self.pending_trackbar_hscrolls
-    }
-
-    pub fn drain_pending_trackbar_hscrolls(&mut self) -> Vec<SkirmishTrackbarHScrollNotification> {
-        std::mem::take(&mut self.pending_trackbar_hscrolls)
     }
 
     pub fn pending_ui_sounds(&self) -> &[SkirmishShellUiSound] {
@@ -595,7 +575,7 @@ pub fn focus_player_name_edit(state: &mut SkirmishShellState) -> bool {
     state.open_combo_dropdown = None;
     state.dropdown_scroll_drag = None;
     state.dropdown_scroll_press = None;
-    state.trackbar_drag = None;
+    state.trackbar_hold = None;
     state.pressed_owner_draw_button = None;
     state.player_name_edit.focus_select_all()
 }

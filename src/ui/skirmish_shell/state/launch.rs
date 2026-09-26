@@ -65,7 +65,7 @@ pub fn launch_settings(state: &SkirmishShellState) -> SkirmishSettings {
         selected_map_idx: state.selected_map_idx,
         player_country: state.player_country,
         ai_country,
-        starting_credits: state.starting_credits,
+        starting_credits: state.credits(),
         start_position: state.player_start_position,
         short_game: state.short_game,
         zoom_enabled: state.zoom_enabled,
@@ -184,7 +184,7 @@ pub fn pack_launch_session_without_start_validation(
     // widgets are overridden from the live shell state below; the remaining
     // base fields (tech level and the non-widget toggles) carry into the match.
     let mut options = state.launch_options_base.clone();
-    options.starting_credits = state.starting_credits;
+    options.starting_credits = state.credits();
     options.unit_count = state.unit_count;
     options.game_speed = state.game_speed;
     options.short_game = state.short_game;

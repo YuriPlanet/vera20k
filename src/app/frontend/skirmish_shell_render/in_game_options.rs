@@ -44,11 +44,14 @@ pub(crate) fn build_in_game_options_instances(
                     control::SCROLL_RATE => speed_slider_pos(state.scroll_rate),
                     _ => continue,
                 };
-                let thumb_px = plain_trackbar_thumb_left(pos, rect) - 1;
                 paint_control(
                     &mut out,
                     chrome,
-                    ControlPaint::PlainTrackbar { rect, thumb_px },
+                    ControlPaint::Trackbar {
+                        rect,
+                        thumb_left: plain_trackbar_thumb_left(pos, rect),
+                        plaque: false,
+                    },
                 );
             }
             ControlKind::Checkbox => {
@@ -234,7 +237,7 @@ fn options_static_align(id: u16) -> ShellAlign {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render::skirmish_shell_chrome::SkirmishShellChromeEntry;
+    use crate::render::skirmish_shell_chrome::{SkirmishShellChromeEntry, trackbar_frame_slot};
 
     fn initialized_empty_csf() -> CsfFile {
         let mut bytes = Vec::new();
@@ -281,10 +284,9 @@ mod tests {
         // Frame-only chrome: only the 2 VISIBLE trackbars
         // (GameSpeed/ScrollRate) emit the shared two-frame composition; the
         // hidden VisualDetails trackbar is skipped.
-        let frame_only = ControlChrome {
-            trackbar_plain_192: Some(entry(196.0, 25.0)),
-            ..Default::default()
-        };
+        let mut frame_only = ControlChrome::default();
+        frame_only.trackbar_frames[trackbar_frame_slot(false, 192, 21).unwrap()] =
+            Some(entry(196.0, 25.0));
         let out = build_in_game_options_instances(
             &frame_only,
             800,

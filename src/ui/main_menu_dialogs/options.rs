@@ -5,7 +5,7 @@
 
 use crate::ui::client_theme;
 use crate::ui::shell::trackbar::{
-    TrackbarPress, thumb_left, trackbar_position_from_x, trackbar_press,
+    TrackbarHold, TrackbarPress, thumb_left, trackbar_position_from_x, trackbar_press,
 };
 
 pub(crate) mod shell;
@@ -312,7 +312,9 @@ impl LauncherTrackbarId {
         }
     }
 
-    const fn plaque_reserve(self) -> i32 {
+    /// The value plaque's reserve; Detail, Difficulty and Scroll turn the
+    /// plaque off (`0x4AC` with 0).
+    pub(crate) const fn plaque_reserve(self) -> i32 {
         match self {
             Self::Detail | Self::Difficulty | Self::Scroll => 0,
             Self::Score | Self::Sound | Self::Voice => 50,
@@ -558,7 +560,7 @@ fn trackbar_paint_geometry(
     id: LauncherTrackbarId,
     position: u8,
 ) -> TrackbarPaintGeometry {
-    // gamemd-derived: `TrackBar_ProcessMouse @ 0x0061D950` and its owner-draw
+    // gamemd-derived: `ShellTrackbar__WndProc @ 0x0061D950` and its owner-draw
     // path share the literal 12x22 grip, 6px rail inset, and plaque reserve;
     // paint therefore consumes the same integer `thumb_left` as admission.
     let width = control.width();
@@ -574,7 +576,12 @@ fn trackbar_paint_geometry(
             bottom: rail_top + 4,
         },
         thumb: PhysicalLocalRect::from_min_size(
-            thumb_left(position, width, id.plaque_reserve(), id.maximum()),
+            thumb_left(
+                i32::from(position),
+                width,
+                id.plaque_reserve(),
+                i32::from(id.maximum()),
+            ),
             thumb_top,
             12,
             22,
@@ -667,7 +674,8 @@ pub(crate) struct OptionsDialogState {
     detail_caption: String,
     difficulty_caption: String,
     scroll_caption: String,
-    capture: Option<LauncherTrackbarId>,
+    /// The slider holding the mouse since a press on it.
+    capture: Option<TrackbarHold<LauncherTrackbarId>>,
     pending_events: Vec<LauncherOptionsEvent>,
     pending_result: Option<LauncherParentResult>,
     shell_interaction: shell::ShellInteraction,
@@ -823,18 +831,19 @@ impl OptionsDialogState {
         if id.is_audio() && !self.launcher_audio_available {
             return;
         }
-        match trackbar_press(
-            self.trackbar_position(id),
+        let press = trackbar_press(
+            i32::from(self.trackbar_position(id)),
             frame.local_x,
             frame.local_y,
             frame.width,
             frame.height,
             id.plaque_reserve(),
-            id.maximum(),
-        ) {
-            TrackbarPress::Ignored => {}
-            TrackbarPress::Capture => self.capture = Some(id),
-            TrackbarPress::Jump(position) => self.set_trackbar_position(id, position),
+            i32::from(id.maximum()),
+        );
+        self.capture = press.hold(id);
+        if let TrackbarPress::Jump(position) = press {
+            // The position never exceeds the byte-sized maximum.
+            self.set_trackbar_position(id, position as u8);
         }
     }
 
@@ -843,20 +852,20 @@ impl OptionsDialogState {
         id: LauncherTrackbarId,
         frame: PhysicalControlFrame,
     ) {
-        if self.capture != Some(id) {
+        if self.capture != Some(TrackbarHold { id, dragging: true }) {
             return;
         }
         let position = trackbar_position_from_x(
             frame.local_x,
             frame.width,
             id.plaque_reserve(),
-            id.maximum(),
+            i32::from(id.maximum()),
         );
-        self.set_trackbar_position(id, position);
+        self.set_trackbar_position(id, position as u8);
     }
 
     pub(crate) fn trackbar_mouse_up(&mut self, id: LauncherTrackbarId) {
-        if self.capture == Some(id) {
+        if self.capture.is_some_and(|hold| hold.id == id) {
             self.capture = None;
         }
     }
@@ -1825,7 +1834,11 @@ mod tests {
                         position,
                         "scale={scale} id={id:?}"
                     );
-                    assert_eq!(state.capture, Some(id), "scale={scale} id={id:?}");
+                    assert_eq!(
+                        state.capture,
+                        Some(TrackbarHold { id, dragging: true }),
+                        "scale={scale} id={id:?}"
+                    );
 
                     let drag = production_frame(
                         scale,
@@ -1893,13 +1906,19 @@ mod tests {
     fn thumb_down_captures_without_jump_and_captured_motion_is_x_only() {
         let mut state = state(true);
         let before = state.trackbar_position(LauncherTrackbarId::Difficulty);
-        let left = thumb_left(before, 180, 0, 2);
+        let left = thumb_left(i32::from(before), 180, 0, 2);
         state.trackbar_mouse_down(LauncherTrackbarId::Difficulty, frame(left + 5, 23, 180, 24));
         assert_eq!(
             state.trackbar_position(LauncherTrackbarId::Difficulty),
             before
         );
-        assert_eq!(state.capture, Some(LauncherTrackbarId::Difficulty));
+        assert_eq!(
+            state.capture,
+            Some(TrackbarHold {
+                id: LauncherTrackbarId::Difficulty,
+                dragging: true,
+            })
+        );
         state.trackbar_mouse_move(LauncherTrackbarId::Difficulty, frame(179, -400, 180, 24));
         assert_eq!(state.trackbar_position(LauncherTrackbarId::Difficulty), 2);
         state.trackbar_mouse_up(LauncherTrackbarId::Difficulty);
@@ -1907,17 +1926,25 @@ mod tests {
     }
 
     #[test]
-    fn rail_jump_has_lower_strip_gate_and_never_captures() {
+    fn rail_jump_has_lower_strip_gate_and_holds_without_drag() {
         let mut state = state(true);
+        let held = Some(TrackbarHold {
+            id: LauncherTrackbarId::Scroll,
+            dragging: false,
+        });
         state.trackbar_mouse_down(LauncherTrackbarId::Scroll, frame(151, 6, 180, 24));
         assert_eq!(
             state.trackbar_position(LauncherTrackbarId::Scroll),
             3,
             "strict lower edge rejects"
         );
+        assert_eq!(state.capture, held);
+        state.trackbar_mouse_up(LauncherTrackbarId::Scroll);
         state.trackbar_mouse_down(LauncherTrackbarId::Scroll, frame(151, 7, 180, 24));
         assert_eq!(state.trackbar_position(LauncherTrackbarId::Scroll), 6);
-        assert_eq!(state.capture, None);
+        assert_eq!(state.capture, held);
+        state.trackbar_mouse_move(LauncherTrackbarId::Scroll, frame(0, 7, 180, 24));
+        assert_eq!(state.trackbar_position(LauncherTrackbarId::Scroll), 6);
     }
 
     #[test]

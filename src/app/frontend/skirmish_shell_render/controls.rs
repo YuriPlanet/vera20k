@@ -10,6 +10,7 @@ use crate::render::skirmish_shell_chrome::{
     ControlChrome, SkirmishShellChromeAtlas, SkirmishShellChromeEntry,
 };
 use crate::rules::color_scheme::ColorSchemeEntry;
+use crate::ui::shell::trackbar::{PLAQUE_RESERVE, THUMB_W};
 use crate::ui::skirmish_shell::{
     COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, DropdownScrollbarPart, RectPx,
     SkirmishCheckboxId, SkirmishComboId, SkirmishComboItem, SkirmishShellLayout,
@@ -18,13 +19,13 @@ use crate::ui::skirmish_shell::{
     combo_dropdown_scroll_thumb_rect, combo_dropdown_scrollbar_rect,
     combo_dropdown_visible_row_count, combo_enabled, combo_face_rect, combo_items,
     combo_swatch_rect, player_name_edit_text_rect, player_row_visible, selected_combo_item_index,
-    trackbar_pixel_offset, trackbar_plaque_rect, trackbar_thumb_rect, trackbar_visual_value,
+    trackbar_visual_value,
 };
 
 use super::chrome::{
-    push_entry, push_entry_native, push_ownerdraw_two_pixel_bevel_frame,
-    push_ownerdraw_two_pixel_bevel_frame_px, push_solid_rect, push_solid_rect_px,
-    push_tinted_entry,
+    push_entry, push_entry_native, push_entry_top_clipped_native, push_entry_wrapped_centered,
+    push_ownerdraw_two_pixel_bevel_frame, push_ownerdraw_two_pixel_bevel_frame_px, push_solid_rect,
+    push_solid_rect_px, push_tinted_entry,
 };
 use super::{
     OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF, SHELL_CONTROL_DEPTH,
@@ -202,28 +203,29 @@ pub(super) fn house_color_tint(_color_schemes: &[ColorSchemeEntry], index: usize
     [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0]
 }
 
+/// The value plaque of `ShellTrackbar__WndProc`'s paint
+/// (`0x0061DE92..0x0061E008`): TROFM through `0x006BA3E0` into the 50 columns
+/// `{x + W - 49, y - 1}` at TROFM's own height, which shows TROFM's middle
+/// columns and none of its red edge rows past the frames; TROFL at the
+/// plaque's left, TROFR at `x + W + 1 - its width`, both at `y - 1`.
 pub(super) fn paint_trackbar_plaque(
     out: &mut Vec<SpriteInstance>,
     chrome: &ControlChrome,
     rect: RectPx,
     depth: f32,
 ) {
-    let plaque = trackbar_plaque_rect(rect);
+    let x = rect.x + rect.w - (PLAQUE_RESERVE - 1);
+    let y = rect.y - 1;
     if let Some(mid) = chrome.trackbar_plaque_mid_trofm {
-        push_entry(out, mid, plaque, depth);
+        let h = mid.pixel_size[1].round() as i32;
+        push_entry_wrapped_centered(out, mid, RectPx::new(x, y, PLAQUE_RESERVE, h), depth);
     }
     if let Some(left) = chrome.trackbar_plaque_left_trofl {
-        push_entry_native(out, left, plaque.x, plaque.y, depth - 0.00001);
+        push_entry_native(out, left, x, y, depth - 0.00001);
     }
     if let Some(right) = chrome.trackbar_plaque_right_trofr {
         let w = right.pixel_size[0].round() as i32;
-        push_entry_native(
-            out,
-            right,
-            plaque.x + plaque.w - w,
-            plaque.y,
-            depth - 0.00001,
-        );
+        push_entry_native(out, right, rect.x + rect.w + 1 - w, y, depth - 0.00001);
     }
 }
 
@@ -250,14 +252,13 @@ pub(super) enum ControlPaint {
         checked: bool,
         rect: RectPx,
     },
+    /// A trackbar window with its thumb's window-relative left edge
+    /// ([`crate::ui::shell::trackbar::thumb_left`]). `plaque` is off where
+    /// the owner sends `0x4AC` with 0 (Options Detail/Difficulty/Scroll, BBB).
     Trackbar {
         rect: RectPx,
-        thumb_px: i32,
-    },
-    /// D5 Detail/Difficulty/Scroll receive 4AC(false): no numeric plaque.
-    PlainTrackbar {
-        rect: RectPx,
-        thumb_px: i32,
+        thumb_left: i32,
+        plaque: bool,
     },
     Combo {
         rect: RectPx,
@@ -293,27 +294,28 @@ pub(super) fn paint_control(
                 push_entry(out, entry, checkbox_icon_rect(rect), SHELL_CONTROL_DEPTH);
             }
         }
-        ControlPaint::Trackbar { rect, thumb_px }
-        | ControlPaint::PlainTrackbar { rect, thumb_px } => {
-            // The active owner-draw callback blits plaque and thumb art before
-            // drawing its two adjacent border-2 primitive frames. The frame
-            // entry includes the native two-pixel outside expansion.
-            let plain = matches!(paint, ControlPaint::PlainTrackbar { .. });
-            if !plain {
+        ControlPaint::Trackbar {
+            rect,
+            thumb_left,
+            plaque,
+        } => {
+            // The paint blits the plaque and the thumb, then draws two
+            // adjacent border-2 frames; the frame entry includes their
+            // two-pixel outside expansion. TRAKGRIP goes through a plain
+            // blit into `{x + thumb_left, y, 12, H}`, so a shorter window
+            // clips it rather than scaling it.
+            if plaque {
                 paint_trackbar_plaque(out, chrome, rect, SHELL_CONTROL_DEPTH);
             }
             if let Some(thumb) = chrome.trackbar_thumb_trakgrip {
-                let thumb_rect = trackbar_thumb_rect(rect, thumb_px);
-                push_entry(out, thumb, thumb_rect, SHELL_CONTROL_DEPTH - 0.00002);
+                push_entry_top_clipped_native(
+                    out,
+                    thumb,
+                    RectPx::new(rect.x + thumb_left, rect.y, THUMB_W, rect.h),
+                    SHELL_CONTROL_DEPTH - 0.00002,
+                );
             }
-            if let Some(frame) = match (plain, rect.w) {
-                (false, 128) => chrome.trackbar_rail,
-                (false, 263) => chrome.trackbar_numeric_263,
-                (false, 225) => chrome.trackbar_numeric_225,
-                (true, 180) => chrome.trackbar_plain_180,
-                (true, 192) => chrome.trackbar_plain_192,
-                _ => None,
-            } {
+            if let Some(frame) = chrome.trackbar_frame(plaque, rect.w, rect.h) {
                 push_entry_native(
                     out,
                     frame,
@@ -447,10 +449,6 @@ pub(super) fn push_trackbar_instances(
     layout: &SkirmishShellLayout,
     shell: &SkirmishShellState,
 ) {
-    // Slice 4B: each trackbar paints through the per-control-kind seam. The
-    // value→pixel quantization (reading bounds) stays here in the skirmish layer;
-    // only the resolved `thumb_px` + rect cross the seam, and `paint_control`
-    // resolves the rail/plaque/thumb glyphs from the `ControlChrome` subset.
     let chrome = atlas.control_chrome();
     for id in [
         SkirmishTrackbarId::GameSpeed0x529,
@@ -459,9 +457,16 @@ pub(super) fn push_trackbar_instances(
     ] {
         let rect = trackbar_rect_for_id(layout, id);
         let value = trackbar_visual_value(shell, id);
-        let (min, max, step) = shell.trackbar_bounds.range(id);
-        let px = trackbar_pixel_offset(value, min, max, step, rect);
-        paint_control(out, &chrome, ControlPaint::Trackbar { rect, thumb_px: px });
+        let thumb_left = shell.trackbar_bounds.range(id).thumb_left(value, rect.w);
+        paint_control(
+            out,
+            &chrome,
+            ControlPaint::Trackbar {
+                rect,
+                thumb_left,
+                plaque: true,
+            },
+        );
     }
 }
 
@@ -703,6 +708,7 @@ pub(super) fn dropdown_selected_row_rect(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::skirmish_shell_chrome::{TRACKBAR_FRAMES, trackbar_frame_slot};
 
     #[test]
     fn skirmish_swatches_match_the_native_fixed_table() {
@@ -784,135 +790,148 @@ mod tests {
         assert!(empty.is_empty());
     }
 
+    fn entry(origin: f32, width: f32, height: f32) -> SkirmishShellChromeEntry {
+        SkirmishShellChromeEntry {
+            uv_origin: [origin, origin + 0.01],
+            uv_size: [0.2, 0.1],
+            pixel_size: [width, height],
+        }
+    }
+
     #[test]
-    fn trackbar_paint_seam_emits_plaque_thumb_and_native_frames_in_order() {
-        let frame = SkirmishShellChromeEntry {
-            uv_origin: [0.01, 0.02],
-            uv_size: [0.03, 0.04],
-            pixel_size: [132.0, 25.0],
-        };
-        let mid = SkirmishShellChromeEntry {
-            uv_origin: [0.11, 0.12],
-            uv_size: [0.13, 0.14],
-            pixel_size: [10.0, 16.0],
-        };
-        let left = SkirmishShellChromeEntry {
-            uv_origin: [0.21, 0.22],
-            uv_size: [0.23, 0.24],
-            pixel_size: [6.0, 16.0],
-        };
-        let right = SkirmishShellChromeEntry {
-            uv_origin: [0.31, 0.32],
-            uv_size: [0.33, 0.34],
-            pixel_size: [7.0, 16.0],
-        };
-        let thumb = SkirmishShellChromeEntry {
-            uv_origin: [0.41, 0.42],
-            uv_size: [0.43, 0.44],
-            pixel_size: [12.0, 18.0],
-        };
-        let chrome = ControlChrome {
-            trackbar_rail: Some(frame),
+    fn trackbar_paint_places_the_native_plaque_thumb_and_frames() {
+        // Retail art sizes: TROFM 114x24, TROFL 8x24, TROFR 10x24,
+        // TRAKGRIP 12x22; the Skirmish Credits window 129x22.
+        let mid = entry(0.1, 114.0, 24.0);
+        let left = entry(0.2, 8.0, 24.0);
+        let right = entry(0.3, 10.0, 24.0);
+        let thumb = entry(0.4, 12.0, 22.0);
+        let frame = entry(0.5, 133.0, 26.0);
+        let mut chrome = ControlChrome {
             trackbar_plaque_mid_trofm: Some(mid),
             trackbar_plaque_left_trofl: Some(left),
             trackbar_plaque_right_trofr: Some(right),
             trackbar_thumb_trakgrip: Some(thumb),
             ..Default::default()
         };
-        let rect = RectPx::new(176, 168, 128, 21);
-        let plaque = trackbar_plaque_rect(rect);
-
-        for thumb_px in [0, 68, 137] {
-            let mut out = Vec::new();
-            paint_control(&mut out, &chrome, ControlPaint::Trackbar { rect, thumb_px });
-            assert_eq!(out.len(), 5, "plaque(mid, left, right) + thumb + frame");
-
-            // 0: plaque mid — scaled to the plaque rect.
-            assert_eq!(out[0].position, [plaque.x as f32, plaque.y as f32]);
-            assert_eq!(out[0].size, [plaque.w as f32, plaque.h as f32]);
-            assert_eq!(out[0].uv_origin, mid.uv_origin);
-            assert_eq!(out[0].depth, SHELL_CONTROL_DEPTH);
-
-            // 1: plaque left — native at the plaque origin.
-            assert_eq!(out[1].position, [plaque.x as f32, plaque.y as f32]);
-            assert_eq!(out[1].size, left.pixel_size);
-            assert_eq!(out[1].uv_origin, left.uv_origin);
-            assert_eq!(out[1].depth, SHELL_CONTROL_DEPTH - 0.00001);
-
-            // 2: plaque right — native and right-aligned in the plaque.
-            let right_w = right.pixel_size[0].round() as i32;
-            assert_eq!(
-                out[2].position,
-                [(plaque.x + plaque.w - right_w) as f32, plaque.y as f32]
-            );
-            assert_eq!(out[2].size, right.pixel_size);
-            assert_eq!(out[2].uv_origin, right.uv_origin);
-            assert_eq!(out[2].depth, SHELL_CONTROL_DEPTH - 0.00001);
-
-            // 3: thumb — follows thumb_px via trackbar_thumb_rect.
-            let thumb_rect = trackbar_thumb_rect(rect, thumb_px);
-            assert_eq!(out[3].position, [thumb_rect.x as f32, thumb_rect.y as f32]);
-            assert_eq!(out[3].size, [thumb_rect.w as f32, thumb_rect.h as f32]);
-            assert_eq!(out[3].uv_origin, thumb.uv_origin);
-            assert_eq!(out[3].depth, SHELL_CONTROL_DEPTH - 0.00002);
-
-            // 4: transparent two-frame composition, expanded two pixels around
-            // the owner-draw control and layered over the PCX edges.
-            assert_eq!(out[4].position, [(rect.x - 2) as f32, (rect.y - 2) as f32]);
-            assert_eq!(out[4].size, frame.pixel_size);
-            assert_eq!(out[4].uv_origin, frame.uv_origin);
-            assert_eq!(out[4].depth, SHELL_CONTROL_DEPTH - 0.00003);
-        }
-
-        // Missing entries → nothing emitted (matches the pre-seam `if let` guards).
-        let mut empty = Vec::new();
-        paint_control(
-            &mut empty,
-            &ControlChrome::default(),
-            ControlPaint::Trackbar { rect, thumb_px: 0 },
-        );
-        assert!(empty.is_empty());
-    }
-
-    #[test]
-    fn numeric_rails_select_native_width_without_stretching_the_divider() {
-        let narrow = SkirmishShellChromeEntry {
-            uv_origin: [0.1, 0.2],
-            uv_size: [0.2, 0.1],
-            pixel_size: [132.0, 25.0],
-        };
-        let wide = SkirmishShellChromeEntry {
-            uv_origin: [0.4, 0.2],
-            uv_size: [0.4, 0.1],
-            pixel_size: [267.0, 25.0],
-        };
-        let rmg = SkirmishShellChromeEntry {
-            uv_origin: [0.1, 0.4],
-            uv_size: [0.3, 0.1],
-            pixel_size: [229.0, 25.0],
-        };
-        let chrome = ControlChrome {
-            trackbar_numeric_225: Some(rmg),
-            trackbar_rail: Some(narrow),
-            trackbar_numeric_263: Some(wide),
-            ..Default::default()
-        };
-        // Actual Skirmish/D5 and B8 widths. The B8 runtime regression was
-        // the narrow atlas entry at a wide control's otherwise correct origin.
-        for (width, expected) in [(128, narrow), (225, rmg), (263, wide)] {
+        chrome.trackbar_frames[trackbar_frame_slot(true, 129, 22).unwrap()] = Some(frame);
+        let rect = RectPx::new(404, 314, 129, 22);
+        for thumb_left in [1, 34, 67] {
             let mut out = Vec::new();
             paint_control(
                 &mut out,
                 &chrome,
                 ControlPaint::Trackbar {
-                    rect: RectPx::new(236, 98, width, 21),
-                    thumb_px: 0,
+                    rect,
+                    thumb_left,
+                    plaque: true,
                 },
             );
-            assert_eq!(out.len(), 1);
+            assert_eq!(out.len(), 5, "plaque (mid, left, right), thumb, frame");
+            // TROFM's middle 50 columns (32..82) at its own height: its red
+            // first and last rows land under the frames, not inside them.
+            assert_eq!(out[0].position, [484.0, 313.0]);
+            assert_eq!(out[0].size, [50.0, 24.0]);
+            assert_eq!(out[0].uv_origin, [0.1 + 0.2 * 32.0 / 114.0, 0.11]);
+            assert_eq!(out[0].uv_size, [0.2 * (50.0 / 114.0), 0.1]);
+            assert_eq!(out[0].depth, SHELL_CONTROL_DEPTH);
+            assert_eq!(out[1].position, [484.0, 313.0]);
+            assert_eq!(out[1].size, left.pixel_size);
+            assert_eq!(out[2].position, [524.0, 313.0]);
+            assert_eq!(out[2].size, right.pixel_size);
+            assert_eq!(out[3].position, [(404 + thumb_left) as f32, 314.0]);
+            assert_eq!(out[3].size, [12.0, 22.0]);
+            assert_eq!(out[3].uv_size, thumb.uv_size);
+            assert_eq!(out[3].depth, SHELL_CONTROL_DEPTH - 0.00002);
+            assert_eq!(out[4].position, [402.0, 312.0]);
+            assert_eq!(out[4].size, frame.pixel_size);
+            assert_eq!(out[4].uv_origin, frame.uv_origin);
+            assert_eq!(out[4].depth, SHELL_CONTROL_DEPTH - 0.00003);
+        }
+
+        // A 21-pixel window (in-game B8) clips the 22-pixel thumb.
+        let mut out = Vec::new();
+        paint_control(
+            &mut out,
+            &chrome,
+            ControlPaint::Trackbar {
+                rect: RectPx::new(236, 98, 263, 21),
+                thumb_left: 1,
+                plaque: false,
+            },
+        );
+        assert_eq!(out.len(), 1, "no plaque, no frame of this size");
+        assert_eq!(out[0].size, [12.0, 21.0]);
+        assert_eq!(out[0].uv_size, [0.2, 0.1 * (21.0 / 22.0)]);
+
+        let mut empty = Vec::new();
+        paint_control(
+            &mut empty,
+            &ControlChrome::default(),
+            ControlPaint::Trackbar {
+                rect,
+                thumb_left: 1,
+                plaque: true,
+            },
+        );
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn each_trackbar_window_takes_its_own_frame() {
+        let mut chrome = ControlChrome::default();
+        for (slot, &(width, height, _)) in TRACKBAR_FRAMES.iter().enumerate() {
+            chrome.trackbar_frames[slot] = Some(entry(
+                slot as f32 / 10.0,
+                (width + 4) as f32,
+                (height + 4) as f32,
+            ));
+        }
+        for &(width, height, reserve) in &TRACKBAR_FRAMES {
+            let mut out = Vec::new();
+            paint_control(
+                &mut out,
+                &chrome,
+                ControlPaint::Trackbar {
+                    rect: RectPx::new(236, 98, width, height),
+                    thumb_left: 1,
+                    plaque: reserve > 0,
+                },
+            );
+            assert_eq!(out.len(), 1, "{width}x{height}");
             assert_eq!(out[0].position, [234.0, 96.0]);
-            assert_eq!(out[0].size, expected.pixel_size);
-            assert_eq!(out[0].uv_origin, expected.uv_origin);
+            assert_eq!(out[0].size, [(width + 4) as f32, (height + 4) as f32]);
+        }
+        // The resource sizes before the runtime growth have no frame.
+        assert!(chrome.trackbar_frame(true, 128, 21).is_none());
+        assert!(chrome.trackbar_frame(false, 180, 21).is_none());
+    }
+
+    /// Every trackbar window the shell pages paint has a frame.
+    #[test]
+    fn every_shell_trackbar_window_has_a_frame() {
+        use crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout;
+        use crate::ui::skirmish_shell::{compute_layout, compute_random_map_setup_layout};
+        for (width, height) in [(640u32, 480u32), (800, 600), (1024, 768)] {
+            let skirmish = compute_layout(width, height).trackbars;
+            let players = compute_random_map_setup_layout(width, height).control_rects[5];
+            let mut windows = vec![
+                (true, skirmish.game_speed),
+                (true, skirmish.credits),
+                (true, skirmish.unit_count),
+                (true, players),
+            ];
+            windows.extend(
+                LauncherOptionsLayout::new(width as i32, height as i32)
+                    .trackbars
+                    .map(|(id, rect)| (id.plaque_reserve() > 0, rect)),
+            );
+            for (plaque, rect) in windows {
+                assert!(
+                    trackbar_frame_slot(plaque, rect.w, rect.h).is_some(),
+                    "{rect:?} at {width}x{height}"
+                );
+            }
         }
     }
 
