@@ -14,6 +14,11 @@ path = "src/main.rs"
 name = "parity-digest"
 path = "src/bin/parity-digest.rs"
 
+# Release-build simulation tick benchmark at scale (see its module doc).
+[[bin]]
+name = "sim-bench"
+path = "src/bin/sim-bench.rs"
+
 [[bin]]
 name = "mix-browser"
 path = "src/bin/mix-browser.rs"
