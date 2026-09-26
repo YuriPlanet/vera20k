@@ -114,6 +114,16 @@ pub(super) fn cell(v: &Value) -> (u16, u16) {
 /// The oracle's map: 33x33 clear cells with native zones, bounds and a
 /// passable path grid.
 fn world(rules: &RuleSet, ini: &IniFile) -> Simulation {
+    world_with(rules, ini, |_| {})
+}
+
+/// [`world`] with `edit` applied to the cells before the path grid, zones
+/// and bridge state are derived from them.
+pub(super) fn world_with(
+    rules: &RuleSet,
+    ini: &IniFile,
+    edit: impl FnOnce(&mut ResolvedTerrainGrid),
+) -> Simulation {
     let mut terrain = ResolvedTerrainGrid::from_cells(
         33,
         33,
@@ -134,6 +144,7 @@ fn world(rules: &RuleSet, ini: &IniFile) -> Simulation {
             c.base_speed_costs = costs.clone();
         }
     }
+    edit(&mut terrain);
     // Map width 12: every cell the rows use (x + y > 12, y - x < 12) is
     // inside the playfield diamond.
     let bounds =

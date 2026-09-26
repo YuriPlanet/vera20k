@@ -1827,28 +1827,26 @@ fn death_weapon_half_strength(strength: i32) -> Option<i32> {
     i32::try_from(X87Chop53::ftol_i64(product).ok()?).ok()
 }
 
-/// Resolve the active fatal-receiver death producer: the death arm's gate
-/// (`TechnoClass::ReceiveDamage 0x00702572..0x00702603`: effective Explodes,
-/// or the weapon at `CurrentWeaponNumber` (`GetWeapon(+0x138)`, vtable
-/// `+0x3F8`) is `Suicide=`), then [`fire_death_weapon_payload`].
-fn death_weapon_aoe(
+/// The death arm's gate (`TechnoClass::ReceiveDamage 0x00702572..0x00702601`):
+/// Explodes (`+0xD15`), the veteran or elite `EXPLODES` ability (IsVeteran
+/// `0x0074FF90` with `+0x2A6`; IsElite `0x00750010` with `+0x2A6` or
+/// `+0x2B8`), or the weapon at `CurrentWeaponNumber` (`GetWeapon(+0x138)`,
+/// vtable `+0x3F8`) is `Suicide=` (`+0x144`). When it holds, KillPassengers
+/// (`0x00702603..0x00702667`) and then Fire_Death_Weapon (`0x00702669`) run;
+/// otherwise neither does.
+pub(crate) fn death_arm_explodes(
     rules: &RuleSet,
     obj: &ObjectType,
     veterancy: u16,
     current_weapon_index: u8,
-    current_weapon: Option<&str>,
-    interner: &mut StringInterner,
-) -> Option<(i32, InternedId, InternedId)> {
+) -> bool {
     let numbered_weapon =
         combat_weapon::weapon_for_slot_index(obj, veterancy, i32::from(current_weapon_index))
             .and_then(|(weapon_id, _)| rules.weapon(weapon_id));
-    let effective_explodes = obj.explodes
+    obj.explodes
         || (veterancy >= 100 && obj.veteran_explodes)
-        || (veterancy >= 200 && obj.elite_explodes);
-    if !effective_explodes && !numbered_weapon.is_some_and(|weapon| weapon.suicide) {
-        return None;
-    }
-    fire_death_weapon_payload(rules, obj, current_weapon, interner)
+        || (veterancy >= 200 && obj.elite_explodes)
+        || numbered_weapon.is_some_and(|weapon| weapon.suicide)
 }
 
 /// `TechnoClass::Fire_Death_Weapon @ 0x0070D690`'s weapon and damage, before
@@ -1858,7 +1856,7 @@ fn death_weapon_aoe(
 /// (`0x0070D6EB..0x0070D6F7`); else `[CombatDamage] DeathWeapon=`
 /// (`Rules+0xFDC`) at `ftol(Strength * 0.5)` (`0x0070D6FE..0x0070D71F`). No
 /// weapon fires nothing. The function has no `Explodes=` gate: the death arm
-/// gates it ([`death_weapon_aoe`]); a crash impact calls it bare.
+/// gates it ([`death_arm_explodes`]); a crash impact calls it bare.
 pub(crate) fn fire_death_weapon_payload(
     rules: &RuleSet,
     obj: &ObjectType,

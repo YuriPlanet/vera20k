@@ -158,8 +158,10 @@ def make_fixture(case):
     u.mem_write(ITYPE + 0x5B4, dwords(7))
     u.mem_write(ITYPE + 0x67C, dwords(0))
     # The transport: its type's OpenTopped (+0x5E4), Gunner (+0x805) and
-    # Crashable (+0xD95), its Location, OnBridge (+0x8C), IsFallingDown
-    # (+0x8F) and Team (+0x5D4).
+    # Crashable (+0xD95), its Location, OnBridge (+0x8C), IsABomb (+0x8F:
+    # only ObjectClass::DropAsBomb 0x5F4160 sets it, the ObjectClass
+    # constructor clears it, and ObjectClass::AI 0x5F4021 kills the object
+    # with C4Warhead once it lands) and Team (+0x5D4).
     u.mem_write(TYPE + 0x5E4, bytes([case.get('open_topped', False)]))
     u.mem_write(TYPE + 0x805, bytes([case.get('gunner', False)]))
     u.mem_write(TYPE + 0xD95, bytes([case.get('crashable', False)]))
@@ -173,7 +175,7 @@ def make_fixture(case):
     z = floor + (416 if case.get('on_bridge') else 0) + case.get('height', 0)
     u.mem_write(ACTOR + 0x9C, dwords(x * 256 + sub[0], y * 256 + sub[1], z))
     u.mem_write(ACTOR + 0x8C, bytes([case.get('on_bridge', False)]))
-    u.mem_write(ACTOR + 0x8F, bytes([case.get('falling', False)]))
+    u.mem_write(ACTOR + 0x8F, bytes([case.get('dropped', False)]))
     u.mem_write(ACTOR + 0x5D4, dwords(TEAM if case.get('team') else 0))
     # A second house (ArrayIndex 1), allied both ways only when the row says;
     # the fixture's House is index 0.
@@ -371,12 +373,12 @@ def cases():
         dict(name='human_one_frame_203', human=True, frame=203),
         # A full Battle Fortress, last boarded first.
         dict(name='computer_five', passengers=five),
-        # The kill gates: IgnoreDefenses, a falling transport, a cell the
-        # passengers cannot enter (water; three stationary allied infantry;
-        # an enemy infantryman), and no attacker.
+        # The kill gates: IgnoreDefenses, a transport dropped as a bomb, a
+        # cell the passengers cannot enter (water; three stationary allied
+        # infantry; an enemy infantryman), and no attacker.
         dict(name='ignore_defenses', passengers=[{}] * 3, ignore_defenses=True),
         dict(name='ignore_defenses_no_attacker', passengers=[{}] * 2, ignore_defenses=True, attacker=False),
-        dict(name='falling', passengers=[{}] * 2, falling=True),
+        dict(name='dropped_as_bomb', passengers=[{}] * 2, dropped=True),
         dict(name='water', passengers=[{}] * 2, water=True),
         dict(name='three_allied_standing', passengers=[{}] * 2, occupants=three_allied),
         dict(name='two_allied_standing', passengers=[{}] * 2, occupants=three_allied[:2]),
@@ -426,7 +428,7 @@ def cases():
              sub=[200, 40]),
         dict(name='under_bridge', passengers=[{}] * 2, bridge=True),
         dict(name='under_bridge_on_water', passengers=[{}] * 2, bridge=True, water=True),
-        # A bridge deck transport above the kill height (a falling deck).
+        # A bridge deck transport above the kill height.
         dict(name='bridge_deck_high', passengers=[{}] * 2, bridge=True, on_bridge=True, height=0xD1),
     ]
 

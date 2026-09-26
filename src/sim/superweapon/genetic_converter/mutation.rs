@@ -295,6 +295,10 @@ mod tests {
             infantry.owner = soviet;
             infantry.type_ref = sim.interner.intern("BOOMER");
             infantry.category = EntityCategory::Infantry;
+            infantry.mission_leaf =
+                crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+                    EntityCategory::Infantry,
+                );
             infantry.is_voxel = false;
             infantry.health = Health { current: victim_hp };
             sim.substrate.entities.insert(infantry);
@@ -392,6 +396,10 @@ mod tests {
             infantry.owner = soviet;
             infantry.type_ref = sim.interner.intern(type_id);
             infantry.category = EntityCategory::Infantry;
+            infantry.mission_leaf =
+                crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+                    EntityCategory::Infantry,
+                );
             infantry.is_voxel = false;
             infantry.health = Health { current: 100 };
             sim.substrate.entities.insert(infantry);
@@ -427,6 +435,9 @@ mod tests {
         ground.owner = owner;
         ground.type_ref = type_ref;
         ground.category = EntityCategory::Infantry;
+        ground.mission_leaf = crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+            EntityCategory::Infantry,
+        );
         ground.is_voxel = false;
         ground.health = Health { current: 100 };
         // In the cell's lists, so on the map: out of limbo and marked.
@@ -437,6 +448,9 @@ mod tests {
         bridge.owner = owner;
         bridge.type_ref = type_ref;
         bridge.category = EntityCategory::Infantry;
+        bridge.mission_leaf = crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+            EntityCategory::Infantry,
+        );
         bridge.is_voxel = false;
         bridge.health = Health { current: 100 };
         bridge.on_bridge = true;

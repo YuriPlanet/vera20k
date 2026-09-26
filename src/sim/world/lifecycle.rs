@@ -2613,6 +2613,24 @@ impl Simulation {
         if !self.substrate.entities.contains(stable_id) {
             return ConcealOutcome::MissingOrDead;
         }
+        // `InfantryClass::Limbo @ 0x0051DF10`, before FootClass::Limbo and
+        // whether or not the man is already in limbo: its locomotor's
+        // Stop_Movement_Animation (ILocomotion `+0xAC`; Walk's `0x0075CBC0`
+        // clears Walk `+0x36`), `+0x6E8 = 2`, not prone (`+0x6DB`) and Doing
+        // Ready (`+0x6C4`). A boarded man leaves his transport with these.
+        // VERA's animation cascade derives the walk animation itself, and
+        // `+0x6E8` has no reader here.
+        if let Some(entity) = self.substrate.entities.get_mut(stable_id)
+            && entity.category == EntityCategory::Infantry
+        {
+            if let Some(infantry) = entity.infantry.as_mut() {
+                infantry.is_prone = false;
+            }
+            entity
+                .mission_leaf
+                .set_infantry_doing_verified(crate::sim::movement::infantry_action::DO_READY)
+                .expect("Ready is in the Doing table");
+        }
         self.foot_neighbors_before_limbo(stable_id);
         self.release_track_occupation_before_foot_limbo(stable_id);
         self.release_walk_occupation_before_foot_limbo(stable_id);

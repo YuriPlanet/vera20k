@@ -32,6 +32,8 @@ RefundPercent=50%
 [VehicleTypes]
 0=AMCV
 1=IFV
+2=APC
+3=BOOMV
 [AircraftTypes]
 [BuildingTypes]
 0=GAPOWR
@@ -71,6 +73,15 @@ Strength=200
 Cost=600
 Crewed=yes
 Passengers=1
+[APC]
+Strength=200
+Cost=900
+Passengers=5
+[BOOMV]
+Strength=200
+Cost=900
+Passengers=2
+Explodes=yes
 [GAPOWR]
 Strength=750
 Cost=800
@@ -549,7 +560,7 @@ fn a_crewed_vehicle_rolls_crew_escape_then_places_its_crewman() {
             sim.mark_up_dying_unit(mcv, UninitContext::with_rules(&rules));
             let before = sim.substrate.entities.keys_sorted();
             let mut replay = sim.scenario_rng.clone();
-            sim.spawn_vehicle_crew(&rules, None, mcv, false);
+            sim.spawn_vehicle_crew(&rules, None, mcv, false, false);
 
             let escaped = replay.next_range_u32_inclusive(0, 0x7fff_fffe) < 0x4000_0000;
             let health = escaped.then(|| {
@@ -611,7 +622,7 @@ fn a_crewman_leaving_a_bridge_deck_keeps_the_vehicle_coordinate() {
         sim.mark_up_dying_unit(mcv, UninitContext::with_rules(&rules));
         let before = sim.substrate.entities.keys_sorted();
         let mut replay = sim.scenario_rng.clone();
-        sim.spawn_vehicle_crew(&rules, None, mcv, false);
+        sim.spawn_vehicle_crew(&rules, None, mcv, false, false);
 
         let escapes = replay.next_range_u32_inclusive(0, 0x7fff_fffe) < 0x4000_0000;
         if escapes {
@@ -648,7 +659,7 @@ fn prevent_escape_and_passenger_capacity_skip_the_crew_draw() {
     for (id, prevent) in [(mcv, true), (ifv, false)] {
         sim.mark_up_dying_unit(id, UninitContext::with_rules(&rules));
         let before = sim.scenario_rng.state();
-        sim.spawn_vehicle_crew(&rules, None, id, prevent);
+        sim.spawn_vehicle_crew(&rules, None, id, prevent, false);
         assert_eq!(sim.scenario_rng.state(), before);
     }
 }
@@ -771,6 +782,189 @@ fn a_killing_hit_releases_the_bio_reactors_infantry() {
     }
 }
 
+/// Board `count` limbo E1s of `owner` into `transport`, the first at the
+/// cargo head.
+fn load_passengers(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    transport: u64,
+    owner: &str,
+    count: usize,
+) -> Vec<u64> {
+    let (rx, ry) = {
+        let entity = sim.substrate.entities.get(transport).unwrap();
+        (entity.position.rx, entity.position.ry)
+    };
+    let passengers: Vec<u64> = (0..count)
+        .map(|_| {
+            sim.construct_object_limbo_at_height("E1", owner, rx, ry, 0, 0, rules)
+                .expect("passenger")
+        })
+        .collect();
+    for &id in passengers.iter().rev() {
+        sim.substrate.entities.get_mut(id).unwrap().passenger_role = PassengerRole::Inside {
+            transport_id: transport,
+        };
+        let cargo = sim
+            .substrate
+            .entities
+            .get_mut(transport)
+            .unwrap()
+            .passenger_role
+            .cargo_mut()
+            .expect("a transport");
+        assert!(cargo.board(id, 1));
+    }
+    passengers
+}
+
+/// A dying unit's passenger must be able to enter its cell, so these
+/// fixtures stand on the flat arena map.
+fn sim_on_arena(seed: u64, rules: &RuleSet) -> Simulation {
+    let mut sim = sim_with_houses(seed);
+    crate::sim::arena_fixture::flat_arena(&mut sim, rules);
+    sim
+}
+
+fn kill_by(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    attacker: u64,
+    flags: ReceiverCallFlags,
+) {
+    let warhead = sim.interner.intern("KILLWH");
+    let house = sim
+        .substrate
+        .entities
+        .get(attacker)
+        .map(|entity| entity.owner());
+    let hit = EntityDamageEvent::direct_receiver(id, 100_000, 0, attacker, house, warhead, flags);
+    sim.commit_noncombat_aoe_hits(rules, None, &[hit]);
+}
+
+fn cargo_len(sim: &Simulation, transport: u64) -> usize {
+    sim.substrate
+        .entities
+        .get(transport)
+        .and_then(|entity| entity.passenger_role.cargo())
+        .map_or(0, |cargo| cargo.passengers.len())
+}
+
+/// Through the production receiver: a dying transport's passengers step out
+/// onto its cell in cargo order, uncredited; a computer's Hunt and a human's
+/// stay put.
+#[test]
+fn a_killing_hit_lets_the_passengers_out() {
+    let rules = rules();
+    for (owner, mission) in [
+        ("Americans", MissionId::from_known(MissionType::Hunt)),
+        ("AlliedHuman", MissionId::NONE),
+    ] {
+        let mut sim = sim_on_arena(3, &rules);
+        let apc = spawn(&mut sim, &rules, "APC", owner, 10, 10);
+        let attacker = spawn(&mut sim, &rules, "APC", "Russians", 14, 10);
+        let passengers = load_passengers(&mut sim, &rules, apc, owner, 3);
+        kill_by(&mut sim, &rules, apc, attacker, ORDINARY);
+        assert!(sim.substrate.pending_delete.contains(&apc));
+        assert_eq!(cargo_len(&sim, apc), 0);
+        for &id in &passengers {
+            let passenger = sim.substrate.entities.get(id).expect("escaped");
+            assert!(passenger.lifecycle.object_alive && !passenger.lifecycle.in_limbo);
+            assert!(matches!(passenger.passenger_role, PassengerRole::None));
+            assert_eq!((passenger.position.rx, passenger.position.ry), (10, 10));
+            assert_eq!(passenger.killed_by, None);
+            assert!(!passenger.selected);
+            assert_eq!(queued(&sim, id), mission, "{owner}");
+            assert!(!sim.substrate.pending_delete.contains(&id));
+        }
+    }
+}
+
+/// IgnoreDefenses (`0x007380A3`) kills every passenger instead, crediting
+/// the attacker.
+#[test]
+fn an_ignore_defenses_kill_takes_the_passengers_along() {
+    let rules = rules();
+    let mut sim = sim_on_arena(3, &rules);
+    let apc = spawn(&mut sim, &rules, "APC", "Americans", 10, 10);
+    let attacker = spawn(&mut sim, &rules, "APC", "Russians", 14, 10);
+    let passengers = load_passengers(&mut sim, &rules, apc, "Americans", 2);
+    kill_by(
+        &mut sim,
+        &rules,
+        apc,
+        attacker,
+        ReceiverCallFlags {
+            ignore_defenses: true,
+            arg6: false,
+        },
+    );
+    let russians = sim.interner.intern("Russians");
+    for id in passengers {
+        let passenger = sim.substrate.entities.get(id).unwrap();
+        assert!(sim.substrate.pending_delete.contains(&id));
+        assert!(!passenger.lifecycle.object_alive);
+        assert_eq!(passenger.killed_by, Some(russians));
+    }
+}
+
+/// An `Explodes=` transport kills its passengers in the Techno death arm
+/// (`0x00702603..0x00702667`), before its death weapon and its own UnInit,
+/// crediting the attacker; its UnitClass arm then finds the cargo empty.
+#[test]
+fn an_exploding_transport_kills_its_passengers_first() {
+    let rules = rules();
+    let mut sim = sim_on_arena(3, &rules);
+    let boomer = spawn(&mut sim, &rules, "BOOMV", "Americans", 10, 10);
+    let attacker = spawn(&mut sim, &rules, "APC", "Russians", 14, 10);
+    let passengers = load_passengers(&mut sim, &rules, boomer, "Americans", 2);
+    kill_by(&mut sim, &rules, boomer, attacker, ORDINARY);
+    let russians = sim.interner.intern("Russians");
+    let deleted = &sim.substrate.pending_delete;
+    let order: Vec<usize> = passengers
+        .iter()
+        .chain([&boomer])
+        .map(|id| deleted.iter().position(|d| d == id).expect("UnInit"))
+        .collect();
+    assert!(order[0] < order[1] && order[1] < order[2], "{deleted:?}");
+    for id in passengers {
+        assert_eq!(
+            sim.substrate.entities.get(id).unwrap().killed_by,
+            Some(russians)
+        );
+    }
+}
+
+/// A transport the local player had selected (`0x00737C98..0x00737CB6`)
+/// selects each escapee (`0x00738174`) and its crewman (`0x00738352`).
+#[test]
+fn a_selected_vehicle_selects_its_escapees_and_crewman() {
+    let rules = rules();
+    let mut crewmen = 0;
+    for seed in 1..=8 {
+        for selected in [true, false] {
+            let mut sim = sim_on_arena(seed, &rules);
+            let owner = sim.interner.intern("AlliedHuman");
+            sim.session.current_house = Some(owner);
+            let apc = spawn(&mut sim, &rules, "APC", "AlliedHuman", 10, 10);
+            let mcv = spawn(&mut sim, &rules, "AMCV", "AlliedHuman", 20, 10);
+            let passengers = load_passengers(&mut sim, &rules, apc, "AlliedHuman", 2);
+            for id in [apc, mcv] {
+                sim.substrate.entities.get_mut(id).unwrap().selected = selected;
+            }
+            kill(&mut sim, &rules, apc, ORDINARY);
+            let before = sim.substrate.entities.keys_sorted();
+            kill(&mut sim, &rules, mcv, ORDINARY);
+            for id in passengers.into_iter().chain(new_ids(&sim, &before)) {
+                assert_eq!(sim.substrate.entities.get(id).unwrap().selected, selected);
+            }
+            crewmen += new_ids(&sim, &before).len();
+        }
+    }
+    assert!(crewmen > 0);
+}
+
 /// Retail `rulesmd.ini` and `artmd.ini` (the local `ini/`): the stock crew
 /// keys bind, and a power plant and an MCV killed through the production
 /// receiver leave stock crew with native health ranges.
@@ -837,6 +1031,32 @@ fn retail_rules_crew_the_power_plant_and_the_mcv() {
         }
     }
     assert!(plant_crew > 0 && mcv_crew > 0, "{plant_crew} {mcv_crew}");
+}
+
+/// Keep the fixture's Americans undefeated: the house rung's defeat pass
+/// (`house_defeat`) blows up everything a skirmish house owns once it has no
+/// building and no base unit left, so a power plant twelve or more cells
+/// from the scene outlives it.
+fn keep_undefeated(
+    sim: &mut Simulation,
+    resources: &crate::sim::runtime::SimResources,
+    scene: (u16, u16),
+) {
+    let spare = (20..120_u16)
+        .flat_map(|y| (20..120_u16).map(move |x| (x, y)))
+        .filter(|&(x, y)| x.abs_diff(scene.0).max(y.abs_diff(scene.1)) >= 12)
+        .find_map(|(x, y)| {
+            sim.spawn_object(
+                "GAPOWR",
+                "Americans",
+                x,
+                y,
+                0,
+                &resources.rules,
+                &resources.height_map,
+            )
+        });
+    assert!(spare.is_some(), "a spare power plant");
 }
 
 /// Retail Dustbowl runtime: a power plant and an MCV die through the
@@ -920,6 +1140,7 @@ fn retail_dustbowl_crews_scatter_off_their_wrecks() {
                 (entity.position.rx, entity.position.ry)
             })
             .into();
+        keep_undefeated(sim, resources, mcv_cell);
         let before = sim.substrate.entities.keys_sorted();
         kill_with(sim, &resources.rules, registry, plant, "Super", ORDINARY);
         kill_with(sim, &resources.rules, registry, mcv, "Super", ORDINARY);
@@ -971,4 +1192,154 @@ fn retail_dustbowl_crews_scatter_off_their_wrecks() {
         crews[0],
         crews[1]
     );
+}
+
+/// Retail Dustbowl runtime: GIs board a Battle Fortress (`OpenTopped=`), an
+/// IFV (`Gunner=`) and a Flak Track through the production boarding, the
+/// transports die through the production receiver, and every GI steps out
+/// onto its transport's cell, Scatters and walks off the wreck. Ignored:
+/// needs the retail install (`RA2_DIR` or `config.toml`).
+#[test]
+#[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
+fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
+    use crate::sim::passenger::BoardingPhase;
+    let dir = std::env::var("RA2_DIR")
+        .ok()
+        .filter(|path| !path.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            crate::util::config::GameConfig::load()
+                .expect("set RA2_DIR or provide config.toml for this ignored test")
+                .paths
+                .ra2_dir
+        });
+    let mut scenario =
+        crate::headless_scenario::load(&dir, "Dustbowl.mmx", 0x00C0_FFEE).expect("Dustbowl loads");
+    let crate::sim::runtime::SimRuntime {
+        simulation: sim,
+        resources,
+    } = &mut scenario.runtime;
+    let rules = &resources.rules;
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .entry(owner)
+        .or_insert_with(|| HouseState::new(owner, 0, None, false, 10_000, 10));
+    if !sim.session.house_order.contains(&owner) {
+        sim.session.house_order.push(owner);
+    }
+    // Each transport on the first central cell that admits it, with level
+    // walkable ground around it for its GIs (the row south) and their
+    // Scatter, four or more cells from the others.
+    let mut loads: Vec<(&str, u64, (u16, u16), Vec<u64>)> = Vec::new();
+    for (kind, count) in [("BFRT", 3_u16), ("FV", 1), ("HTK", 3)] {
+        let mut placed = None;
+        for (x, y) in (40..100_u16).flat_map(|y| (40..100_u16).map(move |x| (x, y))) {
+            let spaced = loads
+                .iter()
+                .all(|(_, _, (lx, ly), _)| x.abs_diff(*lx).max(y.abs_diff(*ly)) >= 4);
+            let open = || {
+                let (grid, terrain) = (sim.path_grid()?, sim.resolved_terrain.as_ref()?);
+                let level = terrain.cell(x, y)?.level;
+                Some((x - 2..=x + 2).all(|cx| {
+                    (y - 2..=y + 2).all(|cy| {
+                        terrain.cell(cx, cy).is_some_and(|cell| cell.level == level)
+                            && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)
+                    })
+                }))
+            };
+            if !spaced || open() != Some(true) {
+                continue;
+            }
+            if let Some(id) =
+                sim.spawn_object(kind, "Americans", x, y, 0, rules, &resources.height_map)
+            {
+                placed = Some((id, (x, y)));
+                break;
+            }
+        }
+        let (transport, (tx, ty)) = placed.unwrap_or_else(|| panic!("{kind} spawns"));
+        let gis = (0..count)
+            .map(|i| {
+                let id = sim
+                    .spawn_object(
+                        "E1",
+                        "Americans",
+                        tx - 1 + i,
+                        ty + 1,
+                        0,
+                        rules,
+                        &resources.height_map,
+                    )
+                    .expect("GI spawns");
+                sim.substrate.entities.get_mut(id).unwrap().passenger_role =
+                    PassengerRole::Boarding {
+                        target_transport_id: transport,
+                        phase: BoardingPhase::Entering,
+                    };
+                id
+            })
+            .collect();
+        loads.push((kind, transport, (tx, ty), gis));
+    }
+    keep_undefeated(sim, resources, loads[0].2);
+    sim.resolve_type_handles(rules);
+    crate::sim::passenger::tick_passenger_system(sim, rules);
+    for (kind, transport, _, gis) in &loads {
+        assert_eq!(cargo_len(sim, *transport), gis.len(), "{kind} boarded");
+    }
+    assert!(
+        sim.substrate
+            .entities
+            .get(loads[1].1)
+            .unwrap()
+            .weapon_override
+            .is_some(),
+        "the IFV took its gunner's weapon"
+    );
+    let registry = Some(&resources.overlay_registry);
+    for (_, transport, _, _) in &loads {
+        kill_with(sim, rules, registry, *transport, "Super", ORDINARY);
+    }
+    let mut destinations = Vec::new();
+    for (kind, transport, cell, gis) in &loads {
+        assert!(sim.substrate.pending_delete.contains(transport));
+        for &id in gis {
+            let gi = sim.substrate.entities.get(id).expect("GI lives");
+            assert!(
+                gi.lifecycle.object_alive && !gi.lifecycle.in_limbo,
+                "{kind}"
+            );
+            assert!(matches!(gi.passenger_role, PassengerRole::None));
+            assert_eq!(
+                (gi.position.rx, gi.position.ry),
+                *cell,
+                "{kind}: out on its cell"
+            );
+            let Some(crate::sim::components::NavTargetRef::Cell { rx, ry }) =
+                gi.navigation.nav_com.clone()
+            else {
+                panic!("{kind}: GI {id} has no Scatter destination");
+            };
+            assert_ne!((rx, ry), *cell, "{kind}: Scatter leads off the wreck");
+            destinations.push((*kind, id, *cell, (rx, ry)));
+        }
+    }
+    // Each GI walks off the wreck; a computer's Hunt may lead it back later.
+    let mut left = vec![false; destinations.len()];
+    for _ in 0..45 {
+        scenario.tick();
+        for (index, (_, id, wreck, _)) in destinations.iter().enumerate() {
+            let gi = scenario
+                .sim()
+                .substrate
+                .entities
+                .get(*id)
+                .expect("GI lives");
+            left[index] |= (gi.position.rx, gi.position.ry) != *wreck;
+        }
+    }
+    for ((kind, id, wreck, destination), left) in destinations.into_iter().zip(left) {
+        println!("{kind} GI {id}: wreck {wreck:?}, Scatter to {destination:?}");
+        assert!(left, "{kind}: GI {id} walked off the wreck");
+    }
 }

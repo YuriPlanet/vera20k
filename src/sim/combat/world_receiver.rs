@@ -161,6 +161,13 @@ pub(crate) struct ReceiverRun {
     pub(crate) handled_deaths: Vec<u64>,
     pub(super) finalizing_terrain: BTreeSet<u64>,
     pub(crate) navigation_changed_cells: Vec<(u16, u16)>,
+    /// Units the local player had selected when their receiver was last
+    /// entered: `UnitClass::ReceiveDamage` reads it first
+    /// (`0x00737C98..0x00737CB6`: IsSelected `+0x83` and
+    /// `HouseClass::IsHumanPlayer @ 0x0050B6F0`), before the kill's Destroy
+    /// callback deselects the unit, and a dying one hands it to its
+    /// passengers and crewman.
+    pub(crate) selected_units: Vec<u64>,
 }
 
 impl ReceiverRun {
@@ -377,6 +384,14 @@ pub(crate) fn commit_entities(
         }
         let target_id = event.target_id;
         let attacker_id = event.attacker_id;
+        run.selected_units.retain(|&id| id != target_id);
+        if world.substrate.entities.get(target_id).is_some_and(|target| {
+            target.category == EntityCategory::Unit
+                && target.selected
+                && world.session.current_house == Some(target.owner())
+        }) {
+            run.selected_units.push(target_id);
+        }
         match apply_building_receive_prelude(
             event,
             &mut world.substrate.entities,
@@ -1110,6 +1125,16 @@ pub(crate) fn handle_death(
                     &mut voxel_debris,
                     &mut explosion_effects,
                 );
+                // An exploding object's passengers die with it
+                // (`0x00702603..0x00702667`, FootClass::KillPassengers' loop
+                // inlined, credited to the killing hit's source) before its
+                // death weapon. A unit that does not explode lets them escape
+                // after this arm (`finish_concrete_death`).
+                let explodes = death_arm_explodes(rules, obj, veterancy, current_weapon_index);
+                if explodes && callbacks_enabled(world) {
+                    let attacker = killing_attacker(world, damage_events, dead_id);
+                    world.kill_passengers(dead_id, attacker, rules);
+                }
                 // `Fire_Death_Weapon` fires the object's GetCurrentWeapon
                 // (vtable `+0x3F4`, `0x0070D6C6`).
                 let current_weapon = world
@@ -1117,14 +1142,10 @@ pub(crate) fn handle_death(
                     .entities
                     .get(dead_id)
                     .and_then(|entity| super::combat_weapon::current_weapon(entity, obj));
-                if let Some((dmg, wh_id, weapon_id)) = death_weapon_aoe(
-                    rules,
-                    obj,
-                    veterancy,
-                    current_weapon_index,
-                    current_weapon,
-                    &mut world.interner,
-                ) {
+                if explodes
+                    && let Some((dmg, wh_id, weapon_id)) =
+                        fire_death_weapon_payload(rules, obj, current_weapon, &mut world.interner)
+                {
                     // Fire_Death_Weapon @ 0x0070D690 detonates a real bullet at
                     // the dying object: an IvanBomb warhead (the Crazy Ivan's
                     // own bomber) plants a bomb on it instead of damaging
@@ -1187,8 +1208,8 @@ pub(crate) fn handle_death(
             }
 
             // The world fatal prelude already owns garrison ejection before
-            // the nested death weapon. Generic cargo remains attached only in
-            // callback-disabled receiver fixtures, for their UnInit assertions.
+            // the nested death weapon. Callback-disabled receiver fixtures
+            // leave the cargo attached for their UnInit assertions.
         }
     }
 
@@ -1337,6 +1358,7 @@ pub(crate) fn handle_death(
         finish_concrete_death(
             world,
             dead_id,
+            run.selected_units.contains(&dead_id),
             damage_events,
             rules,
             overlay_registry,
@@ -1368,9 +1390,13 @@ struct DeathBlast {
 
 /// Concrete receiver work after shared Techno death effects return.
 /// Evidence: Infantry517FA0, Unit737C90 and Building442230 base-call order.
+/// `selected_by_player` is the dying unit's local-player selection on
+/// receiver entry ([`ReceiverRun::selected_units`]), which the kill's Destroy
+/// callback has since cleared.
 fn finish_concrete_death(
     world: &mut Simulation,
     dead_id: u64,
+    selected_by_player: bool,
     damage_events: &[EntityDamageEvent],
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
@@ -1415,8 +1441,9 @@ fn finish_concrete_death(
                 .map(|wh| (wh, event.damage))
         });
     // The killing call's concrete receiver booleans: IgnoreDefenses (arg5)
-    // becomes the building's NoSurvivor, arg6 gates the vehicle crew.
-    let (no_survivor, prevent_crew_escape) = damage_events
+    // becomes the building's NoSurvivor and kills a unit's passengers, arg6
+    // gates the vehicle crew.
+    let (ignore_defenses, prevent_crew_escape) = damage_events
         .iter()
         .rfind(|event| event.target_id == dead_id)
         .and_then(|event| event.receiver_flags)
@@ -1445,33 +1472,26 @@ fn finish_concrete_death(
         _ => {}
     }
     // `UnitClass::ReceiveDamage` then lifts the dying unit off its cell
-    // (`0x00737F7A`) before its passengers and crew leave. Passenger escape
-    // (`0x00737FD2`) is not ported: the fatal prelude already purged the
-    // passengers of every unit but a `Crashable=` one, and a type with
-    // passenger capacity has no crew roll.
+    // (`0x00737F7A`) before its passengers and crew leave.
     let crashable = category == EntityCategory::Unit
         && world
             .object_type(type_id, rules)
             .is_some_and(|object| object.crashable);
     if category == EntityCategory::Unit && callbacks_enabled(world) {
         world.mark_up_dying_unit(dead_id, crate::sim::world::UninitContext::with_rules(rules));
-        // `0x00737F97..0x00737FAB`: above 0xD0 leptons the passengers die with
-        // the attacker credited; a `Crashable=` type then skips the escape
-        // loop (`0x00737FBE`), so lower down its Crash kills them uncredited.
-        let high = world.substrate.entities.get(dead_id).is_some_and(|entity| {
-            crate::sim::movement::air_movement::current_fly_height(
-                entity,
-                world.resolved_terrain.as_ref(),
-            ) > 0xD0
-        });
-        if crashable && high {
-            world.kill_passengers(
-                dead_id,
-                killing_attacker(world, damage_events, dead_id),
-                rules,
-            );
-        }
-        world.spawn_vehicle_crew(rules, overlay_registry, dead_id, prevent_crew_escape);
+        let dying = crate::sim::crew_survival::DyingTransport {
+            attacker: killing_attacker(world, damage_events, dead_id),
+            ignore_defenses,
+            selected_by_player,
+        };
+        world.release_dying_unit_passengers(rules, overlay_registry, dead_id, dying);
+        world.spawn_vehicle_crew(
+            rules,
+            overlay_registry,
+            dead_id,
+            prevent_crew_escape,
+            selected_by_player,
+        );
     }
 
     let inf_death = killing_warhead.as_ref().map_or(1, |(wh, _)| wh.inf_death);
@@ -1551,7 +1571,7 @@ fn finish_concrete_death(
                         rules,
                         overlay_registry,
                         dead_id,
-                        no_survivor,
+                        ignore_defenses,
                         |world, (cell_rx, cell_ry)| {
                             commit_smudges(
                                 world,

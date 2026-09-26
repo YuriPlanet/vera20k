@@ -1512,8 +1512,8 @@
         ]
       ],
       "input": {
-        "falling": true,
-        "name": "falling",
+        "dropped": true,
+        "name": "dropped_as_bomb",
         "passengers": [
           {},
           {}
