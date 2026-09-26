@@ -1442,6 +1442,9 @@ impl Simulation {
                     .and_then(|obj| obj.deploy_sound.clone())
                     .filter(|sound| !sound.is_empty())
                     .map(|sound| (sound, entity.position.rx, entity.position.ry)),
+                rules
+                    .object(type_str)
+                    .is_some_and(|obj| obj.resource_gatherer),
             ))
         });
         let Some((
@@ -1456,6 +1459,7 @@ impl Simulation {
             source_facing,
             is_construction_yard,
             deploy_cue,
+            resource_gatherer,
         )) = deploy_data
         else {
             return false;
@@ -1463,16 +1467,12 @@ impl Simulation {
 
         // Check that all footprint cells are free before deploying.
         //
-        // Follow-up (documented, not wired): `UnitClass::Deploy @ 0x007393C0`
-        // speaks `EVA_CannotDeployHere` (`0x0073950A`) only when the owner
-        // is a human player AND `Type+0x5EC` (`ResourceGatherer=`, `ReadINI
-        // 0x007143E4`) is clear (`0x007394EB..0x0073950A`); a blocked
-        // ResourceGatherer deploy stays silent. VERA's `CannotDeployHere`
-        // events below do not yet apply that type gate. Stock: `[SMIN]`
-        // (slave miner, `ResourceGatherer=yes`, `DeploysInto=YAREFN`) is the
-        // one such unit — a blocked slave-miner deploy speaks in VERA and
-        // not in gamemd. DRIFT, recorded; trigger: every blocked human
-        // slave-miner deploy.
+        // `UnitClass::Deploy @ 0x007393C0` speaks `EVA_CannotDeployHere`
+        // (`0x0073950A`) only when the owner is a human player AND
+        // `Type+0x5EC` (`ResourceGatherer=`, `ReadINI 0x007143E4`) is clear
+        // (`0x007394EB..0x0073950A`): a blocked Slave Miner (`[SMIN]`, the
+        // one stock ResourceGatherer with DeploysInto) stays silent. The
+        // event's owner carries the human half to presentation.
         let (fw, fh) = foundation_dimensions(&foundation);
         for dy in 0..fh {
             for dx in 0..fw {
@@ -1503,8 +1503,10 @@ impl Simulation {
                 });
                 if occupied {
                     log::info!("MCV deploy blocked: structure at ({},{})", cell_x, cell_y,);
-                    self.sound_events
-                        .push(SimSoundEvent::CannotDeployHere { owner: owner_id });
+                    if !resource_gatherer {
+                        self.sound_events
+                            .push(SimSoundEvent::CannotDeployHere { owner: owner_id });
+                    }
                     self.substrate
                         .entities
                         .get_mut(stable_id)
@@ -1519,8 +1521,10 @@ impl Simulation {
                     .unwrap_or(false)
                 {
                     log::info!("MCV deploy blocked: terrain at ({},{})", cell_x, cell_y,);
-                    self.sound_events
-                        .push(SimSoundEvent::CannotDeployHere { owner: owner_id });
+                    if !resource_gatherer {
+                        self.sound_events
+                            .push(SimSoundEvent::CannotDeployHere { owner: owner_id });
+                    }
                     self.substrate
                         .entities
                         .get_mut(stable_id)
@@ -1631,6 +1635,10 @@ impl Simulation {
         self.initialize_cloak_after_unlimbo(new_sid, rules);
         self.add_unit_sensor_after_unlimbo(new_sid, rules);
         self.mission_spawned_entities = true;
+        // 0x00739956: a Slave Miner's manager moves to its refinery (the
+        // hand-off 0x006B0D10, then SetOwner 0x006AF580) before the unit
+        // leaves; the refinery's own fresh slaves are freed.
+        self.transfer_slave_manager(stable_id, new_sid, true, rules, None);
         self.uninit_with_rules(stable_id, rules);
 
         if let Some((country_name, side_index, difficulty, tech_level, _)) = recalc_context {

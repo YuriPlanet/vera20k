@@ -168,6 +168,13 @@ impl Simulation {
                 entity.navigation.suspended_nav_com = None;
             }
         }
+        // `0x004C73E1..0x004C73EA`: any order but Attack takes a Slave Miner
+        // off its hunt (`sim::slave_manager`).
+        if mission != MissionType::Attack
+            && let Some(rules) = rules
+        {
+            self.reset_slave_manager(id, rules);
+        }
     }
 
     /// **Open: what a miner does when a Move order it was given finishes.**
@@ -213,10 +220,17 @@ impl Simulation {
     ///
     /// Everything else Stop touches is left alone; this is the only mission
     /// write retail's Stop performs on any object.
+    ///
+    /// The flag is the type's `Harvester=` (`+0xE0E`, `0x004C766B`): every
+    /// VERA miner but the Slave Miner, whose Miner component is only an
+    /// order marker (`sim::slave_manager`).
     pub fn commit_stop_miner_guard(&mut self, id: u64) {
         let is_stoppable_miner = self.substrate.entities.get(id).is_some_and(|entity| {
             entity.category == crate::map::entities::EntityCategory::Unit
-                && entity.miner.is_some()
+                && entity
+                    .miner
+                    .as_ref()
+                    .is_some_and(|miner| miner.kind != crate::sim::miner::MinerKind::Slave)
                 && matches!(
                     entity.mission.current().known(),
                     Some(MissionType::Harvest) | Some(MissionType::Return)

@@ -63,7 +63,7 @@ fn rules() -> RuleSet {
          [MCV]\nStrength=100\nSpeed=5\nDeploysInto=YARD\n\
          [YARD]\nStrength=1000\nFoundation=1x1\nDeployFacing=0\nUndeploysInto=MCV\n\
          [SMIN]\nStrength=100\nSpeed=3\nDeploysInto=YAREFN\nEnslaves=SLAV\nSlavesNumber=1\n\
-         [YAREFN]\nStrength=1000\nFoundation=1x1\nUndeploysInto=SMIN\nEnslaves=SLAV\nSlavesNumber=1\n\
+         [YAREFN]\nStrength=1000\nFoundation=1x1\nDeployFacing=0\nUndeploysInto=SMIN\nEnslaves=SLAV\nSlavesNumber=1\n\
          [SLAV]\nStrength=125\nSpeed=3\nStorage=4\n",
     ))
     .unwrap()
@@ -132,6 +132,20 @@ fn building_conversion_reads_health_when_animation_finishes() {
     assert_health(&sim, destination, 25);
 }
 
+/// UnitClass::Deploy (`deploy_mcv`) of `source`, answering the building it
+/// became.
+fn deploy(sim: &mut Simulation, rules: &RuleSet, source: u64, into: &str) -> u64 {
+    assert!(sim.deploy_mcv(source, rules, &BTreeMap::new()));
+    sim.substrate
+        .entities
+        .values()
+        .find(|entity| {
+            entity.lifecycle.object_alive && sim.interner.resolve(entity.type_ref()) == into
+        })
+        .unwrap()
+        .stable_id()
+}
+
 #[test]
 fn slave_conversions_reset_master_health_but_preserve_retained_slave_state() {
     let rules = rules();
@@ -152,7 +166,7 @@ fn slave_conversions_reset_master_health_but_preserve_retained_slave_state() {
         damage(&mut sim, slave, 100);
     }
     damage(&mut sim, source, 25);
-    let building = crate::sim::slave_miner::deploy_slave_miner(&mut sim, source, &rules).unwrap();
+    let building = deploy(&mut sim, &rules, source, "YAREFN");
     assert_health(&sim, building, 250);
     assert_eq!(pool(&sim, building), slaves);
     damage(&mut sim, building, 500);
@@ -173,7 +187,7 @@ fn all_four_conversion_callers_preserve_results_above_u16() {
          [MCV]\nStrength=100000\nSpeed=5\nDeploysInto=YARD\n\
          [YARD]\nStrength=1000000\nFoundation=1x1\nDeployFacing=0\nUndeploysInto=MCV\n\
          [SMIN]\nStrength=100000\nSpeed=3\nDeploysInto=YAREFN\nEnslaves=SLAV\nSlavesNumber=1\n\
-         [YAREFN]\nStrength=1000000\nFoundation=1x1\nUndeploysInto=SMIN\nEnslaves=SLAV\nSlavesNumber=1\n\
+         [YAREFN]\nStrength=1000000\nFoundation=1x1\nDeployFacing=0\nUndeploysInto=SMIN\nEnslaves=SLAV\nSlavesNumber=1\n\
          [SLAV]\nStrength=125\nSpeed=3\nStorage=4\n"
     )).unwrap();
     let mut sim = Simulation::with_seed(123);
@@ -218,7 +232,7 @@ fn all_four_conversion_callers_preserve_results_above_u16() {
         .spawn_object_at_height("SMIN", "Neutral", 10, 10, 0, 0, &rules)
         .unwrap();
     damage(&mut sim, source, 75_000);
-    let building = crate::sim::slave_miner::deploy_slave_miner(&mut sim, source, &rules).unwrap();
+    let building = deploy(&mut sim, &rules, source, "YAREFN");
     assert_health(&sim, building, 750_000);
     let unit = crate::sim::slave_miner::undeploy_slave_miner(&mut sim, building, &rules).unwrap();
     assert_health(&sim, unit, 75_000);

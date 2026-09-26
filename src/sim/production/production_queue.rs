@@ -475,9 +475,13 @@ fn tick_production_impl(
                         ),
                     });
             }
+            // A Slave Miner leaving its war factory starts its hunt instead of
+            // taking the rally point (`sim::slave_manager`).
+            let hunting = matches!(spawn_delivery, ProductionDeliveryKind::Standard)
+                && sim.slave_master_leaves_factory(stable_id, rules);
             // Auto-move newly produced unit to rally point (if set).
             // Skip for aircraft docked on helipad — they wait for orders.
-            if helipad_airfield.is_none() {
+            if helipad_airfield.is_none() && !hunting {
                 let rally = match spawn_delivery {
                     ProductionDeliveryKind::NavalUnit { producer_rally, .. } => producer_rally,
                     ProductionDeliveryKind::Standard => rally_point_for_owner(sim, &owner_str),
