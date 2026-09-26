@@ -14,8 +14,13 @@ a prepared spare; their Rust owners carry their own evidence. Unlimbo
 (0x51DFF0, its PlaceInfantryInCell and occupy mark) and Scatter (0x51D0D0)
 run natively; FootClass::Unlimbo (0x4D7170) is answered after writing its
 placement, without the sight reveal and layer submission.
-State 5's relocation check (no ore within SlaveMinerShortScan) is not
-exercised: every state-5 row keeps ore within that range.
+State 5's relocation check (no ore within SlaveMinerShortScan) runs with a
+3-cell ShortScan and a 12-cell LongScan (`relocation` rows): the Building's
+Scan_For_Tiberium (0x70F8F0) runs natively, FindDeployCell's
+Find_Nearby_Passable_Cell is answered from `passable` (its arguments recorded)
+and GetZoneID is answered; the relocation's writes (+0x4F8, ArchiveTarget
++0x218, the queued Selling at +0xB4) are recorded. The placement hand-off
+0x6B0D60 runs on the refinery's manager (`building_helper` rows).
 
 A Slave Miner owner (`owner='unit'`: the fixture's Unit with DeploysInto=YAREFN,
 ResourceGatherer/ResourceDestination and the manager at +0x2D8) runs the
@@ -56,6 +61,8 @@ CREATE_OBJECT, WALK_CTOR, FOOT_UNLIMBO = 0x523B10, 0x75AA90, 0x4D7170
 # FindDeployCell's Find_Nearby_Passable_Cell call (arguments recorded at the
 # call; the dock observer answers from `passable`).
 SHOULD_RECALL, BEGIN_HUNT, RESET_MANAGER, HANDLE_RETURNED = 0x6B1020, 0x6B0CC0, 0x6B0C80, 0x6B0DB0
+# The hand-off a refinery placed from production takes (chain 6b).
+PLACED_HAND_OFF = 0x6B0D60
 UNIT_GUARD, UNIT_AREA_GUARD = 0x740810, 0x744100
 GUARD_NO_KICK, AREA_GUARD_NO_KICK = 0x740854, 0x74416C
 UNIT_DEPLOY, GET_ZONE, FNPC_CALL = 0x7393C0, 0x56D230, 0x6B0417
@@ -294,6 +301,11 @@ def state(u, read32, case):
         result['owner'] = dict(mission=signed(ACTOR + 0xAC), queued=signed(ACTOR + 0xB4),
                                nav=cell_xy(read32(ACTOR + 0x5A4)), deploy_pending=u.mem_read(ACTOR + 0x68C, 1)[0])
         result['ai_timer'] = [signed(MANAGER + 0x50), signed(MANAGER + 0x58)]
+    else:
+        # The refinery: its queued mission (+0xB4), ArchiveTarget (+0x218) and
+        # the undeploy-voice silencer (+0x4F8) the relocation writes.
+        result['building'] = dict(queued=signed(YAREFN + 0xB4), archive=cell_xy(read32(YAREFN + 0x218)),
+                                  silent=u.mem_read(YAREFN + 0x4F8, 1)[0])
     return result
 
 
@@ -320,6 +332,12 @@ def slave_harvest(case):
 
 def deposit(case):
     u, read32, events = run(case, DEPOSIT, slave_address(0), (YAREFN,))
+    return dict(input=case, events=events, state=state(u, read32, case))
+
+
+def building_helper(case):
+    """The placement hand-off 0x6B0D60 on the refinery's manager."""
+    u, read32, events = run(case, PLACED_HAND_OFF, MANAGER)
     return dict(input=case, events=events, state=state(u, read32, case))
 
 
@@ -413,6 +431,46 @@ def manager_cases():
             dict(state=0, cell=DROP, limbo=True), dict(state=3, cell=[16, 13], mission='harvest'),
             dict(state=5, cell=DROP, limbo=True, timer=[-5, 25]), dict(state=0, cell=DROP, limbo=True)]),
         dict(name='m6_building', manager_state=6, ore=[]),
+    ]
+
+
+# State 5's relocation: a 3-cell ShortScan (rings 1 and 2 around the
+# refinery's centre (13, 13)) misses; a 12-cell LongScan stays on the map.
+RELOCATION_RANGES = [3, 14, 12, 3]
+
+
+def relocation_cases():
+    inside = [dict(state=0, cell=DROP, limbo=True)] * 2
+    base = dict(manager_state=5, slave_ranges=RELOCATION_RANGES, nodes=inside)
+    # The supplied deploy cells are the ones VERA's search finds on the replay
+    # scene (the refinery_dock precedent); the two misses it cannot reproduce.
+    return [
+        # S (20,13), D (20,14): 3 + 1 < |(12,12) - S| = 8 -> relocate.
+        dict(base, name='r5_relocates', ore=[[20, 13, 0, 0, 5]], passable=[[20, 14]]),
+        # S (17,13), D (17,14): 3 + 1 < |(12,12) - S| = 5 -> relocate.
+        dict(base, name='r5_relocates_near', ore=[[17, 13, 0, 0, 5]], passable=[[17, 14]]),
+        # S (16,13): |(12,12) - S| = 4, so no D (never S itself, an ore
+        # cell) passes 3 + |D - S| < 4 -> DeploySlaves.
+        dict(base, name='r5_stays', ore=[[16, 13, 0, 0, 5]], passable=[[16, 14]]),
+        # No field: S = (0,0), and FindDeployCell((0,0)) still runs: D (6,7),
+        # 3 + 9 < |(12,12)| = 16 -> relocate; a miss D = (0,0) too (3 < 16).
+        dict(base, name='r5_no_field', ore=[], passable=[[6, 7]]),
+        dict(base, name='r5_no_field_no_cell', ore=[], passable=[None]),
+        # A deploy-cell miss: D = (0,0), 3 + |S| < 8 fails -> DeploySlaves.
+        dict(base, name='r5_no_deploy_cell', ore=[[20, 13, 0, 0, 5]], passable=[None]),
+        # Ore on the ShortScan's second ring: DeploySlaves, no relocation test.
+        dict(base, name='r5_short_hit', ore=[[15, 13, 0, 0, 5]]),
+    ]
+
+
+def building_helper_cases():
+    # A slave on Harvest with a NavCom shows ResetOrdersToGuard; the lost
+    # node (state 6) is skipped.
+    inside = [dict(state=0, cell=DROP, limbo=True, mission='harvest', nav=[16, 16]),
+              dict(state=6, slave=False, timer=[-10, 500]), dict(state=0, cell=DROP, limbo=True)]
+    return [
+        dict(name='placed_idle', helper='placed_hand_off', manager_state=0, nodes=inside),
+        dict(name='placed_working', helper='placed_hand_off', manager_state=5, nodes=inside),
     ]
 
 
@@ -551,7 +609,9 @@ def generate():
             'deposit': [deposit(case) for case in deposit_cases()],
             'unit_manager': [manager(case) for case in unit_manager_cases()],
             'unit_helper': [unit_helper(case) for case in unit_helper_cases()],
-            'unit_mission': [unit_mission(case) for case in unit_mission_cases()]}
+            'unit_mission': [unit_mission(case) for case in unit_mission_cases()],
+            'relocation': [manager(case) for case in relocation_cases()],
+            'building_helper': [building_helper(case) for case in building_helper_cases()]}
 
 
 def main(argv=None):
@@ -559,7 +619,8 @@ def main(argv=None):
         generate, Path(__file__).with_suffix('.json'),
         provenance=lambda: provenance(
             scope='SlaveManagerClass AI_Update 0x6AF6C0, manager state machine 0x6AFD60 (Building owner '
-                  'states 0/4/5/6, Unit owner states 0..6), DeploySlaves 0x6B04C0, '
+                  'states 0/4/5 (with the relocation test and TechnoClass::Scan_For_Tiberium 0x70F8F0)/6, '
+                  'Unit owner states 0..6), DeploySlaves 0x6B04C0, the placement hand-off 0x6B0D60, '
                   'InfantryClass::Mission_Harvest 0x522E70, the slave deposit 0x522D50, ShouldRecallSlaves '
                   '0x6B1020, the hunt start 0x6B0CC0, the reset 0x6B0C80, HandleReturnedSlaves 0x6B0DB0 and '
                   'the Slave Miner Guard/AreaGuard kick (0x740810/0x744100)',
@@ -567,7 +628,8 @@ def main(argv=None):
                           'slave_mission_harvest': SLAVE_HARVEST, 'slave_deposit': DEPOSIT,
                           'infantry_unlimbo': UNLIMBO, 'should_recall_slaves': SHOULD_RECALL,
                           'begin_hunt': BEGIN_HUNT, 'reset_manager': RESET_MANAGER,
-                          'handle_returned_slaves': HANDLE_RETURNED, 'unit_mission_guard': UNIT_GUARD,
+                          'handle_returned_slaves': HANDLE_RETURNED, 'placed_hand_off': PLACED_HAND_OFF,
+                          'unit_mission_guard': UNIT_GUARD,
                           'unit_mission_area_guard': UNIT_AREA_GUARD},
             assumptions=['harvest_field fixture (refinery_dock map, House, Rules, Scenario RNG, ore/gem '
                          'tables); a 2x2 Building (vtable 0x7E3EBC, Foundation index 3) at NW (12,12) as the '
@@ -580,7 +642,8 @@ def main(argv=None):
                          'MovementZone Infantry.',
                          'Rules SlaveMiner ranges 8/14/48/3 cells (leptons), KickFrameDelay 150, '
                          'ApproachTargetResetMultiplier 1 (ReadInt of retail 1.5); Slave Miner rows use a '
-                         '12-cell LongScan so every scan ring stays on the 32x32 map.',
+                         '12-cell LongScan so every scan ring stays on the 32x32 map; relocation rows a 3-cell '
+                         'ShortScan and a 12-cell LongScan.',
                          'Slave Miner owner: the fixture Unit (Drive, MovementZone Crusher, Harvester=no) with '
                          'DeploysInto=YAREFN (+0x404), ResourceGatherer/ResourceDestination (+0x5EC/+0x5ED), the '
                          'manager at +0x2D8, MissionClass start frame +0xC0 and deploy-pending +0x68C supplied; '
@@ -594,7 +657,7 @@ def main(argv=None):
                            'native; harvest_field and refinery_dock observers. Slave Miner rows: '
                            'UnitClass::Deploy 0x7393C0 answered from `deploys`, MapClass::GetZoneID 0x56D230 '
                            'answered (zone 1), Find_Nearby_Passable_Cell 0x56DC20 answered from `passable` by '
-                           'the dock observer with its arguments recorded at 0x6B0417.']),
+                           'the dock observer with its arguments recorded at 0x6B0417 (relocation rows too).']),
         argv=argv)
 
 

@@ -343,7 +343,9 @@ pub enum SimSoundEvent {
         rx: u16,
         ry: u16,
     },
-    /// DeploySound on infantry stance entry or successful unit-to-building conversion.
+    /// DeploySound on infantry stance entry, successful unit-to-building
+    /// conversion, or a building's undeploy start (Selling's UndeploysInto
+    /// arm plays the building type's own `DeploySound=`).
     EntityDeployed {
         deploy_sound_id: InternedId,
         rx: u16,
@@ -5549,9 +5551,10 @@ impl Simulation {
         finished
     }
 
-    /// Advance building-down (undeploy) animations. When done, despawn the
-    /// building and spawn the mobile unit (e.g., ConYard → MCV).
-    /// Returns true if any entities were spawned (triggers atlas refresh).
+    /// Advance building-down (undeploy) animations. When done, the building
+    /// converts into its mobile unit (e.g., ConYard → MCV,
+    /// [`Simulation::finish_undeploy`]). Returns true if any entities were
+    /// spawned (triggers atlas refresh).
     fn tick_building_down(
         &mut self,
         rules: Option<&RuleSet>,
@@ -5574,69 +5577,7 @@ impl Simulation {
         }
         let any_finished = !finished.is_empty();
         for sid in finished {
-            // Extract spawn data before despawning.
-            let spawn_data = self.substrate.entities.get(sid).and_then(|e| {
-                e.building_down.as_ref().map(|bd| {
-                    (
-                        bd.spawn_type,
-                        bd.spawn_owner,
-                        bd.spawn_rx,
-                        bd.spawn_ry,
-                        bd.spawn_z,
-                        bd.was_selected,
-                    )
-                })
-            });
-            let Some((unit_type_id, owner_id, rx, ry, z, was_selected)) = spawn_data else {
-                continue;
-            };
-            // Building449E66/70 captures current health/type ratio at actual
-            // conversion, not when the reverse animation was requested.
-            let converted_health = if let Some(rules) = rules {
-                let Some(health) = self.substrate.entities.get(sid).and_then(|source| {
-                    Some(crate::sim::conversion_health::ConversionHealth::capture(
-                        source,
-                        self.object_type(source.type_ref(), rules)?,
-                        rules.object(self.interner.resolve(unit_type_id))?,
-                        crate::sim::conversion_health::ConversionKind::Building,
-                    ))
-                }) else {
-                    // A missing live type cannot supply a conversion ratio.
-                    continue;
-                };
-                Some(health)
-            } else {
-                None
-            };
-            let rules = match rules {
-                Some(rules) => {
-                    self.uninit_with_rules(sid, rules);
-                    rules
-                }
-                None => {
-                    self.uninit(sid);
-                    continue;
-                }
-            };
-            let unit_type_str = self.interner.resolve(unit_type_id).to_string();
-            let owner_str = self.interner.resolve(owner_id).to_string();
-            if let Some(new_sid) = self.spawn_object_at_height_with_overlay_context(
-                &unit_type_str,
-                &owner_str,
-                rx,
-                ry,
-                0,
-                z,
-                rules,
-                overlay_registry,
-            ) {
-                if let Some(ge) = self.substrate.entities.get_mut(new_sid) {
-                    converted_health
-                        .expect("conversion with rules captured health")
-                        .apply(ge);
-                    ge.selected = was_selected;
-                }
-            }
+            self.finish_undeploy(sid, rules, overlay_registry);
         }
         any_finished
     }

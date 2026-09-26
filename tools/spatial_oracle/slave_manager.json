@@ -585,6 +585,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "17,15": [
             102,
@@ -13957,6 +13962,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -14071,6 +14081,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "15,15": [
             102,
@@ -27451,6 +27466,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "29,15": [
             102,
@@ -27563,6 +27583,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "17,15": [
             102,
@@ -27665,6 +27690,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "17,15": [
             102,
@@ -27771,6 +27801,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "17,15": [
             102,
@@ -27876,6 +27911,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "17,15": [
             102,
@@ -28000,6 +28040,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "17,15": [
             102,
@@ -28130,6 +28175,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "17,15": [
             27,
@@ -28244,6 +28294,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "17,15": [
             102,
@@ -28351,6 +28406,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -28453,6 +28513,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "17,15": [
             102,
@@ -28567,6 +28632,11 @@
       },
       "state": {
         "balance": 75,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -28680,6 +28750,11 @@
       },
       "state": {
         "balance": 125,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -28773,6 +28848,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -28871,6 +28951,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -28966,6 +29051,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -29061,6 +29151,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -29172,6 +29267,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -29279,6 +29379,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -29375,6 +29480,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -29468,6 +29578,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -29556,6 +29671,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -29629,6 +29749,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -29689,6 +29814,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -29753,6 +29883,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -30676,6 +30811,11 @@
       },
       "state": {
         "balance": 100,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "15,17": [
             102,
@@ -30860,6 +31000,334 @@
       }
     }
   ],
+  "building_helper": [
+    {
+      "events": [
+        [
+          "set_destination",
+          2,
+          null,
+          1
+        ],
+        [
+          "set_destination",
+          0,
+          null,
+          1
+        ]
+      ],
+      "input": {
+        "helper": "placed_hand_off",
+        "manager_state": 0,
+        "name": "placed_idle",
+        "nodes": [
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "mission": "harvest",
+            "nav": [
+              16,
+              16
+            ],
+            "state": 0
+          },
+          {
+            "slave": false,
+            "state": 6,
+            "timer": [
+              -10,
+              500
+            ]
+          },
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "state": 0
+          }
+        ]
+      },
+      "state": {
+        "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
+        "cells": {},
+        "frame": 200,
+        "manager_frame": 2147483647,
+        "manager_state": 4,
+        "nodes": [
+          {
+            "slave": 0,
+            "state": 0,
+            "timer": [
+              200,
+              0
+            ]
+          },
+          {
+            "slave": null,
+            "state": 6,
+            "timer": [
+              190,
+              500
+            ]
+          },
+          {
+            "slave": 2,
+            "state": 0,
+            "timer": [
+              200,
+              0
+            ]
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "slaves": {
+          "0": {
+            "archive": null,
+            "coord": [
+              3456,
+              3456,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "2": {
+            "archive": null,
+            "coord": [
+              3456,
+              3456,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "7": {
+            "archive": null,
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "events": [],
+      "input": {
+        "helper": "placed_hand_off",
+        "manager_state": 5,
+        "name": "placed_working",
+        "nodes": [
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "mission": "harvest",
+            "nav": [
+              16,
+              16
+            ],
+            "state": 0
+          },
+          {
+            "slave": false,
+            "state": 6,
+            "timer": [
+              -10,
+              500
+            ]
+          },
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "state": 0
+          }
+        ]
+      },
+      "state": {
+        "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
+        "cells": {},
+        "frame": 200,
+        "manager_frame": 0,
+        "manager_state": 5,
+        "nodes": [
+          {
+            "slave": 0,
+            "state": 0,
+            "timer": [
+              200,
+              0
+            ]
+          },
+          {
+            "slave": null,
+            "state": 6,
+            "timer": [
+              190,
+              500
+            ]
+          },
+          {
+            "slave": 2,
+            "state": 0,
+            "timer": [
+              200,
+              0
+            ]
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "slaves": {
+          "0": {
+            "archive": null,
+            "coord": [
+              3456,
+              3456,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 10,
+            "nav": [
+              16,
+              16
+            ],
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "2": {
+            "archive": null,
+            "coord": [
+              3456,
+              3456,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "7": {
+            "archive": null,
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      }
+    }
+  ],
   "deploy": [
     {
       "events": [
@@ -30938,6 +31406,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -31220,6 +31693,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -31600,6 +32078,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -31902,6 +32385,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -32157,6 +32645,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -32332,6 +32825,11 @@
       },
       "state": {
         "balance": 75,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -32435,6 +32933,11 @@
       },
       "state": {
         "balance": 100,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -32543,6 +33046,11 @@
       },
       "state": {
         "balance": 100,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -32652,6 +33160,11 @@
       },
       "state": {
         "balance": 125,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -32762,6 +33275,11 @@
       },
       "state": {
         "balance": 200,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -32867,6 +33385,11 @@
       },
       "state": {
         "balance": 100,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -32973,6 +33496,11 @@
       },
       "state": {
         "balance": 100,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -33077,6 +33605,11 @@
       },
       "state": {
         "balance": 89,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -33164,6 +33697,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -33245,6 +33783,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 2147483647,
@@ -33291,6 +33834,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -33337,6 +33885,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -33383,6 +33936,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -33429,6 +33987,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 2147483647,
@@ -33684,6 +34247,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "16,13": [
             102,
@@ -34005,6 +34573,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "16,13": [
             102,
@@ -34192,6 +34765,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -34202,6 +34780,1755 @@
           103
         ],
         "slaves": {
+          "7": {
+            "archive": null,
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "relocation": [
+    {
+      "events": [
+        [
+          "zone",
+          [
+            12,
+            12
+          ],
+          0,
+          0
+        ],
+        [
+          "deploy_cell_query",
+          [
+            20,
+            13
+          ],
+          1,
+          1,
+          0,
+          0,
+          2,
+          2,
+          1,
+          0,
+          0,
+          0,
+          [
+            20,
+            13
+          ],
+          0,
+          1
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            20,
+            13
+          ],
+          1,
+          [
+            20,
+            14
+          ]
+        ],
+        [
+          "queue",
+          "0x22001000",
+          19,
+          0
+        ]
+      ],
+      "input": {
+        "manager_state": 5,
+        "name": "r5_relocates",
+        "nodes": [
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "state": 0
+          },
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "state": 0
+          }
+        ],
+        "ore": [
+          [
+            20,
+            13,
+            0,
+            0,
+            5
+          ]
+        ],
+        "passable": [
+          [
+            20,
+            14
+          ]
+        ],
+        "slave_ranges": [
+          3,
+          14,
+          12,
+          3
+        ]
+      },
+      "state": {
+        "balance": 0,
+        "building": {
+          "archive": [
+            12,
+            12
+          ],
+          "queued": 19,
+          "silent": 1
+        },
+        "cells": {
+          "20,13": [
+            102,
+            5,
+            5
+          ]
+        },
+        "frame": 200,
+        "manager_frame": 2147483647,
+        "manager_state": 6,
+        "nodes": [
+          {
+            "slave": 0,
+            "state": 0,
+            "timer": [
+              200,
+              0
+            ]
+          },
+          {
+            "slave": 1,
+            "state": 0,
+            "timer": [
+              200,
+              0
+            ]
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "slaves": {
+          "0": {
+            "archive": null,
+            "coord": [
+              3456,
+              3456,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "1": {
+            "archive": null,
+            "coord": [
+              3456,
+              3456,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "7": {
+            "archive": null,
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "events": [
+        [
+          "zone",
+          [
+            12,
+            12
+          ],
+          0,
+          0
+        ],
+        [
+          "deploy_cell_query",
+          [
+            17,
+            13
+          ],
+          1,
+          1,
+          0,
+          0,
+          2,
+          2,
+          1,
+          0,
+          0,
+          0,
+          [
+            17,
+            13
+          ],
+          0,
+          1
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            17,
+            13
+          ],
+          1,
+          [
+            17,
+            14
+          ]
+        ],
+        [
+          "queue",
+          "0x22001000",
+          19,
+          0
+        ]
+      ],
+      "input": {
+        "manager_state": 5,
+        "name": "r5_relocates_near",
+        "nodes": [
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "state": 0
+          },
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "state": 0
+          }
+        ],
+        "ore": [
+          [
+            17,
+            13,
+            0,
+            0,
+            5
+          ]
+        ],
+        "passable": [
+          [
+            17,
+            14
+          ]
+        ],
+        "slave_ranges": [
+          3,
+          14,
+          12,
+          3
+        ]
+      },
+      "state": {
+        "balance": 0,
+        "building": {
+          "archive": [
+            12,
+            12
+          ],
+          "queued": 19,
+          "silent": 1
+        },
+        "cells": {
+          "17,13": [
+            102,
+            5,
+            5
+          ]
+        },
+        "frame": 200,
+        "manager_frame": 2147483647,
+        "manager_state": 6,
+        "nodes": [
+          {
+            "slave": 0,
+            "state": 0,
+            "timer": [
+              200,
+              0
+            ]
+          },
+          {
+            "slave": 1,
+            "state": 0,
+            "timer": [
+              200,
+              0
+            ]
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "slaves": {
+          "0": {
+            "archive": null,
+            "coord": [
+              3456,
+              3456,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "1": {
+            "archive": null,
+            "coord": [
+              3456,
+              3456,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "7": {
+            "archive": null,
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "events": [
+        [
+          "zone",
+          [
+            12,
+            12
+          ],
+          0,
+          0
+        ],
+        [
+          "deploy_cell_query",
+          [
+            16,
+            13
+          ],
+          1,
+          1,
+          0,
+          0,
+          2,
+          2,
+          1,
+          0,
+          0,
+          0,
+          [
+            16,
+            13
+          ],
+          0,
+          1
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            16,
+            13
+          ],
+          1,
+          [
+            16,
+            14
+          ]
+        ],
+        [
+          "random",
+          0,
+          3,
+          1
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3520,
+            3392,
+            0
+          ],
+          0
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3520,
+            3392,
+            0
+          ],
+          0
+        ],
+        [
+          "scatter",
+          1,
+          [
+            3328,
+            3328,
+            0
+          ],
+          1,
+          1
+        ],
+        [
+          "random",
+          0,
+          4,
+          1
+        ],
+        [
+          "queue",
+          "0x22012000",
+          2,
+          0
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            12
+          ],
+          1
+        ],
+        [
+          "random",
+          0,
+          3,
+          2
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3392,
+            3520,
+            0
+          ],
+          0
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3392,
+            3520,
+            0
+          ],
+          0
+        ],
+        [
+          "scatter",
+          0,
+          [
+            3328,
+            3328,
+            0
+          ],
+          1,
+          1
+        ],
+        [
+          "random",
+          0,
+          4,
+          1
+        ],
+        [
+          "queue",
+          "0x22010000",
+          2,
+          0
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ]
+      ],
+      "input": {
+        "manager_state": 5,
+        "name": "r5_stays",
+        "nodes": [
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "state": 0
+          },
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "state": 0
+          }
+        ],
+        "ore": [
+          [
+            16,
+            13,
+            0,
+            0,
+            5
+          ]
+        ],
+        "passable": [
+          [
+            16,
+            14
+          ]
+        ],
+        "slave_ranges": [
+          3,
+          14,
+          12,
+          3
+        ]
+      },
+      "state": {
+        "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
+        "cells": {
+          "16,13": [
+            102,
+            5,
+            5
+          ]
+        },
+        "frame": 200,
+        "manager_frame": 0,
+        "manager_state": 5,
+        "nodes": [
+          {
+            "slave": 0,
+            "state": 1,
+            "timer": [
+              200,
+              0
+            ]
+          },
+          {
+            "slave": 1,
+            "state": 1,
+            "timer": [
+              200,
+              0
+            ]
+          }
+        ],
+        "random_indices": [
+          5,
+          108
+        ],
+        "slaves": {
+          "0": {
+            "archive": null,
+            "coord": [
+              3392,
+              3520,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "owner": true,
+            "queued": 2,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "1": {
+            "archive": null,
+            "coord": [
+              3520,
+              3392,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              12
+            ],
+            "owner": true,
+            "queued": 2,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "7": {
+            "archive": null,
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "events": [
+        [
+          "zone",
+          [
+            12,
+            12
+          ],
+          0,
+          0
+        ],
+        [
+          "deploy_cell_query",
+          [
+            0,
+            0
+          ],
+          1,
+          1,
+          0,
+          0,
+          2,
+          2,
+          1,
+          0,
+          0,
+          0,
+          [
+            0,
+            0
+          ],
+          0,
+          1
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            0,
+            0
+          ],
+          1,
+          [
+            6,
+            7
+          ]
+        ],
+        [
+          "queue",
+          "0x22001000",
+          19,
+          0
+        ]
+      ],
+      "input": {
+        "manager_state": 5,
+        "name": "r5_no_field",
+        "nodes": [
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "state": 0
+          },
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "state": 0
+          }
+        ],
+        "ore": [],
+        "passable": [
+          [
+            6,
+            7
+          ]
+        ],
+        "slave_ranges": [
+          3,
+          14,
+          12,
+          3
+        ]
+      },
+      "state": {
+        "balance": 0,
+        "building": {
+          "archive": [
+            12,
+            12
+          ],
+          "queued": 19,
+          "silent": 1
+        },
+        "cells": {},
+        "frame": 200,
+        "manager_frame": 2147483647,
+        "manager_state": 6,
+        "nodes": [
+          {
+            "slave": 0,
+            "state": 0,
+            "timer": [
+              200,
+              0
+            ]
+          },
+          {
+            "slave": 1,
+            "state": 0,
+            "timer": [
+              200,
+              0
+            ]
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "slaves": {
+          "0": {
+            "archive": null,
+            "coord": [
+              3456,
+              3456,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "1": {
+            "archive": null,
+            "coord": [
+              3456,
+              3456,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "7": {
+            "archive": null,
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "events": [
+        [
+          "zone",
+          [
+            12,
+            12
+          ],
+          0,
+          0
+        ],
+        [
+          "deploy_cell_query",
+          [
+            0,
+            0
+          ],
+          1,
+          1,
+          0,
+          0,
+          2,
+          2,
+          1,
+          0,
+          0,
+          0,
+          [
+            0,
+            0
+          ],
+          0,
+          1
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            0,
+            0
+          ],
+          1,
+          null
+        ],
+        [
+          "queue",
+          "0x22001000",
+          19,
+          0
+        ]
+      ],
+      "input": {
+        "manager_state": 5,
+        "name": "r5_no_field_no_cell",
+        "nodes": [
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "state": 0
+          },
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "state": 0
+          }
+        ],
+        "ore": [],
+        "passable": [
+          null
+        ],
+        "slave_ranges": [
+          3,
+          14,
+          12,
+          3
+        ]
+      },
+      "state": {
+        "balance": 0,
+        "building": {
+          "archive": [
+            12,
+            12
+          ],
+          "queued": 19,
+          "silent": 1
+        },
+        "cells": {},
+        "frame": 200,
+        "manager_frame": 2147483647,
+        "manager_state": 6,
+        "nodes": [
+          {
+            "slave": 0,
+            "state": 0,
+            "timer": [
+              200,
+              0
+            ]
+          },
+          {
+            "slave": 1,
+            "state": 0,
+            "timer": [
+              200,
+              0
+            ]
+          }
+        ],
+        "random_indices": [
+          0,
+          103
+        ],
+        "slaves": {
+          "0": {
+            "archive": null,
+            "coord": [
+              3456,
+              3456,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "1": {
+            "archive": null,
+            "coord": [
+              3456,
+              3456,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "7": {
+            "archive": null,
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "events": [
+        [
+          "zone",
+          [
+            12,
+            12
+          ],
+          0,
+          0
+        ],
+        [
+          "deploy_cell_query",
+          [
+            20,
+            13
+          ],
+          1,
+          1,
+          0,
+          0,
+          2,
+          2,
+          1,
+          0,
+          0,
+          0,
+          [
+            20,
+            13
+          ],
+          0,
+          1
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            20,
+            13
+          ],
+          1,
+          null
+        ],
+        [
+          "random",
+          0,
+          3,
+          1
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3520,
+            3392,
+            0
+          ],
+          0
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3520,
+            3392,
+            0
+          ],
+          0
+        ],
+        [
+          "scatter",
+          1,
+          [
+            3328,
+            3328,
+            0
+          ],
+          1,
+          1
+        ],
+        [
+          "random",
+          0,
+          4,
+          1
+        ],
+        [
+          "queue",
+          "0x22012000",
+          2,
+          0
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            12
+          ],
+          1
+        ],
+        [
+          "random",
+          0,
+          3,
+          2
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3392,
+            3520,
+            0
+          ],
+          0
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3392,
+            3520,
+            0
+          ],
+          0
+        ],
+        [
+          "scatter",
+          0,
+          [
+            3328,
+            3328,
+            0
+          ],
+          1,
+          1
+        ],
+        [
+          "random",
+          0,
+          4,
+          1
+        ],
+        [
+          "queue",
+          "0x22010000",
+          2,
+          0
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ]
+      ],
+      "input": {
+        "manager_state": 5,
+        "name": "r5_no_deploy_cell",
+        "nodes": [
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "state": 0
+          },
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "state": 0
+          }
+        ],
+        "ore": [
+          [
+            20,
+            13,
+            0,
+            0,
+            5
+          ]
+        ],
+        "passable": [
+          null
+        ],
+        "slave_ranges": [
+          3,
+          14,
+          12,
+          3
+        ]
+      },
+      "state": {
+        "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
+        "cells": {
+          "20,13": [
+            102,
+            5,
+            5
+          ]
+        },
+        "frame": 200,
+        "manager_frame": 0,
+        "manager_state": 5,
+        "nodes": [
+          {
+            "slave": 0,
+            "state": 1,
+            "timer": [
+              200,
+              0
+            ]
+          },
+          {
+            "slave": 1,
+            "state": 1,
+            "timer": [
+              200,
+              0
+            ]
+          }
+        ],
+        "random_indices": [
+          5,
+          108
+        ],
+        "slaves": {
+          "0": {
+            "archive": null,
+            "coord": [
+              3392,
+              3520,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "owner": true,
+            "queued": 2,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "1": {
+            "archive": null,
+            "coord": [
+              3520,
+              3392,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              12
+            ],
+            "owner": true,
+            "queued": 2,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "7": {
+            "archive": null,
+            "coord": [
+              3968,
+              3968,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 1,
+            "mission": 5,
+            "nav": null,
+            "owner": true,
+            "queued": -1,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "events": [
+        [
+          "random",
+          0,
+          3,
+          1
+        ],
+        [
+          "unlimbo",
+          1,
+          [
+            3520,
+            3392,
+            0
+          ],
+          0
+        ],
+        [
+          "foot_unlimbo",
+          1,
+          [
+            3520,
+            3392,
+            0
+          ],
+          0
+        ],
+        [
+          "scatter",
+          1,
+          [
+            3328,
+            3328,
+            0
+          ],
+          1,
+          1
+        ],
+        [
+          "random",
+          0,
+          4,
+          1
+        ],
+        [
+          "queue",
+          "0x22012000",
+          2,
+          0
+        ],
+        [
+          "set_destination",
+          1,
+          [
+            14,
+            12
+          ],
+          1
+        ],
+        [
+          "random",
+          0,
+          3,
+          2
+        ],
+        [
+          "unlimbo",
+          0,
+          [
+            3392,
+            3520,
+            0
+          ],
+          0
+        ],
+        [
+          "foot_unlimbo",
+          0,
+          [
+            3392,
+            3520,
+            0
+          ],
+          0
+        ],
+        [
+          "scatter",
+          0,
+          [
+            3328,
+            3328,
+            0
+          ],
+          1,
+          1
+        ],
+        [
+          "random",
+          0,
+          4,
+          1
+        ],
+        [
+          "queue",
+          "0x22010000",
+          2,
+          0
+        ],
+        [
+          "set_destination",
+          0,
+          [
+            14,
+            14
+          ],
+          1
+        ]
+      ],
+      "input": {
+        "manager_state": 5,
+        "name": "r5_short_hit",
+        "nodes": [
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "state": 0
+          },
+          {
+            "cell": [
+              13,
+              13
+            ],
+            "limbo": true,
+            "state": 0
+          }
+        ],
+        "ore": [
+          [
+            15,
+            13,
+            0,
+            0,
+            5
+          ]
+        ],
+        "slave_ranges": [
+          3,
+          14,
+          12,
+          3
+        ]
+      },
+      "state": {
+        "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
+        "cells": {
+          "15,13": [
+            102,
+            5,
+            5
+          ]
+        },
+        "frame": 200,
+        "manager_frame": 0,
+        "manager_state": 5,
+        "nodes": [
+          {
+            "slave": 0,
+            "state": 1,
+            "timer": [
+              200,
+              0
+            ]
+          },
+          {
+            "slave": 1,
+            "state": 1,
+            "timer": [
+              200,
+              0
+            ]
+          }
+        ],
+        "random_indices": [
+          5,
+          108
+        ],
+        "slaves": {
+          "0": {
+            "archive": null,
+            "coord": [
+              3392,
+              3520,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              14
+            ],
+            "owner": true,
+            "queued": 2,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "1": {
+            "archive": null,
+            "coord": [
+              3520,
+              3392,
+              0
+            ],
+            "doing": -1,
+            "health": [
+              125,
+              125
+            ],
+            "limbo": 0,
+            "mission": 5,
+            "nav": [
+              14,
+              12
+            ],
+            "owner": true,
+            "queued": 2,
+            "storage": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
           "7": {
             "archive": null,
             "coord": [
@@ -34264,6 +36591,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "15,15": [
             102,
@@ -34368,6 +36700,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "15,15": [
             102,
@@ -34483,6 +36820,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "15,15": [
             27,
@@ -34592,6 +36934,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "15,15": [
             102,
@@ -34779,6 +37126,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "15,15": [
             -1,
@@ -34894,6 +37246,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "15,15": [
             102,
@@ -35015,6 +37372,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "15,15": [
             102,
@@ -35122,6 +37484,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 0,
@@ -35232,6 +37599,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {
           "15,15": [
             102,
@@ -57709,6 +60081,11 @@
       },
       "state": {
         "balance": 0,
+        "building": {
+          "archive": null,
+          "queued": -1,
+          "silent": 0
+        },
         "cells": {},
         "frame": 200,
         "manager_frame": 200,

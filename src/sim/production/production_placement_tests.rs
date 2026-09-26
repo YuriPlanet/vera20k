@@ -3835,3 +3835,54 @@ fn retained_wall_plane_placement_reaches_fixed_stride_alias() {
         "three true-dummy neighbors produce no retained output"
     );
 }
+
+/// A Slave Miner refinery placed from production takes the hand-off its
+/// Unlimbo runs (`0x006B0D60`, `BuildingClass::ExitObject @ 0x004452FA`):
+/// the manager its factory constructed idle (state 0) waits out the build-up
+/// in state 4 (frame MAX), as a deployed one does, every slave inside.
+#[test]
+fn a_placed_slave_refinery_waits_out_its_build_up_in_the_deployed_state() {
+    use crate::sim::slave_manager::ManagerState;
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=SLAV\n[VehicleTypes]\n[AircraftTypes]\n\
+         [BuildingTypes]\n0=GACNST\n1=YAREFN\n\
+         [GACNST]\nFactory=BuildingType\n\
+         [SLAV]\nStrength=125\nSpeed=3\nSlaved=yes\nStorage=4\n\
+         [YAREFN]\nStrength=2000\nEnslaves=SLAV\nSlavesNumber=5\nFoundation=2x2\n",
+    ))
+    .expect("slave refinery rules");
+    let mut sim = Simulation::new();
+    let height_map: BTreeMap<(u16, u16), u8> = BTreeMap::new();
+    let grid = PathGrid::new(64, 64);
+    spawn_structure(&mut sim, 1, "Americans", "GACNST", 14, 20);
+    let refinery = ready_and_place(
+        &mut sim,
+        &rules,
+        "Americans",
+        "YAREFN",
+        16,
+        20,
+        &grid,
+        &height_map,
+    );
+    let entity = sim.substrate.entities.get(refinery).unwrap();
+    assert!(entity.building_up.is_some(), "placed buildings build up");
+    let manager = entity
+        .slave_manager
+        .as_ref()
+        .expect("Enslaves= builds the manager");
+    assert_eq!(manager.state(), ManagerState::Deployed);
+    assert_eq!(manager.frame(), i32::MAX);
+    let slaves: Vec<u64> = manager.slaves().collect();
+    assert_eq!(slaves.len(), 5);
+    for slave in slaves {
+        assert!(
+            sim.substrate
+                .entities
+                .get(slave)
+                .unwrap()
+                .lifecycle
+                .in_limbo
+        );
+    }
+}

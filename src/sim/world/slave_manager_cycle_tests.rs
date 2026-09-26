@@ -666,3 +666,371 @@ fn a_dead_slave_is_regrown_after_the_regen_rate_and_goes_out_again() {
         node(&s).state
     );
 }
+
+/// Deploying a Slave Miner (`UnitClass::Deploy`, `deploy_mcv`) and undeploying
+/// its refinery (`undeploy_building` to its conversion in
+/// `tick_building_down`) each hand the manager over (SetOwner `0x006AF580`):
+/// the slaves keep their nodes and follow it, and the manager the new
+/// object's constructor built frees its own fresh slaves (UnInit in limbo).
+/// Each constructor draws its TechnoClass word and one per slave it builds.
+#[test]
+fn deploy_and_undeploy_hand_the_slave_manager_over() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+    use crate::sim::rng::SimRng;
+    use crate::sim::world::Simulation;
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n1=SLAV\n[VehicleTypes]\n1=SMIN\n[BuildingTypes]\n1=YAREFN\n\
+         [SLAV]\nStrength=125\nSpeed=3\nSlaved=yes\nStorage=4\nHarvestRate=150\n\
+         [SMIN]\nStrength=2000\nSpeed=3\nEnslaves=SLAV\nSlavesNumber=5\nDeploysInto=YAREFN\n\
+         ResourceGatherer=yes\nResourceDestination=yes\n\
+         [YAREFN]\nStrength=2000\nEnslaves=SLAV\nSlavesNumber=5\nUndeploysInto=SMIN\n\
+         Foundation=3x3\nDeployFacing=0\n",
+    ))
+    .expect("slave miner rules");
+    let seed = 0x51A7_E001;
+    let mut sim = Simulation::with_seed(seed);
+    let mut expected = SimRng::new(seed);
+    let constructed = |sim: &Simulation, expected: &mut SimRng| {
+        for _ in 0..6 {
+            let _ = expected.next_u32();
+        }
+        assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
+    };
+    let pool = |sim: &Simulation, master: u64| -> Vec<u64> {
+        sim.substrate
+            .entities
+            .get(master)
+            .unwrap()
+            .slave_manager
+            .as_ref()
+            .unwrap()
+            .slaves()
+            .collect()
+    };
+    let alive = |sim: &Simulation, id: u64| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .lifecycle
+            .object_alive
+    };
+    let smin = sim
+        .spawn_object_at_height("SMIN", "YuriCountry", 10, 10, 0, 0, &rules)
+        .expect("spawn SMIN");
+    constructed(&sim, &mut expected);
+    let slaves = pool(&sim, smin);
+    assert_eq!(slaves, vec![2, 3, 4, 5, 6]);
+
+    assert!(
+        sim.deploy_mcv(smin, &rules, &Default::default()),
+        "deploy to YAREFN"
+    );
+    let yarefn = sim
+        .substrate
+        .entities
+        .values()
+        .find(|entity| sim.interner.resolve(entity.type_ref()) == "YAREFN")
+        .expect("deployed YAREFN")
+        .stable_id();
+    constructed(&sim, &mut expected);
+    assert_eq!(pool(&sim, yarefn), slaves);
+    // 0x006B0D10: the idle manager moves to 4 on the way.
+    let state = sim
+        .substrate
+        .entities
+        .get(yarefn)
+        .unwrap()
+        .slave_manager
+        .as_ref()
+        .unwrap()
+        .state();
+    assert_eq!(state, ManagerState::Deployed);
+    assert!(
+        sim.substrate
+            .entities
+            .get(smin)
+            .unwrap()
+            .slave_manager
+            .is_none()
+    );
+    assert!(
+        (8..=12).all(|fresh| !alive(&sim, fresh)),
+        "the refinery's fresh slaves freed"
+    );
+    for &slave in &slaves {
+        assert_eq!(
+            sim.substrate.entities.get(slave).unwrap().slave.owner(),
+            Some(yarefn)
+        );
+    }
+
+    // Built up (`building_up` done), as `undeploy_building` requires, and
+    // elite: the unit takes the refinery's VeterancyClass (`0x0044A058`).
+    let refinery = sim.substrate.entities.get_mut(yarefn).unwrap();
+    refinery.building_up = None;
+    crate::sim::combat::veterancy::set_elite(refinery);
+    assert!(sim.undeploy_building(yarefn, &rules), "undeploy to SMIN");
+    let down = sim
+        .substrate
+        .entities
+        .get_mut(yarefn)
+        .unwrap()
+        .building_down
+        .as_mut()
+        .unwrap();
+    down.elapsed_ticks = down.total_ticks - 1;
+    assert!(sim.tick_building_down(Some(&rules), None), "converted");
+    constructed(&sim, &mut expected);
+    let back = 13;
+    assert_eq!(
+        sim.interner
+            .resolve(sim.substrate.entities.get(back).unwrap().type_ref()),
+        "SMIN"
+    );
+    let unit = sim.substrate.entities.get(back).unwrap();
+    let elite = sim.substrate.entities.get(yarefn).unwrap().veterancy_raw;
+    assert_eq!((unit.veterancy_raw, unit.veterancy), (elite, 200));
+    // The rank cache (`+0x13C`) is not copied: the constructor's -1.
+    assert_eq!(unit.veterancy_rank_cache, -1);
+    assert_eq!(pool(&sim, back), slaves);
+    assert!(
+        (14..=18).all(|fresh| !alive(&sim, fresh)),
+        "the Slave Miner's fresh slaves freed"
+    );
+    for slave in slaves {
+        assert_eq!(
+            sim.substrate.entities.get(slave).unwrap().slave.owner(),
+            Some(back)
+        );
+    }
+}
+
+/// A refinery with no ore within `SlaveMinerShortScan` of its centre and a
+/// field farther out (state 5's relocation test): it archives its own cell
+/// and packs up (the undeploy), the Slave Miner it becomes takes the manager
+/// and its slaves, recalls them (state 6), hunts, deploys beside the field
+/// and, once built up, lets the slaves out there.
+#[test]
+fn a_refinery_whose_ore_runs_out_packs_up_and_moves_to_the_next_field() {
+    let inside = serde_json::json!({"state": 0, "cell": [13, 13], "limbo": true});
+    let mut s = row_scene(&serde_json::json!({
+        "name": "relocate",
+        "human": false,
+        "manager_state": 0,
+        "slave_ranges": [8, 14, 48, 3],
+        "nodes": [inside, inside, inside],
+        "ore": [[24, 13, 0, 0, 5], [25, 13, 0, 0, 5], [24, 14, 0, 0, 5], [25, 14, 0, 0, 5]],
+    }));
+    s.scene.sim.production.ore_growth_config = OreGrowthConfig::disabled();
+    let first = s.master;
+    let slaves: Vec<u64> = s.slaves.values().copied().collect();
+    let holder_of = |s: &SlaveScene| -> Option<u64> {
+        s.scene
+            .sim
+            .substrate
+            .entities
+            .values()
+            .find(|entity| entity.lifecycle.object_alive && entity.slave_manager.is_some())
+            .map(|entity| entity.stable_id())
+    };
+    let mut packed = false;
+    let mut miner = None;
+    let mut relocated = None;
+    for _ in 0..2000 {
+        frame(&mut s);
+        let sim = &s.scene.sim;
+        if let Some(refinery) = sim.substrate.entities.get(first)
+            && refinery.building_down.is_some()
+            && !packed
+        {
+            packed = true;
+            assert_eq!(
+                refinery.archive_target(),
+                Some(crate::sim::combat::TargetKind::Cell(12, 12)),
+                "the relocation archives the refinery's own cell"
+            );
+            assert_eq!(manager_state_of(&s, first), ManagerState::PackingUp);
+        }
+        let Some(holder) = holder_of(&s) else {
+            continue;
+        };
+        let kind = sim
+            .interner
+            .resolve(sim.substrate.entities.get(holder).unwrap().type_ref());
+        if kind == "SMIN" {
+            if miner.is_none() {
+                // `BuildingClass::Sell 0x0044A091..0x0044A0AE`: the unit is
+                // sent to the refinery's archived cell, its own.
+                let unit = sim.substrate.entities.get(holder).unwrap();
+                assert_eq!(unit.navigation.nav_com, Some(NavTargetRef::cell(12, 12)));
+                assert_eq!(unit.mission.queued().known(), Some(MissionType::Move));
+                assert_eq!(manager_state_of(&s, holder), ManagerState::PackingUp);
+                let manager = unit.slave_manager.as_ref().unwrap();
+                assert_eq!(manager.slaves().collect::<Vec<_>>(), slaves);
+            }
+            miner.get_or_insert(holder);
+        } else if holder != first
+            && slaves.iter().all(|&slave| {
+                sim.substrate
+                    .entities
+                    .get(slave)
+                    .is_some_and(|entity| !entity.lifecycle.in_limbo)
+            })
+        {
+            relocated = Some(holder);
+            break;
+        }
+    }
+    assert!(packed, "the refinery packs up");
+    let miner = miner.expect("the refinery becomes a Slave Miner holding the manager");
+    let relocated = relocated.expect("the Slave Miner redeploys and lets its slaves out");
+    let sim = &s.scene.sim;
+    assert!(
+        !sim.substrate
+            .entities
+            .get(first)
+            .is_some_and(|entity| entity.lifecycle.object_alive),
+        "the first refinery is gone"
+    );
+    assert!(
+        !sim.substrate
+            .entities
+            .get(miner)
+            .is_some_and(|entity| entity.lifecycle.object_alive),
+        "the Slave Miner deployed"
+    );
+    let at = sim.substrate.entities.get(relocated).unwrap();
+    assert_eq!(sim.interner.resolve(at.type_ref()), "YAREFN");
+    assert!(
+        (i32::from(at.position.rx) - 24).abs() <= 3 && (i32::from(at.position.ry) - 13).abs() <= 3,
+        "redeployed beside the field: ({}, {})",
+        at.position.rx,
+        at.position.ry
+    );
+    for &slave in &slaves {
+        assert_eq!(
+            sim.substrate.entities.get(slave).unwrap().slave.owner(),
+            Some(relocated)
+        );
+    }
+}
+
+/// Retail `rulesmd.ini` and `artmd.ini` through the production reader
+/// (skipped without them): what the relocation reads. `SlaveMinerShortScan`,
+/// `SlaveMinerLongScan` and `SlaveMinerScanCorrection` (ReadRange leptons,
+/// retail 8, 48 and 3 cells); YAREFN packs up into SMIN, plays
+/// `SlaveMinerUndeploy` as it starts, and is 2x2 (no FindDeployCell step).
+#[test]
+fn retail_rules_feed_the_slave_refinery_relocation() {
+    use crate::rules::art_data::ArtRegistry;
+    use crate::rules::ruleset::RuleSet;
+    let Some((rules_ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art()
+    else {
+        return;
+    };
+    let mut rules = RuleSet::from_ini(&rules_ini).expect("retail rules");
+    rules.merge_art_data(&ArtRegistry::from_ini(&art_ini));
+    let general = &rules.general;
+    assert_eq!(
+        (
+            general.slave_miner_short_scan,
+            general.slave_miner_long_scan,
+            general.slave_miner_scan_correction
+        ),
+        (8 * 256, 48 * 256, 3 * 256)
+    );
+    let refinery = rules.object("YAREFN").expect("YAREFN");
+    assert_eq!(refinery.undeploys_into.as_deref(), Some("SMIN"));
+    assert_eq!(refinery.deploy_sound.as_deref(), Some("SlaveMinerUndeploy"));
+    assert_eq!(
+        crate::rules::foundation::foundation_dimensions(&refinery.foundation),
+        (2, 2)
+    );
+    let miner = rules.object("SMIN").expect("SMIN");
+    assert_eq!(miner.deploys_into.as_deref(), Some("YAREFN"));
+}
+
+/// `BuildingClass::Sell`'s conversion constructs the unit, lists the
+/// building's attackers (`0x00449F23..0x00449FDC`), and Limbos the building,
+/// whose Detach_All clears their targets (an attacker with more than 10
+/// frames left on its passive scan re-arms it with a Scenario draw); after
+/// the unit's Unlimbo the listed attackers target it
+/// (`0x0044A146..0x0044A167`), so an attacker keeps shooting at the Slave
+/// Miner. Draws: the Slave Miner's constructor words, then the re-arm.
+#[test]
+fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+    use crate::sim::combat::{AttackTarget, TargetKind};
+    use crate::sim::rng::SimRng;
+    use crate::sim::world::Simulation;
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n1=SLAV\n[VehicleTypes]\n1=SMIN\n2=TANK\n[BuildingTypes]\n1=YAREFN\n\
+         [SLAV]\nStrength=125\nSpeed=3\nSlaved=yes\nStorage=4\n\
+         [SMIN]\nStrength=2000\nSpeed=3\nEnslaves=SLAV\nSlavesNumber=1\nDeploysInto=YAREFN\n\
+         [TANK]\nStrength=300\nSpeed=5\n\
+         [YAREFN]\nStrength=2000\nEnslaves=SLAV\nSlavesNumber=1\nUndeploysInto=SMIN\n\
+         Foundation=2x2\n",
+    ))
+    .expect("rules");
+    let seed = 0x0A77_AC4E;
+    let mut sim = Simulation::with_seed(seed);
+    let refinery = sim
+        .spawn_object_at_height("YAREFN", "YuriCountry", 10, 10, 0, 0, &rules)
+        .expect("YAREFN");
+    let tank = sim
+        .spawn_object_at_height("TANK", "Americans", 16, 10, 0, 0, &rules)
+        .expect("TANK");
+    let frame = sim.session.binary_frame;
+    let attacker = sim.substrate.entities.get_mut(tank).unwrap();
+    attacker.attack_target = Some(AttackTarget::new(refinery));
+    attacker.passive_scan_timer.arm(frame, 100);
+    let scan_timer = attacker.passive_scan_timer;
+    sim.substrate
+        .entities
+        .get_mut(refinery)
+        .unwrap()
+        .building_up = None;
+    let mut expected = SimRng::new(seed);
+    while expected.logical_state() != sim.scenario_rng.logical_state() {
+        let _ = expected.next_u32();
+    }
+
+    assert!(sim.undeploy_building(refinery, &rules));
+    let down = sim
+        .substrate
+        .entities
+        .get_mut(refinery)
+        .unwrap()
+        .building_down
+        .as_mut()
+        .unwrap();
+    down.elapsed_ticks = down.total_ticks - 1;
+    assert!(sim.tick_building_down(Some(&rules), None));
+    let miner = sim
+        .substrate
+        .entities
+        .values()
+        .find(|entity| {
+            entity.lifecycle.object_alive && sim.interner.resolve(entity.type_ref()) == "SMIN"
+        })
+        .expect("the Slave Miner")
+        .stable_id();
+    let attacker = sim.substrate.entities.get(tank).unwrap();
+    assert_eq!(
+        attacker.attack_target.as_ref().map(|target| target.target),
+        Some(TargetKind::Entity(miner))
+    );
+    // The Slave Miner's TechnoClass word and its one slave's, then the
+    // passive-scan re-arm at the building's Limbo.
+    for _ in 0..2 {
+        let _ = expected.next_u32();
+    }
+    let delay = expected.next_range_u32_inclusive(4, 8);
+    let mut rearmed = scan_timer;
+    rearmed.arm(frame, delay);
+    assert_eq!(attacker.passive_scan_timer, rearmed);
+    assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
+}

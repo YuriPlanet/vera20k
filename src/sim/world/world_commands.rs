@@ -1241,29 +1241,16 @@ impl Simulation {
                 }
                 crate::sim::mcv_deploy::issue_order(self, *entity_id, rules)
             }
+            // RESIDUAL: retail undeploys a building only through a cell click
+            // (`0x004436F0`: the rally/ArchiveTarget event 0x1E, then SELL
+            // 0x16 -> `Sell_Back(-1) @ 0x00447110` queuing Selling), and its
+            // What_Action never answers ACTION_SELF for an UndeploysInto
+            // building (`0x00447210`); VERA's app offers the undeploy on a
+            // self-click and starts it here, with no archive.
             Command::UndeployBuilding { entity_id } => {
                 let Some(rules) = rules else { return false };
                 if !self.entity_owned_by_id(command_owner, *entity_id) {
                     return false;
-                }
-                if self
-                    .substrate
-                    .entities
-                    .get(*entity_id)
-                    .is_some_and(|entity| {
-                        self.object_type(entity.type_ref(), rules)
-                            .is_some_and(|obj| {
-                                obj.enslaves.is_some() && obj.undeploys_into.is_some()
-                            })
-                    })
-                {
-                    return crate::sim::slave_miner::undeploy_slave_miner_with_overlay_context(
-                        self,
-                        *entity_id,
-                        rules,
-                        overlay_registry,
-                    )
-                    .is_some();
                 }
                 self.undeploy_building(*entity_id, rules)
             }
