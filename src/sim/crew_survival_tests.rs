@@ -912,14 +912,41 @@ fn retail_dustbowl_crews_scatter_off_their_wrecks() {
                 Some((mcv, plant))
             })
             .expect("an MCV cell with room for a power plant");
-        sim.resolve_type_handles(&resources.rules);
-        let registry = Some(&resources.overlay_registry);
         let (plant_cell, mcv_cell) = [plant, mcv]
             .map(|id| {
                 let entity = sim.substrate.entities.get(id).unwrap();
                 (entity.position.rx, entity.position.ry)
             })
             .into();
+        // A second power plant well away from the wrecks keeps the house in
+        // the game: with the retail `ShortGame=yes`, a house left with no
+        // counted building and no `BaseUnit=` vehicle is defeated on its next
+        // update, and `HouseClass::Blowup_All` kills the crew
+        // (`sim::world::house_defeat`).
+        let guard = (40..100_u16)
+            .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
+            .filter(|&(x, y)| x.abs_diff(mcv_cell.0) + y.abs_diff(mcv_cell.1) >= 16)
+            .find_map(|(x, y)| {
+                let grid = sim.path_grid()?;
+                let open = (x..=x + 1).all(|cx| {
+                    (y..=y + 1).all(|cy| grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable))
+                });
+                if !open {
+                    return None;
+                }
+                sim.spawn_object(
+                    "GAPOWR",
+                    "Americans",
+                    x,
+                    y,
+                    0,
+                    &resources.rules,
+                    &resources.height_map,
+                )
+            })
+            .expect("room for a power plant away from the wrecks");
+        sim.resolve_type_handles(&resources.rules);
+        let registry = Some(&resources.overlay_registry);
         let before = sim.substrate.entities.keys_sorted();
         kill_with(sim, &resources.rules, registry, plant, "Super", ORDINARY);
         kill_with(sim, &resources.rules, registry, mcv, "Super", ORDINARY);
@@ -942,6 +969,8 @@ fn retail_dustbowl_crews_scatter_off_their_wrecks() {
         for _ in 0..45 {
             scenario.tick();
         }
+        assert!(scenario.sim().substrate.entities.get(guard).is_some());
+        assert!(!scenario.sim().houses[&owner].is_defeated);
         for (id, from_plant, spawn, destination) in crew {
             let entity = scenario
                 .sim()

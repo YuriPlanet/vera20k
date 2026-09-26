@@ -1,6 +1,8 @@
 //! Rust regression tests for the death-anim producers. Expected draws are
 //! replayed on a clone of the Scenario stream in the native order recorded on
-//! each producer; they are not native goldens.
+//! each producer; they are not native goldens. The retail Dustbowl test is the
+//! exception: it compares a building death against native execution
+//! (`tools/spatial_oracle/building_death_anims.py`).
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
@@ -558,10 +560,19 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
     }
 }
 
-/// Retail Dustbowl runtime: a power plant killed through the production
-/// receiver with retail art bound plays one `Explosion=` anim per foundation
-/// cell (an art-less `gtpowexp` pick constructs nothing) with delays in 0..=3,
-/// and an MCV its own explosion, all with `0x600`/0. Ignored: needs the retail
+/// Retail Dustbowl runtime against native execution: a power plant killed
+/// through the production receiver, with retail rules and art bound, throws
+/// its `DebrisAnims=` chunks, rolls for its centre mark and plays one
+/// `Explosion=` anim per foundation cell as the original does from the same
+/// Scenario state (`tools/spatial_oracle/building_death_anims.py`: the
+/// ReceiveDamage debris block, then DestructionEffects steps 7 and 8; the
+/// stream is reseeded at the kill so the scenario's earlier draws cannot move
+/// the comparison). The plant's origin cell carries ore, which CanPlace's
+/// overlay check (`0x006B6002`) rejects for every candidate, so the rows
+/// supply an admit-none answer and the plant leaves no mark; a mark on clean
+/// ground is compared only through the placer's pick (`anim_middle`). An
+/// art-less `gtpowexp` pick constructs nothing (a residual). An MCV then plays one of its own `Explosion=` anims and throws
+/// `MetallicDebris=` chunks, all with `0x600`/0. Ignored: needs the retail
 /// install (`RA2_DIR` or `config.toml`).
 #[test]
 #[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
@@ -576,110 +587,270 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
                 .paths
                 .ra2_dir
         });
-    let mut scenario =
-        crate::headless_scenario::load(&dir, "Dustbowl.mmx", 0x00C0_FFEE).expect("Dustbowl loads");
-    let crate::sim::runtime::SimRuntime {
-        simulation: sim,
-        resources,
-    } = &mut scenario.runtime;
-    let owner = sim.interner.intern("Americans");
-    sim.houses
-        .entry(owner)
-        .or_insert_with(|| HouseState::new(owner, 0, None, false, 10_000, 10));
-    if !sim.session.house_order.contains(&owner) {
-        sim.session.house_order.push(owner);
-    }
-    let (plant, mcv) = (40..100_u16)
-        .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
-        .find_map(|(x, y)| {
-            let grid = sim.path_grid()?;
-            let terrain = sim.resolved_terrain.as_ref()?;
-            let level = terrain.cell(x.checked_sub(3)?, y)?.level;
-            let (x0, y0) = (x.checked_sub(4)?, y.checked_sub(1)?);
-            let open = (x0..=x + 1).all(|cx| {
-                (y0..=y + 2).all(|cy| {
-                    terrain.cell(cx, cy).is_some_and(|cell| cell.level == level)
-                        && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)
-                })
-            });
-            if !open {
-                return None;
-            }
-            let mcv = sim.spawn_object(
-                "AMCV",
-                "Americans",
-                x,
-                y,
-                0,
-                &resources.rules,
-                &resources.height_map,
-            )?;
-            let plant = sim.spawn_object(
-                "GAPOWR",
-                "Americans",
-                x - 3,
-                y,
-                0,
-                &resources.rules,
-                &resources.height_map,
-            )?;
-            Some((plant, mcv))
-        })
-        .expect("an MCV cell with room for a power plant");
-    sim.resolve_type_handles(&resources.rules);
-    let warhead = sim.interner.intern("Super");
-    let mut per_kill = Vec::new();
-    for id in [plant, mcv] {
-        let before: Vec<_> = sim.substrate.anims.iter().map(|(id, _)| *id).collect();
-        let hit = EntityDamageEvent::direct_receiver(
-            id,
-            100_000,
-            0,
-            RAD_NO_ATTACKER,
-            None,
-            warhead,
-            ReceiverCallFlags {
-                ignore_defenses: false,
-                arg6: false,
-            },
-        );
-        sim.commit_noncombat_aoe_hits(&resources.rules, Some(&resources.overlay_registry), &[hit]);
-        let deaths: Vec<_> = sim
-            .substrate
-            .anims
+    let golden: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/building_death_anims.json"
+    ))
+    .unwrap();
+    let rows = golden["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 10);
+    let ints = |value: &serde_json::Value| -> Vec<i64> {
+        value
+            .as_array()
+            .unwrap()
             .iter()
-            .filter(|(id, anim)| !before.contains(id) && anim.draw_flags == 0x600)
-            .map(|(_, anim)| {
+            .map(|v| v.as_i64().unwrap())
+            .collect()
+    };
+    for row in rows {
+        let input = &row["input"];
+        let mut scenario = crate::headless_scenario::load(&dir, "Dustbowl.mmx", 0x00C0_FFEE)
+            .expect("Dustbowl loads");
+        let crate::sim::runtime::SimRuntime {
+            simulation: sim,
+            resources,
+        } = &mut scenario.runtime;
+        let rules = &resources.rules;
+        let owner = sim.interner.intern("Americans");
+        sim.houses
+            .entry(owner)
+            .or_insert_with(|| HouseState::new(owner, 0, None, false, 10_000, 10));
+        if !sim.session.house_order.contains(&owner) {
+            sim.session.house_order.push(owner);
+        }
+        let (plant, mcv) = (40..100_u16)
+            .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
+            .find_map(|(x, y)| {
+                let grid = sim.path_grid()?;
+                let terrain = sim.resolved_terrain.as_ref()?;
+                let level = terrain.cell(x.checked_sub(3)?, y)?.level;
+                let (x0, y0) = (x.checked_sub(4)?, y.checked_sub(1)?);
+                let open = (x0..=x + 1).all(|cx| {
+                    (y0..=y + 2).all(|cy| {
+                        terrain.cell(cx, cy).is_some_and(|cell| cell.level == level)
+                            && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)
+                    })
+                });
+                if !open {
+                    return None;
+                }
+                let mcv =
+                    sim.spawn_object("AMCV", "Americans", x, y, 0, rules, &resources.height_map)?;
+                let plant = sim.spawn_object(
+                    "GAPOWR",
+                    "Americans",
+                    x - 3,
+                    y,
+                    0,
+                    rules,
+                    &resources.height_map,
+                )?;
+                Some((plant, mcv))
+            })
+            .expect("an MCV cell with room for a power plant");
+        sim.resolve_type_handles(rules);
+
+        // The native row's inputs are this plant's: its retail lists, its
+        // Location, and an overlay (ore) on its origin cell, where every
+        // smudge candidate's footprint starts: CanPlace `0x006B5F80` admits
+        // none (OverlayTypeIndex must be -1), the rows' supplied answer.
+        let gapowr = rules.object("GAPOWR").unwrap();
+        let names = |value: &serde_json::Value| -> Vec<String> {
+            value
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect()
+        };
+        assert_eq!(gapowr.explosion_anims, names(&input["explosion"]));
+        assert_eq!(gapowr.debris_anims, names(&input["debris_anims"]));
+        assert!(gapowr.debris_types.is_empty());
+        assert_eq!(
+            [gapowr.max_debris, gapowr.min_debris],
+            [&input["max_debris"], &input["min_debris"]].map(|v| v.as_i64().unwrap() as i32)
+        );
+        assert_eq!(
+            crate::rules::foundation::foundation_dimensions(&gapowr.foundation),
+            (2, 2)
+        );
+        let flagged = |burn: bool, crater: bool, w: u8, h: u8| {
+            (burn || crater).then_some((burn, crater, w, h))
+        };
+        assert_eq!(
+            rules
+                .smudge_types
+                .iter_with_id()
+                .filter_map(|(_, def)| {
+                    flagged(def.burn, def.crater, def.width, def.height)
+                        .map(|flags| (def.name.clone(), flags))
+                })
+                .collect::<Vec<_>>(),
+            golden["smudge_types"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|def| {
+                    let field = |key: &str| def[key].as_u64().unwrap();
+                    flagged(
+                        field("burn") == 1,
+                        field("crater") == 1,
+                        field("width") as u8,
+                        field("height") as u8,
+                    )
+                    .map(|flags| (def["name"].as_str().unwrap().to_string(), flags))
+                })
+                .collect::<Vec<_>>()
+        );
+        let entity = sim.substrate.entities.get(plant).unwrap();
+        let (rx, ry) = (entity.position.rx, entity.position.ry);
+        let location = position_world_coord(&entity.position);
+        assert_eq!(
+            vec![location.x, location.y, location.z]
+                .into_iter()
+                .map(i64::from)
+                .collect::<Vec<_>>(),
+            ints(&input["location"])
+        );
+        let smudges = sim.smudge_grid.as_ref().unwrap();
+        assert!((rx..rx + 2).all(|x| (ry..ry + 2).all(|y| smudges.cell(x, y).type_id.is_none())));
+        let overlay = sim.overlay_grid.as_ref().unwrap();
+        assert!(overlay.cell(rx, ry).overlay_id.is_some());
+        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
+        assert_eq!(
+            sim.scenario_rng.native_state_hex(),
+            row["rng_before"].as_str().unwrap()
+        );
+
+        let warhead = sim.interner.intern("Super");
+        let kill = |sim: &mut Simulation, id: u64| {
+            let before: Vec<_> = sim.substrate.anims.iter().map(|(id, _)| *id).collect();
+            let hit = EntityDamageEvent::direct_receiver(
+                id,
+                100_000,
+                0,
+                RAD_NO_ATTACKER,
+                None,
+                warhead,
+                ReceiverCallFlags {
+                    ignore_defenses: false,
+                    arg6: false,
+                },
+            );
+            sim.commit_noncombat_aoe_hits(rules, Some(&resources.overlay_registry), &[hit]);
+            // (type, coordinate, delay, flags, zAdjust, launch bits), in
+            // construction order.
+            sim.substrate
+                .anims
+                .iter()
+                .filter(|(id, _)| !before.contains(id))
+                .map(|(_, anim)| {
+                    (
+                        sim.interner.resolve(anim.type_id).to_string(),
+                        [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z]
+                            .map(i64::from)
+                            .to_vec(),
+                        anim.runtime.delay_remaining,
+                        anim.draw_flags,
+                        anim.z_adjust,
+                        anim.bounce.as_ref().map(|body| {
+                            (
+                                body.position.map(|v| i64::from(v.bits())).to_vec(),
+                                body.velocity.map(|v| i64::from(v.bits())).to_vec(),
+                            )
+                        }),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let seed = input["seed"].as_u64().unwrap();
+        let (debris, explosions): (Vec<_>, Vec<_>) = kill(sim, plant)
+            .into_iter()
+            .partition(|anim| anim.5.is_some());
+
+        let native_debris = row["debris"].as_array().unwrap();
+        assert_eq!(debris.len(), native_debris.len(), "seed {seed:#x}");
+        for (anim, native) in debris.iter().zip(native_debris) {
+            let ctor = &native["ctor"];
+            assert_eq!(anim.0, ctor["type"].as_str().unwrap(), "seed {seed:#x}");
+            assert_eq!(anim.1, ints(&ctor["coord"]), "seed {seed:#x}");
+            assert_eq!(
+                (anim.2, anim.3, anim.4),
                 (
-                    sim.interner.resolve(anim.type_id).to_string(),
-                    anim.runtime.delay_remaining,
-                    anim.z_adjust,
+                    ctor["delay"].as_u64().unwrap() as u16,
+                    ctor["flags"].as_u64().unwrap() as u32,
+                    0
+                ),
+                "seed {seed:#x}"
+            );
+            let (position, velocity) = anim.5.clone().unwrap();
+            assert_eq!(
+                position,
+                ints(&native["bounce"]["position_bits"]),
+                "seed {seed:#x}"
+            );
+            assert_eq!(
+                velocity,
+                ints(&native["bounce"]["velocity_bits"]),
+                "seed {seed:#x}"
+            );
+        }
+
+        // The mark goes on the Location cell, the plant's origin.
+        let events = row["events"].as_array().unwrap();
+        let mark = events
+            .iter()
+            .find(|event| event["call"] == "smudge")
+            .map(|event| event["type"].as_str().unwrap());
+        let placed = sim.smudge_grid.as_ref().unwrap().cell(rx, ry).type_id;
+        assert_eq!(
+            placed
+                .and_then(|id| rules.smudge_types.get(id))
+                .map(|def| def.name.as_str()),
+            mark,
+            "seed {seed:#x}"
+        );
+
+        let native_explosions: Vec<_> = events
+            .iter()
+            .filter(|event| event["call"] == "anim_ctor")
+            .skip(native_debris.len())
+            .filter(|event| event["type"] != "gtpowexp")
+            .map(|event| {
+                (
+                    event["type"].as_str().unwrap().to_string(),
+                    ints(&event["coord"]),
+                    event["delay"].as_u64().unwrap() as u16,
+                    event["flags"].as_u64().unwrap() as u32,
                 )
             })
             .collect();
-        println!("death anims of {id}: {deaths:?}");
-        per_kill.push(deaths);
+        assert_eq!(
+            explosions
+                .iter()
+                .map(|anim| (anim.0.clone(), anim.1.clone(), anim.2, anim.3))
+                .collect::<Vec<_>>(),
+            native_explosions,
+            "seed {seed:#x}"
+        );
+        assert!(explosions.iter().all(|anim| anim.4 == 0));
+
+        let (mcv_debris, mcv_explosions): (Vec<_>, Vec<_>) = kill(sim, mcv)
+            .into_iter()
+            .partition(|anim| anim.5.is_some());
+        let amcv = rules.object("AMCV").unwrap();
+        assert!(
+            matches!(mcv_explosions.as_slice(), [(name, _, 0, 0x600, 0, None)]
+                if amcv.explosion_anims.iter().any(|entry| entry.eq_ignore_ascii_case(name))),
+            "{mcv_explosions:?}"
+        );
+        assert!(mcv_debris.len() < amcv.max_debris as usize);
+        assert!(mcv_debris.iter().all(|anim| {
+            rules
+                .general
+                .metallic_debris
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(&anim.0))
+                && (anim.2, anim.3, anim.4) == (0, 0x600, 0)
+        }));
     }
-    let rules = &resources.rules;
-    let in_list = |kind: &str, name: &str| {
-        rules
-            .object(kind)
-            .unwrap()
-            .explosion_anims
-            .iter()
-            .any(|entry| entry.eq_ignore_ascii_case(name))
-    };
-    let plant_anims = &per_kill[0];
-    assert!(
-        plant_anims
-            .iter()
-            .all(|(name, delay, z)| in_list("GAPOWR", name) && *delay <= 3 && *z == 0)
-    );
-    // This seed's four picks: two art-less `gtpowexp` (nothing constructed)
-    // and these two.
-    let names: Vec<_> = plant_anims.iter().map(|anim| anim.0.as_str()).collect();
-    assert_eq!(names, ["S_CLSN58", "S_TUMU60"], "{plant_anims:?}");
-    let mcv_anims = &per_kill[1];
-    assert_eq!(mcv_anims.len(), 1, "{mcv_anims:?}");
-    assert!(in_list("AMCV", &mcv_anims[0].0) && mcv_anims[0].1 == 0);
 }
