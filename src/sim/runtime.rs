@@ -187,14 +187,15 @@ impl SimRuntime {
         self.simulation.acknowledge_radar_terrain_dirty(generation)
     }
 
-    /// One command-free Ordinary-lane frame for side binaries (parity-digest):
+    /// One Ordinary-lane frame for side binaries (parity-digest, sim-bench):
     /// the same bound-resource transaction as `advance_frame`, with the
     /// crate-private frame output discarded so no internal type goes public.
-    pub fn advance_idle_frame_for_tooling(
+    pub fn advance_frame_for_tooling(
         &mut self,
+        commands: &[crate::sim::command::CommandEnvelope],
         tick_ms: u32,
     ) -> Result<(), crate::sim::world::FrameAdvanceError> {
-        self.advance_frame(&[], tick_ms, crate::sim::world::TickLane::Ordinary)
+        self.advance_frame(commands, tick_ms, crate::sim::world::TickLane::Ordinary)
             .map(|_| ())
     }
 

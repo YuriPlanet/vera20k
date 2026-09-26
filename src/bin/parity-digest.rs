@@ -161,7 +161,7 @@ fn main() -> Result<(), String> {
             };
             for _ in 0..args.ticks {
                 runtime
-                    .advance_idle_frame_for_tooling(SIM_TICK_MS)
+                    .advance_frame_for_tooling(&[], SIM_TICK_MS)
                     .map_err(|error| error.to_string())?;
                 let digest = runtime.simulation.parity_digest();
                 sink.write(&digest)
