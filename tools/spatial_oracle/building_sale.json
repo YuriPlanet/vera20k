@@ -11956,6 +11956,794 @@
       },
       "scenario_init": 0,
       "survivors": 0
+    },
+    {
+      "building": {
+        "done": 0,
+        "passengers": 0,
+        "status": 2
+      },
+      "delay": 1,
+      "events": [
+        [
+          "radio",
+          3
+        ],
+        [
+          "place_infantry",
+          [
+            12,
+            12
+          ],
+          [
+            3200,
+            3236,
+            0
+          ]
+        ],
+        [
+          "random",
+          0,
+          3,
+          1
+        ],
+        [
+          "unlimbo",
+          "passenger0",
+          [
+            3200,
+            3200,
+            0
+          ],
+          0,
+          1
+        ],
+        [
+          "place_infantry",
+          [
+            12,
+            12
+          ],
+          [
+            3200,
+            3200,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          "passenger0",
+          [
+            3200,
+            3200,
+            0
+          ]
+        ],
+        [
+          "scatter",
+          "passenger0",
+          [
+            0,
+            0,
+            0
+          ],
+          1,
+          0,
+          1
+        ],
+        [
+          "random",
+          0,
+          4,
+          1
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            12,
+            12
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1
+        ],
+        [
+          "nearby_passable_cell_found",
+          [
+            11,
+            11
+          ]
+        ],
+        [
+          "set_destination",
+          "passenger0",
+          [
+            11,
+            11
+          ]
+        ],
+        [
+          "place_infantry",
+          [
+            13,
+            12
+          ],
+          [
+            3456,
+            3236,
+            0
+          ]
+        ],
+        [
+          "random",
+          0,
+          3,
+          2
+        ],
+        [
+          "unlimbo",
+          "passenger1",
+          [
+            3200,
+            3200,
+            0
+          ],
+          0,
+          1
+        ],
+        [
+          "place_infantry",
+          [
+            12,
+            12
+          ],
+          [
+            3200,
+            3200,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          "passenger1",
+          [
+            3200,
+            3200,
+            0
+          ]
+        ],
+        [
+          "scatter",
+          "passenger1",
+          [
+            0,
+            0,
+            0
+          ],
+          1,
+          0,
+          1
+        ],
+        [
+          "random",
+          0,
+          4,
+          1
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            12,
+            12
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1
+        ],
+        [
+          "nearby_passable_cell_found",
+          [
+            11,
+            11
+          ]
+        ],
+        [
+          "set_destination",
+          "passenger1",
+          [
+            11,
+            11
+          ]
+        ],
+        [
+          "place_infantry",
+          [
+            12,
+            13
+          ],
+          [
+            3200,
+            3492,
+            0
+          ]
+        ],
+        [
+          "random",
+          0,
+          3,
+          0
+        ],
+        [
+          "unlimbo",
+          "passenger2",
+          [
+            3200,
+            3200,
+            0
+          ],
+          0,
+          1
+        ],
+        [
+          "place_infantry",
+          [
+            12,
+            12
+          ],
+          [
+            3200,
+            3200,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          "passenger2",
+          [
+            3200,
+            3200,
+            0
+          ]
+        ],
+        [
+          "scatter",
+          "passenger2",
+          [
+            0,
+            0,
+            0
+          ],
+          1,
+          0,
+          1
+        ],
+        [
+          "random",
+          0,
+          4,
+          1
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            12,
+            12
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1
+        ],
+        [
+          "nearby_passable_cell_found",
+          [
+            11,
+            11
+          ]
+        ],
+        [
+          "set_destination",
+          "passenger2",
+          [
+            11,
+            11
+          ]
+        ],
+        [
+          "place_infantry",
+          [
+            13,
+            13
+          ],
+          [
+            3456,
+            3492,
+            0
+          ]
+        ],
+        [
+          "random",
+          0,
+          3,
+          1
+        ],
+        [
+          "unlimbo",
+          "passenger3",
+          [
+            3200,
+            3200,
+            0
+          ],
+          0,
+          1
+        ],
+        [
+          "place_infantry",
+          [
+            12,
+            12
+          ],
+          [
+            3200,
+            3200,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          "passenger3",
+          [
+            3200,
+            3200,
+            0
+          ]
+        ],
+        [
+          "scatter",
+          "passenger3",
+          [
+            0,
+            0,
+            0
+          ],
+          1,
+          0,
+          1
+        ],
+        [
+          "random",
+          0,
+          4,
+          2
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            12,
+            12
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1
+        ],
+        [
+          "nearby_passable_cell_found",
+          [
+            11,
+            11
+          ]
+        ],
+        [
+          "set_destination",
+          "passenger3",
+          [
+            11,
+            11
+          ]
+        ],
+        [
+          "place_infantry",
+          "dummy",
+          [
+            -8385664,
+            -8385628,
+            0
+          ]
+        ],
+        [
+          "random",
+          0,
+          3,
+          1
+        ],
+        [
+          "unlimbo",
+          "passenger4",
+          [
+            3200,
+            3200,
+            0
+          ],
+          0,
+          1
+        ],
+        [
+          "place_infantry",
+          [
+            12,
+            12
+          ],
+          [
+            3200,
+            3200,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          "passenger4",
+          [
+            3200,
+            3200,
+            0
+          ]
+        ],
+        [
+          "scatter",
+          "passenger4",
+          [
+            0,
+            0,
+            0
+          ],
+          1,
+          0,
+          1
+        ],
+        [
+          "random",
+          0,
+          4,
+          4
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            12,
+            12
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1
+        ],
+        [
+          "nearby_passable_cell_found",
+          [
+            11,
+            11
+          ]
+        ],
+        [
+          "set_destination",
+          "passenger4",
+          [
+            11,
+            11
+          ]
+        ],
+        [
+          "random",
+          0,
+          99,
+          20
+        ],
+        [
+          "is_armed",
+          false
+        ],
+        [
+          "construct",
+          "crew0",
+          "INIT",
+          true
+        ],
+        [
+          "constructor_draw",
+          34397
+        ],
+        [
+          "random",
+          0,
+          3,
+          0
+        ],
+        [
+          "place_infantry",
+          [
+            12,
+            12
+          ],
+          [
+            3200,
+            3236,
+            0
+          ]
+        ],
+        [
+          "random",
+          0,
+          3,
+          3
+        ],
+        [
+          "unlimbo",
+          "crew0",
+          [
+            3264,
+            3264,
+            0
+          ],
+          0,
+          1
+        ],
+        [
+          "place_infantry",
+          [
+            12,
+            12
+          ],
+          [
+            3264,
+            3264,
+            0
+          ]
+        ],
+        [
+          "foot_unlimbo",
+          "crew0",
+          [
+            3264,
+            3264,
+            0
+          ]
+        ],
+        [
+          "scatter",
+          "crew0",
+          [
+            0,
+            0,
+            0
+          ],
+          1,
+          0,
+          0
+        ],
+        [
+          "random",
+          0,
+          4,
+          0
+        ],
+        [
+          "nearby_passable_cell",
+          [
+            12,
+            12
+          ],
+          0,
+          -1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1
+        ],
+        [
+          "nearby_passable_cell_found",
+          [
+            11,
+            11
+          ]
+        ],
+        [
+          "set_destination",
+          "crew0",
+          [
+            11,
+            11
+          ]
+        ],
+        [
+          "queue",
+          "crew0",
+          2,
+          0
+        ],
+        [
+          "play_at",
+          41,
+          [
+            3200,
+            3200,
+            0
+          ],
+          null
+        ]
+      ],
+      "infantry": {
+        "crew0": {
+          "coord": [
+            3264,
+            3264,
+            0
+          ],
+          "ctor_word": 34397,
+          "limbo": 0,
+          "mission": -1,
+          "nav": [
+            11,
+            11
+          ],
+          "nominal": 0,
+          "owner": true,
+          "queued": 2,
+          "type": "INIT"
+        },
+        "passenger0": {
+          "coord": [
+            3200,
+            3200,
+            0
+          ],
+          "ctor_word": 0,
+          "limbo": 0,
+          "mission": -1,
+          "nav": [
+            11,
+            11
+          ],
+          "nominal": 0,
+          "owner": true,
+          "queued": -1,
+          "type": "E1"
+        },
+        "passenger1": {
+          "coord": [
+            3200,
+            3200,
+            0
+          ],
+          "ctor_word": 0,
+          "limbo": 0,
+          "mission": -1,
+          "nav": [
+            11,
+            11
+          ],
+          "nominal": 0,
+          "owner": true,
+          "queued": -1,
+          "type": "E1"
+        },
+        "passenger2": {
+          "coord": [
+            3200,
+            3200,
+            0
+          ],
+          "ctor_word": 0,
+          "limbo": 0,
+          "mission": -1,
+          "nav": [
+            11,
+            11
+          ],
+          "nominal": 0,
+          "owner": true,
+          "queued": -1,
+          "type": "E1"
+        },
+        "passenger3": {
+          "coord": [
+            3200,
+            3200,
+            0
+          ],
+          "ctor_word": 0,
+          "limbo": 0,
+          "mission": -1,
+          "nav": [
+            11,
+            11
+          ],
+          "nominal": 0,
+          "owner": true,
+          "queued": -1,
+          "type": "E1"
+        },
+        "passenger4": {
+          "coord": [
+            3200,
+            3200,
+            0
+          ],
+          "ctor_word": 0,
+          "limbo": 0,
+          "mission": -1,
+          "nav": [
+            11,
+            11
+          ],
+          "nominal": 0,
+          "owner": true,
+          "queued": -1,
+          "type": "INIT"
+        }
+      },
+      "input": {
+        "cost": 2000,
+        "name": "c_absorbed_five",
+        "passengers": [
+          "E1",
+          "E1",
+          "E1",
+          "E1",
+          "INIT"
+        ],
+        "side": 2
+      },
+      "next_random": 1901842442,
+      "random_indices": {
+        "after": [
+          19,
+          122
+        ],
+        "before": [
+          0,
+          103
+        ]
+      },
+      "scenario_init": 0,
+      "survivors": 1
     }
   ],
   "refund": [

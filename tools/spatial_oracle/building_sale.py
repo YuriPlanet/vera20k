@@ -18,7 +18,9 @@ that does not undeploy.
   (TechnoTypeClass::GetRefund 0x711F60) over the row's cost, side and owner;
   the occupy list (vt+0x108: BuildingType+0xDFC into the table the static
   initialiser 0x45B1C0 builds); absorbed passengers (+0x114) out through
-  InfantryClass::Unlimbo; per survivor Crew_Type (0x44EB10, TechnoClass::GetCrew
+  InfantryClass::Unlimbo (a passenger past the list's end reads its 0x7FFF
+  terminator and places in MapClass's off-map cell 0xABDC50, constructed as
+  the static initialiser 0x565060 does); per survivor Crew_Type (0x44EB10, TechnoClass::GetCrew
   0x707D20) with the Engineer-once re-roll, the InfantryClass constructor
   (0x517A50: a prepared object, the TechnoClass constructor's one Scenario
   draw (0x6F3254 -> 0x65C780) taken through a native trampoline), the
@@ -38,7 +40,7 @@ import struct
 
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_EIP, UC_X86_REG_ESP
-from tools.native_oracle import RET_MAGIC, finish_vectors, provenance
+from tools.native_oracle import RET_MAGIC, finish_vectors, provenance, run_checked
 from tools.spatial_oracle import building_construction as bc
 from tools.spatial_oracle import slave_manager as sm
 from tools.spatial_oracle.map_queries import dwords
@@ -58,6 +60,9 @@ FNPC, SCATTER_FNPC_CALL, SCATTER_FNPC_RETURN = 0x56DC20, 0x51D41D, 0x51D422
 SETTER, LIMBO, PLAY_ANIM, QUEUE = 0x51AA40, 0x51DF10, 0x51D6F0, 0x5B35E0
 REFUND = 0x70ADA0
 OCCUPY_INIT, OCCUPY_LISTS, OCCUPY_STRIDE = 0x45B1C0, 0x89C900, 120
+# MapClass's cell for coordinates off the map (0x565730 returns it), built by
+# the static initialiser 0x565060 through CellClass's constructor.
+DUMMY_CELL, CELL_CTOR = 0xABDC50, 0x47BBF0
 PLAYER_PTR = 0xA83D4C
 # Scratch after the slave_manager fixture's region: crew types, the
 # constructor trampoline and its slot pointer, prepared infantry objects.
@@ -69,7 +74,7 @@ TRAMPOLINE_DRAW = TRAMPOLINE + 16
 PAD = REGION + 0x8000
 SLOTS = REGION + 0x10000
 SLOT_SIZE = 0x2000  # the object, then its Walk locomotor at +0x1000
-CREW_SLOTS, PASSENGER_SLOTS = 8, 4
+CREW_SLOTS, PASSENGER_SLOTS = 8, 5
 CREW_NAMES = ['E1', 'E2', 'INIT', 'CTECH', 'ENGINEER']
 # Rules crew slots: AlliedCrew, SovietCrew, ThirdCrew, Technician, Engineer.
 RULES_CREW = {'E1': 0xF78, 'E2': 0xF7C, 'INIT': 0xF80, 'CTECH': 0xF6C, 'ENGINEER': 0xF70}
@@ -241,6 +246,7 @@ def crew_fixture(case):
     # and the lazy statics of 0x5F5B90/0x45EC20 already constructed (their
     # first call registers an atexit destructor the fixture cannot run).
     call(OCCUPY_INIT, 0, [])
+    call(CELL_CTOR, DUMMY_CELL, [])
     for flag, value in ((0xAC1398, 0xAC139C), (0x89C890, 0x89C8E8)):
         u.mem_write(flag, bytes([u.mem_read(flag, 1)[0] | 1]))
         u.mem_write(value, dwords(0x7FFF7FFF))
@@ -349,7 +355,8 @@ def observe_crew(u, read32, events, case):
             events.append(['radio', read32(sp + 4)])
             ret(u, read32, 4)
         elif address == PLACE_INFANTRY:
-            events.append(['place_infantry', cell_xy(this), coord(u, read32(sp + 8))])
+            events.append(['place_infantry', 'dummy' if this == DUMMY_CELL else cell_xy(this),
+                           coord(u, read32(sp + 8))])
         elif address == UNLIMBO:
             events.append(['unlimbo', slot_name(this), coord(u, read32(sp + 4)), read32(sp + 8),
                            read32(0xA8E7AC)])
@@ -422,7 +429,13 @@ def crew(case):
     building = sm.YAREFN
     before = [read32(SCENARIO + 0x21C), read32(SCENARIO + 0x220)]
     count = bc.invoke(u, bc.SURVIVOR_COUNT, building)
-    delay = bc.invoke(u, SELL, building)
+    # Stage 1 runs every observer hook per instruction through several native
+    # FNPC searches: a wall-clock limit well past the default 10 s.
+    u.mem_write(bc.SP, dwords(RET_MAGIC))
+    u.reg_write(UC_X86_REG_ECX, building)
+    u.reg_write(UC_X86_REG_ESP, bc.SP)
+    run_checked(u, SELL, RET_MAGIC, count=50_000_000, timeout_us=600_000_000)
+    delay = u.reg_read(UC_X86_REG_EAX)
     for event in events:
         # The refinery_dock observer names objects it does not know by address.
         if event[0] in ('queue', 'commence') and isinstance(event[1], str) and event[1].startswith('0x'):
@@ -483,6 +496,10 @@ def crew_cases():
         dict(name='c_absorbed', side=2, cost=2000, passengers=['E1', 'INIT']),
         dict(name='c_absorbed_computer', side=2, cost=2000, passengers=['E1'], human=False, player=False),
         dict(name='c_absorbed_no_survivor', side=2, cost=2000, passengers=['E1'], no_survivor=True),
+        # A full Bio Reactor: five passengers over the four-cell list; the
+        # fifth reads the list's terminator and places in MapClass's
+        # off-map cell.
+        dict(name='c_absorbed_five', side=2, cost=2000, passengers=['E1', 'E1', 'E1', 'E1', 'INIT']),
     ]
 
 
