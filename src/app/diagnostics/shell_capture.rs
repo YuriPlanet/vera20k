@@ -79,6 +79,29 @@ const CHECKPOINT_SKIRMISH_0X102_BACK_SLIDE_OUT_PREFIX: &str = "skirmish-0x102-ba
 const CHECKPOINT_SKIRMISH_0X102_ENTRY_PREFIX: &str = "skirmish-0x102-entry-tick-";
 const CHECKPOINT_SKIRMISH_0X6B_STEADY: &str = "skirmish-0x6b-steady";
 const CHECKPOINT_SKIRMISH_0X6B_ENTRY_PREFIX: &str = "skirmish-0x6b-entry-tick-";
+const CHECKPOINT_SKIRMISH_0X105_STEADY: &str = "skirmish-0x105-steady";
+const CHECKPOINT_SKIRMISH_0X105_ENTRY_PREFIX: &str = "skirmish-0x105-entry-tick-";
+/// Cancel on `0x105`, then `0x6B`'s entry slide held at one tick.
+const CHECKPOINT_SKIRMISH_0X105_CANCEL_PREFIX: &str = "skirmish-0x105-cancel-tick-";
+const CHECKPOINT_SKIRMISH_0X105_CANCEL_STEADY: &str = "skirmish-0x105-cancel-steady";
+const CHECKPOINT_SKIRMISH_0X105_USE_MAP: &str = "skirmish-0x105-use-map";
+const CHECKPOINT_SKIRMISH_0X105_SEED_BROWSER_RETURN: &str = "skirmish-0x105-seed-browser-return";
+/// Terrain Type's list open with the pointer below it on Map Size's face; the
+/// status line keeps Terrain Type's help (`ej-list-off.png`).
+const CHECKPOINT_SKIRMISH_0X105_LIST_OPEN: &str = "skirmish-0x105-list-open";
+/// Use Map with an AI row the random map cannot hold, then the eject box's
+/// Cancel (`0x6B` settled again) or OK (`0x102` settled with the map).
+const CHECKPOINT_SKIRMISH_0X105_EJECT_CANCEL: &str = "skirmish-0x105-eject-cancel";
+const CHECKPOINT_SKIRMISH_0X105_EJECT_OK: &str = "skirmish-0x105-eject-ok";
+/// The same route's eject box over no dialog (`ej-box.png`).
+const CHECKPOINT_SKIRMISH_0X105_EJECT_BOX: &str = "skirmish-0x105-eject-box";
+/// `skirmish-0x105-hover-<control>`: `0x105` settled with the pointer
+/// resting on a control, as in `rmg-hover-load.png` and
+/// `rmg-hover-surprise.png`.
+const SKIRMISH_0X105_HOVER_CHECKPOINTS: [(&str, (i32, i32)); 2] = [
+    ("skirmish-0x105-hover-load", (720, 262)),
+    ("skirmish-0x105-hover-surprise", (170, 430)),
+];
 const CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN: &str = "skirmish-0x102-choose-map-return";
 const CHECKPOINT_SKIRMISH_START_BLANK: &str = "skirmish-start-blank";
 const CHECKPOINT_SKIRMISH_LOADING_FIRST_FRAME: &str = "skirmish-loading-first-frame";
@@ -185,6 +208,29 @@ pub enum ShellCaptureCheckpoint {
     /// Skirmish settled with the pointer resting on a control
     /// (`SKIRMISH_0X102_HOVER_CHECKPOINTS` index).
     Skirmish0x102Hover(usize),
+    /// Choose Map's Create Random Map: `0x105` settled.
+    Skirmish0x105Steady,
+    /// `0x105`'s entry slide held at one tick.
+    Skirmish0x105Entry(u32),
+    /// `0x105` settled with the pointer resting on a control
+    /// (`SKIRMISH_0X105_HOVER_CHECKPOINTS` index).
+    Skirmish0x105Hover(usize),
+    /// Cancel on `0x105`: `0x6B`'s entry slide held at one tick.
+    Skirmish0x105CancelEntry(u32),
+    /// Cancel on `0x105`: `0x6B` settled again.
+    Skirmish0x105CancelSteady,
+    /// Use Map on `0x105`: the map generates and `0x102` settles with it.
+    Skirmish0x105UseMap,
+    /// Save Map on `0x105` opens the seed browser over it; the browser's
+    /// Back uncovers `0x105`, which settles without an entry slide.
+    Skirmish0x105SeedBrowserReturn,
+    /// Terrain Type's list open on `0x105`, the pointer resting on a row.
+    Skirmish0x105ListOpen,
+    /// Use Map on `0x105` asks to eject AI players; the answer's dialog
+    /// settles (`CHECKPOINT_SKIRMISH_0X105_EJECT_*`).
+    Skirmish0x105Eject(crate::ui::skirmish_shell::EjectPromptButton),
+    /// The same route's eject box, unanswered.
+    Skirmish0x105EjectBox,
     /// Choose Map `0x6B` settled after Skirmish's Choose Map.
     Skirmish0x6BSteady,
     /// Choose Map `0x6B`'s entry slide held at one tick
@@ -259,6 +305,16 @@ impl ShellCaptureCheckpoint {
                 Self::Skirmish0x102Entry,
             ),
             (
+                CHECKPOINT_SKIRMISH_0X105_ENTRY_PREFIX,
+                ShellSlideKind::RandomMap,
+                Self::Skirmish0x105Entry,
+            ),
+            (
+                CHECKPOINT_SKIRMISH_0X105_CANCEL_PREFIX,
+                ShellSlideKind::ChooseMap,
+                Self::Skirmish0x105CancelEntry,
+            ),
+            (
                 CHECKPOINT_SKIRMISH_0X6B_ENTRY_PREFIX,
                 ShellSlideKind::ChooseMap,
                 Self::Skirmish0x6BEntry,
@@ -316,6 +372,20 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE => Ok(Self::MainMenu0xE2EntrySequence),
             CHECKPOINT_SKIRMISH_0X102_STEADY => Ok(Self::Skirmish0x102Steady),
             CHECKPOINT_SKIRMISH_0X6B_STEADY => Ok(Self::Skirmish0x6BSteady),
+            CHECKPOINT_SKIRMISH_0X105_STEADY => Ok(Self::Skirmish0x105Steady),
+            CHECKPOINT_SKIRMISH_0X105_CANCEL_STEADY => Ok(Self::Skirmish0x105CancelSteady),
+            CHECKPOINT_SKIRMISH_0X105_USE_MAP => Ok(Self::Skirmish0x105UseMap),
+            CHECKPOINT_SKIRMISH_0X105_LIST_OPEN => Ok(Self::Skirmish0x105ListOpen),
+            CHECKPOINT_SKIRMISH_0X105_EJECT_BOX => Ok(Self::Skirmish0x105EjectBox),
+            CHECKPOINT_SKIRMISH_0X105_SEED_BROWSER_RETURN => {
+                Ok(Self::Skirmish0x105SeedBrowserReturn)
+            }
+            CHECKPOINT_SKIRMISH_0X105_EJECT_CANCEL => Ok(Self::Skirmish0x105Eject(
+                crate::ui::skirmish_shell::EjectPromptButton::Cancel,
+            )),
+            CHECKPOINT_SKIRMISH_0X105_EJECT_OK => Ok(Self::Skirmish0x105Eject(
+                crate::ui::skirmish_shell::EjectPromptButton::Ok,
+            )),
             CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN => Ok(Self::Skirmish0x102ChooseMapReturn),
             CHECKPOINT_SKIRMISH_START_BLANK => Ok(Self::SkirmishStartBlank),
             CHECKPOINT_SKIRMISH_LOADING_FIRST_FRAME => Ok(Self::SkirmishLoadingFirstFrame),
@@ -356,6 +426,12 @@ impl ShellCaptureCheckpoint {
                 {
                     return Ok(Self::Skirmish0x102Hover(index));
                 }
+                if let Some(index) = SKIRMISH_0X105_HOVER_CHECKPOINTS
+                    .iter()
+                    .position(|(name, _)| *name == value)
+                {
+                    return Ok(Self::Skirmish0x105Hover(index));
+                }
                 bail!("unsupported shell-capture checkpoint {value:?}")
             }
         }
@@ -395,6 +471,21 @@ impl ShellCaptureCheckpoint {
             Self::Skirmish0x102BackSlideOut(_) => "skirmish-0x102-back-slide-out",
             Self::Skirmish0x102Entry(_) => "skirmish-0x102-entry",
             Self::Skirmish0x102Hover(index) => SKIRMISH_0X102_HOVER_CHECKPOINTS[index].0,
+            Self::Skirmish0x105Steady => CHECKPOINT_SKIRMISH_0X105_STEADY,
+            Self::Skirmish0x105Entry(_) => "skirmish-0x105-entry",
+            Self::Skirmish0x105Hover(index) => SKIRMISH_0X105_HOVER_CHECKPOINTS[index].0,
+            Self::Skirmish0x105CancelEntry(_) => "skirmish-0x105-cancel",
+            Self::Skirmish0x105CancelSteady => CHECKPOINT_SKIRMISH_0X105_CANCEL_STEADY,
+            Self::Skirmish0x105UseMap => CHECKPOINT_SKIRMISH_0X105_USE_MAP,
+            Self::Skirmish0x105SeedBrowserReturn => CHECKPOINT_SKIRMISH_0X105_SEED_BROWSER_RETURN,
+            Self::Skirmish0x105ListOpen => CHECKPOINT_SKIRMISH_0X105_LIST_OPEN,
+            Self::Skirmish0x105EjectBox => CHECKPOINT_SKIRMISH_0X105_EJECT_BOX,
+            Self::Skirmish0x105Eject(crate::ui::skirmish_shell::EjectPromptButton::Cancel) => {
+                CHECKPOINT_SKIRMISH_0X105_EJECT_CANCEL
+            }
+            Self::Skirmish0x105Eject(crate::ui::skirmish_shell::EjectPromptButton::Ok) => {
+                CHECKPOINT_SKIRMISH_0X105_EJECT_OK
+            }
             Self::Skirmish0x6BSteady => CHECKPOINT_SKIRMISH_0X6B_STEADY,
             Self::Skirmish0x6BEntry(_) => "skirmish-0x6b-entry",
             Self::Skirmish0x102ChooseMapReturn => CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN,
@@ -933,6 +1024,38 @@ impl ShellCaptureSession {
             }
             ShellCaptureCheckpoint::Skirmish0x102Hover(index) => Some(
                 skirmish::SkirmishCapture::hover(SKIRMISH_0X102_HOVER_CHECKPOINTS[index].1),
+            ),
+            ShellCaptureCheckpoint::Skirmish0x105Steady => Some(
+                skirmish::SkirmishCapture::random_map(skirmish::RandomMapTarget::Steady),
+            ),
+            ShellCaptureCheckpoint::Skirmish0x105Entry(tick) => Some(
+                skirmish::SkirmishCapture::random_map(skirmish::RandomMapTarget::Entry(tick)),
+            ),
+            ShellCaptureCheckpoint::Skirmish0x105Hover(index) => {
+                Some(skirmish::SkirmishCapture::random_map(
+                    skirmish::RandomMapTarget::Hover(SKIRMISH_0X105_HOVER_CHECKPOINTS[index].1),
+                ))
+            }
+            ShellCaptureCheckpoint::Skirmish0x105CancelEntry(tick) => Some(
+                skirmish::SkirmishCapture::random_map(skirmish::RandomMapTarget::CancelEntry(tick)),
+            ),
+            ShellCaptureCheckpoint::Skirmish0x105CancelSteady => Some(
+                skirmish::SkirmishCapture::random_map(skirmish::RandomMapTarget::CancelSteady),
+            ),
+            ShellCaptureCheckpoint::Skirmish0x105UseMap => Some(
+                skirmish::SkirmishCapture::random_map(skirmish::RandomMapTarget::UseMap),
+            ),
+            ShellCaptureCheckpoint::Skirmish0x105SeedBrowserReturn => Some(
+                skirmish::SkirmishCapture::random_map(skirmish::RandomMapTarget::SeedBrowserReturn),
+            ),
+            ShellCaptureCheckpoint::Skirmish0x105ListOpen => Some(
+                skirmish::SkirmishCapture::random_map(skirmish::RandomMapTarget::ListOpen),
+            ),
+            ShellCaptureCheckpoint::Skirmish0x105EjectBox => Some(
+                skirmish::SkirmishCapture::random_map(skirmish::RandomMapTarget::EjectBox),
+            ),
+            ShellCaptureCheckpoint::Skirmish0x105Eject(answer) => Some(
+                skirmish::SkirmishCapture::random_map(skirmish::RandomMapTarget::Eject(answer)),
             ),
             _ => None,
         };
@@ -1651,6 +1774,14 @@ mod tests {
                 ShellCaptureCheckpoint::Skirmish0x102Entry(17),
             ),
             (
+                "skirmish-0x105-entry-tick-",
+                ShellCaptureCheckpoint::Skirmish0x105Entry(17),
+            ),
+            (
+                "skirmish-0x105-cancel-tick-",
+                ShellCaptureCheckpoint::Skirmish0x105CancelEntry(17),
+            ),
+            (
                 "campaign-0x94-entry-tick-",
                 ShellCaptureCheckpoint::Campaign0x94Entry(17),
             ),
@@ -1676,6 +1807,7 @@ mod tests {
         for (name, _) in OPTIONS_0XD5_HOVER_CHECKPOINTS
             .into_iter()
             .chain(SKIRMISH_0X102_HOVER_CHECKPOINTS)
+            .chain(SKIRMISH_0X105_HOVER_CHECKPOINTS)
         {
             let checkpoint = ShellCaptureCheckpoint::parse(name).expect("hover checkpoint");
             assert_eq!(checkpoint.as_str(), name);

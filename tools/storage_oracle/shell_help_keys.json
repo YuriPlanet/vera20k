@@ -1,0 +1,1799 @@
+{
+  "cases": [
+    {
+      "class": "Button",
+      "control_id": 1006,
+      "dialog_id": 226,
+      "help": "STT:MainButtonExitGamemd"
+    },
+    {
+      "class": "Button",
+      "control_id": 1667,
+      "dialog_id": 226,
+      "help": "STT:MainButtonSinglePlayer"
+    },
+    {
+      "class": "Button",
+      "control_id": 1668,
+      "dialog_id": 226,
+      "help": "STT:MainButtonWWOnline"
+    },
+    {
+      "class": "Button",
+      "control_id": 1372,
+      "dialog_id": 226,
+      "help": "STT:MainButtonOptions"
+    },
+    {
+      "class": "Button",
+      "control_id": 1400,
+      "dialog_id": 226,
+      "help": "STT:MainButtonNetwork"
+    },
+    {
+      "class": "Static",
+      "control_id": 1684,
+      "dialog_id": 226,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1685,
+      "dialog_id": 226,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1670,
+      "dialog_id": 226,
+      "help": "STT:MainButtonMovies"
+    },
+    {
+      "class": "Static",
+      "control_id": 1818,
+      "dialog_id": 226,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1820,
+      "dialog_id": 226,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1821,
+      "dialog_id": 226,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1684,
+      "dialog_id": 256,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1672,
+      "dialog_id": 256,
+      "help": "STT:SingleButtonNewCampaign"
+    },
+    {
+      "class": "Button",
+      "control_id": 1673,
+      "dialog_id": 256,
+      "help": "STT:SingleButtonLoadSavedGame"
+    },
+    {
+      "class": "Button",
+      "control_id": 1401,
+      "dialog_id": 256,
+      "help": "STT:SingleButtonSkirmish"
+    },
+    {
+      "class": "Button",
+      "control_id": 1670,
+      "dialog_id": 256,
+      "help": "STT:SingleButtonBack"
+    },
+    {
+      "class": "Static",
+      "control_id": 1685,
+      "dialog_id": 256,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1820,
+      "dialog_id": 256,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1818,
+      "dialog_id": 256,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1685,
+      "dialog_id": 257,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1670,
+      "dialog_id": 257,
+      "help": "STT:OptionsButtonBack"
+    },
+    {
+      "class": "Button",
+      "control_id": 1679,
+      "dialog_id": 257,
+      "help": "STT:OptionsButtonCredits"
+    },
+    {
+      "class": "Button",
+      "control_id": 1678,
+      "dialog_id": 257,
+      "help": "STT:OptionsButtonMovies"
+    },
+    {
+      "class": "Static",
+      "control_id": 1684,
+      "dialog_id": 257,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1820,
+      "dialog_id": 257,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1818,
+      "dialog_id": 257,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1677,
+      "dialog_id": 257,
+      "help": "STT:OptionsButtonSneak"
+    },
+    {
+      "class": "Static",
+      "control_id": 1684,
+      "dialog_id": 297,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1670,
+      "dialog_id": 297,
+      "help": "STT:MsnDltButtonBack"
+    },
+    {
+      "class": "Static",
+      "control_id": 1685,
+      "dialog_id": 297,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1820,
+      "dialog_id": 297,
+      "help": null
+    },
+    {
+      "class": "ListBox",
+      "control_id": 1860,
+      "dialog_id": 297,
+      "help": "GUI:SelectMovie"
+    },
+    {
+      "class": "Button",
+      "control_id": 1861,
+      "dialog_id": 297,
+      "help": "GUI:PlayMovie"
+    },
+    {
+      "class": "Static",
+      "control_id": 1036,
+      "dialog_id": 297,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1472,
+      "dialog_id": 258,
+      "help": "STT:SkirmishButtonBack"
+    },
+    {
+      "class": "Static",
+      "control_id": 1684,
+      "dialog_id": 258,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1559,
+      "dialog_id": 258,
+      "help": "STT:SkirmishButtonStartGame"
+    },
+    {
+      "class": "Edit",
+      "control_id": 1696,
+      "dialog_id": 258,
+      "help": "STT:SkirmishEditPlayer"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1697,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboCountry"
+    },
+    {
+      "class": "msctls_trackbar32",
+      "control_id": 1292,
+      "dialog_id": 258,
+      "help": "STT:SkirmishSliderUnit"
+    },
+    {
+      "class": "msctls_trackbar32",
+      "control_id": 1297,
+      "dialog_id": 258,
+      "help": "STT:SkirmishSliderCredits"
+    },
+    {
+      "class": "Button",
+      "control_id": 1450,
+      "dialog_id": 258,
+      "help": "STT:SkirmishButtonChooseMap"
+    },
+    {
+      "class": "Button",
+      "control_id": 1686,
+      "dialog_id": 258,
+      "help": "STT:SkirmishCBoxCrates"
+    },
+    {
+      "class": "Button",
+      "control_id": 1683,
+      "dialog_id": 258,
+      "help": "STT:SkirmishCBoxRedeploys"
+    },
+    {
+      "class": "Button",
+      "control_id": 1358,
+      "dialog_id": 258,
+      "help": "STT:SkirmishCBoxShortGame"
+    },
+    {
+      "class": "msctls_trackbar32",
+      "control_id": 1321,
+      "dialog_id": 258,
+      "help": "STT:SkirmishSliderSpeed"
+    },
+    {
+      "class": "Static",
+      "control_id": 1689,
+      "dialog_id": 258,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1691,
+      "dialog_id": 258,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1692,
+      "dialog_id": 258,
+      "help": null
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1291,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboAIPlayer"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1294,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboAIPlayer"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1296,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboCountry"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1302,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboAIPlayer"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1306,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboAIPlayer"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1307,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboAIPlayer"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1308,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboAIPlayer"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1309,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboAIPlayer"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1300,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboCountry"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1310,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboCountry"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1311,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboCountry"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1312,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboCountry"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1314,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboColor"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1315,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboColor"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1316,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboColor"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1317,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboColor"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1318,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboColor"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1319,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboColor"
+    },
+    {
+      "class": "Static",
+      "control_id": 1754,
+      "dialog_id": 258,
+      "help": "STT:SkirmishPictureFlag"
+    },
+    {
+      "class": "Static",
+      "control_id": 1755,
+      "dialog_id": 258,
+      "help": "STT:SkirmishPictureFlag"
+    },
+    {
+      "class": "Static",
+      "control_id": 1756,
+      "dialog_id": 258,
+      "help": "STT:SkirmishPictureFlag"
+    },
+    {
+      "class": "Static",
+      "control_id": 1757,
+      "dialog_id": 258,
+      "help": "STT:SkirmishPictureFlag"
+    },
+    {
+      "class": "Static",
+      "control_id": 1758,
+      "dialog_id": 258,
+      "help": "STT:SkirmishPictureFlag"
+    },
+    {
+      "class": "Static",
+      "control_id": 1759,
+      "dialog_id": 258,
+      "help": "STT:SkirmishPictureFlag"
+    },
+    {
+      "class": "Static",
+      "control_id": 1760,
+      "dialog_id": 258,
+      "help": "STT:SkirmishPictureFlag"
+    },
+    {
+      "class": "Static",
+      "control_id": 1761,
+      "dialog_id": 258,
+      "help": "STT:SkirmishPictureFlag"
+    },
+    {
+      "class": "Static",
+      "control_id": 1772,
+      "dialog_id": 258,
+      "help": "STT:SkirmishLabelGameType"
+    },
+    {
+      "class": "Static",
+      "control_id": 1685,
+      "dialog_id": 258,
+      "help": null
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1299,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboCountry"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1313,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboCountry"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1698,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboColor"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1320,
+      "dialog_id": 258,
+      "help": "STT:SkirmishComboColor"
+    },
+    {
+      "class": "Static",
+      "control_id": 1128,
+      "dialog_id": 258,
+      "help": "STT:SkirmishMapThumbnail"
+    },
+    {
+      "class": "Static",
+      "control_id": 1448,
+      "dialog_id": 258,
+      "help": "STT:SkirmishLabelScenario"
+    },
+    {
+      "class": "Button",
+      "control_id": 1690,
+      "dialog_id": 258,
+      "help": "STT:SkirmishCBoxSWAllowed"
+    },
+    {
+      "class": "Button",
+      "control_id": 1693,
+      "dialog_id": 258,
+      "help": "STT:SkirmishCBoxBuildOffAlly"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1699,
+      "dialog_id": 258,
+      "help": "STT:HostComboStart"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1700,
+      "dialog_id": 258,
+      "help": "STT:HostComboStart"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1701,
+      "dialog_id": 258,
+      "help": "STT:HostComboStart"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1702,
+      "dialog_id": 258,
+      "help": "STT:HostComboStart"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1703,
+      "dialog_id": 258,
+      "help": "STT:HostComboStart"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1704,
+      "dialog_id": 258,
+      "help": "STT:HostComboStart"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1706,
+      "dialog_id": 258,
+      "help": "STT:HostComboStart"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1707,
+      "dialog_id": 258,
+      "help": "STT:HostComboStart"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1901,
+      "dialog_id": 258,
+      "help": "STT:HostComboTeam"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1902,
+      "dialog_id": 258,
+      "help": "STT:HostComboTeam"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1903,
+      "dialog_id": 258,
+      "help": "STT:HostComboTeam"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1904,
+      "dialog_id": 258,
+      "help": "STT:HostComboTeam"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1905,
+      "dialog_id": 258,
+      "help": "STT:HostComboTeam"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1906,
+      "dialog_id": 258,
+      "help": "STT:HostComboTeam"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1907,
+      "dialog_id": 258,
+      "help": "STT:HostComboTeam"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1908,
+      "dialog_id": 258,
+      "help": "STT:HostComboTeam"
+    },
+    {
+      "class": "Static",
+      "control_id": 1942,
+      "dialog_id": 258,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1937,
+      "dialog_id": 258,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1938,
+      "dialog_id": 258,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1939,
+      "dialog_id": 258,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1940,
+      "dialog_id": 258,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1472,
+      "dialog_id": 107,
+      "help": "STT:ScenarioButtonCancel"
+    },
+    {
+      "class": "Button",
+      "control_id": 1733,
+      "dialog_id": 107,
+      "help": "STT:ScenarioButtonUseMap"
+    },
+    {
+      "class": "Button",
+      "control_id": 1411,
+      "dialog_id": 107,
+      "help": "STT:ScenarioButtonRandom"
+    },
+    {
+      "class": "Static",
+      "control_id": 1684,
+      "dialog_id": 107,
+      "help": null
+    },
+    {
+      "class": "ListBox",
+      "control_id": 1771,
+      "dialog_id": 107,
+      "help": "STT:ScenarioListGameType"
+    },
+    {
+      "class": "ListBox",
+      "control_id": 1363,
+      "dialog_id": 107,
+      "help": "STT:ScenarioListMaps"
+    },
+    {
+      "class": "Static",
+      "control_id": 1685,
+      "dialog_id": 107,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1128,
+      "dialog_id": 107,
+      "help": "STT:ScenarioMapThumbnail"
+    },
+    {
+      "class": "Button",
+      "control_id": 1472,
+      "dialog_id": 261,
+      "help": "STT:GenerateButtonCancel"
+    },
+    {
+      "class": "Button",
+      "control_id": 1730,
+      "dialog_id": 261,
+      "help": "STT:GenerateButtonLoadMap"
+    },
+    {
+      "class": "Button",
+      "control_id": 1731,
+      "dialog_id": 261,
+      "help": "STT:GenerateButtonSaveMap"
+    },
+    {
+      "class": "Button",
+      "control_id": 1733,
+      "dialog_id": 261,
+      "help": "STT:GenerateButtonUseMap"
+    },
+    {
+      "class": "Button",
+      "control_id": 1732,
+      "dialog_id": 261,
+      "help": "STT:GenerateButtonDeleteMap"
+    },
+    {
+      "class": "Static",
+      "control_id": 1684,
+      "dialog_id": 261,
+      "help": null
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1029,
+      "dialog_id": 261,
+      "help": "STT:GenerateCBoxEnvironment"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1002,
+      "dialog_id": 261,
+      "help": "STT:GenerateCBoxTime"
+    },
+    {
+      "class": "msctls_trackbar32",
+      "control_id": 1003,
+      "dialog_id": 261,
+      "help": "STT:GenerateSliderNumPlayers"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1030,
+      "dialog_id": 261,
+      "help": "STT:GenerateCBoxMapSize"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1031,
+      "dialog_id": 261,
+      "help": "STT:GenerateCBoxTheater"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1032,
+      "dialog_id": 261,
+      "help": "STT:GenerateCBoxResources"
+    },
+    {
+      "class": "Button",
+      "control_id": 1568,
+      "dialog_id": 261,
+      "help": "STT:GenerateButtonPreview"
+    },
+    {
+      "class": "Button",
+      "control_id": 1569,
+      "dialog_id": 261,
+      "help": "STT:GenerateButtonSurprise"
+    },
+    {
+      "class": "Edit",
+      "control_id": 1019,
+      "dialog_id": 261,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1593,
+      "dialog_id": 261,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1592,
+      "dialog_id": 261,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1685,
+      "dialog_id": 261,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1128,
+      "dialog_id": 261,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1745,
+      "dialog_id": 264,
+      "help": "STT:MPScoreButtonContinue"
+    },
+    {
+      "class": "Static",
+      "control_id": 1685,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1684,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1935,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1936,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1937,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1938,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1939,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1940,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1941,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1942,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1943,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1944,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1820,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1746,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelGame"
+    },
+    {
+      "class": "Static",
+      "control_id": 1693,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1694,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1695,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1696,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1931,
+      "dialog_id": 264,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1041,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelPlayer"
+    },
+    {
+      "class": "Static",
+      "control_id": 1699,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelLosses"
+    },
+    {
+      "class": "Static",
+      "control_id": 1049,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelKills"
+    },
+    {
+      "class": "Static",
+      "control_id": 1701,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelBuilt"
+    },
+    {
+      "class": "Static",
+      "control_id": 1702,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelScore"
+    },
+    {
+      "class": "Static",
+      "control_id": 1042,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelPlayer"
+    },
+    {
+      "class": "Static",
+      "control_id": 1700,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelLosses"
+    },
+    {
+      "class": "Static",
+      "control_id": 1050,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelKills"
+    },
+    {
+      "class": "Static",
+      "control_id": 1703,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelBuilt"
+    },
+    {
+      "class": "Static",
+      "control_id": 1704,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelScore"
+    },
+    {
+      "class": "Static",
+      "control_id": 1043,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelPlayer"
+    },
+    {
+      "class": "Static",
+      "control_id": 1705,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelLosses"
+    },
+    {
+      "class": "Static",
+      "control_id": 1051,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelKills"
+    },
+    {
+      "class": "Static",
+      "control_id": 1706,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelBuilt"
+    },
+    {
+      "class": "Static",
+      "control_id": 1707,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelScore"
+    },
+    {
+      "class": "Static",
+      "control_id": 1044,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelPlayer"
+    },
+    {
+      "class": "Static",
+      "control_id": 1708,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelLosses"
+    },
+    {
+      "class": "Static",
+      "control_id": 1052,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelKills"
+    },
+    {
+      "class": "Static",
+      "control_id": 1709,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelBuilt"
+    },
+    {
+      "class": "Static",
+      "control_id": 1710,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelScore"
+    },
+    {
+      "class": "Static",
+      "control_id": 1045,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelPlayer"
+    },
+    {
+      "class": "Static",
+      "control_id": 1711,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelLosses"
+    },
+    {
+      "class": "Static",
+      "control_id": 1053,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelKills"
+    },
+    {
+      "class": "Static",
+      "control_id": 1712,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelBuilt"
+    },
+    {
+      "class": "Static",
+      "control_id": 1713,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelScore"
+    },
+    {
+      "class": "Static",
+      "control_id": 1046,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelPlayer"
+    },
+    {
+      "class": "Static",
+      "control_id": 1714,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelLosses"
+    },
+    {
+      "class": "Static",
+      "control_id": 1054,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelKills"
+    },
+    {
+      "class": "Static",
+      "control_id": 1715,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelBuilt"
+    },
+    {
+      "class": "Static",
+      "control_id": 1716,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelScore"
+    },
+    {
+      "class": "Static",
+      "control_id": 1047,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelPlayer"
+    },
+    {
+      "class": "Static",
+      "control_id": 1717,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelLosses"
+    },
+    {
+      "class": "Static",
+      "control_id": 1055,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelKills"
+    },
+    {
+      "class": "Static",
+      "control_id": 1718,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelBuilt"
+    },
+    {
+      "class": "Static",
+      "control_id": 1719,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelScore"
+    },
+    {
+      "class": "Static",
+      "control_id": 1048,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelPlayer"
+    },
+    {
+      "class": "Static",
+      "control_id": 1720,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelLosses"
+    },
+    {
+      "class": "Static",
+      "control_id": 1056,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelKills"
+    },
+    {
+      "class": "Static",
+      "control_id": 1721,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelBuilt"
+    },
+    {
+      "class": "Static",
+      "control_id": 1722,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelScore"
+    },
+    {
+      "class": "Static",
+      "control_id": 1002,
+      "dialog_id": 264,
+      "help": "STT:MPScoreLabelTime"
+    },
+    {
+      "class": "ListBox",
+      "control_id": 1109,
+      "dialog_id": 148,
+      "help": "STT:CampaignList"
+    },
+    {
+      "class": "Button",
+      "control_id": 1038,
+      "dialog_id": 148,
+      "help": "STT:CampaignButtonLoad"
+    },
+    {
+      "class": "msctls_trackbar32",
+      "control_id": 1295,
+      "dialog_id": 148,
+      "help": "STT:CampaignSliderDifficulty"
+    },
+    {
+      "class": "Static",
+      "control_id": 1822,
+      "dialog_id": 148,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1648,
+      "dialog_id": 148,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1670,
+      "dialog_id": 148,
+      "help": "STT:CampaignButtonBack"
+    },
+    {
+      "class": "Static",
+      "control_id": 1684,
+      "dialog_id": 148,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1770,
+      "dialog_id": 148,
+      "help": "STT:AlliedCampaignIcon"
+    },
+    {
+      "class": "Static",
+      "control_id": 1772,
+      "dialog_id": 148,
+      "help": "STT:SovietCampaignIcon"
+    },
+    {
+      "class": "Static",
+      "control_id": 1685,
+      "dialog_id": 148,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1820,
+      "dialog_id": 148,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1959,
+      "dialog_id": 148,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1960,
+      "dialog_id": 148,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1039,
+      "dialog_id": 183,
+      "help": "STT:LoadButtonLoad"
+    },
+    {
+      "class": "ListBox",
+      "control_id": 1317,
+      "dialog_id": 183,
+      "help": "STT:LoadList"
+    },
+    {
+      "class": "Static",
+      "control_id": 1036,
+      "dialog_id": 183,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1670,
+      "dialog_id": 183,
+      "help": "STT:LoadButtonBack"
+    },
+    {
+      "class": "Static",
+      "control_id": 1684,
+      "dialog_id": 183,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1685,
+      "dialog_id": 183,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1735,
+      "dialog_id": 692,
+      "help": "STT:MsnSaveButtonSave"
+    },
+    {
+      "class": "ListBox",
+      "control_id": 1319,
+      "dialog_id": 692,
+      "help": "STT:MsnSaveListMission"
+    },
+    {
+      "class": "Static",
+      "control_id": 1036,
+      "dialog_id": 692,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1670,
+      "dialog_id": 692,
+      "help": "STT:MsnSaveButtonBack"
+    },
+    {
+      "class": "Static",
+      "control_id": 1684,
+      "dialog_id": 692,
+      "help": null
+    },
+    {
+      "class": "Edit",
+      "control_id": 1318,
+      "dialog_id": 692,
+      "help": "STT:MsnSaveEditName"
+    },
+    {
+      "class": "Static",
+      "control_id": 1685,
+      "dialog_id": 692,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1736,
+      "dialog_id": 693,
+      "help": "STT:MsnDltButtonDelete"
+    },
+    {
+      "class": "ListBox",
+      "control_id": 1320,
+      "dialog_id": 693,
+      "help": "STT:MsnDltListMission"
+    },
+    {
+      "class": "Static",
+      "control_id": 1036,
+      "dialog_id": 693,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1670,
+      "dialog_id": 693,
+      "help": "STT:MsnDltButtonBack"
+    },
+    {
+      "class": "Static",
+      "control_id": 1684,
+      "dialog_id": 693,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1685,
+      "dialog_id": 693,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1670,
+      "dialog_id": 213,
+      "help": "STT:MainOptButtonBack"
+    },
+    {
+      "class": "Button",
+      "control_id": 1486,
+      "dialog_id": 213,
+      "help": "STT:MainOptButtonKeyboard"
+    },
+    {
+      "class": "Static",
+      "control_id": 1684,
+      "dialog_id": 213,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1485,
+      "dialog_id": 213,
+      "help": "STT:MainOptButtonNetwork"
+    },
+    {
+      "class": "msctls_trackbar32",
+      "control_id": 1322,
+      "dialog_id": 213,
+      "help": "STT:MainOptSliderScroll"
+    },
+    {
+      "class": "msctls_trackbar32",
+      "control_id": 1323,
+      "dialog_id": 213,
+      "help": "STT:MainOptSliderVisual"
+    },
+    {
+      "class": "Static",
+      "control_id": 1651,
+      "dialog_id": 213,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1650,
+      "dialog_id": 213,
+      "help": null
+    },
+    {
+      "class": "msctls_trackbar32",
+      "control_id": 1295,
+      "dialog_id": 213,
+      "help": "STT:MainOptSliderDifficulty"
+    },
+    {
+      "class": "Static",
+      "control_id": 1648,
+      "dialog_id": 213,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1537,
+      "dialog_id": 213,
+      "help": "STT:MainOptCBoxTargetLines"
+    },
+    {
+      "class": "Button",
+      "control_id": 1538,
+      "dialog_id": 213,
+      "help": "STT:MainOptCBoxTooltips"
+    },
+    {
+      "class": "Button",
+      "control_id": 1540,
+      "dialog_id": 213,
+      "help": "STT:MainOptCBoxHidden"
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1773,
+      "dialog_id": 213,
+      "help": "STT:MainOptComboModes"
+    },
+    {
+      "class": "msctls_trackbar32",
+      "control_id": 1327,
+      "dialog_id": 213,
+      "help": "STT:MainOptSliderMusic"
+    },
+    {
+      "class": "msctls_trackbar32",
+      "control_id": 1330,
+      "dialog_id": 213,
+      "help": "STT:MainOptSliderSound"
+    },
+    {
+      "class": "msctls_trackbar32",
+      "control_id": 1334,
+      "dialog_id": 213,
+      "help": "STT:MainOptSliderVoice"
+    },
+    {
+      "class": "Static",
+      "control_id": 1774,
+      "dialog_id": 213,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1775,
+      "dialog_id": 213,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1776,
+      "dialog_id": 213,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1777,
+      "dialog_id": 213,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1778,
+      "dialog_id": 213,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1685,
+      "dialog_id": 213,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1820,
+      "dialog_id": 213,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1539,
+      "dialog_id": 213,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1670,
+      "dialog_id": 163,
+      "help": "STT:KeyboardButtonBack"
+    },
+    {
+      "class": "Static",
+      "control_id": 1684,
+      "dialog_id": 163,
+      "help": null
+    },
+    {
+      "class": "ComboBox",
+      "control_id": 1223,
+      "dialog_id": 163,
+      "help": "STT:KeyboardComboCategory"
+    },
+    {
+      "class": "ListBox",
+      "control_id": 1224,
+      "dialog_id": 163,
+      "help": "STT:KeyboardListCommands"
+    },
+    {
+      "class": "Button",
+      "control_id": 1769,
+      "dialog_id": 163,
+      "help": "STT:KeyboardGroupDescription"
+    },
+    {
+      "class": "Static",
+      "control_id": 1227,
+      "dialog_id": 163,
+      "help": null
+    },
+    {
+      "class": "msctls_hotkey32",
+      "control_id": 1229,
+      "dialog_id": 163,
+      "help": "STT:KeyboardEditEntry"
+    },
+    {
+      "class": "Button",
+      "control_id": 1231,
+      "dialog_id": 163,
+      "help": "STT:KeyboardButtonAssign"
+    },
+    {
+      "class": "Button",
+      "control_id": 1232,
+      "dialog_id": 163,
+      "help": "STT:KeyboardButtonResetAll"
+    },
+    {
+      "class": "Static",
+      "control_id": 1595,
+      "dialog_id": 163,
+      "help": "STT:KeyboardLabelAssigned"
+    },
+    {
+      "class": "Static",
+      "control_id": 1596,
+      "dialog_id": 163,
+      "help": "STT:KeyboardLabelShortcut"
+    },
+    {
+      "class": "Static",
+      "control_id": 1597,
+      "dialog_id": 163,
+      "help": "STT:KeyboardLabelError"
+    },
+    {
+      "class": "Static",
+      "control_id": 1685,
+      "dialog_id": 163,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1684,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1760,
+      "dialog_id": 270,
+      "help": "STT:WOLWelcomeQuickMatch"
+    },
+    {
+      "class": "Button",
+      "control_id": 1761,
+      "dialog_id": 270,
+      "help": "STT:WOLWelcomeCustomMatch"
+    },
+    {
+      "class": "Button",
+      "control_id": 1762,
+      "dialog_id": 270,
+      "help": "STT:WOLBuddy"
+    },
+    {
+      "class": "Button",
+      "control_id": 1670,
+      "dialog_id": 270,
+      "help": "STT:WOLWelcomeBack"
+    },
+    {
+      "class": "Static",
+      "control_id": 1685,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1764,
+      "dialog_id": 270,
+      "help": "STT:WOLWelcomeMyInformation"
+    },
+    {
+      "class": "Static",
+      "control_id": 1776,
+      "dialog_id": 270,
+      "help": "STT:WOLMyInformationWins"
+    },
+    {
+      "class": "Static",
+      "control_id": 1777,
+      "dialog_id": 270,
+      "help": "STT:WOLMyInformationLosses"
+    },
+    {
+      "class": "Static",
+      "control_id": 1793,
+      "dialog_id": 270,
+      "help": "STT:WOLMyInformationDisconnects"
+    },
+    {
+      "class": "Static",
+      "control_id": 1780,
+      "dialog_id": 270,
+      "help": "STT:WOLMyInformationRank"
+    },
+    {
+      "class": "Static",
+      "control_id": 1775,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1781,
+      "dialog_id": 270,
+      "help": "STT:WOLMyInformationPoints"
+    },
+    {
+      "class": "Static",
+      "control_id": 1943,
+      "dialog_id": 270,
+      "help": "STT:WelcomeUpdate"
+    },
+    {
+      "class": "Static",
+      "control_id": 1820,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1862,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1864,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1865,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1866,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1868,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1870,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1871,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1872,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1874,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1875,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1884,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1885,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1886,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Button",
+      "control_id": 1905,
+      "dialog_id": 270,
+      "help": "STT:QuickCoop"
+    },
+    {
+      "class": "Button",
+      "control_id": 1375,
+      "dialog_id": 270,
+      "help": "STT:MainButtonYuriWebSite"
+    },
+    {
+      "class": "Static",
+      "control_id": 1950,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1952,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1953,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1954,
+      "dialog_id": 270,
+      "help": null
+    },
+    {
+      "class": "Static",
+      "control_id": 1951,
+      "dialog_id": 270,
+      "help": null
+    }
+  ],
+  "source": "unicorn/gamemd.exe"
+}

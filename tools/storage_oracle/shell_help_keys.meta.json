@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "The status-line help table lookup 0x006040B0 for every control of 15 offline shell dialogs' RT_DIALOG templates",
+  "assumptions": [
+    "The parent dialog's record is found by the original lookup loop in a supplied one-bucket table; record fields other than HWND, next and dialog id stay zero",
+    "Only the table fallback is executed: a child's own 0x4E8 answer and the dialog proc's 0x4E9 answer, which the common handler asks first, are established separately"
+  ],
+  "substitutions": [
+    "Record-table hash function pointer [AC1B18] returns bucket 0",
+    "GetDlgCtrlID IAT pointer returns the template control id"
+  ],
+  "entry_points": {
+    "help_lookup": "0x006040B0"
+  },
+  "payload_sha256": "fb4f590ba1a43e6749922050182118227ff4755bde88fad3563387b8549937b0"
+}

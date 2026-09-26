@@ -295,6 +295,8 @@ pub(super) fn push_random_map_setup_modal_control_instances(
     layout: &RandomMapSetupLayout,
     interior: BackdropInteriorPaint,
     modal: &RandomMapSetupModalState,
+    // The right column and the top panel paint only while no slide runs.
+    steady: bool,
 ) {
     let chrome = atlas.control_chrome();
     // Rows 0..4 are combos; row 5 is the players trackbar. A collapsed combo
@@ -390,7 +392,10 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         (layout.save, RandomMapSetupControl::Save0x6c3),
         (layout.delete, RandomMapSetupControl::Delete0x6c4),
         (layout.cancel, RandomMapSetupControl::Cancel0x5c0),
-    ] {
+    ]
+    .into_iter()
+    .filter(|_| steady)
+    {
         push_right_panel_button_shp(
             out,
             atlas,
@@ -401,13 +406,8 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         );
     }
 
-    push_rect_outline(
-        out,
-        atlas,
-        layout.preview,
-        OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
-        SHELL_DROPDOWN_DEPTH - 0.00012,
-    );
+    // The preview `0x468` is an SS_BLACKRECT static in the top panel: black,
+    // with no frame of its own (retail `rmg-steady.png`).
 
     // The progress widgets are hidden in the resource and shown only while the
     // synchronous generate block owns the dialog.

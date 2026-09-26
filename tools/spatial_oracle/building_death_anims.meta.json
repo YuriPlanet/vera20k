@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "A retail GAPOWR's death anims: TechnoClass::ReceiveDamage's debris block 0x00702281..0x00702572 (count draw, DebrisAnims arm, each piece's AnimClass constructor and Start) then BuildingClass::DestructionEffects steps 7 and 8 0x0044177E..0x00441A2B (the centre scorch/crater roll and real placer, the per-foundation-cell scatter, delay and Explosion= pick, constructor and Start), at the retail Dustbowl fixture's Location over ten Scenario seeds; its origin cell carries ore, so CanPlace's supplied answer admits no SmudgeType, step 7 draws only its roll and no row places a mark.",
+  "assumptions": [
+    "x87 control word 0x0E7F (PC53, chop) on entry, as anim_bouncer_launch.",
+    "No Scenario draw separates the debris block from step 7 for a GAPOWR (the death sounds use the NonCritical stream; steps 1-6 of DestructionEffects draw nothing for it); the two blocks run back to back on one stream.",
+    "Steps 9 (Explodes=), 10 (stored ore), 13 (DestroyAnim=) draw nothing for GAPOWR and are not executed; SpawnSurvivors follows and is not executed.",
+    "AnimType fields are supplied: retail artmd.ini Bouncer=, Report=, Scorch=, Crater= and, for the Bouncer=yes debris, RandomRate=, Elasticity=, MaxXYVel=, MinZVel=; the image-bound types get 16 frames (MiddleFrameIndex 8, nonzero like their retail images'), the art-less gtpowexp 0.",
+    "Audio disabled (0x008464AC clear): the Report sound returns at its gate."
+  ],
+  "substitutions": [
+    "anim_bouncer_launch.Machine's constructor environment (MapClass cell lookup 0x00565730, 0x005F5850, layer submit 0x004A9720, operator new 0x007C8E17 as a bump allocator)",
+    "SmudgeTypeClass CanPlace 0x006B5F80 answers the case's admit mask",
+    "MapClass::GetCell 0x005657A0 returns a fixed cell; the floor height 0x00578080 returns 0",
+    "operator delete 0x007C8B3D is a no-op; the SmudgeClass constructor 0x006B4A50 records its type and coordinate"
+  ],
+  "entry_points": {
+    "debris_block": "0x00702281",
+    "destruction_effects_step7": "0x0044177E",
+    "foundation_lists": "0x0045B1C0",
+    "anim_ctor": "0x00421EA0",
+    "anim_start": "0x00424CE0",
+    "scorch": "0x006B59A0",
+    "crater": "0x006B5C90",
+    "seed": "0x0065C6D0"
+  },
+  "payload_sha256": "5847f068d1360e14e805a6c3ef0c2265cc7063347f4363e06562829fa0bf078e"
+}

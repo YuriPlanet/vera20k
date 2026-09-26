@@ -7,7 +7,7 @@
     1,
     33621247
   ],
-  "scope": "Complete original kind-1 classifier/interval/step/range getters and the kind-4 startup timer for 0x694/0x695/0x71C in seven shell dialogs and the score dialog 0x108, plus 0x102's 0x6EC/0x5A8 and 0x108's 47 table statics",
+  "scope": "Complete original kind-1 classifier/interval/step/range getters and the kind-4 startup timer for 0x694/0x695/0x71C in nine shell dialogs and the score dialog 0x108, plus 0x102's 0x6EC/0x5A8 and 0x108's 47 table statics",
   "assumptions": [
     "Pre-match shell: the network-session predicate 69BBE0 returns false",
     "The parent dialog's record is found by the original lookup loop in a supplied one-bucket table; record fields other than HWND, next and dialog id stay zero",
@@ -27,5 +27,5 @@
     "show_completion_enum": "0x0060AA60",
     "kind4_init": "0x0060A9E2"
   },
-  "payload_sha256": "c8842114ede8f97bdf0f90b2fb4f7714b455051b8b4619e126494183a4d300df"
+  "payload_sha256": "5d02ca05fcbca78f111b6da2fa24e45d91d3dcc7c800a721e78d76dcaea34703"
 }

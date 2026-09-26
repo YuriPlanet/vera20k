@@ -12,7 +12,7 @@
 //! NOT a trait — two shells with no per-ControlKind dispatch yet make a trait an
 //! empty abstraction; the trait arrives at Slice 4 when skirmish needs it. None
 //! of this policy lives in `ui::shell::descriptor` (render-agnostic by contract):
-//! a frame index / pixel sink / fit-scale / disabled alpha is meaningless without
+//! a frame index / pixel sink / fit-scale is meaningless without
 //! the atlas, so it stays render-side.
 //!
 //! Slice 5 adds `paint_modal_shp`: the shared mode-2 SHP modal emitter (PUDLGBGN
@@ -49,10 +49,12 @@ pub const CURSOR_DEPTH: f32 = 0.00001;
 
 /// Owner-draw label color when enabled (#FFFF00). Both shells.
 pub const SHELL_TEXT_RGB_ENABLED: [f32; 3] = [1.0, 1.0, 0.0];
-/// Owner-draw label color when disabled (#9F0000). 0x100 only.
-pub const SHELL_TEXT_RGB_DISABLED: [f32; 3] = [0x9F as f32 / 255.0, 0.0, 0.0];
-/// Button art alpha when a control is disabled (0x80/255 ≈ 0.502). 0x100 only.
-pub const BUTTON_DISABLED_ALPHA: f32 = 0x80 as f32 / 255.0;
+/// Owner-draw button caption color when disabled outside a suspended game:
+/// the RGB `[0x00B0FA94]` (`0x00612F5F` -> `0x00613072`), which `0x0072A8C0`
+/// sets to (0x48, 0, 0) (retail `rmg-steady.png`: RGB565 red 9). The column
+/// buttons (owner-draw type 1, record `+0xB0`) keep their art: the disabled
+/// black blend runs only for type 0 (`0x006135F3..0x0061361B`).
+pub const SHELL_TEXT_RGB_DISABLED: [f32; 3] = [0x48 as f32 / 255.0, 0.0, 0.0];
 /// How a button's SDBTNANM art is fit into its cell rect.
 #[derive(Clone, Copy)]
 pub enum ArtFit {
@@ -64,9 +66,9 @@ pub enum ArtFit {
     FitRightAnchored { panel_w: f32, tile_h: f32 },
 }
 
-/// Per-shell render policy: how art is fit, whether a hover flash happens, how
-/// far content sinks on press, and whether disabled controls dim. Constructed as
-/// a `const` in each render caller.
+/// Per-shell render policy: how art is fit, whether a hover flash happens and
+/// how far content sinks on press. Constructed as a `const` in each render
+/// caller.
 #[derive(Clone, Copy)]
 pub struct ButtonPolicy {
     pub art_fit: ArtFit,
@@ -75,8 +77,6 @@ pub struct ButtonPolicy {
     /// Policy-specific vertical art sink while pressed. The verified 0xE2 and
     /// 0x100 policies both use 0.0. Float because it routes through art emission.
     pub art_sink_y: f32,
-    /// 0x100 = true (alpha 0.502 on disabled art); 0xE2 = false (never disables).
-    pub disabled_dim: bool,
 }
 
 /// One owner-draw button to paint: its cell rect + current per-control state.
@@ -385,8 +385,9 @@ fn select_frame(
 }
 
 /// Emit the owner-draw buttons at `BUTTON_DEPTH`, applying the per-shell policy
-/// (frame select 2/3/4, art fit, art sink, disabled dim) without a per-dialog
-/// branch.
+/// (frame select 2/3/4, art fit, art sink) without a per-dialog branch. A
+/// disabled button keeps its full art (the black blend is only for type 0,
+/// `0x006135F3`).
 pub fn paint_buttons(
     atlas: &MainMenuShellChromeAtlas,
     buttons: &[PaintButton],
@@ -397,11 +398,6 @@ pub fn paint_buttons(
     let mut out = Vec::new();
     for b in buttons {
         let frame = select_frame(atlas, b, policy, now, hover_started_at);
-        let alpha = if !b.enabled && policy.disabled_dim {
-            BUTTON_DISABLED_ALPHA
-        } else {
-            1.0
-        };
         let (pos, size) = match policy.art_fit {
             ArtFit::Native => {
                 let sink = if b.pressed { policy.art_sink_y } else { 0.0 };
@@ -424,7 +420,7 @@ pub fn paint_buttons(
             uv_size: frame.uv_size,
             depth: BUTTON_DEPTH,
             tint: [1.0, 1.0, 1.0],
-            alpha,
+            alpha: 1.0,
             ..Default::default()
         });
     }
@@ -688,7 +684,6 @@ mod tests {
         art_fit: ArtFit::Native,
         hover_flash: false,
         art_sink_y: 0.0,
-        disabled_dim: false,
     };
 
     /// 0xE2 native art stays at the cell top-left when frame 4 is selected.
@@ -791,7 +786,6 @@ mod tests {
         },
         hover_flash: true,
         art_sink_y: 0.0,
-        disabled_dim: true,
     };
 
     /// Pressed always wins, regardless of policy or hover. Both shells.
@@ -883,12 +877,9 @@ mod tests {
         assert!(TEXT_DEPTH > CURSOR_DEPTH);
     }
 
-    /// Disabled dim only applies when the policy opts in AND the control is
-    /// disabled (0x100); 0xE2's policy never dims.
     #[test]
-    fn disabled_dim_constants() {
-        assert_eq!(BUTTON_DISABLED_ALPHA, 0x80 as f32 / 255.0);
-        assert_eq!(SHELL_TEXT_RGB_DISABLED, [0x9F as f32 / 255.0, 0.0, 0.0]);
+    fn caption_colour_constants() {
+        assert_eq!(SHELL_TEXT_RGB_DISABLED, [0x48 as f32 / 255.0, 0.0, 0.0]);
         assert_eq!(SHELL_TEXT_RGB_ENABLED, [1.0, 1.0, 0.0]);
     }
 

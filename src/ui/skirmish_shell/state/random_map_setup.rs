@@ -8,6 +8,7 @@ use crate::map::rmg::options::RmgOptions;
 use crate::map::rmg::preview::PreviewImage;
 use crate::map::rmg::randomize::{RandomRanged, derive_from_map_type, randomize};
 use crate::map::rmg::settings::RmgSettings;
+use crate::ui::shell::static_reveal::DialogStatics;
 
 use super::super::layout::RandomMapSetupControl;
 use super::choose_map::ChooseMapSelection;
@@ -181,6 +182,9 @@ pub struct RandomMapSetupModalState {
     pub preview_generation: u32,
     /// Restored verbatim if the player cancels.
     pub previous_selection: Option<ChooseMapSelection>,
+    /// Heading `0x694` and status line `0x695`, alive while the seed browser
+    /// hides the dialog.
+    pub(crate) statics: DialogStatics,
 }
 
 impl RandomMapSetupModalState {
@@ -210,6 +214,7 @@ impl RandomMapSetupModalState {
             generated_preview: None,
             preview_generation: 0,
             previous_selection,
+            statics: DialogStatics::default(),
         }
     }
 
