@@ -1247,14 +1247,24 @@ fn a_controlled_mcv_cannot_deploy_and_a_controlled_yard_cannot_repack() {
 /// still saves and loads.
 #[test]
 fn selling_a_psychic_tower_frees_its_captives() {
-    let rules = rules();
+    let mut rules = rules();
+    rules.set_buildup_control_for_test("YAPSYT", [0, 25, 2]);
     let mut sim = sim(29);
     let tower = spawn(&mut sim, &rules, "YAPSYT", "YuriCountry", 20, 20);
+    // A frame's operational visit, which the off edge compares against.
+    sim.visit_building_operational(tower, &rules);
+    assert!(
+        sim.substrate
+            .entities
+            .get(tower)
+            .unwrap()
+            .building_last_operational
+    );
     let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
     assert!(sim.capture_unit(tower, gi, &rules));
     sim.sound_events.clear();
 
-    assert!(crate::sim::production::sell_building(
+    assert!(crate::sim::production::sell_building_now_for_test(
         &mut sim, &rules, tower
     ));
     assert_eq!(owner(&sim, gi), "Americans");

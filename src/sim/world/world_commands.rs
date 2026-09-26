@@ -1254,7 +1254,7 @@ impl Simulation {
                 if !self.entity_owned_by_id(command_owner, *entity_id) {
                     return false;
                 }
-                self.undeploy_building(*entity_id, rules, true)
+                self.undeploy_building(*entity_id, rules)
             }
             // RESIDUAL: native asks `CanDeploySlashUnload @ 0x00700D50`
             // (vt+0x314) first, and its infantry arm refuses a deployed
@@ -1424,12 +1424,15 @@ impl Simulation {
                 let type_s = self.interner.resolve(*type_id).to_string();
                 production::cancel_by_type_for_owner(self, rules, &owner_s, &type_s)
             }
+            // The SELL event (`EventClass::Execute 0x004C6F20`): the target's
+            // owner must be the event's house (`0x004C6F45`); a building
+            // takes `Sell_Back(-1)` (`0x004C6FA2`).
             Command::SellBuilding { entity_id } => {
                 let Some(rules) = rules else { return false };
                 if !self.entity_owned_by_id(command_owner, *entity_id) {
                     return false;
                 }
-                production::sell_building(self, rules, *entity_id)
+                production::sell_back(self, rules, *entity_id, production::SellOrder::Player)
             }
             Command::SellWallAtCell { x, y } => {
                 let (Some(rules), Some(overlays)) = (rules, overlay_registry) else {

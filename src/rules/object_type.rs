@@ -570,6 +570,11 @@ pub struct ObjectType {
     pub deploy_sound: Option<String>,
     /// Sound ID played when this unit undeploys.
     pub undeploy_sound: Option<String>,
+    /// `PackupSound=` (BuildingType `+0xE70`, read at `0x00460786` through
+    /// `VocClass::FindByName`): played at a human player's building as its
+    /// sale starts packing up (`BuildingClass::Sell` stage 1, `0x0044A85B`).
+    /// No retail type sets it.
+    pub packup_sound: Option<String>,
     /// `LeaveTransportSound=` — `TechnoTypeClass+0x568`. Read in
     /// `TechnoTypeClass::ReadINI` right after `EnterTransportSound=`
     /// (`+0x564`, key push at `0x00713432`); played by
@@ -2019,6 +2024,7 @@ impl ObjectType {
             crush_sound: section.get("CrushSound").map(|s| s.to_string()),
             deploy_sound: section.get("DeploySound").map(|s| s.to_string()),
             undeploy_sound: section.get("UndeploySound").map(|s| s.to_string()),
+            packup_sound: sound_key(section, "PackupSound"),
             leave_transport_sound: section
                 .get("LeaveTransportSound")
                 .map(str::trim)

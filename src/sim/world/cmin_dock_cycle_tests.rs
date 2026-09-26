@@ -429,10 +429,12 @@ fn a_chrono_miner_ordered_to_a_busy_refinery_warps_in_after_it_frees() {
     );
 }
 
-/// Selling the refinery under an unloading Chrono Miner: the sale's RUN_AWAY
-/// (`0x0044AB5A`) drops the latch and hands the miner to Harvest
-/// (`0x00737A98`) with its cargo, as for the War Miner. It stays on the pad:
-/// the Foot arm's Unit Scatter (`0x00743A50`) refuses the active Teleport.
+/// Selling the refinery under an unloading Chrono Miner: the sale's stage-0
+/// visit, the frame after the order's, broadcasts RUN_AWAY (`0x0044AB5A`),
+/// which drops the latch and hands the miner to Harvest (`0x00737A98`) with
+/// its cargo and its contact, as for the War Miner. It stays on the pad: the
+/// Foot arm's Unit Scatter (`0x00743A50`) refuses the active Teleport. The
+/// next visit's OVER_OUT (stage 1) releases it.
 #[test]
 fn selling_the_refinery_mid_unload_hands_the_chrono_miner_to_harvest() {
     let mut s = fixture_scene((14, 12));
@@ -456,14 +458,43 @@ fn selling_the_refinery_mid_unload_hands_the_chrono_miner_to_harvest() {
         .cargo
         .len();
     let refinery = s.refinery;
-    assert!(crate::sim::production::sell_building(
-        &mut s.sim, &s.rules, refinery
+    let type_id = s
+        .sim
+        .interner
+        .resolve(s.sim.substrate.entities.get(refinery).unwrap().type_ref())
+        .to_string();
+    s.rules.set_buildup_control_for_test(&type_id, [0, 25, 2]);
+    assert!(crate::sim::production::sell_back(
+        &mut s.sim,
+        &s.rules,
+        refinery,
+        crate::sim::production::SellOrder::Player
     ));
+    // The order stands for this frame's event (`EventClass::Execute`); the
+    // frame's own Selling mission does not visit yet.
+    step(&mut s);
+    assert!(
+        s.sim
+            .substrate
+            .entities
+            .get(s.miner)
+            .unwrap()
+            .miner
+            .as_ref()
+            .unwrap()
+            .unload_active,
+        "the order's frame changes nothing"
+    );
+    step(&mut s);
     let miner = s.sim.substrate.entities.get(s.miner).unwrap();
     let state = miner.miner.as_ref().unwrap();
     assert!(!state.unload_active, "RUN_AWAY dropped the latch");
-    assert_eq!(miner.dock_entered_with, None);
-    assert_eq!(miner.radio_contacts.slot(0), None);
+    assert!(miner.dock_entered_with.is_some());
+    assert_eq!(
+        miner.radio_contacts.slot(0),
+        Some(refinery),
+        "RUN_AWAY keeps the contact"
+    );
     assert_eq!(state.cargo.len(), before, "nothing more was dumped");
     assert_eq!(
         miner.mission.current(),
@@ -474,4 +505,9 @@ fn selling_the_refinery_mid_unload_hands_the_chrono_miner_to_harvest() {
         miner.locomotor.as_ref().unwrap().active_kind(),
         LocomotorKind::Teleport
     );
+    step(&mut s);
+    let miner = s.sim.substrate.entities.get(s.miner).unwrap();
+    assert_eq!(miner.dock_entered_with, None, "OVER_OUT released the miner");
+    assert_eq!(miner.radio_contacts.slot(0), None);
+    assert_eq!(miner.miner.as_ref().unwrap().cargo.len(), before);
 }

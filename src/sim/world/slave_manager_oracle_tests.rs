@@ -167,6 +167,12 @@ impl SlaveScene {
 }
 
 pub(super) fn row_scene(input: &Value) -> SlaveScene {
+    row_scene_edited(input, |_| {})
+}
+
+/// [`row_scene`] on rules text that `edit` changes after the slave types are
+/// added.
+pub(super) fn row_scene_edited(input: &Value, edit: impl FnOnce(&mut String)) -> SlaveScene {
     let mut input = input.clone();
     if input.get("ore").is_none() {
         input["ore"] = serde_json::json!([]);
@@ -185,6 +191,7 @@ pub(super) fn row_scene(input: &Value) -> SlaveScene {
         *text = text.replacen("2=GAOREP\n", "2=GAOREP\n3=YAREFN\n", 1);
         *text = text.replacen("1=MTNK\n", "1=MTNK\n2=SMIN\n", 1);
         text.push_str(&slave_rules(&input));
+        edit(text);
     });
     // The oracle's Rules+0x1780.. (ReadRange leptons), KickFrameDelay and
     // ApproachTargetResetMultiplier.

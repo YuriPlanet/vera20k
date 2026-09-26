@@ -380,8 +380,12 @@ fn deploy_mcv_uses_gamemd_large_foundation_origin_offset() {
 /// nothing ever pulled it back. Verified against gamemd 2026-08-05.
 #[test]
 fn deploy_then_undeploy_returns_the_mcv_to_its_original_cell() {
-    let rules = make_mcv_rules();
+    let mut rules = make_mcv_rules();
+    // A yard needs its Buildup SHP to undeploy (`Sell_Back @ 0x00447110`)
+    // and converts back only in a multiplayer game (`0x00449D08`).
+    rules.set_buildup_control_for_test("GACNST", [0, 29, 1]);
     let mut sim = Simulation::new();
+    sim.session.game_mode_nonzero = true;
     add_house(&mut sim, "Americans", true);
     let height_map: BTreeMap<(u16, u16), u8> = BTreeMap::new();
 

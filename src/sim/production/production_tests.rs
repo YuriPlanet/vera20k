@@ -390,7 +390,7 @@ pub(super) fn sell_rules() -> RuleSet {
              [BuildingTypes]\n\
              0=GAPOWR\n\
              1=NAHAND\n\
-             2=CAGAS01\n\
+             2=NABNKR\n\
              [E1]\n\
              Name=GI\n\
              Cost=200\n\
@@ -429,8 +429,8 @@ pub(super) fn sell_rules() -> RuleSet {
              Owner=Russians,Soviet\n\
              Foundation=2x2\n\
              Crewed=yes\n\
-             [CAGAS01]\n\
-             Name=GasStation\n\
+             [NABNKR]\n\
+             Name=Battle Bunker\n\
              Cost=0\n\
              Strength=400\n\
              Armor=wood\n\
@@ -439,7 +439,12 @@ pub(super) fn sell_rules() -> RuleSet {
              CanOccupyFire=yes\n\
              MaxNumberOccupants=5\n",
     );
-    RuleSet::from_ini(&ini).expect("sell rules should parse")
+    let mut rules = RuleSet::from_ini(&ini).expect("sell rules should parse");
+    // Each binds a Buildup (`GAPOWRMK`, `NAHANDMK`, `NABNKRMK`), so each sells.
+    for type_id in ["GAPOWR", "NAHAND", "NABNKR"] {
+        rules.set_buildup_control_for_test(type_id, [0, 25, 2]);
+    }
+    rules
 }
 
 /// Rules with Factory= keys for testing data-driven factory matching.

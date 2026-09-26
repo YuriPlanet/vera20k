@@ -668,7 +668,7 @@ fn a_dead_slave_is_regrown_after_the_regen_rate_and_goes_out_again() {
 
 /// Deploying a Slave Miner (`UnitClass::Deploy`, `deploy_mcv`) and undeploying
 /// its refinery (`undeploy_building` to its conversion in
-/// `tick_building_down`) each hand the manager over (SetOwner `0x006AF580`):
+/// `visit_building_down`) each hand the manager over (SetOwner `0x006AF580`):
 /// the slaves keep their nodes and follow it, and the manager the new
 /// object's constructor built frees its own fresh slaves (UnInit in limbo).
 /// Each constructor draws its TechnoClass word and one per slave it builds.
@@ -687,6 +687,10 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
          Foundation=3x3\nDeployFacing=0\n",
     ))
     .expect("slave miner rules");
+    // A Buildup SHP, without which the refinery cannot undeploy
+    // (`Sell_Back @ 0x00447110`).
+    let mut rules = rules;
+    rules.set_buildup_control_for_test("YAREFN", [0, 17, 3]);
     let seed = 0x51A7_E001;
     let mut sim = Simulation::with_seed(seed);
     let mut expected = SimRng::new(seed);
@@ -770,20 +774,17 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
     let refinery = sim.substrate.entities.get_mut(yarefn).unwrap();
     refinery.building_up = None;
     crate::sim::combat::veterancy::set_elite(refinery);
-    assert!(
-        sim.undeploy_building(yarefn, &rules, true),
-        "undeploy to SMIN"
-    );
-    let down = sim
-        .substrate
+    assert!(sim.undeploy_building(yarefn, &rules), "undeploy to SMIN");
+    sim.substrate
         .entities
         .get_mut(yarefn)
         .unwrap()
-        .building_down
-        .as_mut()
-        .unwrap();
-    down.finish_for_test();
-    assert!(sim.tick_building_down(Some(&rules), None), "converted");
+        .finish_pack_up_for_test();
+    sim.visit_building_down(yarefn, Some(&rules), None);
+    assert!(
+        std::mem::take(&mut sim.mission_spawned_entities),
+        "converted"
+    );
     constructed(&sim, &mut expected);
     let back = 13;
     assert_eq!(
@@ -977,6 +978,8 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
          Foundation=2x2\n",
     ))
     .expect("rules");
+    let mut rules = rules;
+    rules.set_buildup_control_for_test("YAREFN", [0, 17, 3]);
     let seed = 0x0A77_AC4E;
     let mut sim = Simulation::with_seed(seed);
     let refinery = sim
@@ -1000,17 +1003,17 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
         let _ = expected.next_u32();
     }
 
-    assert!(sim.undeploy_building(refinery, &rules, true));
-    let down = sim
-        .substrate
+    assert!(sim.undeploy_building(refinery, &rules));
+    sim.substrate
         .entities
         .get_mut(refinery)
         .unwrap()
-        .building_down
-        .as_mut()
-        .unwrap();
-    down.finish_for_test();
-    assert!(sim.tick_building_down(Some(&rules), None));
+        .finish_pack_up_for_test();
+    sim.visit_building_down(refinery, Some(&rules), None);
+    assert!(
+        std::mem::take(&mut sim.mission_spawned_entities),
+        "converted"
+    );
     let miner = sim
         .substrate
         .entities

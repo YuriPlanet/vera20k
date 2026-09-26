@@ -743,8 +743,12 @@ mod tests {
 
     #[test]
     fn sell_occupied_bunker_starts_release_track_without_teleport() {
+        let mut rules = rules();
+        rules.set_buildup_control_for_test("NATBNK", [0, 25, 2]);
         let mut sim = installed_sim();
-        crate::sim::production::sell_building(&mut sim, &rules(), 2);
+        assert!(crate::sim::production::sell_building_now_for_test(
+            &mut sim, &rules, 2
+        ));
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker_link, BunkerLink::None);
         assert!(unit.in_logic_vector, "occupant remains active after sell");

@@ -1903,31 +1903,16 @@ ConditionYellow=50%
             let mut sim = Simulation::new();
             let bldg = spawn_garrison_building(&mut sim, &rules, "CAGAS01", "Americans", 10, 10);
             let pax = spawn_boarding_occupier(&mut sim, "E1", "Americans", bldg, 10, 11);
-            let owner = sim
-                .substrate
-                .entities
-                .get(bldg)
-                .expect("building exists")
-                .owner;
-            let spawn_type = sim.interner.intern("AMCV");
             let building = sim
                 .substrate
                 .entities
                 .get_mut(bldg)
                 .expect("building exists");
-            building.building_down = Some(crate::sim::components::BuildingDown {
-                anim: crate::sim::components::BuildupStage::begin([0, 30, 1], 0),
-                sell_stage: 0,
-                commenced_frame: 0,
-                done: false,
-                player_order: false,
-                spawn_type,
-                spawn_owner: owner,
-                spawn_rx: 10,
-                spawn_ry: 10,
-                spawn_z: 0,
-                was_selected: false,
-            });
+            building.building_down = Some(crate::sim::components::BuildingDown::commenced(
+                [0, 30, 1],
+                0,
+                false,
+            ));
 
             assert!(
                 !can_enter_garrison_fixture(&sim, &rules, pax, bldg),

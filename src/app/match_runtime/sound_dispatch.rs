@@ -703,6 +703,18 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
+            SimSoundEvent::SellClick { owner } => {
+                // `BuildingClass::Sell_Back 0x0044719B CALL 0x0050B6F0`
+                // (IsHumanPlayer), then `VocClass::PlayAtPos 0x00750920` of
+                // `Rules+0x70C` (`0x004471B6`).
+                if !owner_is_local(&sim.interner, owner, local_owner_name) {
+                    continue;
+                }
+                let Some(sound_id) = rules.general.generic_click_sound.clone() else {
+                    continue;
+                };
+                GameSoundEvent::UiSound { sound_id }
+            }
             SimSoundEvent::Repairing { owner } => {
                 // `BuildingClass::ToggleRepair 0x004470A4 CALL
                 // 0x0050B6F0`: the owner is the local player.

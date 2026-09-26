@@ -152,6 +152,9 @@ pub(super) enum HashFeature {
     /// non-Jumpjet constants every stashed runtime of the pinned fixtures held;
     /// a Jumpjet's own linked values are not reconstructed.
     RetiredJumpjetLegacyBlock = 210,
+    /// A building's AI sale byte (`BuildingClass+0x6DC`). Earlier schemas
+    /// fold nothing.
+    AiSellable = 213,
 }
 
 impl HashSchema {
@@ -189,6 +192,7 @@ impl HashSchema {
                     | HashFeature::AircraftCrash
                     | HashFeature::SlaveManager
                     | HashFeature::RetiredJumpjetLegacyBlock
+                    | HashFeature::AiSellable
             ),
             #[cfg(test)]
             Self::Before(version) | Self::BeforeWithoutRawInfantryOwners(version) => {

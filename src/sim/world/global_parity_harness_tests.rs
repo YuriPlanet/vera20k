@@ -770,7 +770,12 @@ const GLOBAL_HARNESS_FINAL_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0x9036_E050_B184_
 // POSITION_FINGERPRINT, per-tick record/replay equality and the duel's
 // outcome are unchanged: the only change to these pins is the removed fold.
 // Old values: the commit that moved them.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x7D23_F885_0E2A_71D9;
+// 2026-09-26 building sale (snapshot 213, composition only): schema 213 folds
+// each building's AI sale byte (`BuildingClass+0x6DC`). Before(213)
+// reproduces the retired-weapon pin; FINAL_STREAM_STATES, per-tick replay and
+// every older projection are unchanged.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x2511_12D7_8FFD_F103;
+const GLOBAL_HARNESS_FINAL_HASH_PRE_AI_SELLABLE_V213: u64 = 0x7D23_F885_0E2A_71D9;
 const GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_CRASH_V208: u64 = 0x7EF6_3951_8D88_9E82;
 const GLOBAL_HARNESS_FINAL_HASH_PRE_NATIVE_ORE_FIELD_V207: u64 = 0x5BFF_B420_B844_3E8B;
 const GLOBAL_HARNESS_FINAL_HASH_PRE_RETIRED_DOCK_PHASE_V206: u64 = 0xCF73_6E86_820D_B4DA;
@@ -855,6 +860,7 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
         recruitable_a: true,
         recruitable_b: true,
         structure_upgrades: [None, None, None],
+        structure_ai_sellable: false,
     }
 }
 
@@ -1118,6 +1124,11 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     let (_, final_scen, final_main, final_mapgen) =
         *recorded_streams.last().expect("final checkpoint recorded");
     let final_hash = *replayed.last().expect("at least one tick recorded");
+    assert_eq!(
+        rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(213)),
+        GLOBAL_HARNESS_FINAL_HASH_PRE_AI_SELLABLE_V213,
+        "v213 only folds each building's AI sale byte"
+    );
     assert_eq!(
         rep.state_hash_with_schema(super::hash_schema::HashSchema::Before(208)),
         GLOBAL_HARNESS_FINAL_HASH_PRE_AIRCRAFT_CRASH_V208,

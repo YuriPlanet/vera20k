@@ -42,6 +42,7 @@ fn map_entity(type_id: &str, category: EntityCategory, cell: (u16, u16)) -> MapE
         recruitable_a: true,
         recruitable_b: true,
         structure_upgrades: [None, None, None],
+        structure_ai_sellable: false,
     }
 }
 
@@ -1988,4 +1989,44 @@ fn rejected_authored_unlimbo_preserves_mobile_constructor_but_building_has_autho
         assert_eq!(rejected.estimated_health.get(), expected, "{kind}");
         assert!(rejected.lifecycle.in_limbo);
     }
+}
+
+/// The AI sale byte (`BuildingClass+0x6DC`): the constructor sets it and
+/// Init_Managers clears it for a type without a Buildup (`0x00442CBC`); a
+/// map-placed building takes its line's AI Sellable field instead
+/// (`BuildingClass::ReadFromINI` `0x0044FB5B`).
+#[test]
+fn a_building_s_ai_sale_byte_follows_its_buildup_or_its_map_line() {
+    let mut rules = constructor_rules();
+    rules.set_buildup_control_for_test("BASE", [0, 25, 2]);
+    let byte = |sim: &Simulation, id: u64| sim.substrate.entities.get(id).unwrap().ai_sellable;
+
+    let mut built = Simulation::with_seed(0x6DC);
+    install_constructor_test_playfield(&mut built);
+    let base = built
+        .spawn_object("BASE", "Americans", 9, 5, 0, &rules, &BTreeMap::new())
+        .expect("BASE");
+    let bare = built
+        .spawn_object("UP1", "Americans", 6, 5, 0, &rules, &BTreeMap::new())
+        .expect("UP1");
+    assert!(byte(&built, base), "a Buildup keeps the byte");
+    assert!(!byte(&built, bare), "no Buildup clears it");
+
+    let mut authored = Simulation::with_seed(0x6DD);
+    install_constructor_test_playfield(&mut authored);
+    let mut sellable = map_entity("UP1", EntityCategory::Structure, (6, 5));
+    sellable.structure_ai_sellable = true;
+    let unsellable = map_entity("BASE", EntityCategory::Structure, (9, 5));
+    assert_eq!(
+        authored.spawn_from_map(&[sellable, unsellable], Some(&rules), &BTreeMap::new()),
+        2
+    );
+    let bytes: Vec<bool> = authored
+        .substrate
+        .entities
+        .keys_sorted()
+        .into_iter()
+        .map(|id| byte(&authored, id))
+        .collect();
+    assert_eq!(bytes, [true, false], "the map line decides");
 }

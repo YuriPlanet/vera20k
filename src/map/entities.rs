@@ -76,6 +76,11 @@ pub struct MapEntity {
     /// `-1` entries remain empty. Non-structure categories always hold three
     /// empty slots.
     pub structure_upgrades: [Option<String>; 3],
+    /// `[Structures]` field 7, AI Sellable: `BuildingClass::ReadFromINI @
+    /// 0x0044F820` stores its `atoi != 0` in the building's `+0x6DC`
+    /// (`0x0044FB5B`), false when the line stops short. False for other
+    /// categories.
+    pub structure_ai_sellable: bool,
 }
 
 /// Field index of the `MISSION=` column in `[Units]`, `[Infantry]` and
@@ -225,6 +230,7 @@ fn parse_infantry_section(
             recruitable_a: parse_recruitment_field(fields.get(12).copied()),
             recruitable_b: parse_recruitment_field(fields.get(13).copied()),
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         });
     }
 }
@@ -252,6 +258,9 @@ fn parse_structures_section(
             continue;
         };
         entity.structure_upgrades = parse_structure_upgrades(&fields);
+        entity.structure_ai_sellable = fields
+            .get(7)
+            .is_some_and(|value| crate::rules::ini_value::atoi_lenient(value) != 0);
         entities.push(entity);
     }
 }
@@ -346,6 +355,7 @@ fn parse_common_fields(fields: &[&str], category: EntityCategory, key: &str) -> 
         recruitable_b: matches!(category, EntityCategory::Structure)
             || parse_recruitment_field(fields.get(13).copied()),
         structure_upgrades: [None, None, None],
+        structure_ai_sellable: false,
     })
 }
 
@@ -482,6 +492,25 @@ mod tests {
         assert_eq!(entities[0].facing, 0);
         assert_eq!(entities[0].category, EntityCategory::Structure);
         assert_eq!(entities[0].structure_upgrades, [None, None, None]);
+    }
+
+    /// `BuildingClass::ReadFromINI @ 0x0044F820` stores field 7's `atoi != 0`
+    /// as the AI sale byte (`0x0044FB5B`); a line that stops short leaves it
+    /// false.
+    #[test]
+    fn structures_carry_their_ai_sellable_field() {
+        let ini = IniFile::from_str(
+            "[Structures]\n\
+             0=Americans,GAPOWR,256,15,25,0,None,1,0,1,0,0,None,None,None,1,0\n\
+             1=Americans,GAPOWR,256,17,25,0,None,0,1,1,0,0,None,None,None,1,0\n\
+             2=Americans,GAPOWR,256,19,25,0,None\n\
+             3=Americans,GAPOWR,256,21,25,0,None,true\n",
+        );
+        let sellable: Vec<bool> = parse_map_entities(&ini)
+            .iter()
+            .map(|entity| entity.structure_ai_sellable)
+            .collect();
+        assert_eq!(sellable, [true, false, false, false]);
     }
 
     #[test]

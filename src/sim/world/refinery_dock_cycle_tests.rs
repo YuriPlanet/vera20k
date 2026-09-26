@@ -296,21 +296,40 @@ fn a_refinery_order_mid_unload_redocks_and_pays() {
     assert_eq!(refinery.dock_entered_with, None);
 }
 
-/// Selling the refinery under an unloading miner: the sale's RUN_AWAY
-/// (`0x0044AB5A`) drops the latch and hands the miner to Harvest
-/// (`0x00737A98`); it keeps its cargo and is not left idle on Unload.
+/// Selling the refinery under an unloading miner: the sale's stage-0 visit,
+/// the frame after the order's, broadcasts RUN_AWAY (`0x0044AB5A`), which
+/// drops the latch and hands the miner to Harvest (`0x00737A98`) with its
+/// cargo and its contact; the next visit's OVER_OUT (stage 1) releases it
+/// from the pad.
 #[test]
 fn selling_the_refinery_mid_unload_hands_the_miner_to_harvest() {
     let mut s = returning_scene();
     run_until_unloading(&mut s);
     let refinery = s.refinery;
-    assert!(crate::sim::production::sell_building(
-        &mut s.sim, &s.rules, refinery
+    let type_id = s
+        .sim
+        .interner
+        .resolve(s.sim.substrate.entities.get(refinery).unwrap().type_ref())
+        .to_string();
+    s.rules.set_buildup_control_for_test(&type_id, [0, 25, 2]);
+    assert!(crate::sim::production::sell_back(
+        &mut s.sim,
+        &s.rules,
+        refinery,
+        crate::sim::production::SellOrder::Player
     ));
+    // The order stands for this frame's event (`EventClass::Execute`); the
+    // frame's own Selling mission does not visit yet.
+    frame(&mut s);
+    assert!(
+        sample(&s, s.miner).unloading,
+        "the order's frame changes nothing"
+    );
+    frame(&mut s);
     let after = sample(&s, s.miner);
     assert!(!after.unloading, "RUN_AWAY dropped the latch");
-    assert!(!after.tethered);
-    assert_eq!(after.contact, None);
+    assert!(after.tethered);
+    assert_eq!(after.contact, Some(refinery), "RUN_AWAY keeps the contact");
     assert_eq!(after.ore, 40, "nothing was dumped");
     assert_eq!(
         after.mission,
@@ -326,6 +345,11 @@ fn selling_the_refinery_mid_unload_hands_the_miner_to_harvest() {
             .display_type_override,
         None
     );
+    frame(&mut s);
+    let after = sample(&s, s.miner);
+    assert!(!after.tethered, "OVER_OUT released the miner");
+    assert_eq!(after.contact, None);
+    assert_eq!(after.ore, 40);
 }
 
 /// A refinery destroyed under an unloading miner: the NowDead contact loop

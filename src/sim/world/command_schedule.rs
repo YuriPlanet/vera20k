@@ -124,7 +124,7 @@ impl Simulation {
         path_grid: Option<&PathGrid>,
         height_map: &BTreeMap<(u16, u16), u8>,
         overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-    ) -> (bool, bool, bool, Option<InternedId>) {
+    ) -> (bool, bool, Option<InternedId>) {
         let cmd_owner_str = self.interner.resolve(cmd.owner).to_string();
         let applied = self.apply_command_with_overlays(
             &cmd_owner_str,
@@ -140,22 +140,8 @@ impl Simulation {
             if self.substrate.entities.get(entity_id).is_none_or(|e| e.dying));
         let spawned_entity = synchronous_deploy
             || placed_building_owner.is_some()
-            || applied
-                && matches!(
-                    cmd.payload,
-                    Command::UndeployBuilding { .. } | Command::LaunchSuperWeapon { .. }
-                );
-        let destroyed_structure = applied
-            && matches!(
-                cmd.payload,
-                Command::SellBuilding { .. } | Command::UndeployBuilding { .. }
-            );
-        (
-            applied,
-            spawned_entity,
-            destroyed_structure,
-            placed_building_owner,
-        )
+            || applied && matches!(cmd.payload, Command::LaunchSuperWeapon { .. });
+        (applied, spawned_entity, placed_building_owner)
     }
 
     pub(super) fn successful_non_wall_placement_owner(
@@ -560,8 +546,10 @@ impl Simulation {
     /// Apply all due tail commands in HouseClass registration
     /// order. Each house preserves insertion order within the normal and
     /// staged-megamission streams. Returns
-    /// `(executed_commands, spawned_entities, destroyed_structure,
-    /// successful_non_wall_placement_owners)`.
+    /// `(executed_commands, spawned_entities,
+    /// successful_non_wall_placement_owners)`. A sale or undeploy order only
+    /// starts the Selling mission: the building leaves the map at its last
+    /// visit (`Simulation::visit_building_down`).
     pub(super) fn apply_due_commands(
         &mut self,
         commands: &[CommandEnvelope],
@@ -570,10 +558,9 @@ impl Simulation {
         height_map: &BTreeMap<(u16, u16), u8>,
         execute_tick: u64,
         overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-    ) -> (usize, bool, bool, Vec<InternedId>) {
+    ) -> (usize, bool, Vec<InternedId>) {
         let mut executed_commands = 0usize;
         let mut spawned_entities = false;
-        let mut destroyed_structure = false;
         let mut placed_building_owners = Vec::new();
         let mut tail_path_grid = path_grid
             .cloned()
@@ -586,7 +573,7 @@ impl Simulation {
                     && !Self::command_uses_frame_ingress(&command.payload)
                     && !Self::command_uses_megamission(&command.payload)
             }) {
-                let (applied, spawned, destroyed, placed_owner) = self.apply_one_due_command(
+                let (applied, spawned, placed_owner) = self.apply_one_due_command(
                     command,
                     rules,
                     tail_path_grid.as_ref(),
@@ -599,7 +586,6 @@ impl Simulation {
                     tail_path_grid = self.path_grid.as_deref().cloned().or(tail_path_grid);
                 }
                 spawned_entities |= spawned;
-                destroyed_structure |= destroyed;
                 placed_building_owners.extend(placed_owner);
                 executed_commands += 1;
             }
@@ -615,7 +601,7 @@ impl Simulation {
                 .collect::<Vec<_>>();
             self.adjust_staged_megamission_destinations(&mut staged, tail_path_grid.as_ref());
             for command in &staged {
-                let (_, spawned, destroyed, placed_owner) = self.apply_one_due_command(
+                let (_, spawned, placed_owner) = self.apply_one_due_command(
                     command,
                     rules,
                     tail_path_grid.as_ref(),
@@ -623,17 +609,11 @@ impl Simulation {
                     overlay_registry,
                 );
                 spawned_entities |= spawned;
-                destroyed_structure |= destroyed;
                 placed_building_owners.extend(placed_owner);
                 executed_commands += 1;
             }
         }
 
-        (
-            executed_commands,
-            spawned_entities,
-            destroyed_structure,
-            placed_building_owners,
-        )
+        (executed_commands, spawned_entities, placed_building_owners)
     }
 }

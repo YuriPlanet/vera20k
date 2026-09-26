@@ -21,9 +21,9 @@
 //!   (DeploySlaves `0x006B04C0`: an infantry spot in the drop cell, Unlimbo,
 //!   Scatter away from the building). A refinery deployed from a Slave Miner
 //!   (state 4) waits for its BState (`+0x534`), 0 while it builds up. VERA
-//!   keeps a building's build-up and build-down in `building_up` and
-//!   `building_down` (`sim::building_construction`) without publishing the
-//!   Construction or Selling mission or a BState, so both gates read them
+//!   keeps a building's build-up in `building_up`
+//!   (`sim::building_construction`) without publishing the Construction
+//!   mission or a BState, so both gates read it with the Selling mission
 //!   (`GameEntity::constructing_or_selling`, `in_construction_bstate`).
 //! - A slave looks for ore within `SlaveMinerSlaveScan` (the Foot
 //!   Scan_For_Tiberium), walks there, digs one level per `HarvestRate` frames
@@ -38,7 +38,7 @@
 //! - Deploying a Slave Miner hands its manager to the refinery (SetOwner
 //!   `0x006AF580`, with the hand-off `0x006B0D10`); undeploying hands it back
 //!   at the conversion (`BuildingClass::Sell @ 0x0044A047`,
-//!   `tick_building_down`). A refinery placed from production takes the same
+//!   `Simulation::finish_undeploy`). A refinery placed from production takes the same
 //!   hand-off (`0x006B0D60`) once its Unlimbo succeeds.
 //! - A Slave Miner hunts for a field: it sets out as it leaves its war
 //!   factory (`UnitClass::PerCellProcess @ 0x0073A9CA`, ahead of the rally
@@ -58,17 +58,12 @@
 //!   the nearest field within `SlaveMinerLongScan` lies
 //!   `SlaveMinerScanCorrection` cells closer to it than the refinery does
 //!   (state 5, `0x006B0062..0x006B01F5`); with no field in range it moves
-//!   too. It archives its own cell and packs up (Selling's UndeploysInto arm,
-//!   VERA's `undeploy_building`); the Slave Miner it becomes is sent to that
-//!   cell and its manager, in state 6, recalls its idle slaves and hunts.
+//!   too. It archives its own cell and packs up (the Selling mission's
+//!   UndeploysInto arm, `production::begin_selling`); the Slave Miner it
+//!   becomes is sent to that cell and its manager, in state 6, recalls its
+//!   idle slaves and hunts.
 //!
 //! ## Residuals
-//! - The pack-up runs on VERA's undeploy owner (`building_down`, Sell's
-//!   stages 0..2 and the build-up played in reverse at the type's
-//!   `BuildupTime=` rate), but the Selling mission is not published, so the
-//!   refinery's turret keeps firing while it packs up. Trigger: every
-//!   relocation and undeploy. Effect: the turret. Frequency: every
-//!   relocation. Downstream: the mission owner, a separate mechanism.
 //! - A player moves a refinery natively by clicking a cell with it selected
 //!   (`BuildingClass` cell click `0x004436F0`: SetRallyPoint's ArchiveTarget
 //!   event 0x1E, then SELL 0x16 -> `Sell_Back(-1) @ 0x00447110`); Selling
@@ -851,15 +846,16 @@ impl Simulation {
 
     /// The relocation (`0x006B01C1..0x006B01F5`): the refinery archives its
     /// own cell (`vt+0x1BC`, the CellClass at its Location) and queues
-    /// Selling, whose UndeploysInto arm (`BuildingClass::Sell @
-    /// 0x00449C30`) packs it up into the Slave Miner that its manager, now in
-    /// state 6, sends hunting. VERA's undeploy owner is
-    /// [`Simulation::undeploy_building`]; the conversion at its end hands
-    /// the manager over and sends the Slave Miner to the archived cell
-    /// (`tick_building_down`). The byte `+0x4F8` written first silences the
-    /// undeploy voice Selling plays (`0x0044A9DF`: `0x00459C20` ->
-    /// `0x00708E00`), which VERA does not play (`VoiceDeploy=` is unparsed),
-    /// so it has no counterpart.
+    /// Selling (`0x006B01E8`), which the building's ready check commences in
+    /// the same Update (`0x0043FF91`: the idle control holds `+0x6DD`).
+    /// Selling's UndeploysInto arm (`BuildingClass::Sell @ 0x00449C30`)
+    /// packs it up into the Slave Miner that its manager, now in state 6,
+    /// sends hunting: the conversion at its end
+    /// ([`Simulation::finish_undeploy`]) hands the manager over and sends the
+    /// Slave Miner to the archived cell. The byte `+0x4F8` written first
+    /// silences the undeploy voice Selling plays (`0x0044A9DF`: `0x00459C20`
+    /// -> `0x00708E00`), which VERA does not play (`VoiceDeploy=` is
+    /// unparsed), so it has no counterpart.
     fn relocate_refinery(&mut self, master: u64, rules: &RuleSet) {
         let Some(owner) = self.substrate.entities.get_mut(master) else {
             return;
@@ -868,9 +864,7 @@ impl Simulation {
         owner.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(
             x as u16, y as u16,
         )));
-        if !self.undeploy_building(master, rules, false) {
-            log::debug!("slave refinery {master} could not start its undeploy");
-        }
+        crate::sim::production::begin_selling(self, rules, master, false);
         self.set_manager_state(master, ManagerState::PackingUp, i32::MAX);
     }
 

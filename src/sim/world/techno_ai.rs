@@ -603,24 +603,30 @@ fn techno_ai_shell(
             // between them — see the block comment above
             // `clear_passive_target_off_mission`'s neighbours for why.
             //
-            // The clear is DEAD for structures as things stand, and is kept only
-            // so the arm keeps the body's shape: a structure never carries a
-            // destination, a navigation goal or a standing order, so its
-            // committed mission always reads as finished, the derived Guard
-            // reading always wins, and Guard is not one of the twelve missions
-            // that strip a scanner target. It starts doing work the moment a
-            // structure gains live mission machinery.
-            //
-            // RESIDUAL, same root cause: a structure being sold holds the
-            // Selling mission with nothing running, so it reads Guard and keeps
-            // scanning, acquiring and firing for the couple of seconds the sale
-            // takes. Same shape as the `building_up` residual noted on
-            // `passive_acquire_step`.
+            // A structure never carries a destination, a navigation goal or a
+            // standing order, so its committed mission reads as finished and
+            // the derived Guard reading wins — except a sale's Selling
+            // (`GameEntity::passive_acquire_mission`), one of the twelve
+            // missions that strip a scanner target. The passive block never
+            // admits it, and its fire error holds any other target while it
+            // sells.
             clear_passive_target_off_mission(sim, id, rules);
             // BuildingClass::Update consumes its ready latch via Ready→Commence
             // (`0x0043FE43`/`0x0043FFA3`); with no latch writers live the
             // promotion evaluates to not-ready (recorded residual).
             mission_common_step(sim, id, rules);
+            // The Selling mission's handler, BuildingClass::Sell, from the
+            // mission dispatch in TechnoClass::Update (`0x0043FE56`). A sold
+            // or converted building has left the map.
+            sim.visit_building_down(id, rules, ctx.overlay_registry);
+            if sim
+                .substrate
+                .entities
+                .get(id)
+                .is_none_or(|entity| entity.dying)
+            {
+                return;
+            }
             passive_acquire_step(sim, id, rules, ctx);
             if !bomb_fuse_slot(sim, id, rules, ctx.overlay_registry) {
                 return;
@@ -2003,6 +2009,7 @@ mod tests {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         }
     }
 

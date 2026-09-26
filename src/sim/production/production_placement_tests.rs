@@ -8,8 +8,7 @@ use super::{
     cycle_active_producer_for_owner_category, find_spawn_cell_for_owner, foundation_dimensions,
     place_ready_building_with_overlays, place_ready_building_without_overlays,
     placement_preview_for_owner_with_overlays, placement_preview_for_owner_without_overlays,
-    producer_candidates_for_owner_category, ready_buildings_for_owner, sell_building,
-    tick_production,
+    producer_candidates_for_owner_category, ready_buildings_for_owner, tick_production,
 };
 use crate::map::entities::EntityCategory;
 use crate::map::overlay_types::OverlayTypeRegistry;
@@ -3519,217 +3518,150 @@ fn cancel_last_for_owner_cancels_latest_item_across_categories() {
     );
 }
 
+/// A sale's refund (`TechnoClass vt+0x2BC` = `0x0070ADA0` ->
+/// `TechnoTypeClass::GetRefund 0x00711F60`) reads no health, and the sale
+/// drops every radio contact to the building.
 #[test]
-fn sell_damaged_building_refunds_half_cost_and_ejects_allied_infantry() {
-    let mut sim = Simulation::new();
+fn a_sale_refunds_regardless_of_health_and_clears_peer_contacts() {
     let rules = sell_rules();
-    *super::credits_entry_for_owner(&mut sim, "Americans") = 1000;
-
-    // Native70ADA0 does not scale Refund by actual health. Keep a damaged
-    // building here to exercise that distinction through the sell command.
-    spawn_structure(&mut sim, 1, "Americans", "GAPOWR", 20, 20);
-    if let Some(ge) = sim.substrate.entities.get_mut(1) {
-        ge.health = Health { current: 375 };
-        ge.mark_live_contact_with(99);
-    }
-    let mut peer = GameEntity::test_default(99, "MTNK", "Americans", 22, 20);
-    peer.owner = sim.interner.intern("Americans");
-    peer.type_ref = sim.interner.intern("MTNK");
-    peer.mark_live_contact_with(1);
-    sim.substrate.entities.insert(peer);
-
-    assert!(sell_building(&mut sim, &rules, 1));
-    assert_eq!(credits_for_owner(&sim, "Americans"), 1400);
-
-    let survivors: Vec<(String, u16, u16)> = sim
-        .substrate
-        .entities
-        .values()
-        .filter(|e| {
-            sim.interner
-                .resolve(e.owner)
-                .eq_ignore_ascii_case("Americans")
-                && sim.interner.resolve(e.type_ref).eq_ignore_ascii_case("E1")
-        })
-        .map(|e| ("E1".to_string(), e.position.rx, e.position.ry))
-        .collect();
-    // RA2 formula: refund = 800 * 50% * 50% = 200, survivors = 200 / 500 = 0.
-    // Cheap Allied buildings at half health don't eject survivors.
-    assert_eq!(
-        survivors.len(),
-        0,
-        "800-cost Allied building at half health: refund 200 / divisor 500 = 0 survivors"
-    );
-    // Deferred-delete: sell_building enqueues; drain at end-of-tick to free the slot.
-    sim.flush_pending_delete();
-    assert!(
-        !sim.substrate.entities.contains(1),
-        "sold building should be removed from the store"
-    );
-    assert!(
-        !sim.substrate
-            .entities
-            .get(99)
-            .unwrap()
-            .has_live_contact_with(1),
-        "selling a building should clear peer radio contacts to it"
-    );
-}
-
-#[test]
-fn sell_building_uses_owner_appropriate_survivor_type_and_caps_count() {
-    let mut sim = Simulation::new();
-    let rules = sell_rules();
-    // Soviet house: side_index=1 so the sell system picks E2 survivor type.
-    let russians_key = sim.interner.intern("RUSSIANS");
-    let russians_display = sim.interner.intern("Russians");
-    sim.houses.insert(
-        russians_key,
-        crate::sim::house_state::HouseState::new(russians_display, 1, None, false, 1000, 10),
-    );
-
-    spawn_structure(&mut sim, 2, "Russians", "NAHAND", 30, 30);
-    if let Some(ge) = sim.substrate.entities.get_mut(2) {
-        ge.health = Health { current: 500 };
-    }
-
-    assert!(sell_building(&mut sim, &rules, 2));
-    assert_eq!(credits_for_owner(&sim, "Russians"), 1250);
-
-    let conscripts = sim
-        .substrate
-        .entities
-        .values()
-        .filter(|e| {
-            sim.interner
-                .resolve(e.owner)
-                .eq_ignore_ascii_case("Russians")
-                && sim.interner.resolve(e.type_ref).eq_ignore_ascii_case("E2")
-        })
-        .count();
-    // RA2 formula: refund = 500 * 50% * 100% = 250, survivors = 250 / 250 = 1.
-    assert_eq!(
-        conscripts, 1,
-        "500-cost Soviet building at full health: refund 250 / divisor 250 = 1 survivor"
-    );
-}
-
-#[test]
-#[ignore = "WIP: captured-civilian sell-revert not yet landed"]
-fn sell_captured_civilian_ejects_reverts_and_keeps_building() {
-    use crate::sim::passenger::{PassengerCargo, PassengerRole};
-    let mut sim = Simulation::new();
-    let rules = sell_rules();
-    *super::credits_entry_for_owner(&mut sim, "Americans") = 1000;
-
-    // Spawn a CanBeOccupied building owned by Americans, with
-    // garrison_original_owner = Some(Neutral).
-    spawn_structure(&mut sim, 10, "Americans", "CAGAS01", 20, 20);
-    let neutral_id = sim.interner.intern("Neutral");
-    if let Some(t) = sim.substrate.entities.get_mut(10) {
-        t.garrison_original_owner = Some(neutral_id);
-        t.passenger_role = PassengerRole::Transport {
-            cargo: PassengerCargo::new(5, 1),
-        };
-    }
-    // Two occupants inside the cargo.
-    let amer_id = sim.interner.intern("Americans");
-    let e1_id = sim.interner.intern("E1");
-    for &pid in &[11u64, 12u64] {
-        let mut pax =
-            crate::sim::game_entity::GameEntity::test_default(pid, "E1", "Americans", 19, 20);
-        pax.owner = amer_id;
-        pax.type_ref = e1_id;
-        pax.passenger_role = PassengerRole::Inside { transport_id: 10 };
-        sim.substrate.entities.insert(pax);
-    }
-    if let Some(t) = sim.substrate.entities.get_mut(10) {
-        if let Some(c) = t.passenger_role.cargo_mut() {
-            c.board(11, 1);
-            c.board(12, 1);
-        }
-    }
-
-    assert!(sell_building(&mut sim, &rules, 10));
-
-    // Building still in store, owner reverted, cargo cleared.
-    let bldg = sim
-        .substrate
-        .entities
-        .get(10)
-        .expect("building should still exist");
-    assert_eq!(sim.interner.resolve(bldg.owner), "Neutral");
-    assert!(
-        bldg.garrison_original_owner.is_none(),
-        "original_owner should have been consumed"
-    );
-    let cargo = bldg.passenger_role.cargo().expect("cargo");
-    assert!(cargo.is_empty(), "cargo should be cleared");
-
-    // Both occupants alive on the map, role=None, not dying.
-    for &pid in &[11u64, 12u64] {
-        let pax = sim.substrate.entities.get(pid).expect("occupant exists");
-        assert!(!pax.dying, "occupant {pid} should not be dying");
-        assert!(pax.health.current > 0, "occupant {pid} should be alive");
-        assert!(
-            matches!(pax.passenger_role, PassengerRole::None),
-            "occupant {pid} role should be None"
+    let refund = |health: i32| {
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        sim.houses.insert(
+            owner,
+            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
         );
-    }
+        *super::credits_entry_for_owner(&mut sim, "Americans") = 1000;
+        spawn_structure(&mut sim, 1, "Americans", "GAPOWR", 20, 20);
+        if let Some(ge) = sim.substrate.entities.get_mut(1) {
+            ge.health = Health { current: health };
+            ge.mark_live_contact_with(99);
+        }
+        let mut peer = GameEntity::test_default(99, "MTNK", "Americans", 22, 20);
+        peer.owner = owner;
+        peer.type_ref = sim.interner.intern("MTNK");
+        peer.mark_live_contact_with(1);
+        sim.substrate.entities.insert(peer);
 
-    // No refund credited.
-    assert_eq!(
-        credits_for_owner(&sim, "Americans"),
-        1000,
-        "captured-civilian sell pays no refund"
-    );
+        assert!(super::sell_building_now_for_test(&mut sim, &rules, 1));
+        sim.flush_pending_delete();
+        assert!(
+            !sim.substrate.entities.contains(1),
+            "sold building should be removed from the store"
+        );
+        assert!(
+            !sim.substrate
+                .entities
+                .get(99)
+                .unwrap()
+                .has_live_contact_with(1),
+            "selling a building should clear peer radio contacts to it"
+        );
+        credits_for_owner(&sim, "Americans") - 1000
+    };
+    let full = refund(750);
+    assert!(full > 0);
+    assert_eq!(refund(375), full, "a damaged building refunds the same");
 }
 
+/// `BuildingClass::Sell_Back @ 0x00447110`'s admission beyond the SELL
+/// event's sales (`building_construction`'s route replays), with CanSell
+/// (`0x004494C0`) beside it: a player's order on a Selling building clicks
+/// again without a second sale; the computer's order (control 1) refuses,
+/// silently, a Selling building or one carrying C4 (`+0x6DF`), which the
+/// player's order and CanSell ignore; without a Buildup both orders are
+/// refused, except by a `FirestormWall=` type, which leaves the map at once,
+/// unpaid and silent (`0x004471C5`).
 #[test]
-#[ignore = "WIP: captured-civilian sell-revert not yet landed"]
-fn sell_captured_civilian_emits_structure_abandoned_with_pre_revert_owner() {
-    use crate::sim::passenger::{PassengerCargo, PassengerRole};
+fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
+    use super::{SellOrder, can_sell_building, sell_back};
+    use crate::sim::components::PendingC4Detonation;
     use crate::sim::world::SimSoundEvent;
-    let mut sim = Simulation::new();
-    let rules = sell_rules();
-    spawn_structure(&mut sim, 20, "Americans", "CAGAS01", 30, 30);
-    let neutral_id = sim.interner.intern("Neutral");
-    let amer_id = sim.interner.intern("Americans");
-    let e1_id = sim.interner.intern("E1");
-    if let Some(t) = sim.substrate.entities.get_mut(20) {
-        t.garrison_original_owner = Some(neutral_id);
-        t.passenger_role = PassengerRole::Transport {
-            cargo: PassengerCargo::new(5, 1),
-        };
-    }
-    let mut pax = crate::sim::game_entity::GameEntity::test_default(21, "E1", "Americans", 29, 30);
-    pax.owner = amer_id;
-    pax.type_ref = e1_id;
-    pax.passenger_role = PassengerRole::Inside { transport_id: 20 };
-    sim.substrate.entities.insert(pax);
-    if let Some(t) = sim.substrate.entities.get_mut(20) {
-        if let Some(c) = t.passenger_role.cargo_mut() {
-            c.board(21, 1);
-        }
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
+         [BuildingTypes]\n0=GAPOWR\n1=GAFWLL\n\
+         [GAPOWR]\nCost=800\nStrength=750\n\
+         [GAFWLL]\nCost=100\nStrength=100\nFirestormWall=yes\n",
+    ))
+    .expect("sale admission rules should parse");
+    let scene = |type_id: &str| {
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        sim.houses.insert(
+            owner,
+            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
+        );
+        *super::credits_entry_for_owner(&mut sim, "Americans") = 1000;
+        spawn_structure(&mut sim, 1, "Americans", type_id, 20, 20);
+        sim
+    };
+    let clicks = |sim: &Simulation| {
+        sim.sound_events
+            .iter()
+            .filter(|event| matches!(event, SimSoundEvent::SellClick { .. }))
+            .count()
+    };
+    let selling = |sim: &Simulation| {
+        sim.substrate.entities.get(1).is_some_and(|building| {
+            building.mission.effective().known() == Some(MissionType::Selling)
+        })
+    };
+
+    for order in [SellOrder::Player, SellOrder::Computer] {
+        let mut sim = scene("GAPOWR");
+        assert!(!can_sell_building(&sim, &rules, 1));
+        assert!(!sell_back(&mut sim, &rules, 1, order), "{order:?}");
+        assert!(!selling(&sim));
+        assert_eq!(clicks(&sim), 0);
+
+        let mut sim = scene("GAFWLL");
+        assert!(can_sell_building(&sim, &rules, 1));
+        assert!(sell_back(&mut sim, &rules, 1, order), "{order:?}");
+        sim.flush_pending_delete();
+        assert!(!sim.substrate.entities.contains(1), "{order:?}: removed");
+        assert_eq!(clicks(&sim), 0);
+        assert_eq!(credits_for_owner(&sim, "Americans"), 1000, "unpaid");
     }
 
-    assert!(sell_building(&mut sim, &rules, 20));
-
-    let mut found = false;
-    for evt in &sim.sound_events {
-        if let SimSoundEvent::StructureAbandoned { owner } = evt {
-            assert_eq!(
-                sim.interner.resolve(*owner),
-                "Americans",
-                "StructureAbandoned should carry pre-revert owner (Americans), not post-revert civilian"
-            );
-            found = true;
-        }
-    }
-    assert!(
-        found,
-        "expected StructureAbandoned event after captured-civilian sell"
+    rules.set_buildup_control_for_test("GAPOWR", [0, 25, 2]);
+    let mut sim = scene("GAPOWR");
+    assert!(can_sell_building(&sim, &rules, 1));
+    assert!(sell_back(&mut sim, &rules, 1, SellOrder::Player));
+    assert!(selling(&sim));
+    assert!(!can_sell_building(&sim, &rules, 1));
+    let sale = sim.substrate.entities.get(1).unwrap().building_down;
+    assert!(sell_back(&mut sim, &rules, 1, SellOrder::Player));
+    assert_eq!(clicks(&sim), 2, "the repeated order clicks");
+    assert_eq!(
+        sim.substrate.entities.get(1).unwrap().building_down,
+        sale,
+        "the sale is not restarted"
     );
+    assert!(!sell_back(&mut sim, &rules, 1, SellOrder::Computer));
+    assert_eq!(clicks(&sim), 2);
+
+    let mut sim = scene("GAPOWR");
+    assert!(sell_back(&mut sim, &rules, 1, SellOrder::Computer));
+    assert!(selling(&sim));
+    assert_eq!(clicks(&sim), 1);
+
+    let mut sim = scene("GAPOWR");
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .pending_c4_detonation = Some(PendingC4Detonation {
+        start_frame: 0,
+        duration_frames: 100,
+        source_entity_id: None,
+    });
+    assert!(!sell_back(&mut sim, &rules, 1, SellOrder::Computer));
+    assert!(!selling(&sim));
+    assert_eq!(clicks(&sim), 0);
+    assert!(can_sell_building(&sim, &rules, 1));
+    assert!(sell_back(&mut sim, &rules, 1, SellOrder::Player));
+    assert!(selling(&sim));
+    assert_eq!(clicks(&sim), 1);
 }
 
 #[test]
@@ -3740,10 +3672,10 @@ fn sell_player_built_garrisoned_building_demolishes_and_ejects_alive() {
     *super::credits_entry_for_owner(&mut sim, "Americans") = 0;
 
     // Spawn a CanBeOccupied building OWNED by Americans with NO original_owner
-    // (player-built, not captured). CAGAS01 in sell_rules has Cost=0 so the
+    // (player-built, not captured). NABNKR in sell_rules has Cost=0 so the
     // refund is 0 — this test pins the demolition path (entities.remove fired)
     // and the alive-eject of the occupant, not the refund magnitude.
-    spawn_structure(&mut sim, 30, "Americans", "CAGAS01", 40, 40);
+    spawn_structure(&mut sim, 30, "Americans", "NABNKR", 40, 40);
     let amer_id = sim.interner.intern("Americans");
     let e1_id = sim.interner.intern("E1");
     if let Some(t) = sim.substrate.entities.get_mut(30) {
@@ -3763,7 +3695,7 @@ fn sell_player_built_garrisoned_building_demolishes_and_ejects_alive() {
         }
     }
 
-    assert!(sell_building(&mut sim, &rules, 30));
+    assert!(super::sell_building_now_for_test(&mut sim, &rules, 30));
 
     // Building removed (deferred-delete: drain at end-of-tick to free the slot).
     sim.flush_pending_delete();

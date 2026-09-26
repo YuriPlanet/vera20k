@@ -379,9 +379,29 @@ pub(crate) fn place_infantry_in_cell(
     sub_y: SimFixed,
     rng: &mut SimRng,
 ) -> Option<u8> {
-    let ground = raw.ground_bits(rx, ry);
+    place_infantry_in_native_cell(
+        raw,
+        crate::sim::occupancy::RawCellKey::Real(rx, ry),
+        layer,
+        sub_x,
+        sub_y,
+        rng,
+    )
+}
+
+/// [`place_infantry_in_cell`] on the CellClass a Map lookup returned, which
+/// is MapClass's off-map cell for a coordinate outside the map.
+pub(crate) fn place_infantry_in_native_cell(
+    raw: &crate::sim::occupancy::RawCellOccupationGrid,
+    cell: crate::sim::occupancy::RawCellKey,
+    layer: MovementLayer,
+    sub_x: SimFixed,
+    sub_y: SimFixed,
+    rng: &mut SimRng,
+) -> Option<u8> {
+    let ground = raw.bits_at(cell, MovementLayer::Ground);
     let mask = if layer == MovementLayer::Bridge {
-        raw.deck_bits(rx, ry)
+        raw.bits_at(cell, MovementLayer::Bridge)
     } else {
         ground
     };

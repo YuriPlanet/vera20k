@@ -54,6 +54,7 @@ fn make_test_entity(type_id: &str, category: EntityCategory) -> MapEntity {
         recruitable_a: true,
         recruitable_b: true,
         structure_upgrades: [None, None, None],
+        structure_ai_sellable: false,
     }
 }
 
@@ -4216,6 +4217,7 @@ fn test_spawn_from_map_high_unit_uses_bridge_layer_and_deck_level() {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         }],
         Some(&combat_test_rules()),
         &heights,
@@ -4317,6 +4319,7 @@ fn test_spawn_from_map_high_without_bridge_falls_back_to_ground() {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         }],
         Some(&combat_test_rules()),
         &heights,
@@ -4526,6 +4529,7 @@ fn test_destroyed_bridge_snaps_unit_to_ground_when_ground_exists() {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         }],
         Some(&combat_test_rules()),
         &BTreeMap::from([((5, 5), 1)]),
@@ -4588,6 +4592,7 @@ fn test_destroyed_bridge_snaps_unit_to_ground_over_water_below() {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         }],
         Some(&combat_test_rules()),
         &BTreeMap::new(),
@@ -4655,6 +4660,7 @@ fn test_destroyed_bridge_snaps_unit_to_ground_over_overlay_blocked() {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         }],
         Some(&combat_test_rules()),
         &BTreeMap::new(),
@@ -4714,6 +4720,7 @@ fn test_destroyed_bridge_snaps_unit_to_ground_over_terrain_object_blocked() {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         }],
         Some(&combat_test_rules()),
         &BTreeMap::new(),
@@ -4776,6 +4783,7 @@ fn test_destroyed_bridge_fallout_matches_rebuilt_ground_walkability() {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         }],
         Some(&combat_test_rules()),
         &BTreeMap::new(),
@@ -4855,6 +4863,7 @@ fn test_bridge_collapse_kills_ground_unit_under_destroyed_cell() {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         }],
         Some(&rules),
         &BTreeMap::new(),
@@ -6352,6 +6361,7 @@ fn test_execute_tick_delay_blocks_early_execution() {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         }],
         None,
         &empty_heights(),
@@ -6432,6 +6442,7 @@ fn test_move_queue_command_appends_waypoint() {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         }],
         None,
         &empty_heights(),
@@ -6496,6 +6507,7 @@ fn test_stop_command_clears_move_and_attack_intent() {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         }],
         None,
         &empty_heights(),
@@ -6556,6 +6568,7 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         }],
         None,
         &empty_heights(),
@@ -6806,6 +6819,7 @@ fn gsi_13_06_stop_preserves_committed_ship_segment_and_speed_state() {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         }],
         None,
         &empty_heights(),
@@ -6921,6 +6935,7 @@ fn test_move_command_rejects_non_owned_entity() {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         }],
         None,
         &empty_heights(),
@@ -7102,6 +7117,7 @@ fn test_attack_command_rejects_friendly_target() {
                 recruitable_a: true,
                 recruitable_b: true,
                 structure_upgrades: [None, None, None],
+                structure_ai_sellable: false,
             },
             MapEntity {
                 owner: "British".to_string(),
@@ -7118,6 +7134,7 @@ fn test_attack_command_rejects_friendly_target() {
                 recruitable_a: true,
                 recruitable_b: true,
                 structure_upgrades: [None, None, None],
+                structure_ai_sellable: false,
             },
         ],
         None,
@@ -7166,6 +7183,7 @@ fn test_attack_move_auto_acquires_enemy() {
                 recruitable_a: true,
                 recruitable_b: true,
                 structure_upgrades: [None, None, None],
+                structure_ai_sellable: false,
             },
             MapEntity {
                 owner: "Russians".to_string(),
@@ -7182,6 +7200,7 @@ fn test_attack_move_auto_acquires_enemy() {
                 recruitable_a: true,
                 recruitable_b: true,
                 structure_upgrades: [None, None, None],
+                structure_ai_sellable: false,
             },
         ],
         None,
@@ -7254,6 +7273,7 @@ fn test_attack_move_lethal_hit_expires_the_target_at_the_kill() {
                 recruitable_a: true,
                 recruitable_b: true,
                 structure_upgrades: [None, None, None],
+                structure_ai_sellable: false,
             },
             MapEntity {
                 owner: "Russians".to_string(),
@@ -7270,6 +7290,7 @@ fn test_attack_move_lethal_hit_expires_the_target_at_the_kill() {
                 recruitable_a: true,
                 recruitable_b: true,
                 structure_upgrades: [None, None, None],
+                structure_ai_sellable: false,
             },
         ],
         None,
@@ -7360,6 +7381,7 @@ fn test_lethal_hit_restore_refuses_the_dying_archived_target() {
                 recruitable_a: true,
                 recruitable_b: true,
                 structure_upgrades: [None, None, None],
+                structure_ai_sellable: false,
             },
             MapEntity {
                 owner: "Russians".to_string(),
@@ -7376,6 +7398,7 @@ fn test_lethal_hit_restore_refuses_the_dying_archived_target() {
                 recruitable_a: true,
                 recruitable_b: true,
                 structure_upgrades: [None, None, None],
+                structure_ai_sellable: false,
             },
         ],
         None,
@@ -7452,6 +7475,7 @@ fn test_lethal_hit_stuns_the_dying_infantry() {
                 recruitable_a: true,
                 recruitable_b: true,
                 structure_upgrades: [None, None, None],
+                structure_ai_sellable: false,
             },
             MapEntity {
                 owner: "Americans".to_string(),
@@ -7468,6 +7492,7 @@ fn test_lethal_hit_stuns_the_dying_infantry() {
                 recruitable_a: true,
                 recruitable_b: true,
                 structure_upgrades: [None, None, None],
+                structure_ai_sellable: false,
             },
         ],
         None,
@@ -7530,6 +7555,7 @@ fn test_guard_returns_to_anchor_when_displaced() {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         }],
         None,
         &empty_heights(),
@@ -7627,6 +7653,8 @@ fn test_undeploy_conyard_spawns_mcv() {
     let mut rules = combat_test_rules();
     // Retail GACNSTMK: 58 frames with shadows.
     rules.set_buildup_control_for_test("GACNST", [0, 29, 1]);
+    // A yard converts back only in a multiplayer game (`Sell 0x00449D08`).
+    sim.session.game_mode_nonzero = true;
     let heights = empty_heights();
     insert_house_with_counts(&mut sim, "Americans", 0, 0);
 
@@ -8130,12 +8158,13 @@ fn animated_death_uninit_waits_for_ordinary_tail_drain() {
     assert!(sim.substrate.pending_delete.is_empty());
 }
 
-/// Command-applied death (here: selling a power plant) is UnInit'd during command
-/// application but remains resolvable until the ordinary tail drain. Earlier
-/// systems must gate on lifecycle authority rather than counting the dead-limbo
-/// object merely because it is still stored.
+/// A death in the object pass (here: a sold power plant, UnInit'd by the
+/// Selling mission's completing visit in its LogicVector slot) remains
+/// resolvable until the ordinary tail drain. Later systems of the frame must
+/// gate on lifecycle authority rather than counting the dead-limbo object
+/// merely because it is still stored.
 #[test]
-fn command_death_is_ignored_before_ordinary_tail_drain() {
+fn sale_death_is_ignored_before_ordinary_tail_drain() {
     use crate::sim::components::Health;
 
     let ini_str: &str = "\
@@ -8145,7 +8174,9 @@ fn command_death_is_ignored_before_ordinary_tail_drain() {
 [AircraftTypes]\n\n\
 [GAPOWR]\nStrength=750\nArmor=wood\nFoundation=2x2\nPower=100\n";
     let ini = IniFile::from_str(ini_str);
-    let rules = RuleSet::from_ini(&ini).expect("power rules parse");
+    let mut rules = RuleSet::from_ini(&ini).expect("power rules parse");
+    // Retail GAPOWRMK: a building sells only with a Buildup SHP.
+    rules.set_buildup_control_for_test("GAPOWR", [0, 25, 2]);
 
     let mut sim = Simulation::new();
     sim.input_delay_ticks = 0;
@@ -8179,40 +8210,43 @@ fn command_death_is_ignored_before_ordinary_tail_drain() {
         "two power plants should produce 200 before sale",
     );
 
-    // Tick 2: sell plant 1 via command. It remains stored as dead-limbo until the
-    // tail, while P4 power counts only the surviving plant 2 through its lifecycle
-    // gate.
+    // Tick 2: sell plant 1 via command: its Selling mission starts at the
+    // command tail and packs it up; power still counts it.
     let sell = CommandEnvelope::new(
         owner_id,
         sim.session.tick + 1,
         Command::SellBuilding { entity_id: 1 },
     );
     sim.advance_tick(&[sell], Some(&rules), &height_map, Some(&grid), None, 100);
-
     assert!(
-        sim.substrate.entities.get(1).is_none(),
-        "sold plant freed this tick"
+        sim.substrate
+            .entities
+            .get(1)
+            .is_some_and(|plant| plant.building_down.is_some()),
+        "the sale packs the plant up"
     );
+
+    // The completing visit (2 + 24 * 2 frames on) UnInits it in the object
+    // pass; the power phase runs while it is still stored, and the tail
+    // drains it the same tick.
+    let mut frames = 0;
+    while sim.substrate.entities.get(1).is_some() && frames < 60 {
+        sim.advance_tick(&[], Some(&rules), &height_map, Some(&grid), None, 100);
+        frames += 1;
+    }
+    assert_eq!(frames, 50, "sold plant freed at its completing visit");
     assert!(
         sim.substrate.entities.get(2).is_some(),
         "surviving plant still present"
     );
     assert!(
         sim.substrate.pending_delete.is_empty(),
-        "command-death queue drained"
+        "sale-death queue drained"
     );
-    assert_eq!(
-        sim.power_states.get(&owner_id).map(|s| s.total_output),
-        Some(200),
-        "power ran before EventClass sold the plant at the native command tail",
-    );
-
-    // The next object/system frame observes the tail-committed deletion.
-    sim.advance_tick(&[], Some(&rules), &height_map, Some(&grid), None, 100);
     assert_eq!(
         sim.power_states.get(&owner_id).map(|s| s.total_output),
         Some(100),
-        "the surviving plant is the only contributor on the following frame",
+        "power skips the dead-limbo plant the tail has not yet drained",
     );
 }
 

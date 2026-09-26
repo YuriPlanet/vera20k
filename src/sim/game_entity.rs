@@ -648,6 +648,13 @@ pub struct GameEntity {
     /// pointer and is consumed by the building AI low-credit sell decision.
     #[serde(default)]
     pub was_attacked_by_enemy: bool,
+    /// A building's AI sale byte (`BuildingClass+0x6DC`), which the
+    /// computer's low-credit sale requires in a campaign (`0x00450781`). The
+    /// constructor sets it (`0x0043B93D`) and Init_Managers clears it for a
+    /// type without a Buildup (`0x00442CBC`); the map's `[Structures]` reader
+    /// then writes its AI Sellable field (`0x0044FB5B`).
+    #[serde(default)]
+    pub ai_sellable: bool,
     /// Independent turret/barrel facing — only on entities with Turret=yes in rules.ini.
     /// Timer-based 16-bit interpolator mirroring gamemd's BarrelFacing primitive.
     pub barrel_facing: Option<crate::sim::movement::FacingClass>,
@@ -1325,6 +1332,11 @@ impl GameEntity {
             // the finished-job bridge read it as Guard would put the object
             // through BOTH scanners on the same cadence.
             Some(MissionType::AreaGuard) => MissionType::AreaGuard,
+            // A sale runs until the building converts or leaves
+            // (`BuildingClass::Sell`, `building_down`); Selling is one of the
+            // twelve missions that strip a scanner target, and the passive
+            // block never admits it.
+            Some(MissionType::Selling) => MissionType::Selling,
             // A committed mission still doing something wins; one whose work is
             // finished defers to what the object is actually doing (nothing).
             Some(known) if !self.committed_mission_is_finished() => known,
@@ -1507,6 +1519,7 @@ impl GameEntity {
             dock_entered_with: None,
             rally_target: None,
             was_attacked_by_enemy: false,
+            ai_sellable: false,
             barrel_facing: None,
             turret_rotation_latch: false,
             last_fire_frame: NATIVE_LAST_FIRE_FRAME_INIT,
@@ -1849,9 +1862,9 @@ impl GameEntity {
     }
 
     /// A building's current mission is Construction (0x12) or Selling
-    /// (0x13). VERA keeps a building's build-up and its build-down (the
-    /// Construction Yard repack) in `building_up`/`building_down` without
-    /// publishing those missions, so either counts.
+    /// (0x13). VERA keeps a building's build-up in `building_up` without
+    /// publishing the Construction mission, so it counts; a sale publishes
+    /// Selling and carries `building_down`.
     pub(crate) fn constructing_or_selling(&self) -> bool {
         self.building_up.is_some()
             || self.building_down.is_some()
@@ -1870,10 +1883,7 @@ impl GameEntity {
     /// 0 and 1 visits run in the idle BState 1.
     pub(crate) fn in_construction_bstate(&self) -> bool {
         self.building_up.as_ref().is_some_and(|up| !up.idle)
-            || self
-                .building_down
-                .as_ref()
-                .is_some_and(|down| down.sell_stage >= 2)
+            || (self.building_down.is_some() && self.mission.handler_state() >= 2)
     }
 }
 

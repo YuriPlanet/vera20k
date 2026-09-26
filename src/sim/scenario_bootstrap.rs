@@ -2587,11 +2587,13 @@ pub(crate) fn initialize_map_roster_houses(
             .collect();
         // HouseClass::Read_Scenario_INI reads `IQ=` from this exact named
         // house section, defaults it to zero, and changes a value above
-        // MaxIQLevels to literal one before storing CurrentIQ (+0x24C).
+        // MaxIQLevels to literal one before storing it as both the authored
+        // IQ (+0x1D0) and CurrentIQ (+0x24C) (0x00500DBA..0x00500DC0).
         house_state.current_iq = rules.map_or_else(
             || house.iq.unwrap_or(0),
             |rules| house.scenario_current_iq(rules.general.max_iq_levels),
         );
+        house_state.authored_iq = house_state.current_iq;
         // MultiplayPassive lives on the country/house type. A roster section
         // with no `Country=` resolves through `[Countries]` entry zero.
         house_state.multiplay_passive =
@@ -3835,6 +3837,7 @@ mod tests {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         });
         let launch = one_player_battle_launch("payload.mmx");
         let plan_a =

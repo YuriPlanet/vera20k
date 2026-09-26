@@ -720,7 +720,10 @@ pub struct GeneralRules {
     /// `MenuSlideOut`, `RulesClass+0x19C` read at `0x006694C7`), played by
     /// `0x00608070` before a shown shell dialog's buttons slide out.
     pub gui_move_out_sound: Option<String>,
-    /// Generic shell click sound from [AudioVisual] GenericClick.
+    /// Generic shell click sound from [AudioVisual] GenericClick
+    /// (`Rules+0x70C`, read at `0x0066AD30` through `VocClass::FindByName`;
+    /// retail `MenuClick`). A human player's sale order plays it too
+    /// (`Sell_Back @ 0x00447110`).
     pub generic_click_sound: Option<String>,
     /// Launcher Options Sound/Voice preview cue from [AudioVisual] GenericBeep.
     pub generic_beep_sound: Option<String>,
@@ -4475,6 +4478,12 @@ impl RuleSet {
     /// is unbound.
     pub fn buildup_control(&self, type_id: &str) -> [i32; 3] {
         self.buildup_assets.control(type_id)
+    }
+
+    /// Whether a building type's Buildup SHP is bound (`+0x6E9`,
+    /// [`crate::rules::buildup_asset_catalog::BuildupAssetCatalog::has_buildup`]).
+    pub fn has_buildup(&self, type_id: &str) -> bool {
+        self.buildup_assets.has_buildup(type_id)
     }
 
     /// Install one building type's construction control (fixtures without

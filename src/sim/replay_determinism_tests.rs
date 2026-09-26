@@ -31,6 +31,7 @@ fn make_test_sim() -> Simulation {
         recruitable_a: true,
         recruitable_b: true,
         structure_upgrades: [None, None, None],
+        structure_ai_sellable: false,
     };
     let heights: BTreeMap<(u16, u16), u8> = BTreeMap::new();
     sim.spawn_from_map(&[entity], None, &heights);
@@ -140,6 +141,7 @@ fn replay_reapplies_header_seed() {
             recruitable_a: true,
             recruitable_b: true,
             structure_upgrades: [None, None, None],
+            structure_ai_sellable: false,
         };
         let heights: BTreeMap<(u16, u16), u8> = BTreeMap::new();
         sim.spawn_from_map(&[entity], None, &heights);
