@@ -56,33 +56,6 @@ fn test_path_grid_set_blocked() {
 }
 
 #[test]
-fn astar_trace_sink_records_rejected_and_accepted_candidates() {
-    let mut grid = PathGrid::test_all_passable(3, 1);
-    grid.set_blocked(1, 0, true);
-    let collector = AStarTraceCollector::new();
-    let path = astar_search(
-        &grid,
-        (0, 0),
-        MovementLayer::Ground,
-        (2, 0),
-        &AStarOptions {
-            trace_sink: Some(&collector),
-            trace_search_id: 42,
-            ..Default::default()
-        },
-    );
-
-    assert!(path.is_none());
-    let steps = collector.steps();
-    assert!(steps.iter().any(|step| step.search_id == 42));
-    assert!(
-        steps
-            .iter()
-            .any(|step| step.rejected_reason == Some("walkability_blocked"))
-    );
-}
-
-#[test]
 fn test_euclidean_heuristic_cardinal() {
     // Pure cardinal: sqrt(25) * 1000 = 5000.
     let h: i32 = euclidean_heuristic(0, 0, 5, 0);
@@ -2893,14 +2866,13 @@ fn astar_hierarchy_allows_off_marker_cell_with_blocker_neighbor_count() {
 }
 
 #[test]
-fn astar_hierarchy_progress_tracks_last_accepted_next_path_zone() {
+fn astar_hierarchy_marker_follows_the_marked_straight_path() {
     let grid = PathGrid::new(4, 1);
     let level0_zones = row_level0_graph(&[1, 2, 3, 4]);
     let marked_zones = BTreeSet::from([1, 2, 3, 4]);
     let blocker_counts = BlockerNeighborCounts::new(4, 1);
-    let level0_path = vec![1, 2, 3, 4];
 
-    let result = find_path_with_costs_hierarchy_marker_progress(
+    let path = find_path_with_costs_hierarchy_marker(
         &grid,
         (0, 0),
         (3, 0),
@@ -2909,7 +2881,6 @@ fn astar_hierarchy_progress_tracks_last_accepted_next_path_zone() {
         &level0_zones,
         &marked_zones,
         &blocker_counts,
-        &level0_path,
         Some(MovementZone::Normal),
         None,
         None,
@@ -2923,41 +2894,7 @@ fn astar_hierarchy_progress_tracks_last_accepted_next_path_zone() {
     )
     .expect("marked straight path should succeed");
 
-    assert_eq!(result.path, vec![(0, 0), (1, 0), (2, 0), (3, 0)]);
-    assert_eq!(result.progress_index, 3);
-    assert_eq!(result.progress_cell, (3, 0));
-}
-
-#[test]
-fn astar_hierarchy_progress_remains_start_when_no_next_zone_accepted() {
-    let mut grid = PathGrid::new(3, 1);
-    grid.set_blocked(1, 0, true);
-    let level0_zones = row_level0_graph(&[1, 2, 3]);
-    let marked_zones = BTreeSet::from([1, 2, 3]);
-    let blocker_counts = BlockerNeighborCounts::new(3, 1);
-    let level0_path = vec![1, 2, 3];
-    let progress = HierarchyProgressTracker::new((0, 0), &level0_path);
-
-    let path = astar_search(
-        &grid,
-        (0, 0),
-        MovementLayer::Ground,
-        (2, 0),
-        &AStarOptions {
-            hierarchy_gate: Some(HierarchyGate {
-                level0_zones: &level0_zones,
-                marked_level0: &marked_zones,
-                blocker_neighbor_counts: &blocker_counts,
-            }),
-            hierarchy_progress: Some(&progress),
-            movement_zone: Some(MovementZone::Normal),
-            ..Default::default()
-        },
-    );
-
-    assert!(path.is_none());
-    assert_eq!(progress.progress_index(), 0);
-    assert_eq!(progress.progress_cell(), (0, 0));
+    assert_eq!(path, vec![(0, 0), (1, 0), (2, 0), (3, 0)]);
 }
 
 // ---------------------------------------------------------------------------
@@ -3141,7 +3078,6 @@ fn runtime_and_search_share_known_water_cell_admission() {
     assert!(!runtime_admission);
     assert_eq!(search_admission, runtime_admission);
 
-    let trace = AStarTraceCollector::new();
     let path = astar_search(
         &grid,
         (0, 0),
@@ -3151,14 +3087,10 @@ fn runtime_and_search_share_known_water_cell_admission() {
             terrain_costs: Some(&costs),
             movement_zone: Some(MovementZone::Normal),
             resolved_terrain: Some(&terrain),
-            trace_sink: Some(&trace),
             ..Default::default()
         },
     );
     assert!(path.is_none(), "A* must reject the same water boundary");
-    assert!(trace.steps().iter().any(|step| {
-        step.candidate_cell == (0, 1) && step.rejected_reason == Some("walkability_blocked")
-    }));
 }
 
 #[test]
