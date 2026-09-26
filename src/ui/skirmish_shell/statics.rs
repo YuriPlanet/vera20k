@@ -16,7 +16,7 @@
 use std::time::{Duration, Instant};
 
 use crate::ui::shell::static_reveal::{
-    DialogStatics, Kind1Params, PresentedKind1Static, StaticPaint,
+    DialogStatics, DialogStaticsPaint, Kind1Params, PresentedKind1Static, StaticPaint,
 };
 
 /// Game type `0x6EC` and map name `0x5A8` (the executed getters).
@@ -34,12 +34,13 @@ pub(crate) struct SkirmishStatics {
     map_label: PresentedKind1Static,
 }
 
-/// The right panel's three statics in one recomposition; `None` while hidden.
+/// Every static in one recomposition; `None` where nothing paints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct RightPanelPaint<'a> {
+pub(crate) struct SkirmishStaticsPaint<'a> {
     pub heading: Option<StaticPaint<'a>>,
     pub game_type: Option<StaticPaint<'a>>,
     pub map_label: Option<StaticPaint<'a>>,
+    pub status_line: Option<StaticPaint<'a>>,
 }
 
 impl Default for SkirmishStatics {
@@ -69,33 +70,33 @@ impl SkirmishStatics {
         self.map_label.show(now);
     }
 
-    /// `0x102` is shown again after Choose Map: every static repaints
-    /// ([`DialogStatics::shown_again`]); the slide blits over all but the
-    /// status line.
-    pub(crate) fn shown_again(&mut self) {
-        self.dialog.shown_again();
-        self.game_type.repaint();
-        self.map_label.repaint();
-    }
-
     /// A hover message to the status line ([`DialogStatics::hover`]).
     pub(crate) fn hover(&mut self, help: &str, now: Instant) -> bool {
         self.dialog.hover(help, now)
     }
 
-    /// The heading, game type and map name for this recomposition; the
-    /// frame loop commits them after present. The slides blit over them.
-    pub(crate) fn paint_right_panel(&mut self, now: Instant) -> RightPanelPaint<'_> {
-        RightPanelPaint {
-            heading: self.dialog.paint_heading(now),
-            game_type: self.game_type.paint_text(now),
-            map_label: self.map_label.paint_text(now),
+    /// Every static for this recomposition; the frame loop commits them
+    /// after present. While a slide runs it blits over the right panel's
+    /// three, and the status line gets no timer ([`DialogStatics::paint`]).
+    pub(crate) fn paint(&mut self, now: Instant, sliding: bool) -> SkirmishStaticsPaint<'_> {
+        let DialogStaticsPaint {
+            heading,
+            status_line,
+        } = self.dialog.paint(now, sliding);
+        let (game_type, map_label) = if sliding {
+            (None, None)
+        } else {
+            (
+                self.game_type.paint_text(now, true),
+                self.map_label.paint_text(now, true),
+            )
+        };
+        SkirmishStaticsPaint {
+            heading,
+            game_type,
+            map_label,
+            status_line,
         }
-    }
-
-    /// The status line for this recomposition, outside the slides' column.
-    pub(crate) fn paint_status_line(&mut self, now: Instant) -> Option<StaticPaint<'_>> {
-        self.dialog.paint_status_line(now)
     }
 
     pub(crate) fn commit_presented(&mut self) {
@@ -116,14 +117,16 @@ mod tests {
 
     /// Paint and present once: heading, game type, map name, status line.
     fn present(statics: &mut SkirmishStatics, now: Instant) -> [Option<u32>; 4] {
-        let panel = statics.paint_right_panel(now);
-        let [heading, game_type, map_label] = [panel.heading, panel.game_type, panel.map_label]
-            .map(|shown| shown.map(|shown| shown.window.count));
-        let status_line = statics
-            .paint_status_line(now)
-            .map(|shown| shown.window.count);
+        let shown = statics.paint(now, false);
+        let counts = [
+            shown.heading,
+            shown.game_type,
+            shown.map_label,
+            shown.status_line,
+        ]
+        .map(|shown| shown.map(|shown| shown.window.count));
         statics.commit_presented();
-        [heading, game_type, map_label, status_line]
+        counts
     }
 
     /// Present on each 15 ms tick until every reveal is terminal.
@@ -164,16 +167,11 @@ mod tests {
         statics.hover("Start Game help", t0);
         assert_eq!(present(&mut statics, t0), [None; 4]);
         statics.show("Skirmish Game", "Battle", "DC Uprising (2-4)", t0);
+        let shown = statics.paint(t0, false);
+        assert_eq!(shown.heading.map(|shown| shown.text), Some("Skirmish Game"));
         assert_eq!(
-            statics
-                .paint_right_panel(t0)
-                .heading
-                .map(|shown| shown.text),
-            Some("Skirmish Game")
-        );
-        assert_eq!(
-            statics
-                .paint_status_line(t0)
+            shown
+                .status_line
                 .map(|shown| (shown.text, shown.window.count)),
             Some(("Start Game help", 1))
         );
@@ -234,13 +232,13 @@ mod tests {
         assert_eq!(present(&mut statics, t0), [None; 4]);
         statics.show("Skirmish Game", "Battle", "Map", t0);
         assert_eq!(
-            statics.paint_status_line(t0).map(|shown| shown.text),
+            statics.paint(t0, false).status_line.map(|shown| shown.text),
             Some("")
         );
     }
 
     #[test]
-    fn a_reshown_dialog_paints_its_status_line_before_the_slide() {
+    fn a_reshown_dialog_keeps_its_status_line_paint_through_the_slide() {
         let t0 = Instant::now();
         let mut statics = SkirmishStatics::default();
         statics.show("Skirmish Game", "Battle", "Map", t0);
@@ -248,12 +246,23 @@ mod tests {
         let settled = settle(&mut statics, t0);
         // "Help": target 4 + 1 + 16 = 21; the last timer paint drew 19.
         assert_eq!(present(&mut statics, settled)[3], Some(19));
-        statics.shown_again();
+        // Shown again after Choose Map: the entry slide shows only the status
+        // line, at its last paint ...
+        let later = settled + Duration::from_millis(500);
+        let shown = statics.paint(later, true);
+        assert_eq!([shown.heading, shown.game_type, shown.map_label], [None; 3]);
         assert_eq!(
-            statics
-                .paint_status_line(settled)
+            shown
+                .status_line
                 .map(|shown| (shown.text, shown.window.count)),
-            Some(("Help", 22))
+            Some(("Help", 19))
+        );
+        statics.commit_presented();
+        // ... until the SHOW completion repaints every static at its count.
+        statics.show("Skirmish Game", "Battle", "Map", later);
+        assert_eq!(
+            present(&mut statics, later),
+            [Some(22), Some(15), Some(12), Some(22)]
         );
     }
 }

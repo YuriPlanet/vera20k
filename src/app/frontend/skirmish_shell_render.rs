@@ -525,17 +525,15 @@ fn render_skirmish_shell_with_atlas(
     // the random-map dialog `0x105` one over the hidden `0x6B`; the seed
     // browser covers `0x105`.
     let top_dialog = state.frontend.skirmish_shell_state.top_dialog();
-    let chooser_showing = top_dialog == crate::ui::skirmish_shell::SkirmishShellDialog::ChooseMap;
-    let setup_showing = top_dialog == crate::ui::skirmish_shell::SkirmishShellDialog::RandomMap;
-    let slide_kind = if chooser_showing {
-        crate::app::frontend::shell_transition::ShellSlideKind::ChooseMap
-    } else if setup_showing {
-        crate::app::frontend::shell_transition::ShellSlideKind::RandomMap
-    } else {
-        crate::app::frontend::shell_transition::ShellSlideKind::Skirmish
-    };
-    let exit_wave =
-        crate::app::frontend::shell_transition::shell_exit_wave(state, slide_kind).cloned();
+    let chooser_showing =
+        top_dialog == Some(crate::ui::skirmish_shell::SkirmishShellDialog::ChooseMap);
+    let setup_showing =
+        top_dialog == Some(crate::ui::skirmish_shell::SkirmishShellDialog::RandomMap);
+    let exit_wave = crate::app::frontend::shell_transition::skirmish_slide_target(
+        &state.frontend.skirmish_shell_state,
+    )
+    .and_then(|kind| crate::app::frontend::shell_transition::shell_exit_wave(state, kind))
+    .cloned();
     let leaving = exit_wave.is_some();
     let wave = exit_wave.or_else(|| {
         (mode == ShellRenderMode::TransitionPreview)
@@ -553,10 +551,9 @@ fn render_skirmish_shell_with_atlas(
         mode
     };
     update_owner_draw_button_paint_sound(state, paint_mode);
-    // `0x6B`'s heading and status line: revealed from the entry slide's end;
-    // a slide blits the top panel over the heading while the status line
-    // keeps what it painted when the chooser showed.
-    let (chooser_title, chooser_status) = match (
+    // `0x6B`'s and `0x105`'s heading and status line, revealed from the
+    // entry slide's end.
+    let chooser_statics = match (
         choose_map_layout.as_ref(),
         state
             .frontend
@@ -565,19 +562,15 @@ fn render_skirmish_shell_with_atlas(
             .as_mut(),
     ) {
         (Some(chooser), Some(modal)) if chooser_showing && !leaving && !message_box_up => {
-            let now = std::time::Instant::now();
-            let title = if sliding {
-                None
-            } else {
-                modal.statics.paint_heading(now).map(|shown| shown.window)
-            };
-            let status =
-                text::status_line_label(modal.statics.paint_status_line(now), chooser.status_help);
-            (title, status)
+            text::dialog_statics_labels(
+                &mut modal.statics,
+                chooser.title,
+                chooser.status_help,
+                sliding,
+            )
         }
-        _ => (None, None),
+        _ => Vec::new(),
     };
-    // `0x105`'s heading and status line, like `0x6B`'s.
     let setup_layout = compute_random_map_setup_layout(state.render_width(), state.render_height());
     let setup_statics = match state
         .frontend
@@ -585,24 +578,12 @@ fn render_skirmish_shell_with_atlas(
         .random_map_setup_modal
         .as_mut()
     {
-        Some(setup) if setup_showing && !leaving && !message_box_up => {
-            let now = std::time::Instant::now();
-            let mut labels = Vec::with_capacity(2);
-            if !sliding {
-                labels.extend(setup.statics.paint_heading(now).map(|shown| {
-                    text::static_label(
-                        shown,
-                        setup_layout.title,
-                        crate::render::shell_text::ShellAlign::H_CENTER,
-                    )
-                }));
-            }
-            labels.extend(text::status_line_label(
-                setup.statics.paint_status_line(now),
-                setup_layout.status_help,
-            ));
-            labels
-        }
+        Some(setup) if setup_showing && !leaving && !message_box_up => text::dialog_statics_labels(
+            &mut setup.statics,
+            setup_layout.title,
+            setup_layout.status_help,
+            sliding,
+        ),
         _ => Vec::new(),
     };
     ensure_selected_preview_texture(state);
@@ -766,20 +747,12 @@ fn render_skirmish_shell_with_atlas(
                 ));
             }
         } else if !leaving {
-            push_choose_map_modal_text_draws(
-                &mut shell_draws,
-                state,
-                choose_map_layout,
-                chooser_title,
-                sliding,
-            );
-            if let Some(status) = chooser_status {
-                shell_draws.extend(crate::render::shell_paint::paint_labels_at_depth(
-                    &state.renderer.bit_font,
-                    &[status],
-                    SHELL_DROPDOWN_TEXT_DEPTH - 0.0001,
-                ));
-            }
+            push_choose_map_modal_text_draws(&mut shell_draws, state, choose_map_layout, sliding);
+            shell_draws.extend(crate::render::shell_paint::paint_labels_at_depth(
+                &state.renderer.bit_font,
+                &chooser_statics,
+                SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
+            ));
         }
     }
     if let Some(prompt) = eject_prompt {

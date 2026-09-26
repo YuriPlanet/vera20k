@@ -385,8 +385,9 @@ fn select_frame(
 }
 
 /// Emit the owner-draw buttons at `BUTTON_DEPTH`, applying the per-shell policy
-/// (frame select 2/3/4, art fit, art sink, disabled dim) without a per-dialog
-/// branch.
+/// (frame select 2/3/4, art fit, art sink) without a per-dialog branch. A
+/// disabled button keeps its full art (the black blend is only for type 0,
+/// `0x006135F3`).
 pub fn paint_buttons(
     atlas: &MainMenuShellChromeAtlas,
     buttons: &[PaintButton],

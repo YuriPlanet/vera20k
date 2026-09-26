@@ -86,6 +86,15 @@ const CHECKPOINT_SKIRMISH_0X105_CANCEL_PREFIX: &str = "skirmish-0x105-cancel-tic
 const CHECKPOINT_SKIRMISH_0X105_CANCEL_STEADY: &str = "skirmish-0x105-cancel-steady";
 const CHECKPOINT_SKIRMISH_0X105_USE_MAP: &str = "skirmish-0x105-use-map";
 const CHECKPOINT_SKIRMISH_0X105_SEED_BROWSER_RETURN: &str = "skirmish-0x105-seed-browser-return";
+/// Terrain Type's list open with the pointer below it on Map Size's face; the
+/// status line keeps Terrain Type's help (`ej-list-off.png`).
+const CHECKPOINT_SKIRMISH_0X105_LIST_OPEN: &str = "skirmish-0x105-list-open";
+/// Use Map with an AI row the random map cannot hold, then the eject box's
+/// Cancel (`0x6B` settled again) or OK (`0x102` settled with the map).
+const CHECKPOINT_SKIRMISH_0X105_EJECT_CANCEL: &str = "skirmish-0x105-eject-cancel";
+const CHECKPOINT_SKIRMISH_0X105_EJECT_OK: &str = "skirmish-0x105-eject-ok";
+/// The same route's eject box over no dialog (`ej-box.png`).
+const CHECKPOINT_SKIRMISH_0X105_EJECT_BOX: &str = "skirmish-0x105-eject-box";
 /// `skirmish-0x105-hover-<control>`: `0x105` settled with the pointer
 /// resting on a control, as in `rmg-hover-load.png` and
 /// `rmg-hover-surprise.png`.
@@ -215,6 +224,13 @@ pub enum ShellCaptureCheckpoint {
     /// Save Map on `0x105` opens the seed browser over it; the browser's
     /// Back uncovers `0x105`, which settles without an entry slide.
     Skirmish0x105SeedBrowserReturn,
+    /// Terrain Type's list open on `0x105`, the pointer resting on a row.
+    Skirmish0x105ListOpen,
+    /// Use Map on `0x105` asks to eject AI players; the answer's dialog
+    /// settles (`CHECKPOINT_SKIRMISH_0X105_EJECT_*`).
+    Skirmish0x105Eject(crate::ui::skirmish_shell::EjectPromptButton),
+    /// The same route's eject box, unanswered.
+    Skirmish0x105EjectBox,
     /// Choose Map `0x6B` settled after Skirmish's Choose Map.
     Skirmish0x6BSteady,
     /// Choose Map `0x6B`'s entry slide held at one tick
@@ -359,9 +375,17 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_SKIRMISH_0X105_STEADY => Ok(Self::Skirmish0x105Steady),
             CHECKPOINT_SKIRMISH_0X105_CANCEL_STEADY => Ok(Self::Skirmish0x105CancelSteady),
             CHECKPOINT_SKIRMISH_0X105_USE_MAP => Ok(Self::Skirmish0x105UseMap),
+            CHECKPOINT_SKIRMISH_0X105_LIST_OPEN => Ok(Self::Skirmish0x105ListOpen),
+            CHECKPOINT_SKIRMISH_0X105_EJECT_BOX => Ok(Self::Skirmish0x105EjectBox),
             CHECKPOINT_SKIRMISH_0X105_SEED_BROWSER_RETURN => {
                 Ok(Self::Skirmish0x105SeedBrowserReturn)
             }
+            CHECKPOINT_SKIRMISH_0X105_EJECT_CANCEL => Ok(Self::Skirmish0x105Eject(
+                crate::ui::skirmish_shell::EjectPromptButton::Cancel,
+            )),
+            CHECKPOINT_SKIRMISH_0X105_EJECT_OK => Ok(Self::Skirmish0x105Eject(
+                crate::ui::skirmish_shell::EjectPromptButton::Ok,
+            )),
             CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN => Ok(Self::Skirmish0x102ChooseMapReturn),
             CHECKPOINT_SKIRMISH_START_BLANK => Ok(Self::SkirmishStartBlank),
             CHECKPOINT_SKIRMISH_LOADING_FIRST_FRAME => Ok(Self::SkirmishLoadingFirstFrame),
@@ -454,6 +478,14 @@ impl ShellCaptureCheckpoint {
             Self::Skirmish0x105CancelSteady => CHECKPOINT_SKIRMISH_0X105_CANCEL_STEADY,
             Self::Skirmish0x105UseMap => CHECKPOINT_SKIRMISH_0X105_USE_MAP,
             Self::Skirmish0x105SeedBrowserReturn => CHECKPOINT_SKIRMISH_0X105_SEED_BROWSER_RETURN,
+            Self::Skirmish0x105ListOpen => CHECKPOINT_SKIRMISH_0X105_LIST_OPEN,
+            Self::Skirmish0x105EjectBox => CHECKPOINT_SKIRMISH_0X105_EJECT_BOX,
+            Self::Skirmish0x105Eject(crate::ui::skirmish_shell::EjectPromptButton::Cancel) => {
+                CHECKPOINT_SKIRMISH_0X105_EJECT_CANCEL
+            }
+            Self::Skirmish0x105Eject(crate::ui::skirmish_shell::EjectPromptButton::Ok) => {
+                CHECKPOINT_SKIRMISH_0X105_EJECT_OK
+            }
             Self::Skirmish0x6BSteady => CHECKPOINT_SKIRMISH_0X6B_STEADY,
             Self::Skirmish0x6BEntry(_) => "skirmish-0x6b-entry",
             Self::Skirmish0x102ChooseMapReturn => CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN,
@@ -1015,6 +1047,15 @@ impl ShellCaptureSession {
             ),
             ShellCaptureCheckpoint::Skirmish0x105SeedBrowserReturn => Some(
                 skirmish::SkirmishCapture::random_map(skirmish::RandomMapTarget::SeedBrowserReturn),
+            ),
+            ShellCaptureCheckpoint::Skirmish0x105ListOpen => Some(
+                skirmish::SkirmishCapture::random_map(skirmish::RandomMapTarget::ListOpen),
+            ),
+            ShellCaptureCheckpoint::Skirmish0x105EjectBox => Some(
+                skirmish::SkirmishCapture::random_map(skirmish::RandomMapTarget::EjectBox),
+            ),
+            ShellCaptureCheckpoint::Skirmish0x105Eject(answer) => Some(
+                skirmish::SkirmishCapture::random_map(skirmish::RandomMapTarget::Eject(answer)),
             ),
             _ => None,
         };

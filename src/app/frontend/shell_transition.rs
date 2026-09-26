@@ -629,7 +629,7 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     }
     let candidate =
         if state.frontend.shell_route.skirmish() || state.frontend.dev_skirmish_shell_enabled {
-            skirmish_slide_target(&state.frontend.skirmish_shell_state)
+            skirmish_slide_target(&state.frontend.skirmish_shell_state)?
         } else if state.frontend.shell_route.single_player() {
             ShellSlideKind::SinglePlayer
         } else if state.frontend.shell_route.movies_and_credits() {
@@ -661,15 +661,17 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
 
 /// The shown dialog of the Skirmish stack. `0x105` stays shown under the
 /// seed browser, so closing the browser uncovers it without an entry slide.
-fn skirmish_slide_target(shell: &crate::ui::skirmish_shell::SkirmishShellState) -> ShellSlideKind {
+pub(crate) fn skirmish_slide_target(
+    shell: &crate::ui::skirmish_shell::SkirmishShellState,
+) -> Option<ShellSlideKind> {
     use crate::ui::skirmish_shell::SkirmishShellDialog;
-    match shell.top_dialog() {
+    Some(match shell.top_dialog()? {
         SkirmishShellDialog::Skirmish => ShellSlideKind::Skirmish,
         SkirmishShellDialog::ChooseMap => ShellSlideKind::ChooseMap,
         SkirmishShellDialog::RandomMap | SkirmishShellDialog::SeedBrowser => {
             ShellSlideKind::RandomMap
         }
-    }
+    })
 }
 
 /// Arm a newly created `0xE2` before swapchain acquisition. This deliberately
@@ -736,30 +738,8 @@ pub(crate) fn activate_shell_first_paint_after_acquire(state: &mut AppState) {
         return;
     }
     let effect = ShellLifecycleReducer::from_state(state).observe_target(target, Instant::now());
-    if let ShellEntryEffect::Started(kind) = effect {
+    if let ShellEntryEffect::Started(_) = effect {
         crate::app::App::play_shell_slide_in_sound(state);
-        dialog_shown(state, kind);
-    }
-}
-
-/// A dialog that another one hid shows again (`ShowWindow`, then the entry
-/// slide): the statics it owns repaint what they had (`DialogStatics`); a
-/// new instance's are hidden, so nothing paints.
-fn dialog_shown(state: &mut AppState, kind: ShellSlideKind) {
-    let shell = &mut state.frontend.skirmish_shell_state;
-    match kind {
-        ShellSlideKind::Skirmish => shell.statics.shown_again(),
-        ShellSlideKind::ChooseMap => {
-            if let Some(modal) = shell.choose_map_modal.as_mut() {
-                modal.statics.shown_again();
-            }
-        }
-        ShellSlideKind::RandomMap => {
-            if let Some(setup) = shell.random_map_setup_modal.as_mut() {
-                setup.statics.shown_again();
-            }
-        }
-        _ => {}
     }
 }
 
@@ -996,22 +976,34 @@ mod tests {
     }
 
     #[test]
-    fn the_seed_browser_leaves_the_random_map_dialog_shown() {
+    fn the_skirmish_stack_slides_only_the_dialog_that_shows() {
         use crate::ui::skirmish_shell::{
-            ChooseMapModalState, RandomMapSetupModalState, SavedSeedBrowserState, SavedSeedMode,
-            SkirmishShellState, compute_choose_map_modal_layout,
+            ChooseMapModalState, ChooseMapSelection, EjectPrompt, RandomMapSetupModalState,
+            SavedSeedBrowserState, SavedSeedMode, SkirmishShellState,
+            compute_choose_map_modal_layout,
         };
         let mut shell = SkirmishShellState::default();
-        assert_eq!(skirmish_slide_target(&shell), ShellSlideKind::Skirmish);
+        assert_eq!(
+            skirmish_slide_target(&shell),
+            Some(ShellSlideKind::Skirmish)
+        );
         let chooser = compute_choose_map_modal_layout(800, 600);
         shell.choose_map_modal = Some(ChooseMapModalState::open(1, None, &[], &[], &chooser));
-        assert_eq!(skirmish_slide_target(&shell), ShellSlideKind::ChooseMap);
+        assert_eq!(
+            skirmish_slide_target(&shell),
+            Some(ShellSlideKind::ChooseMap)
+        );
+        // Create Random Map hides the chooser while `0x105` runs.
+        shell.choose_map_modal.as_mut().unwrap().hide();
         let options = crate::map::rmg::options::RmgOptions {
             seed: 1,
             ..Default::default()
         };
         shell.random_map_setup_modal = Some(RandomMapSetupModalState::open(options, None, false));
-        assert_eq!(skirmish_slide_target(&shell), ShellSlideKind::RandomMap);
+        assert_eq!(
+            skirmish_slide_target(&shell),
+            Some(ShellSlideKind::RandomMap)
+        );
         // Load, Save and Delete Map run the browser over `0x105` without
         // hiding it (`0x0059693F` -> `0x00558DD0`): no target change, so
         // closing the browser starts no entry slide.
@@ -1023,7 +1015,35 @@ mod tests {
             0,
             1,
         ));
-        assert_eq!(skirmish_slide_target(&shell), ShellSlideKind::RandomMap);
+        assert_eq!(
+            skirmish_slide_target(&shell),
+            Some(ShellSlideKind::RandomMap)
+        );
+        shell.saved_seed_browser = None;
+        // Use Map closes `0x105`, and the hidden chooser's Use Map asks to
+        // eject AI players (`0x005E6B2F`): no dialog shows, so none slides,
+        // and OK closes the chooser at once.
+        shell.random_map_setup_modal = None;
+        let chooser = shell.choose_map_modal.as_mut().unwrap();
+        chooser.eject_prompt = Some(EjectPrompt {
+            selection: ChooseMapSelection {
+                mode_id: 1,
+                record_index: Some(0),
+            },
+            pressed: None,
+        });
+        assert_eq!(skirmish_slide_target(&shell), None);
+        assert_eq!(
+            exit_start_rule(false, None, None, false, ShellSlideKind::ChooseMap),
+            ExitStartRule::Immediate
+        );
+        // Cancel shows the chooser again; its first paint slides it in
+        // (`0x005E6B47`, `0x005E6B51`).
+        assert!(shell.choose_map_modal.as_mut().unwrap().decline_eject());
+        assert_eq!(
+            skirmish_slide_target(&shell),
+            Some(ShellSlideKind::ChooseMap)
+        );
     }
 
     #[test]

@@ -69,7 +69,7 @@ impl App {
         {
             modal.saved_seed_buttons_enabled = available;
             // `0x105` is uncovered, not shown again: its statics repaint.
-            modal.statics.shown_again();
+            modal.statics.uncovered();
         }
     }
 

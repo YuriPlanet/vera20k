@@ -767,6 +767,22 @@ impl App {
             &mut frontend.random_map_retention,
             ra2_dir.as_deref(),
         );
+        Self::show_choose_map_after_random_map(state);
+    }
+
+    /// The random-map run has returned to the hidden chooser: unless its
+    /// Use Map closed it or asks to eject AI players, it shows again and its
+    /// first paint slides it in (`0x005E6B47`, `0x005E6B51`).
+    fn show_choose_map_after_random_map(state: &mut AppState) {
+        let shell = &mut state.frontend.skirmish_shell_state;
+        if shell.random_map_setup_modal.is_some() {
+            return;
+        }
+        if let Some(chooser) = shell.choose_map_modal.as_mut()
+            && chooser.eject_prompt.is_none()
+        {
+            chooser.show();
+        }
     }
 
     /// Commit the dialog's options and close it. Shared by the immediate accept
@@ -804,6 +820,7 @@ impl App {
                 log::error!("random map: could not write {RANDMAP_SED_FILE}: {err}");
             }
         }
+        Self::show_choose_map_after_random_map(state);
     }
 
     /// Rasterise the finished map into the dialog-owned preview surface.
@@ -939,13 +956,12 @@ impl App {
                 mode_id,
                 record_index: Some(index),
             };
-            // Success runs Use Map (`0x005E6B2F`): its eject box can keep the
-            // chooser (`0x005E6B47`).
+            // Success runs the hidden chooser's Use Map (`0x005E6B2F`): its
+            // eject box can keep the chooser (`0x005E6B47`).
             if Self::prompt_choose_map_eject(state, selection) {
                 return Ok(());
             }
-            let _ = Self::commit_choose_map_selection(state, selection);
-            Self::close_choose_map_modal(state);
+            Self::commit_choose_map_use(state, selection);
         }
         Ok(())
     }
@@ -1054,23 +1070,34 @@ impl App {
         let y = state.match_state.input.cursor_y.round() as i32;
         // `0x105`'s proc runs the common handler first (`0x0059631A`): every
         // move writes the help of the control under the pointer, or an empty
-        // one, and repaints the status line.
-        let help = crate::ui::skirmish_shell::random_map_setup_control_at(&layout, x, y)
-            .map(|control| {
-                Self::localized_status_help_text(
-                    state,
-                    crate::ui::skirmish_shell::status_help_key_for_random_map_setup(control),
-                )
-            })
-            .unwrap_or_default();
-        if let Some(setup) = state
+        // one, and repaints the status line. An open list holds the mouse
+        // capture instead (`ComboDropWin` `0x0060E0F1`); its own move handler
+        // (`0x0060E262`) asks the dialog for the row's help (`0x4E9`), which
+        // `0x105` never answers, so the status line keeps its text.
+        let list_open = state
             .frontend
             .skirmish_shell_state
             .random_map_setup_modal
-            .as_mut()
-            && setup.statics.hover(&help, std::time::Instant::now())
-        {
-            state.platform.window.request_redraw();
+            .as_ref()
+            .is_some_and(|modal| modal.open_combo.is_some());
+        if !list_open {
+            let help = crate::ui::skirmish_shell::random_map_setup_control_at(&layout, x, y)
+                .map(|control| {
+                    Self::localized_status_help_text(
+                        state,
+                        crate::ui::skirmish_shell::status_help_key_for_random_map_setup(control),
+                    )
+                })
+                .unwrap_or_default();
+            if let Some(setup) = state
+                .frontend
+                .skirmish_shell_state
+                .random_map_setup_modal
+                .as_mut()
+                && setup.statics.hover(&help, std::time::Instant::now())
+            {
+                state.platform.window.request_redraw();
+            }
         }
         let Some(modal) = state
             .frontend
