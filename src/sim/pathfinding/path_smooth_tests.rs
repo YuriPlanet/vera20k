@@ -1,10 +1,15 @@
-//! Tests for path smoothing (Pass 1: zigzag, Pass 2: drift correction).
+//! Tests for path smoothing (pass 1: zigzag and run replacement).
 
 use super::*;
 
 // ---- Helper: always-walkable closure ----
 fn all_walkable(_x: u16, _y: u16) -> bool {
     true
+}
+
+/// Whether a direction index represents a diagonal (NE, SE, SW, NW).
+fn is_diagonal_dir(d: u8) -> bool {
+    d < 8 && (d & 1) != 0
 }
 
 fn blocked_set(blocked: &[(u16, u16)]) -> impl Fn(u16, u16) -> bool + '_ {
@@ -227,72 +232,6 @@ fn smooth_layered_skips_layer_transition() {
     let (coords, _lyrs) = smooth_layered_path(path.clone(), layers, &|_x, _y, _l| true);
     // Path unchanged because layers differ at the zigzag point.
     assert_eq!(coords, path);
-}
-
-// ---- Pass 2: Drift correction tests ----
-
-#[test]
-fn optimize_straight_path_unchanged() {
-    // Purely diagonal path — no drift.
-    let path = vec![(0, 0), (1, 1), (2, 2), (3, 3), (4, 4)];
-    let result = optimize_path(path.clone(), &all_walkable);
-    assert_eq!(result, path);
-}
-
-#[test]
-fn optimize_short_path_unchanged() {
-    let path = vec![(0, 0), (1, 0), (2, 0)];
-    let result = optimize_path(path.clone(), &all_walkable);
-    assert_eq!(result, path);
-}
-
-#[test]
-fn optimize_staircase_is_a_no_op_today() {
-    // `optimize_path` is dead - `find_drift_segment` can never fire. The
-    // assertions below are `<=` plus endpoint checks, which a no-op
-    // satisfies, so this is not coverage of a reroute.
-    // E-S-E-S-E-S staircase when ideal is SE diagonal.
-    let path = vec![(0, 0), (1, 0), (1, 1), (2, 1), (2, 2), (3, 2), (3, 3)];
-    let result = optimize_path(path.clone(), &all_walkable);
-    // Should be rerouted to a straighter SE diagonal.
-    assert!(result.len() <= path.len());
-    assert_eq!(*result.first().unwrap(), (0, 0));
-    assert_eq!(*result.last().unwrap(), (3, 3));
-}
-
-#[test]
-fn optimize_blocked_reroute_keeps_original() {
-    // Staircase but the diagonal shortcut is blocked.
-    let path = vec![(0, 0), (1, 0), (1, 1), (2, 1), (2, 2), (3, 2), (3, 3)];
-    // Block all diagonal cells so reroute fails.
-    let blocked = blocked_set(&[(1, 1), (2, 2)]);
-    let result = optimize_path(path.clone(), &blocked);
-    // Can't reroute — result should equal input (or partial optimization).
-    assert_eq!(*result.first().unwrap(), (0, 0));
-    assert_eq!(*result.last().unwrap(), (3, 3));
-}
-
-#[test]
-fn optimize_determinism() {
-    let path = vec![(0, 0), (1, 0), (1, 1), (2, 1), (2, 2), (3, 2), (3, 3)];
-    let r1 = optimize_path(path.clone(), &all_walkable);
-    let r2 = optimize_path(path, &all_walkable);
-    assert_eq!(r1, r2, "Path smoothing must be deterministic");
-}
-
-// ---- Integration: smooth then optimize ----
-
-#[test]
-fn full_pipeline_zigzag_then_dead_second_pass() {
-    // Pass 2 is a no-op; only pass 1's effect is under test here.
-    // A path with both zigzags and drift.
-    let path = vec![(0, 0), (0, 1), (1, 1), (1, 2), (2, 2), (2, 3), (3, 3)];
-    let smoothed = smooth_path(path.clone(), &all_walkable);
-    let optimized = optimize_path(smoothed.clone(), &all_walkable);
-    // End-to-end: path should be no longer than the smoothed version.
-    assert!(optimized.len() <= path.len());
-    assert_eq!(*optimized.first().unwrap(), (0, 0));
-    assert_eq!(*optimized.last().unwrap(), (3, 3));
 }
 
 // ---- Pass 1: run-based replacement (Path_smooth_single_segment) ----

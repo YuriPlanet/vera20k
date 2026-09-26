@@ -627,8 +627,6 @@ pub(super) fn find_move_path_with_marker_detailed(
         };
         let (coords, layers) =
             path_smooth::smooth_layered_path(coords, layers, &layered_smooth_walkable);
-        let (coords, layers) =
-            path_smooth::optimize_layered_path(coords, layers, &layered_smooth_walkable);
         let (coords, layers) = truncate_layered_path(coords, layers, MAX_PATH_SEGMENT_STEPS);
         return Ok((coords, layers));
     }
@@ -689,7 +687,6 @@ pub(super) fn find_move_path_with_marker_detailed(
             && !marker_overlay.is_some_and(|m| m.contains((x, y)) && (x, y) != goal)
     };
     let path = path_smooth::smooth_path(path, &smooth_walkable);
-    let path = path_smooth::optimize_path(path, &smooth_walkable);
     let path_layers = build_flat_fallback_layers(&path, start_layer, grid);
     let (path, path_layers) = truncate_layered_path(path, path_layers, MAX_PATH_SEGMENT_STEPS);
     Ok((path, path_layers))

@@ -93,7 +93,7 @@ use super::zone_hierarchy::{ZonePrecheckExclusions, ZonePrecheckOutcome, zone_pr
 use super::zone_map::{ZONE_INVALID, ZoneAdjacency, ZoneGrid, ZoneId, ZoneMap};
 use super::{
     LayeredPathStep, PathGrid, find_layered_path_hierarchy_marker, find_layered_path_marker,
-    find_path_with_costs_corridor_marker, find_path_with_costs_hierarchy_marker_progress,
+    find_path_with_costs_corridor_marker, find_path_with_costs_hierarchy_marker,
     find_path_with_costs_marker,
 };
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -535,7 +535,7 @@ fn find_path_zoned_marker_inner_detailed(
             &ZonePrecheckExclusions::default(),
         ) {
             ZonePrecheckOutcome::Passed(result) => {
-                return find_path_with_costs_hierarchy_marker_progress(
+                return find_path_with_costs_hierarchy_marker(
                     grid,
                     start,
                     goal,
@@ -544,14 +544,12 @@ fn find_path_zoned_marker_inner_detailed(
                     level0_zones,
                     &result.marked[0],
                     blocker_neighbor_counts.expect("checked above"),
-                    &result.paths[0],
                     movement_zone,
                     resolved_terrain,
                     entity_block_map,
                     marker_overlay,
                     facts,
                 )
-                .map(|result| result.path)
                 .ok_or(PathSearchFailure::CellSearchExhausted);
             }
             ZonePrecheckOutcome::Failed if zones_match => {
@@ -869,7 +867,6 @@ pub(crate) fn find_layered_path_zoned_marker_detailed(
                         level0_zones,
                         &result.marked[0],
                         blocker_neighbor_counts.expect("checked above"),
-                        &result.paths[0],
                         movement_zone,
                         resolved_terrain,
                         entity_block_map,

@@ -28,7 +28,6 @@ use crate::map::tube_facts::{TubeId, TubeSource};
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::sim::bridge_state::BridgeRuntimeState;
 use crate::sim::movement::locomotor::MovementLayer;
-use std::cell::Cell;
 use std::cell::RefCell;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
@@ -410,43 +409,6 @@ impl BlockerNeighborCounts {
     }
 }
 
-/// Search-local equivalent of gamemd's hierarchy progress cell.
-///
-/// The cell starts at the A* source and advances only when an accepted neighbor
-/// reaches the next selected level-0 `Zone_precheck` path zone.
-#[derive(Debug)]
-pub(crate) struct HierarchyProgressTracker<'a> {
-    level0_path: &'a [ZoneId],
-    progress_index: Cell<usize>,
-    progress_cell: Cell<(u16, u16)>,
-}
-
-impl<'a> HierarchyProgressTracker<'a> {
-    pub(crate) fn new(start: (u16, u16), level0_path: &'a [ZoneId]) -> Self {
-        Self {
-            level0_path,
-            progress_index: Cell::new(0),
-            progress_cell: Cell::new(start),
-        }
-    }
-
-    fn maybe_advance(&self, zone: ZoneId, cell: (u16, u16)) {
-        let next_index = self.progress_index.get().saturating_add(1);
-        if self.level0_path.get(next_index).copied() == Some(zone) {
-            self.progress_index.set(next_index);
-            self.progress_cell.set(cell);
-        }
-    }
-
-    pub(crate) fn progress_index(&self) -> usize {
-        self.progress_index.get()
-    }
-
-    pub(crate) fn progress_cell(&self) -> (u16, u16) {
-        self.progress_cell.get()
-    }
-}
-
 /// A* expansion gate produced by `Zone_precheck`.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct HierarchyGate<'a> {
@@ -770,60 +732,6 @@ pub(crate) fn can_enter_layer_context(
     }
 }
 
-/// Read-only A* candidate row emitted by the bridge oracle diagnostics.
-#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
-pub struct BridgeOracleAStarStep {
-    pub search_id: u64,
-    pub expansion_index: u64,
-    pub current_cell: (u16, u16),
-    pub candidate_cell: (u16, u16),
-    pub direction: u8,
-    pub incoming_path_height: u8,
-    pub current_layer: MovementLayer,
-    pub initial_candidate_closed_list_layer: MovementLayer,
-    pub computed_neighbor_height: u8,
-    pub bridge_traversal_ran: bool,
-    pub bridge_traversal_allowed: Option<bool>,
-    pub bridge_traversal_path_height: Option<i16>,
-    pub bridge_traversal_force_bridge_list: Option<bool>,
-    pub final_candidate_layer: MovementLayer,
-    pub terrain_layer: MovementLayer,
-    pub object_list_layer: MovementLayer,
-    pub occupancy_bits_layer: MovementLayer,
-    pub walkable: Option<bool>,
-    pub terrain_cost: Option<u8>,
-    pub edge_cost: Option<i32>,
-    pub carried_height: u8,
-    pub rejected_reason: Option<&'static str>,
-}
-
-/// Sink for opt-in A* oracle rows. Normal pathfinding passes no sink.
-pub trait AStarTraceSink {
-    fn emit_astar_step(&self, step: BridgeOracleAStarStep);
-}
-
-/// In-memory trace collector for tests and one-shot diagnostics.
-#[derive(Debug, Default)]
-pub struct AStarTraceCollector {
-    steps: RefCell<Vec<BridgeOracleAStarStep>>,
-}
-
-impl AStarTraceCollector {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn steps(&self) -> Vec<BridgeOracleAStarStep> {
-        self.steps.borrow().clone()
-    }
-}
-
-impl AStarTraceSink for AStarTraceCollector {
-    fn emit_astar_step(&self, step: BridgeOracleAStarStep) {
-        self.steps.borrow_mut().push(step);
-    }
-}
-
 fn encode_from(cell_idx: usize, on_bridge: bool) -> usize {
     cell_idx | if on_bridge { CAME_FROM_BRIDGE } else { 0 }
 }
@@ -888,20 +796,12 @@ pub struct AStarOptions<'a> {
     /// Binary-style hierarchy marker gate. Present only when blocker-neighbor
     /// counts are also available for the same search.
     pub(crate) hierarchy_gate: Option<HierarchyGate<'a>>,
-    /// Optional progress-cell sink for the exact failed-hierarchy retry producer.
-    pub(crate) hierarchy_progress: Option<&'a HierarchyProgressTracker<'a>>,
     /// Movement zone for water mover bypass and passability matrix.
     pub movement_zone: Option<MovementZone>,
     /// Resolved terrain for cliff cost and water passability checks.
     pub resolved_terrain: Option<&'a ResolvedTerrainGrid>,
     /// Infantry units always target ground level at bridge destinations.
     pub is_infantry: bool,
-    /// Optional bridge-oracle A* row sink. Inert unless explicitly supplied.
-    pub trace_sink: Option<&'a dyn AStarTraceSink>,
-    /// Search id copied into trace rows so comparator matching never guesses.
-    pub trace_search_id: u64,
-    /// Optional route/window filter for trace rows.
-    pub trace_window: Option<&'a BTreeSet<(u16, u16)>>,
 }
 
 /// Caller-owned adapter for the native Foot search cost-class virtual.
@@ -932,18 +832,6 @@ pub struct MoverSearchFacts<'a> {
     pub mover_is_crusher: bool,
     pub is_infantry: bool,
     pub wall_cost: Option<&'a dyn SearchCellCostClassifier>,
-}
-
-fn emit_astar_trace(options: &AStarOptions<'_>, step: BridgeOracleAStarStep) {
-    let Some(sink) = options.trace_sink else {
-        return;
-    };
-    if let Some(window) = options.trace_window {
-        if !window.contains(&step.current_cell) && !window.contains(&step.candidate_cell) {
-            return;
-        }
-    }
-    sink.emit_astar_step(step);
 }
 
 /// Reconstruct a layered path from dual came_from arrays.
@@ -1037,21 +925,7 @@ pub fn astar_search(
     // drops into the success tail and returns the path to that adjacent cell
     // ("walk as close to the blocked target as you can"). The near-miss branch
     // in the neighbour loop below is that tail. Only the layer selection below
-    // consumes these two flags.
-    let goal_ground_ok = is_cell_passable_for_category_on_layer(
-        grid,
-        goal.0,
-        goal.1,
-        MovementLayer::Ground,
-        options.movement_zone,
-        None,
-        options.resolved_terrain,
-        options.terrain_costs,
-        false,
-        TerrainEntryMode::AStarNeighbor,
-        options.is_infantry,
-        options.mover_is_crusher,
-    );
+    // consumes this flag.
     let goal_bridge_ok = is_cell_passable_for_mover_on_layer_with_speed(
         grid,
         goal.0,
@@ -1064,7 +938,6 @@ pub fn astar_search(
         false,
         TerrainEntryMode::AStarNeighbor,
     );
-    let _ = goal_ground_ok;
 
     // --- Height initialization ---
     let start_cell = grid.cell(start.0, start.1).unwrap_or(&DEFAULT_BLOCKED_CELL);
@@ -1153,7 +1026,6 @@ pub fn astar_search(
         }));
 
         let mut nodes_evaluated: u32 = 0;
-        let mut expansion_index: u64 = 0;
 
         // --- Main loop ---
         while let Some(Reverse(current)) = open.pop() {
@@ -1214,8 +1086,6 @@ pub fn astar_search(
                 }
                 let nx = nx_i as u16;
                 let ny = ny_i as u16;
-                let this_expansion_index = expansion_index;
-                expansion_index = expansion_index.saturating_add(1);
                 let n_idx = ny as usize * w + nx as usize;
                 let neighbor_cell = grid.cell(nx, ny).unwrap_or(&DEFAULT_BLOCKED_CELL);
 
@@ -1226,39 +1096,10 @@ pub fn astar_search(
                 } else {
                     MovementLayer::Ground
                 });
-                let initial_candidate_layer = layer_context.terrain_layer;
 
                 // Compute what height the NEW node carries forward (separate computation)
                 let neighbor_height =
                     compute_neighbor_height(current.height, cur_cell, neighbor_cell);
-                let mut trace_step = BridgeOracleAStarStep {
-                    search_id: options.trace_search_id,
-                    expansion_index: this_expansion_index,
-                    current_cell: (cx, cy),
-                    candidate_cell: (nx, ny),
-                    direction: dir_index as u8,
-                    incoming_path_height: current.height,
-                    current_layer: if on_bridge {
-                        MovementLayer::Bridge
-                    } else {
-                        MovementLayer::Ground
-                    },
-                    initial_candidate_closed_list_layer: initial_candidate_layer,
-                    computed_neighbor_height: neighbor_height,
-                    bridge_traversal_ran: false,
-                    bridge_traversal_allowed: None,
-                    bridge_traversal_path_height: None,
-                    bridge_traversal_force_bridge_list: None,
-                    final_candidate_layer: initial_candidate_layer,
-                    terrain_layer: layer_context.terrain_layer,
-                    object_list_layer: layer_context.object_list_layer,
-                    occupancy_bits_layer: layer_context.occupancy_bits_layer,
-                    walkable: None,
-                    terrain_cost: None,
-                    edge_cost: None,
-                    carried_height: neighbor_height,
-                    rejected_reason: None,
-                };
 
                 // Height-diff legality gate. Diff-1 transitions require the LOWER cell's
                 // raw slope byte to be nonzero; diff ∈ {±2, ±3, ±4, ±5+} is
@@ -1277,14 +1118,7 @@ pub fn astar_search(
                             parent: Some((cur_cell, (cx, cy))),
                         },
                     );
-                    trace_step.bridge_traversal_ran = true;
-                    trace_step.bridge_traversal_allowed = Some(bridge_traversal.allowed);
-                    trace_step.bridge_traversal_path_height = Some(bridge_traversal.path_height);
-                    trace_step.bridge_traversal_force_bridge_list =
-                        Some(bridge_traversal.force_bridge_list);
                     if !bridge_traversal.allowed {
-                        trace_step.rejected_reason = Some("bridge_traversal_blocked");
-                        emit_astar_trace(options, trace_step);
                         continue;
                     }
                     if bridge_traversal.force_bridge_list {
@@ -1304,9 +1138,6 @@ pub fn astar_search(
                         neighbor_cell,
                         bridge_traversal.path_height,
                     );
-                    trace_step.terrain_layer = layer_context.terrain_layer;
-                    trace_step.object_list_layer = layer_context.object_list_layer;
-                    trace_step.occupancy_bits_layer = layer_context.occupancy_bits_layer;
                 } else {
                     let layer = if neighbor_use_bridge {
                         MovementLayer::Bridge
@@ -1326,16 +1157,9 @@ pub fn astar_search(
                         _ => false,
                     };
                     if !legal {
-                        trace_step.rejected_reason = Some("height_diff_illegal");
-                        emit_astar_trace(options, trace_step);
                         continue;
                     }
                 }
-                trace_step.final_candidate_layer = if neighbor_use_bridge {
-                    MovementLayer::Bridge
-                } else {
-                    MovementLayer::Ground
-                };
 
                 // Closed check on appropriate list
                 // Binary `1.009` handling is an early closed-neighbor skip/fallback
@@ -1343,13 +1167,9 @@ pub fn astar_search(
                 // cells without a dedicated parity fixture for the blocked-goal path.
                 if neighbor_use_bridge {
                     if bridge_closed[n_idx] {
-                        trace_step.rejected_reason = Some("bridge_closed");
-                        emit_astar_trace(options, trace_step);
                         continue;
                     }
                 } else if ground_closed[n_idx] {
-                    trace_step.rejected_reason = Some("ground_closed");
-                    emit_astar_trace(options, trace_step);
                     continue;
                 }
 
@@ -1397,7 +1217,6 @@ pub fn astar_search(
                 // today, a wall it can shoot. `None` means "passable", which is
                 // class 0.
                 let mut refused_cost_class: Option<u8> = None;
-                trace_step.walkable = Some(neighbor_passable);
                 if !neighbor_passable {
                     // Ask the cost-class producer FIRST, and let its answer
                     // decide both admission and the blocked-goal abort. That
@@ -1443,8 +1262,6 @@ pub fn astar_search(
                                 w,
                             ));
                         }
-                        trace_step.rejected_reason = Some("walkability_blocked");
-                        emit_astar_trace(options, trace_step);
                         continue;
                     }
                     refused_cost_class = Some(refused_class);
@@ -1465,8 +1282,6 @@ pub fn astar_search(
                     .flatten()
                     .any(|blocks| blocks.contains(&(nx, ny)));
                     if blocked_by_selected_layers {
-                        trace_step.rejected_reason = Some("entity_blocked");
-                        emit_astar_trace(options, trace_step);
                         continue;
                     }
                 }
@@ -1524,8 +1339,6 @@ pub fn astar_search(
                     && !neighbor_is_bridge_deck
                 {
                     if !gate.allows(nx, ny) {
-                        trace_step.rejected_reason = Some("hierarchy_gate_blocked");
-                        emit_astar_trace(options, trace_step);
                         continue;
                     }
                 }
@@ -1534,8 +1347,6 @@ pub fn astar_search(
                 if let Some((zone_map, allowed)) = options.corridor {
                     let cell_zone = zone_map.zone_at(nx, ny, MovementLayer::Ground);
                     if cell_zone != ZONE_INVALID && !allowed.contains(&cell_zone) {
-                        trace_step.rejected_reason = Some("zone_corridor_blocked");
-                        emit_astar_trace(options, trace_step);
                         continue;
                     }
                 }
@@ -1578,7 +1389,6 @@ pub fn astar_search(
                 } else {
                     100 // no cost grid: uniform cost
                 };
-                trace_step.terrain_cost = Some(terrain_cost);
                 // A neighbour the cost class already admitted is NOT re-judged
                 // here. Review caught this making the whole wall route inert in
                 // production: a non-crushable `Wall=yes` overlay reduces to zone
@@ -1596,8 +1406,6 @@ pub fn astar_search(
                 // `the_wall_arm_answers_seven_where_the_land_row_refuses` pins.
                 // Applying it twice is what refused the wall.
                 if terrain_cost == 0 && refused_cost_class.is_none() {
-                    trace_step.rejected_reason = Some("terrain_cost_blocked");
-                    emit_astar_trace(options, trace_step);
                     continue;
                 }
 
@@ -1634,8 +1442,6 @@ pub fn astar_search(
                     options.search_cost_class_coerce_to_zero,
                 );
                 if !search_cost.expands {
-                    trace_step.rejected_reason = Some("search_cost_class_blocked");
-                    emit_astar_trace(options, trace_step);
                     continue;
                 }
 
@@ -1683,7 +1489,6 @@ pub fn astar_search(
                 }
 
                 step_cost = apply_search_marker_cost(step_cost, options.marker_overlay, (nx, ny));
-                trace_step.edge_cost = Some(step_cost);
 
                 // Direction tie-breaker
                 let tentative_g = current.g_cost + step_cost + DIR_TIEBREAK[dir_index];
@@ -1714,12 +1519,6 @@ pub fn astar_search(
                     height: neighbor_height,
                     on_bridge: neighbor_use_bridge,
                 }));
-                if let (Some(gate), Some(progress)) =
-                    (options.hierarchy_gate, options.hierarchy_progress)
-                {
-                    progress.maybe_advance(gate.level0_zones.zone_at(nx, ny), (nx, ny));
-                }
-                emit_astar_trace(options, trace_step);
             }
 
             // Direction 8 is a TubeClass jump. It is not an adjacent neighbor and
@@ -3049,15 +2848,8 @@ pub fn find_path_with_costs_corridor_marker(
     Some(steps.into_iter().map(|s| (s.rx, s.ry)).collect())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct HierarchyMarkerPathResult {
-    pub path: Vec<(u16, u16)>,
-    pub progress_cell: (u16, u16),
-    pub progress_index: usize,
-}
-
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn find_path_with_costs_hierarchy_marker_progress(
+pub(crate) fn find_path_with_costs_hierarchy_marker(
     grid: &PathGrid,
     start: (u16, u16),
     goal: (u16, u16),
@@ -3066,14 +2858,12 @@ pub(crate) fn find_path_with_costs_hierarchy_marker_progress(
     level0_zones: &ZoneLevelGraph,
     marked_level0: &BTreeSet<ZoneId>,
     blocker_neighbor_counts: &BlockerNeighborCounts,
-    level0_path: &[ZoneId],
     movement_zone: Option<MovementZone>,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     entity_block_map: Option<&LayeredEntityBlockMap>,
     marker_overlay: Option<&SearchMarkerOverlay>,
     facts: MoverSearchFacts<'_>,
-) -> Option<HierarchyMarkerPathResult> {
-    let progress = HierarchyProgressTracker::new(start, level0_path);
+) -> Option<Vec<(u16, u16)>> {
     let steps = astar_search(
         grid,
         start,
@@ -3087,7 +2877,6 @@ pub(crate) fn find_path_with_costs_hierarchy_marker_progress(
                 marked_level0,
                 blocker_neighbor_counts,
             }),
-            hierarchy_progress: Some(&progress),
             entity_block_map,
             marker_overlay,
             urgency: facts.urgency,
@@ -3099,11 +2888,7 @@ pub(crate) fn find_path_with_costs_hierarchy_marker_progress(
             ..Default::default()
         },
     )?;
-    Some(HierarchyMarkerPathResult {
-        path: steps.into_iter().map(|s| (s.rx, s.ry)).collect(),
-        progress_cell: progress.progress_cell(),
-        progress_index: progress.progress_index(),
-    })
+    Some(steps.into_iter().map(|s| (s.rx, s.ry)).collect())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3118,7 +2903,6 @@ pub(crate) fn find_layered_path_hierarchy_marker(
     level0_zones: &ZoneLevelGraph,
     marked_level0: &BTreeSet<ZoneId>,
     blocker_neighbor_counts: &BlockerNeighborCounts,
-    level0_path: &[ZoneId],
     movement_zone: Option<MovementZone>,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     entity_block_map: Option<&LayeredEntityBlockMap>,
@@ -3128,7 +2912,6 @@ pub(crate) fn find_layered_path_hierarchy_marker(
     if !matches!(start_layer, MovementLayer::Ground | MovementLayer::Bridge) {
         return None;
     }
-    let progress = HierarchyProgressTracker::new(start, level0_path);
     astar_search(
         grid,
         start,
@@ -3144,7 +2927,6 @@ pub(crate) fn find_layered_path_hierarchy_marker(
                 marked_level0,
                 blocker_neighbor_counts,
             }),
-            hierarchy_progress: Some(&progress),
             entity_block_map,
             marker_overlay,
             urgency: facts.urgency,
