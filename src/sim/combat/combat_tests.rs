@@ -7786,7 +7786,7 @@ fn gsi_04_07_damage_periodic_radiation_enters_direct_receiver_once() {
 
 #[test]
 fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
         "[General]\n\
          FixtureOnly=1\n\
          [AI]\nCreditReserve=100\n\
@@ -7802,6 +7802,8 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
          [HITWH]\nCellSpread=0\nPercentAtMax=1\nAffectsAllies=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     ))
     .expect("hostile-hit rules");
+    // A Buildup SHP, without which Sell_Back refuses the sale.
+    rules.set_buildup_control_for_test("GAPOWR", [0, 25, 2]);
     let mut sim = crate::sim::world::Simulation::new();
     let ai_owner = sim.interner.intern("AI");
     let enemy_owner = sim.interner.intern("ENEMY");
@@ -7926,15 +7928,20 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
         .unwrap()
         .was_attacked_by_enemy = true;
 
+    let selling = |sim: &crate::sim::world::Simulation, id: u64| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .mission
+            .effective()
+            .known()
+            == Some(crate::sim::mission::MissionType::Selling)
+    };
     let low_iq_rng = sim.scenario_rng.logical_state();
     crate::sim::production::tick_repairs(&mut sim, &rules);
     assert!(
-        sim.substrate
-            .entities
-            .get(hostile_target)
-            .unwrap()
-            .lifecycle
-            .object_alive,
+        !selling(&sim, hostile_target),
         "scenario CurrentIQ 1 stays below RepairSell/SellBack 2"
     );
     assert_eq!(
@@ -7950,24 +7957,12 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
         "TechLevel 51 makes every inclusive native roll win"
     );
     crate::sim::production::tick_repairs(&mut sim, &rules);
-    let sold = sim.substrate.entities.get(hostile_target).unwrap();
-    assert!(!sold.lifecycle.object_alive && sold.lifecycle.in_limbo);
     assert!(
-        sim.substrate
-            .entities
-            .get(allied_target)
-            .unwrap()
-            .lifecycle
-            .object_alive
+        selling(&sim, hostile_target),
+        "the computer's Sell_Back(1) starts the Selling mission"
     );
-    assert!(
-        sim.substrate
-            .entities
-            .get(null_target)
-            .unwrap()
-            .lifecycle
-            .object_alive
-    );
+    assert!(!selling(&sim, allied_target));
+    assert!(!selling(&sim, null_target));
     assert_eq!(
         sim.scenario_rng.logical_state(),
         expected_rng.logical_state(),

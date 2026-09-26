@@ -1328,7 +1328,7 @@ mod map_wall_owner_candidate_tests {
         assert_eq!(captured_online.point_lights.len(), 1);
         assert_eq!(before_capture.fingerprint, captured_online.fingerprint);
 
-        assert!(crate::sim::production::sell_building(&mut sim, &rules, 41));
+        assert!(crate::sim::production::sell_building_now_for_test(&mut sim, &rules, 41));
         let sold = derive_lighting_view(&config, Some(&sim), Some(&rules), 2);
         assert!(sold.point_lights.is_empty());
         assert_ne!(captured_online.fingerprint, sold.fingerprint);

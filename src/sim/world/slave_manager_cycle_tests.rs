@@ -687,6 +687,10 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
          Foundation=3x3\nDeployFacing=0\n",
     ))
     .expect("slave miner rules");
+    // A Buildup SHP, without which the refinery cannot undeploy
+    // (`Sell_Back @ 0x00447110`).
+    let mut rules = rules;
+    rules.set_buildup_control_for_test("YAREFN", [0, 17, 3]);
     let seed = 0x51A7_E001;
     let mut sim = Simulation::with_seed(seed);
     let mut expected = SimRng::new(seed);
@@ -771,19 +775,15 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
     refinery.building_up = None;
     crate::sim::combat::veterancy::set_elite(refinery);
     assert!(
-        sim.undeploy_building(yarefn, &rules, true),
+        sim.undeploy_building(yarefn, &rules),
         "undeploy to SMIN"
     );
-    let down = sim
-        .substrate
+    sim.substrate
         .entities
         .get_mut(yarefn)
         .unwrap()
-        .building_down
-        .as_mut()
-        .unwrap();
-    down.finish_for_test();
-    assert!(sim.tick_building_down(Some(&rules), None), "converted");
+        .finish_pack_up_for_test();
+    assert!(sim.tick_building_down(Some(&rules), None).0, "converted");
     constructed(&sim, &mut expected);
     let back = 13;
     assert_eq!(
@@ -977,6 +977,8 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
          Foundation=2x2\n",
     ))
     .expect("rules");
+    let mut rules = rules;
+    rules.set_buildup_control_for_test("YAREFN", [0, 17, 3]);
     let seed = 0x0A77_AC4E;
     let mut sim = Simulation::with_seed(seed);
     let refinery = sim
@@ -1000,17 +1002,13 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
         let _ = expected.next_u32();
     }
 
-    assert!(sim.undeploy_building(refinery, &rules, true));
-    let down = sim
-        .substrate
+    assert!(sim.undeploy_building(refinery, &rules));
+    sim.substrate
         .entities
         .get_mut(refinery)
         .unwrap()
-        .building_down
-        .as_mut()
-        .unwrap();
-    down.finish_for_test();
-    assert!(sim.tick_building_down(Some(&rules), None));
+        .finish_pack_up_for_test();
+    assert!(sim.tick_building_down(Some(&rules), None).0);
     let miner = sim
         .substrate
         .entities

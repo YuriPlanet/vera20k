@@ -174,7 +174,7 @@ fn gsi_04_18_sale_waits_for_the_next_house_rung_before_reshrouding() {
     sim.reconcile_active_vision_structures(&rules);
     assert!(sim.fog.is_cell_revealed(owner, 23, 23));
 
-    assert!(crate::sim::production::sell_building(&mut sim, &rules, 1));
+    assert!(crate::sim::production::sell_building_now_for_test(&mut sim, &rules, 1));
     assert!(sim.houses[&owner].spy_sat_active);
     assert!(sim.houses[&owner].map_is_clear);
     assert!(

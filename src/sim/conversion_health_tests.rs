@@ -58,15 +58,25 @@ fn original_conversion_health_corpus() {
 }
 
 fn rules() -> RuleSet {
-    RuleSet::from_ini(&IniFile::from_str(
-        "[VehicleTypes]\n0=MCV\n1=SMIN\n[BuildingTypes]\n0=YARD\n1=YAREFN\n[InfantryTypes]\n0=SLAV\n\
-         [MCV]\nStrength=100\nSpeed=5\nDeploysInto=YARD\n\
-         [YARD]\nStrength=1000\nFoundation=1x1\nDeployFacing=0\nUndeploysInto=MCV\n\
-         [SMIN]\nStrength=100\nSpeed=3\nDeploysInto=YAREFN\nEnslaves=SLAV\nSlavesNumber=1\n\
-         [YAREFN]\nStrength=1000\nFoundation=1x1\nDeployFacing=0\nUndeploysInto=SMIN\nEnslaves=SLAV\nSlavesNumber=1\n\
-         [SLAV]\nStrength=125\nSpeed=3\nStorage=4\n",
-    ))
-    .unwrap()
+    with_buildup(
+        RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=MCV\n1=SMIN\n[BuildingTypes]\n0=YARD\n1=YAREFN\n[InfantryTypes]\n0=SLAV\n\
+             [MCV]\nStrength=100\nSpeed=5\nDeploysInto=YARD\n\
+             [YARD]\nStrength=1000\nFoundation=1x1\nDeployFacing=0\nUndeploysInto=MCV\n\
+             [SMIN]\nStrength=100\nSpeed=3\nDeploysInto=YAREFN\nEnslaves=SLAV\nSlavesNumber=1\n\
+             [YAREFN]\nStrength=1000\nFoundation=1x1\nDeployFacing=0\nUndeploysInto=SMIN\nEnslaves=SLAV\nSlavesNumber=1\n\
+             [SLAV]\nStrength=125\nSpeed=3\nStorage=4\n",
+        ))
+        .unwrap(),
+    )
+}
+
+/// Buildup SHPs for both buildings: a building without one cannot be sold
+/// or undeployed (`Sell_Back @ 0x00447110`).
+fn with_buildup(mut rules: RuleSet) -> RuleSet {
+    rules.set_buildup_control_for_test("YARD", [0, 31, 1]);
+    rules.set_buildup_control_for_test("YAREFN", [0, 17, 3]);
+    rules
 }
 
 fn damage(sim: &mut Simulation, id: u64, actual: i32) {
@@ -110,16 +120,13 @@ fn building_conversion_reads_health_when_animation_finishes() {
         .spawn_object_at_height("YARD", "Neutral", 10, 10, 0, 0, &rules)
         .unwrap();
     damage(&mut sim, source, 750);
-    assert!(sim.undeploy_building(source, &rules, true));
+    assert!(sim.undeploy_building(source, &rules));
     damage(&mut sim, source, 250);
     sim.substrate
         .entities
         .get_mut(source)
         .unwrap()
-        .building_down
-        .as_mut()
-        .unwrap()
-        .finish_for_test();
+        .finish_pack_up_for_test();
     sim.advance_tick(&[], Some(&rules), &BTreeMap::new(), None, None, 22);
     assert!(sim.substrate.entities.get(source).is_none());
     let destination = sim
@@ -147,7 +154,7 @@ fn deploy(sim: &mut Simulation, rules: &RuleSet, source: u64, into: &str) -> u64
 }
 
 /// The building's undeploy (`undeploy_building`) run to its conversion
-/// (`tick_building_down`), answering the unit it became. A just-deployed
+/// (the Selling mission's completing visit), answering the unit it became. A just-deployed
 /// building is taken as built up, as the undeploy requires.
 fn undeploy(sim: &mut Simulation, rules: &RuleSet, building: u64, into: &str) -> u64 {
     sim.substrate
@@ -155,16 +162,12 @@ fn undeploy(sim: &mut Simulation, rules: &RuleSet, building: u64, into: &str) ->
         .get_mut(building)
         .unwrap()
         .building_up = None;
-    assert!(sim.undeploy_building(building, rules, true));
-    let down = sim
-        .substrate
+    assert!(sim.undeploy_building(building, rules));
+    sim.substrate
         .entities
         .get_mut(building)
         .unwrap()
-        .building_down
-        .as_mut()
-        .unwrap();
-    down.finish_for_test();
+        .finish_pack_up_for_test();
     sim.advance_tick(&[], Some(rules), &BTreeMap::new(), None, None, 22);
     sim.substrate
         .entities
@@ -212,14 +215,14 @@ fn slave_conversions_reset_master_health_but_preserve_retained_slave_state() {
 
 #[test]
 fn all_four_conversion_callers_preserve_results_above_u16() {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
+    let rules = with_buildup(RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=MCV\n1=SMIN\n[BuildingTypes]\n0=YARD\n1=YAREFN\n[InfantryTypes]\n0=SLAV\n\
          [MCV]\nStrength=100000\nSpeed=5\nDeploysInto=YARD\n\
          [YARD]\nStrength=1000000\nFoundation=1x1\nDeployFacing=0\nUndeploysInto=MCV\n\
          [SMIN]\nStrength=100000\nSpeed=3\nDeploysInto=YAREFN\nEnslaves=SLAV\nSlavesNumber=1\n\
          [YAREFN]\nStrength=1000000\nFoundation=1x1\nDeployFacing=0\nUndeploysInto=SMIN\nEnslaves=SLAV\nSlavesNumber=1\n\
          [SLAV]\nStrength=125\nSpeed=3\nStorage=4\n"
-    )).unwrap();
+    )).unwrap());
     let mut sim = Simulation::with_seed(123);
     let source = sim
         .spawn_object_at_height("MCV", "Neutral", 10, 10, 0, 0, &rules)
@@ -235,18 +238,24 @@ fn all_four_conversion_callers_preserve_results_above_u16() {
         .unwrap()
         .stable_id();
     assert_health(&sim, yard, 750_000);
-    for _ in 0..30 {
+    // The 31-frame Buildup at rate 1 completes by the 32nd frame.
+    for _ in 0..32 {
         sim.advance_tick(&[], Some(&rules), &BTreeMap::new(), None, None, 22);
     }
-    assert!(sim.undeploy_building(yard, &rules, true));
+    assert!(
+        sim.substrate
+            .entities
+            .get(yard)
+            .unwrap()
+            .building_up
+            .is_none()
+    );
+    assert!(sim.undeploy_building(yard, &rules));
     sim.substrate
         .entities
         .get_mut(yard)
         .unwrap()
-        .building_down
-        .as_mut()
-        .unwrap()
-        .finish_for_test();
+        .finish_pack_up_for_test();
     sim.advance_tick(&[], Some(&rules), &BTreeMap::new(), None, None, 22);
     let mcv = sim
         .substrate

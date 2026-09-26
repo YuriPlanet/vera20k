@@ -26,10 +26,16 @@ that does not undeploy.
   draw (0x6F3254 -> 0x65C780) taken through a native trampoline), the
   RandomRanged(0, n - 1) cell pick, PlaceInfantryInCell (0x481180),
   InfantryClass::Unlimbo (0x51DFF0, its FootClass::Unlimbo answered after
-  writing the placement), Scatter (0x51D0D0) and Queue_Mission(Move); then
-  the sale's sounds (VocClass::PlayAt 0x7509E0, observed) and Begin_Mode(0).
-  Answered: the OVER_OUT broadcast (0x65ACE0), the building's IsArmed
-  (vt+0x2AC = 0x458DB0), Select (vt+0x14C) and the infantry deletes.
+  writing the placement), Scatter (0x51D0D0) with the Infantry setter
+  (0x51AA40), Walk's MoveTo and the immediate first Process (0x51D478: the
+  head, FindSubCellDest 0x75C240 and its raw-occupation leaves) native, and
+  Queue_Mission(Move); then the sale's sounds (VocClass::PlayAt 0x7509E0,
+  observed) and Begin_Mode(0). The building's occupy-list cells carry its
+  AddContent mark (0x80), and the step table (0x49F3A0) and the Infantry
+  startup heights run as the static initialisers leave them. Answered: the
+  OVER_OUT broadcast (0x65ACE0), the building's IsArmed (vt+0x2AC =
+  0x458DB0), FootClass::Find_Path (0x4D3920: the one-step route to the
+  neighbouring Scatter cell), Select (vt+0x14C) and the infantry deletes.
 - `refund` rows: the sale's credit, TechnoClass vt+0x2BC (0x70ADA0 ->
   TechnoTypeClass::GetRefund 0x711F60), over cost, owner and game mode.
 
@@ -42,6 +48,7 @@ from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_EIP, UC_X86_REG_ESP
 from tools.native_oracle import RET_MAGIC, finish_vectors, provenance, run_checked
 from tools.spatial_oracle import building_construction as bc
+from tools.spatial_oracle import infantry_entry_raw as entry_raw
 from tools.spatial_oracle import slave_manager as sm
 from tools.spatial_oracle.map_queries import dwords
 from tools.spatial_oracle.refinery_dock import HOUSE, HTYPE, RULES, cell_xy
@@ -58,6 +65,12 @@ PLACE_INFANTRY, UNLIMBO, FOOT_UNLIMBO, SCATTER = 0x481180, 0x51DFF0, 0x4D7170, 0
 # InfantryClass::Scatter's Find_Nearby_Passable_Cell call and return.
 FNPC, SCATTER_FNPC_CALL, SCATTER_FNPC_RETURN = 0x56DC20, 0x51D41D, 0x51D422
 SETTER, LIMBO, PLAY_ANIM, QUEUE = 0x51AA40, 0x51DF10, 0x51D6F0, 0x5B35E0
+# FootClass::Find_Path, which Walk's first Process (Scatter's 0x51D478) calls,
+# and the static initialiser of the eight step offsets (0x89F6D8) the Process
+# adds to the coordinate for the route's next cell (0x75B5AC).
+FIND_PATH, STEP_OFFSETS_INIT = 0x4D3920, 0x49F3A0
+# FacingType order of a route step: N, NE, E, SE, S, SW, W, NW.
+STEP_FACINGS = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]
 REFUND = 0x70ADA0
 OCCUPY_INIT, OCCUPY_LISTS, OCCUPY_STRIDE = 0x45B1C0, 0x89C900, 120
 # MapClass's cell for coordinates off the map (0x565730 returns it), built by
@@ -246,6 +259,13 @@ def crew_fixture(case):
     # and the lazy statics of 0x5F5B90/0x45EC20 already constructed (their
     # first call registers an atexit destructor the fixture cannot run).
     call(OCCUPY_INIT, 0, [])
+    call(STEP_OFFSETS_INIT, 0, [])
+    # The Infantry startup initialisers (CRT table 0x813490): the level height
+    # (0xA8F240) and the bridge-deck threshold (0xA8F234) the raw-occupation
+    # leaves 0x5217C0/0x521850 compare against.
+    for entry in entry_raw.STARTUP:
+        call(entry, 0, [])
+    assert read32(0xA8F234) == 416
     call(CELL_CTOR, DUMMY_CELL, [])
     for flag, value in ((0xAC1398, 0xAC139C), (0x89C890, 0x89C8E8)):
         u.mem_write(flag, bytes([u.mem_read(flag, 1)[0] | 1]))
@@ -253,6 +273,13 @@ def crew_fixture(case):
     foundation = case.get('foundation', 3)
     u.mem_write(kind + 0xEF0, dwords(foundation))
     u.mem_write(kind + 0xDFC, dwords(OCCUPY_LISTS + foundation * OCCUPY_STRIDE))
+    # Place_Down's AddContent (0x47E8A0) lists the building in each cell of
+    # its occupy list and marks the cell through vt+0xF0 (0x453D60:
+    # CellClass+0x124 |= 0x80), which Scatter's Find_Nearby_Passable_Cell reads.
+    for dx, dy in occupy_offsets(read32, foundation):
+        at = sm.cell(sm.YAREFN_NW[0] + dx, sm.YAREFN_NW[1] + dy)
+        u.mem_write(at + 0xE4, dwords(building))
+        u.mem_write(at + 0x124, dwords(read32(at + 0x124) | 0x80))
     # Sell's stage 1 with Selling current and nothing queued.
     u.mem_write(building + 0xAC, dwords(MISSION['selling']))
     u.mem_write(building + 0xB4, dwords(-1))
@@ -309,6 +336,16 @@ def crew_fixture(case):
     return u, call, read32, events
 
 
+def occupy_offsets(read32, foundation):
+    """The occupy list the static initialiser 0x45B1C0 builds for
+    `foundation`: CellStruct offsets up to the 0x7FFF7FFF terminator."""
+    offsets, address = [], OCCUPY_LISTS + foundation * OCCUPY_STRIDE
+    while (value := read32(address)) != 0x7FFF7FFF:
+        offsets.append(tuple(struct.unpack('<hh', struct.pack('<I', value))))
+        address += 4
+    return offsets
+
+
 def prepare_infantry(u, call, slot):
     """An InfantryClass as the constructor leaves it, in limbo (slave_manager's
     make_slave): the four vtables, no mission, Doing -1, a constructed Walk."""
@@ -327,6 +364,9 @@ def prepare_infantry(u, call, slot):
     call(sm.WALK_CTOR, loco, [])
     u.mem_write(loco + 0xC, dwords(slot))
     u.mem_write(slot + 0x674, dwords(loco + 4))
+    # The owner's COM reference (LocomotionClass +0x14), which the setter's
+    # QueryInterface/Release pair (0x4D957C, 0x55A970) must not release.
+    u.mem_write(loco + 0x14, dwords(1))
 
 
 def observe_crew(u, read32, events, case):
@@ -373,8 +413,15 @@ def observe_crew(u, read32, events, case):
         elif address == SETTER:
             target = read32(sp + 4)
             events.append(['set_destination', slot_name(this), cell_xy(target) if target else None])
-            u.mem_write(this + 0x5A4, dwords(target))
-            ret(u, read32, 8)
+        elif address == FIND_PATH:
+            # The AStar route to Scatter's destination, a neighbouring cell:
+            # its one step, written to Foot+5E0 with AL = 1 (track_fresh_response).
+            to = struct.unpack('<hh', dwords(read32(sp + 4)))
+            at = [value // 256 for value in coord(u, this + 0x9C)[:2]]
+            facing = STEP_FACINGS.index((to[0] - at[0], to[1] - at[1]))
+            events.append(['find_path', slot_name(this), list(to), read32(sp + 8), read32(sp + 12), facing])
+            u.mem_write(this + 0x5E0, dwords(facing, *([-1] * 23)))
+            ret(u, read32, 12, 1)
         elif address == LIMBO:
             events.append(['limbo', slot_name(this)])
             u.mem_write(this + 0x81, b'\x01')
@@ -541,7 +588,8 @@ def main(argv=None):
                   'BuildingClass::Sell stage 1 (0x44A2EE..0x44A8DE) with How_Many_Survivors 0x451330, '
                   'Crew_Type 0x44EB10, TechnoClass::GetCrew 0x707D20, the InfantryClass constructor draw, '
                   'the occupy-list cell pick, PlaceInfantryInCell 0x481180, InfantryClass::Unlimbo 0x51DFF0, '
-                  'Scatter 0x51D0D0 and the absorbed passengers; the sale refund 0x70ADA0',
+                  'Scatter 0x51D0D0 with its setter and first Walk Process, and the absorbed passengers; '
+                  'the sale refund 0x70ADA0',
             entry_points={'sell_back': SELL_BACK, 'sell': SELL, 'survivor_count': bc.SURVIVOR_COUNT,
                           'refund': REFUND, 'occupy_init': OCCUPY_INIT},
             assumptions=['route rows: building_construction\'s route fixture (the slave_manager refinery, '
@@ -552,7 +600,11 @@ def main(argv=None):
                          'cost multipliers 1.0 (repair_refund\'s fixture); retail survivor divisors 500/250/750; '
                          'crew types E1/E2/INIT/CTECH/ENGINEER (InfantryType vtable, MovementZone Infantry, '
                          'ENGINEER Engineer=yes); multiplayer game mode, PlayerPtr the owner unless '
-                         '`player` is false; Scenario RNG seeded through the original seeder'],
+                         '`player` is false; Scenario RNG seeded through the original seeder; the building\'s '
+                         'occupy-list cells listed (+0xE4) and marked 0x80 as AddContent 0x47E8A0 -> vt+0xF0 '
+                         '0x453D60 leaves them; prepared Walks hold the owner\'s COM reference (+0x14 = 1); the '
+                         'step offsets 0x89F6D8 (0x49F3A0) and the Infantry startup initialisers 0x517840..'
+                         '0x5179B0 (level height 0xA8F240, bridge threshold 0xA8F234 = 416) run natively'],
             substitutions=['route rows: the broadcast 0x65ACE0, the survivor count 0x451330 (0) and the occupy '
                            'list 0x5F5B90 (empty) answered; IsHumanPlayer 0x50B6F0 answered from `player`; '
                            'VocClass::PlayAtPos 0x750920 and PlayAt 0x7509E0 observed and answered',
@@ -561,12 +613,16 @@ def main(argv=None):
                            'owner and runs the TechnoClass constructor\'s Scenario draw through a trampoline '
                            '(0x6F3249..0x6F3266 in effect); the building\'s IsArmed 0x458DB0 answered from `armed`; '
                            'the broadcast 0x65ACE0, FootClass::Unlimbo 0x4D7170 (writes the coordinate and the '
-                           'limbo/on-map bytes), the Infantry setter 0x51AA40, Limbo 0x51DF10, PlayAnim 0x51D6F0, '
-                           'the scalar delete 0x523350, the kill credit 0x702D40, VocClass::PlayAt 0x7509E0 and '
-                           'Select 0x6FBFA0 answered; Unlimbo 0x51DFF0, PlaceInfantryInCell and Scatter 0x51D0D0 '
-                           'native, and Scatter\'s Find_Nearby_Passable_Cell 0x56DC20 (called at 0x51D41D) runs '
-                           'natively past the refinery_dock observer\'s answer; the harvest_field and '
-                           'refinery_dock observers otherwise']),
+                           'limbo/on-map bytes), FootClass::Find_Path 0x4D3920 (the one-step route from the '
+                           'crewman\'s cell to its neighbouring Scatter cell written to Foot+5E0, AL = 1, as '
+                           'track_fresh_response answers it; the AStar core does not run), Limbo 0x51DF10, '
+                           'PlayAnim 0x51D6F0, the scalar delete 0x523350, the kill credit 0x702D40, '
+                           'VocClass::PlayAt 0x7509E0 and Select 0x6FBFA0 answered; Unlimbo 0x51DFF0, '
+                           'PlaceInfantryInCell, Scatter 0x51D0D0, the Infantry setter 0x51AA40, Walk MoveTo and '
+                           'the first Walk Process 0x75AEC0 (Infantry Can_Enter_Cell, FindSubCellDest 0x75C240, '
+                           'the raw leaves 0x5217C0/0x521850) native, and Scatter\'s Find_Nearby_Passable_Cell '
+                           '0x56DC20 (called at 0x51D41D) runs natively past the refinery_dock observer\'s answer; '
+                           'the harvest_field and refinery_dock observers otherwise']),
         argv=argv)
 
 

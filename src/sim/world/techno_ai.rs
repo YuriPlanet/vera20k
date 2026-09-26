@@ -603,19 +603,13 @@ fn techno_ai_shell(
             // between them — see the block comment above
             // `clear_passive_target_off_mission`'s neighbours for why.
             //
-            // The clear is DEAD for structures as things stand, and is kept only
-            // so the arm keeps the body's shape: a structure never carries a
-            // destination, a navigation goal or a standing order, so its
-            // committed mission always reads as finished, the derived Guard
-            // reading always wins, and Guard is not one of the twelve missions
-            // that strip a scanner target. It starts doing work the moment a
-            // structure gains live mission machinery.
-            //
-            // RESIDUAL, same root cause: a structure being sold holds the
-            // Selling mission with nothing running, so it reads Guard and keeps
-            // scanning, acquiring and firing for the couple of seconds the sale
-            // takes. Same shape as the `building_up` residual noted on
-            // `passive_acquire_step`.
+            // A structure never carries a destination, a navigation goal or a
+            // standing order, so its committed mission reads as finished and
+            // the derived Guard reading wins — except a sale's Selling
+            // (`GameEntity::passive_acquire_mission`), one of the twelve
+            // missions that strip a scanner target. The passive block never
+            // admits it, and its fire error holds any other target while it
+            // sells.
             clear_passive_target_off_mission(sim, id, rules);
             // BuildingClass::Update consumes its ready latch via Ready→Commence
             // (`0x0043FE43`/`0x0043FFA3`); with no latch writers live the

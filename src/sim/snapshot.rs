@@ -614,7 +614,10 @@ use crate::sim::world::Simulation;
 // 211 -> 212: an entity no longer keeps the weapon id of its last live
 // selection (`current_weapon_ref`), which nothing read; `CurrentWeaponNumber`
 // (`TechnoClass+0x138`) stays.
-const SNAPSHOT_VERSION: u32 = 212;
+// 212 -> 213: a sale's pack-up keeps Sell's stage in the Selling mission
+// (`+0xBC`) and marks the player's undeploy order instead of carrying the
+// undeploy's unit type, owner, cell and selection.
+const SNAPSHOT_VERSION: u32 = 213;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3574,7 +3577,9 @@ mod tests {
         // 210 -> 211: the construction animation's StageClass on build-ups
         // and pack-ups.
         // 211 -> 212: no copy of the last selection's weapon id.
-        assert_eq!(super::SNAPSHOT_VERSION, 212);
+        // 212 -> 213: Sell's stage in the Selling mission; no undeploy
+        // spawn copy on pack-ups.
+        assert_eq!(super::SNAPSHOT_VERSION, 213);
     }
 
     #[test]

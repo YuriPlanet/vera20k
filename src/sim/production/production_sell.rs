@@ -1,14 +1,58 @@
-//! Building sell/repair logic: refund calculation, crew ejection, repair tick.
+//! Building sale and repair: the Selling mission's visits, the refund, the
+//! garrison ejection and the repair tick.
 //!
-//! Extracted from production_placement.rs for file-size limits.
+//! A sale starts at `BuildingClass::Sell_Back @ 0x00447110` ([`sell_back`];
+//! a Slave Miner refinery's relocation queues the mission itself,
+//! [`begin_selling`]): the building takes the Selling mission, and each
+//! later frame `Simulation::tick_building_down` visits
+//! `BuildingClass::Sell @ 0x00449C30` ([`BuildingDown`],
+//! `sim::building_construction`):
+//! - stage 0 ([`sell_stage_zero`]): an undeploy's `DeploySound=`, the bunker
+//!   release, RUN_AWAY to every contact and the damage fires put out;
+//! - stage 1 ([`sell_stage_one`]): OVER_OUT to every contact, then (unless a
+//!   dock still tethers the building) its absorbed passengers, garrison and
+//!   crew leave (`sim::crew_survival`), the owner's player hears the sale,
+//!   and the build-up starts playing in reverse;
+//! - stage 2 ([`sell_complete`]), on the animation's last frame: an
+//!   `UndeploysInto=` building converts (`Simulation::finish_undeploy`);
+//!   any other is refunded and removed.
+//!
+//! Evidence: `tools/spatial_oracle/building_sale.json` (Sell_Back and the
+//! visits' timing in `route` rows, stage 1 in `crew` rows, the refund in
+//! `refund` rows), replayed by `sim::building_construction`'s and
+//! `building_sale_oracle_tests`'s tests.
+//!
+//! RESIDUALS:
+//! - `RegisterDestruction(null)` at the sale (`vt+0xE0`, `0x0044A1F9`, after
+//!   `+0x53C = -1` keeps the house's buildings-lost count unchanged): a
+//!   tagged building's "destroyed" trigger events 48 and 29 (VERA has no
+//!   per-object tags) and a radar refresh. Trigger: selling a map-tagged
+//!   building. Effect: its trigger does not fire.
+//! - House `+0x1FC`, set at the completing visit, makes the owner's next
+//!   House AI recheck its tech tree (`0x004F926C..0x004F92FD`); VERA
+//!   refreshes the owner's super weapon grants at the sale instead.
+//! - Presentation: stage 1 re-selects a building selected at its entry
+//!   (`vt+0x14C`, `0x0044A8C9`; VERA's selection never lapses; its tag event
+//!   0x21 has no tags to reach), the `PackupSound=` handle (`+0x6A0`, stopped
+//!   at a conversion `0x0044A1C8`) and stage 2's looping sound update
+//!   (`0x00750D40`).
+//! - Dormant in retail data: Sell_Back's and CanSell's FirestormWall arms
+//!   (no YR type sets `FirestormWall=`), stage 0's upgrade sale (`+0x702`;
+//!   no type sets `PowersUpBuilding=`), its Artillary/TickTank arm, the
+//!   LaserFencePost recalc (`0x004533A0`) and the sale's CloakGenerator arm
+//!   (`Type+0x16C7`, `0x0044A292`).
+//! - Stage 0's Slave Miner arm (`0x0044AA3D..0x0044AA9F`: HandleReturnedSlaves
+//!   for an archived ore cell) needs the retail undeploy click's cell, which
+//!   VERA's undeploy order does not carry.
+//! - A unit's sale on a repair depot (the SELL event's unit arm,
+//!   `0x004C6F5A..0x004C6F96`) is its own mechanism.
 
 use crate::map::entities::EntityCategory;
-use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::DestroyedGarrisonBuilding;
-use crate::sim::components::Position;
+use crate::sim::components::BuildingDown;
 use crate::sim::intern::InternedId;
-use crate::sim::mission::MissionType;
+use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::passenger::PassengerRole;
@@ -22,9 +66,6 @@ use crate::util::lepton;
 use super::production_queue::{credits_entry_for_owner, credits_for_owner};
 use super::production_tech::foundation_dimensions;
 
-/// RA2 sell refund: 50% of cost (integer percentage).
-const SELL_REFUND_PERCENT: u32 = 50;
-
 /// `TechnoTypeClass::GetRefund @ 0x00711F60` for a BuildingType and a live
 /// house (`RET 8`), in its x87 order under the chop control word:
 ///
@@ -37,10 +78,12 @@ const SELL_REFUND_PERCENT: u32 = 50;
 /// if (human (0x0050B730)) v = ftol(v * pct)
 /// ```
 ///
+/// A sale credits it with `full` clear (`TechnoClass vt+0x2BC` =
+/// `0x0070ADA0`, `0x0044A215`).
+///
 /// RESIDUAL: VERA does not parse the country `Cost*Mult=` keys; no stock
 /// country authors them, so `m1` is the HouseType constructor's 1.0f
-/// (`0x00511481..0x005114CC`) for every stock house. Sale money still uses
-/// the older 50% adapter below; it moves here with the Mission_Selling port.
+/// (`0x00511481..0x005114CC`) for every stock house.
 pub(crate) fn building_type_refund(
     rules: &RuleSet,
     object: &crate::rules::object_type::ObjectType,
@@ -91,147 +134,403 @@ const SCATTER_DIRECTION_OFFSETS: [(i16, i16); 8] = [
     (-1, -1),
 ];
 
-/// Building sale invokes Techno70ADA0 -> Type711F60, then credits the result
-/// directly (44A1A3..B0 / 44A215..222). Neither refund body reads health.
-/// VERA's fixed 50%/nonnegative-cost adapter still omits native RefundPercent,
-/// Soylent and owner/type cost modifiers; this is not full refund parity.
-fn sell_refund_for_building(obj: &crate::rules::object_type::ObjectType) -> i32 {
-    obj.cost.max(0) / (100 / SELL_REFUND_PERCENT as i32)
+/// Who orders a sale; `BuildingClass::Sell_Back @ 0x00447110` reads its
+/// control argument.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SellOrder {
+    /// The SELL event's control -1 (`EventClass::Execute 0x004C6F9C`): the
+    /// player's sell cursor.
+    Player,
+    /// The player's undeploy order: VERA's stand-in for the retail undeploy
+    /// click (`BuildingClass::Active_Click_With 0x004436F0`), whose SELL event
+    /// follows the event that sets the building's ArchiveTarget.
+    Undeploy,
+    /// Control 1: the computer's low-credit sale
+    /// (`BuildingClass::UpdateRepairAndPower 0x0045080D`).
+    Computer,
 }
 
-/// Survivor divisor for the given owner's side, from `[General]` INI keys.
-/// Uses HouseState.side_index (0=Allied, 1=Soviet, 2=Yuri) instead of
-/// the old string-matching classify_owner_side hack.
-fn survivor_divisor_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -> i32 {
-    let side = sim
-        .interner
-        .get(owner)
-        .and_then(|id| sim.houses.get(&id))
-        .map(|h| h.side_index)
-        .unwrap_or(0);
-    match side {
-        1 => rules.general.soviet_survivor_divisor,
-        2 => rules.general.third_survivor_divisor,
-        _ => rules.general.allied_survivor_divisor,
-    }
-}
-
-/// Compute survivor count using the RA2 formula: sell_refund / SurvivorDivisor.
-///
-/// VERA divides its refund adapter by a per-side divisor from `[General]`.
-/// The native survivor admission/count path remains separately unverified.
-/// The `Crewed=yes` flag must be set.
-fn sell_survivor_limit(
-    sim: &Simulation,
-    obj: &crate::rules::object_type::ObjectType,
-    rules: &RuleSet,
-    owner: &str,
-) -> usize {
-    if !obj.crewed {
-        return 0;
-    }
-    let refund = sell_refund_for_building(obj);
-    if refund <= 0 {
-        return 0;
-    }
-    let divisor = survivor_divisor_for_owner(sim, rules, owner).max(1);
-    (refund / divisor).max(0) as usize
-}
-
-fn sell_survivor_type(sim: &Simulation, rules: &RuleSet, owner: &str) -> Option<String> {
-    let side = sim
-        .interner
-        .get(owner)
-        .and_then(|id| sim.houses.get(&id))
-        .map(|h| h.side_index)
-        .unwrap_or(0);
-    let mut preferred: Vec<&str> = match side {
-        2 => vec!["INIT", "E2", "E1"],
-        1 => vec!["E2", "E1", "INIT"],
-        _ => vec!["E1", "E2", "INIT"],
-    };
-    preferred.extend(rules.infantry_ids.iter().map(String::as_str));
-
-    preferred.into_iter().find_map(|id| {
-        let obj = rules.object(id)?;
-        if obj.category != ObjectCategory::Infantry {
-            return None;
-        }
-        if !obj.owner.is_empty() && !obj.owner.iter().any(|h| h.eq_ignore_ascii_case(owner)) {
-            return None;
-        }
-        Some(id.to_string())
-    })
-}
-
-fn sell_survivor_positions(rx: u16, ry: u16, width: u16, height: u16) -> Vec<(u16, u16)> {
-    let mut cells = Vec::new();
-    let min_x = i32::from(rx) - 1;
-    let max_x = i32::from(rx) + i32::from(width);
-    let min_y = i32::from(ry) - 1;
-    let max_y = i32::from(ry) + i32::from(height);
-
-    for y in min_y..=max_y {
-        for x in min_x..=max_x {
-            if x < 0 || y < 0 {
-                continue;
+/// `BuildingClass::Sell_Back @ 0x00447110` (vt+0x1A0). A building whose
+/// Buildup SHP is bound (`+0x6E9`) sells: a player's order starts the
+/// Selling mission unless the building is already on it; the computer's
+/// order also stands down while the building is Selling or carries planted
+/// C4 (`+0x6DF`). Each accepted order clicks for the owner's player
+/// (`VocClass::PlayAtPos 0x00750920` with `[AudioVisual] GenericClick=`,
+/// behind `HouseClass::IsHumanPlayer @ 0x0050B6F0`; the app applies that
+/// gate). Without a Buildup only a `FirestormWall=` type (`Type+0x16C0`)
+/// takes the order (`0x004471C5`): it leaves the map (`vt+0xD4`) and is
+/// uninitialised (`vt+0xF8`) at once, with no click or refund (the branch
+/// computes Cost_Of `Type vt+0x84` and asks `0x0050B730`, and discards
+/// both). Returns whether the order was taken.
+pub fn sell_back(sim: &mut Simulation, rules: &RuleSet, id: u64, order: SellOrder) -> bool {
+    let Some((owner, buildup, firestorm_wall, selling, c4)) =
+        sim.substrate.entities.get(id).and_then(|entity| {
+            if entity.category != EntityCategory::Structure {
+                return None;
             }
-            let inside_x = x >= i32::from(rx) && x < i32::from(rx) + i32::from(width);
-            let inside_y = y >= i32::from(ry) && y < i32::from(ry) + i32::from(height);
-            if inside_x && inside_y {
-                continue;
-            }
-            cells.push((x as u16, y as u16));
+            let type_id = sim.interner.resolve(entity.type_ref());
+            Some((
+                entity.owner(),
+                rules.has_buildup(type_id),
+                rules
+                    .object(type_id)
+                    .is_some_and(|object| object.firestorm_wall),
+                // Get_Mission (`vt+0x184`): the current mission, else the
+                // queued one.
+                entity.mission.effective().known() == Some(MissionType::Selling),
+                entity.pending_c4_detonation.is_some(),
+            ))
+        })
+    else {
+        return false;
+    };
+    if !buildup {
+        if firestorm_wall {
+            let _ = sim.techno_limbo_with_rules(id, rules);
+            sim.uninit_with_rules(id, rules);
         }
+        return firestorm_wall;
     }
-
-    cells.sort_by_key(|&(cx, cy)| {
-        let dx = i32::from(cx) - (i32::from(rx) + i32::from(width) - 1);
-        let dy = i32::from(cy) - (i32::from(ry) + i32::from(height) - 1);
-        let dist_sq = dx * dx + dy * dy;
-        (dist_sq, cy, cx)
-    });
-    cells
+    match order {
+        SellOrder::Player | SellOrder::Undeploy if !selling => {
+            begin_selling(sim, rules, id, order == SellOrder::Undeploy);
+        }
+        SellOrder::Player | SellOrder::Undeploy => {}
+        SellOrder::Computer if selling || c4 => return false,
+        SellOrder::Computer => begin_selling(sim, rules, id, false),
+    }
+    sim.sound_events.push(SimSoundEvent::SellClick { owner });
+    true
 }
 
-fn eject_sell_survivors(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    owner: &str,
-    building_type: &crate::rules::object_type::ObjectType,
-    building_pos: Position,
-) -> usize {
-    let Some(infantry_type) = sell_survivor_type(sim, rules, owner) else {
-        return 0;
-    };
-    let survivor_limit = sell_survivor_limit(sim, building_type, rules, owner);
-    if survivor_limit == 0 {
-        return 0;
-    }
-
-    let (width, height) = foundation_dimensions(&building_type.foundation);
-    let mut spawned = 0;
-    for (spawn_rx, spawn_ry) in
-        sell_survivor_positions(building_pos.rx, building_pos.ry, width, height)
-            .into_iter()
-            .take(survivor_limit)
+/// `Queue_Mission(Selling, 0)` then Commence (Sell_Back, `0x00447176`): the
+/// building leaves its mission for Selling, whose visits start the next
+/// frame ([`BuildingDown`]). `undeploy_order` marks the player's undeploy
+/// order. A building already Selling keeps its sale (Queue_Mission refuses
+/// while Selling). The first visit stops any repair before that frame's
+/// repair step, which VERA runs ahead of the visit (`tick_repairs`), so the
+/// sale stops it here.
+pub(crate) fn begin_selling(sim: &mut Simulation, rules: &RuleSet, id: u64, undeploy_order: bool) {
+    let now = sim.session.binary_frame;
+    let selling = MissionId::from_known(MissionType::Selling);
+    let readiness = crate::sim::mission::authority::LiveReadyInputProvider { rules };
+    if sim
+        .mission_queue_exact(id, selling, 0, now, &readiness)
+        .is_err()
+        || sim.mission_commence_exact(id, now).is_err()
     {
-        if sim
-            .spawn_object_at_height(
-                &infantry_type,
-                owner,
-                spawn_rx,
-                spawn_ry,
-                64,
-                building_pos.z,
-                rules,
-            )
-            .is_some()
-        {
-            spawned += 1;
+        return;
+    }
+    let Some(control) = sim
+        .substrate
+        .entities
+        .get(id)
+        .map(|entity| rules.buildup_control(sim.interner.resolve(entity.type_ref())))
+    else {
+        return;
+    };
+    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+        return;
+    };
+    if entity.mission.current() != selling || entity.building_down.is_some() {
+        return;
+    }
+    entity.repairing = false;
+    entity.building_up = None;
+    entity.building_down = Some(BuildingDown::commenced(control, now as i32, undeploy_order));
+}
+
+/// `BuildingClass::CanSell @ 0x004494C0` (vt+0x98), which the sell cursor
+/// asks of the local player's building (`DisplayClass::DetermineAction
+/// 0x006929F2`): never while drained (`+0x1D0`) or for an `Unsellable=`
+/// type (`+0x1579`); otherwise a building with a Buildup SHP (`+0x6E9`), out
+/// of BState 0 (`+0x534`) and on neither Selling nor Construction (VERA's
+/// build-up, `building_up`), or else any `FirestormWall=` type
+/// (`0x00449512`; its owner test, House `+0x1FA`, reads a flag only the
+/// House constructor writes, 0).
+pub fn can_sell_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return false;
+    };
+    let Some(object) = sim.object_type(entity.type_ref(), rules) else {
+        return false;
+    };
+    let buildup_sale = rules.has_buildup(&object.id)
+        && !entity.in_construction_bstate()
+        && entity.building_up.is_none()
+        && !matches!(
+            entity.mission.effective().known(),
+            Some(MissionType::Selling | MissionType::Construction)
+        );
+    entity.category == EntityCategory::Structure
+        && entity.draining_me.is_none()
+        && !object.unsellable
+        && (buildup_sale || object.firestorm_wall)
+}
+
+/// A building type's `UndeploysInto=` unit type (`Type+0x408`), resolved as
+/// the type pointer is: a name no type answers undeploys into nothing.
+pub(crate) fn undeploy_target<'r>(rules: &'r RuleSet, type_id: &str) -> Option<&'r str> {
+    let target = rules.object(type_id)?.undeploys_into.as_deref()?;
+    rules.object(target).map(|_| target)
+}
+
+fn undeploys(rules: &RuleSet, object: &crate::rules::object_type::ObjectType) -> bool {
+    undeploy_target(rules, &object.id).is_some()
+}
+
+/// UpdateAnimation's archive-less sale (`0x00451186..0x004511DF`): an
+/// `UndeploysInto=` building with no ArchiveTarget completes its pack-up at
+/// stage `0x17`.
+pub(crate) fn archive_less_sale(
+    rules: Option<&RuleSet>,
+    type_id: &str,
+    entity: &crate::sim::game_entity::GameEntity,
+) -> bool {
+    rules.is_some_and(|rules| undeploy_target(rules, type_id).is_some()) && !sale_archive(entity)
+}
+
+/// The building's ArchiveTarget (`+0x218`); the player's undeploy order
+/// stands for the click that sets one.
+fn sale_archive(entity: &crate::sim::game_entity::GameEntity) -> bool {
+    entity.archive_target().is_some()
+        || entity.building_down.is_some_and(|down| down.undeploy_order)
+}
+
+/// Sell's undeploy test (`0x0044A8DF`, `0x0044A7CF`, `0x00449CEA`): an
+/// `UndeploysInto=` building converts instead of being sold, except that a
+/// Construction Yard (`+0x16B9`) converts only in a multiplayer game
+/// (`0x00A8B238`) with an ArchiveTarget, a human owner
+/// (`HouseClass::IsControlledByHuman @ 0x0050B730`), `MCVRedeploy`
+/// (`0x00A8B320`) and no mind controller (`+0x2C0`).
+fn qualifying_undeploy(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return false;
+    };
+    let Some(object) = sim.object_type(entity.type_ref(), rules) else {
+        return false;
+    };
+    if !undeploys(rules, object) {
+        return false;
+    }
+    if !object.construction_yard {
+        return true;
+    }
+    let game_mode = sim.session.game_mode_nonzero;
+    game_mode
+        && sale_archive(entity)
+        && sim
+            .houses
+            .get(&entity.owner())
+            .is_some_and(|house| house.is_controlled_by_human(game_mode))
+        && sim.session.game_options.mcv_redeploy
+        && !entity.mind_control.is_mind_controlled()
+}
+
+/// Sell's stage-0 visit (`0x0044A8DF..0x0044ABAC`): an undeploy's
+/// `DeploySound=` (`+0x56C`) at the building's Location (after its undeploy
+/// voice `vt+0x36C`, unplayed: VERA parses no `VoiceDeploy=`), a Tank
+/// Bunker's vehicle released (`+0x2E4`, `0x004593A0`), RUN_AWAY to every
+/// contact (`0x0044AB68`) and the damage-fire anims released (`+0x5C8`,
+/// `0x0044AB87..0x0044ABAA`).
+pub(crate) fn sell_stage_zero(sim: &mut Simulation, rules: Option<&RuleSet>, id: u64) {
+    if let Some(rules) = rules
+        && qualifying_undeploy(sim, rules, id)
+    {
+        let sound = sim.substrate.entities.get(id).and_then(|entity| {
+            let sound = sim
+                .object_type(entity.type_ref(), rules)?
+                .deploy_sound
+                .clone()?;
+            Some((sound, entity.position.rx, entity.position.ry))
+        });
+        if let Some((sound, rx, ry)) = sound {
+            let deploy_sound_id = sim.interner.intern(&sound);
+            sim.sound_events.push(SimSoundEvent::EntityDeployed {
+                deploy_sound_id,
+                rx,
+                ry,
+            });
         }
+    }
+    if sim
+        .substrate
+        .entities
+        .get(id)
+        .and_then(|building| building.bunker_occupant)
+        .is_some()
+    {
+        crate::sim::docking::bunker_link::release_sell_destroy(sim, id);
+    }
+    crate::sim::radio::broadcast(sim, id, crate::sim::radio::RadioMessage::RunAway, rules);
+    sim.clear_building_damage_fire_slots(id, rules);
+}
+
+/// Sell's stage-1 visit (`0x0044A2EE..0x0044A8DE`): OVER_OUT to every
+/// contact (`vt+0x280(3)`); a building a dock still tethers after it
+/// (`+0x418`) visits stage 1 again next frame. Otherwise, unless it is an
+/// archive-bearing undeploy, its absorbed passengers, garrison and crew
+/// leave ([`sale_survivors`]); the owner's player hears the sale
+/// ([`sale_sounds`]); and stage 2 begins (`Begin_Mode(0)`). Returns whether
+/// an object entered the map.
+pub(crate) fn sell_stage_one(
+    sim: &mut Simulation,
+    rules: Option<&RuleSet>,
+    registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    id: u64,
+) -> bool {
+    crate::sim::radio::broadcast_break(sim, id, rules);
+    if sim
+        .substrate
+        .entities
+        .get(id)
+        .is_none_or(|building| building.dock_entered_with.is_some())
+    {
+        return false;
+    }
+    let spawned = rules.is_some_and(|rules| {
+        let spawned = sale_survivors(sim, rules, registry, id);
+        sale_sounds(sim, rules, id);
+        spawned
+    });
+    let now = sim.session.binary_frame as i32;
+    if let Some(building) = sim.substrate.entities.get_mut(id) {
+        let mut status = building.mission.handler_state();
+        if let Some(down) = building.building_down.as_mut() {
+            down.begin_stage_two(&mut status, now);
+        }
+        building.mission.set_handler_state(status);
     }
     spawned
+}
+
+/// Stage 1's survivors (`0x0044A309..0x0044A7A3`), which an
+/// `UndeploysInto=` building with an ArchiveTarget skips: the survivor count
+/// (`vt+0x2D0`, How_Many_Survivors) taken first, then the absorbed
+/// passengers over the occupy list (`vt+0x108`), the garrison (SellBuilding
+/// `0x00457DE0` when occupied) and the crew (`sim::crew_survival`). The
+/// building is alive, so NoSurvivor (`+0x6E0`, written only by
+/// DestructionEffects) is clear.
+fn sale_survivors(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    id: u64,
+) -> bool {
+    let Some((skip, cells)) = sim.substrate.entities.get(id).and_then(|entity| {
+        let object = sim.object_type(entity.type_ref(), rules)?;
+        Some((
+            sale_archive(entity) && undeploys(rules, object),
+            crate::sim::crew_survival::foundation_cells(
+                entity.position.rx,
+                entity.position.ry,
+                &object.foundation,
+            ),
+        ))
+    }) else {
+        return false;
+    };
+    if skip {
+        return false;
+    }
+    let count = sim.building_survivor_count(rules, id, false);
+    let passengers = sim.eject_absorbed_passengers(rules, registry, id, &cells, false);
+    let garrison = eject_garrison_occupants(sim, rules, id);
+    let crew = sim.spawn_sale_crew(rules, registry, id, count, &cells);
+    passengers > 0 || garrison > 0 || crew
+}
+
+/// Stage 1's sounds (`0x0044A7A9..0x0044A899`) for the owner's player (the
+/// app applies `HouseClass::IsHumanPlayer @ 0x0050B6F0`): `[AudioVisual]
+/// SellSound=` unless the building converts, then the type's
+/// `PackupSound=`, both at its Location (`VocClass::PlayAt @ 0x007509E0`). An
+/// `UndeploysInto=` type on a 1x1 foundation plays neither (`vt+0x80`,
+/// `0x00465D40`).
+fn sale_sounds(sim: &mut Simulation, rules: &RuleSet, id: u64) {
+    let Some((owner, position, one_cell_undeploy, packup)) =
+        sim.substrate.entities.get(id).and_then(|entity| {
+            let object = sim.object_type(entity.type_ref(), rules)?;
+            Some((
+                entity.owner(),
+                entity.position.clone(),
+                undeploys(rules, object) && foundation_dimensions(&object.foundation) == (1, 1),
+                object.packup_sound.clone(),
+            ))
+        })
+    else {
+        return;
+    };
+    if one_cell_undeploy {
+        return;
+    }
+    let audible_to = Some([owner, owner]);
+    if !qualifying_undeploy(sim, rules, id)
+        && let Some(sound) = rules.general.sell_sound.clone()
+    {
+        sim.sound_events
+            .push(SimSoundEvent::voc_at_for(sound, audible_to, &position));
+    }
+    if let Some(sound) = packup {
+        sim.sound_events
+            .push(SimSoundEvent::voc_at_for(sound, audible_to, &position));
+    }
+}
+
+/// The stage-2 visit that finds `+0x6DD` (`0x00449CA7`): the building's
+/// target cleared (`vt+0x3C8(0)`, `0x00443B90` on Selling), `EVA_StructureSold`
+/// for the owner's player unless it undeploys (`+0x41A`, `0x00449CE5`), then
+/// the conversion into its `UndeploysInto=` unit
+/// ([`Simulation::finish_undeploy`]) or the sale (`0x0044A1E8`): light off
+/// (`+0x614`), the refund credited ([`building_type_refund`], `full` clear,
+/// before Limbo), then Limbo and UnInit. Returns whether a unit entered the
+/// map.
+pub(crate) fn sell_complete(
+    sim: &mut Simulation,
+    rules: Option<&RuleSet>,
+    registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
+    id: u64,
+) -> bool {
+    let Some(rules) = rules else {
+        sim.uninit(id);
+        return false;
+    };
+    let _ = sim.assign_target_represented(id, None, Some(rules));
+    let Some((owner, undeploys)) = sim.substrate.entities.get(id).and_then(|entity| {
+        let object = sim.object_type(entity.type_ref(), rules)?;
+        Some((entity.owner(), undeploys(rules, object)))
+    }) else {
+        return false;
+    };
+    if !undeploys {
+        sim.sound_events
+            .push(SimSoundEvent::StructureSold { owner });
+    }
+    if qualifying_undeploy(sim, rules, id) {
+        sim.finish_undeploy(id, rules, registry);
+        return true;
+    }
+    let refund = sim.substrate.entities.get(id).and_then(|entity| {
+        let object = sim.object_type(entity.type_ref(), rules)?;
+        let house = sim.houses.get(&owner)?;
+        Some(building_type_refund(
+            rules,
+            object,
+            house,
+            sim.session.game_mode_nonzero,
+            false,
+        ))
+    });
+    sim.set_building_light_active(id, false);
+    if let Some(refund) = refund {
+        let owner_name = sim.interner.resolve(owner).to_string();
+        let credits = credits_entry_for_owner(sim, &owner_name);
+        *credits = credits.wrapping_add(refund);
+    }
+    sim.uninit_with_context(id, UninitContext::with_rules(rules));
+    if sim.session.game_options.super_weapons {
+        crate::sim::superweapon::refresh_super_weapons_for_owner(sim, rules, owner);
+    }
+    false
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -625,6 +924,38 @@ pub(crate) fn eject_destruction_garrison(
     eject_destruction_garrison_with_context(sim, rules, event, UninitContext::default())
 }
 
+/// A sale run to its end at once, for fixtures without frames: the Selling
+/// mission ([`begin_selling`], which a type with no Buildup control takes as
+/// the Slave Miner relocation does), the next frame's operational visit
+/// (`Simulation::visit_building_operational`: a Psychic Tower frees its
+/// captives), then the stage-0, stage-1 and completing visits. Returns
+/// whether the sale completed.
+#[cfg(test)]
+pub(crate) fn sell_building_now_for_test(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
+    begin_selling(sim, rules, id, false);
+    if sim
+        .substrate
+        .entities
+        .get(id)
+        .is_none_or(|building| building.building_down.is_none())
+    {
+        return false;
+    }
+    sim.visit_building_operational(id, rules);
+    sell_stage_zero(sim, Some(rules), id);
+    sell_stage_one(sim, Some(rules), None, id);
+    if sim
+        .substrate
+        .entities
+        .get(id)
+        .is_none_or(|building| building.mission.handler_state() < 2)
+    {
+        return false;
+    }
+    sell_complete(sim, Some(rules), None, id);
+    true
+}
+
 pub(crate) fn eject_destruction_garrison_with_context(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -719,96 +1050,6 @@ pub(crate) fn eject_red_hp_garrison(
     ejected
 }
 
-/// Sell a building entity: refund part of its current value, eject crew, and despawn it.
-///
-/// Captured civilian `CanBeOccupied` garrisons use the same player-sell
-/// transaction once they are owned by the seller: occupants eject through
-/// the SellBuilding-style helper, then the building is removed/refunded.
-/// Revert-to-civilian belongs to empty-garrison reconciliation, not player sell.
-pub fn sell_building(sim: &mut Simulation, rules: &RuleSet, stable_id: u64) -> bool {
-    let (owner_name, type_id, position) = {
-        let Some(entity) = sim.substrate.entities.get(stable_id) else {
-            return false;
-        };
-        if entity.category != EntityCategory::Structure {
-            return false;
-        }
-        (
-            sim.interner.resolve(entity.owner()).to_string(),
-            sim.interner.resolve(entity.type_ref()).to_string(),
-            entity.position.clone(),
-        )
-    };
-    let Some(obj) = rules.object(&type_id) else {
-        return false;
-    };
-
-    // Native Selling ends Is_Operational (`0x004555D0`), so the next Update's
-    // off edge (`0x004549B0`) frees a Psychic Tower's captives (FreeAll at
-    // `0x00454B47`) at the start of the sell-down, long before the building
-    // goes. BuildingClass UnInit frees none, so the sale is where they go.
-    sim.free_all_captures(stable_id, rules);
-    let refund = sell_refund_for_building(obj);
-    let ejected = eject_sell_survivors(sim, rules, &owner_name, obj, position);
-    // Eject garrison occupants alive before removing the building (gamemd SellBuilding).
-    let garrison_ejected = eject_garrison_occupants(sim, rules, stable_id);
-    // `BuildingClass::Sell` sell state 0 (`0x0044AB5A..0x0044AB68`) broadcasts
-    // RUN_AWAY (0x17) to every contact: a harvester mid-unload leaves it for
-    // Harvest and scatters off the pad (`radio::receive`; a Chrono Miner on
-    // Teleport refuses the scatter). VERA's sale is synchronous, so it lands
-    // just before the removal below.
-    crate::sim::radio::broadcast(
-        sim,
-        stable_id,
-        crate::sim::radio::RadioMessage::RunAway,
-        Some(rules),
-    );
-    // This reciprocal bunker link is distinct from refinery contacts.
-    // Native44AAB0 ->4593A0 uses Power_On, Force_Track, a separate owner-speed
-    // setter, link clear and radio BREAK. The current reveal/place adapter
-    // below still awaits that release-order migration; run it before uninit.
-    if sim
-        .substrate
-        .entities
-        .get(stable_id)
-        .and_then(|b| b.bunker_occupant)
-        .is_some()
-    {
-        crate::sim::docking::bunker_link::release_sell_destroy(sim, stable_id);
-    }
-    sim.set_building_light_active(stable_id, false);
-    sim.uninit_with_context(stable_id, UninitContext::with_rules(rules));
-    let owner_id = sim.interner.intern(&owner_name);
-    // Refresh superweapon grants — sold building may have been providing a SW.
-    if sim.session.game_options.super_weapons {
-        crate::sim::superweapon::refresh_super_weapons_for_owner(sim, rules, owner_id);
-    }
-    if refund > 0 {
-        *credits_entry_for_owner(sim, &owner_name) += refund;
-    }
-    // `BuildingClass::Sell 0x00449C99..0x00449CE5` (sell state 2, the
-    // building is gone): `[this+0x6DD]` — the build-animation-complete flag,
-    // set at `0x004467C9` (construction complete), cleared in sell state 0
-    // and again at the end of sell state 1, so state 2 waits for the
-    // sell-down animation — `[this+0x41A]` (owner is the local player) and
-    // `UndeploysInto=` (`Type+0x408`) null → `PlayEVA("EVA_StructureSold")`.
-    // A Construction Yard undeploys into its MCV instead and stays silent.
-    // The app applies the local-owner half.
-    if obj.undeploys_into.is_none() {
-        sim.sound_events
-            .push(SimSoundEvent::StructureSold { owner: owner_id });
-    }
-    log::info!(
-        "Building {} sold by {}: refunded {} credits, ejected {} crew + {} garrison",
-        type_id,
-        owner_name,
-        refund,
-        ejected,
-        garrison_ejected,
-    );
-    true
-}
-
 /// Toggle repair mode on a building. If already repairing, stop. Otherwise start.
 pub fn toggle_repair(sim: &mut Simulation, rules: &RuleSet, stable_id: u64) -> bool {
     let Some(strength) = sim
@@ -854,8 +1095,8 @@ const REPAIR_HP_PER_TICK: i32 = 4;
 /// `BuildingClass::UpdateRepairAndPower @ 0x00450630` in stable building order.
 ///
 /// CurrentIQ is persisted per house because named scenario houses can carry a
-/// lower `IQ=` than generated skirmish computer houses. The sale itself uses
-/// the existing authoritative building-sale transaction.
+/// lower `IQ=` than generated skirmish computer houses. The sale is
+/// [`sell_back`]'s computer order.
 fn tick_ai_low_credit_sell_decisions(sim: &mut Simulation, rules: &RuleSet) {
     let building_ids: Vec<u64> = sim
         .substrate
@@ -917,11 +1158,8 @@ fn tick_ai_low_credit_sell_decisions(sim: &mut Simulation, rules: &RuleSet) {
             continue;
         }
 
-        // The native vslot starts the Building sell/construction path. VERA's
-        // existing building-sale authority completes that same gameplay
-        // transaction synchronously; keeping it here preserves stable-ID and
-        // RNG/credit visibility for the next building decision.
-        let _ = sell_building(sim, rules, stable_id);
+        // `Sell_Back(1)` (`0x0045080D`).
+        let _ = sell_back(sim, rules, stable_id, SellOrder::Computer);
     }
 }
 
@@ -1177,7 +1415,7 @@ mod tests {
             insert_captured_player_owned_garrison(&mut sim, 10, 11);
             sim.substrate.entities.get_mut(10).unwrap().health.current = actual;
             let before = credits_for_owner(&sim, "Americans");
-            assert!(sell_building(&mut sim, &rules, 10));
+            assert!(sell_building_now_for_test(&mut sim, &rules, 10));
             assert_eq!(credits_for_owner(&sim, "Americans") - before, 200);
         }
     }
@@ -1239,6 +1477,11 @@ mod tests {
     ) {
         let americans = sim.interner.intern("Americans");
         let neutral = sim.interner.intern("Neutral");
+        // The refund (`0x0070ADA0`) reads the owner house.
+        sim.houses.insert(
+            americans,
+            crate::sim::house_state::HouseState::new(americans, 0, None, true, 0, 10),
+        );
 
         let mut building = GameEntity::test_default(building_id, "CAGAS01", "Americans", 10, 10);
         building.category = EntityCategory::Structure;
@@ -1340,7 +1583,7 @@ mod tests {
 
         let before = credits_for_owner(&sim, "Americans");
 
-        assert!(sell_building(&mut sim, &rules, building_id));
+        assert!(sell_building_now_for_test(&mut sim, &rules, building_id));
 
         // Deferred-delete: drain at end-of-tick to free the sold building's slot.
         sim.flush_pending_delete();
@@ -1710,7 +1953,7 @@ mod tests {
         insert_structure(&mut sim, 1, "GAPOWR", "Americans");
         insert_structure(&mut sim, 2, "GACNST", "Americans");
 
-        assert!(sell_building(&mut sim, &rules, 1));
+        assert!(sell_building_now_for_test(&mut sim, &rules, 1));
         assert_eq!(
             sold_events(&sim, owner),
             1,
@@ -1718,7 +1961,7 @@ mod tests {
         );
 
         sim.sound_events.clear();
-        assert!(sell_building(&mut sim, &rules, 2));
+        assert!(sell_building_now_for_test(&mut sim, &rules, 2));
         assert_eq!(
             sold_events(&sim, owner),
             0,

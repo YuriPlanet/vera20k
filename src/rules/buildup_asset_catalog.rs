@@ -129,6 +129,14 @@ impl BuildupAssetCatalog {
             .unwrap_or(NO_BUILDUP)
     }
 
+    /// Whether `type_id`'s Buildup SHP is bound: `BuildingClass::Init_Managers`
+    /// sets `+0x6E9` (`0x00442CCF`) exactly when the type's Buildup data
+    /// (`vt+0xC0`, `0x00465960`) is loaded, and a building without it cannot
+    /// be sold (`Sell_Back @ 0x00447110`, `CanSell @ 0x004494C0`).
+    pub fn has_buildup(&self, type_id: &str) -> bool {
+        self.controls.contains_key(&type_id.to_ascii_uppercase())
+    }
+
     /// Install one control directly (test fixtures without assets).
     #[cfg(test)]
     pub(crate) fn insert_for_test(&mut self, type_id: &str, control: [i32; 3]) {

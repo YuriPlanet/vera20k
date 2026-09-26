@@ -1,11 +1,15 @@
-//! Crew survival: the infantry that escape a destroyed building or vehicle.
+//! Crew survival: the infantry that leave a building or vehicle as it dies
+//! or is sold.
 //!
-//! Owner of the two death-time producers and the pieces only they share:
+//! Owner of the three crew producers and the pieces they share:
 //! - `BuildingClass::SpawnSurvivors @ 0x00442D90`, called by
 //!   `BuildingClass::DestructionEffects` (`0x00441F1B`) while the building is
 //!   still on the map: absorbed passengers leave first (Phase A), then each
 //!   foundation cell gets one survivor roll followed by that cell's
 //!   scorch/crater mark (Phase B);
+//! - `BuildingClass::Sell`'s stage 1 (`0x0044A2EE`, driven by
+//!   `production::production_sell`): absorbed passengers, then the survivor
+//!   count's crew, each on a random foundation cell;
 //! - the crew block of `UnitClass::ReceiveDamage` (`0x007381BC..0x0073838A`);
 //! - `BuildingClass::How_Many_Survivors @ 0x00451330`, the building crew pick
 //!   `0x0044EB10` and `TechnoClass::GetCrew @ 0x00707D20`.
@@ -16,6 +20,11 @@
 //! Scatter arm. Every draw is on the Scenario stream. Aircraft never ask for
 //! a crew: `Pilot=` has no gameplay reader and no aircraft caller reaches the
 //! crew-type slot `vt+0x30C`.
+//!
+//! Evidence: `tools/spatial_oracle/building_sale.json` `crew` rows (Sell's
+//! stage 1, each crewman's Scatter setter and first Walk Process run
+//! natively; `Find_Path` answered with the one-step route), replayed by
+//! `building_sale_oracle_tests`.
 //!
 //! RESIDUALS:
 //! - A second SpawnSurvivors after Limbo: DestructionEffects arms the death
@@ -29,10 +38,13 @@
 //!   Frequency: every Soviet Nuclear Reactor death. Risk: survivor count,
 //!   marks and the Scenario stream after them. Needs a breakpoint at
 //!   `0x004400D4` (kill a NANRCT) to confirm Update reaches that arm.
-//! - Sale crew (`Mission_Selling` Status 1, `0x0044A2EE`): a sale keeps the
-//!   older VERA survivor adapter until the Mission_Selling port, which can
-//!   reuse this count. Trigger: every sale of a crewed building. Effect:
-//!   invented survivor count, type and cells.
+//! - A sale's crew Unlimboes at the Z its request carries, 0
+//!   (`0x0044A6C6`): on raised ground InfantryClass::Unlimbo's floor gate
+//!   (`0x0051E01B`) then keeps that exact coordinate instead of placing, so
+//!   the crewman starts below its cell's floor until it moves. VERA places it
+//!   on the floor. Trigger: selling a crewed building on raised ground.
+//!   Effect: the crewman's height before its first step. Not executed (the
+//!   oracle map is flat).
 //! - Passenger escape (`UnitClass::ReceiveDamage` `0x00737FB0..0x007381B6`):
 //!   a dying unit that is not `Crashable=` (`+0xD95`) Unlimboes each passenger
 //!   at its Location and Scatters it (computer passengers join a team or
@@ -66,16 +78,19 @@
 //! - The crewman takes the vehicle's selection (vt+0x14C, local player) and
 //!   tag (`0x006E57C0`/`0x005F5B50`): selection is presentation and VERA has
 //!   no per-object tags.
-//! - Phase A bookkeeping: the House `+0x2F4` counter and the passenger
-//!   `+0x438`/`+0x439` flags, and a refused passenger's kill credit to a
-//!   Techno C4AppliedBy (vt+0xE0) before its UnInit. A UnitAbsorb passenger
-//!   (no stock building) leaves without its Scatter.
-//! - The Nominal survivor flag (Infantry `+0x6D9`, read by
+//! - Absorbed-passenger bookkeeping: the House `+0x2F4` counter and the
+//!   passenger `+0x438`/`+0x439` flags, and a refused passenger's kill credit
+//!   to a Techno C4AppliedBy (vt+0xE0) before its UnInit. A UnitAbsorb
+//!   passenger (no stock building) leaves without its Scatter in Phase A and
+//!   with it in a sale; VERA scatters neither.
+//! - The Nominal survivor flag (Infantry `+0x6D9`, set from the crew type's
+//!   `+0xC9E`; a sale sets it at `0x0044A747`; read by
 //!   `HouseClass::Added_To_Game @ 0x00502C3C`) is not represented.
-//! - A Bio Reactor holding more infantry than foundation cells reads its
-//!   list's sentinel for the extra passenger and starts Phase B past the list
-//!   (open native question); VERA puts the extra passenger's dead
-//!   PlaceInfantryInCell draw on the origin cell and skips Phase B.
+//! - The off-map cell a passenger past the occupy list places in keeps the
+//!   coordinate its lookup stamps (`MapClass::operator[]`); VERA's absorbed
+//!   exit reads the off-map cell's bytes without stamping it. After Phase A
+//!   such a Bio Reactor (more infantry than foundation cells) starts Phase B
+//!   past the list (open native question); VERA skips Phase B's cells.
 
 use crate::map::entities::EntityCategory;
 use crate::map::overlay_types::OverlayTypeRegistry;
@@ -85,6 +100,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::bump_crush;
 use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::occupancy::RawCellKey;
 use crate::sim::world::{
     PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, Simulation, UninitContext,
 };
@@ -146,6 +162,16 @@ enum CrewUnlimbo {
     },
 }
 
+impl CrewUnlimbo {
+    /// The cell and floor the crewman Unlimboes on.
+    fn cell(&self) -> (u16, u16, u8) {
+        match *self {
+            Self::Place { cell, z, .. } => (cell.0, cell.1, z),
+            Self::Exact { rx, ry, z, .. } => (rx, ry, z),
+        }
+    }
+}
+
 impl Simulation {
     /// `TechnoClass::GetCrew @ 0x00707D20` for a Crewed type owned by a house
     /// of `side` (House `+0x1E8`): the side's crew, Technician for any other
@@ -190,7 +216,12 @@ impl Simulation {
     /// NoSurvivor (`+0x6E0`), uncrewed or owned by a house outside the three
     /// sides; otherwise the refund over the side's divisor (doubled once
     /// captured), clamped to 1..5.
-    fn building_survivor_count(&self, rules: &RuleSet, building_id: u64, no_survivor: bool) -> i32 {
+    pub(crate) fn building_survivor_count(
+        &self,
+        rules: &RuleSet,
+        building_id: u64,
+        no_survivor: bool,
+    ) -> i32 {
         let Some(entity) = self.substrate.entities.get(building_id) else {
             return 0;
         };
@@ -250,7 +281,6 @@ impl Simulation {
         let owner = entity.owner();
         let origin = (entity.position.rx, entity.position.ry);
         let captured = entity.has_been_captured;
-        let absorbs = object.infantry_absorb || object.unit_absorb;
         let cells = foundation_cells(origin.0, origin.1, &object.foundation);
         // C4AppliedBy (+0x540); the pointer-expiry broadcast clears it when
         // the planter leaves play.
@@ -262,27 +292,8 @@ impl Simulation {
 
         // Phase A (0x00442DF2..0x00443011): every absorbed passenger advances
         // the foundation cursor that Phase B then continues from.
-        let mut cursor = 0;
-        if absorbs {
-            while let Some((passenger, _)) = self
-                .substrate
-                .entities
-                .get_mut(building_id)
-                .and_then(|building| building.passenger_role.cargo_mut())
-                .and_then(|cargo| cargo.unload_first())
-            {
-                let cell = cells.get(cursor).copied().unwrap_or(origin);
-                cursor += 1;
-                self.eject_absorbed_passenger(
-                    rules,
-                    registry,
-                    building_id,
-                    passenger,
-                    cell,
-                    no_survivor,
-                );
-            }
-        }
+        let cursor =
+            self.eject_absorbed_passengers(rules, registry, building_id, &cells, no_survivor);
 
         // Phase B (0x00443017..0x004433F4): nothing at all, smudges
         // included, when no survivor is owed.
@@ -314,18 +325,7 @@ impl Simulation {
         cell: (u16, u16),
         c4_source: Option<u64>,
     ) -> bool {
-        let z = self
-            .resolved_terrain
-            .as_ref()
-            .and_then(|terrain| terrain.cell(cell.0, cell.1))
-            .map_or(0, |terrain_cell| terrain_cell.level);
-        let request = (
-            SimFixed::from_num(SURVIVOR_REQUEST_X),
-            SimFixed::from_num(SURVIVOR_REQUEST_Y),
-        );
-        let Some(id) =
-            self.construct_crew(rules, crew, owner, CrewUnlimbo::Place { cell, z, request })
-        else {
+        let Some(id) = self.construct_crew(rules, crew, owner, self.survivor_unlimbo(cell)) else {
             return false;
         };
         let strength = rules.object(crew).map_or(0, |object| object.strength);
@@ -368,18 +368,60 @@ impl Simulation {
         true
     }
 
-    /// One Phase A passenger of an absorbing building. An infantryman spends
-    /// the PlaceInfantryInCell draw for its foundation cell (the result is
-    /// overwritten), then every passenger Unlimboes at the building Location
-    /// in priority mode (no second draw), Scatters, and Hunts for a computer
-    /// building owner. NoSurvivor or a refused Unlimbo UnInits it instead.
+    /// The absorbed passengers' exit, shared by SpawnSurvivors' Phase A
+    /// (`0x00442DF2..0x00443011`) and Sell's stage 1
+    /// (`0x0044A389..0x0044A59E`): an `InfantryAbsorb=`/`UnitAbsorb=`
+    /// building's passengers leave in cargo order, each taking the next cell
+    /// of its occupy list `cells`. The cursor is unbounded: the passenger
+    /// after the last cell reads the list's `0x7FFF` terminator, whose cell
+    /// the Map lookup resolves to MapClass's off-map cell
+    /// (`tools/spatial_oracle/building_sale.json` `c_absorbed_five`, a full
+    /// Bio Reactor). Returns the cursor.
+    pub(crate) fn eject_absorbed_passengers(
+        &mut self,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        building_id: u64,
+        cells: &[(u16, u16)],
+        no_survivor: bool,
+    ) -> usize {
+        let absorbs = self
+            .substrate
+            .entities
+            .get(building_id)
+            .and_then(|entity| self.object_type(entity.type_ref(), rules))
+            .is_some_and(|object| object.infantry_absorb || object.unit_absorb);
+        let mut cursor = 0;
+        if !absorbs {
+            return cursor;
+        }
+        while let Some((passenger, _)) = self
+            .substrate
+            .entities
+            .get_mut(building_id)
+            .and_then(|building| building.passenger_role.cargo_mut())
+            .and_then(|cargo| cargo.unload_first())
+        {
+            let cell = cells.get(cursor).copied();
+            cursor += 1;
+            self.eject_absorbed_passenger(rules, registry, building_id, passenger, cell, no_survivor);
+        }
+        cursor
+    }
+
+    /// One absorbed passenger. An infantryman spends the PlaceInfantryInCell
+    /// draw for its occupy-list cell (`None`: past the list, the off-map
+    /// cell; the result is overwritten), then every passenger Unlimboes at
+    /// the building Location in priority mode (no second draw), Scatters, and
+    /// Hunts for a computer building owner. NoSurvivor or a refused Unlimbo
+    /// UnInits it instead.
     fn eject_absorbed_passenger(
         &mut self,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         building_id: u64,
         passenger: u64,
-        cell: (u16, u16),
+        cell: Option<(u16, u16)>,
         no_survivor: bool,
     ) {
         let Some(infantry) = self
@@ -391,10 +433,10 @@ impl Simulation {
             return;
         };
         if infantry {
-            let _overwritten = bump_crush::place_infantry_in_cell(
+            let cell = cell.map_or(RawCellKey::Dummy, |(x, y)| RawCellKey::Real(x, y));
+            let _overwritten = bump_crush::place_infantry_in_native_cell(
                 &self.substrate.raw_cell_occupation,
-                cell.0,
-                cell.1,
+                cell,
                 MovementLayer::Ground,
                 SimFixed::from_num(SURVIVOR_REQUEST_X),
                 SimFixed::from_num(SURVIVOR_REQUEST_Y),
@@ -549,12 +591,29 @@ impl Simulation {
         owner: InternedId,
         unlimbo: CrewUnlimbo,
     ) -> Option<u64> {
+        let (rx, ry, z) = unlimbo.cell();
+        let id = self.construct_crew_limbo(rules, crew, owner, (rx, ry), z)?;
+        self.unlimbo_crew(rules, id, unlimbo).then_some(id)
+    }
+
+    /// `new InfantryClass(type, Owner)`: the TechnoClass constructor's
+    /// Scenario draw. The crewman waits in limbo at `cell` until its Unlimbo.
+    fn construct_crew_limbo(
+        &mut self,
+        rules: &RuleSet,
+        crew: &str,
+        owner: InternedId,
+        cell: (u16, u16),
+        z: u8,
+    ) -> Option<u64> {
         let owner_name = self.interner.resolve(owner).to_string();
-        let (rx, ry, z) = match unlimbo {
-            CrewUnlimbo::Place { cell, z, .. } => (cell.0, cell.1, z),
-            CrewUnlimbo::Exact { rx, ry, z, .. } => (rx, ry, z),
-        };
-        let id = self.construct_object_limbo_at_height(crew, &owner_name, rx, ry, 0, z, rules)?;
+        self.construct_object_limbo_at_height(crew, &owner_name, cell.0, cell.1, 0, z, rules)
+    }
+
+    /// Unlimbo a constructed crewman as `unlimbo` says. A refused cell or
+    /// Unlimbo deletes it.
+    fn unlimbo_crew(&mut self, rules: &RuleSet, id: u64, unlimbo: CrewUnlimbo) -> bool {
+        let (rx, ry, z) = unlimbo.cell();
         let (spot, sub_x, sub_y, on_bridge) = match unlimbo {
             CrewUnlimbo::Place { cell, request, .. } => {
                 let Some(spot) = bump_crush::place_infantry_in_cell(
@@ -567,7 +626,7 @@ impl Simulation {
                     &mut self.scenario_rng,
                 ) else {
                     self.discard_constructed_limbo(id);
-                    return None;
+                    return false;
                 };
                 let (sub_x, sub_y) = crate::util::lepton::subcell_lepton_offset(Some(spot));
                 (spot, sub_x, sub_y, false)
@@ -605,9 +664,94 @@ impl Simulation {
         );
         if !matches!(outcome, RevealOutcome::Revealed { .. }) {
             self.discard_constructed_limbo(id);
-            return None;
+            return false;
         }
-        Some(id)
+        true
+    }
+
+    /// A survivor's placement in a foundation cell: its request
+    /// (`0x80`, `0xA4`) on the cell's floor.
+    fn survivor_unlimbo(&self, cell: (u16, u16)) -> CrewUnlimbo {
+        let z = self
+            .resolved_terrain
+            .as_ref()
+            .and_then(|terrain| terrain.cell(cell.0, cell.1))
+            .map_or(0, |terrain_cell| terrain_cell.level);
+        CrewUnlimbo::Place {
+            cell,
+            z,
+            request: (
+                SimFixed::from_num(SURVIVOR_REQUEST_X),
+                SimFixed::from_num(SURVIVOR_REQUEST_Y),
+            ),
+        }
+    }
+
+    /// Sell's stage-1 crew (`0x0044A5CF..0x0044A7A3`): `count` survivors
+    /// (How_Many_Survivors, counted before the passengers left). Each takes
+    /// the building's crew type (`vt+0x30C`: the Engineer roll, then
+    /// GetCrew), picked again while it names an Engineer once one has been
+    /// picked (`0x0044A5F0..0x0044A623`); is constructed (the TechnoClass
+    /// constructor's draw); picks a cell of the occupy list `cells` with
+    /// `RandomRanged(0, n - 1)` (`0x0044A67A`) and places at its request
+    /// there (PlaceInfantryInCell's draw); Unlimboes in priority mode
+    /// (ScenarioInit raised, no second draw); Scatters; and queues Move for
+    /// any owner. A sale's crew keeps full strength. Returns whether one
+    /// entered the map.
+    pub(crate) fn spawn_sale_crew(
+        &mut self,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        building_id: u64,
+        count: i32,
+        cells: &[(u16, u16)],
+    ) -> bool {
+        let Some(owner) = self
+            .substrate
+            .entities
+            .get(building_id)
+            .map(|entity| entity.owner())
+        else {
+            return false;
+        };
+        // A crewed type always has cells (a 0x0 foundation would pick from
+        // an empty list); no retail type is both.
+        let Some(last) = i32::try_from(cells.len())
+            .ok()
+            .and_then(|count| count.checked_sub(1))
+            .filter(|&last| last >= 0)
+        else {
+            return false;
+        };
+        let is_engineer = |crew: &str| rules.object(crew).is_some_and(|object| object.engineer);
+        let mut engineer_picked = false;
+        let mut spawned = false;
+        for _ in 0..count {
+            let Some(mut crew) = self.building_crew_type(rules, building_id) else {
+                continue;
+            };
+            while engineer_picked && is_engineer(&crew) {
+                match self.building_crew_type(rules, building_id) {
+                    Some(next) => crew = next,
+                    None => break,
+                }
+            }
+            if is_engineer(&crew) {
+                engineer_picked = true;
+            }
+            let Some(id) = self.construct_crew_limbo(rules, &crew, owner, cells[0], 0) else {
+                continue;
+            };
+            let pick = self.scenario_rng.next_range_i32_inclusive(0, last);
+            let cell = cells[pick as usize];
+            if !self.unlimbo_crew(rules, id, self.survivor_unlimbo(cell)) {
+                continue;
+            }
+            self.scatter_crew(rules, registry, id);
+            self.queue_crew_mission(id, MissionType::Move);
+            spawned = true;
+        }
+        spawned
     }
 
     fn set_crew_health(&mut self, id: u64, health: i32) {

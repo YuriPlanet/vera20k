@@ -489,17 +489,18 @@ pub enum SimSoundEvent {
         owner: InternedId,
         event: &'static str,
     },
-    /// `BuildingClass::Sell @ 0x00449B70`, sell state 2 (`0x00449C99..
-    /// 0x00449CE5`, the building is gone): `+0x6DD` (the build-animation-
-    /// complete flag: set at `0x004467C9`, cleared in sell states 0 and 1,
-    /// so state 2 waits for the sell-down animation to finish),
-    /// `TechnoClass+0x41A` (owner is the local player) and `UndeploysInto=`
-    /// (`Type+0x408`) null — a Construction Yard undeploys instead and stays
-    /// silent. The upgrade-sell path (`0x0044AB22..0x0044AB36`) speaks on
-    /// `+0x41A` alone; VERA sells no upgrades. App plays `EVA_StructureSold`.
-    /// Timing DRIFT, recorded: native speaks after the sell-down animation
-    /// (state 1); VERA's sale is synchronous, so the line comes at the click.
+    /// `BuildingClass::Sell @ 0x00449C30`'s completing stage-2 visit
+    /// (`0x00449CC1..0x00449CE5`, once the pack-up animation has set
+    /// `+0x6DD`): `TechnoClass+0x41A` (owner is the local player) and no
+    /// `UndeploysInto=` (`Type+0x408`) — an undeploying building stays
+    /// silent. The upgrade-sale arm (`0x0044AB22..0x0044AB36`) is dormant in
+    /// retail data. App plays `EVA_StructureSold`.
     StructureSold { owner: InternedId },
+    /// A sale order's click (`BuildingClass::Sell_Back @ 0x00447110`:
+    /// `VocClass::PlayAtPos` of `[AudioVisual] GenericClick=`) for the
+    /// owner's player (`HouseClass::IsHumanPlayer @ 0x0050B6F0`; the app
+    /// resolves it).
+    SellClick { owner: InternedId },
     /// `BuildingClass::ToggleRepair @ 0x00446FF0` (`0x004470B7`): repair
     /// switched on while `Health != Type.Strength` (`0x00447059`) and the
     /// owner is the local player (`0x004470A4 CALL 0x0050B6F0`). App plays
@@ -5553,58 +5554,73 @@ impl Simulation {
         finished
     }
 
-    /// Advance every pack-up one frame (`sim::building_construction`): Sell's
-    /// stage-0 visit plays the building's DeploySound, and a stage-2 visit
-    /// that finds the animation complete converts it into its mobile unit
-    /// (e.g., ConYard → MCV, [`Simulation::finish_undeploy`]). Returns true if
-    /// any entities were spawned (triggers atlas refresh).
+    /// Advance every sale one frame, in key order (`sim::building_construction`
+    /// steps the pack-up, `production::production_sell` runs Sell's stages):
+    /// every visit stops the repair (`ToggleRepair(0)`, `0x00449C41`) and
+    /// re-arms the mission for the next frame (Sell returns 1). A building at
+    /// Health 0 runs no mission handler (`MissionClass::AI 0x005B30A7`), a
+    /// warped one no AI (`GameEntity::ai_frozen`). Returns whether an object
+    /// entered the map and whether a building left it.
     fn tick_building_down(
         &mut self,
         rules: Option<&RuleSet>,
         overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-    ) -> bool {
+    ) -> (bool, bool) {
         use crate::sim::building_construction::PackUpFrame;
         let now = self.session.binary_frame as i32;
-        let options = &self.session.game_options;
-        let keys = self.substrate.entities.keys_sorted();
-        let mut visits: Vec<(u64, PackUpFrame)> = Vec::new();
-        let mut finished: Vec<u64> = Vec::new();
-        for &sid in &keys {
-            if let Some(entity) = self.substrate.entities.get_mut(sid) {
-                if entity.ai_frozen() {
-                    continue;
-                }
-                // An UndeploysInto sale with no ArchiveTarget completes at
-                // stage 0x17 (UpdateAnimation `0x00451186..0x004511DF`).
-                let has_archive = entity.archive_target().is_some();
-                let Some(ref mut bd) = entity.building_down else {
+        let mut spawned = false;
+        let mut sold = false;
+        for sid in self.substrate.entities.keys_sorted() {
+            let visit = {
+                let Some(entity) = self.substrate.entities.get(sid) else {
                     continue;
                 };
-                let archive_less = !has_archive && !bd.player_order;
-                let visit = bd.frame(now, archive_less, options);
+                // The visit is the Selling mission's handler; Assign_Mission
+                // (which Selling does not refuse) can end it early.
+                if entity.building_down.is_none()
+                    || entity.mission.current().known()
+                        != Some(crate::sim::mission::MissionType::Selling)
+                    || entity.ai_frozen()
+                    || !entity.is_ai_alive()
+                    || entity.lifecycle.in_limbo
+                {
+                    continue;
+                }
+                let archive_less_sale = production::archive_less_sale(
+                    rules,
+                    self.interner.resolve(entity.type_ref()),
+                    entity,
+                );
+                let options = &self.session.game_options;
+                let Some(entity) = self.substrate.entities.get_mut(sid) else {
+                    continue;
+                };
+                let mut status = entity.mission.handler_state();
+                let Some(down) = entity.building_down.as_mut() else {
+                    continue;
+                };
+                let visit = down.frame(&mut status, now, archive_less_sale, options);
                 if visit != PackUpFrame::NoVisit {
-                    // Every Sell visit stops the repair (0x00449C41).
+                    entity.mission.set_handler_state(status);
+                    entity.mission.write_dispatch_epilogue(now, 1);
                     entity.repairing = false;
                 }
-                match visit {
-                    PackUpFrame::StageZero | PackUpFrame::StageOne => visits.push((sid, visit)),
-                    PackUpFrame::Convert => finished.push(sid),
-                    PackUpFrame::NoVisit | PackUpFrame::Waiting => {}
-                }
-            }
-        }
-        for (sid, visit) in visits {
+                visit
+            };
             match visit {
-                PackUpFrame::StageZero => self.undeploy_stage_zero(sid, rules),
-                // 0x0044A2F5: OVER_OUT to every contact.
-                _ => crate::sim::radio::broadcast_break(self, sid, rules),
+                PackUpFrame::StageZero => production::sell_stage_zero(self, rules, sid),
+                PackUpFrame::StageOne => {
+                    spawned |= production::sell_stage_one(self, rules, overlay_registry, sid);
+                }
+                PackUpFrame::Complete => {
+                    let converted = production::sell_complete(self, rules, overlay_registry, sid);
+                    spawned |= converted;
+                    sold |= !converted;
+                }
+                PackUpFrame::NoVisit | PackUpFrame::Waiting => {}
             }
         }
-        let any_finished = !finished.is_empty();
-        for sid in finished {
-            self.finish_undeploy(sid, rules, overlay_registry);
-        }
-        any_finished
+        (spawned, sold)
     }
 
     /// Spine region (LATE): AI commands, defeat detection, building animations,
@@ -5688,11 +5704,7 @@ impl Simulation {
                     && matches!(cmd.payload, Command::DeployMcv { entity_id }
                     if self.substrate.entities.get(entity_id).is_none_or(|e| e.dying)))
                     || placed_owner.is_some()
-                    || applied
-                        && matches!(
-                            cmd.payload,
-                            Command::UndeployBuilding { .. } | Command::LaunchSuperWeapon { .. }
-                        )
+                    || applied && matches!(cmd.payload, Command::LaunchSuperWeapon { .. })
                 {
                     *spawned_entities = true;
                 }
@@ -5718,13 +5730,16 @@ impl Simulation {
                 overlay_registry,
             );
         }
-        // Advance building-down (undeploy) animations; spawn units when done.
-        *spawned_entities |= self.tick_building_down(rules, overlay_registry);
+        // Advance the sales: an undeploy's unit enters the map, a sold
+        // building leaves it.
+        let (spawned, sold) = self.tick_building_down(rules, overlay_registry);
+        *spawned_entities |= spawned;
+        *destroyed_structure |= sold;
 
         // EventClass dispatch is a Main_Tick tail rung: the complete live
         // Logic walk observes frame N's pre-command state, so an accepted
         // command first changes that object's AI behavior on frame N+1.
-        let (executed, spawned, destroyed, placed_owners) = self.apply_due_commands(
+        let (executed, spawned, placed_owners) = self.apply_due_commands(
             commands,
             rules,
             path_grid,
@@ -5734,7 +5749,6 @@ impl Simulation {
         );
         *executed_commands += executed;
         *spawned_entities |= spawned;
-        *destroyed_structure |= destroyed;
         placed_building_owners.extend(placed_owners);
 
         // Main_Tick returns immediately on a terminal result. The wrapping
@@ -6875,6 +6889,10 @@ mod slave_manager_oracle_tests;
 #[cfg(test)]
 #[path = "slave_manager_cycle_tests.rs"]
 mod slave_manager_cycle_tests;
+
+#[cfg(test)]
+#[path = "building_sale_oracle_tests.rs"]
+mod building_sale_oracle_tests;
 
 #[cfg(test)]
 #[path = "refinery_dock_cycle_tests.rs"]

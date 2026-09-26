@@ -1579,25 +1579,23 @@ impl OccupancyGrid {
     }
 }
 
+/// The cells an object's Mark lists it in: its own cell, or a building's
+/// occupy list (`vt+0x108`, Type `+0xDFC`), which Place_Down's AddContent
+/// (`0x0047E8A0`) walks. The lists are row-major rectangles except
+/// `3x3Refinery`'s, which omits `(2, 1)`.
 pub(crate) fn entity_occupancy_cells(entity: &GameEntity) -> Vec<(u16, u16)> {
     if entity.category != EntityCategory::Structure {
         return vec![(entity.position.rx, entity.position.ry)];
     }
-
-    let (w, h) = crate::rules::foundation::foundation_dimensions(&entity.foundation);
-    let mut cells = Vec::with_capacity(w as usize * h as usize);
-    for dx in 0..w {
-        for dy in 0..h {
-            let Some(rx) = entity.position.rx.checked_add(dx) else {
-                continue;
-            };
-            let Some(ry) = entity.position.ry.checked_add(dy) else {
-                continue;
-            };
-            cells.push((rx, ry));
-        }
-    }
-    cells
+    crate::rules::foundation::foundation_cell_offsets(&entity.foundation)
+        .into_iter()
+        .filter_map(|(dx, dy)| {
+            Some((
+                entity.position.rx.checked_add_signed(dx)?,
+                entity.position.ry.checked_add_signed(dy)?,
+            ))
+        })
+        .collect()
 }
 
 impl OccupancyGrid {

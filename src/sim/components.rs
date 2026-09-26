@@ -221,38 +221,28 @@ pub struct BuildingUp {
     pub first_frame: i32,
 }
 
-/// A building packing up into its `UndeploysInto=` unit through the Selling
-/// mission's UndeploysInto arm (`BuildingClass::Sell @ 0x00449C30`,
-/// `sim::building_construction`): stage 0 and 1 visits, then the
-/// construction animation played again (drawn in reverse) until `+0x6DD`,
-/// when the building converts (`Simulation::finish_undeploy`).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// A building on the Selling mission (`BuildingClass::Sell @ 0x00449C30`,
+/// `sim::building_construction`; its visits `production::production_sell`):
+/// stage 0 and 1 visits, then the construction animation played again (drawn
+/// in reverse) until `+0x6DD`, when the building converts into its
+/// `UndeploysInto=` unit (`Simulation::finish_undeploy`) or is sold for its
+/// refund.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BuildingDown {
     /// The construction animation from stage 1's `Begin_Mode(0)`; before
-    /// that the building shows its idle frames.
+    /// that the building shows its idle frames. Sell's stage (`+0xBC`) is
+    /// the Selling mission's handler state (`MissionCom::handler_state`).
     pub anim: BuildupStage,
-    /// `BuildingClass::Sell`'s stage (`+0xBC`): 0, 1, or 2 (waiting).
-    pub sell_stage: u8,
     /// The frame the Selling mission commenced; its visits start the frame
     /// after.
     pub commenced_frame: i32,
     /// `+0x6DD`, the animation-complete byte.
     pub done: bool,
     /// Started by the player's undeploy order, VERA's stand-in for the retail
-    /// cell click (`0x004436F0`), which always sets an ArchiveTarget before
-    /// the sale: such a pack-up never takes the archive-less stage-0x17 exit.
-    pub player_order: bool,
-    /// Unit type to spawn when animation completes (e.g., "AMCV").
-    pub spawn_type: InternedId,
-    /// Owner of the unit to spawn.
-    pub spawn_owner: InternedId,
-    /// Map position where the mobile unit will appear.
-    pub spawn_rx: u16,
-    pub spawn_ry: u16,
-    /// Height level for the spawned unit.
-    pub spawn_z: u8,
-    /// Whether the entity was selected (transfer selection to spawned unit).
-    pub was_selected: bool,
+    /// undeploy click (`BuildingClass::Active_Click_With 0x004436F0`), which
+    /// sets an ArchiveTarget before its SELL event: Sell and UpdateAnimation
+    /// read such a sale as archive-bearing (`+0x218`).
+    pub undeploy_order: bool,
 }
 
 /// Marker component: this entity is currently selected by the player.

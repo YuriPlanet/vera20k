@@ -639,6 +639,7 @@ mod tests {
             crush_sound: None,
             deploy_sound: None,
             undeploy_sound: None,
+            packup_sound: None,
             leave_transport_sound: None,
             chrono_in_sound: None,
             chrono_out_sound: None,

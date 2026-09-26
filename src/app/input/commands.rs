@@ -185,6 +185,23 @@ pub(crate) fn own_building_under_point(
     own_building_id(state, visible_object_under_point(state, world_x, world_y)?)
 }
 
+/// The local player's own building under the given world point when the sell
+/// cursor takes it: `DisplayClass::DetermineAction 0x006929F2` asks the
+/// building's `CanSell` (`production::can_sell_building`).
+pub(crate) fn own_sellable_building_under_point(
+    state: &AppState,
+    world_x: f32,
+    world_y: f32,
+) -> Option<u64> {
+    own_sellable_building_id(state, visible_object_under_point(state, world_x, world_y)?)
+}
+
+fn own_sellable_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
+    let id = own_building_id(state, stable_id)?;
+    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    crate::sim::production::can_sell_building(sim, state.rules()?, id).then_some(id)
+}
+
 pub(crate) fn sell_wall_under_cursor_is_eligible(state: &AppState) -> bool {
     let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
         state,
@@ -296,7 +313,14 @@ pub(crate) fn try_repair_sell_mode_click(state: &mut AppState) -> bool {
         state.match_state.input.cursor_y,
     );
     let object_under_cursor = visible_object_under_point(state, world_x, world_y);
-    if let Some(entity_id) = object_under_cursor.and_then(|id| own_building_id(state, id)) {
+    let building = object_under_cursor.and_then(|id| {
+        if repair {
+            own_building_id(state, id)
+        } else {
+            own_sellable_building_id(state, id)
+        }
+    });
+    if let Some(entity_id) = building {
         let owner: String =
             preferred_local_owner(state).unwrap_or_else(|| DEFAULT_OWNER.to_string());
         let payload = if repair {

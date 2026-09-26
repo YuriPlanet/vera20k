@@ -6,7 +6,8 @@
 //! - `factory_lifecycle`: held-object birth, completion, cancellation and release
 //! - `production_queue`: queue views and completed mobile delivery
 //! - `production_economy`: resource harvesting and credit delivery
-//! - `production_placement`: building placement, sell, repair
+//! - `production_placement`: building placement
+//! - `production_sell`: building sale and repair
 //! - `production_tech`: tech tree, build options, factory matching, spawn cells
 
 mod factory;
@@ -45,11 +46,14 @@ pub use self::production_queue::{
 };
 pub(crate) use self::production_refinery::spawn_completed_refinery_free_units;
 pub(crate) use self::production_sell::{
-    building_type_refund, eject_destruction_garrison_with_context, eject_red_hp_garrison,
+    archive_less_sale, begin_selling, building_type_refund, eject_destruction_garrison_with_context,
+    eject_red_hp_garrison, sell_complete, sell_stage_one, sell_stage_zero, undeploy_target,
 };
 #[cfg(test)]
-pub(crate) use self::production_sell::eject_destruction_garrison;
-pub use self::production_sell::{sell_building, tick_repairs, toggle_repair};
+pub(crate) use self::production_sell::{eject_destruction_garrison, sell_building_now_for_test};
+pub use self::production_sell::{
+    SellOrder, can_sell_building, sell_back, tick_repairs, toggle_repair,
+};
 pub use self::production_spawn::find_spawn_cell_for_owner;
 pub use self::production_tech::{
     building_base_foundation_cells, building_footprint_cells, building_movement_blocking_cells,

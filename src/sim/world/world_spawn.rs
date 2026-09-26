@@ -22,13 +22,13 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::base_plan::pack_base_plan_cell;
 use crate::sim::base_plan_generation::{preflight_recalc, recalc_base_plan};
 use crate::sim::combat::TargetKind;
-use crate::sim::components::{BuildingDown, BuildingUp, Health};
+use crate::sim::components::{BuildingUp, Health};
 use crate::sim::game_entity::{
     GameEntity, GeneratedTechnoInit, StructureUpgradeLink, TechnoConstructorInit,
 };
 use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
-use crate::sim::production::{ProductionCategory, foundation_dimensions};
+use crate::sim::production::{self, ProductionCategory, foundation_dimensions};
 use crate::sim::vision::MAX_SIGHT_RANGE;
 
 /// Exact generated-object constructor handoff. The later RMG lifecycle owner
@@ -1692,106 +1692,21 @@ impl Simulation {
         true
     }
 
-    /// Undeploy a structure back into its mobile unit (e.g. ConYard → MCV):
-    /// the Selling mission's UndeploysInto arm (`BuildingClass::Sell @
-    /// 0x00449C30`), commenced now and visited from the next frame
-    /// (`BuildingDown`, `sim::building_construction`); the unit spawns when
-    /// the construction animation, played again, lands on its last frame
+    /// The player's undeploy order (VERA's stand-in for the retail undeploy
+    /// click, `BuildingClass::Active_Click_With 0x004436F0`, whose SELL event
+    /// follows the event that sets the building's ArchiveTarget): a building
+    /// that can undeploy takes `Sell_Back(-1)`, and its Selling mission packs
+    /// it up and converts it into its `UndeploysInto=` unit
     /// ([`Self::finish_undeploy`]).
-    pub(crate) fn undeploy_building(
-        &mut self,
-        stable_id: u64,
-        rules: &RuleSet,
-        player_order: bool,
-    ) -> bool {
-        // Read undeploy data before mutating.
-        let undeploy_data = self.substrate.entities.get(stable_id).and_then(|entity| {
-            if !self.can_undeploy_building_runtime(stable_id, rules) {
-                return None;
-            }
-            let type_str = self.interner.resolve(entity.type_ref());
-            let unit_type = undeploy_target_for_building(type_str, rules)?;
-            let obj = rules.object(type_str)?;
-            let (center_rx, center_ry) =
-                undeploy_unit_cell(entity.position.rx, entity.position.ry, &obj.foundation);
-            Some((
-                entity.owner(),
-                center_rx,
-                center_ry,
-                entity.position.z,
-                unit_type,
-                entity.selected,
-            ))
-        });
-        let Some((owner_id, rx, ry, z, unit_type, was_selected)) = undeploy_data else {
-            return false;
-        };
-        let now = self.session.binary_frame as i32;
-        let control = self
-            .substrate
-            .entities
-            .get(stable_id)
-            .map_or(crate::rules::buildup_asset_catalog::NO_BUILDUP, |entity| {
-                rules.buildup_control(self.interner.resolve(entity.type_ref()))
-            });
-        let unit_type_id = self.interner.intern(&unit_type);
-        if let Some(ge) = self.substrate.entities.get_mut(stable_id) {
-            // A player's order runs at the frame's tail: native's next Sell
-            // visit stops the repair before that frame's repair step, which
-            // VERA runs ahead of the visit (`tick_repairs`).
-            if player_order {
-                ge.repairing = false;
-            }
-            ge.building_down = Some(BuildingDown {
-                anim: crate::sim::components::BuildupStage::begin(control, now),
-                sell_stage: 0,
-                commenced_frame: now,
-                done: false,
-                player_order,
-                spawn_type: unit_type_id,
-                spawn_owner: owner_id,
-                spawn_rx: rx,
-                spawn_ry: ry,
-                spawn_z: z,
-                was_selected,
-            });
-        }
-        true
+    pub(crate) fn undeploy_building(&mut self, stable_id: u64, rules: &RuleSet) -> bool {
+        self.can_undeploy_building_runtime(stable_id, rules)
+            && production::sell_back(self, rules, stable_id, production::SellOrder::Undeploy)
     }
 
-    /// Selling's stage-0 visit for an undeploy (`0x0044A8DF`): the undeploy
-    /// voice (`vt+0x36C`, unplayed: VERA parses no `VoiceDeploy=`), the
-    /// building type's `DeploySound=` (`+0x56C`) at its Location
-    /// (`0x0044A9E5..0x0044AA38`), RUN_AWAY to every contact (`0x0044AB68`)
-    /// and its damage-fire anims released (`+0x5C8`, `0x0044AB87..0x0044ABAA`).
-    pub(crate) fn undeploy_stage_zero(&mut self, stable_id: u64, rules: Option<&RuleSet>) {
-        let sound = rules.and_then(|rules| {
-            let entity = self.substrate.entities.get(stable_id)?;
-            let sound = self
-                .object_type(entity.type_ref(), rules)?
-                .deploy_sound
-                .clone()?;
-            Some((sound, entity.position.rx, entity.position.ry))
-        });
-        if let Some((sound, rx, ry)) = sound {
-            let deploy_sound_id = self.interner.intern(&sound);
-            self.sound_events.push(SimSoundEvent::EntityDeployed {
-                deploy_sound_id,
-                rx,
-                ry,
-            });
-        }
-        crate::sim::radio::broadcast(
-            self,
-            stable_id,
-            crate::sim::radio::RadioMessage::RunAway,
-            rules,
-        );
-        self.clear_building_damage_fire_slots(stable_id, rules);
-    }
-
-    /// `BuildingClass::Sell`'s UndeploysInto conversion (stage 2), once the
-    /// build-down (`building_down`) has run. The unit is constructed with its
+    /// `BuildingClass::Sell`'s UndeploysInto conversion (`0x00449CEA`), on
+    /// the Selling mission's completing visit
+    /// (`production::production_sell::sell_complete`). The unit is
+    /// constructed at the building's undeploy cell with its
     /// managers' children, the building's live attackers are listed
     /// (`0x00449F23..0x00449FDC`, Techno array order) and the building leaves
     /// the map (vt+0xD4, whose Detach_All clears their targets) for the
@@ -1811,29 +1726,31 @@ impl Simulation {
     pub(crate) fn finish_undeploy(
         &mut self,
         sid: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
     ) {
-        let Some((unit_type_id, owner_id, rx, ry, z, was_selected)) =
+        let Some((unit_type, owner_id, rx, ry, z, was_selected)) =
             self.substrate.entities.get(sid).and_then(|entity| {
-                entity.building_down.as_ref().map(|down| {
-                    (
-                        down.spawn_type,
-                        down.spawn_owner,
-                        down.spawn_rx,
-                        down.spawn_ry,
-                        down.spawn_z,
-                        down.was_selected,
-                    )
-                })
+                let type_str = self.interner.resolve(entity.type_ref());
+                let unit_type = production::undeploy_target(rules, type_str)?;
+                let (rx, ry) = undeploy_unit_cell(
+                    entity.position.rx,
+                    entity.position.ry,
+                    &rules.object(type_str)?.foundation,
+                );
+                Some((
+                    unit_type,
+                    entity.owner(),
+                    rx,
+                    ry,
+                    entity.position.z,
+                    entity.selected,
+                ))
             })
         else {
             return;
         };
-        let Some(rules) = rules else {
-            self.uninit(sid);
-            return;
-        };
+        let unit_type_id = self.interner.intern(unit_type);
         // Building449E66/70 captures current health/type ratio at actual
         // conversion, not when the reverse animation was requested. A missing
         // live type cannot supply a conversion ratio.
@@ -2060,13 +1977,6 @@ fn construction_yard_type_for_mcv(type_id: &str, rules: &RuleSet) -> Option<Stri
 }
 
 /// Resolve the undeploy target for a building via rules.ini `UndeploysInto=`.
-fn undeploy_target_for_building(type_id: &str, rules: &RuleSet) -> Option<String> {
-    let obj = rules.object(type_id)?;
-    let target: &str = obj.undeploys_into.as_deref()?;
-    rules.object(target)?;
-    Some(target.to_string())
-}
-
 /// Where the unit reappears when a building undeploys, given the building's
 /// north-west footprint cell.
 ///

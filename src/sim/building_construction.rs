@@ -3,8 +3,8 @@
 //! the type's control (`rules::buildup_asset_catalog`: first frame, frame
 //! count, rate) and `BuildingClass::UpdateAnimation` (`0x004509D0`) steps once
 //! per frame, watched by the Construction mission (a placed or deployed
-//! building's build-up) or by the Selling mission's UndeploysInto arm (an
-//! undeploy's pack-up).
+//! building's build-up) or by the Selling mission (a sale's or an undeploy's
+//! pack-up).
 //!
 //! Native, per frame of a building (`BuildingClass::Update`), in this order:
 //! - `UpdateAnimation` (`0x0043FE22`): once the stage timer runs out
@@ -27,8 +27,9 @@
 //!   `[AudioVisual] Construction=`, retail `Dummy`) and completes on a later
 //!   visit that finds `+0x6DD` (radio 0xC and 3, `Begin_Mode(1)`,
 //!   `Grand_Opening`, Guard queued). `BuildingClass::Sell` plays stage 0, then
-//!   stage 1 (`Begin_Mode(0)`, `+0x6DD` cleared), then converts on a stage-2
-//!   visit that finds `+0x6DD`.
+//!   stage 1 (`Begin_Mode(0)`, `+0x6DD` cleared; a tethered building (`+0x418`)
+//!   waits in stage 1), then converts or sells on a stage-2 visit that finds
+//!   `+0x6DD`.
 //! - A ready building commences its queued mission (`0x0043FF91`).
 //! - A queued BState applies (`0x0043FFB4..0x00440042`).
 //!
@@ -55,9 +56,10 @@
 //! same frame.
 //!
 //! Evidence: `tools/spatial_oracle/building_construction.json` `stepping`,
-//! `mission` and `route` rows, replayed below. The route rows run the routes'
-//! entry points and Update's pieces natively in the order read above; the rest
-//! of `TechnoClass::AI` is not run.
+//! `mission` and `route` rows and `tools/spatial_oracle/building_sale.json`
+//! `route` rows, replayed below. The route rows run the routes' entry points
+//! and Update's pieces natively in the order read above; the rest of
+//! `TechnoClass::AI` is not run.
 //!
 //! ## Dependency rules
 //! - Part of sim/; sim/ never depends on render/, ui/, sidebar/, audio/, net/.
@@ -251,26 +253,40 @@ impl BuildingUp {
 pub(crate) enum PackUpFrame {
     /// The frame the sale started: no visit yet.
     NoVisit,
-    /// Stage 0's visit (`0x0044A8DF`): the undeploy voice, the type's
-    /// `DeploySound=` at its Location, RUN_AWAY to every contact (`0x0044AB68`)
-    /// and the damage-fire anims released (`0x0044AB87..0x0044ABAA`).
+    /// Stage 0's visit (`0x0044A8DF`); stage 1 is next.
     StageZero,
-    /// Stage 1's visit (`0x0044A2EE`): OVER_OUT to every contact, then
-    /// `Begin_Mode(0)`.
+    /// Stage 1's visit (`0x0044A2EE`): the owner broadcasts OVER_OUT and,
+    /// unless the building is then tethered (`+0x418`), runs the stage and
+    /// calls [`BuildingDown::begin_stage_two`]; a tethered building visits
+    /// stage 1 again next frame.
     StageOne,
     /// A stage-2 visit still waiting for `+0x6DD`.
     Waiting,
-    /// Stage 2's visit found `+0x6DD`: the building converts.
-    Convert,
+    /// Stage 2's visit found `+0x6DD` (`0x00449CA7`): the building converts
+    /// or is sold.
+    Complete,
 }
 
 impl BuildingDown {
-    /// One frame of the building's Update under Selling's UndeploysInto arm:
+    /// The Selling mission commenced at frame `now`: its visits start the
+    /// frame after.
+    pub(crate) fn commenced(control: [i32; 3], now: i32, undeploy_order: bool) -> Self {
+        Self {
+            anim: BuildupStage::begin(control, now),
+            commenced_frame: now,
+            done: false,
+            undeploy_order,
+        }
+    }
+
+    /// One frame of the building's Update under the Selling mission:
     /// `UpdateAnimation` (the construction animation from stage 1's
     /// `Begin_Mode(0)`; before that the idle frames, whose `+0x6DD` stages 0
-    /// and 1 clear), then the Sell visit.
+    /// and 1 clear), then the Sell visit. `status` is Sell's stage (`+0xBC`,
+    /// the mission's handler state): 0, 1, or 2 (waiting).
     pub(crate) fn frame(
         &mut self,
+        status: &mut u32,
         now: i32,
         archive_less_sale: bool,
         options: &GameOptions,
@@ -278,34 +294,44 @@ impl BuildingDown {
         if now == self.commenced_frame {
             return PackUpFrame::NoVisit;
         }
-        if self.sell_stage >= 2 && self.anim.update(now, archive_less_sale, options) {
+        // Before stage 1's Begin_Mode(0) the building shows BState 1, whose
+        // idle control never steps and sets +0x6DD every frame (rate 0,
+        // 0x00451218); stages 0 and 1 clear it.
+        let anim_done = *status < 2 || self.anim.update(now, archive_less_sale, options);
+        if anim_done {
             self.done = true;
         }
-        match self.sell_stage {
+        match *status {
             0 => {
-                // 0x0044AB61: +0x6DD cleared, stage 1 next.
+                // 0x0044AB61: +0x6DD cleared, stage 1 next (0x0044ABAC).
                 self.done = false;
-                self.sell_stage = 1;
+                *status = 1;
                 PackUpFrame::StageZero
             }
-            1 => {
-                // 0x0044A2EE..: Begin_Mode(0), +0x6DD cleared, stage 2.
-                self.anim = BuildupStage::begin(self.anim.control, now);
-                self.done = false;
-                self.sell_stage = 2;
-                PackUpFrame::StageOne
-            }
-            _ if self.done => PackUpFrame::Convert,
+            1 => PackUpFrame::StageOne,
+            _ if self.done => PackUpFrame::Complete,
             _ => PackUpFrame::Waiting,
         }
     }
 
-    /// Put the pack-up at its last frame: its next frame converts (fixtures).
-    #[cfg(test)]
-    pub(crate) fn finish_for_test(&mut self) {
-        self.sell_stage = 2;
-        self.done = true;
-        self.commenced_frame = i32::MIN;
+    /// Stage 1's tail (`0x0044A8A2..0x0044A8B5`): stage 2, `Begin_Mode(0)`
+    /// and `+0x6DD` cleared.
+    pub(crate) fn begin_stage_two(&mut self, status: &mut u32, now: i32) {
+        *status = 2;
+        self.anim = BuildupStage::begin(self.anim.control, now);
+        self.done = false;
+    }
+}
+
+#[cfg(test)]
+impl crate::sim::game_entity::GameEntity {
+    /// Put the building's pack-up at its last frame: its next frame completes
+    /// (fixtures).
+    pub(crate) fn finish_pack_up_for_test(&mut self) {
+        let down = self.building_down.as_mut().expect("a pack-up");
+        down.done = true;
+        down.commenced_frame = i32::MIN;
+        self.mission.set_handler_state(2);
     }
 }
 
@@ -543,13 +569,71 @@ mod tests {
         assert_eq!(compared, 18);
     }
 
+    /// A row's call of the broadcast (`0x0065ACE0`) with `message`: stage 0
+    /// broadcasts RUN_AWAY (0x17), each stage-1 visit OVER_OUT (3).
+    fn broadcast(call: &Value, message: i64) -> bool {
+        call[0] == "radio" && call[1] == message
+    }
+
+    /// Replays one route row's Sell visits from the order at frame 0;
+    /// `tethered` is the building's `+0x418` at each frame's stage-1 visit.
+    fn replay_sell_visits(row: &Value, archive_less_sale: bool, tethered: impl Fn(i32) -> bool) {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let mut down = BuildingDown::commenced(control(input), 0, false);
+        let mut status = 0;
+        let mut completed = false;
+        for frame in row["frames"].as_array().unwrap() {
+            let now = int(frame, "frame") as i32;
+            let context = format!("{name} frame {now}");
+            let step = down.frame(&mut status, now, archive_less_sale, &options(0));
+            let calls = frame["calls"].as_array().unwrap();
+            assert_eq!(
+                step == PackUpFrame::StageZero,
+                calls.iter().any(|call| broadcast(call, 0x17)),
+                "{context}: stage 0"
+            );
+            assert_eq!(
+                step == PackUpFrame::StageOne,
+                calls.iter().any(|call| broadcast(call, 3)),
+                "{context}: stage 1"
+            );
+            if step == PackUpFrame::StageOne && !tethered(now) {
+                down.begin_stage_two(&mut status, now);
+            }
+            assert_eq!(
+                step == PackUpFrame::Complete,
+                frame["converts"] == true,
+                "{context}: completes"
+            );
+            if step == PackUpFrame::Complete {
+                completed = true;
+                break;
+            }
+            assert_eq!(i64::from(status), int(frame, "status"), "{context}: Sell stage");
+            let construction = status >= 2;
+            assert_eq!(
+                i64::from(!construction),
+                int(frame, "bstate"),
+                "{context}: BState"
+            );
+            let stage = if construction { down.anim.stage } else { 0 };
+            assert_eq!(i64::from(stage), int(frame, "stage"), "{context}: stage");
+            assert_eq!(
+                u64::from(down.done),
+                frame["done"].as_u64().unwrap(),
+                "{context}: +0x6DD"
+            );
+        }
+        assert!(completed, "{name}: the row completes");
+    }
+
     /// An UndeploysInto sale of an idle building, with and without an
     /// ArchiveTarget, frame by frame through Update's pieces and
     /// `BuildingClass::Sell`: Sell's stage, BState, the stage, `+0x6DD` and
     /// the frame whose stage-2 visit finds `+0x6DD` (the conversion).
     #[test]
     fn undeploy_sales_match_the_original_sell_visits() {
-        use crate::sim::intern::test_intern;
         let corpus = corpus();
         let mut compared = 0;
         for row in corpus["route"].as_array().unwrap() {
@@ -557,63 +641,36 @@ mod tests {
             if input["route"] != "sale" {
                 continue;
             }
-            let name = input["name"].as_str().unwrap();
-            let archive_less_sale = input["archive"] != true;
-            let mut down = BuildingDown {
-                anim: BuildupStage::begin(control(input), 0),
-                sell_stage: 0,
-                commenced_frame: 0,
-                done: false,
-                player_order: false,
-                spawn_type: test_intern("SMIN"),
-                spawn_owner: test_intern("YuriCountry"),
-                spawn_rx: 0,
-                spawn_ry: 0,
-                spawn_z: 0,
-                was_selected: false,
-            };
-            for frame in row["frames"].as_array().unwrap() {
-                let now = int(frame, "frame") as i32;
-                let step = down.frame(now, archive_less_sale, &options(0));
-                let context = format!("{name} frame {now}");
-                assert_eq!(
-                    step == PackUpFrame::Convert,
-                    frame["converts"] == true,
-                    "{context}: converts"
-                );
-                if step == PackUpFrame::Convert {
-                    break;
-                }
-                assert_eq!(
-                    step == PackUpFrame::StageZero,
-                    frame["calls"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .any(|call| call[0] == "undeploy_voice"),
-                    "{context}: stage 0"
-                );
-                assert_eq!(
-                    i64::from(down.sell_stage),
-                    int(frame, "status"),
-                    "{context}: Sell stage"
-                );
-                let construction = down.sell_stage >= 2;
-                assert_eq!(
-                    i64::from(!construction),
-                    int(frame, "bstate"),
-                    "{context}: BState"
-                );
-                let stage = if construction { down.anim.stage } else { 0 };
-                assert_eq!(i64::from(stage), int(frame, "stage"), "{context}: stage");
-                assert_eq!(
-                    u64::from(down.done),
-                    frame["done"].as_u64().unwrap(),
-                    "{context}: +0x6DD"
-                );
-            }
+            replay_sell_visits(row, input["archive"] != true, |_| false);
             compared += 1;
         }
         assert_eq!(compared, 8);
+    }
+
+    /// A sale of a building that does not undeploy, from the SELL event
+    /// (`Sell_Back(-1)`) at frame 0: stage 0's RUN_AWAY (0x17), stage 1's
+    /// OVER_OUT (3) on every visit while the building stays tethered
+    /// (`+0x418`), then the stage-2 visit that finds `+0x6DD`
+    /// (`tools/spatial_oracle/building_sale.json` `route` rows; the row whose
+    /// type has no Buildup is Sell_Back's refusal, `production_sell`'s).
+    #[test]
+    fn sales_match_the_original_sell_visits() {
+        let corpus: Value = serde_json::from_str(include_str!(
+            "../../tools/spatial_oracle/building_sale.json"
+        ))
+        .unwrap();
+        let mut compared = 0;
+        for row in corpus["route"].as_array().unwrap() {
+            let input = &row["input"];
+            if input["buildup"] == false {
+                continue;
+            }
+            let tether_until = input["tether_until"].as_i64();
+            replay_sell_visits(row, false, |now| {
+                tether_until.is_some_and(|until| i64::from(now) < until)
+            });
+            compared += 1;
+        }
+        assert_eq!(compared, 9);
     }
 }
