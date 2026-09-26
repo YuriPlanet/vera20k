@@ -98,10 +98,12 @@ impl Simulation {
                 continue;
             }
             if let Some(entity) = self.substrate.entities.get(id) {
-                // A warped object's missions do not run (`ai_frozen`).
+                // A warped object's missions do not run (`ai_frozen`), nor
+                // does a Health-0 wreck's (`MissionClass::AI @ 0x005B30A7`).
                 if entity.order_intent.is_some()
                     && entity.attack_target.is_none()
                     && !entity.ai_frozen()
+                    && super::techno_ai::mission_handlers_run(self, id)
                 {
                     attacker_ids.push(id);
                 }
@@ -191,6 +193,7 @@ impl Simulation {
                 if entity.attack_target.is_some()
                     || entity.movement_target.is_some()
                     || entity.ai_frozen()
+                    || !super::techno_ai::mission_handlers_run(self, id)
                 {
                     continue;
                 }
@@ -1101,7 +1104,7 @@ impl Simulation {
     /// - Aircraft (own state machine in `attack_mission.rs`)
     /// - Deployed-fire infantry (locked while deployed)
     /// - Entities inside transports
-    /// - Dying entities
+    /// - Dying entities, and Health-0 wrecks, which run no mission
     /// - Objects holding a target their own scanner picked up (see below)
     /// - Objects on the **Sticky** mission, which drop the target instead
     ///
@@ -1160,8 +1163,10 @@ impl Simulation {
                 continue;
             };
 
-            // Skip filters — see "Skips" doc above.
-            if entity.dying {
+            // Skip filters — see "Skips" doc above. The approach is Mission_
+            // Attack's, which a Health-0 wreck does not run
+            // (`MissionClass::AI @ 0x005B30A7`).
+            if entity.dying || !super::techno_ai::mission_handlers_run(self, id) {
                 continue;
             }
             if entity.passively_acquired_target {

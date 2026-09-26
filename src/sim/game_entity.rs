@@ -1293,6 +1293,13 @@ impl GameEntity {
     /// finish, so letting the derived Guard reading win there would make every
     /// map-authored Sleep/Sticky/Harmless placement scan and shoot.
     pub fn passive_acquire_mission(&self) -> MissionType {
+        // A Health-0 wreck runs no mission handler (`MissionClass::AI @
+        // 0x005B30A7`), so no job of its can finish and hand it back to Guard:
+        // the passive block reads its committed mission as it stands
+        // (`0x006FA697`).
+        if self.health.current <= 0 {
+            return self.mission.current().known().unwrap_or(MissionType::None);
+        }
         let (derived, _) = self.derived_mission_with(!self.passively_acquired_target);
         let derived = if derived == MissionType::None
             && matches!(
@@ -1820,6 +1827,15 @@ impl GameEntity {
     /// consumers even while ObjectClass native-alive remains set.
     pub fn is_active(&self) -> bool {
         self.lifecycle.object_alive && !self.dying
+    }
+
+    /// ObjectClass IsAlive (`+0x90`) as the per-object AI and a Unit's fire
+    /// update read it. Native clears it when an ordinary death UnInits the
+    /// object inside ReceiveDamage; VERA defers that UnInit, so Health 0 counts
+    /// as dead here unless the object is crashing, and a wreck keeps IsAlive
+    /// until its impact. A death sequence (`dying`) runs through its own path.
+    pub fn is_ai_alive(&self) -> bool {
+        self.is_active() && (self.health.current > 0 || self.crashing)
     }
 
     /// Whether this entity is in any deploy phase (Deploying, Deployed, or Undeploying).
