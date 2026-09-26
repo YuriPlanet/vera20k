@@ -44,6 +44,10 @@ enum ReceiverDeathRecipe {
     Sequence,
     ExternalAnim(u8),
     Cleanup,
+    /// A `JumpJet=` type's InfantryExplode (the InfDeath=3 construction,
+    /// `0x0051831D..0x0051835D`) over a crash its `FootClass::Crash`
+    /// accepted: the infantryman stays, alive at Health 0.
+    CrashExplode,
 }
 
 /// Captured concrete-receiver inputs after recursive DeathWeapon damage;
@@ -64,7 +68,12 @@ impl InfantryDeathPostlude {
         rules: &RuleSet,
         effects: &mut crate::sim::combat::DeathEffects,
     ) {
-        if let ReceiverDeathRecipe::ExternalAnim(inf_death) = self.recipe {
+        let anim = match self.recipe {
+            ReceiverDeathRecipe::ExternalAnim(inf_death) => Some(inf_death),
+            ReceiverDeathRecipe::CrashExplode => Some(INFANTRY_EXPLODE_INF_DEATH),
+            ReceiverDeathRecipe::Sequence | ReceiverDeathRecipe::Cleanup => None,
+        };
+        if let Some(inf_death) = anim {
             crate::sim::combat::emit_infantry_death_anim(
                 &rules.general,
                 inf_death,
@@ -84,16 +93,61 @@ impl InfantryDeathPostlude {
     }
 }
 
+/// The InfDeath arm whose anim is `[General] InfantryExplode=`: a `JumpJet=`
+/// infantryman's death builds it whatever the warhead (`0x00518313`).
+const INFANTRY_EXPLODE_INF_DEATH: u8 = 3;
+
 impl Simulation {
     /// Select the represented concrete recipe after recursive DeathWeapon
     /// damage. Effects remain in the consuming postlude. Animation presence
     /// gates legacy effects, never an indefinite lifetime wait.
+    ///
+    /// A `JumpJet=` type (`+0xD94`, `0x00518313`) builds InfantryExplode
+    /// whatever the warhead, ahead of the InfDeath table. A `Crashable=` one
+    /// (`+0xD95`, `0x005185F1`) then crashes (`Crash(NULL)`, `0x0051860B`):
+    /// accepted, it stays alive at Health 0 and falls (`world::jumpjet_cruise`,
+    /// `movement::infantry_action`); refused on the ground, it is UnInit. An
+    /// infantryman flown by the Jumpjet locomotor first runs the arm's
+    /// Stop_Driver (`0x005180FE`) and Stun (`0x00518108`), which stop its
+    /// locomotor with Scenario draws.
+    ///
+    /// RESIDUAL: a walker skips that Stop_Driver and Stun. Trigger: every
+    /// infantry death. Effect: none observable: its Walk stop and Stun repeat
+    /// the death arm's, and its death sequence or removal overwrites the Doing
+    /// and cell-entry byte they write.
+    ///
+    /// RESIDUAL (kill frame): VERA resolves the frame's shots in the combat
+    /// pass after every object's turn; native kills during the shooter's own
+    /// turn. Trigger: a shooter ahead of the Rocketeer in the Logic order.
+    /// Effect: native's crash latch engages in the kill's frame, VERA's one
+    /// frame later, so the whole fall and its removal come a frame late.
+    /// Frequency: about half of Rocketeer kills. Risk: the fall's Scenario
+    /// draws (its landing) move by a frame against other objects' draws.
+    ///
+    /// RESIDUAL (score): a second kill in the fall runs native `RecordKill @
+    /// 0x00702D40` again, which books the loss, the kill and the points twice;
+    /// VERA books the first kill only (`combat::record_kill_credit`). Trigger:
+    /// splash on a falling Rocketeer. Effect: the score screen's counts.
+    /// Frequency: rare (a two-second fall). Risk: none to the simulation.
     pub(crate) fn begin_infantry_receiver_death(
         &mut self,
         id: u64,
         inf_death: u8,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
         immediate_uninit_ids: &mut Vec<u64>,
     ) -> InfantryDeathPostlude {
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(crate::sim::movement::infantry_action::doing_owns_sequence)
+        {
+            if let Err(cause) = self.infantry_stop_driver(id, rules, overlay_registry) {
+                log::debug!("infantry {id} death Stop_Driver: {cause}");
+            }
+            self.techno_death_stun(id, super::UninitContext::with_rules(rules));
+        }
         // `InfantryClass::ReceiveDamage 0x0051810E..0x0051812E`, before the
         // death ladder: Queue_Mission(-1) (refused), Queue_Mission(Guard),
         // Commence. The corpse sits on Guard until it is removed.
@@ -114,7 +168,16 @@ impl Simulation {
         let position = entity.position.clone();
         let world_z_leptons =
             crate::sim::combat::object_world_z_leptons(entity, self.resolved_terrain.as_ref());
-        let recipe = if entity.animation.is_none() {
+        let (jumpjet, crashable) = self
+            .object_type(entity.type_ref(), rules)
+            .map_or((false, false), |object| (object.jumpjet, object.crashable));
+        let recipe = if jumpjet {
+            if crashable && self.foot_crash(id, None, rules) {
+                ReceiverDeathRecipe::CrashExplode
+            } else {
+                ReceiverDeathRecipe::ExternalAnim(INFANTRY_EXPLODE_INF_DEATH)
+            }
+        } else if entity.animation.is_none() {
             // The no-art cleanup belongs to this concrete receiver's postlude,
             // after any nested DeathWeapon receivers have finished.
             immediate_uninit_ids.push(id);
@@ -128,7 +191,10 @@ impl Simulation {
             immediate_uninit_ids.push(id);
             ReceiverDeathRecipe::Cleanup
         };
-        if !matches!(recipe, ReceiverDeathRecipe::Sequence) {
+        if !matches!(
+            recipe,
+            ReceiverDeathRecipe::Sequence | ReceiverDeathRecipe::CrashExplode
+        ) {
             let entity = self.substrate.entities.get_mut(id).unwrap();
             entity.dying = true;
             entity.infantry_terminal = Some(InfantryTerminal::AwaitingConsequences);

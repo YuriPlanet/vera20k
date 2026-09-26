@@ -222,7 +222,7 @@ fn near_failure_returns_before_the_null_setter_and_guard_queue() {
     human_house(&mut sim);
     let id = engineer_at(&mut sim, &rules, (10, 10));
     order_walk(&mut sim, &rules, id, (11, 10));
-    sim.run_infantry_failed_path_receiver(id, &rules, Some(&registry))
+    sim.infantry_stop_driver(id, &rules, Some(&registry))
         .unwrap();
     // 0x4D40A6..0x4D40D4: Chebyshev 1 to a non-structural target returns.
     sim.finish_find_path_failure(id, DriveCoord::cell(11, 10, 0), &rules)
@@ -260,7 +260,7 @@ fn receiver_records_an_impassable_current_cell() {
     }
     order_walk(&mut sim, &rules, id, (11, 10));
     let before = sim.state_hash();
-    sim.run_infantry_failed_path_receiver(id, &rules, Some(&registry))
+    sim.infantry_stop_driver(id, &rules, Some(&registry))
         .unwrap();
     let e = sim.substrate.entities.get(id).unwrap();
     assert!(e.infantry.as_ref().unwrap().cell_entry_blocked);
@@ -276,7 +276,7 @@ fn receiver_writes_the_ready_action_only_when_do_action_admits_it() {
     order_walk(&mut sim, &rules, id, (11, 10));
     // Doing -1 admits request 0 when the type carries a Ready sequence; the
     // fixture rules define no sequences, so 0x51D70F refuses before any write.
-    sim.run_infantry_failed_path_receiver(id, &rules, Some(&registry))
+    sim.infantry_stop_driver(id, &rules, Some(&registry))
         .unwrap();
     let doing = sim
         .substrate

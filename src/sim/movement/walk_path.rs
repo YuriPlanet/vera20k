@@ -104,14 +104,18 @@ impl Simulation {
         }
     }
 
-    /// Infantry vtable +0x500 = 0x0051DAF0, reached from the `Find_Path`
-    /// failure at 0x4D4044 (and from `Do_Action` 0x51D6F0 at zero health,
-    /// which no live actor here has). Order: `Do_Action` request by Doing and
-    /// the prone byte (+6DB), current-cell `Can_Enter_Cell` (+1AC) with the
-    /// facing octant and the Techno height helper 0x5F5F00 (this+8C OnBridge
-    /// plus the current cell's +11B level through vtable +0x1BC), the +6DC
-    /// answer byte, then Foot 0x4D55C0 -> locomotor +0x48 (Walk Stop 0x75ADA0).
-    pub(crate) fn run_infantry_failed_path_receiver(
+    /// `InfantryClass::Stop_Driver`, Infantry vtable +0x500 = 0x0051DAF0,
+    /// reached from the `Find_Path` failure at 0x4D4044, the Stun
+    /// (`FootClass::Stun @ 0x004D5660`), the kill's Infantry arm
+    /// (`0x005180FE`) and `Do_Action` 0x51D6F0 at zero health. Order:
+    /// `Do_Action` request by Doing and the prone byte (+6DB), current-cell
+    /// `Can_Enter_Cell` (+1AC) with the facing octant and the Techno height
+    /// helper 0x5F5F00 (this+8C OnBridge plus the current cell's +11B level
+    /// through vtable +0x1BC), the +6DC answer byte, then Foot 0x4D55C0 ->
+    /// locomotor +0x48: Walk Stop 0x75ADA0, or the Jumpjet's `Stop_Moving`
+    /// 0x0054B4D0. Another locomotor's Stop is not ported: no stock
+    /// infantryman has one.
+    pub(crate) fn infantry_stop_driver(
         &mut self,
         id: u64,
         rules: &RuleSet,
@@ -156,6 +160,9 @@ impl Simulation {
         //0x5F5F00 (ECX = this Infantry, 0x51DB78): the current cell's signed
         //level byte (+11B via vtable +1BC) plus four when OnBridge (+8C).
         let height = ground_pose::query_object_cell_height(&cells, coord, on_bridge);
+        // A Can_Enter_Cell input VERA lacks (a terrain without the owner's
+        // speed row) leaves the +6DC byte as it was; the Stop below still runs,
+        // as the native call always reaches it.
         let answer = self.infantry_can_enter(
             id,
             cell,
@@ -166,25 +173,35 @@ impl Simulation {
             },
             rules,
             registry,
-        )?;
+        );
         let actor = self
             .substrate
             .entities
             .get_mut(id)
             .ok_or("failed-path receiver actor retired during Can_Enter_Cell")?;
-        //0x51DBAC stores the zero answer byte; 0x51DBBE stores 1 for any other.
-        actor
-            .infantry
-            .as_mut()
-            .ok_or("failed-path receiver requires Infantry runtime state")?
-            .cell_entry_blocked = answer.is_nonzero();
+        match answer {
+            //0x51DBAC stores the zero answer byte; 0x51DBBE stores 1 for any other.
+            Ok(answer) => {
+                actor
+                    .infantry
+                    .as_mut()
+                    .ok_or("failed-path receiver requires Infantry runtime state")?
+                    .cell_entry_blocked = answer.is_nonzero();
+            }
+            Err(cause) => log::debug!("infantry {id} Stop_Driver Can_Enter_Cell: {cause}"),
+        }
         //0x4D55C0 -> ILocomotion +0x48. Walk 0x75ADA0 clears the destination
-        //and, with no paid head, the IsMoving byte.
-        actor
+        //and, with no paid head, the IsMoving byte; the Jumpjet's re-targets
+        //the nearest passable cell (a Scenario draw for Infantry placement).
+        let locomotor = actor
             .locomotor
             .as_mut()
-            .ok_or("failed-path receiver requires the Walk locomotor")?
-            .stop_walk();
+            .ok_or("Stop_Driver requires a locomotor")?;
+        if locomotor.jumpjet_runtime().is_none() {
+            locomotor.stop_walk();
+        } else {
+            self.jumpjet_stop_moving(id, Some(rules), registry);
+        }
         Ok(())
     }
 

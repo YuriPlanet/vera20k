@@ -282,7 +282,7 @@ impl Simulation {
             .get_mut(id)
             .ok_or("retired failed-path receiver")?;
         match actor.category {
-            EntityCategory::Infantry => self.run_infantry_failed_path_receiver(id, rules, registry),
+            EntityCategory::Infantry => self.infantry_stop_driver(id, rules, registry),
             EntityCategory::Unit => {
                 if super::navcom::track_stop_moving(actor) {
                     Ok(())

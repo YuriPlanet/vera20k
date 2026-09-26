@@ -92,7 +92,10 @@ pub fn infantry_facing_slot(facing: u8) -> u16 {
 pub struct Animation {
     /// Currently playing sequence.
     pub sequence: SequenceKind,
-    /// Current frame within the sequence (0 to frame_count - 1).
+    /// Current frame within the sequence (0 to frame_count - 1). For an
+    /// infantryman whose Doing owns its sequence, the native stage (`+0xF8`),
+    /// which does not wrap at the count: the draw takes it modulo the count
+    /// and the sequencer reads its end (`sim::movement::infantry_action`).
     pub frame_index: u16,
     /// Reached native frames accumulated since the last image advance.
     pub elapsed_frames: u16,
@@ -361,10 +364,12 @@ fn tick_animations_impl(
             continue;
         }
         let type_ref = entity.type_ref();
-        // Its Doing's sequence, which its actions restart
-        // (`sim::movement::infantry_action`); the cascade below leaves it.
-        let doing_owns_sequence =
-            crate::sim::movement::infantry_action::doing_owns_sequence(entity);
+        // Its Doing's sequence, which its actions restart and whose stage
+        // steps in its own turn (`sim::movement::infantry_action`); this
+        // frame-end clock leaves it.
+        if !entity.dying && crate::sim::movement::infantry_action::doing_owns_sequence(entity) {
+            continue;
+        }
         let Some(anim) = entity.animation.as_mut() else {
             // Dying entity with no animation → ready for despawn.
             if entity.dying {
@@ -379,8 +384,7 @@ fn tick_animations_impl(
                 dying_finished.push(id);
                 continue;
             }
-            let Some(seq_set) =
-                sequence_set_for_type(sequences, rules, interner.resolve(type_ref))
+            let Some(seq_set) = sequence_set_for_type(sequences, rules, interner.resolve(type_ref))
             else {
                 dying_finished.push(id);
                 continue;
@@ -415,7 +419,6 @@ fn tick_animations_impl(
         // The visual reflects the sim phase; DeployedFire is the auto-transition
         // when a Deployed unit gains an attack target (visual-only, matches stock YR).
         match entity.deploy_state {
-            _ if doing_owns_sequence => {}
             Some(crate::sim::deploy::DeployPhase::Deploying { .. }) => {
                 anim.switch_to(SequenceKind::Deploy);
             }
@@ -506,14 +509,13 @@ fn tick_animations_impl(
         }
 
         if let Some(next) = advance_animation(anim, def, game_options) {
-            // gamemd-derived: `InfantryClass::DoType_Sequencer` @ 0x00520AE0
-            // (0x00520CEB..0x00520D16) updates the completed action's facing
-            // before dispatching its next/default action.
             if let Some(facing) = def.completion_facing {
-                entity.facing = facing;
-                if let Some(body_facing) = entity.body_facing.as_mut() {
-                    body_facing.snap(u16::from(facing) << 8, binary_frame);
-                }
+                snap_completion_facing(
+                    &mut entity.facing,
+                    &mut entity.body_facing,
+                    facing,
+                    binary_frame,
+                );
             }
             // The Doing that installed this sequence has played to its end.
             if let Some(doing) = entity.mission_leaf.as_infantry().map(|leaf| leaf.doing())
@@ -546,6 +548,23 @@ pub fn tick_animations(
         true,
         &mut Vec::new(),
     )
+}
+
+/// `InfantryClass::DoType_Sequencer @ 0x00520AE0` (`0x00520CEB..0x00520D16`):
+/// a completed action's facing hint turns the body before the next or default
+/// action, through `FacingClass::UpdateFacing` (`FacingClass::snap`).
+/// Takes the entity's facing byte and body facing, which the cascade borrows
+/// beside its animation.
+pub(crate) fn snap_completion_facing(
+    facing_byte: &mut u8,
+    body_facing: &mut Option<crate::sim::movement::FacingClass>,
+    facing: u8,
+    binary_frame: u32,
+) {
+    *facing_byte = facing;
+    if let Some(body_facing) = body_facing.as_mut() {
+        body_facing.snap(u16::from(facing) << 8, binary_frame);
+    }
 }
 
 /// Advance only living entity animations. Dying animation completion is owned

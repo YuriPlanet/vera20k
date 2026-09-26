@@ -335,6 +335,9 @@ pub(crate) trait JumpjetFlightHost {
     /// the owner's `INoticeSink` slot 0 with `(0x117C, 0)`, whose handler
     /// finishes the wreck.
     fn crash_impact(&mut self);
+    /// The latch's owner work (`0x0054B014..0x0054B02C`): an Infantry owner
+    /// (What_Am_I 0xF) plays AirDeathStart, an unforced Do_Action(0x22).
+    fn crash_latched(&mut self);
 }
 
 fn zero() -> X87Value {
@@ -719,12 +722,14 @@ pub(crate) fn process(
 /// dispatch: a crashing owner above the ground, not already falling, enters
 /// State 5 with the target height at -5.
 ///
+/// An Infantry owner's latch plays AirDeathStart (vtable `+0x558`,
+/// `0x0054B02C`; [`JumpjetFlightHost::crash_latched`]).
+///
 /// Not ported: a Magnetron-held owner (`+0x6AD`) first has its destination
 /// moved to its cell's centre and latches only once it stands there
-/// (`0x0054AFE0..0x0054B004`), and an Infantry owner's latch plays sequence
-/// `0x22` (vtable `+0x558`, `0x0054B02C`). VERA never raises `+0x6AD` (the
-/// `IsLocomotor=` warhead is unported) and crashes no Infantry.
-fn crash_latch(state: i32, flight: &mut JumpjetFlight, host: &impl JumpjetFlightHost) -> i32 {
+/// (`0x0054AFE0..0x0054B004`). VERA never raises `+0x6AD` (the
+/// `IsLocomotor=` warhead is unported).
+fn crash_latch(state: i32, flight: &mut JumpjetFlight, host: &mut impl JumpjetFlightHost) -> i32 {
     if !host.crashing()
         || matches!(state, STATE_CRASH | STATE_CRASHED)
         || host.height_above_ground() <= 0
@@ -732,6 +737,7 @@ fn crash_latch(state: i32, flight: &mut JumpjetFlight, host: &impl JumpjetFlight
         return state;
     }
     flight.target_height = CRASH_TARGET_HEIGHT;
+    host.crash_latched();
     STATE_CRASH
 }
 
@@ -1298,6 +1304,7 @@ mod tests {
         fn crash_impact(&mut self) {
             self.events.push("crash_impact");
         }
+        fn crash_latched(&mut self) {}
     }
 
     fn int(value: &Value) -> i64 {
@@ -1763,6 +1770,7 @@ mod tests {
             self.impact_events.push(json!("bucket_remove"));
             self.impact_events.push(json!([0x117C, 0]));
         }
+        fn crash_latched(&mut self) {}
     }
 
     /// Parity with `tools/spatial_oracle/jumpjet_states.json`: the native
