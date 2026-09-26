@@ -189,6 +189,7 @@ Choose validation appropriate to the change, considering native fidelity, connec
 production behavior and protection against regressions.
 
 Avoid tests that merely mirror the implementation or require maintaining a second implementation of the same logic.
+Before fixing a bug whose expected behavior is established, first make a focused test fail on it where practical.
 
 - Working Rust: `cargo check -p vera20k` as needed; focused
   `cargo test -p vera20k --lib <module_path>::`.
