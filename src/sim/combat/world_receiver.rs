@@ -2725,11 +2725,9 @@ fn admit_attacker_fire<'r>(
 /// warp-out both set, and gates the update on IsAlive (`+0x90`,
 /// `0x007365BB`), so a crashing Unit's wreck still reaches it at Health 0.
 fn unit_reaches_fire_update(world: &Simulation, id: u64) -> bool {
-    world
-        .substrate
-        .entities
-        .get(id)
-        .is_some_and(|entity| entity.is_active() && !entity.is_warped_out())
+    world.substrate.entities.get(id).is_some_and(|entity| {
+        entity.category == EntityCategory::Unit && entity.is_ai_alive() && !entity.is_warped_out()
+    })
 }
 
 /// Whether an attacker's own AI still reaches its fire this frame. A Unit's
@@ -2739,7 +2737,7 @@ fn unit_reaches_fire_update(world: &Simulation, id: u64) -> bool {
 /// Health-0 wreck does not run) asks.
 fn attacker_reaches_fire(entity: &crate::sim::game_entity::GameEntity) -> bool {
     if entity.category == EntityCategory::Unit {
-        entity.is_active()
+        entity.is_ai_alive()
     } else {
         entity.is_alive() && !entity.dying
     }
@@ -2764,7 +2762,7 @@ fn idle_unit_fire_updates(
         !fire_suppressed.contains(&id)
             && world.substrate.entities.get(id).is_some_and(|entity| {
                 entity.category == EntityCategory::Unit
-                    && entity.is_active()
+                    && entity.is_ai_alive()
                     && !entity.lifecycle.in_limbo
                     && !entity.passenger_role.is_inside_transport()
                     && !entity.is_warped_out()
@@ -3252,6 +3250,63 @@ fn reveal_on_fire(world: &mut Simulation, rules: &RuleSet, firer_id: u64, target
     );
 }
 
+/// `TechnoClass::GetROF` (vt+0x318) for a shot: of the weapon GetWeapon
+/// answers (a garrison's next occupant's), at the stepped burst index. The rank
+/// and class are the firer's (a garrison shot reads the building's). FireAt
+/// created the fired weapon's particle systems just before
+/// (`0x006FF15B..0x006FF26E`), so its flags are the live systems GetROF tests;
+/// a system left from an earlier shot matters only when GetWeapon answers a
+/// different weapon, which no retail garrison does.
+fn fireat_get_rof(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    snap: &AttackerSnapshot,
+    obj: &ObjectType,
+    weapon: &WeaponType,
+    rof_weapon: &WeaponType,
+    next_index: i32,
+) -> i32 {
+    let firer = world.substrate.entities.get(snap.stable_id);
+    super::rof::get_rof(
+        &super::rof::RofQuery {
+            // RESIDUAL: a building's own Ammo (`+0x2FC`) is not kept;
+            // no retail building sets `Ammo=`.
+            building_ammo: None,
+            weapon: Some(rof_weapon),
+            live: super::rof::LiveParticles {
+                spark: weapon.use_spark_particles,
+                fire: weapon.use_fire_particles,
+                railgun: weapon.is_railgun,
+            },
+            burst_index: next_index,
+            unit_burst_delays: (snap.category == EntityCategory::Unit).then_some(obj.burst_delays),
+            house_rof: world
+                .houses
+                .get(&snap.owner)
+                .map_or(crate::util::native_x87::NativeF64Bits::ONE, |house| {
+                    house.rof_bias()
+                }),
+            rof_ability: self::veterancy::has_weapon_ability(
+                self::veterancy::rank_from_u16(snap.veterancy),
+                obj,
+                crate::rules::object_type::Ability::Rof,
+            ),
+            veteran_rof: rules.general.veteran_rof,
+            occupants: snap.garrison.as_ref().map(|gs| gs.occupant_count as i32),
+            bunkered: snap.category != EntityCategory::Structure
+                && firer.is_some_and(|firer| {
+                    matches!(
+                        firer.bunker_link,
+                        crate::sim::game_entity::BunkerLink::Installed(_)
+                    )
+                }),
+            occupy_rof_multiplier: rules.garrison_rules.occupy_rof_multiplier,
+            bunker_rof_multiplier: rules.garrison_rules.bunker_rof_multiplier,
+        },
+        &mut world.scenario_rng,
+    )
+}
+
 /// Existing FireAt delivery and bookkeeping, shared by the world receiver.
 /// The caller still owns legality, fire-action timing and inline damage commit.
 fn emit_admitted_fire(
@@ -3315,6 +3370,34 @@ fn emit_admitted_fire(
                 .is_some_and(|target_obj| target_obj.drainable)
         {
             out.drain_links.push((snap.stable_id, target_id));
+        }
+        return;
+    }
+
+    // `TechnoClass::FireAt`'s DiskLaser arm (`0x006FE460..0x006FE4EF`): a
+    // DiskLaserClass takes the shot, the burst steps around GetROF, the rearm
+    // stores GetROF's value unhalved, and FireAt returns with no bullet,
+    // report or muzzle anim. `DiskLaserClass::AI @ 0x004A7340` then deletes
+    // the laser before it draws or deals anything while its owner is crashing
+    // (`+0x425`, `0x004A7462`), so a falling Floating Disc's shots are spent
+    // here. A live Disc's delivery is VERA's unported DiskLaser path below.
+    if weapon.disk_laser
+        && world
+            .substrate
+            .entities
+            .get(snap.stable_id)
+            .is_some_and(|firer| firer.crashing)
+    {
+        let burst = world
+            .substrate
+            .entities
+            .get(snap.stable_id)
+            .map(|entity| entity.weapon_burst)
+            .unwrap_or_default();
+        let rof = fireat_get_rof(world, rules, snap, obj, weapon, weapon, burst.next_index());
+        if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
+            entity.rearm_timer.start(binary_frame as i32, rof);
+            entity.weapon_burst.complete_shot(weapon.burst.max(1));
         }
         return;
     }
@@ -3758,55 +3841,8 @@ fn emit_admitted_fire(
 
     let next_index = burst.next_index();
     let mid_burst = next_index < rof_weapon.burst;
-    // `CALL [EDX+0x318]` at `0x006FF289`: GetROF of the weapon GetWeapon
-    // answers (a garrison's next occupant's), at the stepped burst index. The
-    // rank and class are the firer's (a garrison shot reads the building's).
-    // FireAt created the fired weapon's particle systems just before
-    // (`0x006FF15B..0x006FF26E`), so its flags are the live systems GetROF
-    // tests; a system left from an earlier shot matters only when GetWeapon
-    // answers a different weapon, which no retail garrison does.
-    let rof = {
-        let firer = world.substrate.entities.get(snap.stable_id);
-        super::rof::get_rof(
-            &super::rof::RofQuery {
-                // RESIDUAL: a building's own Ammo (`+0x2FC`) is not kept;
-                // no retail building sets `Ammo=`.
-                building_ammo: None,
-                weapon: Some(rof_weapon),
-                live: super::rof::LiveParticles {
-                    spark: weapon.use_spark_particles,
-                    fire: weapon.use_fire_particles,
-                    railgun: weapon.is_railgun,
-                },
-                burst_index: next_index,
-                unit_burst_delays: (snap.category == EntityCategory::Unit)
-                    .then_some(obj.burst_delays),
-                house_rof: world
-                    .houses
-                    .get(&snap.owner)
-                    .map_or(crate::util::native_x87::NativeF64Bits::ONE, |house| {
-                        house.rof_bias()
-                    }),
-                rof_ability: self::veterancy::has_weapon_ability(
-                    self::veterancy::rank_from_u16(snap.veterancy),
-                    obj,
-                    crate::rules::object_type::Ability::Rof,
-                ),
-                veteran_rof: rules.general.veteran_rof,
-                occupants: snap.garrison.as_ref().map(|gs| gs.occupant_count as i32),
-                bunkered: snap.category != EntityCategory::Structure
-                    && firer.is_some_and(|firer| {
-                        matches!(
-                            firer.bunker_link,
-                            crate::sim::game_entity::BunkerLink::Installed(_)
-                        )
-                    }),
-                occupy_rof_multiplier: rules.garrison_rules.occupy_rof_multiplier,
-                bunker_rof_multiplier: rules.garrison_rules.bunker_rof_multiplier,
-            },
-            &mut world.scenario_rng,
-        )
-    };
+    // `CALL [EDX+0x318]` at `0x006FF289`.
+    let rof = fireat_get_rof(world, rules, snap, obj, weapon, rof_weapon, next_index);
 
     // `0x006FF274..0x006FF2CB`, all on the firer: the burst step around GetROF,
     // then the rearm (`+0x2EC`) with GetROF's value, which a berserk firer

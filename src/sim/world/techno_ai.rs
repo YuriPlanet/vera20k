@@ -887,16 +887,19 @@ fn mission_common_step(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
 // the handler-body execution remains with legacy per-system phases except for
 // the timer-only Move reschedule below and the absorbed Harvest handler.
 
-/// `ObjectClass+0x90` IsAlive, which `TechnoClass::AI_Update` tests after its
-/// early blocks (`0x006FA23C`) and again after the bomb and the managers
+/// `ObjectClass+0x90` IsAlive ([`GameEntity::is_ai_alive`]), which
+/// `TechnoClass::AI_Update` tests after the rocking update when `vt+0x298`
+/// answers true (`0x006FA23C`) and again after the bomb and the managers
 /// (`0x006FA735`), and `UnitClass::AI` before its fire update (`0x007365BB`).
 /// A crashing wreck keeps it at Health 0 until its impact, so it keeps running
-/// that AI while it falls; an object native has UnInit is VERA's `dying` one.
+/// that AI while it falls.
+///
+/// [`GameEntity::is_ai_alive`]: crate::sim::game_entity::GameEntity::is_ai_alive
 pub(crate) fn ai_alive(sim: &Simulation, id: u64) -> bool {
     sim.substrate
         .entities
         .get(id)
-        .is_some_and(|entity| entity.is_active())
+        .is_some_and(|entity| entity.is_ai_alive())
 }
 
 /// `MissionClass::AI @ 0x005B3060`'s last gate before a mission handler: Health
@@ -1879,8 +1882,8 @@ mod tests {
     fn bracket_pre_guard_short_circuits_dead_unit() {
         let mut sim = Simulation::new();
         let mut e = entity_of(1, EntityCategory::Unit);
+        // Killed, its UnInit deferred: native has already cleared IsAlive.
         e.health.current = 0;
-        e.lifecycle.object_alive = false; // its UnInit cleared IsAlive
         sim.substrate.entities.insert(e);
         // Guard B (IsAlive) fires after the (empty) pre-block: a dead Unit runs
         // no mission work (counter stays 0).
@@ -2146,6 +2149,64 @@ mod tests {
         assert!(
             sim.substrate.entities.get(2).unwrap().health.current < 3000,
             "the wreck's fire update shot it"
+        );
+    }
+
+    /// A falling Floating Disc's DiskLaser shot is spent where `FireAt`'s
+    /// DiskLaser arm leaves it: the rearm takes GetROF's value, and the laser
+    /// deletes itself before dealing anything while its owner is crashing
+    /// (`DiskLaserClass::AI @ 0x004A7340`, `+0x425` at `0x004A7462`).
+    #[test]
+    fn a_falling_disc_wreck_spends_its_disk_laser() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nNormalTargetingDelay=27\nGuardAreaTargetingDelay=36\n\n\
+             [Guard]\nRate=.016\n\n\
+             [InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [VehicleTypes]\n0=DISC\n1=UNARM\n\
+             [DISC]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             Strength=300\nArmor=heavy\nSpeed=6\nSight=10\nPrimary=Laser\n\n\
+             [UNARM]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             Strength=3000\nArmor=heavy\nSpeed=6\nSight=10\n\n\
+             [Laser]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\nDiskLaser=yes\n\n\
+             [AP]\nVerses=100%,100%,90%,75%,75%,75%,60%,30%,20%,0%,0%\n",
+        ))
+        .expect("disc rules parse");
+        let heights: std::collections::BTreeMap<(u16, u16), u8> = std::collections::BTreeMap::new();
+        let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
+        let mut sim = Simulation::with_seed(0x5CA1_AB1E_0009);
+        let disc = crate::map::entities::MapEntity {
+            mission: Some(MissionType::Guard),
+            ..passive_map_entity("Americans", "DISC", 20, 20, EntityCategory::Unit)
+        };
+        sim.spawn_from_map(
+            &[
+                disc,
+                passive_map_entity("Soviet", "UNARM", 23, 20, EntityCategory::Unit),
+            ],
+            Some(&rules),
+            &heights,
+        );
+        {
+            let wreck = sim.substrate.entities.get_mut(1).expect("disc present");
+            wreck.health.current = 0;
+            wreck.crashing = true;
+        }
+        let mut shots = 0;
+        let mut rearm_start = None;
+        for _ in 0..200 {
+            let _ = sim.advance_tick(&[], Some(&rules), &heights, Some(&grid), None, 67);
+            let wreck = sim.substrate.entities.get(1).expect("the wreck stays");
+            let start = wreck.rearm_timer.start_frame();
+            if wreck.rearm_timer.duration() > 0 && rearm_start != Some(start) {
+                rearm_start = Some(start);
+                shots += 1;
+            }
+        }
+        assert!(shots >= 2, "the wreck kept firing its laser ({shots})");
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().health.current,
+            3000,
+            "a crashing owner's disk laser deals nothing"
         );
     }
 

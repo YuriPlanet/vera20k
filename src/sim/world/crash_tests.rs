@@ -617,7 +617,7 @@ fn jumpjet_rules(balloon: bool) -> RuleSet {
          Primary=CrashGun\nExplosion=BOOM\nCrashingSound=JJDie\nImpactLandSound=TypeLand\n\
          [VICTIM]\nStrength=1000\nArmor=none\n\
          [RIDER]\nStrength=100\nArmor=none\n\
-         [CrashGun]\nDamage=150\nWarhead=CrashWH\n\
+         [CrashGun]\nDamage=150\nRange=6\nWarhead=CrashWH\n\
          [CrashWH]\nCellSpread=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
         if balloon { "yes" } else { "no" },
     )))
@@ -1064,6 +1064,87 @@ fn a_jumpjet_shot_down_touching_down_still_crashes() {
         fall.impact_booms, 1,
         "Death_Explosion once more at the impact"
     );
+}
+
+/// A wreck keeps the passive scan of its committed mission, which no handler
+/// changes at Health 0 (`MissionClass::AI @ 0x005B30A7`): shot down on Guard it
+/// scans and picks up the enemy beside it on the way down; shot down while
+/// committed to Attack (its target gone with the kill's Stun) it scans nothing,
+/// since the passive block admits Move, Harvest and Guard only (`0x006FA697`).
+#[test]
+fn a_jumpjet_wreck_scans_only_on_its_committed_guard() {
+    use crate::sim::mission::{MissionId, MissionType};
+    for (mission, scans) in [(MissionType::Guard, true), (MissionType::Attack, false)] {
+        let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
+        let frame = sim.session.binary_frame;
+        sim.mission_assign_exact(1, MissionId::from_known(mission), frame)
+            .unwrap();
+        // An enemy two cells east, inside `CrashGun`'s range.
+        let soviets = sim.interner.intern("Soviets");
+        let type_ref = sim.interner.intern("VICTIM");
+        let enemy = sim.allocate_stable_id();
+        let mut entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
+            enemy,
+            54,
+            52,
+            0,
+            0,
+            soviets,
+            crate::sim::components::Health { current: 1000 },
+            type_ref,
+            EntityCategory::Unit,
+            0,
+            5,
+            true,
+        );
+        entity.lifecycle.in_limbo = true;
+        sim.substrate.entities.insert(entity);
+        assert!(matches!(
+            sim.try_reveal_entity(
+                enemy,
+                RevealRequest {
+                    position: RevealPosition {
+                        rx: 54,
+                        ry: 52,
+                        z: 0,
+                        sub_x: SimFixed::from_num(128),
+                        sub_y: SimFixed::from_num(128),
+                    },
+                    placement: PlacementEvidence::MarkSucceeded,
+                    logic_eligible: true,
+                }
+            ),
+            RevealOutcome::Revealed { .. }
+        ));
+        shoot_down(&mut sim, &rules, shooter);
+        let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
+        let mut acquired = false;
+        for _ in 0..40 {
+            sim.advance_tick(
+                &[],
+                Some(&rules),
+                &std::collections::BTreeMap::new(),
+                Some(&grid),
+                None,
+                67,
+            );
+            let Some(wreck) = sim
+                .substrate
+                .entities
+                .get(1)
+                .filter(|wreck| wreck.lifecycle.object_alive)
+            else {
+                break;
+            };
+            assert_eq!(
+                wreck.mission.current(),
+                MissionId::from_known(mission),
+                "no handler changes a wreck's mission"
+            );
+            acquired |= wreck.attack_target.is_some() && wreck.passively_acquired_target;
+        }
+        assert_eq!(acquired, scans, "{mission:?}");
+    }
 }
 
 /// On the ground a crashable unit's Crash refuses, and the receiver UnInits
