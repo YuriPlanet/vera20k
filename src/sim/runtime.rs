@@ -726,7 +726,7 @@ where
         .effective_destroyable_bridges(bridge_destroyability_mode);
     let bridge_strength = rules
         .map(|rules| rules.bridge_rules.strength)
-        .unwrap_or(1500);
+        .unwrap_or(1000);
     sim.bridge_state = Some(
         crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain_with_map_size(
             resolved_terrain,

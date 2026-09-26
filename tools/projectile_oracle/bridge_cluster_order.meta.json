@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "72 full original 468D80 ordinary impact-to-detonation-to-area/bridge-to-cluster cases; original Scenario RNG and continuation.",
+  "assumptions": [
+    "Synthetic 64x64 map with an empty 7x7 local patch; Cell10,20 level2 raw structural0x100 and anchor9,20 overlay0x18 (or case variation).",
+    "Bullet ordinary Arcing=true, impact flag1, Q8 multiplier256, no source; special warhead flags, CellSpread, AnimList, MaxDebris, Shrapnel, Rocker and Inviso zero; empty object and AirTracker lists.",
+    "Zero-initialized supplied Rules/Warhead/BulletType fields except declared inputs; BridgeStrength supplied independently of its separately established native INI reader.",
+    "Original Cell virtuals, MapClass lookup/height, slope matrices, Sqrt_Approx, ftol, animation selection, AirTracker and math execute; x87PC53/chop.",
+    "bridge_patch=true supplies structural/anchor fields over surrounding cells for repeated-admission ordering; it is not a topology-validity or driver proof."
+  ],
+  "substitutions": [
+    "Bridge drivers587180/57BAA0/57CCF0 returnfalse without mutation; projection6D2140 writes0,0 and dirty6D2790 no-op. Every reached substitution recorded. No other body replaced."
+  ],
+  "entry_points": {
+    "impact_ladder": "0x00468D80",
+    "detonate": "0x004690B0",
+    "area_damage": "0x00489280",
+    "bridge_blocks": "0x00489E87",
+    "cluster_distance_call": "0x00469057",
+    "cluster_coord": "0x0049F420",
+    "rng_ranged": "0x0065C7E0",
+    "rng_raw": "0x0065C780"
+  },
+  "payload_sha256": "153eb83e2fbd4593190f32eacd2b043c02336e7c79c1b224935506b4e0ed3320"
+}

@@ -63,9 +63,150 @@ fn event(sim: &mut Simulation, cell: (u16, u16)) -> BridgeDamageEvent {
         damage: 2,
         warhead_ref: sim.interner.intern("Super"),
         is_ion_cannon: false,
-        impact_z: 0,
+        impact_z_leptons: 416,
     }
 }
+
+#[test]
+fn bridge_damage_exact_height_runs_body_and_detaches_only_after_collapse() {
+    let rules = rules();
+    let mut sim = world(&rules, 9);
+    let attacker = sim
+        .construct_object_limbo_at_height("MTNK", "Americans", 7, 7, 0, 0, &rules)
+        .unwrap();
+    sim.reveal(attacker);
+    sim.substrate
+        .entities
+        .get_mut(attacker)
+        .unwrap()
+        .attack_target = Some(crate::sim::combat::AttackTarget::for_cell(4, 4));
+    let mut hit = event(&mut sim, (4, 4));
+    let before = sim.scenario_rng.logical_state();
+    // Native strict lower bound: level0 +208 refuses, +209 enters.
+    hit.impact_z_leptons = 208;
+    assert!(!apply_bridge_damage_events(&mut sim, &rules, &[hit]));
+    assert_eq!(
+        sim.bridge_state
+            .as_ref()
+            .unwrap()
+            .cell(4, 4)
+            .unwrap()
+            .damage_state,
+        DamageState::Healthy { variant: 0 }
+    );
+    assert_eq!(sim.scenario_rng.logical_state(), before);
+
+    hit.impact_z_leptons = 209;
+    assert!(!apply_bridge_damage_events(&mut sim, &rules, &[hit]));
+    assert_eq!(
+        sim.bridge_state
+            .as_ref()
+            .unwrap()
+            .cell(4, 4)
+            .unwrap()
+            .damage_state,
+        DamageState::Damaged
+    );
+    assert!(
+        sim.substrate
+            .entities
+            .get(attacker)
+            .unwrap()
+            .attack_target
+            .is_some()
+    );
+
+    assert!(apply_bridge_damage_events(&mut sim, &rules, &[hit]));
+    assert!(
+        sim.substrate
+            .entities
+            .get(attacker)
+            .unwrap()
+            .attack_target
+            .is_none()
+    );
+    assert_eq!(
+        sim.resolved_terrain
+            .as_ref()
+            .unwrap()
+            .cell(4, 4)
+            .unwrap()
+            .bridge_facts
+            .raw_flags
+            & 0x100,
+        0
+    );
+    let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "bridge-damage", 0);
+    let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    assert_eq!(restored.bridge_state.as_ref().unwrap().bridge_strength(), 1);
+    assert!(
+        restored
+            .substrate
+            .entities
+            .get(attacker)
+            .unwrap()
+            .attack_target
+            .is_none()
+    );
+}
+
+#[test]
+fn signed_bridge_strength_survives_reader_runtime_dispatch_and_snapshot() {
+    let native: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tools/spatial_oracle/bridge_damage_admission.json"
+    ))
+    .unwrap();
+    for strength in [-1, 0, 65536] {
+        let parsed = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[CombatDamage]\nBridgeStrength={strength}\n"
+        )))
+        .unwrap();
+        assert_eq!(parsed.bridge_rules.strength, strength);
+        let rules = rules();
+        let mut sim = world(&rules, 9);
+        sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain(
+            sim.resolved_terrain.as_ref().unwrap(),
+            true,
+            parsed.bridge_rules.strength,
+        ));
+        let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "signed-strength", 0);
+        let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+            .unwrap()
+            .sim;
+        assert_eq!(
+            restored.bridge_state.as_ref().unwrap().bridge_strength(),
+            strength
+        );
+        // Snapshots restore map resources separately; exercise the restored
+        // authoritative bridge state against the same retained terrain.
+        sim.bridge_state = restored.bridge_state;
+        let mut hit = event(&mut sim, (4, 4));
+        hit.damage = i32::MAX;
+        assert!(!apply_bridge_damage_events(&mut sim, &rules, &[hit]));
+        assert_eq!(
+            sim.bridge_state.as_ref().unwrap().bridge_strength(),
+            strength
+        );
+        let name = format!("strength_{strength}");
+        let row = native["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["input"]["name"] == name)
+            .unwrap();
+        let state = sim.scenario_rng.logical_view();
+        assert_eq!(
+            serde_json::json!([state.index_a, state.index_b]),
+            row["rng_indices"],
+            "{name}"
+        );
+        let next: Vec<_> = (0..4).map(|_| sim.scenario_rng.next_u32()).collect();
+        assert_eq!(serde_json::json!(next), row["next_rng"], "{name}");
+    }
+}
+
 
 fn host<'a>(sim: &'a mut Simulation, rules: &'a RuleSet) -> LivePublication<'a> {
     LivePublication {

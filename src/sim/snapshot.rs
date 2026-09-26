@@ -618,7 +618,8 @@ use crate::sim::world::Simulation;
 // (`+0xBC`) and marks the player's undeploy order instead of carrying the
 // undeploy's unit type, owner, cell and selection; a building keeps its AI
 // sale byte (`+0x6DC`) and a house its authored IQ (`+0x1D0`).
-const SNAPSHOT_VERSION: u32 = 213;
+// BridgeStrength retains its native signed dword (formerly narrowed to u16).
+const SNAPSHOT_VERSION: u32 = 214;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3580,7 +3581,8 @@ mod tests {
         // 211 -> 212: no copy of the last selection's weapon id.
         // 212 -> 213: Sell's stage in the Selling mission; no undeploy
         // spawn copy on pack-ups.
-        assert_eq!(super::SNAPSHOT_VERSION, 213);
+        // 213 -> 214: signed BridgeStrength in serialized bridge state.
+        assert_eq!(super::SNAPSHOT_VERSION, 214);
     }
 
     #[test]

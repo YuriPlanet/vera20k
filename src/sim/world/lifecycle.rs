@@ -3202,20 +3202,10 @@ impl Simulation {
     ///    the target.** A successful Restore re-installs the archived target, and
     ///    the null-out then does not run.
     ///
-    /// **ONLY ONE OF SIX NATIVE ENTRY POINTS IS WIRED.** The sweep is reached
-    /// from six distinct functions in the original — area damage (six call
-    /// sites in one function), building sale, an unnamed pair, the building
-    /// occupy-map placement, the owner change, and the teleport locomotor's
-    /// state machine. VERA calls it only from the owner change. The earlier
-    /// "1 of 3 Restore sites" framing counted CALL sites through the Restore
-    /// vtable slot, which is a different and smaller set than the sweep's own
-    /// callers, and read more complete than it was. Consequence: an attacker
-    /// stays latched onto a target that is being sold or chrono-teleported
-    /// until the target is actually removed and the pointer-expiry broadcast
-    /// catches it. Frequency: every building sale and every Chrono
-    /// Legionnaire / Chronosphere use — tens of times a match — though the
-    /// window is short and the blast radius today is limited to objects that
-    /// went through a blocked-step Override.
+    /// The native sweep has callers in area damage, building sale, owner change,
+    /// building placement and teleportation. The represented owner-change and
+    /// bridge-damage callers share this owner; the other caller chains remain
+    /// separate migration work.
     ///
     /// RESIDUALS, recorded rather than guessed:
     /// - The native suppression clause (`0x0070D4DB..0x0070D4FB`) skips the
@@ -3229,15 +3219,27 @@ impl Simulation {
     /// - The aircraft-Patrol arm, which clears two patrol-cursor fields on an
     ///   aircraft whose committed mission is Patrol. Neither field is
     ///   represented; the arm is a no-op for every ground object.
-    /// - A second native table swept after the techno vector, nulling two
-    ///   pointer slots that match the detaching object. Its element class is
-    ///   UNKNOWN, so it is not modelled.
+    /// - The second sweep is TeamClass (0x0070D554..0x0070D57B), clearing
+    ///   matching pointers at +0x3C/+0x40. The represented Team owner does not
+    ///   yet retain both native pointers. Bridge damage needs that lifecycle
+    ///   when those Team states are implemented.
     pub(crate) fn stop_all_targeting_on_detach(&mut self, detach_id: u64, rules: Option<&RuleSet>) {
+        self.stop_all_targeting_target(TargetKind::Entity(detach_id), rules);
+    }
+
+    /// Apply_area_damage bridge success calls the same 0x0070D4A0 sweep with a
+    /// CellClass pointer. This is not CellClass PointerExpired: Restore must
+    /// precede the conditional target clear, in descending Techno order.
+    pub(crate) fn stop_all_targeting_cell(&mut self, rx: u16, ry: u16, rules: Option<&RuleSet>) {
+        self.stop_all_targeting_target(TargetKind::Cell(rx, ry), rules);
+    }
+
+    fn stop_all_targeting_target(&mut self, target: TargetKind, rules: Option<&RuleSet>) {
         let mut listeners = self.substrate.entities.keys_sorted();
         listeners.reverse();
 
         for listener_id in listeners {
-            if !self.listener_targets(listener_id, detach_id) {
+            if !self.listener_targets(listener_id, target) {
                 continue;
             }
 
@@ -3245,7 +3247,7 @@ impl Simulation {
                 .mission_restore_on_target_detach(listener_id, rules)
                 .expect("detach sweep listener was resolved immediately before the Restore");
 
-            let target_cleared = self.listener_targets(listener_id, detach_id);
+            let target_cleared = self.listener_targets(listener_id, target);
             if target_cleared {
                 self.assign_target_represented(listener_id, None, rules)
                     .expect("detach sweep listener remains present for the target clear");
@@ -3253,30 +3255,22 @@ impl Simulation {
 
             let _ = restored;
             #[cfg(test)]
-            self.trace_lifecycle_for_test(LifecycleTestEvent::DetachTargetingSweepVisited {
-                detach_id,
-                listener_id,
-                restored,
-                target_cleared,
-            });
+            if let TargetKind::Entity(detach_id) = target {
+                self.trace_lifecycle_for_test(LifecycleTestEvent::DetachTargetingSweepVisited {
+                    detach_id,
+                    listener_id,
+                    restored,
+                    target_cleared,
+                });
+            }
         }
     }
 
-    /// Whether `listener_id` currently holds `detach_id` as its shoot-at target.
-    ///
-    /// Cell targets never match: the native comparison is against an object
-    /// pointer, so an object overridden onto a wall cell is invisible to both
-    /// detach sweeps.
-    fn listener_targets(&self, listener_id: u64, detach_id: u64) -> bool {
-        self.substrate
-            .entities
-            .get(listener_id)
-            .is_some_and(|listener| {
-                matches!(
-                    listener.attack_target.as_ref().map(|target| target.target),
-                    Some(TargetKind::Entity(id)) if id == detach_id
-                )
-            })
+    /// Match the retained target identity, preserving Cell/Techno distinction.
+    fn listener_targets(&self, listener_id: u64, target: TargetKind) -> bool {
+        self.substrate.entities.get(listener_id).is_some_and(|listener| {
+            listener.attack_target.as_ref().map(|current| current.target) == Some(target)
+        })
     }
 
     /// Infantry PerCell repair519D17..519D36 calls each registered Infantry

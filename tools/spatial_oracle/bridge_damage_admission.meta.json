@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original489E87..48A2C4 bridge admission, four independent blocks, real lookup/RNG; ordinary cell-target FireAt/BulletFire and actual Cell impact ladder; BridgeStrength constructor/store/INI reader",
+  "assumptions": [
+    "Interior state follows ordinary nonzero area damage, after receiver and Rocker phases; those phases and their mutations are excluded",
+    "Scenario flag, Wall byte, signed damage/BridgeStrength, tile-family globals, explicit impact/anchor cells, original packed coordinate and lepton Z are supplied",
+    "OriginalRandomSeed supplies Scenario+218; every RandomRanged instruction and rejection retry executes; next four original RandomNext values record continuation",
+    "Actual GetCellClass5657A0 reads a populated fixed-stride table; cells and retained anchor relationships are synthetic accepted inputs, not native-loaded map witnesses",
+    "Synthetic callback mutations establish dispatcher continuation reads, not stock driver/callback reachability or correctness",
+    "Coordinate fixtures execute originalCellGetTargetCoords/GetCoords/ComputeGroundHeight with supplied104 and original deck initializers; only listed scalar/slope cases are covered",
+    "Impact-ladder cases use actualCell and Bullet vtables, flat level2 structural cells, arcing1/cluster1, zero other flags and stop at first DetonateAtCoord; duplicated Cell scalar state supplies the shared dummy cases",
+    "OriginalBridgeStrength constructor store and CombatDamage read/store run with supplied cached INI indexes built using original key CRC; nativeReadInt executes unchanged",
+    "Inner-selector cases start5871A5 after the dirty vector clear, with EBP=Map and original stack locals; actual lookup/selection runs to the selected leaf entry or no-match tail, before any driver executes",
+    "Signed out-of-retail-range strength/damage/level cases characterize accepted arithmetic domain, not retail map reachability"
+  ],
+  "substitutions": [
+    "Drivers587180/57BAA0/57CCF0 return supplied booleans and apply only declared callback writes; their gameplay bodies are excluded",
+    "Detach70D4A0 and screenDirty6D2790 are recorded sinks; CoordsToClient6D2140 writes0,0 to its output; no other calls are replaced"
+  ],
+  "entry_points": {
+    "area_bridge_blocks": "0x00489E87",
+    "area_deck_initializer": "0x00489100",
+    "lookup": "0x005657A0",
+    "random_seed": "0x0065C6D0",
+    "random_ranged": "0x0065C7E0",
+    "fireat_cell_aim": "0x006FE1F6",
+    "bullet_target_copy": "0x004686FA",
+    "cell_target_coords": "0x00486890",
+    "cell_deck_initializer": "0x0047B2C0",
+    "impact_ladder": "0x00468D80",
+    "strength_default_store": "0x006675DA",
+    "strength_read": "0x0066CD66",
+    "integer_reader": "0x005276D0",
+    "inner_selector": "0x005871A5"
+  },
+  "payload_sha256": "697b811db3b423899fa285d06e14698575139dad6c287467561b501237c00f9d"
+}

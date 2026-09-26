@@ -444,6 +444,72 @@ mod tests {
         }
     }
 
+    /// Original468D80 with the real CellClass receivers. Its ground-distance
+    /// thresholds must not move to the structural deck plane. The same live
+    /// +48/+58 pair applies to the one retained fallback CellClass.
+    #[test]
+    fn bridge_cell_impact_ladder_matches_original_ground_and_deck_receivers() {
+        use crate::sim::projectile::{ImpactLadderBullet, resolve_impact_coord};
+        let corpus: Value = serde_json::from_str(include_str!(
+            "../../../tools/spatial_oracle/bridge_damage_admission.json"
+        ))
+        .unwrap();
+        for row in corpus["ladder_cases"].as_array().unwrap() {
+            let mut sim = Simulation::new();
+            let cell_x = row["coord"][0].as_u64().unwrap() as u16;
+            let cell_y = row["coord"][1].as_u64().unwrap() as u16;
+            let level = row["level"].as_i64().unwrap() as i8;
+            let slope = row["slope"].as_u64().unwrap() as u8;
+            let flags = row["flags"].as_u64().unwrap() as u32;
+            let mut cells = (0..32)
+                .flat_map(|y| (0..32).map(move |x| crate::map::resolved_terrain::test_flat_cell(x, y)))
+                .collect::<Vec<_>>();
+            let cell = &mut cells[usize::from(cell_y) * 32 + usize::from(cell_x)];
+            cell.level = level as u8;
+            cell.slope_type = slope;
+            cell.bridge_facts.raw_flags = flags;
+            sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(32, 32, cells));
+            let target = if row["dummy"].as_bool().unwrap() {
+                sim.shared_cell_dummy
+                    .stamp_coord(i32::from(cell_x), i32::from(cell_y));
+                sim.shared_cell_dummy.set_level_slope(level, slope);
+                sim.shared_cell_dummy.test_set_retained_bridge_flags(flags);
+                ProjectileTarget::DummyCell
+            } else {
+                ProjectileTarget::Cell {
+                    rx: cell_x,
+                    ry: cell_y,
+                }
+            };
+            assert_eq!(row["cluster"], 1, "fixture models the first detonation");
+            assert_eq!(row["em_effect"], 0, "fixture has no EM-effect warhead");
+            let location = coord(row, "location", [0; 3]);
+            let mut shot = gsi_05_02_projectile(999, None);
+            shot.target = target;
+            shot.origin = location;
+            admit_existing(&mut sim, shot);
+            let projectile = sim.projectiles.get(100).unwrap();
+            let inputs = world(&sim).impact_ladder(projectile, location);
+            let actual = resolve_impact_coord(
+                &ImpactLadderBullet {
+                    location,
+                    reference: coord(row, "reference", [0; 3]),
+                    impact_flag: row["impact_flag"].as_u64().unwrap() != 0,
+                    inaccurate: row["inaccurate"].as_u64().unwrap() != 0,
+                    airburst: row["airburst"].as_u64().unwrap() != 0,
+                    arcing: row["arcing"].as_u64().unwrap() != 0,
+                    homing: row["rot"].as_i64().unwrap() > 0,
+                },
+                &inputs,
+            );
+            assert_eq!(
+                actual,
+                coord(row, "impact", [0; 3]),
+                "original Cell ladder {row}"
+            );
+        }
+    }
+
     /// Admit `shot` as bullet 100, already in flight: the allocator moves
     /// past it, so the frame's combat tail does not take it for a new shot.
     fn admit_existing(sim: &mut Simulation, shot: crate::sim::projectile::ProjectileSpawn) {
@@ -1559,9 +1625,22 @@ impl ProjectileCollisionWorld<'_> {
                 }
             }),
             cell @ (ProjectileTarget::Cell { .. } | ProjectileTarget::DummyCell) => {
-                self.target_aim(cell).map(|coords| ImpactLadderTarget {
+                // 468DEA/468E88 and DistanceTo468F71 use Cell+48 ground.
+                // Only the last replacement468F88 reads the +58 deck aim.
+                // Conflating them moves the 32/42-lepton admission sphere
+                // from the ground to the deck and changes the final impact.
+                let coords = match cell {
+                    ProjectileTarget::Cell { rx, ry } => {
+                        crate::sim::projectile::cell_ground_coord(self.terrain, rx, ry)
+                    }
+                    ProjectileTarget::DummyCell => {
+                        crate::sim::projectile::dummy_cell_ground_coord(self.dummy)
+                    }
+                    _ => unreachable!("Cell impact target"),
+                };
+                self.target_aim(cell).map(|aim| ImpactLadderTarget {
                     coords,
-                    aim: coords,
+                    aim,
                     offset_coords: coords,
                     in_air: false,
                     ground_layer: true,

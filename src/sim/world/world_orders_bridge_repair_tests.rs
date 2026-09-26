@@ -1350,7 +1350,13 @@ fn build_ns_bridge_with_bridgehead_for_dispatch() -> (
             });
         }
     }
-    let resolved = crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(5, 5, cells);
+    let mut resolved = crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(5, 5, cells);
+    // The area-damage gate requires the input's Middle tile class; a synthetic
+    // Bridgehead role/overlay18 alone does not establish native admission.
+    resolved.cell_mut(2, 4).unwrap().final_tile_index = 1019;
+    resolved.test_set_high_bridge_rim_tiles(
+        crate::map::bridge_rim_tiles::HighBridgeRimTiles::from_ini(
+            1000, b"[General]\nBridgeMiddle1=20\nBridgeMiddle2=40\n"));
 
     // Build bridge state: bridgehead at (2, 4), anchor at (2, 2), and two
     // perpendicular Anchor neighbors at (1, 2) / (3, 2). Overlay 0x18 keeps
@@ -1439,7 +1445,7 @@ fn ramp_fire_collapses_high_bridgehead_on_ion_retry() {
     sim.resolved_terrain = Some(resolved);
     sim.bridge_state = Some(bs);
 
-    let mut rules = bridge_repair_test_rules();
+    let rules = bridge_repair_test_rules();
     sim.resolve_type_handles(&rules);
 
     let pre_bridgehead = *sim.bridge_state.as_ref().unwrap().cell(2, 4).unwrap();
@@ -1454,7 +1460,7 @@ fn ramp_fire_collapses_high_bridgehead_on_ion_retry() {
                 damage: 999,
                 warhead_ref: crate::sim::intern::InternedId::default(),
                 is_ion_cannon: true,
-                impact_z: 4,
+                impact_z_leptons: 416,
             }],
         );
         // Slot +3 collapse signals a path-grid refresh.

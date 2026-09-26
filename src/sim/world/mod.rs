@@ -1817,9 +1817,9 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
         detonations: &[crate::sim::projectile::ProjectileDetonation],
-    ) {
+    ) -> bool {
         if detonations.is_empty() {
-            return;
+            return false;
         }
         let mut run = crate::sim::combat::world_receiver::ReceiverRun::default();
         let commit = crate::sim::combat::world_receiver::commit_projectiles(
@@ -1837,10 +1837,11 @@ impl Simulation {
         }
         #[cfg(test)]
         if let Some(fixture) = self.receiver_fixture.as_mut() {
+            let changed = commit.effects.bridge_state_changed;
             fixture
                 .tail_effects
                 .push((commit.effects, commit.under_attack_events));
-            return;
+            return changed;
         }
         self.absorb_noncombat_damage_effects(
             rules,
@@ -1848,7 +1849,8 @@ impl Simulation {
             commit.effects,
             commit.under_attack_events,
             terrain_navigation_changed_cells,
-        );
+        )
+        .bridge_state_changed
     }
 
     pub(crate) fn commit_fired_wave(&mut self, rules: &RuleSet, event: &SimFireEvent) {
@@ -1979,22 +1981,26 @@ impl Simulation {
         first_tail_id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::map::overlay_types::OverlayTypeRegistry>,
-    ) {
+    ) -> bool {
+        let mut bridge_state_changed = false;
         let mut index = 0;
         while index < self.substrate.logic.len() {
             let stable_id = self.substrate.logic.as_slice()[index];
             if stable_id >= first_tail_id && !self.substrate.entities.contains(stable_id) {
-                let _ = self.object_ai_visit_one(
-                    stable_id,
-                    Some(rules),
-                    techno_ai::ObjectAiCtx {
-                        overlay_registry,
-                        ..techno_ai::ObjectAiCtx::default()
-                    },
-                );
+                bridge_state_changed |= self
+                    .object_ai_visit_one_with_effects(
+                        stable_id,
+                        Some(rules),
+                        techno_ai::ObjectAiCtx {
+                            overlay_registry,
+                            ..techno_ai::ObjectAiCtx::default()
+                        },
+                    )
+                    .bridge_state_changed;
             }
             index += 1;
         }
+        bridge_state_changed
     }
 
     /// Walk one Wave damage request in recorded-cell and current Cell-list
@@ -2505,13 +2511,13 @@ impl Simulation {
         effects: crate::sim::combat::DeathEffects,
         under_attack_events: Vec<crate::sim::combat::UnderAttackEvent>,
         terrain_navigation_changed_cells: Vec<(u16, u16)>,
-    ) {
-        let _ = damage_consequences::DamageConsequences::immediate(
+    ) -> damage_consequences::DamageCommitReceipt {
+        damage_consequences::DamageConsequences::immediate(
             effects,
             under_attack_events,
             terrain_navigation_changed_cells,
         )
-        .commit(self, rules, overlay_registry, None);
+        .commit(self, rules, overlay_registry, None)
     }
 
     /// `HouseClass::NotifyUnderAttack @ 0x004F93E0` for one damaged asset,
@@ -6307,7 +6313,7 @@ impl Simulation {
                 let stable_id = self.allocate_stable_id();
                 self.admit_projectile(stable_id, projectile);
             }
-            self.visit_combat_tail(first_tail_id, rules, overlay_registry);
+            bridge_state_changed |= self.visit_combat_tail(first_tail_id, rules, overlay_registry);
             let post_combat_path_grid = self.path_grid_snapshot();
             let active_post_combat_path_grid =
                 post_combat_path_grid.as_deref().or(active_path_grid);

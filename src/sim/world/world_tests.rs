@@ -4362,7 +4362,7 @@ fn test_bridge_damage_rebuilds_path_grid() {
             damage: 20,
             warhead_ref: crate::sim::intern::InternedId::default(),
             is_ion_cannon: true,
-            impact_z: 4,
+            impact_z_leptons: 416,
         }],
     );
 
@@ -4404,7 +4404,7 @@ fn test_bridge_collapse_signals_pathgrid_refresh() {
             damage: 20,
             warhead_ref: crate::sim::intern::InternedId::default(),
             is_ion_cannon: true,
-            impact_z: 4,
+            impact_z_leptons: 416,
         }],
     );
     assert!(
@@ -4488,7 +4488,7 @@ fn test_bridge_collapse_clears_transition_flag() {
             damage: 20,
             warhead_ref: crate::sim::intern::InternedId::default(),
             is_ion_cannon: true,
-            impact_z: 4,
+            impact_z_leptons: 416,
         }],
     );
 
@@ -4547,7 +4547,7 @@ fn test_destroyed_bridge_snaps_unit_to_ground_when_ground_exists() {
             damage: 15,
             warhead_ref: crate::sim::intern::InternedId::default(),
             is_ion_cannon: true,
-            impact_z: 4,
+            impact_z_leptons: 416,
         }],
     );
 
@@ -4610,7 +4610,7 @@ fn test_destroyed_bridge_snaps_unit_to_ground_over_water_below() {
             damage: 15,
             warhead_ref: crate::sim::intern::InternedId::default(),
             is_ion_cannon: true,
-            impact_z: 4,
+            impact_z_leptons: 416,
         }],
     );
 
@@ -4678,7 +4678,7 @@ fn test_destroyed_bridge_snaps_unit_to_ground_over_overlay_blocked() {
             damage: 15,
             warhead_ref: crate::sim::intern::InternedId::default(),
             is_ion_cannon: true,
-            impact_z: 4,
+            impact_z_leptons: 416,
         }],
     );
 
@@ -4738,7 +4738,7 @@ fn test_destroyed_bridge_snaps_unit_to_ground_over_terrain_object_blocked() {
             damage: 15,
             warhead_ref: crate::sim::intern::InternedId::default(),
             is_ion_cannon: true,
-            impact_z: 4,
+            impact_z_leptons: 416,
         }],
     );
 
@@ -4801,7 +4801,7 @@ fn test_destroyed_bridge_fallout_matches_rebuilt_ground_walkability() {
             damage: 15,
             warhead_ref: crate::sim::intern::InternedId::default(),
             is_ion_cannon: true,
-            impact_z: 4,
+            impact_z_leptons: 416,
         }],
     );
 
@@ -4898,7 +4898,7 @@ fn test_bridge_collapse_kills_ground_unit_under_destroyed_cell() {
             damage: 15,
             warhead_ref: crate::sim::intern::InternedId::default(),
             is_ion_cannon: true,
-            impact_z: 4,
+            impact_z_leptons: 416,
         }],
     );
 
@@ -4935,7 +4935,7 @@ fn test_bridge_walker_collapses_full_3_cell_strip_on_single_hit() {
             damage: 15,
             warhead_ref: crate::sim::intern::InternedId::default(),
             is_ion_cannon: true,
-            impact_z: 4,
+            impact_z_leptons: 416,
         }],
     );
 
@@ -4952,102 +4952,6 @@ fn test_bridge_walker_collapses_full_3_cell_strip_on_single_hit() {
             "cell ({x}, 5) must hold the EW final-stage overlay"
         );
     }
-}
-
-/// Path mutual exclusion: a cell whose overlay has been TRANSITIONED out
-/// of the raw body range (e.g. 0x6) routes to the state-machine path,
-/// never to direct-overlay. The reverse (raw body overlay) routes to the
-/// direct path. Verifies the dispatcher's overlay invariant prevents
-/// double-firing on the same hit.
-#[test]
-fn test_bridge_dispatcher_state_machine_overlay_routes_to_high_sm_not_direct() {
-    use crate::sim::bridge_state::{
-        AnchorSpan, Axis, BridgeCellRole, BridgeRuntimeCell, DamageState, Direction, DispatchPath,
-    };
-    let mut sim = Simulation::new();
-    let (resolved, mut bridge_state) = ew_high_bridge_strip_for_dispatch(5, 5, 4, false, 0);
-    // Override center cell to the post-transition state: overlay 0x6 (out
-    // of the 0xCD..=0xE6 raw HIGH range), role=Anchor, damage_state=Damaged
-    // (so a single hit Damaged→Destroyed). Anchor span carries only the
-    // anchor itself so set_bridge_direction emits one BlowUpBridge action.
-    bridge_state.test_seed_cell(
-        5,
-        5,
-        BridgeRuntimeCell {
-            deck_present: true,
-            destroyable: true,
-            deck_level: 4,
-            bridge_group_id: Some(1),
-            damage_state: DamageState::Damaged,
-            axis: Some(Axis::EW),
-            role: BridgeCellRole::Anchor,
-            anchor_span_id: Some(1),
-            overlay_byte: 0x6,
-            bridgehead_anchor_class: crate::sim::bridge_state::BridgeheadAnchorClass::Variant0,
-        },
-    );
-    bridge_state.test_seed_anchor_span(AnchorSpan {
-        id: 1,
-        anchor: (5, 5),
-        cells: [Some((5, 5)), None, None, None, None, None],
-        axis: Axis::EW,
-        direction: Direction::S,
-        damage_state: DamageState::Damaged,
-        bridge_group_id: 1,
-    });
-    sim.resolved_terrain = Some(resolved);
-    sim.bridge_state = Some(bridge_state);
-
-    // Path classifier: HighSM matches, HighDirect does NOT, when the
-    // overlay has been transitioned out of the raw body range.
-    let bs = sim.bridge_state.as_ref().unwrap();
-    let ctx = crate::sim::bridge_state::BridgeDamageContext {
-        damage: 15,
-        warhead_ref: crate::sim::intern::InternedId::default(),
-        is_ion_cannon: true,
-        bridge_strength: bs.bridge_strength(),
-        impact_z: 0,
-    };
-    let terrain = sim.resolved_terrain.as_ref().unwrap();
-    assert!(
-        bs.path_matches_cell(DispatchPath::HighStateMachine, 5, 5, &ctx, terrain),
-        "transitioned overlay routes to HighSM"
-    );
-    assert!(
-        !bs.path_matches_cell(DispatchPath::HighDirect, 5, 5, &ctx, terrain),
-        "transitioned overlay must NOT also match HighDirect"
-    );
-
-    // BR-02: a cell still in the raw body range matches HighDirect AND the
-    // High SM block — the SM block's overlay-first driver routes it to the
-    // direct walker, so both blocks fire and consume two BridgeStrength draws.
-    // Re-seed (4, 5) with overlay 0xDC.
-    let bs_mut = sim.bridge_state.as_mut().unwrap();
-    bs_mut.test_seed_cell(
-        4,
-        5,
-        BridgeRuntimeCell {
-            deck_present: true,
-            destroyable: true,
-            deck_level: 4,
-            bridge_group_id: Some(1),
-            damage_state: DamageState::Healthy { variant: 0 },
-            axis: Some(Axis::EW),
-            role: BridgeCellRole::Body,
-            anchor_span_id: Some(1),
-            overlay_byte: 0xDC,
-            bridgehead_anchor_class: crate::sim::bridge_state::BridgeheadAnchorClass::Variant0,
-        },
-    );
-    let bs = sim.bridge_state.as_ref().unwrap();
-    assert!(
-        bs.path_matches_cell(DispatchPath::HighDirect, 4, 5, &ctx, terrain),
-        "raw body overlay routes to HighDirect"
-    );
-    assert!(
-        bs.path_matches_cell(DispatchPath::HighStateMachine, 4, 5, &ctx, terrain),
-        "BR-02: in-band cell also matches the High SM block (overlay-first), consuming a second draw"
-    );
 }
 
 /// Integration test: full apply_bridge_damage_events pipeline on a
@@ -5148,7 +5052,7 @@ fn test_bridge_orchestrator_state_machine_path_collapses_anchor_and_deactivates_
             damage: 15,
             warhead_ref: crate::sim::intern::InternedId::default(),
             is_ion_cannon: true,
-            impact_z: 0, // Z-gate window for level=0 is [-1, 1]
+            impact_z_leptons: 416, // Native structural deck over level0.
         }],
     );
 
@@ -5259,7 +5163,7 @@ fn test_bridge_collapse_is_deterministic_under_replay() {
                 damage: 100,
                 warhead_ref: crate::sim::intern::InternedId::default(),
                 is_ion_cannon: false, // exercises per-path RNG gate
-                impact_z: 4,
+                impact_z_leptons: 416,
             }],
         );
         sim.state_hash()
@@ -5299,7 +5203,7 @@ fn replay_determinism_with_bridge_collapse_and_rim_refresh() {
                 damage: 100,
                 warhead_ref: crate::sim::intern::InternedId::default(),
                 is_ion_cannon: false,
-                impact_z: 4,
+                impact_z_leptons: 416,
             }],
         );
         sim.state_hash()
@@ -5337,7 +5241,7 @@ fn test_bridge_snapshot_roundtrip_preserves_state_after_collapse() {
             damage: 15,
             warhead_ref: crate::sim::intern::InternedId::default(),
             is_ion_cannon: true,
-            impact_z: 4,
+            impact_z_leptons: 416,
         }],
     );
 
@@ -5420,7 +5324,7 @@ fn test_bridge_dispatcher_consumes_one_path_gate_draw_per_non_ion_event() {
             damage: 9999,
             warhead_ref: crate::sim::intern::InternedId::default(),
             is_ion_cannon: false,
-            impact_z: 4,
+            impact_z_leptons: 416,
         }],
     );
 

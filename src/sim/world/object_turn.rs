@@ -477,7 +477,8 @@ impl Simulation {
             .entities
             .get(stable_id)
             .is_some_and(|entity| entity.category == EntityCategory::Structure);
-        sim.object_ai_visit_one(stable_id, rules, object_ctx);
+        let ai = sim.object_ai_visit_one_with_effects(stable_id, rules, object_ctx);
+        outcome.bridge_state_changed |= ai.bridge_state_changed;
         if was_structure
             && sim
                 .substrate

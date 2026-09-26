@@ -44,6 +44,13 @@ pub(crate) struct ObjectAiCtx<'a> {
     pub(crate) miner_config: Option<&'a MinerConfig>,
 }
 
+/// Ephemeral outputs of a single live AI visit, forwarded to the frame result.
+#[derive(Default)]
+pub(super) struct ObjectAiOutcome {
+    pub(super) visited: bool,
+    pub(super) bridge_state_changed: bool,
+}
+
 // P3 oracle probe import — used only by the `#[cfg(test)]` factory_oracle_step_trace.
 #[cfg(test)]
 use crate::sim::production::StepOutcome;
@@ -271,27 +278,31 @@ impl Simulation {
     /// Dispatch one current LogicVector slot. A finishing death sequence calls
     /// UnInit synchronously here, so compacting removal is visible before the
     /// scheduler increments its cursor.
-    pub(crate) fn object_ai_visit_one(
+    pub(super) fn object_ai_visit_one_with_effects(
         &mut self,
         id: u64,
         rules: Option<&RuleSet>,
         ctx: ObjectAiCtx<'_>,
-    ) -> bool {
+    ) -> ObjectAiOutcome {
+        let mut outcome = ObjectAiOutcome {
+            visited: true,
+            ..Default::default()
+        };
         if self.substrate.anims.contains_key(id) {
             if let Some(rules) = rules {
                 self.visit_anim(id, rules, ctx.overlay_registry);
             }
-            return true;
+            return outcome;
         }
         if self.substrate.voxel_anims.contains_key(id) {
             self.visit_voxel_anim(id, rules);
-            return true;
+            return outcome;
         }
         if self.substrate.particle_systems.contains_key(id) {
             if let Some(rules) = rules {
                 crate::sim::particles::system_ai::tick_particle_system(self, rules, id);
             }
-            return true;
+            return outcome;
         }
         if self.production.terrain_objects.contains_key(&id) {
             crate::sim::terrain_spawn::tick_terrain_object_ai(
@@ -301,7 +312,7 @@ impl Simulation {
                 ctx.overlay_registry,
                 ctx.terrain_spawner_cells,
             );
-            return true;
+            return outcome;
         }
         if let Some(projectile) = self.projectiles.get(id) {
             // BulletClass::AI @ 0x00467C3C reads the live firer (+0xB0),
@@ -365,7 +376,7 @@ impl Simulation {
                 .expect("projectile remained present for its Logic slot");
             let terminal = !result.expired.is_empty() || !result.detonations.is_empty();
             if let Some(rules) = rules {
-                self.commit_logic_projectile_detonations(
+                outcome.bridge_state_changed |= self.commit_logic_projectile_detonations(
                     rules,
                     ctx.overlay_registry,
                     &result.detonations,
@@ -380,7 +391,7 @@ impl Simulation {
                 let retired = self.retire_non_entity_object(id);
                 debug_assert!(retired);
             }
-            return true;
+            return outcome;
         }
         if self.waves.get(id).is_some() {
             let context = self.wave_update_context(id);
@@ -407,7 +418,7 @@ impl Simulation {
                 let retired = self.retire_non_entity_object(id);
                 debug_assert!(retired);
             }
-            return true;
+            return outcome;
         }
 
         // Building43FB20 samples its operational edge before delayed Health0
@@ -416,14 +427,15 @@ impl Simulation {
             self.visit_building_operational(id, rules);
         }
         let Some(entity) = self.substrate.entities.get(id) else {
-            return false;
+            return ObjectAiOutcome::default();
         };
         if entity.infantry_terminal.is_some() {
-            return self.visit_infantry_terminal(id, rules, ctx);
+            outcome.visited = self.visit_infantry_terminal(id, rules, ctx);
+            return outcome;
         }
         if entity.dying {
             let Some(rules) = rules else {
-                return true;
+                return outcome;
             };
             let type_ref = entity.type_ref();
             let type_name = self.interner.resolve(type_ref);
@@ -441,7 +453,7 @@ impl Simulation {
                 self.release_move_sound(id);
                 self.uninit_with_rules(id, rules);
             }
-            return true;
+            return outcome;
         }
 
         // UnitClass::AI / InfantryClass::AI test the object-owned TubeMovement
@@ -454,12 +466,22 @@ impl Simulation {
             EntityCategory::Unit | EntityCategory::Infantry
         ) && entity.low_bridge_tube_state.is_some()
         {
-            return true;
+            return outcome;
         }
 
         let category = entity.category;
         techno_ai_shell(self, id, category, rules, ctx);
-        true
+        outcome
+    }
+
+    #[cfg(test)]
+    pub(crate) fn object_ai_visit_one(
+        &mut self,
+        id: u64,
+        rules: Option<&RuleSet>,
+        ctx: ObjectAiCtx<'_>,
+    ) -> bool {
+        self.object_ai_visit_one_with_effects(id, rules, ctx).visited
     }
 
     /// [`Simulation::object_ai_stage`] with the world context the dispatched
