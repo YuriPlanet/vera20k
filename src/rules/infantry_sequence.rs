@@ -522,6 +522,48 @@ pub(crate) fn action_id(kind: SequenceKind) -> u8 {
     }
 }
 
+/// The sequence a native action id plays: the inverse of [`action_id`], for
+/// the ids that have a `SequenceKind`.
+pub(crate) fn action_kind(action: i32) -> Option<SequenceKind> {
+    Some(match action {
+        0 => SequenceKind::Stand,
+        2 => SequenceKind::Prone,
+        3 => SequenceKind::Walk,
+        4 => SequenceKind::Attack,
+        5 => SequenceKind::Down,
+        6 => SequenceKind::Crawl,
+        7 => SequenceKind::Up,
+        8 => SequenceKind::FireProne,
+        9 => SequenceKind::Idle1,
+        10 => SequenceKind::Idle2,
+        11 => SequenceKind::Die1,
+        12 => SequenceKind::Die2,
+        13 => SequenceKind::Die3,
+        14 => SequenceKind::Die4,
+        15 => SequenceKind::Die5,
+        16 => SequenceKind::Tread,
+        17 => SequenceKind::Swim,
+        18 => SequenceKind::WetIdle1,
+        19 => SequenceKind::WetIdle2,
+        22 => SequenceKind::WetAttack,
+        23 => SequenceKind::Hover,
+        24 => SequenceKind::Fly,
+        26 => SequenceKind::FireFly,
+        27 => SequenceKind::Deploy,
+        28 => SequenceKind::Deployed,
+        29 => SequenceKind::DeployedFire,
+        30 => SequenceKind::DeployedIdle,
+        31 => SequenceKind::Undeploy,
+        32 => SequenceKind::Cheer,
+        33 => SequenceKind::Paradrop,
+        37 => SequenceKind::Panic,
+        38 => SequenceKind::Shovel,
+        40 => SequenceKind::SecondaryFire,
+        41 => SequenceKind::SecondaryProne,
+        _ => return None,
+    })
+}
+
 fn action_timing(kind: SequenceKind) -> (u16, bool) {
     let id = action_id(kind);
     (

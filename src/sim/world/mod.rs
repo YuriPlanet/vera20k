@@ -70,6 +70,8 @@ mod aircraft_deployment_tests;
 #[cfg(test)]
 mod crash_tests;
 #[cfg(test)]
+mod jumpjet_infantry_tests;
+#[cfg(test)]
 mod damage_consequence_tests;
 #[cfg(test)]
 mod eva_dispatch_tests;

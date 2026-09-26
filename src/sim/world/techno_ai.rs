@@ -562,7 +562,7 @@ fn techno_ai_shell(
             {
                 return;
             }
-            clear_passive_target_off_mission(sim, id);
+            clear_passive_target_off_mission(sim, id, rules);
             mission_common_step(sim, id, rules);
             if let Some(rules) = rules
                 && mission_handlers_run(sim, id)
@@ -606,7 +606,7 @@ fn techno_ai_shell(
             // scanning, acquiring and firing for the couple of seconds the sale
             // takes. Same shape as the `building_up` residual noted on
             // `passive_acquire_step`.
-            clear_passive_target_off_mission(sim, id);
+            clear_passive_target_off_mission(sim, id, rules);
             // BuildingClass::Update consumes its ready latch via Ready→Commence
             // (`0x0043FE43`/`0x0043FFA3`); with no latch writers live the
             // promotion evaluates to not-ready (recorded residual).
@@ -1373,7 +1373,7 @@ fn unit_techno_bracket(
         return BracketReach::DiedInPre;
     }
     // The off-mission passive-target clear runs BEFORE the +0xC4 counter.
-    clear_passive_target_off_mission(sim, id);
+    clear_passive_target_off_mission(sim, id, rules);
     mission_common_step(sim, id, rules);
     // Mission_Dispatch position: the absorbed handler bodies run here,
     // timer-gated, ending with the verified post-handler epilogue write
@@ -1449,7 +1449,7 @@ const PASSIVE_TARGET_CLEAR_MISSIONS: [MissionType; 12] = [
 /// The off-mission clear, which runs before the AI counter: a passively
 /// acquired target is dropped the moment the object takes a job that should not
 /// be shooting (see [`PASSIVE_TARGET_CLEAR_MISSIONS`]).
-fn clear_passive_target_off_mission(sim: &mut Simulation, id: u64) {
+fn clear_passive_target_off_mission(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
     let drop = sim.substrate.entities.get(id).is_some_and(|entity| {
         entity.attack_target.is_some()
             && entity.passively_acquired_target
@@ -1458,7 +1458,7 @@ fn clear_passive_target_off_mission(sim: &mut Simulation, id: u64) {
     if !drop {
         return;
     }
-    let _ = sim.assign_target_represented(id, None);
+    let _ = sim.assign_target_represented(id, None, rules);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.passively_acquired_target = false;
     }
@@ -3243,7 +3243,7 @@ mod tests {
             e.attack_target = Some(AttackTarget::new(9));
             e.passively_acquired_target = true;
         }
-        clear_passive_target_off_mission(&mut sim, 1);
+        clear_passive_target_off_mission(&mut sim, 1, None);
         let e = sim.substrate.entities.get(1).unwrap();
         assert!(e.attack_target.is_none(), "a scanner target is dropped");
         assert!(!e.passively_acquired_target);
@@ -3254,7 +3254,7 @@ mod tests {
             e.attack_target = Some(AttackTarget::new(9));
             e.passively_acquired_target = false;
         }
-        clear_passive_target_off_mission(&mut sim, 1);
+        clear_passive_target_off_mission(&mut sim, 1, None);
         assert!(
             sim.substrate
                 .entities

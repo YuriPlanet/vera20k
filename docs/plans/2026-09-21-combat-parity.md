@@ -999,6 +999,7 @@ All saved and read back; no byte or prototype edits. One boundary repair (below,
 - `4238B0` Anim Mark (was ProcessCloakMode); `414290` QueryInterface
 - `468B90`/`62FE80`/`75F890`/`74A960` non-entity GetLayer; `4CCB40` Fly ILoco_Process
 - `54CA90` JumpjetLocomotionClass__State5_Crash (was State5_Touchdown); `54AE50` JumpjetLocomotionClass__Is_Moving
+- `520F40` InfantryClass__Movement_Actions (was FootClass__Locomotion_AI); EOLs `521161`, `52117D`, `521228`, `52123C` (the airborne Fly/Hover arm), `51D8C3` (Do_Action's Ready->Hover remap), `51DA96` (Health-0 Stop_Driver re-entry), `520827` (FireFly), `4D3710` (SetSpeedFraction)
 - Missions: `417300` Patrol, `4158E0` ParadropApproach, `415960` ParadropOverfly, `4155F0` SpyplaneApproach, `4157C0` SpyplaneOverfly
 - `4197C0` FindFireLocation (was Find_Approach_Cell)
 - `4CE680` Takeoff_Facing_Callback (was Ascent_Step); `4CD2A0` Process_Phase_Transitions; `4CFE20` Get_Current_Speed
@@ -1212,9 +1213,14 @@ Whole-combat gaps (plan list plus review coverage top 10):
   outer impact anim after its receivers; the fatal prelude after the Techno death arm; verify the
   InfDeath anim's native constructor arguments); the ship sink (`+3CD`, `vt+3A0`, the
   `UnitClass::AI` sinking); a crushed vehicle's `Death_Explosion` (`746D60`); the Jumpjet
-  Infantry crash (Rocketeer, Cosmonaut); the building NowDead contact loop (`442511`, radio 0x17 and the C4 kill of contacts),
+  Infantry crash (Rocketeer, Cosmonaut; its airborne actions are ported, `movement::infantry_action`); the building NowDead contact loop (`442511`, radio 0x17 and the C4 kill of contacts),
   AnimClass::Middle for every explosion anim, the deferred death of `Explodes=`/Selling
   buildings, death specials, the sale crew, passenger escape from dying transports.
+- Infantry DoTypes beyond the Jumpjet-flown (`movement::infantry_action`): the locomotion action
+  tail (`520F40`, Walk/Crawl/Ready/Prone) and the firing arm's Do_Action (FireUp/FireProne/
+  DeployedFire/secondary, `520844..5208FE`) for walkers, whose display stays the animation
+  cascade; `Assign_Target`'s idle Do_Action (`51B214..51B24F`, entity-local -1 today); the
+  `+68D` firing latch producer (`520912`), which readiness reads (`MissionClass` Ready).
 - Homing launch/steering non-native (VERA-built BAM tables, a cosine sidewinder where native uses sine);
   the projectile SHP frame and MagBeam edges still use host trig.
 - The Gattling Cannon's stages (the building attack mission first: Mission_Attack `44ACF0` and

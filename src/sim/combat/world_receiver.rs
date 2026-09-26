@@ -2419,10 +2419,19 @@ fn admit_attacker_fire<'r>(
         if let Some(pending) = snap.pending_infantry_fire {
             if snap.has_movement || snap.animation_sequence != Some(pending.sequence) {
                 out.pending_infantry_updates.push((snap.stable_id, None));
-                out.animation_switches.push((
-                    snap.stable_id,
-                    infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
-                ));
+                // An infantryman whose Doing owns its sequence keeps the one
+                // its last action started.
+                if !world
+                    .substrate
+                    .entities
+                    .get(snap.stable_id)
+                    .is_some_and(crate::sim::movement::infantry_action::doing_owns_sequence)
+                {
+                    out.animation_switches.push((
+                        snap.stable_id,
+                        infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
+                    ));
+                }
                 return None;
             }
             if snap.animation_frame != Some(pending.fire_frame) {
@@ -2526,13 +2535,24 @@ fn admit_attacker_fire<'r>(
         },
         EntityCategory::Infantry => {
             if pending_at_fire_frame {
-                // Block 2 (`0x005209FD`): a refusal ends the fire action.
+                // Block 2 (`0x005209FD`): a refusal ends the fire action. An
+                // infantryman whose Doing owns its sequence takes the idle
+                // Do_Action itself (`0x00520A03..0x00520A51`).
                 if code != fire_error::FireError::Ok {
                     out.pending_infantry_updates.push((snap.stable_id, None));
-                    out.animation_switches.push((
-                        snap.stable_id,
-                        infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
-                    ));
+                    if world
+                        .substrate
+                        .entities
+                        .get(snap.stable_id)
+                        .is_some_and(crate::sim::movement::infantry_action::doing_owns_sequence)
+                    {
+                        world.infantry_fire_refused_action(snap.stable_id, rules);
+                    } else {
+                        out.animation_switches.push((
+                            snap.stable_id,
+                            infantry_idle_sequence(snap.is_prone, snap.is_fully_deployed),
+                        ));
+                    }
                 }
             } else {
                 match code {
@@ -2689,8 +2709,29 @@ fn admit_attacker_fire<'r>(
     };
 
     if infantry_fire_sync && !pending_at_fire_frame {
-        let sequence =
-            infantry_fire_sequence(obj, selected.slot, snap.is_prone, snap.is_fully_deployed);
+        // The fire action `InfantryClass::Fire_At_Target` starts
+        // (`0x0052078F..0x00520904`): a `JumpJet=` type flown by the Jumpjet
+        // locomotor fires in FireFly (`0x00520827`), through Do_Action, and its
+        // FireUp frame still names the discharge (`0x0052095A`).
+        let fire_fly = obj.jumpjet
+            && world
+                .substrate
+                .entities
+                .get(snap.stable_id)
+                .is_some_and(crate::sim::movement::infantry_action::doing_owns_sequence);
+        let sequence = if fire_fly {
+            if let Err(cause) = world.infantry_do_action(
+                snap.stable_id,
+                crate::sim::movement::infantry_action::DO_FIRE_FLY,
+                false,
+                rules,
+            ) {
+                log::debug!("infantry {} FireFly: {cause}", snap.stable_id);
+            }
+            crate::sim::animation::SequenceKind::FireFly
+        } else {
+            infantry_fire_sequence(obj, selected.slot, snap.is_prone, snap.is_fully_deployed)
+        };
         let fire_frame =
             infantry_fire_frame(obj, selected.slot, snap.is_prone, snap.is_fully_deployed);
         out.animation_switches.push((snap.stable_id, sequence));
@@ -3015,15 +3056,17 @@ struct FireAtLaunchAim {
 /// the only stock types with an offset. Effect: a launch speed a few leptons
 /// per frame off.
 ///
-/// RESIDUAL (lead inputs): `Is_Moving` has no VERA answer for a Hover target
-/// (`motion_query::is_moving`), and a Jumpjet vehicle's
-/// current speed reads 0 because the production Jumpjet host does not apply
+/// A Jumpjet target's current speed reads the fraction its `Process` hands
 /// `SetSpeedFraction` (`jumpjet_cruise.rs`; native vt+0x544 at `0x0054B9A4`,
-/// `0x0054C814`, `0x0054D1AE`). Trigger: shots at a moving Kirov, Floating
-/// Disc, Siege Chopper or hover unit. Effect: the shot is not led. A garrison
-/// shot's GetCurrentWeapon would be the occupant's (`BuildingClass::GetWeapon
-/// 0x004526F0`), not the building type's slot; every retail occupant weapon
-/// is Inviso, which never reaches the lead, so it is dormant.
+/// `0x0054C814`, `0x0054D1AE`), so a moving Kirov, Floating Disc, Siege
+/// Chopper or Rocketeer is led.
+///
+/// RESIDUAL (lead inputs): `Is_Moving` has no VERA answer for a Hover target
+/// (`motion_query::is_moving`). Trigger: shots at a moving hover unit.
+/// Effect: the shot is not led. A garrison shot's GetCurrentWeapon would be
+/// the occupant's (`BuildingClass::GetWeapon 0x004526F0`), not the building
+/// type's slot; every retail occupant weapon is Inviso, which never reaches
+/// the lead, so it is dormant.
 fn fireat_launch_aim(
     world: &Simulation,
     rules: &RuleSet,

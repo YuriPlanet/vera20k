@@ -125,6 +125,9 @@ struct CruiseHost<'a> {
     crash_relocated: bool,
     /// State 5 reached the ground: the owner's impact notice is due.
     impact: bool,
+    /// The last `SetSpeedFraction` (owner vtable `+0x544`) of the frame, as the
+    /// native double's bits.
+    speed_fraction: Option<u64>,
 }
 
 impl CruiseHost<'_> {
@@ -281,7 +284,9 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.deploy_to_land
     }
 
-    fn set_speed_fraction(&mut self, _fraction_bits: u64) {}
+    fn set_speed_fraction(&mut self, fraction_bits: u64) {
+        self.speed_fraction = Some(fraction_bits);
+    }
 
     fn arrival_notify(&mut self) {}
 
@@ -496,6 +501,7 @@ struct HostEffects {
     touched_down: bool,
     crash_relocated: bool,
     impact: bool,
+    speed_fraction: Option<u64>,
 }
 
 impl Simulation {
@@ -588,6 +594,7 @@ impl Simulation {
                 map_size,
                 crash_relocated: false,
                 impact: false,
+                speed_fraction: None,
             };
 
             let params = runtime.params;
@@ -615,6 +622,7 @@ impl Simulation {
                 touched_down: host.touched_down,
                 crash_relocated: host.crash_relocated,
                 impact: host.impact,
+                speed_fraction: host.speed_fraction,
             };
             (state, flight, host.location, effects)
         };
@@ -635,6 +643,12 @@ impl Simulation {
         }
         let entity = self.substrate.entities.get_mut(stable_id)?;
         commit_world_location(&mut entity.position, location);
+        // `FootClass::SetSpeedFraction @ 0x004D3710` on the owner, which the
+        // Infantry fire error (`0x0051C9B8`), its locomotion action AI and
+        // GetCurrentSpeed's shot lead read.
+        if let Some(bits) = effects.speed_fraction {
+            entity.foot_speed.set_speed_fraction_native_bits(bits);
+        }
         if effects.grounded_reset {
             entity.on_bridge = false;
         }
@@ -1061,6 +1075,26 @@ mod tests {
                 (expected["body_facing"].as_u64().expect("body facing") >> 8) as u32,
                 "{name}: body facing, frame {index}"
             );
+            // `SetSpeedFraction` reaches Foot `+0x578`: the frame's last native
+            // fraction, clamped to [0, 1] and truncated to `SimFixed`.
+            if let Some(bits) = expected["speed_fractions"]
+                .as_array()
+                .and_then(|fractions| fractions.last())
+            {
+                let value = f64::from_bits(bits.as_u64().expect("fraction bits"));
+                let truncated = if value.is_nan() || value <= 0.0 {
+                    0
+                } else if value >= 1.0 {
+                    1 << 16
+                } else {
+                    (value * 65536.0).floor() as i32
+                };
+                assert_eq!(
+                    entity.foot_speed.applied_fraction.to_bits(),
+                    truncated,
+                    "{name}: speed fraction, frame {index}"
+                );
+            }
             let last = index + 1 == frames.len();
             assert_eq!(stats.arrivals, u32::from(last), "{name}: frame {index}");
         }

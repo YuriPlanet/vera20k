@@ -1939,7 +1939,11 @@ fn infantry_deployed_attack_reacquire(
     // one was found. It writes no `+0x50C`, so the setter leaves the flag
     // clear.
     if had_target || pick.is_some() {
-        let _ = sim.assign_target_represented(id, pick.map(crate::sim::combat::TargetKind::Entity));
+        let _ = sim.assign_target_represented(
+            id,
+            pick.map(crate::sim::combat::TargetKind::Entity),
+            Some(rules),
+        );
     }
     if pick.is_some() {
         return None;

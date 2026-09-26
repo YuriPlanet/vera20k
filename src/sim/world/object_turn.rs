@@ -610,6 +610,18 @@ impl Simulation {
             }
             return Ok(outcome);
         }
+        // `InfantryClass::AI` ends with its sequencer (`0x0051BF6A`) and the
+        // locomotion actions of 0x00520F40 (`0x0051BF7B`), which read the
+        // fraction and state Process just left.
+        if let Some(rules) = rules
+            && sim
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| entity.category == EntityCategory::Infantry)
+        {
+            sim.infantry_action_turn(stable_id, rules);
+        }
         let teleport_armed = sim
             .substrate
             .entities

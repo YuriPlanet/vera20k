@@ -518,7 +518,9 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
     }
 
     fn assign_target(&mut self, target: Option<TargetKind>) {
-        let _ = self.sim.assign_target_represented(self.id, target);
+        let _ = self
+            .sim
+            .assign_target_represented(self.id, target, Some(self.rules));
     }
 
     /// RESIDUAL: Area Guard natively scans around its guard post (the
