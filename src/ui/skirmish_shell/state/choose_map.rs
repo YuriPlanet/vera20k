@@ -13,6 +13,7 @@ use crate::map::skirmish_scenarios::{
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 use crate::ui::shell::list::{ListScrollInteraction, ShellListGeometry};
+use crate::ui::shell::static_reveal::DialogStatics;
 
 use super::super::layout::{ChooseMapModalButton, ChooseMapModalLayout, RectPx};
 
@@ -90,10 +91,11 @@ pub struct ChooseMapModalState {
     pub mode_scroll: ListScrollInteraction,
     pub map_scroll: ListScrollInteraction,
     pub pressed_button: Option<ChooseMapModalButton>,
-    /// The status line's help text. A child sets it from its own mouse
-    /// moves; `0x6B` has no dialog hit test that clears it, so it keeps the
-    /// last text over the background (`0x00611CBA..0x00611E8B`).
-    pub status_help: String,
+    /// Heading `0x694` and status line `0x695`, alive while `0x105` hides
+    /// the chooser. A child writes the status help from its own mouse moves;
+    /// `0x6B` has no dialog hit test that clears it, so it keeps the last
+    /// text over the background (`0x00611CBA..0x00611E8B`).
+    pub(crate) statics: DialogStatics,
     /// Use Map's eject box while it shows.
     pub eject_prompt: Option<EjectPrompt>,
     /// The list window and time/point of the last press on list rows, for
@@ -148,7 +150,7 @@ impl ChooseMapModalState {
             mode_scroll: ListScrollInteraction::default(),
             map_scroll: ListScrollInteraction::default(),
             pressed_button: None,
-            status_help: String::new(),
+            statics: DialogStatics::default(),
             eject_prompt: None,
             last_list: None,
             last_press: None,

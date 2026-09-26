@@ -389,6 +389,90 @@ impl PresentedKind1Static {
     pub(crate) fn is_terminal(&self) -> bool {
         self.pending.is_none() && self.reveal.is_terminal_persistent()
     }
+
+    /// [`Self::paint`] with the static's text.
+    pub(crate) fn paint_text(&mut self, now: Instant) -> Option<StaticPaint<'_>> {
+        let window = self.paint(now)?;
+        Some(StaticPaint {
+            text: &self.text,
+            window,
+        })
+    }
+}
+
+/// One shown static in a recomposition: its text and reveal window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct StaticPaint<'a> {
+    pub text: &'a str,
+    pub window: Kind1RevealWindow,
+}
+
+/// Heading `0x694` and status line `0x695` of a family dialog that another
+/// dialog hides or covers without destroying (`0x6B` under `0x105`, `0x105`
+/// under the seed browser), so they outlive the other dialog's run: text,
+/// started flag and count stay, and its SHOW completion repaints what
+/// already started ([`PresentedKind1Static::show`]).
+#[derive(Debug, Clone)]
+pub(crate) struct DialogStatics {
+    heading: PresentedKind1Static,
+    /// Holds the last hover help.
+    status_line: PresentedKind1Static,
+}
+
+impl Default for DialogStatics {
+    fn default() -> Self {
+        Self {
+            heading: PresentedKind1Static::new(HEADING_KIND1),
+            status_line: PresentedKind1Static::new(STATUS_LINE_KIND1),
+        }
+    }
+}
+
+impl DialogStatics {
+    /// The SHOW completion with the heading the dialog holds.
+    pub(crate) fn show(&mut self, heading: &str, now: Instant) {
+        self.heading.set_text(heading, now);
+        self.heading.show(now);
+        self.status_line.show(now);
+    }
+
+    /// A hover message to the status line (`0x4B2`): a changed help restarts
+    /// a started reveal, and every message repaints the line
+    /// (`0x00615EF7`). Returns whether the help changed.
+    pub(crate) fn hover(&mut self, help: &str, now: Instant) -> bool {
+        let changed = self.status_line.text() != help;
+        self.status_line.set_text(help, now);
+        self.status_line.repaint();
+        changed
+    }
+
+    /// The dialog shows again (`ShowWindow`) or another dialog stops
+    /// covering it: both statics repaint at their counts. An entry slide
+    /// blits the top panel over the heading, while the status line, outside
+    /// the blits and validate-only while the slide runs (`0x00606800` through
+    /// `0x00601360`), keeps those pixels (retail `rmg-cancel.png`).
+    pub(crate) fn shown_again(&mut self) {
+        self.heading.repaint();
+        self.status_line.repaint();
+    }
+
+    pub(crate) fn paint_heading(&mut self, now: Instant) -> Option<StaticPaint<'_>> {
+        self.heading.paint_text(now)
+    }
+
+    pub(crate) fn paint_status_line(&mut self, now: Instant) -> Option<StaticPaint<'_>> {
+        self.status_line.paint_text(now)
+    }
+
+    pub(crate) fn commit_presented(&mut self) {
+        self.heading.commit_presented();
+        self.status_line.commit_presented();
+    }
+
+    /// Both reveals ran to completion and their last paints are on screen.
+    pub(crate) fn is_terminal(&self) -> bool {
+        self.heading.is_terminal() && self.status_line.is_terminal()
+    }
 }
 
 fn next_deadline_after(deadline: Instant, now: Instant, interval: Duration) -> Instant {
@@ -451,7 +535,7 @@ pub(crate) mod tests {
     fn heading_and_status_line_parameters_match_the_native_getters() {
         // Heading 0x694 and status line 0x695: kind 1 (0x00602490), interval
         // 0x00600CA0, step 0x006015E0, range 0x00601D20, executed natively.
-        for dialog in [0xE2, 0x100, 0x101, 0x129, 0xD5, 0x102, 0xB7] {
+        for dialog in [0xE2, 0x100, 0x101, 0x129, 0xD5, 0x102, 0xB7, 0x6B, 0x105] {
             assert_eq!(native_params(dialog, 0x694), HEADING_KIND1, "{dialog:#x}");
             assert_eq!(
                 native_params(dialog, 0x695),
@@ -650,5 +734,42 @@ pub(crate) mod tests {
             })
         );
         assert!(!reveal.poll_timer(start + Duration::from_secs(10)));
+    }
+
+    /// Paint and present both statics once: (heading, status line) counts.
+    fn present_dialog(statics: &mut DialogStatics, now: Instant) -> (Option<u32>, Option<u32>) {
+        let heading = statics.paint_heading(now).map(|shown| shown.window.count);
+        let status = statics
+            .paint_status_line(now)
+            .map(|shown| shown.window.count);
+        statics.commit_presented();
+        (heading, status)
+    }
+
+    #[test]
+    fn dialog_statics_start_once_and_repaint_when_the_dialog_shows_again() {
+        let t0 = Instant::now();
+        let mut statics = DialogStatics::default();
+        // Help written before the SHOW completion is only stored.
+        assert!(statics.hover("Help", t0));
+        assert_eq!(present_dialog(&mut statics, t0), (None, None));
+        statics.show("Choose Map", t0);
+        assert_eq!(present_dialog(&mut statics, t0), (Some(1), Some(1)));
+        let mut now = t0;
+        while !statics.is_terminal() {
+            now += Duration::from_millis(15);
+            present_dialog(&mut statics, now);
+        }
+        // "Choose Map" (10 units): the last timer paint drew 18 of 19;
+        // "Help": 19 of 21 (step 3).
+        assert_eq!(present_dialog(&mut statics, now), (Some(18), Some(19)));
+        // Shown again after another dialog hid it, or uncovered: both repaint
+        // at their counts, which after the last timer paint is the target.
+        statics.shown_again();
+        assert_eq!(present_dialog(&mut statics, now), (Some(19), Some(22)));
+        // The SHOW completion after an entry slide repaints without a restart.
+        statics.show("Choose Map", now);
+        assert_eq!(present_dialog(&mut statics, now), (Some(19), Some(22)));
+        assert!(statics.is_terminal());
     }
 }

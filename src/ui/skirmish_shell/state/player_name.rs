@@ -282,6 +282,33 @@ pub struct SkirmishShellState {
     pub(crate) statics: SkirmishStatics,
 }
 
+/// The family dialog on top of the Skirmish stack. Choose Map `0x6B` hides
+/// `0x102` and the random-map dialog `0x105` hides `0x6B`; the seed browser
+/// (`0xB7`, `0x2B4`, `0x2B5`) opens over `0x105` without hiding it
+/// (`0x00558DD0` creates and shows its own dialog, `0x00622650`,
+/// `0x00622800`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkirmishShellDialog {
+    Skirmish,
+    ChooseMap,
+    RandomMap,
+    SeedBrowser,
+}
+
+impl SkirmishShellState {
+    pub fn top_dialog(&self) -> SkirmishShellDialog {
+        if self.choose_map_modal.is_none() {
+            SkirmishShellDialog::Skirmish
+        } else if self.saved_seed_browser.is_some() {
+            SkirmishShellDialog::SeedBrowser
+        } else if self.random_map_setup_modal.is_some() {
+            SkirmishShellDialog::RandomMap
+        } else {
+            SkirmishShellDialog::ChooseMap
+        }
+    }
+}
+
 impl Default for SkirmishShellState {
     fn default() -> Self {
         let settings = SkirmishSettings::default();

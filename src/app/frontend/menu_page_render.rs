@@ -23,12 +23,12 @@ use crate::ui::shell::static_reveal::Kind1RevealWindow;
 
 /// Menu pages paint the native 156x42 SDBTNANM frame at the control origin.
 /// Mouse hover updates static 0x695 but does not select frame 3. Press selects
-/// frame 4 without moving the art; a runtime-disabled button remains dimmed.
+/// frame 4 without moving the art; a runtime-disabled button keeps its art and
+/// shows its caption in the disabled colour (owner-draw type 1, `0x006135F3`).
 pub(crate) const MENU_PAGE_BUTTON_POLICY: ButtonPolicy = ButtonPolicy {
     art_fit: ArtFit::Native,
     hover_flash: false,
     art_sink_y: 0.0,
-    disabled_dim: true,
 };
 const MENU_PAGE_BUTTON_ALIGN: ShellAlign =
     ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
@@ -214,6 +214,7 @@ pub(crate) fn active_page_title_text(
         ShellSlideKind::WolWelcome => crate::ui::wol_shell::WOL_WELCOME_PAGE.title_key,
         ShellSlideKind::Keyboard => crate::ui::shell::keyboard::KEYBOARD_PAGE.title_key,
         ShellSlideKind::ChooseMap => crate::ui::skirmish_shell::CHOOSE_MAP_TITLE_KEY,
+        ShellSlideKind::RandomMap => crate::ui::skirmish_shell::RANDOM_MAP_TITLE_KEY,
         // The Options heading is the dialog's own resolved label.
         ShellSlideKind::Options => {
             return state
@@ -480,7 +481,6 @@ mod tests {
         assert!(matches!(MENU_PAGE_BUTTON_POLICY.art_fit, ArtFit::Native));
         assert!(!MENU_PAGE_BUTTON_POLICY.hover_flash);
         assert_eq!(MENU_PAGE_BUTTON_POLICY.art_sink_y, 0.0);
-        assert!(MENU_PAGE_BUTTON_POLICY.disabled_dim);
     }
 
     #[test]

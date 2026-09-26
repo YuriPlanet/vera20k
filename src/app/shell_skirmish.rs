@@ -927,7 +927,7 @@ impl App {
         );
     }
 
-    fn localized_status_help_text(state: &AppState, key: &str) -> String {
+    pub(super) fn localized_status_help_text(state: &AppState, key: &str) -> String {
         state
             .process_assets.csf
             .as_ref()
@@ -1002,16 +1002,14 @@ impl App {
         else {
             return;
         };
-        // A child's hover message repaints the status line (`0x00615EF7`).
-        state.frontend.shell_status_line.repaint();
+        // A child's hover message writes and repaints the status line.
         if let Some(modal) = state
             .frontend
             .skirmish_shell_state
             .choose_map_modal
             .as_mut()
-            && modal.status_help != text
+            && modal.statics.hover(&text, std::time::Instant::now())
         {
-            modal.status_help = text;
             state.platform.window.request_redraw();
         }
     }

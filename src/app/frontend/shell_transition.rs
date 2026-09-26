@@ -70,6 +70,8 @@ pub(crate) enum ShellSlideKind {
     ChooseMap,
     /// Dialog 0x108 — the score screen after a skirmish game.
     Score,
+    /// Dialog 0x105 — Choose Map's random-map dialog.
+    RandomMap,
 }
 
 impl ShellSlideKind {
@@ -90,6 +92,7 @@ impl ShellSlideKind {
             ShellSlideKind::Keyboard => 0x00A3,
             ShellSlideKind::ChooseMap => 0x006B,
             ShellSlideKind::Score => 0x0108,
+            ShellSlideKind::RandomMap => 0x0105,
         })
     }
 
@@ -149,6 +152,13 @@ pub(crate) enum ShellExitThen {
     /// Choose Map Create Random Map: `0x6B` slides out and hides
     /// (`0x005E6A03..0x005E6A0B`) before the random-map dialog runs.
     ChooseMapRandomMap,
+    /// Random map Use Map: `0x105` slides out (`0x00595C42` ->
+    /// `0x00622720`), then the chooser selects the map and runs its Use Map
+    /// (`0x005E6A16..0x005E6B2F`) while it stays hidden.
+    RandomMapUse,
+    /// Random map Cancel: `0x105` slides out and the chooser slides in again
+    /// (`0x005E6B47`).
+    RandomMapCancel,
     /// Westwood Online Main Menu (result 0): `0xE2` is recreated.
     WolBack,
     /// Score Continue (result 1, `0x005CA06C`): `0x108` slides out, the
@@ -176,6 +186,7 @@ impl ShellExitThen {
             Self::ChooseMapUse(_) | Self::ChooseMapCancel | Self::ChooseMapRandomMap => {
                 ShellSlideKind::ChooseMap
             }
+            Self::RandomMapUse | Self::RandomMapCancel => ShellSlideKind::RandomMap,
             Self::WolBack | Self::WolApiMissing => ShellSlideKind::WolWelcome,
             Self::ScoreContinue => ShellSlideKind::Score,
         }
@@ -336,6 +347,10 @@ enum ShellWaveCompletion {
     /// Single Player `0x100`, Movies & Credits `0x101` or movie list `0x129`.
     MenuPage,
     Skirmish,
+    /// Choose Map `0x6B`, whose statics outlive the random-map dialog.
+    ChooseMap,
+    /// The random-map dialog `0x105`, whose statics outlive the seed browser.
+    RandomMap,
     /// Score `0x108`: the heading, the status line and the table start.
     Score,
 }
@@ -439,9 +454,10 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::LoadSavedGame
             | ShellSlideKind::Options
             | ShellSlideKind::WolWelcome
-            | ShellSlideKind::Keyboard
-            | ShellSlideKind::ChooseMap => ShellWaveCompletion::MenuPage,
+            | ShellSlideKind::Keyboard => ShellWaveCompletion::MenuPage,
             ShellSlideKind::Skirmish => ShellWaveCompletion::Skirmish,
+            ShellSlideKind::ChooseMap => ShellWaveCompletion::ChooseMap,
+            ShellSlideKind::RandomMap => ShellWaveCompletion::RandomMap,
             ShellSlideKind::Score => ShellWaveCompletion::Score,
         })
     }
@@ -613,15 +629,7 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     }
     let candidate =
         if state.frontend.shell_route.skirmish() || state.frontend.dev_skirmish_shell_enabled {
-            let shell = &state.frontend.skirmish_shell_state;
-            if shell.choose_map_modal.is_none() {
-                ShellSlideKind::Skirmish
-            } else if shell.random_map_setup_modal.is_some() || shell.saved_seed_browser.is_some() {
-                // The chooser hides while the random-map dialogs run.
-                return None;
-            } else {
-                ShellSlideKind::ChooseMap
-            }
+            skirmish_slide_target(&state.frontend.skirmish_shell_state)
         } else if state.frontend.shell_route.single_player() {
             ShellSlideKind::SinglePlayer
         } else if state.frontend.shell_route.movies_and_credits() {
@@ -649,6 +657,19 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
             return None;
         };
     crate::ui::shell::slide::is_slide_eligible(candidate.dialog_id()).then_some(candidate)
+}
+
+/// The shown dialog of the Skirmish stack. `0x105` stays shown under the
+/// seed browser, so closing the browser uncovers it without an entry slide.
+fn skirmish_slide_target(shell: &crate::ui::skirmish_shell::SkirmishShellState) -> ShellSlideKind {
+    use crate::ui::skirmish_shell::SkirmishShellDialog;
+    match shell.top_dialog() {
+        SkirmishShellDialog::Skirmish => ShellSlideKind::Skirmish,
+        SkirmishShellDialog::ChooseMap => ShellSlideKind::ChooseMap,
+        SkirmishShellDialog::RandomMap | SkirmishShellDialog::SeedBrowser => {
+            ShellSlideKind::RandomMap
+        }
+    }
 }
 
 /// Arm a newly created `0xE2` before swapchain acquisition. This deliberately
@@ -715,8 +736,30 @@ pub(crate) fn activate_shell_first_paint_after_acquire(state: &mut AppState) {
         return;
     }
     let effect = ShellLifecycleReducer::from_state(state).observe_target(target, Instant::now());
-    if let ShellEntryEffect::Started(_) = effect {
+    if let ShellEntryEffect::Started(kind) = effect {
         crate::app::App::play_shell_slide_in_sound(state);
+        dialog_shown(state, kind);
+    }
+}
+
+/// A dialog that another one hid shows again (`ShowWindow`, then the entry
+/// slide): the statics it owns repaint what they had (`DialogStatics`); a
+/// new instance's are hidden, so nothing paints.
+fn dialog_shown(state: &mut AppState, kind: ShellSlideKind) {
+    let shell = &mut state.frontend.skirmish_shell_state;
+    match kind {
+        ShellSlideKind::Skirmish => shell.statics.shown_again(),
+        ShellSlideKind::ChooseMap => {
+            if let Some(modal) = shell.choose_map_modal.as_mut() {
+                modal.statics.shown_again();
+            }
+        }
+        ShellSlideKind::RandomMap => {
+            if let Some(setup) = shell.random_map_setup_modal.as_mut() {
+                setup.statics.shown_again();
+            }
+        }
+        _ => {}
     }
 }
 
@@ -763,7 +806,7 @@ pub(crate) fn render_shell_first_paint_slide(
     ShellLifecycleReducer::from_state(state).advance_wave(Instant::now());
 
     let rendered = match kind {
-        ShellSlideKind::Skirmish | ShellSlideKind::ChooseMap => {
+        ShellSlideKind::Skirmish | ShellSlideKind::ChooseMap | ShellSlideKind::RandomMap => {
             if !crate::app::App::ensure_skirmish_shell_chrome(state) {
                 log::warn!("Skirmish shell chrome unavailable; cancelling first-paint slide");
                 state.frontend.shell_first_paint_slide = None;
@@ -868,6 +911,30 @@ pub(crate) fn render_shell_first_paint_slide(
                 .statics
                 .show(&title, &game_type, &map_label, now);
         }
+        Some(ShellWaveCompletion::ChooseMap) => {
+            let now = Instant::now();
+            let title = crate::app::frontend::menu_page_render::active_page_title_text(state, kind);
+            if let Some(modal) = state
+                .frontend
+                .skirmish_shell_state
+                .choose_map_modal
+                .as_mut()
+            {
+                modal.statics.show(&title, now);
+            }
+        }
+        Some(ShellWaveCompletion::RandomMap) => {
+            let now = Instant::now();
+            let title = crate::app::frontend::menu_page_render::active_page_title_text(state, kind);
+            if let Some(setup) = state
+                .frontend
+                .skirmish_shell_state
+                .random_map_setup_modal
+                .as_mut()
+            {
+                setup.statics.show(&title, now);
+            }
+        }
         // Menu pages start their heading reveal on the same edge (0xE2 starts
         // its own in the presented-entry completion transaction).
         Some(ShellWaveCompletion::MenuPage) => {
@@ -926,6 +993,37 @@ mod tests {
             start(true, shown, shown, false),
             ExitStartRule::AlreadyLeaving
         );
+    }
+
+    #[test]
+    fn the_seed_browser_leaves_the_random_map_dialog_shown() {
+        use crate::ui::skirmish_shell::{
+            ChooseMapModalState, RandomMapSetupModalState, SavedSeedBrowserState, SavedSeedMode,
+            SkirmishShellState, compute_choose_map_modal_layout,
+        };
+        let mut shell = SkirmishShellState::default();
+        assert_eq!(skirmish_slide_target(&shell), ShellSlideKind::Skirmish);
+        let chooser = compute_choose_map_modal_layout(800, 600);
+        shell.choose_map_modal = Some(ChooseMapModalState::open(1, None, &[], &[], &chooser));
+        assert_eq!(skirmish_slide_target(&shell), ShellSlideKind::ChooseMap);
+        let options = crate::map::rmg::options::RmgOptions {
+            seed: 1,
+            ..Default::default()
+        };
+        shell.random_map_setup_modal = Some(RandomMapSetupModalState::open(options, None, false));
+        assert_eq!(skirmish_slide_target(&shell), ShellSlideKind::RandomMap);
+        // Load, Save and Delete Map run the browser over `0x105` without
+        // hiding it (`0x0059693F` -> `0x00558DD0`): no target change, so
+        // closing the browser starts no entry slide.
+        shell.saved_seed_browser = Some(SavedSeedBrowserState::open(
+            SavedSeedMode::Load,
+            Vec::new(),
+            "".into(),
+            "".into(),
+            0,
+            1,
+        ));
+        assert_eq!(skirmish_slide_target(&shell), ShellSlideKind::RandomMap);
     }
 
     #[test]

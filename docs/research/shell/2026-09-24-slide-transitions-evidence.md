@@ -339,8 +339,11 @@ captures of retail YR at 800x600 (SHA-256 prefixes: `to-mm.png` `71ad979c`,
   longer column. The production shell runs at 800x600 or 640x480, so only
   `--shell-capture` sizes reach it.
 - **Other slide-capable dialogs.** `0x0060C540` also marks Options `0xD5`,
-  Load `0xB7`, Score `0x108`, Choose Map `0x6B` and the in-game menu dialogs
-  (`0xB5`, `0xB6`, `0xB8`, `0xBBA`, `0xBBB`). None of them slides here yet.
+  Load `0xB7`, Score `0x108`, Choose Map `0x6B`, the random-map dialog `0x105`
+  (`0x0060C5F7`), the seed browser's save and delete forms (`0x2B4`, `0x2B5`)
+  and the in-game menu dialogs (`0xB5`, `0xB6`, `0xB8`, `0xBBA`, `0xBBB`). The
+  shell pages slide since their chains; the seed browser (`0xB7`, `0x2B4`,
+  `0x2B5`) and the in-game menus do not yet.
 - **Skirmish Back backdrop.** After Back's slide-out, retail paints the empty
   backdrop (`0x006AE3CF`) before state 1 shows `0x100`. VERA20k goes straight to
   `0x100`'s entry slide, whose first tick shows the same shuttered rows over the

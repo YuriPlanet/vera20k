@@ -13,16 +13,17 @@ use crate::render::shell_text::{self, ShellAlign, ShellTextDraw, TextRect};
 use crate::skirmish_modes::mode_by_id;
 use crate::ui::main_menu::SkirmishCountry;
 use crate::ui::shell::modal::BodyOkLayout;
+use crate::ui::shell::static_reveal::StaticPaint;
 use crate::ui::skirmish_shell::{
     CHOOSE_MAP_TITLE_KEY, COMBO_DROPDOWN_ROW_H, COMBO_FACE_H, COMBO_TEXT_LEFT_INSET,
-    ChooseMapModalButton, ChooseMapModalLayout, OwnerDrawButton, RandomMapSetupLayout, RectPx,
-    SETUP_COMBO_ROWS, SavedSeedLayout, SkirmishAiRowType, SkirmishCheckboxId, SkirmishComboId,
-    SkirmishComboItem, SkirmishCountryChoice, SkirmishShellLayout, SkirmishShellOpponent,
-    SkirmishShellState, SkirmishTrackbarId, StaticPaint, checkbox_text_rect,
-    combo_dropdown_content_rect, combo_dropdown_rect, combo_dropdown_visible_row_count,
-    combo_enabled, combo_items, combo_text_rect, player_name_edit_text_rect, player_row_visible,
-    random_map_setup_dropdown_rect, setup_combo_items, trackbar_value_text_rect,
-    trackbar_visual_value,
+    ChooseMapModalButton, ChooseMapModalLayout, OwnerDrawButton, RandomMapSetupControl,
+    RandomMapSetupLayout, RectPx, SETUP_COMBO_ROWS, SavedSeedLayout, SkirmishAiRowType,
+    SkirmishCheckboxId, SkirmishComboId, SkirmishComboItem, SkirmishCountryChoice,
+    SkirmishShellLayout, SkirmishShellOpponent, SkirmishShellState, SkirmishTrackbarId,
+    checkbox_text_rect, combo_dropdown_content_rect, combo_dropdown_rect,
+    combo_dropdown_visible_row_count, combo_enabled, combo_items, combo_text_rect,
+    player_name_edit_text_rect, player_row_visible, random_map_setup_dropdown_rect,
+    setup_combo_items, trackbar_value_text_rect, trackbar_visual_value,
 };
 
 use super::controls::trackbar_rect_for_id;
@@ -165,10 +166,11 @@ pub(super) fn button_label_color() -> [f32; 3] {
 }
 
 /// Retail provenance: disabled `OwnerDraw_Button_00612B70` replaces the normal
-/// yellow label with its disabled palette color at `0x00612F5F`.
+/// yellow label with its disabled color at `0x00612F5F`
+/// ([`crate::render::shell_paint::SHELL_TEXT_RGB_DISABLED`]).
 pub(super) fn button_label_color_for_disabled(disabled: bool) -> [f32; 3] {
     if disabled {
-        SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
+        crate::render::shell_paint::SHELL_TEXT_RGB_DISABLED
     } else {
         button_label_color()
     }
@@ -435,52 +437,65 @@ pub(crate) fn skirmish_right_panel_label_strings(state: &AppState) -> (String, S
     (title, game_type, map_label)
 }
 
-/// Paint `0x102`'s kind-1 statics for this recomposition: the heading, game
-/// type and map name centred in their windows and the status line top-left
+/// A kind-1 static's label: the Path-A reveal of its text in its window
 /// (kind-1 paint passes the window's horizontal alignment only,
-/// `0x00615A81`). Hidden statics and a blank status line draw nothing.
-pub(super) fn paint_skirmish_statics(
-    state: &mut AppState,
-    layout: &SkirmishShellLayout,
-) -> Vec<PaintLabel<'static>> {
-    let paint = state
-        .frontend
-        .skirmish_shell_state
-        .statics
-        .paint(std::time::Instant::now());
-    let label = |shown: StaticPaint<'_>, rect: RectPx, align: ShellAlign| PaintLabel {
+/// `0x00615A81`).
+pub(super) fn static_label(
+    shown: StaticPaint<'_>,
+    rect: RectPx,
+    align: ShellAlign,
+) -> PaintLabel<'static> {
+    PaintLabel {
         text: shown.text.to_owned().into(),
         rect,
         align,
         rgb: SHELL_LABEL_TEXT_RGB,
         path_a_reveal: Some(shell_reveal_path_a(shown.window)),
-    };
-    [
-        paint
-            .heading
-            .map(|shown| label(shown, layout.right_panel_text.title, ShellAlign::H_CENTER)),
-        paint.game_type.map(|shown| {
-            label(
-                shown,
-                layout.right_panel_text.game_type,
-                ShellAlign::H_CENTER,
-            )
-        }),
-        paint.map_label.map(|shown| {
-            label(
-                shown,
-                layout.right_panel_text.map_label,
-                ShellAlign::H_CENTER,
-            )
-        }),
-        paint
-            .status_line
-            .filter(|shown| !shown.text.is_empty())
-            .map(|shown| label(shown, layout.status_help, ShellAlign::NONE)),
-    ]
-    .into_iter()
-    .flatten()
-    .collect()
+    }
+}
+
+/// A status line's label, top-left in its window; nothing while it is
+/// hidden or blank.
+pub(super) fn status_line_label(
+    shown: Option<StaticPaint<'_>>,
+    rect: RectPx,
+) -> Option<PaintLabel<'static>> {
+    shown
+        .filter(|shown| !shown.text.is_empty())
+        .map(|shown| static_label(shown, rect, ShellAlign::NONE))
+}
+
+/// Paint `0x102`'s kind-1 statics for this recomposition. While a slide runs
+/// it blits the top panel over the heading, game type and map name; the
+/// status line keeps what it painted when the dialog showed.
+pub(super) fn paint_skirmish_statics(
+    state: &mut AppState,
+    layout: &SkirmishShellLayout,
+    sliding: bool,
+) -> Vec<PaintLabel<'static>> {
+    let now = std::time::Instant::now();
+    let statics = &mut state.frontend.skirmish_shell_state.statics;
+    let mut labels = Vec::with_capacity(4);
+    if !sliding {
+        let panel = statics.paint_right_panel(now);
+        let text = &layout.right_panel_text;
+        labels.extend(
+            [
+                (panel.heading, text.title),
+                (panel.game_type, text.game_type),
+                (panel.map_label, text.map_label),
+            ]
+            .into_iter()
+            .filter_map(|(shown, rect)| {
+                shown.map(|shown| static_label(shown, rect, ShellAlign::H_CENTER))
+            }),
+        );
+    }
+    labels.extend(status_line_label(
+        statics.paint_status_line(now),
+        layout.status_help,
+    ));
+    labels
 }
 
 pub(super) fn push_player_name_edit_text_draw(
@@ -789,20 +804,12 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     out: &mut Vec<ShellTextDraw>,
     state: &AppState,
     layout: &RandomMapSetupLayout,
+    // While a slide runs the column draws the right buttons without captions.
+    sliding: bool,
 ) {
     let Some(modal) = state.frontend.skirmish_shell_state.random_map_setup_modal.as_ref() else {
         return;
     };
-
-    push_text_draw(
-        out,
-        state,
-        &localized_label(state, "GUI:GenerateMap", "Generate Map"),
-        rect_to_text_rect(layout.title),
-        SHELL_LABEL_TEXT_RGB,
-        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-        SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
-    );
 
     // Row order: map type, time, theater, size, resources, players. The 0x405
     // label reads "Environment" even though the control writes the map type.
@@ -828,21 +835,72 @@ pub(super) fn push_random_map_setup_modal_text_draws(
         );
     }
 
-    for (key, fallback, rect) in [
-        ("GUI:SurpriseMe", "Surprise Me", layout.randomize),
-        ("GUI:PreviewMap", "Preview Map", layout.generate),
-        ("GUI:UseMap", "Use Map", layout.use_map),
-        ("GUI:LoadMap", "Load Map", layout.load),
-        ("GUI:SaveMap", "Save Map", layout.save),
-        ("GUI:DeleteMap", "Delete Map", layout.delete),
-        ("GUI:Cancel", "Cancel", layout.cancel),
+    for (key, fallback, rect, control) in [
+        (
+            "GUI:SurpriseMe",
+            "Surprise Me",
+            layout.randomize,
+            RandomMapSetupControl::Randomize0x621,
+        ),
+        (
+            "GUI:PreviewMap",
+            "Preview Map",
+            layout.generate,
+            RandomMapSetupControl::Generate0x620,
+        ),
     ] {
         push_text_draw(
             out,
             state,
             &localized_label(state, key, fallback),
             rect_to_text_rect(rect),
-            SHELL_LABEL_TEXT_RGB,
+            button_label_color_for_disabled(!modal.is_enabled(control)),
+            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
+        );
+    }
+    // The column's owner-draw type-1 captions, as on `0x102` and `0x6B`.
+    for (key, fallback, rect, control) in [
+        (
+            "GUI:UseMap",
+            "Use Map",
+            layout.use_map,
+            RandomMapSetupControl::Ok0x6c5,
+        ),
+        (
+            "GUI:LoadMap",
+            "Load Map",
+            layout.load,
+            RandomMapSetupControl::Load0x6c2,
+        ),
+        (
+            "GUI:SaveMap",
+            "Save Map",
+            layout.save,
+            RandomMapSetupControl::Save0x6c3,
+        ),
+        (
+            "GUI:DeleteMap",
+            "Delete Map",
+            layout.delete,
+            RandomMapSetupControl::Delete0x6c4,
+        ),
+        (
+            "GUI:Cancel",
+            "Cancel",
+            layout.cancel,
+            RandomMapSetupControl::Cancel0x5c0,
+        ),
+    ]
+    .into_iter()
+    .filter(|_| !sliding)
+    {
+        push_text_draw(
+            out,
+            state,
+            &localized_label(state, key, fallback),
+            button_text_rect(rect, modal.pressed_control == Some(control)),
+            button_label_color_for_disabled(!modal.is_enabled(control)),
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
             SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
         );

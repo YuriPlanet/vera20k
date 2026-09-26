@@ -693,7 +693,12 @@ impl App {
                 }
             };
             if accept {
-                Self::accept_random_map_setup(state);
+                // The generate block ran inside Use Map; the dialog then
+                // ends through its teardown slide.
+                Self::leave_shell_dialog(
+                    state,
+                    crate::app::frontend::shell_transition::ShellExitThen::RandomMapUse,
+                );
             }
             return true;
         }
@@ -748,7 +753,7 @@ impl App {
     /// That matters beyond tidiness: a late finish would otherwise overwrite
     /// `RandMap.img`, changing the chooser's thumbnail to a map the player
     /// walked away from.
-    fn cancel_random_map_setup(state: &mut AppState) {
+    pub(super) fn cancel_random_map_setup(state: &mut AppState) {
         let ra2_dir = state
             .platform
             .game_config
@@ -766,7 +771,7 @@ impl App {
 
     /// Commit the dialog's options and close it. Shared by the immediate accept
     /// and the one deferred behind a generation.
-    fn accept_random_map_setup(state: &mut AppState) {
+    pub(super) fn accept_random_map_setup(state: &mut AppState) {
         let ra2_dir = state
             .platform
             .game_config
@@ -1046,6 +1051,27 @@ impl App {
     pub(super) fn handle_random_map_setup_mouse_move(state: &mut AppState) {
         let layout = Self::skirmish_random_map_setup_layout(state);
         let x = state.match_state.input.cursor_x.round() as i32;
+        let y = state.match_state.input.cursor_y.round() as i32;
+        // `0x105`'s proc runs the common handler first (`0x0059631A`): every
+        // move writes the help of the control under the pointer, or an empty
+        // one, and repaints the status line.
+        let help = crate::ui::skirmish_shell::random_map_setup_control_at(&layout, x, y)
+            .map(|control| {
+                Self::localized_status_help_text(
+                    state,
+                    crate::ui::skirmish_shell::status_help_key_for_random_map_setup(control),
+                )
+            })
+            .unwrap_or_default();
+        if let Some(setup) = state
+            .frontend
+            .skirmish_shell_state
+            .random_map_setup_modal
+            .as_mut()
+            && setup.statics.hover(&help, std::time::Instant::now())
+        {
+            state.platform.window.request_redraw();
+        }
         let Some(modal) = state
             .frontend
             .skirmish_shell_state
@@ -1209,11 +1235,18 @@ impl App {
             // Accept, if it was asked for, is now the job's responsibility.
             return true;
         }
+        // Both results end the dialog through its teardown slide.
         if accept_requested {
-            Self::accept_random_map_setup(state);
+            Self::leave_shell_dialog(
+                state,
+                crate::app::frontend::shell_transition::ShellExitThen::RandomMapUse,
+            );
         }
         if close_setup {
-            Self::cancel_random_map_setup(state);
+            Self::leave_shell_dialog(
+                state,
+                crate::app::frontend::shell_transition::ShellExitThen::RandomMapCancel,
+            );
         }
         true
     }
