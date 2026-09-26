@@ -23,6 +23,9 @@ use crate::sim::intern::{InternedId, StringInterner};
 #[derive(Debug, Clone, Default)]
 pub struct TypeHandleTable {
     by_interned: Vec<Option<TypeHandle>>,
+    /// Distinct for every build (0 while unbuilt), so a cache of reads made
+    /// through the table can tell a rebuilt table from the one it read.
+    build_serial: u64,
 }
 
 impl TypeHandleTable {
@@ -36,7 +39,16 @@ impl TypeHandleTable {
             let name = interner.resolve(InternedId::from_index(idx));
             by_interned.push(rules.type_handle(name));
         }
-        Self { by_interned }
+        static BUILDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        Self {
+            by_interned,
+            build_serial: BUILDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
+        }
+    }
+
+    /// Which build this table is (see `build_serial`).
+    pub(crate) fn build_serial(&self) -> u64 {
+        self.build_serial
     }
 
     /// Resolve an interned id to its handle, if it names an object.

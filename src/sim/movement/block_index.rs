@@ -28,11 +28,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseAllianceMap;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::entity_store::{EntityStore, TouchedEntities};
+use crate::sim::entity_store::{EntityStore, TouchReader};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::pathfinding::{EntityBlockEntry, LayeredEntityBlockMap, MovingAllyOccupant};
+use crate::sim::touch_log::Touched;
 
 /// One owner's product: the cells buildings block, and the per-cell soft
 /// blockers as that owner's movers see them.
@@ -394,17 +395,17 @@ pub(crate) struct TouchedBacklog {
 }
 
 impl TouchedBacklog {
-    fn absorb(&mut self, touched: &TouchedEntities) {
+    fn absorb(&mut self, touched: &Touched) {
         match touched {
-            TouchedEntities::All => self.set_everything(),
-            TouchedEntities::Ids(ids) if !self.everything => {
+            Touched::All => self.set_everything(),
+            Touched::Ids(ids) if !self.everything => {
                 self.ids.extend(ids.iter().copied());
                 // Nobody is taking this backlog: stop growing it.
                 if self.ids.len() > 1 << 16 {
                     self.set_everything();
                 }
             }
-            TouchedEntities::Ids(_) => {}
+            Touched::Ids(_) => {}
         }
     }
 
@@ -449,7 +450,7 @@ impl OwnerBlockIndex {
     /// Move the store's touch log into this index's backlog and the
     /// forwarded one.
     fn drain_log(&mut self, entities: &mut EntityStore) {
-        let touched = entities.take_touched();
+        let touched = entities.take_touched(TouchReader::BlockIndex);
         self.pending.absorb(&touched);
         self.forwarded.absorb(&touched);
     }
@@ -592,7 +593,7 @@ fn debug_assert_current(
     rules: Option<&RuleSet>,
 ) {
     debug_assert!(
-        !super::movement_occupancy::live_read_check_enabled()
+        !crate::sim::touch_log::live_read_check_enabled()
             || *product == build_owner_block_set(entities, owner, alliances, interner, rules),
         "owner block sets for {owner} diverged from a build of the whole world"
     );

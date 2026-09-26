@@ -1210,12 +1210,11 @@ fn advance_ordinary_mover(
         .get(entity_id)
         .and_then(|mover| MoverBuildingEntryFacts::new(mover, rules));
     #[cfg(debug_assertions)]
-    let building_entry_skip_check =
-        super::movement_occupancy::live_read_check_enabled().then(|| {
-            super::movement_occupancy::build_live_building_entry_skip_map(
-                entities, entity_id, interner, rules,
-            )
-        });
+    let building_entry_skip_check = crate::sim::touch_log::live_read_check_enabled().then(|| {
+        super::movement_occupancy::build_live_building_entry_skip_map(
+            entities, entity_id, interner, rules,
+        )
+    });
     let deferred_entry_skips = DeferredBuildingEntrySkips {
         mover: mover_building_entry_facts.as_ref(),
         rules,
@@ -1228,7 +1227,7 @@ fn advance_ordinary_mover(
     // read live from the store while the mover is lifted out of it.
     let mover_marker_peer = bridge_marker_peer(entities, entity_id, rules, interner);
     #[cfg(debug_assertions)]
-    let marker_peer_check = super::movement_occupancy::live_read_check_enabled()
+    let marker_peer_check = crate::sim::touch_log::live_read_check_enabled()
         .then(|| super::path_markers::snapshot_bridge_marker_peers(entities, rules, interner));
     let deferred_marker = path_grid.map(|grid| DeferredBridgeMarker {
         mover_id: entity_id,
@@ -2501,7 +2500,7 @@ impl MovementPassCache {
             .expect("plane was just ensured")
             .plane;
         debug_assert!(
-            !super::movement_occupancy::live_read_check_enabled()
+            !crate::sim::touch_log::live_read_check_enabled()
                 || *plane
                     == bump_crush::build_blocker_neighbor_counts_with_overlays(
                         entities,

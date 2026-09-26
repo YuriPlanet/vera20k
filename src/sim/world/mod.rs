@@ -40,6 +40,7 @@ mod display_registry;
 mod fly_landing;
 mod fly_orders;
 mod frame_error;
+mod ground_keys;
 mod lifecycle;
 mod load_object_lifecycle;
 mod logic_vector;

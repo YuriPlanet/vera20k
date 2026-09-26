@@ -1,11 +1,14 @@
 //! DisplayClass lifecycle queries. The vectors belong to ObjectSubstrate;
-//! queries borrow the object stores without copying coordinates or sort keys.
-//! Ground rendering and entity picking consume the retained vectors. Upper-layer
-//! GPU interleaving and remaining locomotor resubmission writers are still open.
+//! queries borrow the object stores without copying coordinates. Ground
+//! comparisons read kept sort keys (`ground_keys`), forgotten from the entity
+//! and anim touch logs before each scan. Ground rendering and entity picking
+//! consume the retained vectors. Upper-layer GPU interleaving and remaining
+//! locomotor resubmission writers are still open.
 //! Native query/membership comparisons: tools/spatial_oracle/display_non_entity.json.
 
 use super::Simulation;
 use super::display_layers::DisplayLayer;
+use super::ground_keys::{GroundSortKeys, KeptSortKey, ReadContext};
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::LocomotorKind;
@@ -102,7 +105,8 @@ fn entity_sort_key(
 }
 
 /// Ground comparisons read the live receiver each time (5F6220), independently
-/// of Logic membership. Air/Surface/Top insertions never call GetYSort.
+/// of Logic membership; the kept keys return what that read would. Air,
+/// Surface and Top insertions never call GetYSort.
 struct GroundSortView<'a> {
     entities: &'a crate::sim::entity_store::EntityStore,
     anims: &'a crate::sim::anim_class::AnimStore,
@@ -113,8 +117,13 @@ struct GroundSortView<'a> {
     rules: Option<&'a RuleSet>,
 }
 
-impl GroundSortView<'_> {
-    fn key(&self, id: u64) -> i32 {
+/// Each read says what it may keep: the key of an entity, an unattached anim
+/// or a terrain object until the object is forgotten (a Building's key also
+/// reads the rules and the type handle table, which the read context
+/// covers), an attached anim's own term (its owner's is kept per owner), and
+/// nothing for particle systems, whose AI moves them without a touch log.
+impl GroundSortKeys for GroundSortView<'_> {
+    fn read(&self, id: u64) -> (i32, KeptSortKey) {
         if let Some(entity) = self.entities.get(id) {
             // Only BuildingClass GetYSort reads type terms. Every sort pass
             // and Ground insert evaluates this; the handle hop never allocates.
@@ -126,17 +135,27 @@ impl GroundSortView<'_> {
                     })
                 })
                 .flatten();
-            return entity_sort_key(entity, object);
+            let key = entity_sort_key(entity, object);
+            return (key, KeptSortKey::Key(key));
         }
         if let Some(system) = self.particles.get(id) {
             // ParticleSystem VT7EFB9C: +AC ->41BE00 ->+48 ->5F65A0,
             // +B8 ->5F6BD0. Attachment updates coords in its AI, not here.
-            return system.coords.x.wrapping_add(system.coords.y);
+            let key = system.coords.x.wrapping_add(system.coords.y);
+            return (key, KeptSortKey::Unknown);
         }
         if let Some(anim) = self.anims.get(id) {
             // Anim422BC0 -> Object5F6BD0 -> GetCoords422BE0, then retained
             // instance+104. Type changes do not recopy this constructor field.
-            return crate::sim::anim_class::anim_display_sort_key(anim, self.entities);
+            let key = crate::sim::anim_class::anim_display_sort_key(anim, self.entities);
+            let kept = match anim.owner_entity {
+                Some(owner) => KeptSortKey::Attached {
+                    own: crate::sim::anim_class::anim_own_sort_term(anim),
+                    owner,
+                },
+                None => KeptSortKey::Key(key),
+            };
+            return (key, kept);
         }
         if let Some(terrain) = self.terrain.get(&id) {
             // Terrain ctor71BC4A..71BC76 sign-extends the cell coordinates,
@@ -144,9 +163,17 @@ impl GroundSortView<'_> {
             // Object GetYSort5F6BD0; terrain has no runtime relocation writer.
             let x = i32::from(terrain.rx as i16) * 256 + 128;
             let y = i32::from(terrain.ry as i16) * 256 + 128;
-            return x.wrapping_add(y);
+            let key = x.wrapping_add(y);
+            return (key, KeptSortKey::Key(key));
         }
         panic!("unrepresented Ground display identity {id}");
+    }
+
+    /// A dangling owner adds nothing (`anim_world_coords`).
+    fn owner_term(&self, owner: u64) -> i32 {
+        self.entities
+            .get(owner)
+            .map_or(0, crate::sim::anim_class::anim_owner_sort_term)
     }
 }
 
@@ -157,6 +184,9 @@ impl Simulation {
         layer: DisplayLayer,
         rules: Option<&RuleSet>,
     ) {
+        if layer == DisplayLayer::GROUND {
+            self.forget_changed_ground_keys(rules);
+        }
         let view = GroundSortView {
             entities: &self.substrate.entities,
             anims: &self.substrate.anims,
@@ -166,9 +196,26 @@ impl Simulation {
             type_handles: &self.type_handles,
             rules,
         };
+        self.substrate.display.submit(id, Some(layer), &view);
+    }
+
+    /// Forget the kept Ground keys whose inputs the entity and anim stores
+    /// handed out mutably since the last Ground scan, and all of them when
+    /// the rules or the type handle table differ from what they were read
+    /// under.
+    fn forget_changed_ground_keys(&mut self, rules: Option<&RuleSet>) {
+        let context = ReadContext {
+            rules: rules.map(|rules| std::ptr::from_ref(rules) as usize),
+            type_handles: self.type_handles.build_serial(),
+        };
+        let entities = self
+            .substrate
+            .entities
+            .take_touched(crate::sim::entity_store::TouchReader::GroundKeys);
+        let anims = self.substrate.anims.take_touched();
         self.substrate
             .display
-            .submit(id, Some(layer), |id| view.key(id));
+            .forget_changed_ground_keys(context, [entities, anims]);
     }
 
     pub(super) fn submit_entity_display(
@@ -216,6 +263,7 @@ impl Simulation {
     }
 
     pub(super) fn sort_display_ground(&mut self, rules: Option<&RuleSet>) {
+        self.forget_changed_ground_keys(rules);
         let view = GroundSortView {
             entities: &self.substrate.entities,
             anims: &self.substrate.anims,
@@ -225,7 +273,7 @@ impl Simulation {
             type_handles: &self.type_handles,
             rules,
         };
-        self.substrate.display.sort_ground_pass(|id| view.key(id));
+        self.substrate.display.sort_ground_pass(&view);
     }
 }
 
@@ -379,6 +427,159 @@ mod tests {
                         entity_layer(entity, Some(&terrain), Some(&rules)),
                         DisplayLayer::from_index(row["layer"].as_u64().unwrap() as u8).unwrap(),
                         "{name}, cached height {cached_height}",
+                    );
+                }
+            }
+        }
+    }
+
+    /// Kept Ground keys through the production entry points. Units move by
+    /// `get_mut` and in their own turn, the anims attached to them follow,
+    /// anims move by themselves, members leave and rejoin, and scans switch
+    /// between rules and none and follow a type handle rebuild. Before each
+    /// scan the display is copied through its saved form, which keeps
+    /// nothing, and the copy repeats the scan reading every key live: both
+    /// must order Ground alike.
+    #[test]
+    fn kept_ground_keys_follow_moving_owners_through_production_entry_points() {
+        use super::super::display_layers::DisplayLayers;
+        use crate::rules::art_data::ArtRegistry;
+        use crate::sim::anim_class::AnimWorldCoord;
+        use crate::sim::components::{AnimClassSpawnDescriptor, Health};
+
+        let mut rules = RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=GATE\n[GATE]\nStrength=100\nGate=yes\n\
+             [General]\nDamageFireTypes=\n\
+             [AudioVisual]\nConditionYellow=50%\nConditionRed=25%\n",
+        ))
+        .unwrap();
+        let mut art = ArtRegistry::from_ini(&IniFile::from_str("[SPARK]\nLayer=Ground\n"));
+        art.bind_anim_frame_count_for_test("SPARK", 8);
+        rules.art_registry = art;
+        let mut sim = Simulation::new();
+        let house = sim.interner.intern("Americans");
+        let unit_type = sim.interner.intern("MTNK");
+        let gate_type = sim.interner.intern("GATE");
+        let spark = sim.interner.intern("SPARK");
+        let mut units = Vec::new();
+        for index in 0..5u16 {
+            let id = sim.allocate_stable_id();
+            let (category, type_ref) = if index == 4 {
+                (EntityCategory::Structure, gate_type)
+            } else {
+                (EntityCategory::Unit, unit_type)
+            };
+            let mut entity = GameEntity::new_at_frame_zero_for_test(
+                id,
+                10 + index,
+                13 - index,
+                0,
+                0,
+                house,
+                Health { current: 100 },
+                type_ref,
+                category,
+                0,
+                5,
+                false,
+            );
+            entity.position.sub_x = SimFixed::from_num(128);
+            entity.position.sub_y = SimFixed::from_num(128);
+            sim.entities_mut().insert(entity);
+            sim.submit_object_display(id, DisplayLayer::GROUND, Some(&rules));
+            units.push(id);
+        }
+        let mut anims = Vec::new();
+        for index in 0..8i32 {
+            let id = sim
+                .spawn_anim_at_world(
+                    &rules,
+                    AnimClassSpawnDescriptor::new(spark, 0, 0, SimFixed::ZERO, SimFixed::ZERO, 0),
+                    AnimWorldCoord {
+                        x: 2600 + index * 97,
+                        y: 3300 - index * 61,
+                        z: 0,
+                    },
+                )
+                .unwrap();
+            // Two anims on each of the first three units; two stay free.
+            if index < 6 {
+                assert!(sim.set_anim_owner_object(id, Some(units[index as usize / 2]), &rules));
+            }
+            assert_eq!(
+                sim.substrate.display.layer_of(id),
+                Some(DisplayLayer::GROUND)
+            );
+            anims.push(id);
+        }
+        let copy = |display: &DisplayLayers| -> DisplayLayers {
+            serde_json::from_str(&serde_json::to_string(display).unwrap()).unwrap()
+        };
+        let live = |sim: &Simulation, rules: Option<&RuleSet>, id: u64| {
+            GroundSortView {
+                entities: &sim.substrate.entities,
+                anims: &sim.substrate.anims,
+                particles: &sim.substrate.particle_systems,
+                terrain: &sim.production.terrain_objects,
+                interner: &sim.interner,
+                type_handles: &sim.type_handles,
+                rules,
+            }
+            .read(id)
+            .0
+        };
+        let mut state: u64 = 0x5EED;
+        let mut next = |bound: u64| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (state >> 33) % bound
+        };
+        for step in 0..400 {
+            let delta = (next(9) as i32 - 4) * 48;
+            match next(7) {
+                0 => {
+                    let unit = units[next(4) as usize];
+                    let entity = sim.substrate.entities.get_mut(unit).unwrap();
+                    entity.position.sub_x = SimFixed::from_num((128 + delta).rem_euclid(256));
+                    entity.position.ry = (entity.position.ry as i32 + delta.signum()) as u16;
+                }
+                1 => {
+                    let unit = units[next(4) as usize];
+                    let mut turn = sim.substrate.entities.take_turn(unit).unwrap();
+                    let (entity, _) = turn.split();
+                    entity.position.rx = (entity.position.rx as i32 - delta.signum()) as u16;
+                    entity.position.sub_y = SimFixed::from_num((128 - delta).rem_euclid(256));
+                }
+                2 => {
+                    let anim = anims[next(8) as usize];
+                    sim.substrate.anims.get_mut(anim).unwrap().world_coord.x += delta;
+                }
+                3 => {
+                    let anim = anims[next(8) as usize];
+                    let mut expected = copy(&sim.substrate.display);
+                    sim.substrate.display.remove(anim);
+                    sim.submit_anim_display(anim, Some(&rules), None);
+                    expected.remove(anim);
+                    expected.submit(anim, Some(DisplayLayer::GROUND), &|id| {
+                        live(&sim, Some(&rules), id)
+                    });
+                    assert_eq!(
+                        sim.substrate.display.members(DisplayLayer::GROUND),
+                        expected.members(DisplayLayer::GROUND),
+                        "step {step}: rejoin {anim}"
+                    );
+                }
+                4 => sim.resolve_type_handles(&rules),
+                _ => {
+                    let scan_rules = (next(3) != 0).then_some(&rules);
+                    let mut expected = copy(&sim.substrate.display);
+                    sim.sort_display_ground(scan_rules);
+                    expected.sort_ground_pass(&|id| live(&sim, scan_rules, id));
+                    assert_eq!(
+                        sim.substrate.display.members(DisplayLayer::GROUND),
+                        expected.members(DisplayLayer::GROUND),
+                        "step {step}: sort"
                     );
                 }
             }
