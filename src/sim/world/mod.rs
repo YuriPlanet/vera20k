@@ -3924,6 +3924,11 @@ impl Simulation {
         );
     }
 
+    /// Release test builds have no debug assertions, so the check is a no-op
+    /// there, like the `debug_assert!`s it holds. Tests call it without a cfg.
+    #[cfg(all(test, not(debug_assertions)))]
+    pub(crate) fn debug_assert_logic_membership_consistent(&self) {}
+
     /// Debug-only checks for relationships that remain true while the native
     /// lifecycle axes themselves are deliberately independent.
     #[cfg(debug_assertions)]

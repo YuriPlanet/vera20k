@@ -1662,7 +1662,6 @@ mod tests {
                 "sold building should clear foundation cell {cell:?}"
             );
         }
-        #[cfg(debug_assertions)]
         sim.debug_assert_logic_membership_consistent();
         assert_eq!(credits_for_owner(&sim, "Americans") - before, 200);
 

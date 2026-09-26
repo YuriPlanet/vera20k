@@ -2155,7 +2155,6 @@ fn uninit_removes_all_structure_foundation_cells() {
     assert!(sim.substrate.entities.get(10).is_some_and(|e| e.dying));
     sim.flush_pending_delete();
     assert!(sim.substrate.entities.get(10).is_none());
-    #[cfg(debug_assertions)]
     sim.debug_assert_logic_membership_consistent();
 }
 
@@ -2170,7 +2169,6 @@ fn unregister_live_object_clears_flag_when_vector_entry_is_missing() {
 
     sim.unregister_live_object(10);
 
-    #[cfg(debug_assertions)]
     sim.debug_assert_logic_membership_consistent();
     assert!(sim.live_object_order_snapshot().is_empty());
     assert!(!sim.substrate.entities.get(10).unwrap().in_logic_vector);
@@ -10561,7 +10559,6 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
         restored.substrate.voxel_anims, expected_store,
         "every piece and its physics body survive the snapshot"
     );
-    #[cfg(debug_assertions)]
     restored.debug_assert_logic_membership_consistent();
 
     // The scheduler slot advances the physics body, and a piece leaves the live
@@ -10590,7 +10587,6 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
         None,
         "Delete leaves Display too"
     );
-    #[cfg(debug_assertions)]
     sim.debug_assert_logic_membership_consistent();
 }
 

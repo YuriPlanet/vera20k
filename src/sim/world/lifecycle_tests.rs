@@ -2077,7 +2077,6 @@ fn particle_logic_membership_uses_the_object_local_guard_and_rebuilds_it() {
             .unwrap()
             .in_logic_vector
     );
-    #[cfg(debug_assertions)]
     sim.debug_assert_logic_membership_consistent();
 
     assert!(sim.conceal_particle_system(7));
@@ -4040,7 +4039,6 @@ fn lifecycle_authority_set_logic_order_for_test_synchronizes_all_membership_flag
     );
     assert!(sim.substrate.entities.get(1).unwrap().in_logic_vector);
     assert!(!sim.substrate.entities.get(2).unwrap().in_logic_vector);
-    #[cfg(debug_assertions)]
     sim.debug_assert_logic_membership_consistent();
 
     sim.set_logic_order_for_test(vec![2]);
@@ -4055,7 +4053,6 @@ fn lifecycle_authority_set_logic_order_for_test_synchronizes_all_membership_flag
     );
     assert!(!sim.substrate.entities.get(1).unwrap().in_logic_vector);
     assert!(sim.substrate.entities.get(2).unwrap().in_logic_vector);
-    #[cfg(debug_assertions)]
     sim.debug_assert_logic_membership_consistent();
 }
 
@@ -4515,7 +4512,6 @@ fn gsi_05_02_mixed_six_family_order_roundtrips_and_dispatches_every_slot() {
         }
     });
     assert_eq!(visited, mixed);
-    #[cfg(debug_assertions)]
     restored.debug_assert_logic_membership_consistent();
 }
 
@@ -4607,7 +4603,6 @@ fn substrate_registration_and_removal_dispatch_is_order_identical() {
     assert!(sim.substrate.pending_delete.contains(&terrain_id));
     assert!(!sim.live_object_order_snapshot().contains(&terrain_id));
 
-    #[cfg(debug_assertions)]
     sim.debug_assert_logic_membership_consistent();
 }
 
@@ -4670,7 +4665,6 @@ fn gsi_05_02_tail_appends_run_same_pass_and_terminal_current_skips_successor() {
     assert!(removal.projectiles.get(terminal_id).is_some());
     assert_eq!(removal.substrate.pending_delete, vec![terminal_id]);
     assert_eq!(removal.waves.get(successor_id).unwrap().lifetime, 100);
-    #[cfg(debug_assertions)]
     removal.debug_assert_logic_membership_consistent();
 }
 

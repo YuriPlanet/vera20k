@@ -1631,7 +1631,6 @@ ConditionYellow=50%
             vec![transport, tail, passenger],
             "an already-active contained passenger must not append twice"
         );
-        #[cfg(debug_assertions)]
         sim.debug_assert_logic_membership_consistent();
     }
 
