@@ -9,9 +9,10 @@ from contextlib import contextmanager
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -150,14 +151,132 @@ def resolve_binary(root: Path, name: str, profile: str | None = None) -> tuple[P
     return None, None
 
 
+def validate_label(label: str) -> None:
+    if not isinstance(label, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}', label):
+        raise ValueError('Label must be 1-80 ASCII letters, digits, dots, dashes or underscores')
+
+
+def _artifact_parts(relative: str) -> list[str]:
+    if (not isinstance(relative, str) or not relative or '\\' in relative or ':' in relative
+            or PureWindowsPath(relative).drive
+            or PurePosixPath(relative).is_absolute()
+            or any(part in ('', '.', '..') for part in relative.split('/'))):
+        raise ValueError(f'Invalid preserved artifact path: {relative!r}')
+    return relative.split('/')
+
+
+def _label_path(base: Path, relative: str) -> Path:
+    """Require canonical relative artifact paths without symlinks or junctions.
+
+    Labels are shared by worktrees in the Git common directory. That directory
+    is the trusted anchor; preserved files may not redirect lookup outside it.
+    Windows reparse attributes cover junctions on Python 3.11 as well.
+    """
+    current = base
+    for part in _artifact_parts(relative):
+        current /= part
+        info = current.lstat()
+        if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
+            raise ValueError(f'Preserved artifact path contains a link or reparse point: {current}')
+    if not current.resolve().is_relative_to(base):
+        raise ValueError(f'Preserved artifact path escapes its store: {current}')
+    return current
+
+
+def _manifest_object(pairs: list[tuple[str, object]]) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f'Duplicate preserved manifest field: {key}')
+        result[key] = value
+    return result
+
+
+def host_bin_profile(target: Path, executable: Path) -> str | None:
+    """Classify Cargo's retained path, without resolving mutable cache paths."""
+    for profile in ('release', 'debug'):
+        if executable.parent == target / profile:
+            return profile
+    return None
+
+
+def resolve_labeled_binary(root: Path, label: str, name: str,
+                           profile: str) -> tuple[Path | None, str | None]:
+    """Resolve one unchanged preserved host bin; never use latest or cache paths.
+
+    Schema 1 retains Cargo's original executable path and owned target root.
+    An exact target/profile parent is the same host-bin classification used by
+    publish_binaries: dependency/test binaries, examples and cross-target paths
+    do not qualify. Original build outputs need no longer exist; only the
+    preserved bytes are opened. This proves recorded byte identity, not source
+    freshness, executable format, or a hermetic/authenticated build.
+    """
+    validate_label(label)
+    if profile not in ('release', 'debug'):
+        raise ValueError('Expected release or debug host profile')
+    if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', name):
+        raise ValueError('Expected an executable basename, not a path')
+    store, _ = build_store(root)
+    # Resolve only the Git-derived anchor. Check every component beneath it,
+    # including artifacts/, the label directory and manifest itself.
+    anchor = store.parent.resolve()
+    relative_label = f'{store.name}/artifacts/{label}'
+    try:
+        directory = _label_path(anchor, relative_label)
+    except FileNotFoundError:
+        return None, None
+    if not directory.is_dir():
+        raise ValueError(f'Preserved label is not a directory: {directory}')
+    manifest_path = _label_path(anchor, relative_label + '/manifest.json')
+    if not manifest_path.is_file():
+        raise ValueError('Preserved label manifest is not a regular file')
+    manifest = json.loads(manifest_path.read_text(), object_pairs_hook=_manifest_object)
+    if not isinstance(manifest, dict) or type(manifest.get('schema')) is not int or manifest['schema'] != 1:
+        raise ValueError('Expected preserved build manifest schema 1')
+    target_text = manifest.get('target_dir')
+    if not isinstance(target_text, str) or not Path(target_text).is_absolute() or '..' in Path(target_text).parts:
+        raise ValueError('Preserved manifest needs an absolute original target_dir')
+    target = Path(target_text)
+    artifacts = manifest.get('artifacts')
+    if not isinstance(artifacts, list):
+        raise ValueError('Preserved manifest artifacts must be a list')
+    expected = name + '.exe' if os.name == 'nt' else name
+    matches = []
+    for entry in artifacts:
+        if (not isinstance(entry, dict) or not isinstance(entry.get('file'), str)
+                or not isinstance(entry.get('source'), str)
+                or not isinstance(entry.get('sha256'), str)
+                or not re.fullmatch(r'[0-9a-f]{64}', entry['sha256'])):
+            raise ValueError('Malformed preserved executable record')
+        relative = entry['file']
+        _artifact_parts(relative)
+        if PurePosixPath(relative).name == expected:
+            matches.append(entry)
+    if not matches:
+        return None, None
+    if len(matches) != 1:
+        raise ValueError(f'Ambiguous preserved executable basename: {expected}')
+    entry, = matches
+    source = Path(entry['source'])
+    if (not source.is_absolute() or '..' in source.parts
+            or host_bin_profile(target, source) != profile or source.name != expected):
+        raise ValueError(f'Preserved executable is not a {profile} host bin: {entry["source"]}')
+    path = _label_path(anchor, relative_label + '/' + entry['file'])
+    if not stat.S_ISREG(path.stat().st_mode):
+        raise ValueError(f'Preserved executable is not a regular file: {path}')
+    if hashlib.sha256(path.read_bytes()).hexdigest() != entry['sha256']:
+        raise ValueError(f'Preserved executable SHA-256 mismatch: {path}')
+    return path, profile
+
+
 def publish_binaries(store: Path, namespace: str, target: Path, artifacts: set[Path]):
     """Record native host release/debug bins; test/dependency/cross-target bins are excluded."""
     record = store / 'latest' / f'{namespace}.json'
     records = json.loads(record.read_text()) if record.exists() else {}
     for path in artifacts:
-        if path.parent in (target / 'release', target / 'debug'):
+        if profile := host_bin_profile(target, path):
             name = path.stem if path.suffix == '.exe' else path.name
-            records.setdefault(path.parent.name, {})[name] = {
+            records.setdefault(profile, {})[name] = {
                 'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
             }
     record.parent.mkdir(parents=True, exist_ok=True)
@@ -169,8 +288,8 @@ def publish_binaries(store: Path, namespace: str, target: Path, artifacts: set[P
 
 def run(root: Path, args: list[str], label: str | None, timeout: float) -> int:
     args = cargo_args(args, label)
-    if label and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}', label):
-        raise ValueError('Label must be 1-80 ASCII letters, digits, dots, dashes or underscores')
+    if label:
+        validate_label(label)
     store, namespace = build_store(root)
     # A target root may be shared, but never its package fingerprints/artifacts.
     cache_root = Path(os.environ.get('CARGO_TARGET_DIR', str(root / 'target'))).resolve()
@@ -245,6 +364,7 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--label', help='Preserve executables and source manifest under a unique label')
     mode.add_argument('--resolve', metavar='BIN', help='Print a verified recorded host executable path; never builds')
+    parser.add_argument('--from-label', metavar='LABEL', help='Resolve from one preserved build label, not latest')
     parser.add_argument('--profile', choices=('release', 'debug'), help='Required with --resolve; no fallback')
     parser.add_argument('--wait-seconds', type=float,
                         help='Maximum build-owner wait (default: 3600)')
@@ -253,8 +373,8 @@ def main(argv: list[str] | None = None) -> int:
     if options.resolve is not None:
         if not options.profile or options.cargo or options.wait_seconds is not None:
             parser.error('--resolve requires --profile and accepts no Cargo arguments or --wait-seconds')
-    elif options.profile:
-        parser.error('--profile is only valid with --resolve')
+    elif options.profile or options.from_label is not None:
+        parser.error('--profile and --from-label are only valid with --resolve')
     wait_seconds = 3600 if options.wait_seconds is None else options.wait_seconds
     if not 0 <= wait_seconds < float('inf'):
         parser.error('--wait-seconds must be finite and nonnegative')
@@ -262,10 +382,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         root = Path(git(Path.cwd(), 'rev-parse', '--show-toplevel')).resolve()
         if options.resolve is not None:
-            path, _ = resolve_binary(root, options.resolve, options.profile)
+            if options.from_label is not None:
+                path, _ = resolve_labeled_binary(root, options.from_label, options.resolve, options.profile)
+                context = f'in preserved label {options.from_label!r}'
+            else:
+                path, _ = resolve_binary(root, options.resolve, options.profile)
+                context = 'recorded for this checkout; build it through tools.cargo_run first'
             if path is None:
-                raise ValueError(f'No verified {options.profile} host executable {options.resolve!r} '
-                                 'recorded for this checkout; build it through tools.cargo_run first')
+                raise ValueError(f'No verified {options.profile} host executable {options.resolve!r} {context}')
             print(path)
             return 0
         return run(root, args, options.label, wait_seconds)

@@ -9,7 +9,7 @@ points; the exhaustive oracle/tool inventory remains tracked in issue #746.
 | --- | --- |
 | Run all Python tool and source-skill tests | `python -m tools.run_tests` (below) |
 | Wait for builds; test, check, lint or build the current checkout; preserve A/B binaries | `python -m tools.cargo_run` (below) |
-| Find a built host executable for shell use | `python -m tools.cargo_run --resolve asset --profile release` (below) |
+| Find a built or preserved host executable for shell use | `python -m tools.cargo_run --resolve asset --profile release` (below) |
 | Run retail corpus checks or export a decoder-baseline candidate | [retail corpus](retail_corpus.md) |
 | Inspect exact retail INI values through production sources and readers | [INI lookup](ini_lookup.md), `asset ini-get` |
 | Select media archives without ambient argument parsing | [media policy](media_policy.md) |
@@ -26,6 +26,7 @@ points; the exhaustive oracle/tool inventory remains tracked in issue #746.
 | Capture and certify shell routes | [shell certification](shell_certification/README.md) |
 | Capture and certify tactical routes | [tactical certification](tactical_certification/README.md) |
 | Measure resident unit-atlas texture pages and sprite counts | [production map observation](map_observation.md#resident-unit-atlas-measurement) |
+| Validate retained map captures or compare exact production observations | [map observation](map_observation.md), `python -m tools.map_observation compare` |
 | Load a chosen retail map, step, capture and exit | [map observation](map_observation.md), `python -m tools.map_observation` |
 | Run one bounded child with retained diagnostics | `tools.child_process.run_child` (shared by capture wrappers) |
 | Check shell UI matrices | [exact shell matrix](exact_shell_ui_matrix/README.md) |
@@ -39,6 +40,7 @@ python -m tools.cargo_run -- clippy -p vera20k --lib
 python -m tools.cargo_run --label release-before -- build --locked --release -p vera20k --bin vera20k
 python -m tools.cargo_run --label tests-before -- test -p vera20k --lib --no-run
 python -m tools.cargo_run --resolve asset --profile release
+python -m tools.cargo_run --resolve vera20k --profile release --from-label release-before
 python -m unittest tools.tests.test_cargo_run -v
 ```
 
@@ -78,6 +80,13 @@ user configuration and arbitrary build-script environment inputs are not sealed.
 Capture and native-oracle tools retain responsibility for their own input evidence.
 Debug-symbol sidecars are not copied. Keep the source checkout and its cache when
 debugging a preserved binary; the executable alone suffices for ordinary A/B runs.
+
+`--resolve <BIN> --profile release|debug --from-label <LABEL>` selects a
+preserved executable from that label. It verifies the recorded artifact path,
+host/profile classification and actual SHA-256; missing, ambiguous, malformed or
+changed artifacts fail without falling back to a latest build. This uses the
+same preserved manifest owner as `--label`, including existing schema-1 labels.
+The original build source and toolchain metadata stay in the label's manifest.
 
 For shell use, `--resolve <BIN> --profile release|debug` prints only the absolute
 verified path to stdout. Missing records/files or changed bytes produce a nonzero

@@ -1,8 +1,11 @@
 """Portable child receipts exercise the wrapper, without retail files or a GPU."""
 from copy import deepcopy
+import contextlib
+import io
 import json
 from pathlib import Path
 import tempfile
+import shutil
 import unittest
 from unittest.mock import patch
 
@@ -39,6 +42,7 @@ class MapObservationTests(unittest.TestCase):
             ],
             'total_texel_payload_bytes': 16,
         }
+        self.frame = bytes(range(16))
         self.change = lambda manifest: None
         self.result = ChildResult(42, 0, False, b'child output\n', b'', ())
         environment = patch.dict('os.environ', {}, clear=True)
@@ -51,7 +55,7 @@ class MapObservationTests(unittest.TestCase):
         self.assertEqual(kwargs['timeout_seconds'], 1)
         directory = Path(command[-1])
         directory.mkdir()
-        frame = bytes(range(16))
+        frame = self.frame
         (directory / 'frame.bgra').write_bytes(frame)
         ticks = self.profile['ticks']
         fingerprint = lambda tick: {'simulation_tick': tick, 'binary_frame': tick,
@@ -104,6 +108,9 @@ class MapObservationTests(unittest.TestCase):
         self.assertEqual((self.output / 'profile.json').read_bytes(), self.profile_path.read_bytes())
         self.assertEqual(json.loads((self.output / 'run.json').read_text()), report)
         self.assertEqual(report['parity_certification'], 'NONE')
+        self.assertEqual(report['schema_version'], observation.RUN_SCHEMA)
+        self.assertEqual((self.output / 'config.toml').read_bytes(), self.config.read_bytes())
+        self.assertEqual((self.output / 'contract.json').read_bytes(), self.contract.read_bytes())
 
     def test_empty_atlas_receipt_is_valid(self):
         self.unit_atlas.update(resident_sprite_count=0, last_build_rasterized_sprite_count=0,
@@ -232,6 +239,7 @@ class MapObservationTests(unittest.TestCase):
                  ('frame', 'sha256', '0' * 64), ('frame', 'byte_length', 15),
                  ('map_source', 'kind', 'generated'), ('map_source', 'source_sha256', 'bad'),
                  ('lifecycle', 'input_violations', 1), ('render', 'ready', False),
+                 ('render', 'internal_extent', [2.0, 2]),
                  ('startup', 'seed_source', 'Random')]
         for index, (section, key, value) in enumerate(cases):
             with self.subTest(section=section, key=key):
@@ -261,6 +269,312 @@ class MapObservationTests(unittest.TestCase):
                                          output=self.output, working_directory=self.root,
                                          executable=self.executable)
         self.assertEqual(report['status'], 'INVALID')
+
+    def valid_capture(self, name):
+        self.output = self.root / name
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        return self.output
+
+    @staticmethod
+    def edit_json(path, change):
+        document = json.loads(path.read_text())
+        change(document)
+        path.write_text(json.dumps(document))
+
+    def make_legacy(self, run):
+        self.edit_json(run / 'run.json',
+                       lambda report: report.update(schema_version=observation.LEGACY_RUN_SCHEMA))
+        (run / 'config.toml').unlink()
+        (run / 'contract.json').unlink()
+
+    def test_sealed_run_revalidates_without_original_profile_config_or_contract(self):
+        original_contract = self.root / 'original-contract.json'
+        original_contract.write_bytes(self.contract.read_bytes())
+        self.contract = original_contract
+        run = self.valid_capture('sealed')
+        for path in (self.profile_path, self.config, self.contract):
+            path.unlink()
+        report = observation.validate_run(run)
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        self.assertEqual(report['input_provenance'], {
+            'profile': 'SEALED_COPY', 'config': 'SEALED_COPY', 'contract': 'SEALED_COPY',
+            'executable': 'EXTERNALLY_REVALIDATED'})
+        self.assertEqual(report['capture']['unit_atlas'], self.unit_atlas)
+
+    def test_capture_detects_each_retained_copy_changed_by_child(self):
+        for name, filename in observation.COPIES.items():
+            with self.subTest(input=name):
+                self.output = self.root / f'copy-changed-{name}'
+                self.change = lambda m, f=filename: (self.output / f).write_bytes(b'changed copy')
+                report = self.run_capture()
+                self.assertEqual(report['status'], 'INVALID')
+                self.assertTrue(any(f'{name} copy' in error for error in report['errors']))
+
+    def test_offline_validator_reads_every_retained_artifact(self):
+        artifacts = ('profile.json', 'config.toml', 'contract.json', 'stdout.log', 'stderr.log',
+                     'child-output/capture.json', 'child-output/frame.bgra')
+        for index, artifact in enumerate(artifacts):
+            with self.subTest(artifact=artifact):
+                run = self.valid_capture(f'tamper-artifact-{index}')
+                path = run / artifact
+                path.write_bytes(path.read_bytes() + b'changed')
+                report = observation.validate_run(run)
+                self.assertEqual(report['status'], 'INVALID')
+                self.assertTrue(report['errors'])
+        run = self.valid_capture('missing-frame')
+        (run / 'child-output/frame.bgra').unlink()
+        self.assertEqual(observation.validate_run(run)['status'], 'INVALID')
+
+    def test_offline_validator_rechecks_child_semantics_after_manifest_rehash(self):
+        run = self.valid_capture('semantic-corruption')
+        manifest = run / 'child-output/capture.json'
+        self.edit_json(manifest, lambda value: value['lifecycle'].update(input_violations=1))
+        self.edit_json(run / 'run.json', lambda value: value['capture']['manifest'].update(
+            byte_length=manifest.stat().st_size, sha256=sha256_bytes(manifest.read_bytes())))
+        report = observation.validate_run(run)
+        self.assertEqual(report['status'], 'INVALID')
+        self.assertIn('input_violations', report['errors'][0])
+
+    def test_offline_validator_rejects_receipt_inconsistency_and_bad_types(self):
+        changes = [lambda r: r.update(status='INVALID'),
+                   lambda r: r.update(errors=['capture failed']),
+                   lambda r: r.update(schema_version='unknown'),
+                   lambda r: r.update(native_comparator='NATIVE'),
+                   lambda r: r['child'].update(exit_status=False),
+                   lambda r: r['child'].update(timed_out=True),
+                   lambda r: r['child'].update(pid=None),
+                   lambda r: r['capture']['final'].update(deterministic_state_hash=10.0),
+                   lambda r: r['capture']['unit_atlas']['pages'][0].update(sample_count=True),
+                   lambda r: r['inputs']['config'].update(path='/wrong/config.toml'),
+                   lambda r: r['inputs']['executable'].update(sha256='x' * 64),
+                   lambda r: r['inputs']['profile'].pop('byte_length'),
+                   lambda r: r.update(command=['some other command']),
+                   lambda r: r.update(capture=None)]
+        for index, change in enumerate(changes):
+            with self.subTest(case=index):
+                run = self.valid_capture(f'bad-receipt-{index}')
+                self.edit_json(run / 'run.json', change)
+                report = observation.validate_run(run)
+                self.assertEqual(report['status'], 'INVALID')
+                self.assertTrue(report['errors'])
+        run = self.valid_capture('duplicate-json')
+        (run / 'run.json').write_text('{"status":"VALID","status":"VALID"}')
+        self.assertEqual(observation.validate_run(run)['status'], 'INVALID')
+
+    def test_live_and_offline_nested_profile_types_are_strict(self):
+        # bool is equal to integer 1 in Python, but not in the recorded launch DTO.
+        self.change = lambda m: m['profile']['request']['launch']['options'].update(bases=1)
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'INVALID')
+        self.assertTrue(any('bases' in error for error in report['errors']))
+
+    def test_legacy_requires_explicit_original_input_revalidation(self):
+        run = self.valid_capture('legacy')
+        self.make_legacy(run)
+        rejected = observation.validate_run(run)
+        self.assertEqual(rejected['status'], 'INVALID')
+        self.assertIn('--allow-legacy-inputs', rejected['errors'][0])
+        report = observation.validate_run(run, allow_legacy_inputs=True)
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        self.assertEqual(report['input_provenance']['config'], 'EXTERNALLY_REVALIDATED_UNSEALED')
+        self.assertEqual(report['input_provenance']['contract'], 'EXTERNALLY_REVALIDATED_UNSEALED')
+        self.assertEqual(report['input_provenance']['profile'], 'SEALED_COPY')
+        self.config.write_text('changed after original capture')
+        self.assertEqual(observation.validate_run(run, allow_legacy_inputs=True)['status'], 'INVALID')
+        self.config.unlink()
+        self.assertEqual(observation.validate_run(run, allow_legacy_inputs=True)['status'], 'INVALID')
+
+    def test_legacy_contract_cannot_be_replaced_or_silently_resealed(self):
+        original_contract = self.root / 'legacy-contract.json'
+        original_contract.write_bytes(self.contract.read_bytes())
+        self.contract = original_contract
+        run = self.valid_capture('legacy-contract')
+        self.make_legacy(run)
+        self.contract.write_bytes(self.contract.read_bytes() + b'\n')
+        report = observation.validate_run(run, allow_legacy_inputs=True)
+        self.assertEqual(report['status'], 'INVALID')
+        self.assertIn('contract', report['errors'][0])
+        self.contract.unlink()
+        self.assertEqual(observation.validate_run(run, allow_legacy_inputs=True)['status'], 'INVALID')
+
+    def test_offline_contract_semantics_survive_consistent_rehashing(self):
+        run = self.valid_capture('contract-guards')
+        contract = run / 'contract.json'
+        self.edit_json(contract, lambda value: value.update(environment_denylist=[]))
+        digest = sha256_bytes(contract.read_bytes())
+        self.edit_json(run / 'run.json', lambda value: value['inputs']['contract'].update(
+            sha256=digest, byte_length=contract.stat().st_size))
+        self.edit_json(run / 'child-output/capture.json',
+                       lambda value: value['contract'].update(sha256=digest))
+        report = observation.validate_run(run)
+        self.assertEqual(report['status'], 'INVALID')
+        self.assertIn('denylist', report['errors'][0])
+
+    def test_original_executable_must_still_exist_and_match(self):
+        run = self.valid_capture('binary-evidence')
+        self.executable.write_bytes(b'different executable')
+        self.assertEqual(observation.validate_run(run)['status'], 'INVALID')
+        self.executable.unlink()
+        self.assertEqual(observation.validate_run(run)['status'], 'INVALID')
+
+    def test_comparison_matches_verified_different_binaries(self):
+        before = self.valid_capture('before')
+        self.executable = self.root / 'new-game'
+        self.executable.write_bytes(b'new executable identity')
+        after = self.valid_capture('after')
+        report = observation.compare_runs(before, after)
+        self.assertEqual(report['status'], 'MATCH', report['errors'])
+        self.assertEqual(report['differences'], [])
+        self.assertNotEqual(report['before']['inputs']['executable']['sha256'],
+                            report['after']['inputs']['executable']['sha256'])
+        self.assertEqual(report['native_comparator'], 'NONE')
+        self.assertEqual(report['parity_certification'], 'NONE')
+
+    def test_comparison_reports_meaningful_valid_differences(self):
+        before = self.valid_capture('difference-before')
+        changes = [('initial.deterministic_state_hash',
+                    lambda m: m['initial'].update(deterministic_state_hash=8)),
+                   ('final.deterministic_state_hash',
+                    lambda m: m['final'].update(deterministic_state_hash=12)),
+                   ('map_source.source_sha256',
+                    lambda m: m['map_source'].update(source_sha256='b' * 64)),
+                   ('unit_atlas.resident_sprite_count',
+                    lambda m: m['render']['unit_atlas'].update(resident_sprite_count=8)),
+                   ('frame.surface_format',
+                    lambda m: m['frame'].update(surface_format='Bgra8Unorm'))]
+        for index, (field, change) in enumerate(changes):
+            with self.subTest(field=field):
+                self.change = change
+                after = self.valid_capture(f'difference-after-{index}')
+                report = observation.compare_runs(before, after)
+                self.assertEqual(report['status'], 'MISMATCH', report['errors'])
+                self.assertEqual([d['field'] for d in report['differences']], [field])
+        self.change = lambda m: None
+        self.frame = bytes(reversed(self.frame))
+        after = self.valid_capture('different-frame')
+        report = observation.compare_runs(before, after)
+        self.assertEqual(report['status'], 'MISMATCH', report['errors'])
+        self.assertEqual([d['field'] for d in report['differences']], ['frame.bytes'])
+
+    def test_comparison_requires_same_input_bytes(self):
+        before = self.valid_capture('input-before')
+        self.config.write_text('different production settings')
+        after = self.valid_capture('config-after')
+        report = observation.compare_runs(before, after)
+        self.assertEqual(report['status'], 'INVALID')
+        self.assertIn('config input bytes differ', report['errors'][0])
+        self.config.write_text('[paths]\nra2_dir="fixture"\n')
+        self.profile['ticks'] = 4
+        self.profile_path.write_text(json.dumps(self.profile))
+        after = self.valid_capture('profile-after')
+        report = observation.compare_runs(before, after)
+        self.assertEqual(report['status'], 'INVALID')
+        self.assertIn('profile input bytes differ', report['errors'][0])
+
+    def test_comparison_checks_frame_bytes_instead_of_copied_wrapper_hash(self):
+        before = self.valid_capture('raw-before')
+        after = self.valid_capture('raw-after')
+        (after / 'child-output/frame.bgra').write_bytes(b'changed raw data!')
+        report = observation.compare_runs(before, after)
+        self.assertEqual(report['status'], 'INVALID')
+        self.assertTrue(report['errors'])
+
+    def test_comparison_rechecks_first_run_after_reading_second(self):
+        before = self.valid_capture('race-before')
+        after = self.valid_capture('race-after')
+        load = observation._load_run
+
+        def load_and_change(directory, allow_legacy):
+            result = load(directory, allow_legacy)
+            if directory == after:
+                (before / 'config.toml').write_bytes(b'changed during comparison')
+            return result
+
+        with patch.object(observation, '_load_run', side_effect=load_and_change):
+            report = observation.compare_runs(before, after)
+        self.assertEqual(report['status'], 'INVALID')
+        self.assertTrue(any('changed' in error for error in report['errors']))
+
+    def test_same_alias_and_relocated_runs_are_rejected(self):
+        run = self.valid_capture('location')
+        report = observation.compare_runs(run, run / '.')
+        self.assertEqual(report['status'], 'INVALID')
+        self.assertIn('distinct', report['errors'][0])
+        alias = self.root / 'alias'
+        try:
+            alias.symlink_to(run, target_is_directory=True)
+        except OSError:
+            pass  # Windows can require a privilege for symlink creation.
+        else:
+            self.assertEqual(observation.compare_runs(run, alias)['status'], 'INVALID')
+        copied = self.root / 'copied'
+        shutil.copytree(run, copied)
+        report = observation.validate_run(copied)
+        self.assertEqual(report['status'], 'INVALID')
+        self.assertIn('run.command', report['errors'][0])
+
+    def test_legacy_comparison_is_explicit_and_child_v1_remains_unsupported(self):
+        before = self.valid_capture('legacy-before')
+        after = self.valid_capture('legacy-after')
+        self.make_legacy(before)
+        self.assertEqual(observation.compare_runs(before, after)['status'], 'INVALID')
+        report = observation.compare_runs(before, after, allow_legacy_inputs=True)
+        self.assertEqual(report['status'], 'MATCH', report['errors'])
+        self.edit_json(before / 'child-output/capture.json',
+                       lambda m: m.update(schema_version='vera20k.map-observation.v1'))
+        report = observation.compare_runs(before, after, allow_legacy_inputs=True)
+        self.assertEqual(report['status'], 'INVALID')
+        self.assertIn('schema_version', report['errors'][0])
+
+    def test_labeled_capture_uses_shared_resolver_and_never_falls_back(self):
+        with patch.object(observation, 'resolve_labeled_binary',
+                          return_value=(self.executable, 'release')) as resolver, \
+             patch.object(observation, 'resolve_binary') as latest, \
+             patch.object(observation, 'run_child', side_effect=self.fake_child):
+            report = observation.capture(profile_path=self.profile_path, contract_path=self.contract,
+                                         output=self.output, working_directory=self.root,
+                                         build_label='before-build')
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        resolver.assert_called_once_with(observation.ROOT, 'before-build', 'vera20k', 'release')
+        latest.assert_not_called()
+        with patch.object(observation, 'resolve_labeled_binary', return_value=(None, None)), \
+             patch.object(observation, 'resolve_binary') as latest:
+            with self.assertRaisesRegex(ValidationError, 'build label'):
+                observation.capture(profile_path=self.profile_path, contract_path=self.contract,
+                                    output=self.root / 'missing-label', working_directory=self.root,
+                                    build_label='missing')
+            latest.assert_not_called()
+        with self.assertRaisesRegex(ValidationError, 'mutually exclusive'):
+            observation.capture(profile_path=self.profile_path, contract_path=self.contract,
+                                output=self.root / 'conflicting-selector', working_directory=self.root,
+                                executable=self.executable, build_label='before-build')
+
+    def test_cli_checks_have_distinct_verdicts_and_exclusive_outputs(self):
+        before = self.valid_capture('cli-before')
+        after = self.valid_capture('cli-after')
+        output = self.root / 'comparison.json'
+        arguments = ['compare', '--before', str(before), '--after', str(after),
+                     '--output', str(output)]
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(observation.main(arguments), 0)
+            self.assertEqual(json.loads(output.read_text())['status'], 'MATCH')
+            previous_bytes = output.read_bytes()
+            self.assertEqual(observation.main(arguments), 2)
+            self.assertEqual(output.read_bytes(), previous_bytes)
+            self.frame = b'changed frame!!!'
+            changed = self.valid_capture('cli-changed')
+            self.assertEqual(observation.main(['compare', '--before', str(before),
+                                               '--after', str(changed), '--output',
+                                               str(self.root / 'mismatch.json')]), 1)
+            self.assertEqual(observation.main(['validate', '--run', str(before), '--output',
+                                               str(self.root / 'validation.json')]), 0)
+            (after / 'child-output/frame.bgra').unlink()
+            self.assertEqual(observation.main(['validate', '--run', str(after), '--output',
+                                               str(self.root / 'invalid.json')]), 2)
+            self.assertEqual(observation.main(['validate', '--run', str(before), '--output',
+                                               str(before / 'forbidden-report.json')]), 2)
+            self.assertFalse((before / 'forbidden-report.json').exists())
 
 
 if __name__ == '__main__':

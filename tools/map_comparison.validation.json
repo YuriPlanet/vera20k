@@ -1,0 +1,499 @@
+{
+  "schema": "vera20k.map-comparison-validation.v1",
+  "checked_at_utc": "2026-09-28T01:37:02.304497+00:00",
+  "base_commit": "78417204c6c4d01d72c4b4ae7c5e8586df2be748",
+  "owners": {
+    "preserved_executables": "tools.cargo_run",
+    "receipt_validation_and_comparison": "tools.map_observation"
+  },
+  "source_sha256": {
+    "tools/cargo_run.py": "7a9e886519f4512fe6336b4fbe4f90e757bc45b6ddf15469495743904e686134",
+    "tools/map_observation.py": "10c24ad75530c255fc9d9bed8e50b059070869d81970d7812e4dec4d1b3e6cb9",
+    "tools/tests/test_cargo_run.py": "b9431449597990e4bcc0346659786a9048565fd8fb3f95b251966bc686536c7f",
+    "tools/tests/test_map_observation.py": "5d4807ce7354f7da581f530c539a125cd21053be453f988e917081f8f0414633"
+  },
+  "python_checks": {
+    "discovery": {
+      "command": "python -m tools.run_tests",
+      "tests": 291,
+      "skipped": 2,
+      "exit_code": 0,
+      "log_sha256": "5c06bb9b169d52c50c3e9e3dade815e1733477eebea2439b34f3511d50c5788c"
+    },
+    "focused_optimized": {
+      "command": "python -O -m unittest tools.tests.test_map_observation tools.tests.test_cargo_run tools.tests.test_child_process",
+      "tests": 72,
+      "exit_code": 0,
+      "log_sha256": "36127f75e8a47bf4c678555f9149086ebe20a3a8c52860006b4d8050188ccca0"
+    },
+    "whole_suite_optimized_limit": {
+      "command": "python -O -m tools.run_tests",
+      "tests": 291,
+      "failures": 8,
+      "errors": 4,
+      "skipped": 2,
+      "exit_code": 1,
+      "log_sha256": "745b1a81be774ac94293cd10e6cf81e60cc275e7ea3da4217472c6635e694afa",
+      "cause": "All failures/errors are in test_anytown_packet_receipt. The unchanged validate_packet.py:209 explicitly rejects optimization because its native witnesses still require assertions. Default discovery passes those tests. This is not a passing whole-suite optimized result."
+    }
+  },
+  "production": {
+    "legacy-default-rejected": {
+      "command": [
+        "/Users/halvor/Documents/vera20k-dev/.venv/bin/python",
+        "-m",
+        "tools.map_observation",
+        "validate",
+        "--run",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/ini-get-capture-final",
+        "--output",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/legacy-rejected.json"
+      ],
+      "exit_code": 2,
+      "stdout": "INVALID: /Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/legacy-rejected.json"
+    },
+    "legacy-atlas-ini": {
+      "command": [
+        "/Users/halvor/Documents/vera20k-dev/.venv/bin/python",
+        "-m",
+        "tools.map_observation",
+        "compare",
+        "--before",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/atlas-after-capture-1",
+        "--after",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/ini-get-capture-final",
+        "--allow-legacy-inputs",
+        "--output",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/legacy-atlas-ini.json"
+      ],
+      "exit_code": 0,
+      "stdout": "MATCH: /Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/legacy-atlas-ini.json"
+    },
+    "legacy-media": {
+      "command": [
+        "/Users/halvor/Documents/vera20k-dev/.venv/bin/python",
+        "-m",
+        "tools.map_observation",
+        "compare",
+        "--before",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/media-after-ordinary",
+        "--after",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/media-after-Cd-path",
+        "--allow-legacy-inputs",
+        "--output",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/legacy-media.json"
+      ],
+      "exit_code": 0,
+      "stdout": "MATCH: /Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/legacy-media.json"
+    },
+    "capture-before": {
+      "command": [
+        "/Users/halvor/Documents/vera20k-dev/.venv/bin/python",
+        "-m",
+        "tools.map_observation",
+        "--profile",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/tools/map_observation.example.json",
+        "--contract",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/src/app/diagnostics/tactical_capture/contract.v2.json",
+        "--cwd",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k",
+        "--output",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/before",
+        "--build-label",
+        "ini-get-reviewed-20260928"
+      ],
+      "exit_code": 0,
+      "stdout": "VALID: /Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/before/run.json"
+    },
+    "capture-after": {
+      "command": [
+        "/Users/halvor/Documents/vera20k-dev/.venv/bin/python",
+        "-m",
+        "tools.map_observation",
+        "--profile",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/tools/map_observation.example.json",
+        "--contract",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/src/app/diagnostics/tactical_capture/contract.v2.json",
+        "--cwd",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k",
+        "--output",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/after",
+        "--build-label",
+        "media-owner-after-20260928"
+      ],
+      "exit_code": 0,
+      "stdout": "VALID: /Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/after/run.json"
+    },
+    "sealed-compare": {
+      "command": [
+        "/Users/halvor/Documents/vera20k-dev/.venv/bin/python",
+        "-m",
+        "tools.map_observation",
+        "compare",
+        "--before",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/before",
+        "--after",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/after",
+        "--output",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/sealed-comparison.json"
+      ],
+      "exit_code": 0,
+      "stdout": "MATCH: /Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/sealed-comparison.json"
+    },
+    "legacy-sealed": {
+      "command": [
+        "/Users/halvor/Documents/vera20k-dev/.venv/bin/python",
+        "-m",
+        "tools.map_observation",
+        "compare",
+        "--before",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/ini-get-capture-final",
+        "--after",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/after",
+        "--allow-legacy-inputs",
+        "--output",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/legacy-sealed.json"
+      ],
+      "exit_code": 0,
+      "stdout": "MATCH: /Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/legacy-sealed.json"
+    },
+    "sealed-validate": {
+      "command": [
+        "/Users/halvor/Documents/vera20k-dev/.venv/bin/python",
+        "-m",
+        "tools.map_observation",
+        "validate",
+        "--run",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/after",
+        "--output",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/sealed-validation.json"
+      ],
+      "exit_code": 0,
+      "stdout": "VALID: /Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/sealed-validation.json"
+    },
+    "self-rejected": {
+      "command": [
+        "/Users/halvor/Documents/vera20k-dev/.venv/bin/python",
+        "-m",
+        "tools.map_observation",
+        "compare",
+        "--before",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/after",
+        "--after",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/after",
+        "--output",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/self-rejected.json"
+      ],
+      "exit_code": 2,
+      "stdout": "INVALID: /Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/self-rejected.json"
+    },
+    "frame-corruption-rejected": {
+      "command": [
+        "/Users/halvor/Documents/vera20k-dev/.venv/bin/python",
+        "-m",
+        "tools.map_observation",
+        "validate",
+        "--run",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/after",
+        "--output",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/corrupt-frame.json"
+      ],
+      "exit_code": 2,
+      "stdout": "INVALID: /Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/corrupt-frame.json"
+    },
+    "restored-valid": {
+      "command": [
+        "/Users/halvor/Documents/vera20k-dev/.venv/bin/python",
+        "-m",
+        "tools.map_observation",
+        "validate",
+        "--run",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/after",
+        "--output",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/restored-validation.json"
+      ],
+      "exit_code": 0,
+      "stdout": "VALID: /Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/restored-validation.json"
+    },
+    "frame_corruption": {
+      "original_sha256": "a3a1c989ccc273b9c7a3ac8e21a79cadeb6d1eebaef22688c3ae36753acfa9bd",
+      "mutated_sha256": "33cd126ad0a3bdcf7077879cfc04b4b7c67390b1044fdcd2955ea14cbd3c924b",
+      "restored": true
+    }
+  },
+  "reports": {
+    "legacy-rejected": {
+      "status": "INVALID",
+      "errors": [
+        "legacy run v1 has no sealed config/contract copies; use --allow-legacy-inputs to revalidate the original files"
+      ],
+      "sha256": "65a4cb26542f5afbb5cbcedcee85b50dfdb591dea42b74f1edcea35f982ff21c"
+    },
+    "legacy-atlas-ini": {
+      "status": "MATCH",
+      "errors": [],
+      "sha256": "0022e4005d1582d00258d69d2b145cda9ae009731f3b11232bf553f19e512ab5",
+      "differences": [],
+      "executable_before": {
+        "byte_length": 31316704,
+        "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/atlas-owner-after-20260928/0/vera20k",
+        "sha256": "03147bcae30e7386ddbb64630038803aae7ad799e105c887ed54b0057bef3f05"
+      },
+      "executable_after": {
+        "byte_length": 31393792,
+        "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/ini-get-reviewed-20260928/2/vera20k",
+        "sha256": "63b7389f2a8a203fe9031c3ac892aeee6b173462811b5116e15240eb3ff461f1"
+      }
+    },
+    "legacy-media": {
+      "status": "MATCH",
+      "errors": [],
+      "sha256": "10cad910a8958a9428c45633cc955143b02a99b22e920cb8fab16324d8bdb0c7",
+      "differences": [],
+      "executable_before": {
+        "byte_length": 31454368,
+        "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/media-owner-after-20260928/12/vera20k",
+        "sha256": "82adc5343609e6cb2a9f585e0d6365a16079a51cec693736bd89105c6a82e413"
+      },
+      "executable_after": {
+        "byte_length": 31454368,
+        "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/media-owner-after-20260928/12/vera20k",
+        "sha256": "82adc5343609e6cb2a9f585e0d6365a16079a51cec693736bd89105c6a82e413"
+      }
+    },
+    "sealed-comparison": {
+      "status": "MATCH",
+      "errors": [],
+      "sha256": "910e116e15e077b368d7b1da17b1654496e4dc33ff180d081240508600942273",
+      "differences": [],
+      "executable_before": {
+        "byte_length": 31393792,
+        "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/ini-get-reviewed-20260928/2/vera20k",
+        "sha256": "63b7389f2a8a203fe9031c3ac892aeee6b173462811b5116e15240eb3ff461f1"
+      },
+      "executable_after": {
+        "byte_length": 31454368,
+        "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/media-owner-after-20260928/12/vera20k",
+        "sha256": "82adc5343609e6cb2a9f585e0d6365a16079a51cec693736bd89105c6a82e413"
+      }
+    },
+    "legacy-sealed": {
+      "status": "MATCH",
+      "errors": [],
+      "sha256": "22b0d2e547a14decf1a95920619a80aa13add2c65feb4705c3edfe25b6145d6f",
+      "differences": [],
+      "executable_before": {
+        "byte_length": 31393792,
+        "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/ini-get-reviewed-20260928/2/vera20k",
+        "sha256": "63b7389f2a8a203fe9031c3ac892aeee6b173462811b5116e15240eb3ff461f1"
+      },
+      "executable_after": {
+        "byte_length": 31454368,
+        "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/media-owner-after-20260928/12/vera20k",
+        "sha256": "82adc5343609e6cb2a9f585e0d6365a16079a51cec693736bd89105c6a82e413"
+      }
+    },
+    "sealed-validation": {
+      "status": "VALID",
+      "errors": [],
+      "sha256": "b0357157e3dedc588b84b59cc888354a9fac57dddddc44bbd276122b106ff300"
+    },
+    "self-rejected": {
+      "status": "INVALID",
+      "errors": [
+        "before and after must be distinct observation directories"
+      ],
+      "sha256": "d46d935aba6b810c069a3236e1f51dc71c6835dae39c1f513969b0b768d9fe75",
+      "differences": []
+    },
+    "corrupt-frame": {
+      "status": "INVALID",
+      "errors": [
+        "frame.sha256 is 'a3a1c989ccc273b9c7a3ac8e21a79cadeb6d1eebaef22688c3ae36753acfa9bd', expected '33cd126ad0a3bdcf7077879cfc04b4b7c67390b1044fdcd2955ea14cbd3c924b'"
+      ],
+      "sha256": "ec478c875f4b95599dddfb67c17da1ee2445f7ab534c5d3017d946e221c867d2"
+    },
+    "restored-validation": {
+      "status": "VALID",
+      "errors": [],
+      "sha256": "7fc887f2476d16f725c0633047a3cdb56f20b4dfdcc7f7261cc2343994291c6e"
+    },
+    "sealed-before": {
+      "schema": "vera20k.map-observation-run.v2",
+      "status": "VALID",
+      "run_sha256": "5cb9cfc7d2581a5ed626f4b02ea93e2da1b7b6dbe8416f9ea692e5dee17479e7",
+      "capture": {
+        "exact_step_count": 30,
+        "final": {
+          "binary_frame": 30,
+          "deterministic_state_hash": 11854557809103330951,
+          "simulation_tick": 30,
+          "total_simulation_ms": 660
+        },
+        "frame": {
+          "byte_length": 1920000,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/before/child-output/frame.bgra",
+          "sha256": "a3a1c989ccc273b9c7a3ac8e21a79cadeb6d1eebaef22688c3ae36753acfa9bd"
+        },
+        "initial": {
+          "binary_frame": 0,
+          "deterministic_state_hash": 17975855442756925998,
+          "simulation_tick": 0,
+          "total_simulation_ms": 0
+        },
+        "manifest": {
+          "byte_length": 7465,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/before/child-output/capture.json",
+          "sha256": "5093ed8e5a3e4c35681727f42175a02bf5f2e6224c738cc19085741a6ef06f53"
+        },
+        "map_source": {
+          "entry_id": -1828261808,
+          "kind": "mix",
+          "logical_name": "Fight.MAP",
+          "payload_len": 91254,
+          "source_archive": "multimd.mix",
+          "source_sha256": "d751dce7cd3611077e9228c33235f39c71681fff6ac08ca1f716d963ad6ce070"
+        },
+        "unit_atlas": {
+          "last_build_rasterized_sprite_count": 4480,
+          "pages": [
+            {
+              "dimension": "D2",
+              "extent": [
+                4259,
+                4364,
+                1
+              ],
+              "format": "R8Uint",
+              "mip_level_count": 1,
+              "sample_count": 1,
+              "texel_payload_bytes": 18586276
+            }
+          ],
+          "resident_sprite_count": 4480,
+          "total_texel_payload_bytes": 18586276
+        }
+      },
+      "input_identities": {
+        "config": {
+          "byte_length": 596,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/config.toml",
+          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+        },
+        "contract": {
+          "byte_length": 590,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/src/app/diagnostics/tactical_capture/contract.v2.json",
+          "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
+        },
+        "executable": {
+          "byte_length": 31393792,
+          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/ini-get-reviewed-20260928/2/vera20k",
+          "sha256": "63b7389f2a8a203fe9031c3ac892aeee6b173462811b5116e15240eb3ff461f1"
+        },
+        "profile": {
+          "byte_length": 2336,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/tools/map_observation.example.json",
+          "sha256": "7e3a61effe5862b0c28f18d939020cd9fae7c0f8906aa3b09b0d6a4128858baa"
+        }
+      }
+    },
+    "sealed-after": {
+      "schema": "vera20k.map-observation-run.v2",
+      "status": "VALID",
+      "run_sha256": "0de4721a9d58b917dd900869012fca72323b21305f35b8b8cea06d02fa757cdc",
+      "capture": {
+        "exact_step_count": 30,
+        "final": {
+          "binary_frame": 30,
+          "deterministic_state_hash": 11854557809103330951,
+          "simulation_tick": 30,
+          "total_simulation_ms": 660
+        },
+        "frame": {
+          "byte_length": 1920000,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/after/child-output/frame.bgra",
+          "sha256": "a3a1c989ccc273b9c7a3ac8e21a79cadeb6d1eebaef22688c3ae36753acfa9bd"
+        },
+        "initial": {
+          "binary_frame": 0,
+          "deterministic_state_hash": 17975855442756925998,
+          "simulation_tick": 0,
+          "total_simulation_ms": 0
+        },
+        "manifest": {
+          "byte_length": 7467,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/after/child-output/capture.json",
+          "sha256": "0b34b8cbf7bf989c177c3861a46076b63714bc704d5ccfbda47aca24feb7a09b"
+        },
+        "map_source": {
+          "entry_id": -1828261808,
+          "kind": "mix",
+          "logical_name": "Fight.MAP",
+          "payload_len": 91254,
+          "source_archive": "multimd.mix",
+          "source_sha256": "d751dce7cd3611077e9228c33235f39c71681fff6ac08ca1f716d963ad6ce070"
+        },
+        "unit_atlas": {
+          "last_build_rasterized_sprite_count": 4480,
+          "pages": [
+            {
+              "dimension": "D2",
+              "extent": [
+                4259,
+                4364,
+                1
+              ],
+              "format": "R8Uint",
+              "mip_level_count": 1,
+              "sample_count": 1,
+              "texel_payload_bytes": 18586276
+            }
+          ],
+          "resident_sprite_count": 4480,
+          "total_texel_payload_bytes": 18586276
+        }
+      },
+      "input_identities": {
+        "config": {
+          "byte_length": 596,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/config.toml",
+          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+        },
+        "contract": {
+          "byte_length": 590,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/src/app/diagnostics/tactical_capture/contract.v2.json",
+          "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
+        },
+        "executable": {
+          "byte_length": 31454368,
+          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/media-owner-after-20260928/12/vera20k",
+          "sha256": "82adc5343609e6cb2a9f585e0d6365a16079a51cec693736bd89105c6a82e413"
+        },
+        "profile": {
+          "byte_length": 2336,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/tools/map_observation.example.json",
+          "sha256": "7e3a61effe5862b0c28f18d939020cd9fae7c0f8906aa3b09b0d6a4128858baa"
+        }
+      }
+    }
+  },
+  "scope": [
+    "No Rust, simulation behavior, native golden or oracle producer changed. Existing preserved game binaries supply the production captures.",
+    "New wrapper v2 retains exact profile/config/contract bytes; executable bytes remain externally revalidated at the recorded path. Legacy v1 requires explicit external revalidation and remains unsealed for config/contract.",
+    "Only child manifest v2 is supported; relocated bundles are deliberately rejected. Historical receipts remain unchanged.",
+    "MATCH establishes equality of compared checked observations, not independent execution or native parity. All reports retain native_comparator and parity_certification NONE.",
+    "The controlled frame-corruption check modifies only this task's generated after/frame.bgra, confirms rejection, restores exact original bytes in finally, then confirms valid restoration.",
+    "Full optimized discovery is unsupported by the existing Anytown assertion-required witness lifecycle; affected map/build/child tools pass optimized checks. Two default skips are explicit optional retail environment/capture checks."
+  ],
+  "independent_review": {
+    "reviewer": "fresh read-only critic_ramp_height",
+    "result": "No actionable defects found",
+    "checks": [
+      "59 focused resolver/map tests passed normally and under -O",
+      "Both real preserved labels resolved; sealed validation VALID",
+      "Sealed, historical media and legacy-to-sealed comparisons MATCH",
+      "Default legacy validation and self-comparison INVALID"
+    ],
+    "limits": "No broader codebase cleanup or native equivalence certified; no edits, Cargo builds or computer use."
+  }
+}

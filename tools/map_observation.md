@@ -32,14 +32,33 @@ The default executable is the unchanged release `vera20k` recorded for this
 checkout by `tools.cargo_run`; it never guesses a target directory. Recorded byte
 identity does not establish source freshness: build the intended revision first.
 `--executable /absolute/path/to/vera20k` selects an explicit binary instead.
+For preserved builds, `--build-label LABEL` asks the shared Cargo owner for that
+label's verified host release `vera20k`; the two selectors are mutually exclusive.
+It checks the artifact path, target/profile classification, ambiguity and actual
+executable SHA, with no fallback to the latest build. For example:
+
+```sh
+python -m tools.cargo_run --label before-map-change -- build -p vera20k --release --bin vera20k
+python -m tools.cargo_run --resolve vera20k --profile release --from-label before-map-change
+env -u RA2_DIR python -m tools.map_observation \
+  --build-label before-map-change \
+  --profile /absolute/checkout/tools/map_observation.example.json \
+  --contract /absolute/checkout/src/app/diagnostics/tactical_capture/contract.v2.json \
+  --cwd /absolute/checkout \
+  --output /absolute/evidence/before-map-change
+```
+
 The supplied contract must match the repository contract bytes. Every environment
 variable in its denylist must be absent, even if set to an empty string. The
 wrapper reports denied variables and does not silently change the environment.
 After sourcing the native development environment, explicitly remove `RA2_DIR`
 for this command as above; asset loading uses the working directory's config.
 
-A new bundle contains `profile.json`, `stdout.log`, `stderr.log`, `run.json` and
-the child's atomically published `child-output/{capture.json,frame.bgra}`.
+A new wrapper v2 bundle contains sealed `profile.json`, `config.toml` and
+`contract.json` copies, plus `stdout.log`, `stderr.log`, `run.json` and the child's
+atomically published `child-output/{capture.json,frame.bgra}`. Runtime still reads
+the supplied original paths; retaining copies does not redirect the game loader.
+Original files and retained copies must remain unchanged during capture.
 `run.json` records exact input hashes, command, child PID/status, timeout, receipt
 validation and capture artifact identities. A valid observation requires unchanged
 profile/config/executable/contract files, matching profile and contract receipts,
@@ -69,6 +88,94 @@ The saved [validation receipt](map_observation.validation.json) records the chec
 release binary and source snapshot, repeated MIX-map state, loose-map and zero-step
 captures, missing-map diagnostics, and the explicit coverage limits. It is a run
 summary, not a native oracle golden.
+
+## Validate and compare saved observations
+
+Use the same owner to recheck an existing run or compare before/after captures.
+These commands read evidence and write one new JSON report outside the run
+directories; they do not launch a game or change the captures.
+
+```sh
+python -m tools.map_observation validate \
+  --run /absolute/evidence/before-map-change \
+  --output /absolute/evidence/before-validation.json
+python -m tools.map_observation compare \
+  --before /absolute/evidence/before-map-change \
+  --after /absolute/evidence/after-map-change \
+  --output /absolute/evidence/comparison.json
+```
+
+Validation reads the fixed artifact paths under the supplied run, checks actual
+profile/config/contract/frame/log bytes and child receipt semantics, then
+cross-checks the wrapper's copied evidence and original input identities. It does
+not trust a stored `VALID` verdict or matching digest strings. The executable must
+still exist at its recorded original path and match its recorded length and SHA;
+a labeled preserved build makes that requirement durable. The report marks this
+as `EXTERNALLY_REVALIDATED`. It cannot validate a deleted or replaced executable
+from its old receipt alone.
+
+A new wrapper v2 run validates its `SEALED_COPY` inputs without requiring the
+original profile, config or contract files to remain available. It validates the
+retained contract's v2 rules without requiring today's checkout to have identical
+contract bytes. Offline checking does not apply the current process environment
+denylist because it does not launch a child.
+
+Both runs must validate before comparison. Profile, config and contract **bytes**
+must match, including formatting; differing inputs make the comparison `INVALID`.
+Executable bytes may intentionally differ, and both verified identities appear in
+the report. Comparison checks complete initial/final fingerprints, map source,
+exact steps, resident atlas statistics, surface format and actual BGRA bytes.
+Differences name precise field paths and before/after values. There are no pixel
+tolerances or omitted atlas fields.
+
+`MATCH` means these checked observations are exactly equal for the compared
+fields; it neither establishes independent execution nor certifies native parity.
+`MISMATCH` means valid, comparable observations differ. `INVALID` means an input,
+artifact, identity or receipt check failed. `native_comparator` and
+`parity_certification` remain `NONE`. Compare exits `0` for `MATCH`, `1` for
+`MISMATCH`, and `2` for `INVALID` or publication failure; validate exits `0` for
+`VALID` and `2` otherwise. Reports are never overwritten.
+
+Run bundles currently must remain at their original absolute location: command
+output and wrapper artifact identity paths are cross-checked against the supplied
+run. A copied or relocated bundle is rejected, and validation never follows its
+stored artifact paths to read some other bundle. Same-directory and symlink-alias
+comparisons are rejected. Keep reports outside both evidence directories.
+
+### Historical captures
+
+Wrapper v1 retained only `profile.json`. It is rejected by default with a specific
+diagnostic. `--allow-legacy-inputs` explicitly rereads the original config and
+contract paths and requires their actual lengths/hashes to match the old receipt.
+These inputs are reported as `EXTERNALLY_REVALIDATED_UNSEALED`, never as retained
+copies. Missing or changed originals fail validation; the profile copy and
+original executable are checked as above. This policy also allows comparing an
+old wrapper v1 run to a new v2 run when their actual input bytes match.
+
+```sh
+python -m tools.map_observation compare \
+  --before /absolute/evidence/old-wrapper-capture \
+  --after /absolute/evidence/new-wrapper-capture \
+  --allow-legacy-inputs \
+  --output /absolute/evidence/historical-comparison.json
+```
+
+Both paths still require **child** manifest v2 with recorded atlas statistics.
+Earlier child v1 captures remain unsupported historical evidence; the tool does
+not invent missing statistics or rewrite historical receipts.
+
+Focused portable checks, including malformed/tampered packages, input provenance,
+exact mismatches, legacy policy and binary selection:
+
+```sh
+python -m unittest tools.tests.test_map_observation tools.tests.test_cargo_run
+python -O -m unittest tools.tests.test_map_observation tools.tests.test_cargo_run
+```
+
+The [checked comparison validation](map_comparison.validation.json) records
+whole-suite checks, preserved-label selection, revalidated historical pairs and
+new sealed production captures for this workflow. The earlier capture validation
+receipt above remains historical evidence for its recorded source revision.
 
 ## Resident unit-atlas measurement
 
