@@ -193,6 +193,19 @@ print(json.dumps(dict(pid=r.pid,exit_status=r.exit_status,errors=r.errors,stdout
             deadline = time.monotonic() + 5
             while ready.exists() and not done.exists() and time.monotonic() < deadline:
                 time.sleep(0.01)
+            # The marker precedes process exit. Windows can still retain the
+            # descendant's cwd and inherited diagnostic handles briefly after
+            # it appears. Reclaim only this fixture, with a bounded wait; do
+            # not suppress a genuine leak or change run_child's wait policy.
+            deadline = time.monotonic() + 5
+            while True:
+                try:
+                    self.directory.cleanup()
+                    break
+                except PermissionError as error:
+                    if getattr(error, 'winerror', None) not in (5, 32) or time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.01)
 
 
 if __name__ == '__main__':

@@ -10,7 +10,8 @@
     "tools/cargo_run.py": "7a9e886519f4512fe6336b4fbe4f90e757bc45b6ddf15469495743904e686134",
     "tools/map_observation.py": "10c24ad75530c255fc9d9bed8e50b059070869d81970d7812e4dec4d1b3e6cb9",
     "tools/tests/test_cargo_run.py": "b9431449597990e4bcc0346659786a9048565fd8fb3f95b251966bc686536c7f",
-    "tools/tests/test_map_observation.py": "5d4807ce7354f7da581f530c539a125cd21053be453f988e917081f8f0414633"
+    "tools/tests/test_map_observation.py": "5d4807ce7354f7da581f530c539a125cd21053be453f988e917081f8f0414633",
+    "tools/tests/test_child_process.py": "027868ebc8b79e9044ee2c3f4ff5a4708d0329ad3805ba71ca6aac6a93948e3d"
   },
   "python_checks": {
     "discovery": {
@@ -495,5 +496,23 @@
       "Default legacy validation and self-comparison INVALID"
     ],
     "limits": "No broader codebase cleanup or native equivalence certified; no edits, Cargo builds or computer use."
+  },
+  "post_review_ci_fix": {
+    "initial_windows_job": "https://github.com/YuriPlanet/vera20k/actions/runs/36367026607/job/108755363180",
+    "failure": "Existing inherited-output descendant test passed assertions but TemporaryDirectory cleanup raced Windows process handle release after done marker. One teardown PermissionError WinError32.",
+    "change": "Bounded five-second retry only for Windows sharing/access errors removing this test-owned fixture after releasing the descendant; production lifecycle unchanged.",
+    "checks": [
+      {
+        "command": "python -m unittest tools.tests.test_child_process",
+        "tests": 13,
+        "exit_code": 0
+      },
+      {
+        "command": "python -O -m unittest tools.tests.test_child_process",
+        "tests": 13,
+        "exit_code": 0
+      }
+    ],
+    "review_policy": "Original fresh critic completed before this test teardown fix; no repeat critic per project contract."
   }
 }
