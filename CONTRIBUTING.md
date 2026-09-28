@@ -49,8 +49,11 @@ For anything large, ask on Discord or in an issue first.
    builds probes in `tests/` that need the game). Without the game, tests that need the retail
    INI files print `SKIPPED` and pass (`-- --show-output` shows them). To run them for real,
    fill `ini/` with `cargo run --bin extract-ini [game folder]` (it falls back to `RA2_DIR`,
-   then `config.toml`). Set `VERA20K_REQUIRE_RETAIL_INI=1` to make a missing file fail. If a
-   test fails only with your own game files, tell us which install you have.
+   then `config.toml`). Set `VERA20K_REQUIRE_RETAIL_INI=1` to make a missing file fail.
+   [Archive-backed fixture checks](tools/retail_fixture_contracts.md) also run in the library
+   suite when `RA2_DIR` names your retail install. Set `VERA20K_REQUIRE_RETAIL_ASSETS=1`
+   to require that install; it is separate from the extracted-INI requirement. If a test
+   fails only with your own game files, tell us which install you have.
 5. **Never commit game files:** no `.mix`, INI, art, audio, video or `.exe` from the game, and
    nothing from `ini/`. Git already ignores `ini/` and `config.toml`.
 
@@ -70,8 +73,9 @@ Python tool changes also run `python -m tools.run_tests` with Python 3.12+ and
    the files you changed with `rustfmt --edition 2024 <file>` (not `cargo fmt`; a `mod.rs`
    also reformats its submodules, so leave those out).
 5. **Keep the README status honest** if your change makes a feature work or stop working.
-6. **Open the PR against `main`** and fill in the template. CI builds and tests Windows, Linux
-   and macOS.
+6. **Open the PR against `main`** and fill in the template. PR CI runs Rust Clippy and
+   Python tool tests on Windows, Linux and macOS. The Rust library test workflows
+   are manually dispatched; run the required library suite locally before publishing.
 
 ## Project rules, in short
 

@@ -141,4 +141,27 @@ mod tests {
         assert_eq!(catalog[0].footprint[4], (0, 1));
         assert_eq!(catalog[0].footprint[11], (3, 2));
     }
+    #[test]
+    fn stock_contract_catalog_matches_selected_retail_startup() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+        let startup = owner
+            .startup_compatibility_projection()
+            .expect("RMG shell projection");
+        let actual = resolve(startup.ini(), owner.fixed_art());
+        let expected = stock_contract_catalog();
+        assert_eq!(
+            actual
+                .iter()
+                .map(|entry| (&entry.name, &entry.footprint))
+                .collect::<Vec<_>>(),
+            expected
+                .iter()
+                .map(|entry| (&entry.name, &entry.footprint))
+                .collect::<Vec<_>>(),
+            "selected retail neutral-tech list and every footprint cell"
+        );
+    }
 }

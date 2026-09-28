@@ -351,4 +351,24 @@ mod tests {
         assert!(modes[0].allies_allowed);
         assert!(modes[0].must_ally);
     }
+    #[test]
+    fn stock_contract_modes_match_selected_retail_roster_and_overrides() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let modes = skirmish_modes_from_assets(&assets).expect("selected retail MPModes roster");
+        // Fixture coverage must not silently accept the production reader's
+        // tolerant missing/malformed override fallback as retail evidence.
+        for mode in &modes {
+            if !mode.override_file.is_empty() {
+                crate::rules::retail_sources::select_ini(&assets, &mode.override_file)
+                    .expect("every stock roster override is present and parseable");
+            }
+        }
+        assert_eq!(
+            modes,
+            stock_skirmish_modes(),
+            "every consumed roster and override field"
+        );
+    }
 }

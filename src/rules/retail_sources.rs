@@ -234,4 +234,73 @@ mod tests {
             .expect("repeated projection");
         assert_eq!(again.content_hash(), projected.content_hash());
     }
+    /// Stock field regressions through retained startup, scenario passes and
+    /// fixed ART. These are retail-data checks, not fresh native goldens.
+    #[test]
+    fn stock_hills_battle_fields_match_retail_contracts() {
+        use crate::util::fixed_math::SimFixed;
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = retail.rules;
+        let gacnst = rules.object("GACNST").expect("retail GACNST");
+        assert_eq!(gacnst.strength, 1000);
+        assert_eq!(gacnst.armor, "concrete");
+        assert_eq!(gacnst.adjacent, 2);
+        assert_eq!(gacnst.power, 0);
+        let gapowr = rules.object("GAPOWR").expect("retail GAPOWR");
+        assert_eq!(gapowr.strength, 750);
+        assert_eq!(gapowr.armor, "wood");
+        assert_eq!(gapowr.adjacent, 2);
+        assert_eq!(gapowr.power, 200);
+        let amradr = rules.object("AMRADR").expect("retail AMRADR");
+        assert_eq!(amradr.strength, 600);
+        assert_eq!(amradr.armor, "steel");
+        assert_eq!(amradr.adjacent, 2);
+        assert_eq!(amradr.power, -50);
+        assert!(amradr.radar);
+
+        for id in ["GAWEAP", "NAWEAP", "GAYARD", "NAYARD", "YAWEAP", "YAYARD"] {
+            assert!(
+                rules
+                    .object(id)
+                    .is_some_and(|object| object.weapons_factory)
+            );
+        }
+        for id in ["GAPILE", "GAPOWR"] {
+            assert!(
+                !rules
+                    .object(id)
+                    .is_some_and(|object| object.weapons_factory)
+            );
+        }
+
+        assert_eq!(
+            rules.object("APOC").expect("retail APOC").weight,
+            SimFixed::lit("3.5")
+        );
+        assert_eq!(
+            rules.object("MTNK").expect("retail MTNK").weight,
+            SimFixed::lit("2")
+        );
+        assert_eq!(
+            rules.general.direct_rocking_coefficient,
+            SimFixed::lit("1.5")
+        );
+        assert_eq!(rules.general.fallback_coefficient, SimFixed::lit("0.1"));
+        let v3wh = rules.warhead("V3WH").expect("processed retail V3WH");
+        assert!(v3wh.rocker);
+        assert!(!v3wh.direct_rocker);
+
+        for id in ["GHOST", "TANY", "PTROOP"] {
+            assert!(rules.object(id).is_some_and(|object| object.c4));
+        }
+        for id in ["CAMISC01", "CAMISC02", "CAMISC06", "AMMOCRAT"] {
+            assert!(!rules.object(id).is_some_and(|object| object.can_c4));
+        }
+        let napowr = rules.object("NAPOWR").expect("retail NAPOWR");
+        assert_eq!(napowr.strength, 750);
+        assert!(napowr.can_c4);
+        assert_eq!(rules.c4_delay_ticks, 27);
+    }
 }

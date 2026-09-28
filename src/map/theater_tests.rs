@@ -669,6 +669,44 @@ fn native_general_corpus() -> serde_json::Value {
 }
 
 #[test]
+fn selected_retail_temperate_rmg_roles_reach_tile_ids() {
+    use crate::map::rmg::tiles::{SpecialTerrain, TileIds};
+    use crate::util::sha256::sha256_hex;
+
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let theater = load_theater(&mut assets, "TEMPERATE").expect("load retail temperate theater");
+    let corpus = native_general_corpus();
+    let physical = corpus["physical"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["file"] == "temperatmd.ini")
+        .expect("checked native physical temperate input");
+    assert_eq!(
+        sha256_hex(&theater.ini_data),
+        physical["sha256"].as_str().unwrap()
+    );
+
+    // Reader/default/ordinal correctness is independently compared with native
+    // execution by general_helpers_match_original_reader_and_signed_repair_keys
+    // and general_roles_match_original_ordinal_publication below. This assertion
+    // covers production loading/publication, without another 18-key parser.
+    let ini = IniFile::from_bytes(&theater.ini_data).expect("selected theater INI");
+    let expected = resolve_rmg_tile_keys(&theater.lookup, ini.section("General"));
+    assert_eq!(
+        theater.rmg_tiles, expected,
+        "loader publishes every RMG role"
+    );
+    let mut loaded_ids = TileIds::resolve(&theater);
+    // SpecialTerrain comes from cliff_ranges, not these 18 RMG keys. Its native
+    // predicates have separate tests; this is only the RMG projection boundary.
+    loaded_ids.special = SpecialTerrain::default();
+    assert_eq!(loaded_ids, TileIds::from_keys(&expected));
+}
+
+#[test]
 fn general_helpers_match_original_reader_and_signed_repair_keys() {
     use crate::map::bridge_rim_tiles::HighBridgeRimTiles;
 

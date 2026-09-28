@@ -29,7 +29,7 @@ const MISC_PAVE_SPAN: i32 = 14;
 const PAVE_SPAN: i32 = 16;
 
 /// Resolved flat tile ids for one theater. `-1` = key absent.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TileIds {
     pub clear: i32,
     pub ramp_base: i32,
@@ -57,7 +57,7 @@ pub struct TileIds {
 /// Tileset bases that mark a cell as carrying special terrain — cliff faces,
 /// ramps, bridges and waterfalls. `-1` means the theater does not define that
 /// set, which disables its test.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpecialTerrain {
     /// Waterfall bases indexed by travel heading / 2: N, E, S, W.
     pub waterfalls: [i32; 4],

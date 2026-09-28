@@ -1,0 +1,494 @@
+{
+  "schema": "vera20k.retail-fixture-contracts-validation.v1",
+  "base_commit": "bed6db2cc8ef5b6a77af27766bcd976826aac456",
+  "checked_at_utc": "2026-09-28T02:10:41.519514+00:00",
+  "source_sha256": {
+    "CONTRIBUTING.md": "506826d68769139421d288ae8d39aa2a88c68a158ea4ca71536f5d669e7094ac",
+    "src/map/rmg/tech_catalog.rs": "b96974a0aeb1d3f20c480d068db398818223a6c68307a86f8e7d6b0cb6f97573",
+    "src/map/rmg/tiles.rs": "c04bfd4dcbd1ba08d73724e8be189866b4124c76465b89a6ba3a0d032084f467",
+    "src/map/theater_tests.rs": "8af272963753e75bab2ccb474c1ad6222b812f0b00612f2197ced1aeb8e25f8d",
+    "src/rules/retail_ini_fixture.rs": "23263d46b6ac02d5372621c831dc55f5fc9fd0660d412c0cc60811b4584d4219",
+    "src/rules/retail_sources.rs": "14f288b007157310a9ae5783faba9e94aad526dcf53f5000248310f792020033",
+    "src/sim/miner/outbound_drive_tests.rs": "c6691a16c70689380d791035144de4b79a048b0c800217653d1dc3a113819ecf",
+    "src/skirmish_modes.rs": "93526c7ff3c56e408b0fbb391d3f1111c2e8593df412bfec9e7b4a69d1c8ef61",
+    "tests/retail_ini_contracts.rs": null,
+    "tools/README.md": "e09d0efe8b14b4a708c29e58b81661fc760eed77460edf74a1a754ca457401aa",
+    "tools/retail_fixture_contracts.md": "019812d7717a251b89eb691916fab2064ff5197446db50de6169b87124095592"
+  },
+  "required_environment": [
+    "RA2_DIR",
+    "VERA20K_REQUIRE_RETAIL_INI=1",
+    "VERA20K_REQUIRE_RETAIL_ASSETS=1"
+  ],
+  "rust_checks": {
+    "initial_focused": {
+      "filter": "retail",
+      "passed": 132,
+      "ignored": 134,
+      "exit_code": 0
+    },
+    "full_library_suite": {
+      "command": "python -m tools.cargo_run -- test -p vera20k --lib",
+      "passed": 9585,
+      "failed": 1,
+      "ignored": 213,
+      "exit_code": 101,
+      "failure": "architecture_guards::production_dependency_edges_match_frozen_ledger_inventory saw map references in a fixture module whose cfg(test) was only on its parent. No behavior assertions failed."
+    },
+    "post_fix": {
+      "change": "Explicit cfg(test) on the two map-referencing fixture items; guard and exception list unchanged. No fixture/production behavior changed.",
+      "architecture_guards_passed": 7,
+      "retail_filter_passed": 132,
+      "retail_filter_ignored": 134,
+      "clippy_exit_code": 0,
+      "clippy_warnings": 871,
+      "policy": "Full suite not repeated for a test-boundary-only fix; affected tests and guard rerun per project contract."
+    },
+    "archive_gate_subprocesses": {
+      "test": "skirmish_modes::tests::stock_contract_modes_match_selected_retail_roster_and_overrides",
+      "unset_RA2_DIR_optional": {
+        "exit_code": 0,
+        "printed_explicit_skip": true
+      },
+      "unset_RA2_DIR_required": {
+        "exit_code": 101,
+        "expected_failure": true
+      },
+      "parent_environment_mutated": false
+    }
+  },
+  "native": {
+    "command": "PYTHONPATH=. python tools/rules_oracle/theater_general_reader.py --check",
+    "exit_code": 0,
+    "golden_sha256": "c969765db7782b4387ecba4bca9ace32db7b30909777ee739d0169010e981d2b",
+    "provenance": {
+      "schema_version": 1,
+      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+      "unicorn_binding": "2.1.4",
+      "unicorn_core": [
+        2,
+        1,
+        33621247
+      ],
+      "scope": "Original theater545150 General integer reads and ordinal projection.\n\nThe complete56-read block545535..545C3F runs, including native defaults,\nread order, scalar parser and result stores. Supplied INI caches retain source\norder and duplicate records; original sort/search executes. This is not full\nINI file loading or a full theater/TMP loader. See the adjacent Markdown.\n",
+      "assumptions": [
+        "The complete contiguous56-read General block executes with a supplied loader frame and INI cache. Every call/default/key/result store is observed, with no replacement integer parser. Original executable bytes remain unchanged.",
+        "Physical six-theater General text comes from retail files whose full-file hashes are retained. Unique General section/keys are asserted. The supplied lexical boundary trims ASCII controls, strips entry comments, omits empty entries/sections and retains duplicate records; long physical lines are excluded.",
+        "INI CRC arrays preserve physical order and begin unsorted, so original native sort/search chooses duplicate winners. This covers only the stated bounded duplicate layouts; full physical INI loading, arbitrary duplicate/collision behavior and archive precedence are not certified.",
+        "All results are original signed DWORDs. Ten bridge piece globals retain them directly. Ordinal controls execute the original compare/publish block with explicitly supplied loop ordinal and cumulative base; they do not execute TMP construction, count accumulation, loader termination or later lunar global zeroing.",
+        "Seven ordinal controls retain three signed-width cases and add four controls within current u16 tile projections: all46 ordinal keys=$13 at ordinal19/base1234, plus mixed BridgeSet=$13, WoodBridgeSet=1, CliffSet=bogus and DestroyableCliffs=$nothex at ordinal/base0/0,1/7,19/1234.",
+        "Python success establishes bounded native evidence only. Production Rust reader comparisons and the release theater/map loader are separate validation obligations."
+      ],
+      "substitutions": [
+        "Shared Reader/Fixture supplies the original image, bump allocator, inert delete and CRT TLS context. Prepared INI records substitute physical archive/file loading; no Reader result is overridden."
+      ],
+      "entry_points": {
+        "theater_loader": "0x00545150",
+        "general_begin": "0x00545535",
+        "general_stop": "0x00545C3F",
+        "read_int": "0x005276D0",
+        "ordinal_projection_begin": "0x00545CEF",
+        "ordinal_projection_stop": "0x00545FA3"
+      },
+      "payload_sha256": "4e70c3591bc156642ace04b6b4de7fa1f9c7b4a077bd33d68afa7da51dc24535"
+    },
+    "goldens_changed": false
+  },
+  "local_log_sha256": {
+    "retail-contract-gate-required.log": "c4fe05215d5b9989c764f95bb8b4dda6316a2fe5160257d1e81de381ee229d1f",
+    "retail-contract-theater-native.log": "bbdbbfbf9a79bcb6826c272088fb316d07ed8c73147f849e1b8eaba2cee37c62",
+    "retail-contract-lib.log": "513b6a0fd7521eeabac63c98c4ccc1896eb521304afe1776b380338ad2097012",
+    "retail-contract-guards.log": "4a634903924dbde96ea90257f37a39029688d8e5ad69fd31ff75b0108ece2d57",
+    "retail-contract-gate-optional.log": "ed0071116ba101fc1279caef03822048e2820ce5fdc4fbf42dd8893d8b3f6b0e",
+    "retail-contract-focused-final.log": "a42eaee8ee4e158e1632e24716601839eb3ac09c7e1149e97e3c22be3a83370e",
+    "retail-contract-focused.log": "0fa989dfef04d00a2f436584faaf6196fd10d531c405ae01609c4428cc1f65a1",
+    "retail-contract-clippy.log": "3d4386e713deec8b44fc3acf36d0531206ce2dd67976712a8c53afb86ee07377",
+    "retail-contract-release.log": "3cda6399218406a54d4c0e6590800b89d433ce876ef542f92b7ae6813f707655"
+  },
+  "scope": [
+    "Five formerly ignored integration checks now execute in library tests; the integration copy and RA2 base-INI layering were removed.",
+    "Physical retail fixture provenance and Rust regression coverage, not blanket native gameplay parity. Native reader/ordinal witness scope is retained in the referenced metadata.",
+    "Scenario fields cover Hills/Battle; startup RMG catalog and full stock mode roster have separate consumers. No campaign/TMCJ4F/LANGRULE Digest claim.",
+    "Only value equality derives outside cfg(test); no RNG draws, timer writes, detach paths or playback behavior changed.",
+    "Other ignored/integration test inventories and refactor issue752 remain open."
+  ],
+  "release_build": {
+    "command": "python -m tools.cargo_run --label retail-fixture-after-20260928 -- build --release -p vera20k --bin vera20k --bin parity-digest",
+    "label": "retail-fixture-after-20260928",
+    "exit_code": 0,
+    "executable_sha256": {
+      "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/retail-fixture-after-20260928/1/vera20k": "82adc5343609e6cb2a9f585e0d6365a16079a51cec693736bd89105c6a82e413",
+      "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/retail-fixture-after-20260928/0/parity-digest": "e12029b7073445c6d6f6d5994f3c88b773a4dbd6b580f0bb8a63f5da1fbf1532"
+    },
+    "manifest": {
+      "schema": 1,
+      "checkout": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k",
+      "source": {
+        "head": "bed6db2cc8ef5b6a77af27766bcd976826aac456",
+        "branch": "feature/retail-fixture-provenance",
+        "status": "M CONTRIBUTING.md\n M src/map/rmg/tech_catalog.rs\n M src/map/rmg/tiles.rs\n M src/map/theater_tests.rs\n M src/rules/retail_ini_fixture.rs\n M src/rules/retail_sources.rs\n M src/sim/miner/outbound_drive_tests.rs\n M src/skirmish_modes.rs\n D tests/retail_ini_contracts.rs\n M tools/README.md\n?? tools/retail_fixture_contracts.md",
+        "source_sha256": "1c68545b27dbba49e94a337960ff49a7ca2374fcbd50d38edb97ebdbc888374d"
+      },
+      "command": [
+        "cargo",
+        "build",
+        "--message-format=json-render-diagnostics",
+        "--release",
+        "-p",
+        "vera20k",
+        "--bin",
+        "vera20k",
+        "--bin",
+        "parity-digest"
+      ],
+      "target_dir": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/target/owned-worktrees/5c896dc1cc21fcaf",
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+      "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)\n",
+      "build_environment": {},
+      "artifacts": [
+        {
+          "source": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/target/owned-worktrees/5c896dc1cc21fcaf/release/parity-digest",
+          "file": "0/parity-digest",
+          "sha256": "e12029b7073445c6d6f6d5994f3c88b773a4dbd6b580f0bb8a63f5da1fbf1532"
+        },
+        {
+          "source": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/target/owned-worktrees/5c896dc1cc21fcaf/release/vera20k",
+          "file": "1/vera20k",
+          "sha256": "82adc5343609e6cb2a9f585e0d6365a16079a51cec693736bd89105c6a82e413"
+        }
+      ]
+    }
+  },
+  "production": {
+    "headless": {
+      "command": [
+        "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/retail-fixture-after-20260928/0/parity-digest",
+        "--ra2-dir",
+        "/Users/halvor/Documents/vera20k-dev/game/Command and Conquer Red Alert II",
+        "--map",
+        "Hills.mmx",
+        "--seed",
+        "305419896",
+        "--ticks",
+        "30",
+        "--out",
+        ".local-audit/retail-fixture-runtime/headless.jsonl"
+      ],
+      "working_directory": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k",
+      "exit_code": 0,
+      "rows": 30,
+      "sha256": "30fe3708fbe4a4d97afeafcab5b38cbe08a86b7deebfafc92d156d32338770bf",
+      "comparison_command": "cmp .local-audit/media-runtime/ordinary.jsonl .local-audit/retail-fixture-runtime/headless.jsonl",
+      "comparison_exit_code": 0
+    },
+    "capture": {
+      "status": "VALID",
+      "build_label": "retail-fixture-after-20260928",
+      "wrapper_module": "tools.map_observation",
+      "profile": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/tools/map_observation.example.json",
+      "contract": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/src/app/diagnostics/tactical_capture/contract.v2.json",
+      "working_directory": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k",
+      "RA2_DIR": "removed from child environment; checked config owns root",
+      "capture_evidence": {
+        "exact_step_count": 30,
+        "final": {
+          "binary_frame": 30,
+          "deterministic_state_hash": 11854557809103330951,
+          "simulation_tick": 30,
+          "total_simulation_ms": 660
+        },
+        "frame": {
+          "byte_length": 1920000,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/retail-fixture-capture/child-output/frame.bgra",
+          "sha256": "a3a1c989ccc273b9c7a3ac8e21a79cadeb6d1eebaef22688c3ae36753acfa9bd"
+        },
+        "initial": {
+          "binary_frame": 0,
+          "deterministic_state_hash": 17975855442756925998,
+          "simulation_tick": 0,
+          "total_simulation_ms": 0
+        },
+        "manifest": {
+          "byte_length": 7469,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/retail-fixture-capture/child-output/capture.json",
+          "sha256": "34bbbb7763927a3f1820e11a5ee6e3b9fc61d2c39e9712a123cd70b37eec8ec4"
+        },
+        "map_source": {
+          "entry_id": -1828261808,
+          "kind": "mix",
+          "logical_name": "Fight.MAP",
+          "payload_len": 91254,
+          "source_archive": "multimd.mix",
+          "source_sha256": "d751dce7cd3611077e9228c33235f39c71681fff6ac08ca1f716d963ad6ce070"
+        },
+        "unit_atlas": {
+          "last_build_rasterized_sprite_count": 4480,
+          "pages": [
+            {
+              "dimension": "D2",
+              "extent": [
+                4259,
+                4364,
+                1
+              ],
+              "format": "R8Uint",
+              "mip_level_count": 1,
+              "sample_count": 1,
+              "texel_payload_bytes": 18586276
+            }
+          ],
+          "resident_sprite_count": 4480,
+          "total_texel_payload_bytes": 18586276
+        }
+      },
+      "inputs": {
+        "config": {
+          "byte_length": 596,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/config.toml",
+          "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+        },
+        "contract": {
+          "byte_length": 590,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/src/app/diagnostics/tactical_capture/contract.v2.json",
+          "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
+        },
+        "executable": {
+          "byte_length": 31454368,
+          "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/retail-fixture-after-20260928/1/vera20k",
+          "sha256": "82adc5343609e6cb2a9f585e0d6365a16079a51cec693736bd89105c6a82e413"
+        },
+        "profile": {
+          "byte_length": 2336,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/tools/map_observation.example.json",
+          "sha256": "7e3a61effe5862b0c28f18d939020cd9fae7c0f8906aa3b09b0d6a4128858baa"
+        }
+      },
+      "child_command": [
+        "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/retail-fixture-after-20260928/1/vera20k",
+        "--tactical-capture",
+        "map-observe-v1",
+        "--profile",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/tools/map_observation.example.json",
+        "--contract",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/src/app/diagnostics/tactical_capture/contract.v2.json",
+        "--output",
+        "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/retail-fixture-capture/child-output"
+      ]
+    },
+    "comparison": {
+      "after": {
+        "capture": {
+          "exact_step_count": 30,
+          "final": {
+            "binary_frame": 30,
+            "deterministic_state_hash": 11854557809103330951,
+            "simulation_tick": 30,
+            "total_simulation_ms": 660
+          },
+          "frame": {
+            "byte_length": 1920000,
+            "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/retail-fixture-capture/child-output/frame.bgra",
+            "sha256": "a3a1c989ccc273b9c7a3ac8e21a79cadeb6d1eebaef22688c3ae36753acfa9bd"
+          },
+          "initial": {
+            "binary_frame": 0,
+            "deterministic_state_hash": 17975855442756925998,
+            "simulation_tick": 0,
+            "total_simulation_ms": 0
+          },
+          "manifest": {
+            "byte_length": 7469,
+            "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/retail-fixture-capture/child-output/capture.json",
+            "sha256": "34bbbb7763927a3f1820e11a5ee6e3b9fc61d2c39e9712a123cd70b37eec8ec4"
+          },
+          "map_source": {
+            "entry_id": -1828261808,
+            "kind": "mix",
+            "logical_name": "Fight.MAP",
+            "payload_len": 91254,
+            "source_archive": "multimd.mix",
+            "source_sha256": "d751dce7cd3611077e9228c33235f39c71681fff6ac08ca1f716d963ad6ce070"
+          },
+          "unit_atlas": {
+            "last_build_rasterized_sprite_count": 4480,
+            "pages": [
+              {
+                "dimension": "D2",
+                "extent": [
+                  4259,
+                  4364,
+                  1
+                ],
+                "format": "R8Uint",
+                "mip_level_count": 1,
+                "sample_count": 1,
+                "texel_payload_bytes": 18586276
+              }
+            ],
+            "resident_sprite_count": 4480,
+            "total_texel_payload_bytes": 18586276
+          }
+        },
+        "checked_at_utc": "2026-09-28T02:09:52.708795Z",
+        "errors": [],
+        "input_provenance": {
+          "config": "SEALED_COPY",
+          "contract": "SEALED_COPY",
+          "executable": "EXTERNALLY_REVALIDATED",
+          "profile": "SEALED_COPY"
+        },
+        "inputs": {
+          "config": {
+            "byte_length": 596,
+            "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/config.toml",
+            "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          },
+          "contract": {
+            "byte_length": 590,
+            "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/src/app/diagnostics/tactical_capture/contract.v2.json",
+            "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
+          },
+          "executable": {
+            "byte_length": 31454368,
+            "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/retail-fixture-after-20260928/1/vera20k",
+            "sha256": "82adc5343609e6cb2a9f585e0d6365a16079a51cec693736bd89105c6a82e413"
+          },
+          "profile": {
+            "byte_length": 2336,
+            "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/tools/map_observation.example.json",
+            "sha256": "7e3a61effe5862b0c28f18d939020cd9fae7c0f8906aa3b09b0d6a4128858baa"
+          }
+        },
+        "native_comparator": "NONE",
+        "parity_certification": "NONE",
+        "run": {
+          "byte_length": 3960,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/retail-fixture-capture/run.json",
+          "sha256": "57f785cf1981e89095f9947bf9897e2d570ab12249f6099a01383b676549579a"
+        },
+        "schema_version": "vera20k.map-observation-validation.v1",
+        "status": "VALID"
+      },
+      "after_path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/retail-fixture-capture",
+      "before": {
+        "capture": {
+          "exact_step_count": 30,
+          "final": {
+            "binary_frame": 30,
+            "deterministic_state_hash": 11854557809103330951,
+            "simulation_tick": 30,
+            "total_simulation_ms": 660
+          },
+          "frame": {
+            "byte_length": 1920000,
+            "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/after/child-output/frame.bgra",
+            "sha256": "a3a1c989ccc273b9c7a3ac8e21a79cadeb6d1eebaef22688c3ae36753acfa9bd"
+          },
+          "initial": {
+            "binary_frame": 0,
+            "deterministic_state_hash": 17975855442756925998,
+            "simulation_tick": 0,
+            "total_simulation_ms": 0
+          },
+          "manifest": {
+            "byte_length": 7467,
+            "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/after/child-output/capture.json",
+            "sha256": "0b34b8cbf7bf989c177c3861a46076b63714bc704d5ccfbda47aca24feb7a09b"
+          },
+          "map_source": {
+            "entry_id": -1828261808,
+            "kind": "mix",
+            "logical_name": "Fight.MAP",
+            "payload_len": 91254,
+            "source_archive": "multimd.mix",
+            "source_sha256": "d751dce7cd3611077e9228c33235f39c71681fff6ac08ca1f716d963ad6ce070"
+          },
+          "unit_atlas": {
+            "last_build_rasterized_sprite_count": 4480,
+            "pages": [
+              {
+                "dimension": "D2",
+                "extent": [
+                  4259,
+                  4364,
+                  1
+                ],
+                "format": "R8Uint",
+                "mip_level_count": 1,
+                "sample_count": 1,
+                "texel_payload_bytes": 18586276
+              }
+            ],
+            "resident_sprite_count": 4480,
+            "total_texel_payload_bytes": 18586276
+          }
+        },
+        "checked_at_utc": "2026-09-28T02:09:52.677175Z",
+        "errors": [],
+        "input_provenance": {
+          "config": "SEALED_COPY",
+          "contract": "SEALED_COPY",
+          "executable": "EXTERNALLY_REVALIDATED",
+          "profile": "SEALED_COPY"
+        },
+        "inputs": {
+          "config": {
+            "byte_length": 596,
+            "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/config.toml",
+            "sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a"
+          },
+          "contract": {
+            "byte_length": 590,
+            "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/src/app/diagnostics/tactical_capture/contract.v2.json",
+            "sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0"
+          },
+          "executable": {
+            "byte_length": 31454368,
+            "path": "/Users/halvor/Documents/vera20k/.git/owned-builds/artifacts/media-owner-after-20260928/12/vera20k",
+            "sha256": "82adc5343609e6cb2a9f585e0d6365a16079a51cec693736bd89105c6a82e413"
+          },
+          "profile": {
+            "byte_length": 2336,
+            "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/tools/map_observation.example.json",
+            "sha256": "7e3a61effe5862b0c28f18d939020cd9fae7c0f8906aa3b09b0d6a4128858baa"
+          }
+        },
+        "native_comparator": "NONE",
+        "parity_certification": "NONE",
+        "run": {
+          "byte_length": 3974,
+          "path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/after/run.json",
+          "sha256": "0de4721a9d58b917dd900869012fca72323b21305f35b8b8cea06d02fa757cdc"
+        },
+        "schema_version": "vera20k.map-observation-validation.v1",
+        "status": "VALID"
+      },
+      "before_path": "/Users/halvor/.codex/worktrees/ownership-audit/vera20k/.local-audit/map-comparison-runtime/after",
+      "checked_at_utc": "2026-09-28T02:09:52.654371Z",
+      "differences": [],
+      "errors": [],
+      "native_comparator": "NONE",
+      "parity_certification": "NONE",
+      "schema_version": "vera20k.map-observation-comparison.v1",
+      "status": "MATCH"
+    },
+    "invocation_correction": "First wrapper attempt used relative paths and was rejected before capture with exit2. Retried absolute paths per CLI contract; final capture VALID and comparison MATCH."
+  },
+  "production_artifact_sha256": {
+    ".local-audit/retail-fixture-capture/run.json": "57f785cf1981e89095f9947bf9897e2d570ab12249f6099a01383b676549579a",
+    ".local-audit/retail-fixture-runtime/comparison.json": "907e11a21afdc71330d77648b51475fd6f1bbba2193c12d1a94b6ca6a44bc19f"
+  },
+  "independent_review": {
+    "reviewer": "fresh read-only critic_ramp_height",
+    "result": "No actionable defects found",
+    "checks": [
+      "Every useful old assertion group has a registered library destination using existing fixture constructors",
+      "All seven new tests passed through existing test executable",
+      "Optional absent RA2 explicitly skips; required absent and optional invalid RA2 fail",
+      "Native theater --check reproduced unchanged",
+      "Source, log, executable and artifact hashes matched; fixture and golden bytes unchanged",
+      "Headless bytes identical; saved capture VALID and comparison MATCH"
+    ],
+    "limits": "One bounded fixture migration; no whole-codebase or full native theater-loader parity certification."
+  }
+}

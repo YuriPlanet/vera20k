@@ -42,14 +42,19 @@ struct OutboundContractOracle {
     tiberium_speed_costs: SpeedCostProfile,
 }
 
-fn outbound_contract_oracle() -> OutboundContractOracle {
+fn outbound_contract_inputs() -> (IniFile, IniFile) {
     let rules_ini = IniFile::from_str(include_str!(
         "../../../tests/fixtures/ini/miner_outbound_rules_contract.ini"
     ));
-    let mut rules = RuleSet::from_ini(&rules_ini).expect("outbound contract rules");
     let art_ini = IniFile::from_str(include_str!(
         "../../../tests/fixtures/ini/miner_outbound_art_contract.ini"
     ));
+    (rules_ini, art_ini)
+}
+
+fn outbound_contract_oracle() -> OutboundContractOracle {
+    let (rules_ini, art_ini) = outbound_contract_inputs();
+    let mut rules = RuleSet::from_ini(&rules_ini).expect("outbound contract rules");
     rules.merge_art_data(&ArtRegistry::from_ini(&art_ini));
     let overlays = OverlayTypeRegistry::from_ini(&rules_ini, None);
     let tib01 = overlays.id_for_name("TIB01").expect("retail TIB01");
@@ -1619,4 +1624,145 @@ fn cmin_second_cycle_leaves_the_pad_and_reharvests() {
         "miner must drive back out and harvest again after the first deposit \
          (stall = sharp-turn fallback path killed by the tube gate)",
     );
+}
+
+fn assert_contract_section(contract: &IniFile, retail: &IniFile, section_name: &str) {
+    let contract_section = contract
+        .section(section_name)
+        .unwrap_or_else(|| panic!("contract section [{section_name}]"));
+    let retail_section = retail
+        .section(section_name)
+        .unwrap_or_else(|| panic!("retail section [{section_name}]"));
+    for key in contract_section.keys() {
+        assert_eq!(
+            retail_section.get(key),
+            contract_section.get(key),
+            "retail [{section_name}] {key}= must match the tracked contract"
+        );
+    }
+}
+
+fn assert_miner_object_contract(contract: &RuleSet, retail: &RuleSet, id: &str) {
+    let expected = contract
+        .object(id)
+        .unwrap_or_else(|| panic!("contract {id}"));
+    let actual = retail.object(id).unwrap_or_else(|| panic!("retail {id}"));
+
+    assert_eq!(actual.strength, expected.strength, "{id} Strength");
+    assert_eq!(actual.armor, expected.armor, "{id} Armor");
+    assert_eq!(actual.harvester, expected.harvester, "{id} Harvester");
+    assert_eq!(actual.speed, expected.speed, "{id} Speed");
+    assert_eq!(actual.storage, expected.storage, "{id} Storage");
+    assert_eq!(actual.turret_rot, expected.turret_rot, "{id} ROT");
+    assert_eq!(actual.crusher, expected.crusher, "{id} Crusher");
+    assert_eq!(actual.locomotor, expected.locomotor, "{id} Locomotor");
+    assert_eq!(
+        actual.movement_zone, expected.movement_zone,
+        "{id} MovementZone"
+    );
+    assert_eq!(actual.speed_type, expected.speed_type, "{id} SpeedType");
+    assert_eq!(actual.teleporter, expected.teleporter, "{id} Teleporter");
+    assert_eq!(actual.accelerates, expected.accelerates, "{id} Accelerates");
+    assert_eq!(
+        actual.accel_factor, expected.accel_factor,
+        "{id} acceleration"
+    );
+    assert_eq!(
+        actual.decel_factor, expected.decel_factor,
+        "{id} deceleration"
+    );
+    assert_eq!(
+        actual.slowdown_distance, expected.slowdown_distance,
+        "{id} slowdown distance"
+    );
+    assert_eq!(actual.dock, expected.dock, "{id} Dock");
+}
+
+/// The narrow Drive fixture remains hermetic; this registered test ties its
+/// authored inputs and consumed fields to one real active-YR scenario.
+#[test]
+fn outbound_contract_matches_selected_retail_hills_battle() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let (miner_contract_rules_ini, miner_contract_art_ini) = outbound_contract_inputs();
+    let miner_contract_rules = outbound_contract_oracle().rules;
+    let rules_ini = &retail.authored_rules;
+    let art_ini = &retail.fixed_art;
+    let rules = &retail.rules;
+    for section in [
+        "General", "Riparius", "Clear", "Tiberium", "TIB01", "HARV", "CMIN", "GAREFN",
+    ] {
+        assert_contract_section(&miner_contract_rules_ini, rules_ini, section);
+    }
+    assert_contract_section(&miner_contract_art_ini, art_ini, "GAREFN");
+
+    // Literal fixture expectations remain in outbound_contract_oracle. Here
+    // equality also checks defaults absent from the authored retail text.
+    for id in ["HARV", "CMIN"] {
+        assert_miner_object_contract(&miner_contract_rules, rules, id);
+    }
+
+    let contract_miner = MinerConfig::from_rules(&miner_contract_rules);
+    let retail_miner = MinerConfig::from_rules(rules);
+    assert_eq!(retail_miner.ore_bale_value, contract_miner.ore_bale_value);
+    assert_eq!(retail_miner.gem_bale_value, contract_miner.gem_bale_value);
+    assert_eq!(
+        retail_miner.war_miner_capacity,
+        contract_miner.war_miner_capacity
+    );
+    assert_eq!(
+        retail_miner.chrono_miner_capacity,
+        contract_miner.chrono_miner_capacity
+    );
+    assert_eq!(
+        retail_miner.unload_tick_interval,
+        contract_miner.unload_tick_interval
+    );
+    assert_eq!(
+        rules.general.harvester_too_far_distance,
+        miner_contract_rules.general.harvester_too_far_distance
+    );
+    assert_eq!(
+        rules.general.chrono_harv_too_far_distance,
+        miner_contract_rules.general.chrono_harv_too_far_distance
+    );
+
+    let refinery = rules.object("GAREFN").expect("retail GAREFN");
+    let contract_refinery = miner_contract_rules
+        .object("GAREFN")
+        .expect("contract GAREFN");
+    assert_eq!(refinery.strength, contract_refinery.strength);
+    assert_eq!(refinery.armor, contract_refinery.armor);
+    assert_eq!(refinery.refinery, contract_refinery.refinery);
+    assert_eq!(refinery.bib, contract_refinery.bib);
+    assert_eq!(refinery.storage, contract_refinery.storage);
+    assert_eq!(refinery.free_unit, contract_refinery.free_unit);
+    assert_eq!(refinery.number_of_docks, contract_refinery.number_of_docks);
+    assert_eq!(refinery.power, contract_refinery.power);
+    assert_eq!(refinery.foundation, contract_refinery.foundation);
+    assert_eq!(refinery.queueing_cell, contract_refinery.queueing_cell);
+    assert!(refinery.refinery);
+    assert!(refinery.bib);
+    assert_eq!(refinery.foundation, "4x3");
+    assert_eq!(refinery.queueing_cell, [4, 1]);
+
+    let overlays = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
+    let tib01 = overlays.id_for_name("TIB01").expect("retail TIB01");
+    assert!(overlays.flags(tib01).is_some_and(|flags| flags.tiberium));
+    for terrain in ["Clear", "Tiberium"] {
+        let expected = miner_contract_rules
+            .terrain_rules
+            .semantics_by_name(terrain)
+            .unwrap_or_else(|| panic!("contract {terrain} terrain"));
+        let actual = rules
+            .terrain_rules
+            .semantics_by_name(terrain)
+            .unwrap_or_else(|| panic!("retail {terrain} terrain"));
+        assert_eq!(actual.buildable, expected.buildable, "{terrain} Buildable");
+        assert_eq!(
+            actual.speed_costs, expected.speed_costs,
+            "{terrain} speed-cost profile"
+        );
+    }
 }
