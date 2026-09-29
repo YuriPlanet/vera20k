@@ -224,6 +224,13 @@ fn iso_height_shift_cells(height_leptons: i32) -> i32 {
 
 /// Height above the map plane, in leptons, for one entity.
 ///
+/// Residual: this is not `ground_pose::object_world_z_leptons`. It ignores an
+/// exact coordinate and reads the stored level. Native See reads the object's
+/// coordinate Z, but VERA's sight records compare their origin every tick, so
+/// the exact Z (a Hover bob, a ramp step) would release and re-reveal the
+/// whole sight area each time and drift the hashed shroud counters. Native
+/// reveal cadence is unverified.
+///
 /// The engine keeps a single 3-D world coordinate per object and feeds its Z to
 /// both the reveal-centre shift and the line-of-sight viewer level, so terrain
 /// elevation and flight altitude are one quantity here too. The precedence

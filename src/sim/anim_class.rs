@@ -436,7 +436,7 @@ fn anim_owner_world_coords(
     AnimWorldCoord {
         x: centre.x,
         y: centre.y,
-        z: crate::sim::combat::object_world_z_leptons(owner, terrain),
+        z: crate::sim::movement::ground_pose::object_world_z_leptons(owner, terrain),
     }
 }
 

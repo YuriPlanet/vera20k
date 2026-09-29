@@ -751,15 +751,11 @@ fn update_fly_height(
             .passenger_role
             .cargo()
             .is_some_and(|cargo| cargo.count() != 0);
+    let world_z = super::ground_pose::object_world_z_leptons(entity, terrain);
     let loco = entity
         .locomotor
         .as_mut()
         .expect("Fly process owns a locomotor");
-    let world_z = entity.position.exact_z_leptons.unwrap_or_else(|| {
-        ground_z
-            .wrapping_add(if entity.on_bridge { 416 } else { 0 })
-            .wrapping_add(loco.altitude.to_num::<i32>())
-    });
     let output = loco
         .fly_runtime()
         .expect("Fly process owns Fly state")

@@ -193,7 +193,7 @@ fn first_yard_distance_accepts(
                 .wrapping_sub(1)
                 .wrapping_mul(crate::sim::cell_kernel::CELL_CENTER_LEPTONS),
         );
-    let yard_z = crate::sim::combat::object_world_z_leptons(yard, Some(terrain));
+    let yard_z = crate::sim::movement::ground_pose::object_world_z_leptons(yard, Some(terrain));
     let distance = crate::util::native_x87::distance_3d_leptons(
         [cell_x, cell_y, cell_z],
         [yard_x, yard_y, yard_z],

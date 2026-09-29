@@ -942,9 +942,12 @@ fn entity_world_leptons(
     entity: &crate::sim::game_entity::GameEntity,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> (i64, i64, i64) {
-    let z = terrain
-        .and_then(|t| combat::in_range::effective_z_leptons(entity, t))
-        .unwrap_or(0);
+    let z = terrain.map_or(0, |t| {
+        i64::from(crate::sim::combat::in_range::range_object_z_leptons(
+            entity,
+            Some(t),
+        ))
+    });
     (
         entity.position.rx as i64 * LEPTONS_PER_CELL + entity.position.sub_x.to_num::<i64>(),
         entity.position.ry as i64 * LEPTONS_PER_CELL + entity.position.sub_y.to_num::<i64>(),

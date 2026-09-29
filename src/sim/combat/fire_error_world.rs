@@ -198,10 +198,9 @@ impl FireSubject<'_> {
             warped_out: firer.is_warped_out(),
             warping_in: firer.is_warping_in(),
             on_bridge: firer.on_bridge,
-            z: self
-                .terrain()
-                .and_then(|terrain| in_range::effective_z_leptons(firer, terrain))
-                .map_or(0, |z| z as i32),
+            z: self.terrain().map_or(0, |terrain| {
+                crate::sim::combat::in_range::range_object_z_leptons(firer, Some(terrain))
+            }),
             berserk: firer.berserk.active,
             falling: firer.object_is_falling_down != 0,
             sinking: firer.sinking.is_active(),
@@ -336,10 +335,12 @@ impl FireSubject<'_> {
                         in_limbo: entity.lifecycle.in_limbo,
                         sinking: entity.sinking.is_active(),
                         on_bridge: entity.on_bridge,
-                        z: self
-                            .terrain()
-                            .and_then(|terrain| in_range::effective_z_leptons(entity, terrain))
-                            .map_or(0, |z| z as i32),
+                        z: self.terrain().map_or(0, |terrain| {
+                            crate::sim::combat::in_range::range_object_z_leptons(
+                                entity,
+                                Some(terrain),
+                            )
+                        }),
                         mission: entity.mission.current().raw(),
                         iron_curtained: crate::sim::superweapon::invulnerability::is_invulnerable(
                             entity.invulnerability.as_ref(),

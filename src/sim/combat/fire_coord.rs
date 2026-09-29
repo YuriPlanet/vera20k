@@ -238,7 +238,12 @@ fn fire_coordinate_base<'r>(
         .substrate
         .entities
         .get(snap.stable_id)
-        .map(|entity| super::object_world_z_leptons(entity, world.resolved_terrain.as_ref()))
+        .map(|entity| {
+            crate::sim::movement::ground_pose::object_world_z_leptons(
+                entity,
+                world.resolved_terrain.as_ref(),
+            )
+        })
         .or(snap.exact_z_leptons)
         .unwrap_or_else(|| i32::from(snap.level).wrapping_mul(LEPTONS_PER_LEVEL as i32));
     // The object coordinate every arm starts from, `vtable+0xAC`. For a

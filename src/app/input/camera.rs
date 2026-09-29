@@ -1121,7 +1121,7 @@ fn entity_lepton_coord(entity: &crate::sim::game_entity::GameEntity) -> (i32, i3
     let cell = crate::util::lepton::LEPTONS_PER_CELL_I32;
     let x = i32::from(entity.position.rx) * cell + entity.position.sub_x.to_num::<i32>();
     let y = i32::from(entity.position.ry) * cell + entity.position.sub_y.to_num::<i32>();
-    (x, y, crate::render::locomotor_visual::world_z_leptons(entity))
+    (x, y, crate::sim::movement::ground_pose::object_world_z_leptons(entity, None))
 }
 
 pub(crate) fn center_camera_on_cell(state: &mut AppState, rx: u16, ry: u16) {

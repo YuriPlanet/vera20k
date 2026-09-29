@@ -247,7 +247,7 @@ pub(crate) fn air_impact_from_entity(
     Some(AoEAirImpact {
         sub_x: entity.position.sub_x,
         sub_y: entity.position.sub_y,
-        z_leptons: i32::try_from(super::in_range::effective_z_leptons(entity, terrain?)?).ok()?,
+        z_leptons: crate::sim::combat::in_range::range_object_z_leptons(entity, Some(terrain?)),
     })
 }
 
@@ -922,11 +922,7 @@ fn push_airborne_aoe_damage(
     if entity.health.current == 0 || entity.dying {
         return;
     }
-    let Some(target_z) =
-        super::in_range::effective_z_leptons(entity, terrain).and_then(|z| i32::try_from(z).ok())
-    else {
-        return;
-    };
+    let target_z = crate::sim::combat::in_range::range_object_z_leptons(entity, Some(terrain));
     let impact_x = i32::from(impact_rx)
         .wrapping_mul(256)
         .wrapping_add(impact.sub_x.to_num::<i32>());
@@ -1047,20 +1043,7 @@ fn push_entity_aoe_damage(
         let y = i32::from(entity.position.ry)
             .wrapping_mul(256)
             .wrapping_add(entity.position.sub_y.to_num::<i32>());
-        let z = terrain
-            .and_then(|terrain| super::in_range::effective_z_leptons(entity, terrain))
-            .and_then(|z| i32::try_from(z).ok())
-            .unwrap_or_else(|| {
-                i32::from(entity.position.z)
-                    .wrapping_mul(LEPTONS_PER_LEVEL as i32)
-                    .wrapping_add(
-                        entity
-                            .locomotor
-                            .as_ref()
-                            .map(|locomotor| locomotor.altitude.to_num::<i32>())
-                            .unwrap_or(0),
-                    )
-            });
+        let z = crate::sim::combat::in_range::range_object_z_leptons(entity, terrain);
         (x, y, z)
     };
     let distance_leptons = if entity.category == EntityCategory::Structure && center_cell {

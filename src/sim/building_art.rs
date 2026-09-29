@@ -26,6 +26,11 @@ impl Simulation {
     ) -> Option<crate::sim::anim_class::AnimWorldCoord> {
         let entity = self.substrate.entities.get(id)?;
         let raw = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+        // The same object Z the damage fires anchor to (`anim_owner_world_coords`).
+        let z = crate::sim::movement::ground_pose::object_world_z_leptons(
+            entity,
+            self.resolved_terrain.as_ref(),
+        );
         let (dx, dy) = self
             .session
             .pixel_conversion_bounds
@@ -33,7 +38,7 @@ impl Simulation {
         Some(crate::sim::anim_class::AnimWorldCoord {
             x: raw.x.wrapping_sub(128).wrapping_add(dx),
             y: raw.y.wrapping_sub(128).wrapping_add(dy),
-            z: raw.z,
+            z,
         })
     }
 

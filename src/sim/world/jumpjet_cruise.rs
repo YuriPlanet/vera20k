@@ -555,11 +555,7 @@ impl Simulation {
             ];
 
             let xy = position_world_xy(&entity.position);
-            let z = entity.position.exact_z_leptons.unwrap_or_else(|| {
-                ground_surface_z_at(xy, entity.on_bridge, terrain, None)
-                    .unwrap_or(0)
-                    .wrapping_add(locomotor.altitude.to_num::<i32>())
-            });
+            let z = crate::sim::movement::ground_pose::object_world_z_leptons(entity, terrain);
             let object =
                 rules.and_then(|rules| rules.object(self.interner.resolve(entity.type_ref())));
             let (trig, _) = required_math_tables();

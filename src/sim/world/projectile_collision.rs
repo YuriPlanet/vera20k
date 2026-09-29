@@ -1457,7 +1457,7 @@ impl ProjectileCollisionWorld<'_> {
         ProjectileCoord::new(
             i32::from(object.position.rx) * 256 + object.position.sub_x.to_num::<i32>(),
             i32::from(object.position.ry) * 256 + object.position.sub_y.to_num::<i32>(),
-            crate::sim::combat::object_world_z_leptons(object, self.terrain),
+            crate::sim::movement::ground_pose::object_world_z_leptons(object, self.terrain),
         )
     }
 

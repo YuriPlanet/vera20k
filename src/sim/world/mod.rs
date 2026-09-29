@@ -781,9 +781,7 @@ impl SimSoundEvent {
     }
 
     fn world_z_leptons(position: &Position) -> i32 {
-        position.exact_z_leptons.unwrap_or_else(|| {
-            i32::from(position.z).wrapping_mul(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS)
-        })
+        crate::sim::movement::ground_pose::position_world_coord(position).z
     }
 }
 
@@ -1921,7 +1919,7 @@ impl Simulation {
                 ProjectileCoord::new(
                     i32::from(entity.position.rx) * 256 + entity.position.sub_x.to_num::<i32>(),
                     i32::from(entity.position.ry) * 256 + entity.position.sub_y.to_num::<i32>(),
-                    crate::sim::combat::object_world_z_leptons(entity, terrain),
+                    crate::sim::movement::ground_pose::object_world_z_leptons(entity, terrain),
                 )
             }
             crate::sim::combat::TargetKind::Cell(rx, ry) => {
@@ -1934,7 +1932,7 @@ impl Simulation {
                 ProjectileCoord::new(
                     i32::from(entity.position.rx) * 256 + entity.position.sub_x.to_num::<i32>(),
                     i32::from(entity.position.ry) * 256 + entity.position.sub_y.to_num::<i32>(),
-                    crate::sim::combat::object_world_z_leptons(entity, terrain),
+                    crate::sim::movement::ground_pose::object_world_z_leptons(entity, terrain),
                 )
             })
             .unwrap_or_else(|| {
@@ -3293,25 +3291,16 @@ impl Simulation {
             .map(Self::movement_sound_world)
     }
 
+    /// The object's coordinate for its sounds. Sound owners hold no terrain,
+    /// so an object without an exact coordinate uses its stored level.
     pub(crate) fn movement_sound_world(
         entity: &crate::sim::game_entity::GameEntity,
     ) -> crate::sim::anim_class::AnimWorldCoord {
-        let locomotor_z = entity
-            .locomotor
-            .as_ref()
-            .map_or(0, |locomotor| locomotor.altitude.to_num::<i32>());
+        let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
         crate::sim::anim_class::AnimWorldCoord {
-            x: i32::from(entity.position.rx)
-                .wrapping_mul(256)
-                .wrapping_add(entity.position.sub_x.to_num::<i32>()),
-            y: i32::from(entity.position.ry)
-                .wrapping_mul(256)
-                .wrapping_add(entity.position.sub_y.to_num::<i32>()),
-            z: entity.position.exact_z_leptons.unwrap_or_else(|| {
-                i32::from(entity.position.z)
-                    .wrapping_mul(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS)
-                    .wrapping_add(locomotor_z)
-            }),
+            x,
+            y,
+            z: crate::sim::movement::ground_pose::object_world_z_leptons(entity, None),
         }
     }
 

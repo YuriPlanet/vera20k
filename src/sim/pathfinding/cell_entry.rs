@@ -1740,13 +1740,8 @@ fn head_on_with_moving_ally(mover: &GameEntity, occupant: &GameEntity, frame: u3
 /// An object's native coordinate triple in leptons: cell origin plus sub-cell
 /// offset, and the exact Z when the mover retains one, else the level height.
 pub(crate) fn entity_world_leptons(entity: &GameEntity) -> [i32; 3] {
-    use crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
-    let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
-    let z = entity
-        .position
-        .exact_z_leptons
-        .unwrap_or_else(|| i32::from(entity.position.z as i8) * GROUND_LEVEL_HEIGHT_LEPTONS);
-    [x, y, z]
+    let coord = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+    [coord.x, coord.y, coord.z]
 }
 
 /// The head-on exit over raw inputs; see [`head_on_with_moving_ally`] for the

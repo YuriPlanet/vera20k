@@ -11,11 +11,12 @@ use crate::sim::intern::StringInterner;
 use crate::sim::world::Simulation;
 use crate::util::lepton::ground_height_leptons;
 
+use super::super::TargetKind;
 use super::super::combat_weapon::is_armed;
 use super::super::fire_error::FireError;
 use super::super::fire_error_world::FireSubject;
-use super::super::{TargetKind, object_world_z_leptons};
 use super::ExistingTargetDisposition;
+use crate::sim::movement::ground_pose::object_world_z_leptons;
 
 pub(super) fn entity_coord(entity: &GameEntity, terrain: Option<&ResolvedTerrainGrid>) -> [i32; 3] {
     [

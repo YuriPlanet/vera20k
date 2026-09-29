@@ -9,7 +9,6 @@ use super::Simulation;
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
@@ -425,11 +424,9 @@ impl Simulation {
                     {
                         continue;
                     }
-                    let Some(coord_z) = self
-                        .resolved_terrain
-                        .as_ref()
-                        .and_then(|terrain| combat::in_range::effective_z_leptons(entity, terrain))
-                    else {
+                    let Some(coord_z) = self.resolved_terrain.as_ref().map(|terrain| {
+                        crate::sim::combat::in_range::range_object_z_leptons(entity, Some(terrain))
+                    }) else {
                         continue;
                     };
                     members.push(group_destination::GroupDestinationMember {
@@ -442,7 +439,7 @@ impl Simulation {
                             i32::from(entity.position.ry)
                                 .wrapping_mul(256)
                                 .wrapping_add(entity.position.sub_y.to_num::<i32>()),
-                            coord_z as i32,
+                            coord_z,
                         ],
                         source_cell: (entity.position.rx as i16, entity.position.ry as i16),
                     });

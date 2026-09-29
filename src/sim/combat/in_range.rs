@@ -37,7 +37,6 @@ use crate::sim::combat::line_of_fire::{self, LineOfFireInputs};
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::StringInterner;
-use crate::sim::map::bridge_topology::BRIDGE_DECK_HEIGHT_LEPTONS;
 use crate::sim::movement::air_movement::{is_high_flying_in_query, is_low_flying_in_query};
 use crate::sim::production::foundation_dimensions;
 use crate::util::fixed_math::{SimFixed, isqrt_i64};
@@ -58,53 +57,28 @@ fn terrain_ground_z_at(
         .map(i64::from)
 }
 
-fn entity_ground_z_leptons(entity: &GameEntity, terrain: &ResolvedTerrainGrid) -> Option<i64> {
-    let world_x = i32::from(entity.position.rx)
-        .wrapping_mul(256)
-        .wrapping_add(entity.position.sub_x.to_num::<i32>());
-    let world_y = i32::from(entity.position.ry)
-        .wrapping_mul(256)
-        .wrapping_add(entity.position.sub_y.to_num::<i32>());
-    let ground = terrain_ground_z_at(
-        terrain,
-        entity.position.rx,
-        entity.position.ry,
-        world_x,
-        world_y,
-    )?;
-    Some(
-        ground
-            + if entity.on_bridge {
-                i64::from(BRIDGE_DECK_HEIGHT_LEPTONS)
-            } else {
-                0
-            },
-    )
-}
-
-/// Absolute world-coordinate Z of an entity. An object-owned exact coordinate
-/// is authoritative; otherwise this reconstructs exact sloped terrain ground,
-/// the entity-owned OnBridge deck offset, and locomotor altitude.
+/// The object Z the range family reads (InRange, CanFireAt's source, splash,
+/// threat distance, group destinations, the cursor's world point): the
+/// object's GetCoords Z from [`object_world_z_leptons`], except that a
+/// descending parachutist without an exact coordinate stays on its ground.
 ///
-/// Droppod and parachute altitudes are intentionally NOT added — those
-/// entities are always IsLowFlying-equivalent during descent and get
-/// ground-snapped by the InRange caller.
-pub(crate) fn effective_z_leptons(
+/// Residual: that exception is VERA's prior range rule, not a native one.
+/// Paratroopers are low-flying, so InRange snaps them as targets anyway, but a
+/// high-flying attacker's source Z and splash, threat and group-destination
+/// distances read this value. VERA's air-height read (`queried_flight_height`)
+/// also gives a parachutist height 0; native GetCoords/GetHeight during a
+/// parachute descent is unverified, so both stay together until it is.
+///
+/// [`object_world_z_leptons`]: crate::sim::movement::ground_pose::object_world_z_leptons
+pub(crate) fn range_object_z_leptons(
     entity: &GameEntity,
-    terrain: &ResolvedTerrainGrid,
-) -> Option<i64> {
-    if let Some(exact_z_leptons) = entity.position.exact_z_leptons {
-        return Some(i64::from(exact_z_leptons));
+    terrain: Option<&ResolvedTerrainGrid>,
+) -> i32 {
+    use crate::sim::movement::ground_pose;
+    if entity.parachute_state.is_some() && entity.position.exact_z_leptons.is_none() {
+        return ground_pose::object_ground_z_leptons(entity, terrain);
     }
-
-    let base = entity_ground_z_leptons(entity, terrain)?;
-    Some(
-        base + entity
-            .locomotor
-            .as_ref()
-            .map(|loco| loco.altitude.to_num::<i64>())
-            .unwrap_or(0),
-    )
+    ground_pose::object_world_z_leptons(entity, terrain)
 }
 
 /// `AirRangeBonus=` reaches `TechnoTypeClass+0x68C` through
@@ -239,7 +213,7 @@ pub(crate) fn inside_minimum_range(
 /// hit `target` with `weapon`, accounting for all Stage 1 gates.
 ///
 /// `src` is caller-supplied as `(attacker_x_lep, attacker_y_lep,
-/// effective_z_leptons(attacker, terrain))`.
+/// object_world_z_leptons(attacker, Some(terrain)))`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn compute_in_range(
     attacker: &GameEntity,
@@ -545,7 +519,7 @@ fn resolve_target_coords_3d(
             // Virtual+48 supplies the target point before +50. The height
             // predicate reads physical XY; the following Map queries use this
             // returned point (which can be a building's foundation centre).
-            let own_z = effective_z_leptons(t, terrain)?;
+            let own_z = i64::from(range_object_z_leptons(t, Some(terrain)));
             let tz = if is_low_flying_in_query(t, cells, Some((rules, interner))) {
                 native_ground_target_z(tx as i32, ty as i32, cells)?
             } else {
@@ -654,7 +628,10 @@ fn target_own_z_leptons(
     terrain: &ResolvedTerrainGrid,
 ) -> Option<i64> {
     match *target {
-        TargetKind::Entity(id) => effective_z_leptons(entities.get(id)?, terrain),
+        TargetKind::Entity(id) => Some(i64::from(range_object_z_leptons(
+            entities.get(id)?,
+            Some(terrain),
+        ))),
         TargetKind::Cell(rx, ry) => cell_own_coords(rx, ry, terrain).map(|(_, _, z)| z),
     }
 }
@@ -735,7 +712,7 @@ fn fire_source_for_target(
     let mut x = i64::from(attacker.position.rx) * 256 + attacker.position.sub_x.to_num::<i64>();
     let mut y = i64::from(attacker.position.ry) * 256 + attacker.position.sub_y.to_num::<i64>();
     let mut z = match target {
-        RangeTarget::Abstract(_) => effective_z_leptons(attacker, terrain)?,
+        RangeTarget::Abstract(_) => i64::from(range_object_z_leptons(attacker, Some(terrain))),
         RangeTarget::Cell(_) => {
             i64::from(crate::sim::movement::ground_pose::position_world_coord(&attacker.position).z)
         }
@@ -844,30 +821,61 @@ mod tests {
         e
     }
 
+    /// A descending parachutist stands on its ground for the range family
+    /// (VERA's prior rule, a recorded residual) while its world Z carries the
+    /// descent height; an exact coordinate wins for both.
     #[test]
-    fn effective_z_ground_unit() {
-        let e = ground_entity_at_level(5);
-        let mut terrain = flat_terrain(16, 16);
-        terrain.cells[10 * 16 + 10].level = 5;
-        assert_eq!(effective_z_leptons(&e, &terrain), Some(520));
+    fn range_z_keeps_a_descending_parachutist_on_its_ground() {
+        let mut e = ground_entity_at_level(0);
+        e.parachute_state = Some(
+            crate::sim::movement::parachute_descent::ParachuteDescentState {
+                rate: -3,
+                altitude: SimFixed::from_num(1200),
+            },
+        );
+        let terrain = flat_terrain(16, 16);
+        assert_eq!(range_object_z_leptons(&e, Some(&terrain)), 0);
+        assert_eq!(
+            crate::sim::movement::ground_pose::object_world_z_leptons(&e, Some(&terrain)),
+            1200
+        );
+        e.position.exact_z_leptons = Some(300);
+        assert_eq!(range_object_z_leptons(&e, Some(&terrain)), 300);
     }
 
     #[test]
-    fn effective_z_airborne_aircraft_adds_altitude() {
+    fn world_z_ground_unit() {
+        let e = ground_entity_at_level(5);
+        let mut terrain = flat_terrain(16, 16);
+        terrain.cells[10 * 16 + 10].level = 5;
+        assert_eq!(
+            crate::sim::movement::ground_pose::object_world_z_leptons(&e, Some(&terrain)),
+            520
+        );
+    }
+
+    #[test]
+    fn world_z_airborne_aircraft_adds_altitude() {
         let mut e = aircraft_at_altitude(1500);
         e.position.z = 0;
         let terrain = flat_terrain(16, 16);
-        assert_eq!(effective_z_leptons(&e, &terrain), Some(1500));
+        assert_eq!(
+            crate::sim::movement::ground_pose::object_world_z_leptons(&e, Some(&terrain)),
+            1500
+        );
 
         let mut e2 = aircraft_at_altitude(800);
         e2.position.z = 2;
         let mut elevated = flat_terrain(16, 16);
         elevated.cells[10 * 16 + 10].level = 2;
-        assert_eq!(effective_z_leptons(&e2, &elevated), Some(1008));
+        assert_eq!(
+            crate::sim::movement::ground_pose::object_world_z_leptons(&e2, Some(&elevated)),
+            1008
+        );
     }
 
     #[test]
-    fn gsi_04_03b_effective_z_uses_exact_sloped_subcell_and_air_altitude() {
+    fn gsi_04_03b_world_z_uses_exact_sloped_subcell_and_air_altitude() {
         let mut entity = aircraft_at_altitude(500);
         entity.position.sub_x = SimFixed::from_num(64);
         entity.position.sub_y = SimFixed::from_num(192);
@@ -875,25 +883,31 @@ mod tests {
         let cell = &mut terrain.cells[10 * 16 + 10];
         cell.level = 2;
         cell.slope_type = 1;
-        assert_eq!(effective_z_leptons(&entity, &terrain), Some(734));
-    }
-
-    #[test]
-    fn gsi_04_03b_effective_z_uses_entity_on_bridge_not_cell_deck() {
-        let mut entity = ground_entity_at_level(0);
-        let mut terrain = flat_terrain(16, 16);
-        terrain.cells[10 * 16 + 10].has_bridge_deck = true;
-
-        assert_eq!(effective_z_leptons(&entity, &terrain), Some(0));
-        entity.on_bridge = true;
         assert_eq!(
-            effective_z_leptons(&entity, &terrain),
-            Some(i64::from(BRIDGE_DECK_HEIGHT_LEPTONS))
+            crate::sim::movement::ground_pose::object_world_z_leptons(&entity, Some(&terrain)),
+            734
         );
     }
 
     #[test]
-    fn gsi_04_15_effective_z_prefers_exact_signed_world_coordinate() {
+    fn gsi_04_03b_world_z_uses_entity_on_bridge_not_cell_deck() {
+        let mut entity = ground_entity_at_level(0);
+        let mut terrain = flat_terrain(16, 16);
+        terrain.cells[10 * 16 + 10].has_bridge_deck = true;
+
+        assert_eq!(
+            crate::sim::movement::ground_pose::object_world_z_leptons(&entity, Some(&terrain)),
+            0
+        );
+        entity.on_bridge = true;
+        assert_eq!(
+            crate::sim::movement::ground_pose::object_world_z_leptons(&entity, Some(&terrain)),
+            crate::sim::map::bridge_topology::BRIDGE_DECK_HEIGHT_LEPTONS
+        );
+    }
+
+    #[test]
+    fn gsi_04_15_world_z_prefers_exact_signed_world_coordinate() {
         let mut entity = aircraft_at_altitude(1500);
         entity.position.rx = 600;
         entity.position.ry = 600;
@@ -902,7 +916,10 @@ mod tests {
         entity.on_bridge = true;
 
         let terrain = flat_terrain(1, 1);
-        assert_eq!(effective_z_leptons(&entity, &terrain), Some(-137));
+        assert_eq!(
+            crate::sim::movement::ground_pose::object_world_z_leptons(&entity, Some(&terrain)),
+            -137
+        );
     }
 
     #[test]

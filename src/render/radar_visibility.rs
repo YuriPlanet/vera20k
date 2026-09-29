@@ -130,7 +130,8 @@ fn radar_get_height_leptons(
             i32::from(entity.position.z as i8)
                 .wrapping_mul(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS)
         });
-    let mut height = super::locomotor_visual::world_z_leptons(entity).wrapping_sub(ground);
+    let mut height = crate::sim::movement::ground_pose::object_world_z_leptons(entity, None)
+        .wrapping_sub(ground);
     if entity.on_bridge {
         height = height.wrapping_sub(crate::sim::map::bridge_topology::BRIDGE_DECK_HEIGHT_LEPTONS);
     }

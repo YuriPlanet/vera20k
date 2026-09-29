@@ -249,7 +249,10 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
         });
         (
             ports,
-            super::object_world_z_leptons(transport, sim.resolved_terrain.as_ref()),
+            crate::sim::movement::ground_pose::object_world_z_leptons(
+                transport,
+                sim.resolved_terrain.as_ref(),
+            ),
         )
     };
     let mut first_volley = None;

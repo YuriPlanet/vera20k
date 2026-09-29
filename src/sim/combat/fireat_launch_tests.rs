@@ -78,7 +78,10 @@ impl Duel {
         ProjectileCoord::new(
             i32::from(entity.position.rx) * 256 + entity.position.sub_x.to_num::<i32>(),
             i32::from(entity.position.ry) * 256 + entity.position.sub_y.to_num::<i32>(),
-            crate::sim::combat::object_world_z_leptons(entity, self.sim.resolved_terrain.as_ref()),
+            crate::sim::movement::ground_pose::object_world_z_leptons(
+                entity,
+                self.sim.resolved_terrain.as_ref(),
+            ),
         )
     }
 

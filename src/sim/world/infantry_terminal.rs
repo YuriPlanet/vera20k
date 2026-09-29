@@ -166,8 +166,10 @@ impl Simulation {
             .expect("fatal Infantry retained for postlude");
         debug_assert_eq!(entity.category, EntityCategory::Infantry);
         let position = entity.position.clone();
-        let world_z_leptons =
-            crate::sim::combat::object_world_z_leptons(entity, self.resolved_terrain.as_ref());
+        let world_z_leptons = crate::sim::movement::ground_pose::object_world_z_leptons(
+            entity,
+            self.resolved_terrain.as_ref(),
+        );
         let (jumpjet, crashable) = self
             .object_type(entity.type_ref(), rules)
             .map_or((false, false), |object| (object.jumpjet, object.crashable));

@@ -55,89 +55,7 @@
 //! - Part of render/ — reads sim/ state read-only and writes none of it.
 //! - sim/ NEVER depends on render/, so nothing here may be called from sim/.
 
-use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::game_entity::GameEntity;
-use crate::sim::movement::locomotor::MovementLayer;
-
-/// What is carrying this entity's visual height, if anything.
-///
-/// The variants are ordered by the precedence the sim tick used to establish by
-/// write order: the ground pass ran first and the later passes overwrote it, so
-/// the last pass to touch an entity won. Preserved here as an explicit `match`
-/// rather than left implicit in pass ordering.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HeightSource {
-    /// Object-level falling state — a paradropped unit under a parachute.
-    Parachute,
-    /// A scripted missile in flight.
-    Rocket,
-    /// An air-layer locomotor holding the unit up.
-    AirLocomotor,
-    /// On the ground, with no additional visual height.
-    Ground,
-}
-
-fn height_source(entity: &GameEntity) -> HeightSource {
-    if entity.parachute_state.is_some() {
-        return HeightSource::Parachute;
-    }
-    if entity.rocket_state.is_some() {
-        return HeightSource::Rocket;
-    }
-    let airborne = entity
-        .locomotor
-        .as_ref()
-        .is_some_and(|loco| loco.layer == MovementLayer::Air && loco.kind != LocomotorKind::Rocket);
-    if airborne {
-        HeightSource::AirLocomotor
-    } else {
-        HeightSource::Ground
-    }
-}
-
-/// An entity's total world Z in leptons — the VERA answer to the native
-/// object's coordinate `+0xA4`.
-///
-/// This is the coordinate frame, not the render frame: it is what
-/// `CenterViewCommandClass` and the follow camera read, so the `BuildingClass`
-/// -128/-128 art shift must stay out of it (see [`building_art_anchor`]).
-///
-/// An exact object coordinate is already total world Z and replaces both terms
-/// below; otherwise the coarse signed terrain level and the object's altitude
-/// above it compose, exactly as [`screen_position`] composes their pixel forms.
-pub fn world_z_leptons(entity: &GameEntity) -> i32 {
-    if let Some(exact_z_leptons) = entity.position.exact_z_leptons {
-        return exact_z_leptons;
-    }
-    // The level byte is signed everywhere else that reads it.
-    i32::from(entity.position.z as i8) * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS
-        + height_leptons(entity)
-}
-
-/// This entity's height above the ground, in leptons.
-///
-/// Whichever state is carrying it — see [`HeightSource`] for why the order is
-/// what it is.
-fn height_leptons(entity: &GameEntity) -> i32 {
-    match height_source(entity) {
-        HeightSource::Parachute => entity
-            .parachute_state
-            .as_ref()
-            .map(|state| state.altitude.to_num::<i32>())
-            .unwrap_or(0),
-        HeightSource::Rocket => entity
-            .rocket_state
-            .as_ref()
-            .map(|state| state.altitude.to_num::<i32>())
-            .unwrap_or(0),
-        HeightSource::AirLocomotor => entity
-            .locomotor
-            .as_ref()
-            .map(|loco| loco.altitude.to_num::<i32>())
-            .unwrap_or(0),
-        HeightSource::Ground => 0,
-    }
-}
 
 fn adjust_for_z_lift_px(leptons: i32) -> f32 {
     crate::util::native_x87::adjust_for_z_standard(leptons) as f32
@@ -164,7 +82,9 @@ pub fn height_lift_px(entity: &GameEntity) -> f32 {
     if let Some(exact_z_leptons) = entity.position.exact_z_leptons {
         return adjust_for_z_lift_px(exact_z_leptons);
     }
-    adjust_for_z_lift_px(height_leptons(entity))
+    adjust_for_z_lift_px(crate::sim::movement::ground_pose::object_altitude_leptons(
+        entity,
+    ))
 }
 
 /// Where this entity is drawn, in world-space screen pixels.
@@ -254,6 +174,7 @@ mod tests {
     use crate::map::entities::EntityCategory;
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::movement::locomotor::LocomotorState;
+    use crate::sim::movement::locomotor::MovementLayer;
     use crate::util::fixed_math::SimFixed;
 
     fn air_unit(kind: LocomotorKind, altitude: i32) -> GameEntity {
@@ -299,7 +220,10 @@ mod tests {
                     .unwrap()
                     .altitude = SimFixed::from_num(125);
             }
-            let before = world_z_leptons(sim.substrate.entities.get(1).unwrap());
+            let before = crate::sim::movement::ground_pose::object_world_z_leptons(
+                sim.substrate.entities.get(1).unwrap(),
+                None,
+            );
             assert_eq!(before, 333);
             assert!(teleport_movement::issue_teleport_command(
                 &mut sim.substrate.entities,
@@ -310,7 +234,10 @@ mod tests {
                 0,
             ));
             let e = sim.substrate.entities.get(1).unwrap();
-            assert_eq!(world_z_leptons(e), before);
+            assert_eq!(
+                crate::sim::movement::ground_pose::object_world_z_leptons(e, None),
+                before
+            );
             assert_eq!(sim.foot_navigation_coordinate(1).unwrap().z, before);
             assert_eq!(height_lift_px(e), adjust_for_z_lift_px(before));
             teleport_movement::tick_teleport_movement(
@@ -323,7 +250,10 @@ mod tests {
             );
             let e = sim.substrate.entities.get(1).unwrap();
             assert_eq!(e.locomotor.as_ref().unwrap().active_kind(), kind);
-            assert_eq!(world_z_leptons(e), 208);
+            assert_eq!(
+                crate::sim::movement::ground_pose::object_world_z_leptons(e, None),
+                208
+            );
             assert_eq!(sim.foot_navigation_coordinate(1).unwrap().z, 208);
             assert_eq!(height_lift_px(e), adjust_for_z_lift_px(208));
         }

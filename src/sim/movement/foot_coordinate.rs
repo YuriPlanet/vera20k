@@ -16,28 +16,16 @@ pub(super) fn head_or_current(stored: Option<DriveCoord>, current: DriveCoord) -
         .unwrap_or(current)
 }
 
-/// Physical Object+9C projection. An exact producer write is total world Z.
-/// Legacy positions without one retain coarse ground and separate displacement;
-/// materialize that representation before changing the active locomotor.
+/// Physical Object+9C projection: retained XY and the object's world Z,
+/// without resampling changed terrain (an object without an exact coordinate
+/// uses its stored level plus its altitude source).
 pub(super) fn current_coordinate(entity: &GameEntity) -> DriveCoord {
-    let mut current = super::ground_pose::position_world_coord(&entity.position);
-    if entity.position.exact_z_leptons.is_some() {
-        return current;
+    let [x, y] = super::ground_pose::position_world_xy(&entity.position);
+    DriveCoord {
+        x,
+        y,
+        z: super::ground_pose::object_world_z_leptons(entity, None),
     }
-    if let Some(loco) = entity.locomotor.as_ref() {
-        let displacement = match loco.active_kind() {
-            LocomotorKind::Hover | LocomotorKind::Fly => loco.altitude.to_num::<i32>(),
-            // tick_rocket_movement advances the entity payload before copying
-            // it into the locomotor image. Read the writer, not the saved copy.
-            LocomotorKind::Rocket => entity
-                .rocket_state
-                .as_ref()
-                .map_or(0, |r| r.altitude.to_num::<i32>()),
-            _ => 0,
-        };
-        current.z = current.z.wrapping_add(displacement);
-    }
-    current
 }
 
 /// Publish the integer displacement of an existing altitude controller without

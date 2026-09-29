@@ -214,7 +214,7 @@ fn shp_z_adjust_in_runtime(
     runtime: Option<&crate::sim::runtime::SimRuntime>,
     entity: &GameEntity,
 ) -> f32 {
-    let world_z = crate::render::locomotor_visual::world_z_leptons(entity);
+    let world_z = crate::sim::movement::ground_pose::object_world_z_leptons(entity, None);
     let height_only = adjust_for_z_standard(world_z)
         .wrapping_neg()
         .wrapping_sub(2);
@@ -279,7 +279,7 @@ fn unit_z_adjust_in_runtime(
     entity: &GameEntity,
     unloading_body: bool,
 ) -> i32 {
-    let world_z = crate::render::locomotor_visual::world_z_leptons(entity);
+    let world_z = crate::sim::movement::ground_pose::object_world_z_leptons(entity, None);
     if !matches!(
         entity.category,
         EntityCategory::Unit | EntityCategory::Infantry

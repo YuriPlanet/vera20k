@@ -96,6 +96,69 @@ pub(crate) fn position_world_coord(position: &Position) -> DriveCoord {
     }
 }
 
+/// ObjectClass GetCoords Z (virtual +0x48, Object+0xA4) of any object: the
+/// one answer to "how high is this object". An exact coordinate a native
+/// writer retained is already total world Z. Otherwise VERA still keeps the
+/// object's height in parts: the live sloped ground at its XY (Map578080
+/// through `ground_height_leptons`), the OnBridge deck, and its one active
+/// altitude source ([`object_altitude_leptons`]). Without terrain the stored
+/// signed level stands in for the ground. InRange's low-flying snap is its
+/// caller's rule, not part of this read.
+pub(crate) fn object_world_z_leptons(
+    entity: &crate::sim::game_entity::GameEntity,
+    terrain: Option<&ResolvedTerrainGrid>,
+) -> i32 {
+    entity.position.exact_z_leptons.unwrap_or_else(|| {
+        object_ground_z_leptons(entity, terrain).wrapping_add(object_altitude_leptons(entity))
+    })
+}
+
+/// The ground an object without an exact coordinate stands on: the live
+/// sloped ground at its XY plus the OnBridge deck, or without terrain its
+/// stored signed level (which already includes a deck).
+pub(crate) fn object_ground_z_leptons(
+    entity: &crate::sim::game_entity::GameEntity,
+    terrain: Option<&ResolvedTerrainGrid>,
+) -> i32 {
+    let [x, y] = position_world_xy(&entity.position);
+    terrain
+        .and_then(|terrain| terrain.cell(entity.position.rx, entity.position.ry))
+        .and_then(|cell| ground_height_leptons(cell.level, cell.slope_type, x, y).ok())
+        .map(|ground| {
+            ground.wrapping_add(if entity.on_bridge {
+                BRIDGE_HEIGHT_DELTA_LEPTONS as i32
+            } else {
+                0
+            })
+        })
+        .unwrap_or_else(|| i32::from(entity.position.z as i8) * GROUND_LEVEL_HEIGHT_LEPTONS)
+}
+
+/// Height above the ground of an object without an exact coordinate: a
+/// parachute's descent height, else a rocket's own flight state (its
+/// locomotor keeps only a lagging piggyback copy), else the altitude of an
+/// Air-layer locomotor or of an active Hover (which floats on the Ground
+/// layer). Any other Ground-layer locomotor never lifts, which keeps a landed
+/// or docked aircraft on the floor whatever its stale altitude.
+pub(crate) fn object_altitude_leptons(entity: &crate::sim::game_entity::GameEntity) -> i32 {
+    if let Some(state) = entity.parachute_state.as_ref() {
+        return state.altitude.to_num::<i32>();
+    }
+    if let Some(state) = entity.rocket_state.as_ref() {
+        return state.altitude.to_num::<i32>();
+    }
+    entity
+        .locomotor
+        .as_ref()
+        .filter(|locomotor| {
+            use crate::rules::locomotor_type::LocomotorKind;
+            (locomotor.layer == crate::sim::movement::locomotor::MovementLayer::Air
+                && locomotor.kind != LocomotorKind::Rocket)
+                || locomotor.active_kind() == LocomotorKind::Hover
+        })
+        .map_or(0, |locomotor| locomotor.altitude.to_num::<i32>())
+}
+
 /// Building render-coordinate459EF0 and GetYSort449410's type adjustment.
 /// Shared by display registration and presentation; neither uses center coords.
 pub(crate) fn building_render_order_parts(

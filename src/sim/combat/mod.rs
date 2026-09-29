@@ -124,7 +124,6 @@ use crate::sim::house_state::HouseState;
 use crate::sim::house_strategy::update_anger_nodes;
 use crate::sim::infantry;
 use crate::sim::intern::{InternedId, StringInterner};
-use crate::sim::map::bridge_topology::BRIDGE_DECK_HEIGHT_LEPTONS;
 use crate::sim::mission::authority::queue_entity_mission_deferred;
 use crate::sim::mission::concrete_effects::represented_assign_target;
 use crate::sim::mission::{MissionId, MissionType};
@@ -149,7 +148,7 @@ use crate::sim::vision::FogState;
 use crate::sim::wave::WaveDamageEvent;
 use crate::sim::world::{FireOriginSnapshot, SimFireEvent, SimSoundEvent};
 use crate::util::fixed_math::{SIM_ZERO, SimFixed};
-use crate::util::lepton::{LEPTONS_PER_LEVEL, ground_height_leptons};
+use crate::util::lepton::LEPTONS_PER_LEVEL;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53};
 
 use super::animation::SequenceKind;
@@ -1583,66 +1582,7 @@ pub(crate) fn death_announcement_event(
     })
 }
 
-/// Exact ObjectClass-style world Z for effect and projectile coordinates.
-///
-/// This is deliberately distinct from [`in_range::effective_z_leptons`]: the
-/// range helper applies low-flight targeting rules, while native animation and
-/// bullet coordinates retain the object's actual airborne height. An explicit
-/// exact coordinate is already absolute. Otherwise the base is exact sloped
-/// terrain plus the object-owned bridge deck, followed by the one active
-/// object/locomotor altitude source in presentation precedence order.
-pub(crate) fn object_world_z_leptons(
-    entity: &GameEntity,
-    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-) -> i32 {
-    if let Some(exact_z_leptons) = entity.position.exact_z_leptons {
-        return exact_z_leptons;
-    }
-
-    let world_x = i32::from(entity.position.rx)
-        .wrapping_mul(256)
-        .wrapping_add(entity.position.sub_x.to_num::<i32>());
-    let world_y = i32::from(entity.position.ry)
-        .wrapping_mul(256)
-        .wrapping_add(entity.position.sub_y.to_num::<i32>());
-    let base_z = terrain
-        .and_then(|terrain| terrain.cell(entity.position.rx, entity.position.ry))
-        .and_then(|cell| ground_height_leptons(cell.level, cell.slope_type, world_x, world_y).ok())
-        .map(|ground_z| {
-            ground_z.wrapping_add(if entity.on_bridge {
-                BRIDGE_DECK_HEIGHT_LEPTONS
-            } else {
-                0
-            })
-        })
-        // Position.z is already the effective layer level (including a bridge
-        // deck), so the mapless fallback must not add OnBridge a second time.
-        .unwrap_or_else(|| i32::from(entity.position.z).wrapping_mul(LEPTONS_PER_LEVEL as i32));
-
-    let altitude = entity
-        .parachute_state
-        .as_ref()
-        .map(|state| state.altitude.to_num::<i32>())
-        .or_else(|| {
-            entity
-                .rocket_state
-                .as_ref()
-                .map(|state| state.altitude.to_num::<i32>())
-        })
-        .or_else(|| {
-            entity
-                .locomotor
-                .as_ref()
-                .filter(|locomotor| {
-                    locomotor.layer == crate::sim::movement::locomotor::MovementLayer::Air
-                        && locomotor.kind != crate::rules::locomotor_type::LocomotorKind::Rocket
-                })
-                .map(|locomotor| locomotor.altitude.to_num::<i32>())
-        })
-        .unwrap_or(0);
-
-    base_z.wrapping_add(altitude)
-}
+use crate::sim::movement::ground_pose::object_world_z_leptons;
 
 fn attack_world_z_leptons(
     target: TargetKind,
