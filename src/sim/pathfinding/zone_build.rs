@@ -1830,14 +1830,11 @@ mod tests {
         assert!(redirect.is_none());
     }
 
-    /// OPEN: accepted raw path tokens can address native process data outside
-    /// the proven direction/zero slots; missing Tube pairs may change routes.
-    /// See PHASE3_TUBE_HIERARCHY_20260910.md for trigger and bounded delivery.
-    #[test]
-    #[ignore = "429780 arbitrary raw direction-data and invalid registry reads remain unproved"]
-    fn tube_hierarchy_raw_process_memory_domain_is_unresolved() {
-        panic!("unresolved: raw process-memory reads accepted by7283C0 into429780");
-    }
+    // OPEN: accepted raw path tokens can address native process data outside
+    // the proven direction/zero slots; missing Tube pairs may change routes.
+    // See PHASE3_TUBE_HIERARCHY_20260910.md for trigger and bounded delivery.
+    // Residual (formerly an ignored placeholder test): 429780 arbitrary raw direction-data and invalid registry reads remain unproved.
+    // Unresolved: raw process-memory reads accepted by7283C0 into429780.
 
     /// `MapClass::RegisterBridgeOrTubeHierarchyPairs` 0x00582D70 enters its
     /// bridge branch on `CellClass::IsBridge` 0x00486750 **OR**
