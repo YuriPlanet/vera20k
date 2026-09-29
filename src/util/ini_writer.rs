@@ -15,91 +15,6 @@
 //! ## Dependency rules
 //! - Part of util/ — no dependencies on game modules.
 
-/// Update (or insert) `[section] key=value` in `content`, returning the new
-/// file bytes.
-///
-/// Matching is case-insensitive on the section and key names (as INI requires);
-/// the names are written using the casing passed in. When the key already
-/// exists in the section, only its value is replaced and the line's terminator
-/// is kept. When the section exists but the key does not, the key is appended
-/// to the end of that section. When the section is absent, a new section is
-/// appended at the end of the file. An empty input yields a fresh section.
-/// Lines that are not valid UTF-8 are passed through verbatim, never matched.
-#[cfg(test)]
-pub fn set_ini_value(content: &[u8], section: &str, key: &str, value: &str) -> Vec<u8> {
-    let target_section = section.trim();
-    let target_key = key.trim();
-    let new_line = format!("{key}={value}");
-    let lines = split_lines(content);
-
-    // Locate the FIRST matching section block, the key within it (if present),
-    // and where a missing key would be appended (the end of that block's keys).
-    // Win32's WritePrivateProfileString operates on the first matching section
-    // span, so any later duplicate `[section]` blocks are ignored for both the
-    // lookup and the insert position.
-    let mut section_found = false;
-    let mut key_idx: Option<usize> = None;
-    let mut insert_after: Option<usize> = None;
-    let mut in_first_block = false;
-    for (idx, (text, _)) in lines.iter().enumerate() {
-        let Ok(line) = std::str::from_utf8(text) else {
-            continue; // non-UTF-8: never a header/key, leave untouched
-        };
-        if let Some(name) = section_header_name(line) {
-            if !section_found && name.eq_ignore_ascii_case(target_section) {
-                section_found = true;
-                in_first_block = true;
-                insert_after = Some(idx);
-            } else {
-                // Any later header (including a duplicate target) ends the block.
-                in_first_block = false;
-            }
-            continue;
-        }
-        if in_first_block {
-            if let Some(k) = key_name(line) {
-                if key_idx.is_none() && k.eq_ignore_ascii_case(target_key) {
-                    key_idx = Some(idx);
-                }
-                insert_after = Some(idx);
-            }
-        }
-    }
-
-    let mut out = Vec::with_capacity(content.len() + new_line.len() + CRLF.len() + 4);
-    for (idx, (text, terminator)) in lines.iter().enumerate() {
-        if Some(idx) == key_idx {
-            // Replace the value in place, keeping this line's own terminator.
-            out.extend_from_slice(new_line.as_bytes());
-            out.extend_from_slice(terminator);
-            continue;
-        }
-        out.extend_from_slice(text);
-        out.extend_from_slice(terminator);
-        if key_idx.is_none() && section_found && Some(idx) == insert_after {
-            // Section exists but the key does not — append it here. If the
-            // anchor line was the unterminated last line, terminate it first.
-            if terminator.is_empty() {
-                out.extend_from_slice(CRLF);
-            }
-            out.extend_from_slice(new_line.as_bytes());
-            out.extend_from_slice(CRLF);
-        }
-    }
-
-    if !section_found {
-        if !out.is_empty() && !out.ends_with(b"\n") {
-            out.extend_from_slice(CRLF);
-        }
-        out.extend_from_slice(format!("[{section}]").as_bytes());
-        out.extend_from_slice(CRLF);
-        out.extend_from_slice(new_line.as_bytes());
-        out.extend_from_slice(CRLF);
-    }
-
-    out
-}
-
 /// Update several keys in the first matching section in one traversal and one
 /// output buffer.
 ///
@@ -294,7 +209,11 @@ mod tests {
     fn replaces_value_preserving_other_keys_and_sections() {
         let input = b"[Options]\r\nGameSpeed=3\r\n[Audio]\r\nSoundVolume=0.700000\r\n\
 ScoreVolume=0.600000\r\nInGameMusic=yes\r\n[Network]\r\nNetID=ffff,ffff,ffff,\r\n";
-        let out = s(set_ini_value(input, "Audio", "ScoreVolume", "0.250000"));
+        let out = s(set_ini_values(
+            input,
+            "Audio",
+            &[("ScoreVolume", "0.250000")],
+        ));
         assert!(out.contains("ScoreVolume=0.250000\r\n"));
         assert!(out.contains("SoundVolume=0.700000\r\n"));
         assert!(out.contains("InGameMusic=yes\r\n"));
@@ -306,7 +225,7 @@ ScoreVolume=0.600000\r\nInGameMusic=yes\r\n[Network]\r\nNetID=ffff,ffff,ffff,\r\
     #[test]
     fn updates_only_the_targeted_section() {
         let input = b"[A]\r\nVol=1\r\n[B]\r\nVol=2\r\n";
-        let out = s(set_ini_value(input, "B", "Vol", "9"));
+        let out = s(set_ini_values(input, "B", &[("Vol", "9")]));
         assert_eq!(out, "[A]\r\nVol=1\r\n[B]\r\nVol=9\r\n");
     }
 
@@ -314,7 +233,7 @@ ScoreVolume=0.600000\r\nInGameMusic=yes\r\n[Network]\r\nNetID=ffff,ffff,ffff,\r\
     #[test]
     fn appends_missing_key_within_section() {
         let input = b"[Audio]\r\nSoundVolume=0.7\r\n";
-        let out = s(set_ini_value(input, "Audio", "ScoreVolume", "0.5"));
+        let out = s(set_ini_values(input, "Audio", &[("ScoreVolume", "0.5")]));
         assert_eq!(out, "[Audio]\r\nSoundVolume=0.7\r\nScoreVolume=0.5\r\n");
     }
 
@@ -322,7 +241,7 @@ ScoreVolume=0.600000\r\nInGameMusic=yes\r\n[Network]\r\nNetID=ffff,ffff,ffff,\r\
     #[test]
     fn appends_missing_section_at_eof() {
         let input = b"[Options]\r\nGameSpeed=3\r\n";
-        let out = s(set_ini_value(input, "Audio", "ScoreVolume", "0.5"));
+        let out = s(set_ini_values(input, "Audio", &[("ScoreVolume", "0.5")]));
         assert_eq!(
             out,
             "[Options]\r\nGameSpeed=3\r\n[Audio]\r\nScoreVolume=0.5\r\n"
@@ -332,7 +251,7 @@ ScoreVolume=0.600000\r\nInGameMusic=yes\r\n[Network]\r\nNetID=ffff,ffff,ffff,\r\
     /// Empty input yields a fresh section (CRLF default).
     #[test]
     fn empty_input_creates_section() {
-        let out = s(set_ini_value(b"", "Audio", "ScoreVolume", "0.4"));
+        let out = s(set_ini_values(b"", "Audio", &[("ScoreVolume", "0.4")]));
         assert_eq!(out, "[Audio]\r\nScoreVolume=0.4\r\n");
     }
 
@@ -340,7 +259,7 @@ ScoreVolume=0.600000\r\nInGameMusic=yes\r\n[Network]\r\nNetID=ffff,ffff,ffff,\r\
     #[test]
     fn preserves_lf_line_endings() {
         let input = b"[Audio]\nScoreVolume=0.6\n";
-        let out = s(set_ini_value(input, "Audio", "ScoreVolume", "0.3"));
+        let out = s(set_ini_values(input, "Audio", &[("ScoreVolume", "0.3")]));
         assert_eq!(out, "[Audio]\nScoreVolume=0.3\n");
     }
 
@@ -348,14 +267,18 @@ ScoreVolume=0.600000\r\nInGameMusic=yes\r\n[Network]\r\nNetID=ffff,ffff,ffff,\r\
     #[test]
     fn matches_section_and_key_case_insensitively() {
         let input = b"[audio]\r\nscorevolume=0.6\r\n";
-        let out = s(set_ini_value(input, "Audio", "ScoreVolume", "0.3"));
+        let out = s(set_ini_values(input, "Audio", &[("ScoreVolume", "0.3")]));
         assert_eq!(out, "[audio]\r\nScoreVolume=0.3\r\n");
     }
 
     /// An unterminated final header line gets terminated before the inserted key.
     #[test]
     fn inserts_after_unterminated_header() {
-        let out = s(set_ini_value(b"[Audio]", "Audio", "ScoreVolume", "0.4"));
+        let out = s(set_ini_values(
+            b"[Audio]",
+            "Audio",
+            &[("ScoreVolume", "0.4")],
+        ));
         assert_eq!(out, "[Audio]\r\nScoreVolume=0.4\r\n");
     }
 
@@ -363,7 +286,7 @@ ScoreVolume=0.600000\r\nInGameMusic=yes\r\n[Network]\r\nNetID=ffff,ffff,ffff,\r\
     #[test]
     fn preserves_comment_lines() {
         let input = b"[Audio]\r\n; music level\r\nScoreVolume=0.6\r\n";
-        let out = s(set_ini_value(input, "Audio", "ScoreVolume", "0.1"));
+        let out = s(set_ini_values(input, "Audio", &[("ScoreVolume", "0.1")]));
         assert_eq!(out, "[Audio]\r\n; music level\r\nScoreVolume=0.1\r\n");
     }
 
@@ -372,7 +295,11 @@ ScoreVolume=0.600000\r\nInGameMusic=yes\r\n[Network]\r\nNetID=ffff,ffff,ffff,\r\
     #[test]
     fn appends_missing_key_into_first_duplicate_section() {
         let input = b"[Audio]\r\nSoundVolume=0.7\r\n[Audio]\r\nMusicVolume=0.5\r\n";
-        let out = s(set_ini_value(input, "Audio", "ScoreVolume", "0.250000"));
+        let out = s(set_ini_values(
+            input,
+            "Audio",
+            &[("ScoreVolume", "0.250000")],
+        ));
         assert_eq!(
             out,
             "[Audio]\r\nSoundVolume=0.7\r\nScoreVolume=0.250000\r\n\
@@ -386,7 +313,7 @@ ScoreVolume=0.600000\r\nInGameMusic=yes\r\n[Network]\r\nNetID=ffff,ffff,ffff,\r\
     #[test]
     fn replaces_only_first_duplicate_section_key() {
         let input = b"[Audio]\r\nScoreVolume=0.6\r\n[Audio]\r\nScoreVolume=0.9\r\n";
-        let out = s(set_ini_value(input, "Audio", "ScoreVolume", "0.1"));
+        let out = s(set_ini_values(input, "Audio", &[("ScoreVolume", "0.1")]));
         assert_eq!(
             out,
             "[Audio]\r\nScoreVolume=0.1\r\n[Audio]\r\nScoreVolume=0.9\r\n"
@@ -398,7 +325,7 @@ ScoreVolume=0.600000\r\nInGameMusic=yes\r\n[Network]\r\nNetID=ffff,ffff,ffff,\r\
     #[test]
     fn appended_key_uses_crlf_even_in_lf_file() {
         let input = b"[Audio]\nSoundVolume=0.7\n";
-        let out = s(set_ini_value(input, "Audio", "ScoreVolume", "0.5"));
+        let out = s(set_ini_values(input, "Audio", &[("ScoreVolume", "0.5")]));
         assert_eq!(out, "[Audio]\nSoundVolume=0.7\nScoreVolume=0.5\r\n");
     }
 

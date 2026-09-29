@@ -13,8 +13,3 @@
 //!   The render draw-offset lives behind a render-facing trait in render/, so the
 //!   sim-side service never gains a render dependency.
 pub mod bridge_topology;
-
-/// SHADOW two-layer object-list occupancy (GATE A2). NOT authoritative — the live
-/// occupancy store stays `sim::occupancy::OccupancyGrid`. Parallel gamemd-faithful
-/// repr used to validate the bridge two-layer/order/transition contract via tests.
-pub mod bridge_occupancy_shadow;

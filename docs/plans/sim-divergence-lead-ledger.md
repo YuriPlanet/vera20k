@@ -1398,7 +1398,7 @@ goes straight to Ghidra; there is no lens to look through.
 | NH-11 | `src/sim/aircraft/drop_payload.rs`, `paradrop_mission.rs` | YR superweapon paradrop. TS `Paradrop_Cargo` (`aircraft.cpp:1041`) is scenario-reinforcement cargo with no cadence — comparing them would import TS legacy. `dropship.cpp` deliberately not consulted. |
 | NH-12 | `src/sim/superweapon/genetic_converter.rs`, `psychic_reveal.rs`, `force_shield.rs`, `iron_curtain.rs`, `paradrop.rs`; `wave.rs` type 3 (MagBeam) | Yuri psychic/genetic content is YR-only; TS's nearest analogues to shield/curtain are the Firestorm wall and drop pods, both TS content. TS's `wave.cpp` knows only SONIC, LASER, BIG_LASER. `ionblast.cpp` (Ion Cannon) is TS-only. |
 | NH-13 | `src/sim/particles/spark_world.rs`, particle store/serde plumbing, the `system_ai.rs` take/reinsert ownership dance | VERA-internal architecture. |
-| NH-14 | `src/sim/map/` (`mod.rs`, `bridge_topology.rs`, `bridge_occupancy_shadow.rs`) | Not homologous *to the vision group's homolog set* — it is a bridge-topology / two-layer occupancy read service, not a cell or shroud master. the reference tree's bridge code lives in `map.cpp` but belongs to the movement/terrain groups, which are covered by the `bridge` entries. |
+| NH-14 | `src/sim/map/` (`mod.rs`, `bridge_topology.rs`) | Not homologous *to the vision group's homolog set* — it is a bridge-topology read service, not a cell or shroud master. the reference tree's bridge code lives in `map.cpp` but belongs to the movement/terrain groups, which are covered by the `bridge` entries. |
 
 ---
 
