@@ -2319,60 +2319,55 @@ mod cursor_animation_tests {
         );
     }
 
-    /// RESIDUAL - gamemd address 0x00587410,
-    /// `MapClass::FindBridgeConnection_Predicate`, branch selection.
-    ///
-    /// The overlay branch is ported: step 3 above gates the engineer Enter
-    /// cursor on `bridge_hut_has_collapsed_span`, so a hut whose span carries
-    /// no collapsed anchor no longer offers a repair cursor.
-    ///
-    /// Trigger, corrected 2026-08-19: NOT "a partially damaged span". The
-    /// native picks its branch from whichever of the four 5x5 cases matched
-    /// LAST, and a cell whose iso-tile sits in a bridge tileset window is a
-    /// tileset match whose overlay is never read (the body is an if /
-    /// else-if chain testing `cell+0x38` before `cell+0x44`). A repair hut
-    /// sits beside ramp and bridgehead iso-tiles, so the tileset branch is
-    /// plausibly the ordinary case rather than a corner - though whether it
-    /// wins the last-match race on stock maps is UNCHECKED. Whenever it does,
-    /// gamemd walks `BridgeRecord`s at tolerance 3 and VERA walks overlays.
-    ///
-    /// Effect and DIRECTION: unbounded, and it can point either way. Where
-    /// the record branch would return true and the overlay walk finds no
-    /// anchor, VERA withholds a cursor gamemd shows - the opposite of the
-    /// over-eager cursor this fix removed. The repair itself is unaffected:
-    /// `context_order.rs` and the world-order path accept the order on the
-    /// hut flag alone, so a player who clicks anyway still repairs. What is
-    /// lost is the affordance, and a player reading the cursor concludes the
-    /// bridge cannot be repaired.
-    ///
-    /// Frequency: every mouse-over of a repair hut with an engineer selected
-    /// on a bridged map - the same cadence as the defect it replaces, not
-    /// narrower.
-    ///
-    /// Also unported, verified separately and NOT part of the branch problem
-    /// above: at 0x0051E3B0 the BridgeRepairHut arm RETURNS unconditionally.
-    /// `read_memory 0x0051E520` decodes the tail after the
-    /// `CALL 0x00587410` at 0x0051E54C as
-    /// `NEG AL; SBB EAX,EAX; AND AL,0xFD; ADD EAX,0x20; RET 0x8` - 0x1D when
-    /// the predicate holds, 0x20 when it does not, with no path past it. gamemd
-    /// therefore never reaches a later cursor case for a hut, while
-    /// `capability_cursor_for_hover` falls through to the capturable and
-    /// friendly-structure cases below.
-    ///
-    /// Trigger: every engineer hover over a repair hut. Effect today is nil -
-    /// `CABHUT` carries no `Capturable=` in `ini/rulesmd.ini`, so the case
-    /// immediately below does not fire - but nothing constrains the cases after
-    /// it, and a modded or future hut type would diverge silently.
-    ///
-    /// Blocker: the three geometry tables are data this crate has no reader
-    /// for; the tolerance-3 record hop needs `FindBridgeRecord`'s semantics
-    /// ported first; and settling the direction needs a live check of what a
-    /// stock hut's 5x5 actually contains.
-    #[test]
-    #[ignore = "gamemd 0x00587410 picks overlay-vs-record branch by last 5x5 match; VERA always walks overlays"]
-    fn bridge_hut_repair_cursor_always_takes_the_overlay_branch() {
-        panic!(
-            "unimplemented: branch selection + record branch of FindBridgeConnection_Predicate 0x00587410"
-        );
-    }
+    // RESIDUAL - gamemd address 0x00587410,
+    // `MapClass::FindBridgeConnection_Predicate`, branch selection.
+    //
+    // The overlay branch is ported: step 3 above gates the engineer Enter
+    // cursor on `bridge_hut_has_collapsed_span`, so a hut whose span carries
+    // no collapsed anchor no longer offers a repair cursor.
+    //
+    // Trigger, corrected 2026-08-19: NOT "a partially damaged span". The
+    // native picks its branch from whichever of the four 5x5 cases matched
+    // LAST, and a cell whose iso-tile sits in a bridge tileset window is a
+    // tileset match whose overlay is never read (the body is an if /
+    // else-if chain testing `cell+0x38` before `cell+0x44`). A repair hut
+    // sits beside ramp and bridgehead iso-tiles, so the tileset branch is
+    // plausibly the ordinary case rather than a corner - though whether it
+    // wins the last-match race on stock maps is UNCHECKED. Whenever it does,
+    // gamemd walks `BridgeRecord`s at tolerance 3 and VERA walks overlays.
+    //
+    // Effect and DIRECTION: unbounded, and it can point either way. Where
+    // the record branch would return true and the overlay walk finds no
+    // anchor, VERA withholds a cursor gamemd shows - the opposite of the
+    // over-eager cursor this fix removed. The repair itself is unaffected:
+    // `context_order.rs` and the world-order path accept the order on the
+    // hut flag alone, so a player who clicks anyway still repairs. What is
+    // lost is the affordance, and a player reading the cursor concludes the
+    // bridge cannot be repaired.
+    //
+    // Frequency: every mouse-over of a repair hut with an engineer selected
+    // on a bridged map - the same cadence as the defect it replaces, not
+    // narrower.
+    //
+    // Also unported, verified separately and NOT part of the branch problem
+    // above: at 0x0051E3B0 the BridgeRepairHut arm RETURNS unconditionally.
+    // `read_memory 0x0051E520` decodes the tail after the
+    // `CALL 0x00587410` at 0x0051E54C as
+    // `NEG AL; SBB EAX,EAX; AND AL,0xFD; ADD EAX,0x20; RET 0x8` - 0x1D when
+    // the predicate holds, 0x20 when it does not, with no path past it. gamemd
+    // therefore never reaches a later cursor case for a hut, while
+    // `capability_cursor_for_hover` falls through to the capturable and
+    // friendly-structure cases below.
+    //
+    // Trigger: every engineer hover over a repair hut. Effect today is nil -
+    // `CABHUT` carries no `Capturable=` in `ini/rulesmd.ini`, so the case
+    // immediately below does not fire - but nothing constrains the cases after
+    // it, and a modded or future hut type would diverge silently.
+    //
+    // Blocker: the three geometry tables are data this crate has no reader
+    // for; the tolerance-3 record hop needs `FindBridgeRecord`'s semantics
+    // ported first; and settling the direction needs a live check of what a
+    // stock hut's 5x5 actually contains.
+    // Residual (formerly an ignored placeholder test): gamemd 0x00587410 picks overlay-vs-record branch by last 5x5 match; VERA always walks overlays.
+    // Unimplemented: branch selection + record branch of FindBridgeConnection_Predicate 0x00587410.
 }

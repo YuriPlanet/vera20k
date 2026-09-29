@@ -316,28 +316,25 @@ mod tests {
         assert!(parse_tubes(&ini).is_empty());
     }
 
-    /// RESIDUAL — gamemd address 0x007283C0, `MapClass::ReadTubesINI`.
-    ///
-    /// Trigger, corrected: a `[Tubes]` row that runs out of fields before it
-    /// reaches either a `-1` or the native loop's 100th slot. A row that
-    /// simply has no sentinel inside 100 fields is NOT this case - since the
-    /// truncation fix in this module it is kept at 99 steps, matching the
-    /// native counter.
-    ///
-    /// Effect: gamemd calls `CRT__strtok` 0x007C9CC2 past the end of the row,
-    /// gets NULL, and passes it straight to `CRT__atoi` 0x007C9B72, which
-    /// dereferences it with no null test — an access violation during map
-    /// load. VERA spends the same constructor ID and aborts the load with a
-    /// typed error rather than terminating the process.
-    ///
-    /// Frequency: never in a retail map — the YR map editor always emits the
-    /// sentinel. Reachable only through a hand-edited or third-party map.
-    ///
-    /// Left divergent deliberately only in host failure form: matching gamemd
-    /// means crashing. Constructor cost and no-continuation behavior match.
-    #[test]
-    #[ignore = "gamemd faults the process; VERA returns a hard load error after the same ID spend"]
-    fn gsi_04_15_sentinel_less_row_diverges_from_a_native_crash() {
-        panic!("intentional divergence: gamemd access-faults where VERA hard-errors the load");
-    }
+    // RESIDUAL — gamemd address 0x007283C0, `MapClass::ReadTubesINI`.
+    //
+    // Trigger, corrected: a `[Tubes]` row that runs out of fields before it
+    // reaches either a `-1` or the native loop's 100th slot. A row that
+    // simply has no sentinel inside 100 fields is NOT this case - since the
+    // truncation fix in this module it is kept at 99 steps, matching the
+    // native counter.
+    //
+    // Effect: gamemd calls `CRT__strtok` 0x007C9CC2 past the end of the row,
+    // gets NULL, and passes it straight to `CRT__atoi` 0x007C9B72, which
+    // dereferences it with no null test — an access violation during map
+    // load. VERA spends the same constructor ID and aborts the load with a
+    // typed error rather than terminating the process.
+    //
+    // Frequency: never in a retail map — the YR map editor always emits the
+    // sentinel. Reachable only through a hand-edited or third-party map.
+    //
+    // Left divergent deliberately only in host failure form: matching gamemd
+    // means crashing. Constructor cost and no-continuation behavior match.
+    // Residual (formerly an ignored placeholder test): gamemd faults the process; VERA returns a hard load error after the same ID spend.
+    // Intentional divergence: gamemd access-faults where VERA hard-errors the load.
 }

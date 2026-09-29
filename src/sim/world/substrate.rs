@@ -243,19 +243,15 @@ impl ObjectSubstrate {
     }
 
     // State-hash folds over substrate-owned occupation state (F13).
-    // Called from `state_hash_with_schema` at fixed positions; the fold
+    // Called from `state_hash` at fixed positions; the fold
     // order and byte layout are part of the hash contract.
 
     /// Fold the authoritative sparse raw occupation bytes without conflating
     /// coordinates or the ground/deck planes. Empty raw state contributes no
     /// bytes, preserving established hashes while every modeled zero remains
     /// represented canonically by the absence of a sparse entry.
-    pub(crate) fn fold_raw_cell_occupation(
-        &self,
-        hasher: &mut impl std::hash::Hasher,
-        include_process_dummy: bool,
-    ) {
-        if include_process_dummy && let Some(dummy) = self.raw_cell_occupation.dummy_for_hash() {
+    pub(crate) fn fold_raw_cell_occupation(&self, hasher: &mut impl std::hash::Hasher) {
+        if let Some(dummy) = self.raw_cell_occupation.dummy_for_hash() {
             b"raw-dummy-occupation-v1".hash(hasher);
             dummy.hash(hasher);
         }

@@ -251,12 +251,10 @@ mod tests {
     }
 
     #[test]
-    fn crate_authority_every_raw_word_changes_v114_hash_only() {
+    fn crate_authority_every_raw_word_changes_the_hash() {
         use crate::sim::world::Simulation;
 
-        let baseline = Simulation::new();
-        let baseline_current = baseline.state_hash();
-        let baseline_v113 = baseline.state_hash_without_crate_authority_v114();
+        let baseline_current = Simulation::new().state_hash();
         for slot in [
             CrateSlot {
                 start_frame: 8,
@@ -282,10 +280,6 @@ mod tests {
             let mut changed = Simulation::new();
             *changed.crate_authority.slot_mut(73) = slot;
             assert_ne!(baseline_current, changed.state_hash());
-            assert_eq!(
-                baseline_v113,
-                changed.state_hash_without_crate_authority_v114()
-            );
         }
     }
 

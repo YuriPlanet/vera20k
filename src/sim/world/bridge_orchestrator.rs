@@ -324,8 +324,8 @@ const LOW_COLLAPSED_ANCHORS: [u8; 2] = [0x64, 0x65];
 /// agree. Original execution over both Anytown huts returns0/0/1/0 for healthy,
 /// first-damaged, collapsed and repaired states, with unchanged Cells/RNG/frame:
 /// `tools/spatial_oracle/anytown_damage/hut_cursor`. Its other-axis and mixed-
-/// family selection paths remain instruction evidence. The test
-/// `bridge_hut_repair_cursor_always_takes_the_overlay_branch` records the
+/// family selection paths remain instruction evidence. The residual note
+/// on the bridge-hut repair cursor in `app/input/cursor.rs` records the
 /// separate structural-branch limitation.
 pub(crate) fn bridge_hut_has_collapsed_span(sim: &Simulation, hut_center: (u16, u16)) -> bool {
     hut_has_collapsed_anchor(&|x, y| bridge_overlay_at(sim, x, y), hut_center)

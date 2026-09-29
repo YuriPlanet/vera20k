@@ -79,37 +79,7 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // Schema171: live type acceleration preserves retasked track progression;
 // fresh turning defers admission.
 // See docs/research/TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md, PR415 attribution.
-const SLICE6_BASELINE_HASH_PRE_RETIRED_TIBERIUM_STATE_V174: u64 = 0x35D6_8C9D_840F_2F74;
-// Schema174 removes folds instead of adding them: OreGrowthState's node-era
-// scanner cursor, candidate lists and sample counters, and ProductionState's
-// fallback ore overlay id. The pre-174 projection folds the values those fields
-// held IN THIS FIXTURE (zero, empty, None): its node-era scan never advanced,
-// and it never calls the spawner seeding, the one path that set the fallback
-// id. It is not a general reconstruction; a scenario finalized by the map
-// loader held Some(first TIB* id).
-// Paid Walk (2026-09-21) changes both projections through E1 alone: native
-// polar coordinates, FacingClass timer refresh and the Foot speed cache. The
-// generic direction cache is no longer its movement authority. Replacing only
-// E1 with ec27dc26's final state reproduces old current90DA2A8E0C06D5E3 and
-// pre174221E77F911A4FB24 exactly; tanks and RNG match on all16 frames. See
-// docs/research/COMBAT_WALK_REPLAY_ATTRIBUTION.md. Rust pins, not native goldens.
-const SLICE6_BASELINE_HASH_PRE_CRATE_SPEED_V181: u64 = 0x7B34_5825_40F4_B3BA;
-// v181 folds Foot+580, including default1.0. The pre-181 assertion below
-// proves this fixture's shift comes only from the added hash field.
-const SLICE6_BASELINE_HASH_PRE_DISPLAY_LAYERS_V182: u64 = 0x952D_1DDE_1A61_B49D;
-// Snapshot182 adds ordered display vectors. The pre-182 projection below
-// must reproduce the previous whole-fixture hash, including all RNG/state.
-const SLICE6_BEFORE_INFANTRY_ROT_HASH: u64 = 2557321976219781054;
-// Infantry ctor517BBD supplies PrimaryFacing ROT127. The comparison below
-// changes only that retained rate back to0 and reproduces every previous pin.
-// Schema186 removes each entity's always-None aircraft release-tail fold. The
-// pre186 assertion retains this fixture's preceding current hash, independently
-// of the existing constructor-rate projection and native paid-Walk witnesses.
-const SLICE6_BASELINE_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 0x8801_AD46_9E2A_9ECA;
-// Schema187: the pre187 projection below preserves the preceding full pin.
-// Schema189 folds retained Techno+3D4; Before(189) below reproduces v188.
-// v190 adds saved Foot neighbor history. Before(190) reproduces the full v189
-// fixture; it has no retained counter plane. Route/RNG pins are unchanged.
+// Infantry ctor 517BBD supplies PrimaryFacing ROT 127 (asserted below).
 // 2026-09-23 Drive/Ship Process path request (behavior, not composition):
 // Drive/Ship orders from every producer (player, pursuit, rally, miners) are
 // accepted by the Unit setter without an order-time A*, PowerOn or redirect.
@@ -168,14 +138,7 @@ const SLICE6_BASELINE_HASH_PRE_AIRCRAFT_RELEASE_V186: u64 = 0x8801_AD46_9E2A_9EC
 // the same step: with its four default fields folded back in their old place,
 // this change reproduced every facing-only pin (final 0x6CAD_D2FC_438A_0BC2),
 // RNG streams included. Old values: the commit that moved them.
-const SLICE6_BASELINE_HASH_PRE_BARREL_ELEVATION_V239: u64 = 0xD28A_0344_C7E9_5CB4;
-// Schema 239 adds only the barrel elevation fold: its projection
-// reproduces the prior pin.
 const SLICE6_BASELINE_HASH: u64 = 0x8CB9_BA0F_43C5_BB2A;
-const SLICE6_BASELINE_HASH_PRE_RETIRED_RALLY_V220: u64 = 0x8A48_34A5_69FE_54D2;
-const SLICE6_BASELINE_HASH_PRE_NATIVE_IDENTITY_V217: u64 = 0x2092_3652_93FA_213F;
-const SLICE6_BASELINE_HASH_PRE_AIRCRAFT_CRASH_V208: u64 = 0x3710_07AB_7B8C_0BF8;
-const SLICE6_BASELINE_HASH_PRE_REARM_TIMER_V202: u64 = 0x1F51_0E2E_EFE9_BF48;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -410,10 +373,6 @@ fn replay_hash_stable_through_slice6() {
     }
     let hash = sim.state_hash();
     println!(
-        "[schema168 slice6] pre168={:016X}",
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(168))
-    );
-    println!(
         "[slice6] counter-projected={hash:016X} live={live_hash:016X} streams={:016X},{:016X},{:016X}",
         sim.scenario_rng.state(),
         sim.main_rng.state(),
@@ -442,83 +401,6 @@ fn replay_hash_stable_through_slice6() {
     }
     let infantry_facing = sim.substrate.entities.get(3).unwrap().body_facing;
     assert_eq!(infantry_facing.rot_per_frame(), 0x7F00);
-    sim.substrate
-        .entities
-        .get_mut(3)
-        .unwrap()
-        .body_facing
-        .set_rot(0);
-    assert_eq!(
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(186)),
-        SLICE6_BEFORE_INFANTRY_ROT_HASH,
-        "only the corrected Infantry constructor rate may differ from the preceding baseline"
-    );
-    assert_eq!(
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(174)),
-        SLICE6_BASELINE_HASH_PRE_RETIRED_TIBERIUM_STATE_V174,
-        "pre-174 projection drifted from the documented paid Walk behavior"
-    );
-    assert_eq!(
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(181)),
-        SLICE6_BASELINE_HASH_PRE_CRATE_SPEED_V181,
-        "excluding only Foot+580 must preserve the pre-181 fixture"
-    );
-    assert_eq!(
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(182)),
-        SLICE6_BASELINE_HASH_PRE_DISPLAY_LAYERS_V182,
-        "excluding only display vectors must preserve the pre-182 fixture"
-    );
-    sim.substrate.entities.get_mut(3).unwrap().body_facing = infantry_facing;
-    assert_eq!(
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(186)),
-        SLICE6_BASELINE_HASH_PRE_AIRCRAFT_RELEASE_V186,
-        "restoring only the absent release-tail fold must reproduce the prior fixture"
-    );
-    assert_eq!(
-        sim.state_hash(),
-        hash,
-        "restore facing within the historical counter projection"
-    );
-    assert_eq!(
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(187)),
-        0x43BD_B315_707D_27CA,
-        "schema187 only replaces zero remaining-shot fields with the retained index in this fixture"
-    );
-    assert_eq!(
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(189)),
-        0x121F_3225_5B6F_8747,
-        "v189 adds only the retained Techno+3D4 hash fold"
-    );
-    assert_eq!(
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(190)),
-        13190223968348790889,
-        "v190 changes only the Foot neighbor-history hash composition in this fixture"
-    );
-    assert_eq!(
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(202)),
-        SLICE6_BASELINE_HASH_PRE_REARM_TIMER_V202,
-        "v202 only folds the object's rearm timer in place of the target's counters"
-    );
-    assert_eq!(
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(208)),
-        SLICE6_BASELINE_HASH_PRE_AIRCRAFT_CRASH_V208,
-        "v208 only folds the crash latch, its AI edge and the Fly fall counter"
-    );
-    assert_eq!(
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(217)),
-        SLICE6_BASELINE_HASH_PRE_NATIVE_IDENTITY_V217,
-        "schema217 must preserve this fixture's prior hash after excluding native identity and fallback-cell Land"
-    );
-    assert_eq!(
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(220)),
-        SLICE6_BASELINE_HASH_PRE_RETIRED_RALLY_V220,
-        "schema220 only drops the two empty rally copies from this fixture's hash"
-    );
-    assert_eq!(
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(239)),
-        SLICE6_BASELINE_HASH_PRE_BARREL_ELEVATION_V239,
-        "schema239 only adds the barrel elevation fold"
-    );
     assert_eq!(
         hash, SLICE6_BASELINE_HASH,
         "Slice 6 scripted-retask state hash drifted. Treat this as behavior drift \

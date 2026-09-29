@@ -68,13 +68,6 @@ pub const SIM_TICK_HZ: u32 = 45;
 // Conversion helpers
 // ---------------------------------------------------------------------------
 
-/// Convert an `i32` to `SimFixed`.
-#[cfg(test)]
-#[inline]
-pub fn sim_from_i32(val: i32) -> SimFixed {
-    SimFixed::from_num(val)
-}
-
 /// Truncate `SimFixed` to `i32` (rounds toward zero).
 #[inline]
 pub fn sim_to_i32(val: SimFixed) -> i32 {
@@ -104,107 +97,8 @@ pub fn sim_from_f64(val: f64) -> SimFixed {
 }
 
 // ---------------------------------------------------------------------------
-// Delta time
-// ---------------------------------------------------------------------------
-
-/// Fixed-point delta time from a millisecond tick count.
-///
-/// Converts an integer millisecond tick count to a fixed-point seconds
-/// value (the client passes `SIM_TICK_MS` = 22 ms).
-///
-/// Example: `dt_from_tick_ms(66)` ≈ 0.066 (stored as 4325/65536).
-#[cfg(test)]
-#[inline]
-pub fn dt_from_tick_ms(tick_ms: u32) -> SimFixed {
-    SimFixed::from_num(tick_ms) / SimFixed::from_num(1000u16)
-}
-
-// ---------------------------------------------------------------------------
 // Math helpers
 // ---------------------------------------------------------------------------
-
-/// Fixed-point absolute value.
-#[cfg(test)]
-#[inline]
-pub fn fixed_abs(val: SimFixed) -> SimFixed {
-    val.abs()
-}
-
-/// Fixed-point clamp to `[min, max]`.
-#[cfg(test)]
-#[inline]
-pub fn fixed_clamp(val: SimFixed, min: SimFixed, max: SimFixed) -> SimFixed {
-    if val < min {
-        min
-    } else if val > max {
-        max
-    } else {
-        val
-    }
-}
-
-/// Fixed-point linear interpolation: `a + (b - a) * t`.
-///
-/// `t` should be in `[0, 1]` but is not clamped internally.
-#[cfg(test)]
-#[inline]
-pub fn fixed_lerp(a: SimFixed, b: SimFixed, t: SimFixed) -> SimFixed {
-    a + (b - a) * t
-}
-
-/// Fixed-point `max(a, b)`.
-#[cfg(test)]
-#[inline]
-pub fn fixed_max(a: SimFixed, b: SimFixed) -> SimFixed {
-    if a >= b { a } else { b }
-}
-
-/// Fixed-point `min(a, b)`.
-#[cfg(test)]
-#[inline]
-pub fn fixed_min(a: SimFixed, b: SimFixed) -> SimFixed {
-    if a <= b { a } else { b }
-}
-
-/// Deterministic fixed-point square root via Newton's method.
-///
-/// Returns `√val` with full I16F16 precision (~0.000015).
-/// 8 iterations of Newton's method on the underlying integer representation
-/// guarantee convergence for the entire non-negative I16F16 range.
-///
-/// Returns `SIM_ZERO` for zero or negative inputs.
-#[cfg(test)]
-pub fn fixed_sqrt(val: SimFixed) -> SimFixed {
-    if val <= SIM_ZERO {
-        return SIM_ZERO;
-    }
-    // Newton's method: guess_{n+1} = (guess_n + val / guess_n) / 2
-    // Start with val/2 as initial guess (or val if val < 2 to avoid zero guess).
-    let two = SimFixed::from_num(2u8);
-    let mut guess: SimFixed = if val < two { val } else { val / two };
-    for _ in 0..8 {
-        // guard against division by zero (shouldn't happen with positive val)
-        if guess <= SIM_ZERO {
-            return SIM_ZERO;
-        }
-        guess = (guess + val / guess) / two;
-    }
-    guess
-}
-
-/// Squared distance between two points: `dx*dx + dy*dy`.
-///
-/// Use this to compare distances without taking a square root.
-/// For example, `fixed_distance_sq(dx, dy) < threshold * threshold` avoids
-/// the cost and imprecision of `fixed_sqrt`.
-///
-/// **Warning:** Overflows if `dx` or `dy` exceed ~181 (since 181² ≈ 32,761 ≈ SimFixed max).
-/// For large cell deltas (maps > 181 cells), use `int_distance_to_sim()` instead.
-#[cfg(test)]
-#[inline]
-pub fn fixed_distance_sq(dx: SimFixed, dy: SimFixed) -> SimFixed {
-    dx * dx + dy * dy
-}
 
 /// Euclidean distance for SimFixed values: `sqrt(dx² + dy²)`.
 ///
@@ -380,78 +274,6 @@ mod tests {
         assert!((half - 0.5).abs() < 0.001);
     }
 
-    #[test]
-    fn test_dt_from_tick_ms() {
-        let dt: SimFixed = dt_from_tick_ms(33);
-        let dt_f32: f32 = dt.to_num();
-        // 33/1000 = 0.033. Fixed-point rounds slightly, but should be very close.
-        assert!((dt_f32 - 0.033).abs() < 0.001, "dt={dt_f32}");
-        // 10 ticks of dt should accumulate close to 0.33.
-        let ten_dt: SimFixed = dt * SimFixed::from_num(10u8);
-        let ten_f32: f32 = ten_dt.to_num();
-        assert!((ten_f32 - 0.33).abs() < 0.01, "10*dt={ten_f32}");
-    }
-
-    #[test]
-    fn test_dt_zero() {
-        let dt: SimFixed = dt_from_tick_ms(0);
-        assert_eq!(dt, SIM_ZERO);
-    }
-
-    #[test]
-    fn test_fixed_sqrt_perfect_squares() {
-        for val in [1, 4, 9, 16, 25, 36, 49, 64, 100, 144, 400, 900] {
-            let result: SimFixed = fixed_sqrt(SimFixed::from_num(val));
-            let expected: f32 = (val as f32).sqrt();
-            let result_f32: f32 = result.to_num();
-            assert!(
-                (result_f32 - expected).abs() < 0.01,
-                "sqrt({val}): got {result_f32}, expected {expected}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_fixed_sqrt_non_perfect() {
-        // sqrt(2) ≈ 1.41421
-        let result: f32 = fixed_sqrt(SimFixed::from_num(2)).to_num();
-        assert!((result - 1.41421).abs() < 0.001, "sqrt(2)={result}");
-        // sqrt(1200) ≈ 34.641 (max altitude)
-        let result: f32 = fixed_sqrt(SimFixed::from_num(1200)).to_num();
-        assert!((result - 34.641).abs() < 0.01, "sqrt(1200)={result}");
-    }
-
-    #[test]
-    fn test_fixed_sqrt_small_values() {
-        let result: f32 = fixed_sqrt(SIM_HALF).to_num();
-        assert!((result - 0.7071).abs() < 0.01, "sqrt(0.5)={result}");
-    }
-
-    #[test]
-    fn test_fixed_sqrt_zero_and_negative() {
-        assert_eq!(fixed_sqrt(SIM_ZERO), SIM_ZERO);
-        assert_eq!(fixed_sqrt(SimFixed::from_num(-5)), SIM_ZERO);
-    }
-
-    #[test]
-    fn test_fixed_clamp() {
-        let lo: SimFixed = SimFixed::from_num(0);
-        let hi: SimFixed = SimFixed::from_num(1);
-        assert_eq!(fixed_clamp(SimFixed::from_num(-1), lo, hi), lo);
-        assert_eq!(fixed_clamp(SIM_HALF, lo, hi), SIM_HALF);
-        assert_eq!(fixed_clamp(SimFixed::from_num(5), lo, hi), hi);
-    }
-
-    #[test]
-    fn test_fixed_lerp() {
-        let a: SimFixed = SimFixed::from_num(10);
-        let b: SimFixed = SimFixed::from_num(20);
-        let mid: f32 = fixed_lerp(a, b, SIM_HALF).to_num();
-        assert!((mid - 15.0).abs() < 0.01, "lerp(10,20,0.5)={mid}");
-        assert_eq!(fixed_lerp(a, b, SIM_ZERO), a);
-        assert_eq!(fixed_lerp(a, b, SIM_ONE), b);
-    }
-
     // -----------------------------------------------------------------------
     // Facing tests
     // -----------------------------------------------------------------------
@@ -575,34 +397,10 @@ mod tests {
     }
 
     #[test]
-    fn test_sim_conversions() {
-        assert_eq!(sim_to_i32(sim_from_i32(42)), 42);
-        assert_eq!(sim_to_i32(sim_from_i32(-7)), -7);
-        let val: SimFixed = sim_from_f32(3.14);
-        let back: f32 = sim_to_f32(val);
-        assert!((back - 3.14).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_fixed_max_min() {
-        let a: SimFixed = SimFixed::from_num(3);
-        let b: SimFixed = SimFixed::from_num(7);
-        assert_eq!(fixed_max(a, b), b);
-        assert_eq!(fixed_min(a, b), a);
-    }
-
-    #[test]
     fn test_new_constants() {
         assert_eq!(SIM_TWO, SimFixed::from_num(2));
         let one_five: f32 = SIM_1_5.to_num();
         assert!((one_five - 1.5).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_sim_from_f64() {
-        let val: SimFixed = sim_from_f64(3.14);
-        let back: f32 = sim_to_f32(val);
-        assert!((back - 3.14).abs() < 0.001);
     }
 
     /// S0 GATE (design Correction 1): pin the ReadDouble->SimFixed quantization.
@@ -633,25 +431,6 @@ mod tests {
             // (b) chosen path equals from_num(reference_double):
             assert_eq!(from_f64, SimFixed::from_num(reference), "row {s:?}");
         }
-    }
-
-    #[test]
-    fn test_fixed_distance_sq() {
-        // 3-4-5 triangle: dx=3, dy=4 → dist_sq = 25
-        let dx: SimFixed = SimFixed::from_num(3);
-        let dy: SimFixed = SimFixed::from_num(4);
-        let dist_sq: SimFixed = fixed_distance_sq(dx, dy);
-        assert_eq!(dist_sq, SimFixed::from_num(25));
-        // sqrt(25) = 5
-        let dist: f32 = fixed_sqrt(dist_sq).to_num();
-        assert!((dist - 5.0).abs() < 0.01, "dist={dist}");
-    }
-
-    #[test]
-    fn test_fixed_abs() {
-        assert_eq!(fixed_abs(SimFixed::from_num(-5)), SimFixed::from_num(5));
-        assert_eq!(fixed_abs(SimFixed::from_num(5)), SimFixed::from_num(5));
-        assert_eq!(fixed_abs(SIM_ZERO), SIM_ZERO);
     }
 
     #[test]

@@ -7,7 +7,7 @@
 //! Responsibility boundaries:
 //! - `command_schedule.rs`: queue admission, due batches, house order and group destinations
 //! - `world_commands.rs`: individual payloads and selection/ownership helpers
-//! - `world_hash.rs` / `hash_schema.rs` — deterministic folds and historical projections
+//! - `world_hash.rs` — deterministic state-hash folds
 //! - `world_spawn.rs` — entity spawning from map data and production
 //! - `world_orders.rs` — order-intent tick systems (attack-move, guard, area-guard)
 //! - `lifecycle.rs` / `substrate.rs` — object transitions, stores and registration order
@@ -31,7 +31,6 @@ pub mod edge_cell;
 mod gap_generator;
 mod ground_move;
 pub(crate) use ground_move::GroundMove;
-mod hash_schema;
 mod house_base;
 mod house_defeat;
 pub(crate) use house_base::HouseBaseState;

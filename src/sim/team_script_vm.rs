@@ -1069,18 +1069,11 @@ impl TeamScriptState {
 }
 
 impl TeamScriptVm {
-    /// `ai_teams` (schema v238) adds each team's creation frame and forming
-    /// byte and, tagged, the AI triggers whose track record left its
-    /// registered state; `recruitment` (v241) adds, tagged, each team's
-    /// recruitment state once it leaves its constructor values and the
-    /// objects' teams to rejoin. A state without them hashes as before.
-    pub(crate) fn hash_state(
-        &self,
-        current_frame: i32,
-        ai_teams: bool,
-        recruitment: bool,
-        hasher: &mut impl Hasher,
-    ) {
+    /// Folds each team's creation frame and forming byte, the AI triggers
+    /// whose track record left its registered state (tagged), and each team's
+    /// recruitment state once it leaves its constructor values plus the
+    /// objects' teams to rejoin (tagged).
+    pub(crate) fn hash_state(&self, current_frame: i32, hasher: &mut impl Hasher) {
         // TeamClass::ComputeCRC observes live Team/Script state, not the VM's
         // source registry or allocator. Action-49's +0x84 success flag is not
         // included by the captured YR 1.001 CRC sequence.
@@ -1108,11 +1101,9 @@ impl TeamScriptVm {
             // The retired target and per-type counts, always empty.
             None::<u64>.hash(hasher);
             Vec::<(TeamMemberTypeIdentity, u32)>::new().hash(hasher);
-            if ai_teams {
-                team.created_frame.hash(hasher);
-                team.formed.hash(hasher);
-            }
-            if recruitment && team.recruitment_state_moved(current_frame) {
+            team.created_frame.hash(hasher);
+            team.formed.hash(hasher);
+            if team.recruitment_state_moved(current_frame) {
                 b"team-recruitment-v1".hash(hasher);
                 team.members.hash(hasher);
                 team.slot_counts.hash(hasher);
@@ -1127,7 +1118,7 @@ impl TeamScriptVm {
                 team.guard_timer.remaining(current_frame).hash(hasher);
             }
         }
-        if recruitment && self.teams.values().any(|team| team.retarget) {
+        if self.teams.values().any(|team| team.retarget) {
             b"team-retarget-v1".hash(hasher);
             for (id, team) in &self.teams {
                 if team.retarget {
@@ -1135,24 +1126,22 @@ impl TeamScriptVm {
                 }
             }
         }
-        if recruitment && !self.rejoin_team.is_empty() {
+        if !self.rejoin_team.is_empty() {
             b"team-rejoin-v1".hash(hasher);
             self.rejoin_team.hash(hasher);
         }
-        if ai_teams {
-            let changed: Vec<_> = self
-                .ai_trigger_order
-                .iter()
-                .filter_map(|id| {
-                    let record = self.ai_trigger_records.get(id)?;
-                    let initial = self.ai_triggers.get(id)?.weights[0];
-                    (*record != AiTriggerTrackRecord::new(initial)).then_some((id, record))
-                })
-                .collect();
-            if !changed.is_empty() {
-                b"ai-trigger-records-v1".hash(hasher);
-                changed.hash(hasher);
-            }
+        let changed: Vec<_> = self
+            .ai_trigger_order
+            .iter()
+            .filter_map(|id| {
+                let record = self.ai_trigger_records.get(id)?;
+                let initial = self.ai_triggers.get(id)?.weights[0];
+                (*record != AiTriggerTrackRecord::new(initial)).then_some((id, record))
+            })
+            .collect();
+        if !changed.is_empty() {
+            b"ai-trigger-records-v1".hash(hasher);
+            changed.hash(hasher);
         }
     }
 
@@ -1364,7 +1353,7 @@ mod tests {
 
     fn state_hash_at(vm: &TeamScriptVm, current_frame: i32) -> u64 {
         let mut hasher = DefaultHasher::new();
-        vm.hash_state(current_frame, true, true, &mut hasher);
+        vm.hash_state(current_frame, &mut hasher);
         hasher.finish()
     }
 
@@ -1530,21 +1519,16 @@ mod tests {
     }
 
     #[test]
-    fn recruitment_state_folds_only_once_it_leaves_the_constructor_values() {
+    fn recruitment_state_folds_once_it_leaves_the_constructor_values() {
         let owner = InternedId::from_index(1);
         let team_type = InternedId::from_index(4);
         let mut vm = TeamScriptVm::default();
         register_team_type(&mut vm, team_type, Vec::new());
         let team = vm.construct_team(team_type, owner, true, 0).unwrap();
-        let hash = |vm: &TeamScriptVm, recruitment: bool| {
-            let mut hasher = DefaultHasher::new();
-            vm.hash_state(0, true, recruitment, &mut hasher);
-            hasher.finish()
-        };
-        assert_eq!(hash(&vm, true), hash(&vm, false));
+        let constructed = state_hash_at(&vm, 0);
 
         vm.teams.get_mut(&team).unwrap().zone = Some(TeamTarget::Cell { x: 3, y: 4 });
-        assert_ne!(hash(&vm, true), hash(&vm, false));
+        assert_ne!(state_hash_at(&vm, 0), constructed);
     }
 
     #[test]

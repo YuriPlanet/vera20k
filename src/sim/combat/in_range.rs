@@ -2258,45 +2258,42 @@ mod tests {
         ));
     }
 
-    /// RESIDUAL — gamemd address 0x006F7220, the arcing branch of
-    /// `TechnoClass::InRange`.
-    ///
-    /// Branch selector: `0x006F73F6 MOV CL,[EDX+0x29B]` with `EDX` = the
-    /// projectile at `WeaponType+0xA0`. `BulletTypeClass::ReadINI` 0x0046BFC4
-    /// fills +0x29B from the INI key `Arcing=` (key string at 0x0081B130). It
-    /// is NOT `WeaponType+0xB8`, which is read at 0x006F737F and gates only the
-    /// MinimumRange test.
-    ///
-    /// Clause, at 0x006F74D7–0x006F7504: the arc/slope test at 0x0048ABC0 must
-    /// pass in every case, and when it does, the shot is additionally refused
-    /// unless the TARGET's cell has flag 0x100 clear, or
-    /// `target.Z - source.Z < 3 * g_nTechnoInRangeLevelHeightLeptons`. A bridge
-    /// cell under the target therefore TIGHTENS the check with an extra height
-    /// ceiling; it does not relax it. Note this reads the target's cell, the
-    /// opposite of the gate at 0x006F75FB in the same function, which reads the
-    /// source's.
-    ///
-    /// Trigger: an arcing weapon firing at something standing on a bridge
-    /// deck. The arcing population is every cannon tank — `Cannon`,
-    /// `Ballistic`, `FlakTProj`, `GrandCannonBall`, `Lobbed`, `Lobbed2` and
-    /// `DogShard` — NOT the V3/Dreadnought/Cruise launchers, which fire
-    /// `InvisibleHigh` and carry no `Arcing=` key. See
-    /// `compute_in_range_arcing_2d` for the full weapon list.
-    ///
-    /// Effect: `compute_in_range_arcing_2d` is a documented 2D fallthrough stub
-    /// with neither the slope test nor this ceiling, so VERA allows arcing
-    /// shots at deck targets that gamemd refuses.
-    ///
-    /// Frequency: every arcing shot at a unit on a bridge — i.e. Grizzly,
-    /// Rhino, Apocalypse, Lasher, Tank Destroyer, Flak Track and Destroyer
-    /// fire, not a siege-unit footnote. Bounded by the fact that the whole arc
-    /// check is stubbed, so this clause is downstream of a larger unported
-    /// mechanism and cannot be fixed on its own.
-    #[test]
-    #[ignore = "gamemd 0x006F74D7 adds a height ceiling for arcing shots at bridge-cell targets; VERA's arcing path is a 2D stub"]
-    fn inrange_arcing_branch_bridge_ceiling_is_unported() {
-        panic!("unimplemented: InRange 0x006F74D7 arcing bridge height ceiling");
-    }
+    // RESIDUAL — gamemd address 0x006F7220, the arcing branch of
+    // `TechnoClass::InRange`.
+    //
+    // Branch selector: `0x006F73F6 MOV CL,[EDX+0x29B]` with `EDX` = the
+    // projectile at `WeaponType+0xA0`. `BulletTypeClass::ReadINI` 0x0046BFC4
+    // fills +0x29B from the INI key `Arcing=` (key string at 0x0081B130). It
+    // is NOT `WeaponType+0xB8`, which is read at 0x006F737F and gates only the
+    // MinimumRange test.
+    //
+    // Clause, at 0x006F74D7–0x006F7504: the arc/slope test at 0x0048ABC0 must
+    // pass in every case, and when it does, the shot is additionally refused
+    // unless the TARGET's cell has flag 0x100 clear, or
+    // `target.Z - source.Z < 3 * g_nTechnoInRangeLevelHeightLeptons`. A bridge
+    // cell under the target therefore TIGHTENS the check with an extra height
+    // ceiling; it does not relax it. Note this reads the target's cell, the
+    // opposite of the gate at 0x006F75FB in the same function, which reads the
+    // source's.
+    //
+    // Trigger: an arcing weapon firing at something standing on a bridge
+    // deck. The arcing population is every cannon tank — `Cannon`,
+    // `Ballistic`, `FlakTProj`, `GrandCannonBall`, `Lobbed`, `Lobbed2` and
+    // `DogShard` — NOT the V3/Dreadnought/Cruise launchers, which fire
+    // `InvisibleHigh` and carry no `Arcing=` key. See
+    // `compute_in_range_arcing_2d` for the full weapon list.
+    //
+    // Effect: `compute_in_range_arcing_2d` is a documented 2D fallthrough stub
+    // with neither the slope test nor this ceiling, so VERA allows arcing
+    // shots at deck targets that gamemd refuses.
+    //
+    // Frequency: every arcing shot at a unit on a bridge — i.e. Grizzly,
+    // Rhino, Apocalypse, Lasher, Tank Destroyer, Flak Track and Destroyer
+    // fire, not a siege-unit footnote. Bounded by the fact that the whole arc
+    // check is stubbed, so this clause is downstream of a larger unported
+    // mechanism and cannot be fixed on its own.
+    // Residual (formerly an ignored placeholder test): gamemd 0x006F74D7 adds a height ceiling for arcing shots at bridge-cell targets; VERA's arcing path is a 2D stub.
+    // Unimplemented: InRange 0x006F74D7 arcing bridge height ceiling.
 
     /// `InRange`'s final `return`, 0x006F7642: `CALL 0x004CC310` and
     /// `TEST EAX,EAX; SETZ AL`. A `SubjectToCliffs` projectile with a
@@ -2440,35 +2437,29 @@ mod tests {
         ));
     }
 
-    /// Abstract Cell callers still use the legacy terrain projection. The
-    /// composed retained-Cell path above proves the actual WaterSet+50 gate,
-    /// own-ground read, map relookup and structural offset. General force-fire
-    /// callers must preserve that identity across their source/range pair too.
-    #[test]
-    #[ignore = "legacy Abstract Cell callers do not yet use the retained Cell source/range transaction"]
-    fn abstract_cell_range_transaction_remains_unintegrated() {
-        panic!("unimplemented: general Abstract Cell source/range identity and WaterSet gate");
-    }
+    // Abstract Cell callers still use the legacy terrain projection. The
+    // composed retained-Cell path above proves the actual WaterSet+50 gate,
+    // own-ground read, map relookup and structural offset. General force-fire
+    // callers must preserve that identity across their source/range pair too.
+    // Residual (formerly an ignored placeholder test): legacy Abstract Cell callers do not yet use the retained Cell source/range transaction.
+    // Unimplemented: general Abstract Cell source/range identity and WaterSet gate.
 
-    /// RESIDUAL — gamemd address 0x006F724E, `CMP EDI,0xFFFFFE00`, the first
-    /// thing `TechnoClass::InRange` tests.
-    ///
-    /// `compute_in_range` honours the `-512` always-in-range sentinel;
-    /// `combat::is_within_range_leptons`, the 2-D twin the other range call
-    /// sites still use, does not — `Range=-2` squares to a positive `262144`
-    /// there and reads as a two-cell reach. Full trigger / effect / frequency /
-    /// downstream note sits on that function in `sim/combat/mod.rs`; the short
-    /// of it is that a Destroyer's `ASWLauncher` closes to two cells where
-    /// gamemd is always in range.
-    ///
-    /// Pre-existing, and recorded here rather than fixed because the cure is
-    /// migrating those call sites onto `compute_in_range`, not adding a second
-    /// sentinel test to the twin.
-    #[test]
-    #[ignore = "gamemd 0x006F724E -512 always-in-range sentinel is unhandled in combat::is_within_range_leptons"]
-    fn is_within_range_leptons_ignores_the_always_in_range_sentinel() {
-        panic!("unimplemented: is_within_range_leptons has no InRange 0x006F724E -512 sentinel");
-    }
+    // RESIDUAL — gamemd address 0x006F724E, `CMP EDI,0xFFFFFE00`, the first
+    // thing `TechnoClass::InRange` tests.
+    //
+    // `compute_in_range` honours the `-512` always-in-range sentinel;
+    // `combat::is_within_range_leptons`, the 2-D twin the other range call
+    // sites still use, does not — `Range=-2` squares to a positive `262144`
+    // there and reads as a two-cell reach. Full trigger / effect / frequency /
+    // downstream note sits on that function in `sim/combat/mod.rs`; the short
+    // of it is that a Destroyer's `ASWLauncher` closes to two cells where
+    // gamemd is always in range.
+    //
+    // Pre-existing, and recorded here rather than fixed because the cure is
+    // migrating those call sites onto `compute_in_range`, not adding a second
+    // sentinel test to the twin.
+    // Residual (formerly an ignored placeholder test): gamemd 0x006F724E -512 always-in-range sentinel is unhandled in combat::is_within_range_leptons.
+    // Unimplemented: is_within_range_leptons has no InRange 0x006F724E -512 sentinel.
 
     /// Guards the INCLUSIVE half of the gate's boundary pair (`JGE` at
     /// 0x006F762F): a target exactly on the deck top is refused. Without this

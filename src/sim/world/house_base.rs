@@ -328,7 +328,6 @@ mod tests {
     /// House+140 only while it is non-empty.
     #[test]
     fn factory_plant_discount_follows_unlimbo_capture_and_expiry() {
-        use super::super::hash_schema::HashSchema;
         use crate::map::resolved_terrain::test_flat_ground_grid;
         use crate::rules::ini_parser::IniFile;
         use crate::sim::house_state::HouseState;
@@ -357,11 +356,11 @@ mod tests {
                 sim.cost_of(soviets, tank, &rules),
             )
         };
-        // Schema 228's fold alone: later features (a building's `+0x388`
-        // from 230) differ too.
+        // The hash folds House+140 only while it is non-empty.
         let plant_fold = |sim: &Simulation| {
-            sim.state_hash_with_schema(HashSchema::Before(229))
-                != sim.state_hash_with_schema(HashSchema::Before(228))
+            sim.houses
+                .values()
+                .any(|house| !house.base_projection.factory_plants().is_empty())
         };
         assert_eq!(costs(&sim), (900, 450));
         assert!(!plant_fold(&sim));

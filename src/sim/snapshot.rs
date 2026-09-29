@@ -4373,7 +4373,7 @@ mod tests {
     }
 
     #[test]
-    fn naval_build_const_order_and_membership_roundtrip_with_current_hash_only() {
+    fn naval_build_const_order_and_membership_roundtrip_with_hash() {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("AMERICANS");
         let country = sim.interner.intern("Americans");
@@ -4398,17 +4398,7 @@ mod tests {
         );
         sim.substrate.entities.insert(entity);
 
-        let v108_default_hash = sim.state_hash_without_naval_build_const_v109();
-        let v109_default_hash = sim.state_hash_without_base_plan_v110();
-        assert_eq!(
-            v109_default_hash, v108_default_hash,
-            "empty BuildConst vectors and false membership preserve the v108 hash stream through v109"
-        );
-        assert_ne!(
-            sim.state_hash(),
-            v109_default_hash,
-            "the v110 schema adds BasePlan authority even when BuildConst state is empty"
-        );
+        let default_hash = sim.state_hash();
 
         sim.houses.get_mut(&owner).unwrap().build_const_order = vec![9, 3];
         sim.substrate
@@ -4418,11 +4408,7 @@ mod tests {
             .build_const_eligible = true;
 
         let ordered_hash = sim.state_hash();
-        let v109_ordered_hash = sim.state_hash_without_base_plan_v110();
-        let historical_pre_v109 = sim.state_hash_without_naval_build_const_v109();
-        assert_ne!(ordered_hash, historical_pre_v109);
-        let historical_pre_v28 = sim.state_hash_before_lifecycle_v28_and_mission_v29();
-        let historical_pre_v29 = sim.state_hash_without_mission_v29();
+        assert_ne!(ordered_hash, default_hash);
         sim.houses
             .get_mut(&owner)
             .unwrap()
@@ -4432,26 +4418,6 @@ mod tests {
             sim.state_hash(),
             ordered_hash,
             "stored vector order is hashed"
-        );
-        assert_ne!(
-            sim.state_hash_without_base_plan_v110(),
-            v109_ordered_hash,
-            "the v109 provenance schema retained by the v110 probe hashes BuildConst order"
-        );
-        assert_eq!(
-            sim.state_hash_without_naval_build_const_v109(),
-            historical_pre_v109,
-            "the v108 provenance schema excludes BuildConst acquisition order"
-        );
-        assert_eq!(
-            sim.state_hash_before_lifecycle_v28_and_mission_v29(),
-            historical_pre_v28,
-            "the historical pre-v28 probe excludes current-schema state"
-        );
-        assert_eq!(
-            sim.state_hash_without_mission_v29(),
-            historical_pre_v29,
-            "the historical pre-v29 probe excludes current-schema state"
         );
         sim.houses
             .get_mut(&owner)
@@ -4469,28 +4435,12 @@ mod tests {
             ordered_hash,
             "entity membership is hashed"
         );
-        assert_ne!(
-            sim.state_hash_without_base_plan_v110(),
-            v109_ordered_hash,
-            "the v109 provenance schema retained by the v110 probe hashes BuildConst membership"
-        );
-        assert_eq!(
-            sim.state_hash_without_naval_build_const_v109(),
-            historical_pre_v109,
-            "the v108 provenance schema excludes immutable BuildConst membership"
-        );
-        assert_eq!(
-            sim.state_hash_before_lifecycle_v28_and_mission_v29(),
-            historical_pre_v28
-        );
-        assert_eq!(sim.state_hash_without_mission_v29(), historical_pre_v29);
         sim.substrate
             .entities
             .get_mut(9)
             .unwrap()
             .build_const_eligible = true;
         assert_eq!(sim.state_hash(), ordered_hash);
-        assert_eq!(sim.state_hash_without_base_plan_v110(), v109_ordered_hash);
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "naval-build-const", 0);
         assert_eq!(
