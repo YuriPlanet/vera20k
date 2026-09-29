@@ -9,7 +9,6 @@
 use std::hash::{Hash, Hasher};
 
 use super::Simulation;
-use super::hash_schema::{HashFeature, HashSchema};
 
 fn hash_projectile_target(
     target: crate::sim::projectile::ProjectileTarget,
@@ -344,118 +343,13 @@ mod real_cell_bridge_hash_schema_tests {
     }
 }
 
-/// The two removed Option payloads could disagree with the retained class.
-/// Only independently established absent-payload, pending=false fixtures have
-/// a projection.
-/// Reject current evidence of an active or partially retired track, rather
-/// than inventing the former geometry/cursor/speed. A destination or retained
-/// residual alone is not an active track: native keeps those independently.
-#[cfg(test)]
-fn assert_retired_track_projection_is_bounded(entity: &crate::sim::game_entity::GameEntity) {
-    let idle_progress = |track: &crate::sim::components::TrackProgress| {
-        track.turn_index == -1 && matches!(track.cursor, -1 | 0)
-    };
-    let drive_absent = entity.drive_locomotion.as_ref().is_none_or(|drive| {
-        idle_progress(&drive.track)
-            && drive.head_to.is_none()
-            && !drive.track_valid
-            && !drive.turn_latched
-            && drive.occupation_head_to.is_none()
-            && drive.occupation_handoff.is_none()
-    });
-    let ship_absent = entity.ship_locomotion.as_ref().is_none_or(|ship| {
-        !ship.track_valid
-            && !ship.turn_latched
-            && idle_progress(&ship.track)
-            && ship.head_to.is_none()
-            && ship.occupation_head_to.is_none()
-            && ship.occupation_handoff.is_none()
-    });
-    assert!(
-        drive_absent && ship_absent,
-        "pre-v167 detached-track projection requires an independently established absent payload; entity {} retains active track state that cannot recover the obsolete representation",
-        entity.stable_id(),
-    );
-}
 
-/// Schema166 derived Hash included a pending=false field immediately after
-/// TrackProgress. References hash their values; deriving these former payload
-/// layouts and mapping the original Options preserves both field order and
-/// Option discriminants. This bounded fixture projection cannot recover an
-/// old pending=true obligation or either removed detached executor.
-#[cfg(test)]
-fn hash_retained_track_classes_before_167(
-    entity: &crate::sim::game_entity::GameEntity,
-    hasher: &mut impl Hasher,
-) {
-    use crate::sim::components::{DriveCoord, DriveOccupationFootprint, TrackProgress};
-    use crate::util::fixed_math::SimFixed;
-
-    #[derive(Hash)]
-    struct DriveSchema166<'a> {
-        destination: &'a Option<DriveCoord>,
-        head_to: &'a Option<DriveCoord>,
-        turn: (Option<u8>, Option<u16>, u16, bool),
-        track: &'a TrackProgress,
-        pending_track_occupation: bool,
-        end_permitted: &'a bool,
-        track_valid: &'a bool,
-        target_speed_fraction: &'a SimFixed,
-        occupation_head_to: &'a Option<DriveOccupationFootprint>,
-        occupation_handoff: &'a Option<DriveOccupationFootprint>,
-    }
-    #[derive(Hash)]
-    struct ShipSchema166<'a> {
-        destination: &'a Option<DriveCoord>,
-        head_to: &'a Option<DriveCoord>,
-        track: &'a TrackProgress,
-        pending_track_occupation: bool,
-        target_speed_fraction: &'a SimFixed,
-        occupation_head_to: &'a Option<DriveOccupationFootprint>,
-        occupation_handoff: &'a Option<DriveOccupationFootprint>,
-    }
-
-    entity
-        .drive_locomotion
-        .as_ref()
-        .map(|drive| DriveSchema166 {
-            destination: &drive.destination,
-            head_to: &drive.head_to,
-            turn: (None, None, 0, false),
-            track: &drive.track,
-            pending_track_occupation: false,
-            end_permitted: &drive.end_permitted,
-            track_valid: &drive.track_valid,
-            target_speed_fraction: &drive.target_speed_fraction,
-            occupation_head_to: &drive.occupation_head_to,
-            occupation_handoff: &drive.occupation_handoff,
-        })
-        .hash(hasher);
-    entity
-        .ship_locomotion
-        .as_ref()
-        .map(|ship| ShipSchema166 {
-            destination: &ship.destination,
-            head_to: &ship.head_to,
-            track: &ship.track,
-            pending_track_occupation: false,
-            target_speed_fraction: &ship.target_speed_fraction,
-            occupation_head_to: &ship.occupation_head_to,
-            occupation_handoff: &ship.occupation_handoff,
-        })
-        .hash(hasher);
-}
 
 fn hash_retained_track_classes(
     entity: &crate::sim::game_entity::GameEntity,
-    _schema: HashSchema,
     hasher: &mut impl Hasher,
 ) {
-    #[cfg(test)]
-    if !_schema.includes(HashFeature::TrackAuthority) {
-        hash_retained_track_classes_before_167(entity, hasher);
-        return;
-    }
+    
     entity.drive_locomotion.hash(hasher);
     entity.ship_locomotion.hash(hasher);
 }
@@ -561,118 +455,6 @@ impl Simulation {
     /// Hashes clocks, Scenario RNG, production, fog, alliances, and all entity
     /// components in stable-entity-ID order (EntityStore keys_sorted) for determinism.
     pub fn state_hash(&self) -> u64 {
-        self.state_hash_with_schema(HashSchema::Current)
-    }
-
-    /// Test-only schema166 provenance for fixtures whose two detached track
-    /// options were independently established to be absent and both pending
-    /// flags false. Restores those positional fields without reconstructing
-    /// removed runtime state.
-    /// Active retained tracks are rejected; neither their former ordinary
-    /// geometry copy nor a separate forced executor can be recovered here.
-    #[cfg(test)]
-    pub(crate) fn state_hash_without_track_authority_v167(&self) -> u64 {
-        self.state_hash_with_schema(HashSchema::Before(167))
-    }
-
-    /// Test-only provenance probe for the v29 Mission hash rebaseline.
-    ///
-    /// It retains lifecycle-v28 fields and reconstructs the exact prior
-    /// Mission/hash layout from representable final state.
-    #[cfg(test)]
-    pub(crate) fn state_hash_without_mission_v29(&self) -> u64 {
-        self.state_hash_with_schema(HashSchema::Before(29))
-    }
-
-    /// Test-only provenance probe for the historical pre-v28 baseline.
-    ///
-    /// Both the lifecycle-v28 and Mission-v29 additions are omitted so later
-    /// schema changes do not invalidate that earlier proof.
-    #[cfg(test)]
-    pub(crate) fn state_hash_before_lifecycle_v28_and_mission_v29(&self) -> u64 {
-        self.state_hash_with_schema(HashSchema::Before(28))
-    }
-
-    /// Test-only provenance probe for the v107 unconditional Spark dummy
-    /// level/slope fold. It reconstructs the committed v106 hash layout.
-    #[cfg(test)]
-    pub(crate) fn state_hash_without_spark_dummy_level_slope_v107(&self) -> u64 {
-        self.state_hash_with_schema(HashSchema::Before(107))
-    }
-
-    /// Test-only provenance probe for the v109 naval BuildConst folds. It
-    /// reconstructs the committed v108 hash layout while retaining every
-    /// earlier schema addition.
-    #[cfg(test)]
-    pub(crate) fn state_hash_without_naval_build_const_v109(&self) -> u64 {
-        self.state_hash_with_schema(HashSchema::Before(109))
-    }
-
-    /// Test-only provenance probe for the v110 BasePlan folds. It reconstructs
-    /// the committed v109 hash layout while retaining every earlier schema
-    /// addition, including naval BuildConst order and membership.
-    #[cfg(test)]
-    pub(crate) fn state_hash_without_base_plan_v110(&self) -> u64 {
-        self.state_hash_with_schema(HashSchema::Before(110))
-    }
-
-    /// Test-only provenance probe for the schema-v111 BasePlan-center fold.
-    #[cfg(test)]
-    pub(crate) fn state_hash_without_base_plan_center_v111(&self) -> u64 {
-        self.state_hash_with_schema(HashSchema::Before(111))
-    }
-
-    /// Test-only provenance probe for the schema-v112 House deploy-latch fold.
-    #[cfg(test)]
-    pub(crate) fn state_hash_without_house_deploy_latches_v112(&self) -> u64 {
-        self.state_hash_with_schema(HashSchema::Before(112))
-    }
-
-    /// Test-only provenance probe for the schema-v113 House-update activation
-    /// fold. It reconstructs the committed v112 CurrentIQ/latch order.
-    #[cfg(test)]
-    pub(crate) fn state_hash_without_house_update_activation_v113(&self) -> u64 {
-        self.state_hash_with_schema(HashSchema::Before(113))
-    }
-
-    /// Test-only provenance probe for the schema-v114 raw crate-slot fold.
-    #[cfg(test)]
-    pub(crate) fn state_hash_without_crate_authority_v114(&self) -> u64 {
-        self.state_hash_with_schema(HashSchema::Before(114))
-    }
-
-    /// Test-only provenance probe for the schema-v132 `HouseClass+0x242`
-    /// harvester no-ore latch fold. It reconstructs the committed v117 layout.
-    #[cfg(test)]
-    pub(crate) fn state_hash_without_house_harvester_no_ore_v132(&self) -> u64 {
-        self.state_hash_with_schema(HashSchema::Before(132))
-    }
-
-    /// Test-only provenance probe for the schema-v133 House EVA advice folds
-    /// (`+0x57D4` funds timer, `[0xA8F040]` low-power guard). It reconstructs
-    /// the committed v132 layout.
-    #[cfg(test)]
-    pub(crate) fn state_hash_without_house_eva_v133(&self) -> u64 {
-        self.state_hash_with_schema(HashSchema::Before(133))
-    }
-
-    /// Test-only provenance probe for the schema-v135 credit-income folds
-    /// (the `BuildingClass+0x6D0` ProduceCash timer and the
-    /// `TechnoClass+0x1CC/+0x1D0` drain link on every entity). It
-    /// reconstructs the committed v133/v134 layout.
-    #[cfg(test)]
-    pub(crate) fn state_hash_without_credit_income_v135(&self) -> u64 {
-        self.state_hash_with_schema(HashSchema::Before(135))
-    }
-
-    /// Test-only provenance probe for the schema-v115 retained wall-count and
-    /// shared-dummy overlay folds.
-    #[cfg(test)]
-    pub(crate) fn state_hash_without_wall_runtime_v115(&self) -> u64 {
-        self.state_hash_with_schema(HashSchema::Before(115))
-    }
-
-    pub(super) fn state_hash_with_schema(&self, schema: HashSchema) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
 
         self.session.tick.hash(&mut hasher);
@@ -683,25 +465,19 @@ impl Simulation {
         // Scenario+214 controls identities of future constructors and therefore
         // guided Bullet steering. The saved prefix/phase also controls a fresh
         // map-read continuation. This is independent of Rust stable handles.
-        if schema.includes(HashFeature::NativeRuntimeIdentity) {
-            self.native_unique_ids.hash(&mut hasher);
-        }
+        self.native_unique_ids.hash(&mut hasher);
         self.substrate.next_stable_object_id.hash(&mut hasher);
         self.substrate.next_occupancy_enter_order.hash(&mut hasher);
         // YR LogicClass trigger latches are save/lockstep state, even though
         // their camera/message outcomes stay app-owned and are not hashed.
-        if schema.includes(HashFeature::MasterFrame) {
-            self.trigger_runtime.hash_state(&mut hasher);
+        self.trigger_runtime.hash_state(&mut hasher);
             self.team_script_vm.hash_state(
                 self.session.binary_frame as i32,
-                schema.includes(HashFeature::AiTeams),
-                schema.includes(HashFeature::AiTeamRecruitment),
+                true,
+                true,
                 &mut hasher,
             );
-        }
-        if schema.includes(HashFeature::PlayfieldAuthority) {
-            self.hash_playfield_authority(&mut hasher);
-        }
+        self.hash_playfield_authority(&mut hasher);
 
         // LogicClass active-object order — authoritative (drives reconciliation order).
         let order = self.substrate.logic.as_slice();
@@ -709,54 +485,34 @@ impl Simulation {
         for id in order {
             id.hash(&mut hasher);
         }
-        if schema.includes(HashFeature::DisplayLayers) {
-            #[cfg(test)]
-            if !schema.includes(HashFeature::AnimationDisplay) {
-                self.substrate
-                    .display
-                    .fold_hash_excluding(&mut hasher, |id| self.substrate.anims.contains_key(id));
-            } else {
-                self.substrate.display.fold_hash(&mut hasher);
-            }
-            #[cfg(not(test))]
-            self.substrate.display.fold_hash(&mut hasher);
-        }
+        self.substrate.display.fold_hash(&mut hasher);
 
-        if schema.includes(HashFeature::Lifecycle) {
-            // PendingDeleteList is an independent ordered substrate fact. The
+        // PendingDeleteList is an independent ordered substrate fact. The
             // length delimiter distinguishes queue boundaries before the ordered
             // IDs are folded (duplicates are intentionally preserved here).
             self.substrate.pending_delete.len().hash(&mut hasher);
             for id in &self.substrate.pending_delete {
                 id.hash(&mut hasher);
             }
-        }
 
         self.substrate.fold_raw_cell_occupation(
             &mut hasher,
-            schema.includes(HashFeature::BridgeLocomotorAndDummy),
+            true,
         );
         self.substrate.fold_hidden_occupation(&mut hasher);
         self.substrate.fold_air_slots(&mut hasher);
         self.substrate.fold_base_reservations(&mut hasher);
-        if schema.includes(HashFeature::CellMembership) {
-            self.substrate.occupancy.hash_memberships(&mut hasher);
-        }
+        self.substrate.occupancy.hash_memberships(&mut hasher);
 
         self.session.fold_game_options(&mut hasher);
-        self.hash_houses(&mut hasher, schema);
-        if schema.includes(HashFeature::TerminalScore) {
-            self.hash_terminal_score_snapshot(&mut hasher);
-        }
-        self.hash_production(&mut hasher, schema);
-        if schema.includes(HashFeature::AircraftDockState) {
-            self.production.airfield_docks.hash_state(&mut hasher);
-        }
+        self.hash_houses(&mut hasher);
+        self.hash_terminal_score_snapshot(&mut hasher);
+        self.hash_production(&mut hasher);
+        self.production.airfield_docks.hash_state(&mut hasher);
         self.hash_power_states(&mut hasher);
-        self.hash_fog_and_alliances(&mut hasher, schema);
+        self.hash_fog_and_alliances(&mut hasher);
         self.hash_bridge_state(&mut hasher);
-        if schema.includes(HashFeature::RealCellBridgeFlags) {
-            // `resolved_terrain` is derived/skipped. Fold the exact saved real
+        // `resolved_terrain` is derived/skipped. Fold the exact saved real
             // CellClass `0x1180` values once through their serialized authority.
             // Historical pre-v28/pre-v29 provenance probes must omit both this
             // schema tag and the value authority introduced at snapshot v90.
@@ -764,20 +520,16 @@ impl Simulation {
             self.real_cell_bridge_flags_0x1180.hash(&mut hasher);
             b"dynamic-terrain-cells-v1".hash(&mut hasher);
             self.dynamic_terrain_cells.hash(&mut hasher);
-        }
-        self.hash_overlay_grid(&mut hasher, schema);
-        if schema.includes(HashFeature::CrateAuthority) {
-            self.hash_crate_authority(&mut hasher);
-        }
+        self.hash_overlay_grid(&mut hasher);
+        self.hash_crate_authority(&mut hasher);
         self.hash_smudge_grid(&mut hasher);
         self.hash_radiation(&mut hasher);
-        if schema.includes(HashFeature::MasterFrame) {
-            self.hash_projectiles(&mut hasher, schema);
+        {
+            self.hash_projectiles(&mut hasher);
             let shared_dummy_handle = self.effective_shared_cell_dummy();
             let shared_dummy = shared_dummy_handle.snapshot();
             let gap_flags = shared_dummy_handle.retained_bridge_flags() & 0xC00;
-            let bridge_keeps_dummy = schema.includes(HashFeature::BridgePublication)
-                && (shared_dummy_handle.native_anchor()
+            let bridge_keeps_dummy = (shared_dummy_handle.native_anchor()
                     == Some(crate::map::cell_index::NativeCellIdentity::Dummy)
                     || self.resolved_terrain.as_ref().is_some_and(|terrain| {
                         terrain.iter().any(|cell| {
@@ -785,7 +537,7 @@ impl Simulation {
                                 == Some(crate::map::cell_index::NativeCellIdentity::Dummy)
                         })
                     }));
-            if schema.includes(HashFeature::BridgePublication) {
+            {
                 let extra_flags = shared_dummy_handle.raw_flags()
                     & !crate::map::bridge_facts::RETAINED_CELLCLASS_BRIDGE_FLAG_MASK;
                 let anchor = shared_dummy_handle.native_anchor();
@@ -800,12 +552,9 @@ impl Simulation {
                 gap_flags.hash(&mut hasher);
             }
             let shared_dummy_overlay = shared_dummy_handle.overlay_identity_state();
-            if schema.includes(HashFeature::NativeRuntimeIdentity) {
-                b"shared-cell-dummy-land-v1".hash(&mut hasher);
+            b"shared-cell-dummy-land-v1".hash(&mut hasher);
                 shared_dummy_handle.land_type().hash(&mut hasher);
-            }
-            if schema.includes(HashFeature::FootNeighborHistory)
-                && shared_dummy_handle.neighbor_count() != 0
+            if shared_dummy_handle.neighbor_count() != 0
             {
                 b"shared-cell-dummy-neighbor-count-v1".hash(&mut hasher);
                 shared_dummy_handle.neighbor_count().hash(&mut hasher);
@@ -818,23 +567,16 @@ impl Simulation {
             // Unlike the requested coordinate, native `+0x140 & 0x1180`
             // survives ordinary lookups and changes later bridge/FNPC/target
             // behavior even when no Bullet currently retains the dummy.
-            if schema.includes(HashFeature::SparkDummyLevelSlope) {
-                b"shared-cell-dummy-spark-v4".hash(&mut hasher);
+            b"shared-cell-dummy-spark-v4".hash(&mut hasher);
                 shared_dummy.bridge_flags_0x1180.hash(&mut hasher);
                 shared_dummy.level.hash(&mut hasher);
                 shared_dummy.slope_type.hash(&mut hasher);
-            } else {
-                b"shared-cell-dummy-bridge-v3".hash(&mut hasher);
-                shared_dummy.bridge_flags_0x1180.hash(&mut hasher);
-            }
             // CellClass+0x44/+0x11E can be mutated through true-dummy wall
             // cleanup and later changes lookup-dependent wall behavior. Native
             // Resize reconstructs the process object, so this is synchronized
             // live-state authority rather than Scenario payload authority.
-            if schema.includes(HashFeature::WallRuntime) {
-                b"shared-cell-dummy-overlay-v1".hash(&mut hasher);
+            b"shared-cell-dummy-overlay-v1".hash(&mut hasher);
                 shared_dummy_overlay.hash(&mut hasher);
-            }
             if bridge_keeps_dummy
                 || self.projectiles.iter().any(|(_, projectile)| {
                     projectile.target == crate::sim::projectile::ProjectileTarget::DummyCell
@@ -843,27 +585,18 @@ impl Simulation {
                 // A retained Bullet pointer additionally makes coordinate
                 // deterministic future behavior. Preserve the complete v106
                 // field/tag order for historical provenance probes.
-                if schema.includes(HashFeature::SparkDummyLevelSlope) {
-                    b"shared-cell-dummy-target-v3".hash(&mut hasher);
+                b"shared-cell-dummy-target-v3".hash(&mut hasher);
                     shared_dummy.coord.hash(&mut hasher);
-                } else {
-                    b"shared-cell-dummy-target-v2".hash(&mut hasher);
-                    shared_dummy.coord.hash(&mut hasher);
-                    shared_dummy.level.hash(&mut hasher);
-                    shared_dummy.slope_type.hash(&mut hasher);
-                }
             }
             self.hash_waves(&mut hasher);
         }
         self.hash_super_weapons(&mut hasher);
-        self.hash_entities(&mut hasher, schema);
-        self.hash_anims(&mut hasher, schema);
+        self.hash_entities(&mut hasher);
+        self.hash_anims(&mut hasher);
         self.hash_voxel_anims(&mut hasher);
         self.hash_particle_systems(&mut hasher);
         self.session.fold_identity(&mut hasher);
-        if schema.includes(HashFeature::AnimationAuthority) {
-            self.session.pixel_conversion_bounds.hash(&mut hasher);
-        }
+        self.session.pixel_conversion_bounds.hash(&mut hasher);
 
         hasher.finish()
     }
@@ -916,14 +649,12 @@ impl Simulation {
         }
     }
 
-    fn hash_projectiles(&self, hasher: &mut impl Hasher, schema: HashSchema) {
+    fn hash_projectiles(&self, hasher: &mut impl Hasher) {
         self.projectiles.len().hash(hasher);
         for (&id, projectile) in self.projectiles.iter() {
             id.hash(hasher);
             projectile.id.hash(hasher);
-            if schema.includes(HashFeature::NativeRuntimeIdentity) {
-                projectile.native_unique_id.hash(hasher);
-            }
+            projectile.native_unique_id.hash(hasher);
             projectile.source_id.hash(hasher);
             projectile.position.x.hash(hasher);
             projectile.position.y.hash(hasher);
@@ -938,21 +669,13 @@ impl Simulation {
             projectile.payload.base_damage.hash(hasher);
             projectile.payload.warhead.index().hash(hasher);
             projectile.payload.weapon.index().hash(hasher);
-            if schema.includes(HashFeature::PrismSupport)
-                && projectile.payload.damage_multiplier()
+            if projectile.payload.damage_multiplier()
                     != crate::sim::projectile::ProjectilePayload::UNSCALED
             {
                 b"prism-damage-multiplier-v1".hash(hasher);
                 projectile.payload.damage_multiplier().hash(hasher);
             }
-            if !schema.includes(HashFeature::InvisoBullet) {
-                // The retired owner-house snapshot: the live source's house.
-                self.substrate
-                    .entities
-                    .get(projectile.source_id)
-                    .map_or(0, |source| source.owner().index())
-                    .hash(hasher);
-            }
+            
             projectile.speed_leptons_per_frame.hash(hasher);
             projectile.velocity.hash(hasher);
             projectile.trajectory.hash(hasher);
@@ -975,12 +698,8 @@ impl Simulation {
             projectile.collision.inaccurate.hash(hasher);
             projectile.collision.floater.hash(hasher);
             projectile.collision.elasticity_bits.hash(hasher);
-            if schema.includes(HashFeature::InvisoBullet) {
-                projectile.on_bridge.hash(hasher);
-            }
-            if schema.includes(HashFeature::BouncingDebris) {
-                projectile.collision.arcing.hash(hasher);
-            }
+            projectile.on_bridge.hash(hasher);
+            projectile.collision.arcing.hash(hasher);
         }
     }
 
@@ -1058,7 +777,7 @@ impl Simulation {
     }
 
     /// Hash per-player house state (BTreeMap = deterministic order).
-    fn hash_houses(&self, hasher: &mut impl Hasher, schema: HashSchema) {
+    fn hash_houses(&self, hasher: &mut impl Hasher) {
         for (owner, house) in &self.houses {
             owner.hash(hasher);
             house.economy.credits.hash(hasher);
@@ -1070,8 +789,7 @@ impl Simulation {
             // House504080/503040 preserves them through native load. The
             // retained-ship chain needs both its initial and terminal loss.
             // Preserve zero and historical streams before this schema.
-            if schema.includes(HashFeature::ShipSinking)
-                && house.stats != crate::sim::house_state::MatchStatistics::default()
+            if house.stats != crate::sim::house_state::MatchStatistics::default()
             {
                 b"house-match-statistics-v1".hash(hasher);
                 house.stats.hash(hasher);
@@ -1080,53 +798,29 @@ impl Simulation {
             house.is_human.hash(hasher);
             house.player_control.hash(hasher);
             (house.difficulty as i32).hash(hasher);
-            if schema.includes(HashFeature::InvisoBullet) {
-                house.rof_bias().bits().hash(hasher);
-            }
+            house.rof_bias().bits().hash(hasher);
             house.is_defeated.hash(hasher);
             house.has_won.hash(hasher);
             house.has_lost.hash(hasher);
             house.outcome_state.hash(hasher);
             house.map_is_clear.hash(hasher);
             house.spy_sat_active.hash(hasher);
-            if schema.includes(HashFeature::HouseDefeatTracking) {
-                house.tracking.hash_defeat_counters(hasher);
-            } else {
-                // Earlier schemas folded a count of the owner's buildings and
-                // one of its other objects, each added at construction and
-                // released at UnInit: its stored entities whose destruction
-                // is not yet recorded.
-                let (buildings, others) = self.owned_object_counts(*owner);
-                buildings.hash(hasher);
-                others.hash(hasher);
-            }
+            house.tracking.hash_defeat_counters(hasher);
             house.tech_level.hash(hasher);
             hash_house_ai_activation_fields(
                 house,
-                schema.includes(HashFeature::HouseDeployLatches),
-                schema.includes(HashFeature::HouseUpdateActivation),
+                true,
+                true,
                 hasher,
             );
-            if schema.includes(HashFeature::BaseDefenseResponse) {
-                house.strategy_emergency.hash(hasher);
-            } else {
-                house.strategy_emergency.mode.hash(hasher);
-                house.strategy_emergency.all_to_hunt_bias.hash(hasher);
-                house
-                    .strategy_emergency
-                    .last_building_attack_frame
-                    .hash(hasher);
-            }
+            house.strategy_emergency.hash(hasher);
             house.grudge_scores.len().hash(hasher);
             for (other, score) in &house.grudge_scores {
                 other.hash(hasher);
                 score.hash(hasher);
             }
             house.enemy_house.hash(hasher);
-            if !schema.includes(HashFeature::RetiredRallyCopies) {
-                // The retired house rally copy, always empty in the fixtures.
-                0u8.hash(hasher);
-            }
+            
             if let Some((rx, ry)) = house.base_center {
                 1u8.hash(hasher);
                 rx.hash(hasher);
@@ -1134,10 +828,8 @@ impl Simulation {
             } else {
                 0u8.hash(hasher);
             }
-            if schema.includes(HashFeature::AlternateBaseCenter) {
-                house.alternate_base_center.hash(hasher);
-            }
-            if schema.includes(HashFeature::NavalBuildConst) && !house.build_const_order.is_empty()
+            house.alternate_base_center.hash(hasher);
+            if !house.build_const_order.is_empty()
             {
                 b"naval-build-const-house-v1".hash(hasher);
                 house.build_const_order.len().hash(hasher);
@@ -1145,20 +837,17 @@ impl Simulation {
                     stable_id.hash(hasher);
                 }
             }
-            if schema.includes(HashFeature::PrismSupport)
-                && !house.base_projection.buildings().is_empty()
+            if !house.base_projection.buildings().is_empty()
             {
                 b"house-buildings-v1".hash(hasher);
                 house.base_projection.buildings().hash(hasher);
             }
-            if schema.includes(HashFeature::FactoryPlants)
-                && !house.base_projection.factory_plants().is_empty()
+            if !house.base_projection.factory_plants().is_empty()
             {
                 b"house-factory-plants-v1".hash(hasher);
                 house.base_projection.factory_plants().hash(hasher);
             }
-            if schema.includes(HashFeature::BasePlan) {
-                house.base_plan.percent_built.hash(hasher);
+            house.base_plan.percent_built.hash(hasher);
                 house.base_plan.nodes.len().hash(hasher);
                 for node in &house.base_plan.nodes {
                     node.type_or_control.hash(hasher);
@@ -1166,19 +855,13 @@ impl Simulation {
                     node.filled.hash(hasher);
                     node.retry_count.hash(hasher);
                 }
-            }
-            if schema.includes(HashFeature::BasePlanCenter) {
-                house.base_plan_center.hash(hasher);
-            }
+            house.base_plan_center.hash(hasher);
             house.base_reservation.hash(hasher);
             house.waypoint_edge.hash(hasher);
-            if schema.includes(HashFeature::HouseHarvesterNoOre) {
-                // `HouseClass+0x242`, the sticky harvester no-ore latch — a
+            // `HouseClass+0x242`, the sticky harvester no-ore latch — a
                 // raw House byte in the native save block and lockstep CRC.
                 house.harvester_no_ore.hash(hasher);
-            }
-            if schema.includes(HashFeature::HouseEva) {
-                // `HouseClass+0x57D4` funds-nag TimerStruct and the
+            // `HouseClass+0x57D4` funds-nag TimerStruct and the
                 // `[0xA8F040]` low-power guard (`HouseClass::Update
                 // 0x004F8B3C..0x004F8DAB`): both live in the native save.
                 // Folded with a 64-bit start, as before the timer was a
@@ -1186,48 +869,41 @@ impl Simulation {
                 i64::from(house.eva_funds_timer.start_frame()).hash(hasher);
                 house.eva_funds_timer.duration().hash(hasher);
                 house.eva_low_power_guard.hash(hasher);
-            }
-            if schema.includes(HashFeature::BuildingRepair) {
-                house.repair_delay.to_bits().hash(hasher);
+            house.repair_delay.to_bits().hash(hasher);
                 house.repair_start_latch.hash(hasher);
                 i64::from(house.repair_latch_timer.start_frame()).hash(hasher);
                 house.repair_latch_timer.duration().hash(hasher);
-            }
             // Tagged and folded only off their constructor values, so a house
             // without computer production hashes as earlier schemas did.
             let gatherers = house.tracking.resource_gatherers();
-            if schema.includes(HashFeature::AiBaseBuilding)
-                && (house.ai_production != Default::default() || gatherers != 0)
+            if (house.ai_production != Default::default() || gatherers != 0)
             {
                 b"ai-base-building-v1".hash(hasher);
                 house.ai_production.hash(hasher);
                 gatherers.hash(hasher);
             }
             let forces = house.tracking.force_values();
-            if schema.includes(HashFeature::AiBaseDefense) && forces != Default::default() {
+            if forces != Default::default() {
                 b"house-force-values-v1".hash(hasher);
                 forces.hash(hasher);
             }
-            if schema.includes(HashFeature::AiStrategy)
-                && house.strategy_timer != crate::sim::house_state::strategy_timer_at_construction()
+            if house.strategy_timer != crate::sim::house_state::strategy_timer_at_construction()
             {
                 b"house-strategy-timer-v1".hash(hasher);
                 house.strategy_timer.hash(hasher);
             }
-            if schema.includes(HashFeature::AiTeams) {
-                house.team_creation.hash_state(hasher);
+            house.team_creation.hash_state(hasher);
                 if house.ai_unit_choices != Default::default() {
                     b"house-ai-unit-choices-v1".hash(hasher);
                     house.ai_unit_choices.hash(hasher);
                 }
                 house.tracking.hash_ai_team_counters(hasher);
-            }
         }
     }
 
     /// Hash all production-related state: queues, ready items, resources.
-    fn hash_production(&self, hasher: &mut impl Hasher, schema: HashSchema) {
-        let retired_tiberium_fold = !schema.includes(HashFeature::RetiredTiberiumNodeState);
+    fn hash_production(&self, hasher: &mut impl Hasher) {
+        let retired_tiberium_fold = false;
         // P5d: the per-`BuildQueueItem` `queues_by_owner` fold is RETIRED — the
         // queue-of-record now lives in the factory registry (active build = `Factory`
         // head fields; tail = `Factory.queue` of `QueueEntry`) and folds in
@@ -1249,7 +925,7 @@ impl Simulation {
             }
         }
         self.production.next_enqueue_order.hash(hasher);
-        self.hash_factory_registry(hasher, schema); // P5b: the authoritative factory registry
+        self.hash_factory_registry(hasher); // P5b: the authoritative factory registry
 
         // Live ore/gem identity and quantity are folded by `hash_overlay_grid`.
         self.production
@@ -1292,12 +968,11 @@ impl Simulation {
     /// contract. Explicit-field folding (NOT `#[derive(Hash)]`) so `SpecialItem`'s
     /// three states + the Option presence tags fold distinctly, consistent with the
     /// rest of this file.
-    fn hash_factory_registry(&self, hasher: &mut impl Hasher, schema: HashSchema) {
+    fn hash_factory_registry(&self, hasher: &mut impl Hasher) {
         for (holder, f) in self.production.factory_shadow.holders_insertion_ordered() {
             // The building that holds a computer's factory (`BuildingClass+0x524`);
             // a House's factory folds as earlier schemas did.
-            if schema.includes(HashFeature::AiBaseBuilding)
-                && let crate::sim::production::FactoryHolder::Building(building) = holder
+            if let crate::sim::production::FactoryHolder::Building(building) = holder
             {
                 b"building-factory-v1".hash(hasher);
                 building.hash(hasher);
@@ -1360,28 +1035,15 @@ impl Simulation {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn state_hash_without_sustained_gap_sight_v142(&self) -> u64 {
-        self.state_hash_with_schema(HashSchema::Before(142))
-    }
 
     /// Hash fog-of-war visibility and house alliance data.
-    fn hash_fog_and_alliances(&self, hasher: &mut impl Hasher, schema: HashSchema) {
+    fn hash_fog_and_alliances(&self, hasher: &mut impl Hasher) {
         self.fog.width.hash(hasher);
         self.fog.height.hash(hasher);
         for (owner, fog) in &self.fog.by_owner {
             owner.hash(hasher);
-            if schema.includes(HashFeature::SustainedGapSight) {
-                fog.cells_raw().hash(hasher);
+            fog.cells_raw().hash(hasher);
                 fog.shroud_knowledge_raw().hash(hasher);
-            } else {
-                // Historical probes predate the four persisted provenance bits.
-                fog.cells_raw()
-                    .iter()
-                    .map(|cell| cell & !0xF0)
-                    .collect::<Vec<_>>()
-                    .hash(hasher);
-            }
             // CellClass visibility counters/flags are serialized simulation
             // state, not renderer cache; fold their row-major projection too.
             for cell in fog.cell_runtime_raw() {
@@ -1394,24 +1056,20 @@ impl Simulation {
             }
             fog.visibility_marks_raw().hash(hasher);
         }
-        if schema.includes(HashFeature::SustainedGapSight) {
-            self.fog.gap_sources.hash(hasher);
+        self.fog.gap_sources.hash(hasher);
             self.fog.sight_admissions.hash(hasher);
             self.fog.whole_map_revealed_owners.hash(hasher);
-        }
         b"fogged-object-footprints-v1".hash(hasher);
         self.fog.next_fogged_object_id.hash(hasher);
         self.fog.fogged_object_cells.hash(hasher);
         self.fog.fogged_objects.hash(hasher);
         self.fog.sensors_by_house.hash(hasher);
-        if schema.includes(HashFeature::DisguiseDetect) {
-            // `CellClass+0xAC[house]` disguise-detect counters.
+        // `CellClass+0xAC[house]` disguise-detect counters.
             // Behaviour-affecting like their `SensorsOfHouses` sibling above:
             // `FUN_004870F0` reads them inside `IsDisguisedTo`, which decides
             // target acquisition and so changes issued commands, not just
             // presentation.
             self.fog.disguise_detect_by_house.hash(hasher);
-        }
         self.fog.cloaked_by_houses.hash(hasher);
         for (owner, allies) in &self.house_alliances {
             owner.hash(hasher);
@@ -1465,7 +1123,7 @@ impl Simulation {
         }
     }
 
-    fn hash_overlay_grid(&self, hasher: &mut impl Hasher, schema: HashSchema) {
+    fn hash_overlay_grid(&self, hasher: &mut impl Hasher) {
         let Some(overlay_grid) = &self.overlay_grid else {
             0u8.hash(hasher);
             return;
@@ -1483,8 +1141,7 @@ impl Simulation {
                 cell.wall_owner.hash(hasher);
             }
         }
-        if schema.includes(HashFeature::WallRuntime) {
-            b"retained-wall-neighbor-counts-v1".hash(hasher);
+        b"retained-wall-neighbor-counts-v1".hash(hasher);
             match overlay_grid.retained_neighbor_counts() {
                 None => 0u8.hash(hasher),
                 Some(counts) => {
@@ -1495,7 +1152,6 @@ impl Simulation {
                     }
                 }
             }
-        }
     }
 
     /// Fold every raw MapClass crate-slot word in fixed ascending order.
@@ -1585,50 +1241,28 @@ impl Simulation {
 
     /// Hash all entity components in stable-entity-ID order.
     /// BTreeMap iterates in key order (= stable_id), so no manual sort needed.
-    fn hash_entities(&self, hasher: &mut impl Hasher, schema: HashSchema) {
+    fn hash_entities(&self, hasher: &mut impl Hasher) {
         for entity in self.substrate.entities.values() {
             entity.stable_id().hash(hasher);
-            if schema.includes(HashFeature::AircraftDockState) {
-                // Both mission and legacy ammo FSMs still execute. Hash their
+            // Both mission and legacy ammo FSMs still execute. Hash their
                 // actual saved state until their ownership migration retires one.
                 if let Some(ammo) = entity.aircraft_ammo.as_ref() {
                     b"aircraft-ammo-v170".hash(hasher);
-                    #[cfg(test)]
-                    if !schema.includes(HashFeature::AircraftReleaseAuthority) {
-                        ammo.hash_before_pending_release(hasher);
-                    } else {
-                        ammo.hash(hasher);
-                    }
-                    #[cfg(not(test))]
                     ammo.hash(hasher);
                 }
                 if let Some(mission) = entity.aircraft_mission.as_ref() {
                     b"aircraft-mission-v170".hash(hasher);
                     mission.hash(hasher);
-                    #[cfg(test)]
-                    if !schema.includes(HashFeature::AircraftReleaseAuthority)
-                        && matches!(
-                            mission,
-                            crate::sim::aircraft::AircraftMission::Attack { .. }
-                        )
-                    {
-                        // Only the false/false historical fixture is recoverable.
-                        false.hash(hasher);
-                        false.hash(hasher);
-                    }
+                    
                 }
-            }
-            if schema.includes(HashFeature::CreditIncome) {
-                // GSI-09.01: the `BuildingClass+0x6D0/+0x6D8` ProduceCash
+            // GSI-09.01: the `BuildingClass+0x6D0/+0x6D8` ProduceCash
                 // timer and the `TechnoClass+0x1CC/+0x1D0` drain link pair.
                 // All three drive future wallet writes, so a divergence here
                 // desyncs credits; every object carries them.
                 entity.produce_cash_timer.hash(hasher);
                 entity.drain_target.hash(hasher);
                 entity.draining_me.hash(hasher);
-            }
-            if schema.includes(HashFeature::Parasite) {
-                // ParasiteClass (Foot+69C) of dogs and drones, the victim's
+            // ParasiteClass (Foot+69C) of dogs and drones, the victim's
                 // Foot+694/+698 links, and Foot+6A0 once it has been armed.
                 // `limbo_reselect` (+432) is deliberately absent: it is set
                 // only for the local player's selection, so peers differ.
@@ -1645,24 +1279,19 @@ impl Simulation {
                     0x6a0_u32.hash(hasher);
                     entity.paralysis_timer.hash(hasher);
                 }
-            }
-            if schema.includes(HashFeature::CrewSurvival) && entity.has_been_captured {
+            if entity.has_been_captured {
                 // Building+6E3: doubles the survivor divisor, widens the
                 // survivor roll and skips the engineer roll at death.
                 0x6e3_u32.hash(hasher);
             }
-            if schema.includes(HashFeature::TechnoConstructor)
-                && (entity.techno_ctor_random_word != 0 || entity.structure_upgrade_link.is_some())
+            if (entity.techno_ctor_random_word != 0 || entity.structure_upgrade_link.is_some())
             {
                 b"techno-constructor-v1".hash(hasher);
                 entity.techno_ctor_random_word.hash(hasher);
                 entity.structure_upgrade_link.hash(hasher);
             }
-            if schema.includes(HashFeature::NativeRuntimeIdentity) {
-                entity.native_unique_id.hash(hasher);
-            }
-            if schema.includes(HashFeature::SlaveManager) {
-                if let Some(manager) = entity.slave_manager.as_ref() {
+            entity.native_unique_id.hash(hasher);
+            if let Some(manager) = entity.slave_manager.as_ref() {
                     b"slave-manager-v209".hash(hasher);
                     manager.hash(hasher);
                 }
@@ -1675,20 +1304,10 @@ impl Simulation {
                         bale.value.hash(hasher);
                     }
                 }
-            } else if schema.includes(HashFeature::TechnoConstructor)
-                && let Some(manager) = entity.slave_manager.as_ref()
-            {
-                b"constructor-slave-pool-v1".hash(hasher);
-                manager.slaves().count().hash(hasher);
-                for slave_id in manager.slaves() {
-                    slave_id.hash(hasher);
-                }
-            }
             entity.occupancy_enter_order.hash(hasher);
             entity.air_spatial_bucket.hash(hasher);
             entity.air_spatial_enter_order.hash(hasher);
-            if schema.includes(HashFeature::Lifecycle) {
-                // Independent lifecycle axes and deterministic Rust bookkeeping.
+            // Independent lifecycle axes and deterministic Rust bookkeeping.
                 // Keep this order fixed: it is part of the lockstep hash contract.
                 entity.lifecycle.object_alive.hash(hasher);
                 entity.lifecycle.in_limbo.hash(hasher);
@@ -1696,28 +1315,19 @@ impl Simulation {
                 entity.dying.hash(hasher);
                 entity.dirty_rect_eligible.hash(hasher);
                 entity.destruction_recorded.hash(hasher);
-            }
-            if schema.includes(HashFeature::InfantryTerminal) {
-                entity.infantry_terminal.hash(hasher);
-            }
-            if schema.includes(HashFeature::TechnoPlayfield) {
-                // TechnoClass+0x3D5 is mutable admission state, not a derived
+            entity.infantry_terminal.hash(hasher);
+            // TechnoClass+0x3D5 is mutable admission state, not a derived
                 // position query: ordinary movement is promote-only while
                 // teleport and Set_Clipped_LocalSize own exact demotions.
                 entity.in_playfield.hash(hasher);
-            }
             entity.move_sound_active.hash(hasher);
-            if schema.includes(HashFeature::AircraftCrash) {
-                entity.crashing.hash(hasher);
+            entity.crashing.hash(hasher);
                 entity.crashing_seen.hash(hasher);
-            }
-            if schema.includes(HashFeature::ShipSinking) && !entity.sinking.is_default() {
+            if !entity.sinking.is_default() {
                 b"techno-sinking-v1".hash(hasher);
                 entity.sinking.hash(hasher);
             }
-            if schema.includes(HashFeature::TechnoMissionOnly) {
-                entity.is_mission_only().hash(hasher);
-            }
+            entity.is_mission_only().hash(hasher);
             entity.move_sound_countdown.hash(hasher);
             entity.position.rx.hash(hasher);
             entity.position.ry.hash(hasher);
@@ -1735,8 +1345,7 @@ impl Simulation {
             entity.body_facing.hash(hasher);
             // The barrel elevation (`+0x370`), tagged, once an Unlimbo moved
             // it off its constructor value.
-            if schema.includes(HashFeature::BarrelElevation)
-                && !entity.barrel_elevation_is_constructed()
+            if !entity.barrel_elevation_is_constructed()
             {
                 b"barrel-elevation-v1".hash(hasher);
                 entity.barrel_elevation().hash(hasher);
@@ -1748,31 +1357,27 @@ impl Simulation {
             }
             if entity.building_actually_placed
                 || entity.building_anim_slots.iter().any(Option::is_some)
-                || (schema.includes_building_power_integration()
-                    && entity.building_anim_effect_replay.iter().any(|v| *v))
+                || (entity.building_anim_effect_replay.iter().any(|v| *v))
             {
                 b"building-anim-slots-v1".hash(hasher);
                 entity.building_actually_placed.hash(hasher);
                 entity.building_anim_slots.hash(hasher);
-                if schema.includes_building_power_integration() {
-                    entity.building_anim_effect_replay.hash(hasher);
-                }
+                entity.building_anim_effect_replay.hash(hasher);
             }
             if entity.building_storage != Default::default() {
                 b"building-storage-v1".hash(hasher);
                 entity.building_storage.hash(hasher);
             }
-            if schema.includes_building_power_integration() && entity.building_last_operational {
+            if entity.building_last_operational {
                 b"building-operational-v1".hash(hasher);
             }
-            if schema.includes_building_power_integration() && !entity.building_stuff_enabled {
+            if !entity.building_stuff_enabled {
                 b"building-stuff-disabled-v1".hash(hasher);
             }
-            if schema.includes(HashFeature::AnimationAuthority) && entity.building_has_engineer {
+            if entity.building_has_engineer {
                 b"building-has-engineer-v1".hash(hasher);
             }
-            if schema.includes(HashFeature::EntityAnimation)
-                && let Some(animation) = entity.animation.as_ref()
+            if let Some(animation) = entity.animation.as_ref()
             {
                 b"entity-animation-v1".hash(hasher);
                 animation.sequence.hash(hasher);
@@ -1782,24 +1387,20 @@ impl Simulation {
             }
             entity.owner().hash(hasher);
             entity.health.current.hash(hasher);
-            if schema.includes(HashFeature::EstimatedHealth) {
-                entity.estimated_health.get().hash(hasher);
-            }
+            entity.estimated_health.get().hash(hasher);
             entity.type_ref().hash(hasher);
             (entity.category as u8).hash(hasher);
             entity.foundation.hash(hasher);
             entity.building_hidden_occupancy.hash(hasher);
             entity.base_reservation_spacing.hash(hasher);
             entity.determines_waypoint_edge.hash(hasher);
-            if schema.includes(HashFeature::NavalBuildConst) && entity.build_const_eligible {
+            if entity.build_const_eligible {
                 b"naval-build-const-entity-v1".hash(hasher);
                 entity.build_const_eligible.hash(hasher);
             }
-            if schema.includes(HashFeature::BasePlan) {
-                entity.base_plan_type_index.hash(hasher);
+            entity.base_plan_type_index.hash(hasher);
                 entity.base_plan_is_defense.hash(hasher);
                 entity.base_plan_has_undeploy_target.hash(hasher);
-            }
             entity.veterancy.hash(hasher);
             // The raw accumulator is authoritative — `veterancy` is only its
             // rank projection, so two objects one kill apart inside the same
@@ -1815,40 +1416,30 @@ impl Simulation {
             entity.armor_multiplier.bits().hash(hasher);
             entity.berserk.hash(hasher);
             entity.was_attacked_by_enemy.hash(hasher);
-            if schema.includes(HashFeature::AiSellable)
-                && entity.category == crate::map::entities::EntityCategory::Structure
+            if entity.category == crate::map::entities::EntityCategory::Structure
             {
                 entity.ai_sellable.hash(hasher);
             }
-            if schema.includes(HashFeature::BuildingRepair)
-                && entity.category == crate::map::entities::EntityCategory::Structure
+            if entity.category == crate::map::entities::EntityCategory::Structure
             {
                 entity.repairing.hash(hasher);
                 entity.ai_repairable.hash(hasher);
             }
-            if schema.includes(HashFeature::AiBaseBuilding)
-                && entity.ai_placement_timer != crate::sim::timer::CdTimer::default()
+            if entity.ai_placement_timer != crate::sim::timer::CdTimer::default()
             {
                 b"ai-placement-timer-v1".hash(hasher);
                 entity.ai_placement_timer.hash(hasher);
             }
-            if schema.includes(HashFeature::BaseDefenseResponse) {
-                b"base-defense-response-v1".hash(hasher);
+            b"base-defense-response-v1".hash(hasher);
                 entity.base_defense_response.hash(hasher);
-            }
             entity.regular_crusher.hash(hasher);
             entity.drive_accelerates.hash(hasher);
             entity.damage_fire_state_active.hash(hasher);
             entity.damage_fire_anim_ids.hash(hasher);
             entity.vision_range.hash(hasher);
-            if schema.includes(HashFeature::CellMembership) {
-                entity.sight_is_zero.hash(hasher);
-            }
-            if schema.includes(HashFeature::SustainedGapSight) {
-                entity.sight_refresh_timers.hash(hasher);
-            }
-            if schema.includes(HashFeature::GapOperational)
-                && entity.gap_generator != crate::sim::vision::GapGeneratorRuntime::default()
+            entity.sight_is_zero.hash(hasher);
+            entity.sight_refresh_timers.hash(hasher);
+            if entity.gap_generator != crate::sim::vision::GapGeneratorRuntime::default()
             {
                 b"gap-operational-v144".hash(hasher);
                 entity.gap_generator.hash(hasher);
@@ -1858,28 +1449,14 @@ impl Simulation {
                 1u8.hash(hasher);
                 movement.next_index.hash(hasher);
                 movement.speed.hash(hasher);
-                if !schema.includes(HashFeature::FootPathRuntime) {
-                    // Historical positional encoding of the former adapter
-                    // fields. This projection is not native timer equality.
-                    let path = &entity.navigation.path_runtime;
-                    (path
-                        .movement_timer
-                        .remaining(self.session.binary_frame as i32) as u16)
-                        .hash(hasher);
-                    (path
-                        .blocked_timer
-                        .remaining(self.session.binary_frame as i32) as u16)
-                        .hash(hasher);
-                    path.path_blocked.hash(hasher);
-                    (path.retries_left as u8).hash(hasher);
-                }
+                
                 movement.path.hash(hasher);
                 movement.path_layers.hash(hasher);
             } else {
                 0u8.hash(hasher);
             }
 
-            if schema.includes(HashFeature::FootPathRuntime) {
+            {
                 // Preserve schema160's original four-field order. Deriving
                 // the fold from the expanded struct would alter every prior
                 // projection, including constructor-default Foot states.
@@ -1888,14 +1465,12 @@ impl Simulation {
                 path.blocked_timer.hash(hasher);
                 path.path_blocked.hash(hasher);
                 path.retries_left.hash(hasher);
-                if schema.includes(HashFeature::FootScoldLatch) && path.scold_latch_raw() != 0 {
+                if path.scold_latch_raw() != 0 {
                     0x68a_u32.hash(hasher);
                     path.scold_latch_raw().hash(hasher);
                 }
             }
-            if schema.includes(HashFeature::FootNeighborHistory) {
-                entity.navigation.neighbor_state.hash(hasher);
-            }
+            entity.navigation.neighbor_state.hash(hasher);
             entity.navigation.path_replay.hash(hasher);
             entity.navigation.nav_com_aux.hash(hasher);
             entity.navigation.nav_com.hash(hasher);
@@ -1903,42 +1478,27 @@ impl Simulation {
             entity.navigation.nav_queue.hash(hasher);
             entity.navigation.pending_arrival_clear.hash(hasher);
 
-            #[cfg(test)]
-            if !schema.includes(HashFeature::TrackAuthority) {
-                assert_retired_track_projection_is_bounded(entity);
-                // Schema166's entity.drive_track == None tag, before the
-                // retained classes. The original payload is not recoverable.
-                0u8.hash(hasher);
-            }
-            hash_retained_track_classes(entity, schema, hasher);
+            
+            hash_retained_track_classes(entity, hasher);
             entity.foot_speed.applied_fraction.hash(hasher);
             entity.foot_speed.cached_current_speed.hash(hasher);
-            if schema.includes(HashFeature::FlyLanding)
-                && entity.flight_attitude != Default::default()
+            if entity.flight_attitude != Default::default()
             {
                 0x2e8_u32.hash(hasher);
                 entity.flight_attitude.hash(hasher);
             }
-            if schema.includes(HashFeature::FootCrateSpeed) {
-                entity.foot_speed.crate_multiplier().hash(hasher);
-            }
+            entity.foot_speed.crate_multiplier().hash(hasher);
             entity.foot_occupation_enabled.hash(hasher);
             entity.foot_locomotor_swap_active.hash(hasher);
             // Techno+0x1F8 is up only between the Teleporter arm's can't-end
             // branch and the next Unit setter call; the tag keeps every
             // established stream unchanged while it is clear.
-            if schema.includes(HashFeature::RetiredRefineryDockPhase)
-                && entity.setter_force_reassign
+            if entity.setter_force_reassign
             {
                 0x1f8_u32.hash(hasher);
             }
 
-            #[cfg(test)]
-            if !schema.includes(HashFeature::TrackAuthority) {
-                // Schema166's entity.forced_drive_track == None tag follows
-                // owner speed/occupation. Current production folds neither tag.
-                0u8.hash(hasher);
-            }
+            
             if let Some(ref loco) = entity.locomotor {
                 1u8.hash(hasher);
                 (loco.kind as u8).hash(hasher);
@@ -1960,11 +1520,11 @@ impl Simulation {
                 loco.hover_throttle.to_bits().hash(hasher);
                 loco.hover_bob_offset.to_bits().hash(hasher);
                 loco.altitude.to_bits().hash(hasher);
-                hash_locomotor_payload(&loco.runtime_payload, hasher, schema);
+                hash_locomotor_payload(&loco.runtime_payload, hasher);
                 match loco.piggyback.as_deref() {
                     Some(runtime) => {
                         1u8.hash(hasher);
-                        hash_locomotor_runtime(runtime, hasher, schema);
+                        hash_locomotor_runtime(runtime, hasher);
                     }
                     None => 0u8.hash(hasher),
                 }
@@ -2009,31 +1569,24 @@ impl Simulation {
                 cloak.step_timer.timer.duration().hash(hasher);
                 cloak.recloak_delay.start_frame().hash(hasher);
                 cloak.recloak_delay.duration().hash(hasher);
-                if !schema.includes(HashFeature::RearmTimer) {
-                    entity.rearm_timer.start_frame().hash(hasher);
-                    entity.rearm_timer.duration().hash(hasher);
-                }
+                
             } else {
                 0u8.hash(hasher);
             }
-            if schema.includes(HashFeature::SensorDeposit) {
-                if let Some(deposit) = entity.sensor_deposit {
+            if let Some(deposit) = entity.sensor_deposit {
                     1u8.hash(hasher);
                     deposit.owner.hash(hasher);
                     deposit.center.hash(hasher);
                     deposit.add_radius.hash(hasher);
                     deposit.remove_radius.hash(hasher);
                     deposit.building_array.hash(hasher);
-                    if schema.includes(HashFeature::DisguiseDetect) {
-                        // The cached `DetectDisguiseRange=` circle. It is the
+                    // The cached `DetectDisguiseRange=` circle. It is the
                         // radius Limbo will decrement, so it selects which
                         // cells leave the disguise-detect plane.
                         deposit.detect_disguise_radius.hash(hasher);
-                    }
                 } else {
                     0u8.hash(hasher);
                 }
-            }
             if let Some(disguise) = entity.disguise.as_ref() {
                 1u8.hash(hasher);
                 disguise.disguised.hash(hasher);
@@ -2062,31 +1615,19 @@ impl Simulation {
 
             if let Some(ref attack) = entity.attack_target {
                 1u8.hash(hasher);
-                if !schema.includes(HashFeature::RearmTimer) {
-                    0u16.hash(hasher);
-                }
+                
                 attack.target.hash(hasher);
-                if !schema.includes(HashFeature::WeaponBurstAuthority) {
-                    // Bounded historical replay fixtures had no remaining
-                    // burst shots. Arbitrary old AttackTarget state is unrecoverable.
-                    0u8.hash(hasher);
-                }
-                if !schema.includes(HashFeature::RearmTimer) {
-                    0u8.hash(hasher);
-                }
+                
+                
                 attack.pending_infantry_fire.hash(hasher);
             } else {
                 0u8.hash(hasher);
             }
-            if schema.includes(HashFeature::RearmTimer) {
-                entity.rearm_timer.start_frame().hash(hasher);
+            entity.rearm_timer.start_frame().hash(hasher);
                 entity.rearm_timer.duration().hash(hasher);
-            }
-            if schema.includes(HashFeature::WeaponBurstAuthority) {
-                entity.weapon_burst.hash(hasher);
-            }
+            entity.weapon_burst.hash(hasher);
             entity.pending_building_fire.hash(hasher);
-            if schema.includes(HashFeature::PrismSupport) && entity.prism_support_count != 0 {
+            if entity.prism_support_count != 0 {
                 b"prism-support-count-v1".hash(hasher);
                 entity.prism_support_count.hash(hasher);
             }
@@ -2105,10 +1646,7 @@ impl Simulation {
                 }
                 None => 0u8.hash(hasher),
             }
-            if !schema.includes(HashFeature::RetiredRallyCopies) {
-                // The retired per-building rally copy (`HashFeature::RetiredRallyCopies`).
-                None::<(u16, u16)>.hash(hasher);
-            }
+            
             entity.capture_target.hash(hasher);
             entity.c4_plant.hash(hasher);
             match entity.pending_c4_detonation {
@@ -2147,12 +1685,7 @@ impl Simulation {
             if entity.mcv_deploy_pending {
                 0x4d435644u32.hash(hasher);
                 entity.mcv_deploy_pending.hash(hasher);
-                #[cfg(test)]
-                if !schema.includes(HashFeature::TrackAuthority) {
-                    // The bounded historical projection above rejects retained
-                    // turn/track state; only its established false latch projects.
-                    false.hash(hasher);
-                }
+                
             }
             match entity.deploy_state {
                 None => 0u8.hash(hasher),
@@ -2203,13 +1736,13 @@ impl Simulation {
                     (bale.resource_type as u8).hash(hasher);
                     bale.value.hash(hasher);
                 }
-                let retired_dock_fold = !schema.includes(HashFeature::RetiredRefineryDockPhase);
+                let retired_dock_fold = false;
                 if retired_dock_fold {
                     // home_refinery: None.
                     None::<u64>.hash(hasher);
                 }
                 miner.reserved_refinery.hash(hasher);
-                let native_ore_field = schema.includes(HashFeature::NativeOreField);
+                let native_ore_field = true;
                 if !native_ore_field {
                     // The retired target_ore_cell (None) and harvest_timer
                     // (unarmed).
@@ -2317,14 +1850,9 @@ impl Simulation {
             // worlds without a mind-control controller keep legacy hashes.
             if let Some(ref manager) = entity.capture_manager {
                 3u8.hash(hasher);
-                if schema.includes(HashFeature::MindControl) {
-                    manager.hash(hasher);
-                } else {
-                    manager.hash_before_mind_control(hasher);
-                }
+                manager.hash(hasher);
             }
-            if schema.includes(HashFeature::MindControl)
-                && entity.mind_control != crate::sim::capture_manager::MindControlLink::default()
+            if entity.mind_control != crate::sim::capture_manager::MindControlLink::default()
             {
                 // The victim's MindControlledBy (+2C0) and ring (+2C8).
                 0x2c0_u32.hash(hasher);
@@ -2333,23 +1861,20 @@ impl Simulation {
             // TemporalImUsing (+274) and TemporalTargetingMe (+278). Objects
             // with neither fold nothing, so worlds without a Temporal firer
             // keep their hashes.
-            if schema.includes(HashFeature::Temporal)
-                && entity.temporal != crate::sim::temporal::TemporalState::default()
+            if entity.temporal != crate::sim::temporal::TemporalState::default()
             {
                 0x274_u32.hash(hasher);
                 entity.temporal.hash(hasher);
             }
             // A carried bomb (+38); an unbombed object folds nothing.
-            if schema.includes(HashFeature::IvanBomb)
-                && let Some(bomb) = &entity.bomb
+            if let Some(bomb) = &entity.bomb
             {
                 0x38_u32.hash(hasher);
                 bomb.hash(hasher);
             }
             // Gattling stage, value and report latch (+140, +144, +4B8); an
             // object that never spun folds nothing.
-            if schema.includes(HashFeature::Gattling)
-                && entity.gattling != crate::sim::combat::gattling::GattlingState::default()
+            if entity.gattling != crate::sim::combat::gattling::GattlingState::default()
             {
                 0x140_u32.hash(hasher);
                 entity.gattling.hash(hasher);
@@ -2386,8 +1911,7 @@ impl Simulation {
                 0u8.hash(hasher);
             }
 
-            if schema.includes(HashFeature::Mission) {
-                hash_mission_com(&entity.mission, hasher);
+            hash_mission_com(&entity.mission, hasher);
                 hash_mission_leaf(&entity.mission_leaf, hasher);
                 entity.occupier.hash(hasher);
                 entity.passive_scan_timer.hash(hasher);
@@ -2405,14 +1929,7 @@ impl Simulation {
                     None => 0u8.hash(hasher),
                 }
                 entity.object_is_falling_down.hash(hasher);
-            } else {
-                hash_mission_com_before_v29(&entity.mission, hasher);
-            }
-            if !schema.includes(HashFeature::AircraftReleaseAuthority) {
-                // Bounded historical fixtures had no fabricated release tail.
-                // An arbitrary old active tail cannot be reconstructed.
-                0u8.hash(hasher);
-            }
+            
             // S4b damage-Spark `+0x308`-equivalent live-system gate. Hashed because
             // it gates future scenario_rng draws (a divergence here desyncs the
             // stream). Zero for every entity in stock YR (the gate is Cyborg-only).
@@ -2425,22 +1942,16 @@ impl Simulation {
 
     /// Scheduler-owned ordinary animations in stable-ID order. Render caches and
     /// transient sound events are deliberately excluded.
-    fn hash_anims(&self, hasher: &mut impl Hasher, schema: HashSchema) {
+    fn hash_anims(&self, hasher: &mut impl Hasher) {
         self.substrate.anims.iter().count().hash(hasher);
         for (id, anim) in self.substrate.anims.iter() {
             id.hash(hasher);
-            #[cfg(test)]
-            if !schema.includes(HashFeature::AnimationDisplay) {
-                anim.hash_before_display(hasher);
-                continue;
-            }
+            
             anim.hash(hasher);
-            if schema.includes(HashFeature::BouncingDebris) {
-                anim.bounce.is_some().hash(hasher);
+            anim.bounce.is_some().hash(hasher);
                 if let Some(body) = &anim.bounce {
                     body.hash_bits(hasher);
                 }
-            }
         }
     }
 
@@ -2494,7 +2005,6 @@ impl Simulation {
 fn hash_locomotor_runtime(
     runtime: &crate::sim::movement::locomotion::piggyback::LocomotorRuntime,
     hasher: &mut impl Hasher,
-    schema: HashSchema,
 ) {
     (runtime.kind as u8).hash(hasher);
     (runtime.layer as u8).hash(hasher);
@@ -2510,9 +2020,7 @@ fn hash_locomotor_runtime(
     common.altitude.to_bits().hash(hasher);
     0i32.hash(hasher);
     0i32.hash(hasher);
-    if !schema.includes(HashFeature::RetiredJumpjetLegacyBlock) {
-        hash_retired_jumpjet_legacy_block(hasher);
-    }
+    
     common.balloon_hover.hash(hasher);
     common.hover_attack.hash(hasher);
     common.speed_type.hash(hasher);
@@ -2527,7 +2035,7 @@ fn hash_locomotor_runtime(
     common.hover_throttle.to_bits().hash(hasher);
     common.hover_speed_request.to_bits().hash(hasher);
     common.hover_bob_offset.to_bits().hash(hasher);
-    hash_locomotor_payload(&runtime.payload, hasher, schema);
+    hash_locomotor_payload(&runtime.payload, hasher);
 }
 
 /// The retired VERA copy of the Jumpjet type block in the common locomotor
@@ -2549,7 +2057,6 @@ fn hash_retired_jumpjet_legacy_block(hasher: &mut impl Hasher) {
 fn hash_locomotor_payload(
     payload: &crate::sim::movement::locomotion::piggyback::LocomotorRuntimePayload,
     hasher: &mut impl Hasher,
-    schema: HashSchema,
 ) {
     use crate::sim::movement::locomotion::piggyback::LocomotorRuntimePayload;
     match payload {
@@ -2559,9 +2066,7 @@ fn hash_locomotor_payload(
         }
         LocomotorRuntimePayload::Walk(state) => {
             1u8.hash(hasher);
-            if schema.includes(HashFeature::BridgeLocomotorAndDummy) {
-                state.hash(hasher);
-            }
+            state.hash(hasher);
         }
         LocomotorRuntimePayload::Teleport(state) => {
             2u8.hash(hasher);
@@ -2581,9 +2086,7 @@ fn hash_locomotor_payload(
         }
         LocomotorRuntimePayload::Hover(head) => {
             6u8.hash(hasher);
-            if schema.includes(HashFeature::BridgeLocomotorAndDummy) {
-                head.hash(hasher);
-            }
+            head.hash(hasher);
         }
         LocomotorRuntimePayload::Mech => 7u8.hash(hasher),
         LocomotorRuntimePayload::Ship(state) => {
@@ -2596,26 +2099,16 @@ fn hash_locomotor_payload(
             target_height.hash(hasher);
             taking_off.hash(hasher);
             landing.hash(hasher);
-            if schema.includes(HashFeature::FlyDestination) {
-                state.destination().hash(hasher);
-            }
-            if schema.includes(HashFeature::FlyCruiseMode) {
-                state.cruise_mode().hash(hasher);
-            }
-            if schema.includes(HashFeature::FlyLanding) {
-                state.moving().hash(hasher);
+            state.destination().hash(hasher);
+            state.cruise_mode().hash(hasher);
+            state.moving().hash(hasher);
                 state.landing_effect_latched().hash(hasher);
                 state.airport_bound().hash(hasher);
-            }
-            if schema.includes(HashFeature::AircraftCrash) {
-                state.fall_counter().hash(hasher);
-            }
+            state.fall_counter().hash(hasher);
         }
         LocomotorRuntimePayload::Jumpjet(state) => {
             10u8.hash(hasher);
-            if schema.includes(HashFeature::BridgeLocomotorAndDummy) {
-                state.hash(hasher);
-            }
+            state.hash(hasher);
         }
         LocomotorRuntimePayload::Parachute => 11u8.hash(hasher),
     }
