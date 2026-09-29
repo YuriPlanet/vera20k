@@ -666,7 +666,6 @@ fn fly_retained_destination_drives_subcell_arrival_after_save_and_restore() {
 
 #[test]
 fn fly_destination_is_hashed_and_persisted_in_active_and_stashed_runtime() {
-    use super::hash_schema::HashSchema;
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::movement::locomotion::piggyback;
     use crate::sim::movement::locomotor::MovementLayer;
@@ -675,16 +674,11 @@ fn fly_destination_is_hashed_and_persisted_in_active_and_stashed_runtime() {
         let (mut sim, rules) = destination_fixture(&row);
         assert!(issue_coordinate(&mut sim, &rules, [16519, 16523, 111]));
         let before = sim.state_hash();
-        let old_projection = sim.state_hash_with_schema(HashSchema::Before(188));
         assert!(issue_coordinate(&mut sim, &rules, [16519, 16523, 333]));
         assert_ne!(
             before,
             sim.state_hash(),
             "retained Z changes the hash without changing cell cache"
-        );
-        assert_eq!(
-            old_projection,
-            sim.state_hash_with_schema(HashSchema::Before(188))
         );
         if stashed {
             let loco = sim
@@ -1020,7 +1014,6 @@ fn fly_phase_outer_health_power_and_life_gates_precede_nonlandable_override() {
 
 #[test]
 fn fly_landing_state_hashes_and_restores_active_and_stashed_instances() {
-    use super::hash_schema::HashSchema;
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::movement::{locomotion::piggyback, locomotor::MovementLayer};
     for stashed in [false, true] {
@@ -1060,11 +1053,6 @@ fn fly_landing_state_hashes_and_restores_active_and_stashed_instances() {
             assert_ne!(
                 before.state_hash(),
                 changed.state_hash(),
-                "{field}, stashed={stashed}"
-            );
-            assert_eq!(
-                before.state_hash_with_schema(HashSchema::Before(192)),
-                changed.state_hash_with_schema(HashSchema::Before(192)),
                 "{field}, stashed={stashed}"
             );
             let bytes = GameSnapshot::save(&changed, 0, 0, "Fly landing state", 0);
@@ -1107,11 +1095,9 @@ fn fly_landing_state_hashes_and_restores_active_and_stashed_instances() {
 
 #[test]
 fn fly_cruise_mode_hashes_separately_from_destination() {
-    use super::hash_schema::HashSchema;
     let row = destination_vectors().remove(0);
     let (mut sim, _) = destination_fixture(&row);
     let before = sim.state_hash();
-    let old = sim.state_hash_with_schema(HashSchema::Before(191));
     // A readiness change can change mode for the identical retained XYZ.
     sim.substrate
         .entities
@@ -1124,7 +1110,6 @@ fn fly_cruise_mode_hashes_separately_from_destination() {
         .unwrap()
         .select_destination_mode(0, false, true, false);
     assert_ne!(sim.state_hash(), before);
-    assert_eq!(sim.state_hash_with_schema(HashSchema::Before(191)), old);
 }
 
 #[test]

@@ -1956,10 +1956,9 @@ fn shroud_current_sight_provenance_changes_future_conceal_and_hash() {
         &sim.interner,
     );
     let sight_hash = sim.state_hash();
-    let historical_hash = sim.state_hash_without_sustained_gap_sight_v142();
     let mut mapped = sim.fog.clone();
     // Keep the public observation identical, but replace the source's selected
-    // state with a past mapping receipt. Historical projections remain equal.
+    // state with a past mapping receipt.
     mapped.sight_admissions.clear();
     for state in &mut mapped.by_owner.get_mut(&owner).unwrap().shroud_knowledge {
         if state.local_sources > 0 {
@@ -1970,10 +1969,6 @@ fn shroud_current_sight_provenance_changes_future_conceal_and_hash() {
     }
     let sight = std::mem::replace(&mut sim.fog, mapped);
     assert_ne!(sim.state_hash(), sight_hash);
-    assert_eq!(
-        sim.state_hash_without_sustained_gap_sight_v142(),
-        historical_hash
-    );
     apply_gap_generators(&mut sim.fog, &[(gapper, 10, 10, 3)], &sim.interner);
     assert!(!sim.fog.is_cell_revealed(owner, 10, 10));
     sim.fog = sight;

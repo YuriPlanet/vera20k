@@ -121,9 +121,8 @@ fn native_sink_suffix_preserves_cadence_coordinates_and_complete_rng_states() {
 }
 
 #[test]
-fn sinking_state_is_hashed_only_in_its_schema_and_survives_snapshot() {
+fn sinking_state_is_hashed_and_survives_snapshot() {
     use crate::sim::snapshot::GameSnapshot;
-    use crate::sim::world::hash_schema::HashSchema;
 
     let (mut sim, rules, id) = fixture(-125);
     sim.session.map_name = "SINK.MAP".to_owned();
@@ -134,17 +133,12 @@ fn sinking_state_is_hashed_only_in_its_schema_and_survives_snapshot() {
     // Native load restarts Scenario from Seed0. Begin both compared futures
     // at that same cursor; this test does not assert saved Scenario retention.
     sim.scenario_rng = SimRng::new(0);
-    let old_hash = sim.state_hash_with_schema(HashSchema::Before(227));
     let active_hash = sim.state_hash();
     sim.sinking_edge_sounds(id, &rules);
     assert_ne!(
         sim.state_hash(),
         active_hash,
         "the observed sound edge is authority"
-    );
-    assert_eq!(
-        sim.state_hash_with_schema(HashSchema::Before(227)),
-        old_hash
     );
     let expected_hash = sim.state_hash();
     let bytes = GameSnapshot::save_validated(&sim, 17, 18, "sinking", 19);

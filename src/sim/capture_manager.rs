@@ -208,14 +208,6 @@ impl CaptureManagerState {
         state
     }
 
-    /// The pre-196 hash projection: limit, infinity and the victim ids.
-    pub(crate) fn hash_before_mind_control(&self, hasher: &mut impl std::hash::Hasher) {
-        use std::hash::Hash;
-        self.max_control.hash(hasher);
-        self.infinite.hash(hasher);
-        self.victims().collect::<Vec<_>>().hash(hasher);
-    }
-
     #[cfg(test)]
     pub(crate) fn reverse_nodes_for_test(&mut self) {
         self.nodes.reverse();

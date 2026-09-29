@@ -33,34 +33,20 @@ fn hash_projectile_target(
     }
 }
 
-/// Fold the versioned direct House CRC fields around CurrentIQ.
+/// Fold the direct House CRC fields around CurrentIQ in native order.
 ///
 /// gamemd-derived: raw House CRC `0x00502D60..0x0050303F` folds Production at
 /// `0x00502E58`, AutocreateAllowed at `0x00502E66`, AITriggersActive at
 /// `0x00502E74`, and CurrentIQ at `0x00502E90`; exhaustive census finds no
-/// direct AutoBaseBuilding (`House+0x1F3`) feed. Schema v112 retains its
-/// committed CurrentIQ-before-two-latches stream, while v113 uses native order.
+/// direct AutoBaseBuilding (`House+0x1F3`) feed.
 fn hash_house_ai_activation_fields(
     house: &crate::sim::house_state::HouseState,
-    include_house_deploy_latches_v112: bool,
-    include_house_update_activation_v113: bool,
     hasher: &mut impl Hasher,
 ) {
-    if !include_house_update_activation_v113 {
-        house.current_iq.hash(hasher);
-    }
-    if include_house_deploy_latches_v112 {
-        house.ai_activation.production.hash(hasher);
-    }
-    if include_house_update_activation_v113 {
-        house.ai_activation.autocreate_allowed.hash(hasher);
-    }
-    if include_house_deploy_latches_v112 {
-        house.ai_activation.ai_triggers_active.hash(hasher);
-    }
-    if include_house_update_activation_v113 {
-        house.current_iq.hash(hasher);
-    }
+    house.ai_activation.production.hash(hasher);
+    house.ai_activation.autocreate_allowed.hash(hasher);
+    house.ai_activation.ai_triggers_active.hash(hasher);
+    house.current_iq.hash(hasher);
 }
 
 #[cfg(test)]
@@ -228,32 +214,6 @@ mod shared_dummy_bridge_hash_tests {
         assert_eq!(side_flag, sim.state_hash());
     }
 
-    #[test]
-    fn gsi_04_07_hashes_live_dummy_overlay_identity_and_state() {
-        let sim = Simulation::new();
-        let dummy = sim.effective_shared_cell_dummy();
-        let clear_hash = sim.state_hash();
-        let v114_hash = sim.state_hash_without_wall_runtime_v115();
-
-        dummy.write_overlay_identity(0x02);
-        let identity_hash = sim.state_hash();
-        assert_ne!(
-            clear_hash, identity_hash,
-            "dummy OverlayType identity changes later wall lookup behavior"
-        );
-
-        dummy.write_overlay_state(0x2a);
-        assert_ne!(
-            identity_hash,
-            sim.state_hash(),
-            "dummy OverlayData damage/connectivity is independent hash authority"
-        );
-        assert_eq!(
-            v114_hash,
-            sim.state_hash_without_wall_runtime_v115(),
-            "the v114 provenance schema excludes both dummy overlay fields"
-        );
-    }
 
     #[test]
     fn gsi_04_03_hashes_dummy_level_slope_without_retained_projectile() {
@@ -267,7 +227,6 @@ mod shared_dummy_bridge_hash_tests {
         );
         let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
         let clear_hash = sim.state_hash();
-        let v106_clear_hash = sim.state_hash_without_spark_dummy_level_slope_v107();
 
         dummy.set_level_slope(-3, 0);
         let level_facts = SparkCollisionWorld::new(&sim, &rules)
@@ -279,12 +238,7 @@ mod shared_dummy_bridge_hash_tests {
         let level_only_hash = sim.state_hash();
         assert_ne!(
             clear_hash, level_only_hash,
-            "dummy level alone is unconditional v107 hash authority"
-        );
-        assert_eq!(
-            v106_clear_hash,
-            sim.state_hash_without_spark_dummy_level_slope_v107(),
-            "the v106 provenance schema excludes an unretained dummy level change"
+            "dummy level alone is unconditional hash authority"
         );
 
         dummy.set_level_slope(0, 0);
@@ -300,48 +254,11 @@ mod shared_dummy_bridge_hash_tests {
         let slope_only_hash = sim.state_hash();
         assert_ne!(
             clear_hash, slope_only_hash,
-            "dummy slope alone is unconditional v107 hash authority"
-        );
-        assert_eq!(
-            v106_clear_hash,
-            sim.state_hash_without_spark_dummy_level_slope_v107(),
-            "the v106 provenance schema excludes an unretained dummy slope change"
+            "dummy slope alone is unconditional hash authority"
         );
     }
 }
 
-#[cfg(test)]
-mod real_cell_bridge_hash_schema_tests {
-    use super::Simulation;
-    use crate::map::resolved_terrain::ResolvedTerrainGrid;
-
-    #[test]
-    fn gsi_04_01_real_cell_bridge_authority_is_current_schema_only() {
-        let baseline = Simulation::new();
-        let mut different_authority = Simulation::new();
-        different_authority.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(
-            0,
-            1,
-            Vec::new(),
-        ));
-
-        assert_ne!(
-            baseline.state_hash(),
-            different_authority.state_hash(),
-            "current schema hashes the exact real-cell bridge authority, including its aligned shape"
-        );
-        assert_eq!(
-            baseline.state_hash_before_lifecycle_v28_and_mission_v29(),
-            different_authority.state_hash_before_lifecycle_v28_and_mission_v29(),
-            "the pre-v28 provenance schema excludes both the v90 tag and authority"
-        );
-        assert_eq!(
-            baseline.state_hash_without_mission_v29(),
-            different_authority.state_hash_without_mission_v29(),
-            "the pre-v29 provenance schema excludes both the v90 tag and authority"
-        );
-    }
-}
 
 
 
@@ -372,60 +289,6 @@ fn hash_mission_com(mission: &crate::sim::mission::MissionCom, hasher: &mut impl
     mission.dispatch_timer().delay().hash(hasher);
 }
 
-/// Reconstruct the pre-v29 Mission hash pre-image for the committed regression
-/// provenance fixtures.
-///
-/// The old schema could not represent unknown selectors or a handler state
-/// wider than one byte, so this path fails loudly rather than normalizing
-/// unrepresentable final-schema state. The fixtures also never retask at frame
-/// zero, which makes the old constructor sentinel recoverable. Live hashing
-/// never calls this helper.
-fn hash_mission_com_before_v29(
-    mission: &crate::sim::mission::MissionCom,
-    hasher: &mut impl Hasher,
-) {
-    use crate::sim::mission::{MissionId, MissionType};
-
-    fn known_or_idle(id: MissionId) -> MissionType {
-        if id == MissionId::NONE {
-            MissionType::None
-        } else {
-            id.known()
-                .expect("pre-v29 Mission hash cannot represent an unknown selector")
-        }
-    }
-
-    fn hash_legacy_optional(id: MissionId, hasher: &mut impl Hasher) {
-        if id == MissionId::NONE {
-            0u8.hash(hasher);
-        } else {
-            1u8.hash(hasher);
-            (known_or_idle(id) as u16).hash(hasher);
-        }
-    }
-
-    (known_or_idle(mission.current()) as u16).hash(hasher);
-    hash_legacy_optional(mission.queued(), hasher);
-    hash_legacy_optional(mission.suspended(), hasher);
-    u8::try_from(mission.handler_state())
-        .expect("pre-v29 Mission hash cannot represent a handler state above 255")
-        .hash(hasher);
-    let legacy_start = if mission.dispatch_timer().start_frame() == 0
-        && mission.dispatch_timer().delay() == 0
-        && mission.mission_start_frame() == 0
-    {
-        // These provenance fixtures never retask at frame zero. Final-schema
-        // construction anchors dispatch there, while the old frame-free
-        // constructor represented the same untouched compatibility state with
-        // MissionTimer's u32::MAX sentinel.
-        u32::MAX
-    } else {
-        mission.dispatch_timer().start_frame() as u32
-    };
-    legacy_start.hash(hasher);
-    (mission.dispatch_timer().delay() as u32).hash(hasher);
-    mission.ai_counter().hash(hasher);
-}
 
 fn hash_mission_leaf(leaf: &crate::sim::mission::MissionLeafState, hasher: &mut impl Hasher) {
     if let Some(unit) = leaf.as_unit() {
@@ -471,12 +334,7 @@ impl Simulation {
         // YR LogicClass trigger latches are save/lockstep state, even though
         // their camera/message outcomes stay app-owned and are not hashed.
         self.trigger_runtime.hash_state(&mut hasher);
-            self.team_script_vm.hash_state(
-                self.session.binary_frame as i32,
-                true,
-                true,
-                &mut hasher,
-            );
+            self.team_script_vm.hash_state(self.session.binary_frame as i32, &mut hasher);
         self.hash_playfield_authority(&mut hasher);
 
         // LogicClass active-object order — authoritative (drives reconciliation order).
@@ -495,10 +353,7 @@ impl Simulation {
                 id.hash(&mut hasher);
             }
 
-        self.substrate.fold_raw_cell_occupation(
-            &mut hasher,
-            true,
-        );
+        self.substrate.fold_raw_cell_occupation(&mut hasher);
         self.substrate.fold_hidden_occupation(&mut hasher);
         self.substrate.fold_air_slots(&mut hasher);
         self.substrate.fold_base_reservations(&mut hasher);
@@ -757,11 +612,8 @@ impl Simulation {
     }
 
     /// The owner's stored buildings and other objects whose destruction is
-    /// not yet recorded: the retired per-house counts that schemas before
-    /// `HouseDefeatTracking` fold. It reproduces them for a house created
-    /// before its objects whose counts were never set by hand; no pinned-hash
-    /// fixture has a house, so older schemas meet it only in relative
-    /// comparisons.
+    /// not yet recorded (test observation of the retired per-house counts).
+    #[cfg(test)]
     pub(crate) fn owned_object_counts(&self, owner: crate::sim::intern::InternedId) -> (u32, u32) {
         self.substrate
             .entities
@@ -807,12 +659,7 @@ impl Simulation {
             house.spy_sat_active.hash(hasher);
             house.tracking.hash_defeat_counters(hasher);
             house.tech_level.hash(hasher);
-            hash_house_ai_activation_fields(
-                house,
-                true,
-                true,
-                hasher,
-            );
+            hash_house_ai_activation_fields(house, hasher);
             house.strategy_emergency.hash(hasher);
             house.grudge_scores.len().hash(hasher);
             for (other, score) in &house.grudge_scores {
@@ -2038,21 +1885,6 @@ fn hash_locomotor_runtime(
     hash_locomotor_payload(&runtime.payload, hasher);
 }
 
-/// The retired VERA copy of the Jumpjet type block in the common locomotor
-/// runtime (speed, accel, current speed, deviation, crash speed, turn rate).
-/// It never followed the payload: every stashed runtime in stock play (only
-/// the Chrono Miner piggybacks) and in the pinned fixtures held a
-/// non-Jumpjet's zeros and the constructor's turn rate 4, which is what
-/// earlier schemas fold here.
-fn hash_retired_jumpjet_legacy_block(hasher: &mut impl Hasher) {
-    use crate::util::fixed_math::SIM_ZERO;
-    for _ in 0..3 {
-        SIM_ZERO.to_bits().hash(hasher);
-    }
-    0i32.hash(hasher);
-    SIM_ZERO.to_bits().hash(hasher);
-    4i32.hash(hasher);
-}
 
 fn hash_locomotor_payload(
     payload: &crate::sim::movement::locomotion::piggyback::LocomotorRuntimePayload,
@@ -2394,7 +2226,6 @@ mod raw_cell_occupation_hash_tests {
 #[cfg(test)]
 mod overlay_grid_hash_tests {
     use super::Simulation;
-    use crate::map::authored_overlay::FinalizedOverlayPayload;
     use crate::map::overlay::OverlayDataPack;
     use crate::sim::miner::ResourceType;
     use crate::sim::overlay_grid::OverlayGrid;
@@ -2427,63 +2258,7 @@ mod overlay_grid_hash_tests {
         assert_ne!(sim_a.state_hash(), sim_b.state_hash());
     }
 
-    #[test]
-    fn retained_wall_neighbor_plane_changes_hash_with_identical_final_cells() {
-        let cells = vec![(-1, 0), (1, 2), (-1, 0), (-1, 0)];
-        let mut sim_a = Simulation::new();
-        let mut sim_b = Simulation::new();
-        sim_a.overlay_grid = Some(OverlayGrid::from_finalized_map_payload(
-            FinalizedOverlayPayload::from_cells_for_test(2, 2, cells.clone(), vec![0, 1, 0, 0]),
-        ));
-        sim_b.overlay_grid = Some(OverlayGrid::from_finalized_map_payload(
-            FinalizedOverlayPayload::from_cells_for_test(2, 2, cells, vec![0, 2, 0, 0]),
-        ));
 
-        for y in 0..2 {
-            for x in 0..2 {
-                assert_eq!(
-                    sim_a.overlay_grid.as_ref().expect("A").cell(x, y),
-                    sim_b.overlay_grid.as_ref().expect("B").cell(x, y)
-                );
-            }
-        }
-        assert_ne!(sim_a.state_hash(), sim_b.state_hash());
-        assert_eq!(
-            sim_a.state_hash_without_wall_runtime_v115(),
-            sim_b.state_hash_without_wall_runtime_v115(),
-            "the v114 provenance schema ended after final overlay-cell state"
-        );
-    }
-
-    #[test]
-    fn retained_wall_neighbor_authority_mode_changes_hash_even_when_zero() {
-        let mut legacy = Simulation::new();
-        legacy.overlay_grid = Some(OverlayGrid::new(2, 2));
-
-        let mut retained = Simulation::new();
-        retained.overlay_grid = Some(OverlayGrid::from_finalized_map_payload(
-            FinalizedOverlayPayload::from_cells_for_test(2, 2, vec![(-1, 0); 4], vec![0; 4]),
-        ));
-
-        for y in 0..2 {
-            for x in 0..2 {
-                assert_eq!(
-                    legacy.overlay_grid.as_ref().expect("legacy").cell(x, y),
-                    retained.overlay_grid.as_ref().expect("retained").cell(x, y)
-                );
-            }
-        }
-        assert_ne!(
-            legacy.state_hash(),
-            retained.state_hash(),
-            "None and Some(all-zero) select different future wall-count behavior"
-        );
-        assert_eq!(
-            legacy.state_hash_without_wall_runtime_v115(),
-            retained.state_hash_without_wall_runtime_v115(),
-            "retained authority mode begins with schema v115"
-        );
-    }
 
     #[test]
     fn tiberium_cells_are_hashed_by_cell_not_placement_order() {
@@ -2905,46 +2680,13 @@ mod track_authority_hash_tests {
         }
     }
 
-    #[test]
-    fn prior_track_free_projection_keeps_retained_residual_and_short_state() {
-        for ship in [false, true] {
-            let mut sim = supplied_track_world(ship, false);
-            let before = sim.state_hash_without_track_authority_v167();
-            assert_ne!(
-                before,
-                sim.state_hash(),
-                "obsolete absence tags and pending=false are projected only before schema167"
-            );
-            let entity = sim.substrate.entities.get_mut(1).unwrap();
-            let track = if ship {
-                &mut entity.ship_locomotion.as_mut().unwrap().track
-            } else {
-                &mut entity.drive_locomotion.as_mut().unwrap().track
-            };
-            // Completion retires selector/cursor independently of these fields.
-            track.cursor = 0;
-            track.residual = 3;
-            track.reversed = true;
-            assert_ne!(before, sim.state_hash_without_track_authority_v167());
-        }
-    }
 
-    #[test]
-    #[should_panic(expected = "pre-v167 detached-track projection requires")]
-    fn prior_projection_rejects_active_drive_instead_of_fabricating_absence() {
-        supplied_track_world(false, true).state_hash_without_track_authority_v167();
-    }
 
-    #[test]
-    #[should_panic(expected = "pre-v167 detached-track projection requires")]
-    fn prior_projection_rejects_active_ship_instead_of_fabricating_absence() {
-        supplied_track_world(true, true).state_hash_without_track_authority_v167();
-    }
 }
 
 #[cfg(test)]
 mod state_hash_field_tests {
-    use super::{Simulation, hash_house_ai_activation_fields};
+    use super::Simulation;
     use crate::sim::components::{DriveCoord, DriveLocomotionRuntime};
     use crate::sim::game_entity::GameEntity;
 
@@ -3011,41 +2753,6 @@ mod state_hash_field_tests {
         assert_ne!(sim_a.state_hash(), sim_b.state_hash());
     }
 
-    #[test]
-    fn live_house_statistics_change_current_hash_and_preserve_older_projections() {
-        use crate::sim::house_state::{HouseState, MatchStatistics};
-
-        let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
-        sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
-        let clear_hash = sim.state_hash();
-        let previous = sim.state_hash_with_schema(super::HashSchema::Before(227));
-        assert_eq!(clear_hash, previous, "zero statistics add no fold");
-        let mutations: [fn(&mut MatchStatistics); 6] = [
-            |stats| stats.units_killed = 1,
-            |stats| stats.buildings_killed = 1,
-            |stats| stats.units_lost = 1,
-            |stats| stats.buildings_lost = 1,
-            |stats| stats.built = 1,
-            |stats| stats.score_points = -1,
-        ];
-        let mut hashes = std::collections::BTreeSet::from([clear_hash]);
-        for mutate in mutations {
-            let stats = &mut sim.houses.get_mut(&owner).unwrap().stats;
-            *stats = MatchStatistics::default();
-            mutate(stats);
-            assert!(
-                hashes.insert(sim.state_hash()),
-                "each live total is authority"
-            );
-            assert_eq!(
-                sim.state_hash_with_schema(super::HashSchema::Before(227)),
-                previous,
-                "previous projections omit live statistics"
-            );
-        }
-    }
 
     #[test]
     fn house_rof_bias_changes_state_hash_at_its_difficulty() {
@@ -3154,21 +2861,6 @@ mod state_hash_field_tests {
         let baseline = house_sim(vec![first, second], 50);
         let reversed = house_sim(vec![second, first], 50);
         assert_ne!(baseline.state_hash(), reversed.state_hash());
-        assert_ne!(
-            baseline.state_hash(),
-            baseline.state_hash_without_base_plan_v110(),
-            "the v110 schema folds BasePlan state even when earlier schema state is unchanged"
-        );
-        assert_eq!(
-            baseline.state_hash_without_base_plan_v110(),
-            reversed.state_hash_without_base_plan_v110(),
-            "the v109 provenance schema excludes BasePlan node order"
-        );
-        assert_eq!(
-            baseline.state_hash_before_lifecycle_v28_and_mission_v29(),
-            reversed.state_hash_before_lifecycle_v28_and_mission_v29(),
-            "historical schemas exclude the complete v110 authority"
-        );
 
         for changed in [
             house_sim(vec![first, second], 51),
@@ -3229,86 +2921,8 @@ mod state_hash_field_tests {
         assert_ne!(entity_a.state_hash(), entity_b.state_hash());
     }
 
-    #[test]
-    fn base_plan_center_affects_only_current_v111_hash_schema() {
-        use crate::sim::house_state::HouseState;
 
-        fn fixture(center: (u16, u16)) -> Simulation {
-            let mut sim = Simulation::new();
-            let owner = sim.interner.intern("Americans");
-            let mut house = HouseState::new(owner, 0, Some(owner), false, 0, 10);
-            house.base_plan_center = center;
-            sim.houses.insert(owner, house);
-            sim
-        }
 
-        let baseline = fixture((0, 0));
-        let changed = fixture((19, 21));
-
-        assert_ne!(baseline.state_hash(), changed.state_hash());
-        assert_eq!(
-            baseline.state_hash_without_base_plan_center_v111(),
-            changed.state_hash_without_base_plan_center_v111()
-        );
-    }
-
-    /// `HouseClass+0x242` (the sticky harvester no-ore latch) is folded once,
-    /// under the v132 flag only.
-    #[test]
-    fn house_harvester_no_ore_affects_only_current_v132_hash_schema() {
-        use crate::sim::house_state::HouseState;
-
-        fn fixture(latched: bool) -> Simulation {
-            let mut sim = Simulation::new();
-            let owner = sim.interner.intern("Americans");
-            let mut house = HouseState::new(owner, 0, Some(owner), true, 0, 10);
-            house.harvester_no_ore = latched;
-            sim.houses.insert(owner, house);
-            sim
-        }
-
-        let baseline = fixture(false);
-        let latched = fixture(true);
-
-        assert_ne!(baseline.state_hash(), latched.state_hash());
-        assert_eq!(
-            baseline.state_hash_without_house_harvester_no_ore_v132(),
-            latched.state_hash_without_house_harvester_no_ore_v132()
-        );
-    }
-
-    /// The v133 House EVA advice folds move only the current schema; the
-    /// dedicated pre-v133 probe reproduces the v132 layout.
-    #[test]
-    fn house_eva_advice_affects_only_current_v133_hash_schema() {
-        use crate::sim::house_state::{HouseState, eva_funds_timer_at_construction};
-        use crate::sim::timer::CdTimer;
-
-        fn fixture(timer: CdTimer, guard: bool) -> Simulation {
-            let mut sim = Simulation::new();
-            let owner = sim.interner.intern("Americans");
-            let mut house = HouseState::new(owner, 0, Some(owner), true, 0, 10);
-            house.eva_funds_timer = timer;
-            house.eva_low_power_guard = guard;
-            sim.houses.insert(owner, house);
-            sim
-        }
-
-        let baseline = fixture(eva_funds_timer_at_construction(), false);
-        let armed = fixture(CdTimer::started(40, 2_880), false);
-        let guarded = fixture(eva_funds_timer_at_construction(), true);
-
-        assert_ne!(baseline.state_hash(), armed.state_hash());
-        assert_ne!(baseline.state_hash(), guarded.state_hash());
-        assert_eq!(
-            baseline.state_hash_without_house_eva_v133(),
-            armed.state_hash_without_house_eva_v133()
-        );
-        assert_eq!(
-            baseline.state_hash_without_house_eva_v133(),
-            guarded.state_hash_without_house_eva_v133()
-        );
-    }
 
     #[test]
     fn house_ai_activation_hash_matches_native_direct_crc_fields_only() {
@@ -3353,90 +2967,8 @@ mod state_hash_field_tests {
         assert_ne!(baseline.state_hash(), autocreate.state_hash());
         assert_ne!(baseline.state_hash(), ai_triggers.state_hash());
         assert_eq!(baseline.state_hash(), auto_base.state_hash());
-        assert_ne!(
-            baseline.state_hash_without_house_update_activation_v113(),
-            production.state_hash_without_house_update_activation_v113()
-        );
-        assert_eq!(
-            baseline.state_hash_without_house_update_activation_v113(),
-            autocreate.state_hash_without_house_update_activation_v113()
-        );
-        assert_ne!(
-            baseline.state_hash_without_house_update_activation_v113(),
-            ai_triggers.state_hash_without_house_update_activation_v113()
-        );
-        assert_eq!(
-            baseline.state_hash_without_house_deploy_latches_v112(),
-            production.state_hash_without_house_deploy_latches_v112()
-        );
-        assert_eq!(
-            baseline.state_hash_without_house_deploy_latches_v112(),
-            autocreate.state_hash_without_house_deploy_latches_v112()
-        );
-        assert_eq!(
-            baseline.state_hash_without_house_deploy_latches_v112(),
-            ai_triggers.state_hash_without_house_deploy_latches_v112()
-        );
-        assert_eq!(
-            baseline.state_hash_without_house_deploy_latches_v112(),
-            auto_base.state_hash_without_house_deploy_latches_v112()
-        );
     }
 
-    #[test]
-    fn house_ai_activation_hash_field_order_preserves_v113_and_v112_streams() {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        use crate::sim::house_state::{HouseAiActivationLatches, HouseState};
-
-        for (current_iq, production, autocreate_allowed, ai_triggers_active) in [
-            (0x1357_2468, true, false, false),
-            (-0x0246_1357, false, true, false),
-            (0x1020_3040, false, false, true),
-        ] {
-            let mut house = HouseState::new(Default::default(), 0, None, false, 0, 10);
-            house.current_iq = current_iq;
-            house.ai_activation = HouseAiActivationLatches {
-                production,
-                autocreate_allowed,
-                ai_triggers_active,
-                auto_base_building: true,
-            };
-
-            let mut actual_v113 = DefaultHasher::new();
-            hash_house_ai_activation_fields(&house, true, true, &mut actual_v113);
-            let mut manual_v113 = DefaultHasher::new();
-            house.ai_activation.production.hash(&mut manual_v113);
-            house
-                .ai_activation
-                .autocreate_allowed
-                .hash(&mut manual_v113);
-            house
-                .ai_activation
-                .ai_triggers_active
-                .hash(&mut manual_v113);
-            house.current_iq.hash(&mut manual_v113);
-            assert_eq!(actual_v113.finish(), manual_v113.finish());
-
-            let mut actual_v112 = DefaultHasher::new();
-            hash_house_ai_activation_fields(&house, true, false, &mut actual_v112);
-            let mut manual_v112 = DefaultHasher::new();
-            house.current_iq.hash(&mut manual_v112);
-            house.ai_activation.production.hash(&mut manual_v112);
-            house
-                .ai_activation
-                .ai_triggers_active
-                .hash(&mut manual_v112);
-            assert_eq!(actual_v112.finish(), manual_v112.finish());
-
-            let mut actual_pre_v112 = DefaultHasher::new();
-            hash_house_ai_activation_fields(&house, false, false, &mut actual_pre_v112);
-            let mut manual_pre_v112 = DefaultHasher::new();
-            house.current_iq.hash(&mut manual_pre_v112);
-            assert_eq!(actual_pre_v112.finish(), manual_pre_v112.finish());
-        }
-    }
 
     #[test]
     fn gsi_04_05_house_strategy_emergency_fields_each_change_world_hash() {
@@ -4174,7 +3706,6 @@ mod infantry_hash_tests {
         let actor = infantry_entity(&mut sim);
         sim.substrate.entities.insert(actor);
         let before = sim.state_hash();
-        let previous = sim.state_hash_with_schema(super::HashSchema::Before(160));
         let mut retained = FootPathRuntime::at_frame(0);
         retained.movement_timer = CdTimer::from_raw(-1, -7);
         retained.blocked_timer = CdTimer::from_raw(i32::MAX - 2, 31);
@@ -4187,10 +3718,6 @@ mod infantry_hash_tests {
             .navigation
             .path_runtime = retained;
         assert_ne!(sim.state_hash(), before);
-        assert_eq!(
-            sim.state_hash_with_schema(super::HashSchema::Before(160)),
-            previous
-        );
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "foot-path", 0);
         let loaded = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .unwrap()
@@ -4201,7 +3728,7 @@ mod infantry_hash_tests {
     }
 
     #[test]
-    fn foot_scold_byte_survives_snapshot_and_preserves_prior_hash_projections() {
+    fn foot_scold_byte_survives_snapshot_and_changes_the_hash() {
         // Original raw Load and no-init Foot construction preserve 0, 1 and
         // 255 separately; the guard only distinguishes zero from nonzero.
         // Native comparison: tools/spatial_oracle/foot_scold_latch.json.
@@ -4214,9 +3741,7 @@ mod infantry_hash_tests {
         assert_eq!(actor.navigation.path_runtime.scold_latch_raw(), 0);
         sim.substrate.entities.insert(actor);
         let clear_hash = sim.state_hash();
-        let old_hash = sim.state_hash_with_schema(super::HashSchema::Before(224));
-        assert_eq!(clear_hash, old_hash, "a zero byte adds no fold");
-        let mut retained_hashes = Vec::new();
+        let mut retained_hashes = vec![clear_hash];
         let native: serde_json::Value = serde_json::from_str(include_str!(
             "../../../tools/spatial_oracle/foot_scold_latch.json"
         ))
@@ -4231,12 +3756,7 @@ mod infantry_hash_tests {
                 .path_runtime
                 .set_scold_latch_for_test(raw);
             let current_hash = sim.state_hash();
-            assert_eq!(
-                sim.state_hash_with_schema(super::HashSchema::Before(224)),
-                old_hash,
-                "schema223 never folded Foot+68A"
-            );
-            assert!(!retained_hashes.contains(&current_hash));
+            assert!(!retained_hashes.contains(&current_hash) || raw == 0);
             retained_hashes.push(current_hash);
 
             let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "scold", 0);
@@ -4767,8 +4287,7 @@ mod bridge161_hash_projection_tests {
     use crate::sim::components::{DriveCoord, Health};
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::locomotion::piggyback::{LocomotorRuntimePayload, StashedLocomotor};
-    use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
-    use crate::sim::occupancy::RawCellKey;
+    use crate::sim::movement::locomotor::LocomotorState;
 
     fn supplied_payload_world(kind: LocomotorKind, stashed: bool) -> Simulation {
         let mut sim = Simulation::new();
@@ -4862,54 +4381,11 @@ mod bridge161_hash_projection_tests {
                         after.state_hash(),
                         "{kind:?} stashed={stashed} field={field}"
                     );
-                    for version in [159, 160, 161] {
-                        assert_eq!(
-                            before.state_hash_with_schema(HashSchema::Before(version)),
-                            after.state_hash_with_schema(HashSchema::Before(version)),
-                            "only the declared bridge payload is projected out at {version}",
-                        );
-                    }
                 }
             }
         }
-        assert!(HashSchema::Before(161).includes(HashFeature::FootPathRuntime));
-        assert!(HashSchema::Before(160).includes(HashFeature::CellMembership));
-        assert!(!HashSchema::Before(159).includes(HashFeature::CellMembership));
     }
 
-    #[test]
-    fn bridge161_projects_dummy_only_and_keeps_real_owner_identity() {
-        let mut sim = Simulation::new();
-        let owner = sim.intern("Americans");
-        let other = sim.intern("Russians");
-        let before = sim.state_hash();
-        let projected = sim.state_hash_with_schema(HashSchema::Before(161));
-        sim.substrate.raw_cell_occupation.write_infantry(
-            RawCellKey::Dummy,
-            MovementLayer::Ground,
-            4,
-            owner,
-            true,
-        );
-        assert_ne!(before, sim.state_hash());
-        assert_eq!(
-            projected,
-            sim.state_hash_with_schema(HashSchema::Before(161))
-        );
-        sim.substrate
-            .raw_cell_occupation
-            .mark_ground_infantry(5, 5, 4, owner);
-        let real_owner = sim.state_hash_with_schema(HashSchema::Before(161));
-        assert_ne!(projected, real_owner);
-        sim.substrate
-            .raw_cell_occupation
-            .mark_ground_infantry(5, 5, 4, other);
-        assert_ne!(
-            real_owner,
-            sim.state_hash_with_schema(HashSchema::Before(161)),
-            "historical projection does not omit real owner state or invent the former entity ID"
-        );
-    }
 }
 
 #[cfg(test)]
@@ -4983,68 +4459,10 @@ mod aircraft_dock_hash_tests {
 
 #[cfg(test)]
 mod prism_support_hash_tests {
-    use super::super::hash_schema::HashSchema;
     use super::Simulation;
     use crate::map::entities::EntityCategory;
     use crate::sim::components::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::house_state::HouseState;
 
-    /// Schema225's Prism folds are tagged suffixes present only when set: a
-    /// zero support count, Construct's multiplier 256 and an empty House+0x68
-    /// hash as Before(225) does, and each set value changes the stream.
-    #[test]
-    fn prism_support_state_folds_only_when_set() {
-        let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
-        sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
-        let tower = GameEntity::new_at_frame_zero_for_test(
-            1,
-            0,
-            0,
-            0,
-            0,
-            owner,
-            Health { current: 600 },
-            sim.interner.intern("ATESLA"),
-            EntityCategory::Structure,
-            0,
-            5,
-            false,
-        );
-        sim.substrate.entities.insert(tower);
-        let bullet = sim.allocate_stable_id();
-        sim.admit_projectile(
-            bullet,
-            super::super::lifecycle_tests::gsi_05_02_projectile(1, None),
-        );
-        let unset = sim.state_hash_with_schema(HashSchema::Before(225));
-        assert_eq!(sim.state_hash(), unset, "unset Prism state adds no fold");
-
-        sim.substrate
-            .entities
-            .get_mut(1)
-            .unwrap()
-            .prism_support_count = 2;
-        let count = sim.state_hash();
-        sim.houses
-            .get_mut(&owner)
-            .unwrap()
-            .base_projection
-            .replace_buildings_for_test(vec![1]);
-        let list = sim.state_hash();
-        let payload = &mut sim.projectiles.get_mut(bullet).unwrap().payload;
-        *payload = payload.with_damage_multiplier(1024);
-        let multiplier = sim.state_hash();
-        let hashes = [unset, count, list, multiplier];
-        for (index, hash) in hashes.iter().enumerate() {
-            assert!(!hashes[index + 1..].contains(hash), "fold {index} aliases");
-        }
-        assert_eq!(
-            sim.state_hash_with_schema(HashSchema::Before(225)),
-            unset,
-            "Before(225) folds none of them"
-        );
-    }
 }

@@ -7858,14 +7858,8 @@ fn display_lifecycle_is_independent_of_logic_and_survives_production_save() {
         sim.substrate.entities.get_mut(id).unwrap().position.rx = 7 - id as u16;
     }
     let before_sort = sim.state_hash();
-    let before_sort_without_display =
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(182));
     sim.sort_display_ground(None);
     assert_ne!(sim.state_hash(), before_sort);
-    assert_eq!(
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(182)),
-        before_sort_without_display
-    );
     assert_eq!(
         sim.substrate.display.members(DisplayLayer::GROUND),
         [2, 3, 4, 1]
@@ -8194,9 +8188,12 @@ fn unlimbo_levels_then_aims_the_barrel_elevation() {
         for (frame, heading) in samples {
             assert_eq!(elevation.current(frame), heading, "{type_id} frame {frame}");
         }
-        assert_ne!(
-            sim.state_hash(),
-            sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(239)),
+        assert!(
+            !sim.substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .barrel_elevation_is_constructed(),
             "{type_id}"
         );
     }
@@ -8213,9 +8210,5 @@ fn unlimbo_levels_then_aims_the_barrel_elevation() {
             .get(1)
             .unwrap()
             .barrel_elevation_is_constructed()
-    );
-    assert_eq!(
-        sim.state_hash(),
-        sim.state_hash_with_schema(super::hash_schema::HashSchema::Before(239))
     );
 }

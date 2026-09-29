@@ -867,30 +867,6 @@ mod tests {
         assert_eq!(sim.substrate.entities.get(plant).unwrap().draining_me, None);
     }
 
-    /// The v135 folds move only the current hash schema; the pre-v135 probe
-    /// reproduces the v133/v134 layout for an armed timer and a drain link.
-    #[test]
-    fn credit_income_state_affects_only_current_v135_hash_schema() {
-        let rules = rules();
-        let mut sim = Simulation::with_seed(0x0011_0905);
-        let _americans = house(&mut sim, "Americans", true, 500);
-        let heights: BTreeMap<(u16, u16), u8> = BTreeMap::new();
-        let oil = sim
-            .spawn_object("CAOILD", "Americans", 10, 10, 0, &rules, &heights)
-            .expect("derrick spawns");
-        let baseline_current = sim.state_hash();
-        let baseline_probe = sim.state_hash_without_credit_income_v135();
-        sim.substrate
-            .entities
-            .get_mut(oil)
-            .unwrap()
-            .produce_cash_timer = CdTimer::started(sim.session.binary_frame as i32, 100);
-        assert_ne!(baseline_current, sim.state_hash());
-        assert_eq!(baseline_probe, sim.state_hash_without_credit_income_v135());
-        sim.substrate.entities.get_mut(oil).unwrap().draining_me = Some(oil);
-        assert_eq!(baseline_probe, sim.state_hash_without_credit_income_v135());
-    }
-
     #[test]
     fn produce_cash_timer_fires_once_at_delay_minus_one_then_needs_rearm() {
         let timer = CdTimer::started(100, 100);
