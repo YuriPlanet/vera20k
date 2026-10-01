@@ -203,7 +203,11 @@ files, refs or processes; untouched-file failures require causal investigation.
 Start `feature/<topic>` from fetched `origin/main`; isolate owned/dirty checkouts.
 Continue task-owned branches and commit validated increments. Never commit/push
 directly to `main`. Publication requires user/goal authority; PRs target `main`.
-Integrate promptly when authorized. Owners resolve conflicts and revalidate.
+Label each PR with the model and, when known, the reasoning effort of the session
+that did the work, lowercase (`model:<name>`, `effort:<level>`, e.g. `model:opus-5.5`,
+`effort:high`; create a missing label with `gh label create`), so outcomes can be
+compared across agents. Integrate promptly when authorized. Owners resolve conflicts
+and revalidate.
 Preserve unique/local data; use `sync` for complex cleanup.
 
 Choose validation appropriate to the change, considering native fidelity, connected
